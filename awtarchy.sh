@@ -106,7 +106,7 @@ Usage:
   awtarchy.sh
   awtarchy.sh dry-run
   awtarchy.sh install [--no-reboot] [--dry-run]
-  awtarchy.sh update-reset-backup [--tag <tag>]
+  awtarchy.sh update-reset-backup [--tag <tag>] [--mode preserve|clean] [--review-only]
   awtarchy.sh update-backup-cleaner [options]
   awtarchy.sh clean-backups [options]
   awtarchy.sh help
@@ -241,10 +241,20 @@ create_directory() {
 }
 
 pacman_install_one() {
-  local package="$1"
-  if ! pacman -Qi "$package" >/dev/null 2>&1; then
+  local package="$1" was_installed=0
+  pacman -Qi "$package" >/dev/null 2>&1 && was_installed=1
+
+  if (( was_installed == 0 )); then
     printf '%s\n' "${COLOR_CYAN}Installing ${package}...${COLOR_RESET}"
     pacman -S --needed --noconfirm "$package"
+    if pacman -Qi "$package" >/dev/null 2>&1; then
+      install -d -m 0755 /var/lib/awtarchy
+      touch /var/lib/awtarchy/managed-packages
+      grep -Fxq "$package" /var/lib/awtarchy/managed-packages \
+        || printf '%s\n' "$package" >>/var/lib/awtarchy/managed-packages
+      LC_ALL=C sort -u -o /var/lib/awtarchy/managed-packages /var/lib/awtarchy/managed-packages
+      chmod 0644 /var/lib/awtarchy/managed-packages
+    fi
   else
     printf '%s\n' "${COLOR_YELLOW}${package} already installed. Skipping...${COLOR_RESET}"
   fi
@@ -2450,7 +2460,14 @@ install_aur_repo_apps_stage() {
       printf '%s\n' "${COLOR_YELLOW}tlpui already installed. Skipping...${COLOR_RESET}"
     else
       log "Installing tlpui through AUR Guard practical mode..."
-      run_aur_guard_as_target aurinstall tlpui || true
+      if run_aur_guard_as_target aurinstall tlpui && pacman -Qq tlpui >/dev/null 2>&1; then
+        install -d -m 0755 /var/lib/awtarchy
+        touch /var/lib/awtarchy/managed-packages
+        grep -Fxq tlpui /var/lib/awtarchy/managed-packages \
+          || printf '%s\n' tlpui >>/var/lib/awtarchy/managed-packages
+        LC_ALL=C sort -u -o /var/lib/awtarchy/managed-packages /var/lib/awtarchy/managed-packages
+        chmod 0644 /var/lib/awtarchy/managed-packages
+      fi
     fi
   fi
 
@@ -3080,7 +3097,25 @@ multilib_enabled(){
 }
 
 pacman_install(){
+  local -a newly_managed=()
+  local package=""
+  for package in "$@"; do
+    pacman -Qq "$package" >/dev/null 2>&1 || newly_managed+=("$package")
+  done
+
   as_root pacman -S --needed --noconfirm "$@"
+
+  if (( ${#newly_managed[@]} )); then
+    as_root install -d -m 0755 /var/lib/awtarchy
+    as_root touch /var/lib/awtarchy/managed-packages
+    for package in "${newly_managed[@]}"; do
+      pacman -Qq "$package" >/dev/null 2>&1 || continue
+      if ! grep -Fxq "$package" /var/lib/awtarchy/managed-packages 2>/dev/null; then
+        printf '%s\n' "$package" | as_root tee -a /var/lib/awtarchy/managed-packages >/dev/null
+      fi
+    done
+    as_root sh -c 'LC_ALL=C sort -u -o /var/lib/awtarchy/managed-packages /var/lib/awtarchy/managed-packages && chmod 0644 /var/lib/awtarchy/managed-packages'
+  fi
 }
 
 pacman_remove(){
@@ -3147,18 +3182,34 @@ aur_install(){
     log "DRY-RUN: would AUR install: $*"
     return 0
   fi
+
+  local -a newly_managed=()
+  local package=""
+  for package in "$@"; do
+    pacman -Qq "$package" >/dev/null 2>&1 || newly_managed+=("$package")
+  done
+
   if have paru; then
     as_user paru -S --needed --noconfirm "$@"
-    return 0
-  fi
-  if have yay; then
+  elif have yay; then
     as_user yay -S --needed --noconfirm "$@"
-    return 0
+  else
+    bootstrap_yay
+    as_user yay -S --needed --noconfirm "$@"
   fi
-  bootstrap_yay
-  as_user yay -S --needed --noconfirm "$@"
-}
 
+  if (( ${#newly_managed[@]} )); then
+    as_root install -d -m 0755 /var/lib/awtarchy
+    as_root touch /var/lib/awtarchy/managed-packages
+    for package in "${newly_managed[@]}"; do
+      pacman -Qq "$package" >/dev/null 2>&1 || continue
+      if ! grep -Fxq "$package" /var/lib/awtarchy/managed-packages 2>/dev/null; then
+        printf '%s\n' "$package" | as_root tee -a /var/lib/awtarchy/managed-packages >/dev/null
+      fi
+    done
+    as_root sh -c 'LC_ALL=C sort -u -o /var/lib/awtarchy/managed-packages /var/lib/awtarchy/managed-packages && chmod 0644 /var/lib/awtarchy/managed-packages'
+  fi
+}
 # ---------- kernel detection (Arch + Cachy variants) ----------
 detect_kernel_pkgs(){
   # Prefer real installed kernel pkgbases from /usr/lib/modules (works for Cachy variants, custom kernels).
@@ -4030,28 +4081,56 @@ umask 022
 
 REPO_OWNER="dillacorn"
 REPO_NAME="awtarchy"
-
 LOG_PREFIX="[awtarchy-update]"
 
 log()  { printf '%s %s\n' "$LOG_PREFIX" "$*"; }
 warn() { printf '%s WARN: %s\n' "$LOG_PREFIX" "$*" >&2; }
 die()  { printf '%s ERROR: %s\n' "$LOG_PREFIX" "$*" >&2; exit 1; }
-
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"; }
-
 ts() { date -Iseconds; }
 stamp() { date +%Y%m%d-%H%M%S; }
 
 TARGET_USER=""
 HOME_DIR=""
+STATE_DIR=""
+BASELINE_HOME=""
+MANIFEST_FILE=""
+HARDWARE_FILE=""
+ACTIVE_THEME_FILE=""
+AUDIT_LOG=""
+UPDATE_MODE=""
+REVIEW_ONLY=0
+ASSUME_YES=0
+TAG_OVERRIDE=""
 BACKUPS=()
+CHANGED=()
+PRESERVED=()
+MERGED=()
+REMOVED=()
+FAILED=()
+ROLLBACK_PATHS=()
+MOUSE_ENABLED=0
+GPU_DETECTION_RELIABLE=0
+TMPD=""
+
+cleanup_update() {
+  if (( MOUSE_ENABLED == 1 )); then
+    printf '\033[?1000l\033[?1006l' >/dev/tty 2>/dev/null || true
+  fi
+  [[ -n "${TMPD:-}" ]] && rm -rf -- "$TMPD" 2>/dev/null || true
+}
+trap cleanup_update EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 run_target() {
   if [[ "${EUID}" -eq 0 ]]; then
+    local -a user_env=(env "HOME=${HOME_DIR}" "USER=${TARGET_USER}" "LOGNAME=${TARGET_USER}")
     if command -v runuser >/dev/null 2>&1; then
-      runuser -u "$TARGET_USER" -- "$@"
+      runuser -u "$TARGET_USER" -- "${user_env[@]}" "$@"
     elif command -v sudo >/dev/null 2>&1; then
-      sudo -u "$TARGET_USER" -H -- "$@"
+      sudo -u "$TARGET_USER" -H -- "${user_env[@]}" "$@"
     else
       die "Running as root but neither runuser nor sudo is available to run commands as ${TARGET_USER}"
     fi
@@ -4063,12 +4142,67 @@ run_target() {
 init_target_user() {
   if [[ "${EUID}" -eq 0 && -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
     TARGET_USER="${SUDO_USER}"
+  elif [[ "${EUID}" -eq 0 ]]; then
+    TARGET_USER="$(awk -F: '$3 >= 1000 && $1 != "nobody" { print $1; exit }' /etc/passwd)"
   else
-    TARGET_USER="${USER}"
+    TARGET_USER="${USER:-$(id -un)}"
   fi
+  [[ -n "$TARGET_USER" ]] || die "Could not determine the target desktop user. Run with sudo from that user account."
 
   HOME_DIR="$(getent passwd "$TARGET_USER" | cut -d: -f6 || true)"
-  [[ -n "${HOME_DIR}" && -d "${HOME_DIR}" ]] || die "Could not resolve HOME for user: ${TARGET_USER}"
+  [[ -n "$HOME_DIR" && -d "$HOME_DIR" ]] || die "Could not resolve HOME for user: ${TARGET_USER}"
+
+  STATE_DIR="${HOME_DIR}/.local/state/awtarchy"
+  BASELINE_HOME="${STATE_DIR}/baseline/home"
+  MANIFEST_FILE="${STATE_DIR}/baseline/manifest.paths"
+  HARDWARE_FILE="${STATE_DIR}/hardware-state"
+  ACTIVE_THEME_FILE="${STATE_DIR}/active-theme"
+  mkdir -p -- "${STATE_DIR}/logs"
+  AUDIT_LOG="${STATE_DIR}/logs/update-$(stamp).log"
+  if [[ "${EUID}" -eq 0 ]]; then
+    chown -R "${TARGET_USER}:${TARGET_USER}" "$STATE_DIR" 2>/dev/null || true
+  fi
+}
+
+parse_args() {
+  while (( $# )); do
+    case "$1" in
+      --tag)
+        TAG_OVERRIDE="${2:-}"
+        [[ -n "$TAG_OVERRIDE" ]] || die "--tag requires a release tag"
+        shift 2
+        ;;
+      --mode)
+        UPDATE_MODE="${2:-}"
+        [[ "$UPDATE_MODE" == "preserve" || "$UPDATE_MODE" == "clean" ]] || die "--mode must be preserve or clean"
+        shift 2
+        ;;
+      --review-only)
+        REVIEW_ONLY=1
+        shift
+        ;;
+      --yes|-y)
+        ASSUME_YES=1
+        shift
+        ;;
+      --help|-h)
+        cat <<'EOF'
+Usage:
+  awtarchy.sh update-reset-backup [options]
+
+Options:
+  --tag <tag>              Update from an exact GitHub release tag
+  --mode preserve|clean    Select update mode without the menu
+  --review-only            Download, classify, and review without changing files
+  --yes                    Accept conservative hardware cleanup prompts
+EOF
+        return 2
+        ;;
+      *)
+        die "Unknown update option: $1"
+        ;;
+    esac
+  done
 }
 
 curl_headers() {
@@ -4078,7 +4212,6 @@ curl_headers() {
     --retry-delay 1
     -H "User-Agent: awtarchy-update"
   )
-
   if [[ -n "${GITHUB_TOKEN:-}" ]]; then
     CURL_ARGS+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
   fi
@@ -4087,15 +4220,14 @@ curl_headers() {
 fetch_latest_release_tag() {
   local api="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest"
   local json
-
-  json="$(curl "${CURL_ARGS[@]}" -H "Accept: application/vnd.github+json" "$api")" || die "Failed to query GitHub latest release API"
-
-  python3 - <<'PY' "$json"
+  json="$(curl "${CURL_ARGS[@]}" -H "Accept: application/vnd.github+json" "$api")" \
+    || die "Failed to query GitHub latest release API"
+  python3 - "$json" <<'PY'
 import json, sys
 j = json.loads(sys.argv[1])
 tag = (j.get("tag_name") or "").strip()
 if not tag:
-  raise SystemExit(2)
+    raise SystemExit(2)
 print(tag)
 PY
 }
@@ -4104,590 +4236,1326 @@ urlencode_path_segment() {
   python3 - "$1" <<'PY'
 import sys
 from urllib.parse import quote
-# Keep "/" unescaped (rare but possible in tags), encode everything else that could break URLs (like '#').
 print(quote(sys.argv[1], safe="/-._~"))
 PY
 }
 
 download_release_tarball() {
-  local tag="$1"
-  local out="$2"
-  local tag_enc
+  local tag="$1" out="$2" max_time="${3:-300}" tag_enc
   tag_enc="$(urlencode_path_segment "$tag")"
 
-  local url="https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/tags/${tag_enc}.tar.gz"
-  curl "${CURL_ARGS[@]}" -L -o "$out" "$url" || die "Failed to download release tarball: $url"
+  curl "${CURL_ARGS[@]}" \
+    --connect-timeout 10 \
+    --max-time "$max_time" \
+    --retry 1 \
+    -L -o "$out" \
+    "https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/tags/${tag_enc}.tar.gz"
 }
-
 tar_topdir() {
-  local tgz="$1"
-  local top
-  top="$(tar -tzf "$tgz" | head -n 1 | cut -d/ -f1)"
-  [[ -n "$top" ]] || die "Could not determine tarball top directory"
-  printf '%s\n' "$top"
+  python3 - "$1" <<'PY'
+import sys, tarfile
+try:
+    with tarfile.open(sys.argv[1], "r:gz") as archive:
+        first = next((name for name in archive.getnames() if name), "")
+except (OSError, tarfile.TarError):
+    raise SystemExit(1)
+top = first.split("/", 1)[0]
+if not top:
+    raise SystemExit(1)
+print(top)
+PY
 }
 
-make_backup_file() {
-  local dest="$1"
-  [[ -e "$dest" || -L "$dest" ]] || return 0
-
-  local b="${dest}.backup"
-  if [[ -e "$b" || -L "$b" ]]; then
-    b="${dest}.backup.$(stamp)"
-  fi
-  mkdir -p -- "$(dirname "$b")"
-  cp -a -- "$dest" "$b"
-  BACKUPS+=("$b")
-}
-
-same_symlink_target() {
-  local a="$1" b="$2"
-  [[ -L "$a" && -L "$b" ]] || return 1
-  [[ "$(readlink "$a")" == "$(readlink "$b")" ]]
-}
-
-files_equal() {
-  local src="$1" dest="$2"
-
-  if [[ -L "$src" || -L "$dest" ]]; then
-    same_symlink_target "$src" "$dest"
-    return $?
-  fi
-
-  [[ -f "$src" && -f "$dest" ]] || return 1
-  cmp -s -- "$src" "$dest"
-}
-
-atomic_copy() {
-  local src="$1" dest="$2"
-
-  if [[ -f "$src" && ! -L "$src" && ! -s "$src" ]]; then
-    warn "Skipping empty upstream file (refusing to overwrite): $dest"
-    return 0
-  fi
-
-  mkdir -p -- "$(dirname "$dest")"
-
-  local tmp
-  tmp="$(mktemp --tmpdir="$(dirname "$dest")" ".awtarchy.tmp.XXXXXX")"
-  rm -f -- "$tmp" 2>/dev/null || true
-
-  cp -a --no-preserve=ownership -- "$src" "$tmp"
-
-  if [[ "${EUID}" -eq 0 ]]; then
-    chown -h "${TARGET_USER}:${TARGET_USER}" "$tmp" 2>/dev/null || true
-  fi
-
-  mv -Tf -- "$tmp" "$dest"
-}
-
-deploy_file() {
-  local src="$1" dest="$2"
-
-  if [[ -e "$dest" || -L "$dest" ]]; then
-    if files_equal "$src" "$dest"; then
-      return 0
-    fi
-    make_backup_file "$dest"
-    if [[ -d "$dest" && ! -d "$src" ]]; then
-      rm -rf -- "$dest"
-    fi
-  fi
-
-  atomic_copy "$src" "$dest"
-}
-
-deploy_tree() {
-  local src_root="$1" dest_root="$2"
-
-  [[ -d "$src_root" ]] || die "Missing upstream directory: $src_root"
-  mkdir -p -- "$dest_root"
-
-  while IFS= read -r -d '' d; do
-    local rel="${d#"$src_root"/}"
-    mkdir -p -- "${dest_root}/${rel}"
-  done < <(find "$src_root" -mindepth 1 -type d -print0)
-
-  while IFS= read -r -d '' f; do
-    local rel="${f#"$src_root"/}"
-    deploy_file "$f" "${dest_root}/${rel}"
-  done < <(find "$src_root" -mindepth 1 \( -type f -o -type l \) -print0)
-
-  if [[ "${EUID}" -eq 0 ]]; then
-    chown -R "${TARGET_USER}:${TARGET_USER}" "$dest_root" 2>/dev/null || true
-  fi
-}
-
-fix_managed_perms() {
-  local -a dirs=("$@")
-
-  for d in "${dirs[@]}"; do
-    local root="${HOME_DIR}/.config/${d}"
-    [[ -d "$root" ]] || continue
-    find "$root" -type d -exec chmod 755 {} + 2>/dev/null || true
-    find "$root" -type f -exec chmod 644 {} + 2>/dev/null || true
-  done
-
-  if [[ -d "${HOME_DIR}/.config/hypr/scripts" ]]; then
-    find "${HOME_DIR}/.config/hypr/scripts" -type f -exec chmod +x {} + 2>/dev/null || true
-  fi
-  if [[ -d "${HOME_DIR}/.config/hypr/themes" ]]; then
-    find "${HOME_DIR}/.config/hypr/themes" -type f -exec chmod +x {} + 2>/dev/null || true
-  fi
-  if [[ -d "${HOME_DIR}/.config/waybar/scripts" ]]; then
-    find "${HOME_DIR}/.config/waybar/scripts" -type f -exec chmod +x {} + 2>/dev/null || true
-  fi
-}
-
-maybe_hyprctl_reload() {
-  command -v hyprctl >/dev/null 2>&1 || return 0
-  run_target hyprctl reload >/dev/null 2>&1 || true
-}
-
-write_version_stamp() {
-  local tag="$1"
-  local dest="${HOME_DIR}/.cache/awtarchy/version"
-  mkdir -p -- "$(dirname "$dest")"
-  {
-    printf '%s\n' "tag=${tag}"
-    printf '%s\n' "updated_at=$(ts)"
-  } >"$dest"
-  if [[ "${EUID}" -eq 0 ]]; then
-    chown "${TARGET_USER}:${TARGET_USER}" "$dest" 2>/dev/null || true
-  fi
-}
-
-update_system_cursor_default() {
-  [[ "${EUID}" -eq 0 ]] || return 0
-  install -d -m 755 /usr/share/icons/default
-  printf '%s\n' "[Icon Theme]" "Inherits=ComixCursors-White" | tee /usr/share/icons/default/index.theme >/dev/null
-  chmod 644 /usr/share/icons/default/index.theme 2>/dev/null || true
-}
-
-is_interactive_tty() {
-  [[ -t 0 && -t 1 ]]
+is_interactive() {
+  [[ -t 0 && -t 1 && -r /dev/tty && -w /dev/tty ]]
 }
 
 ask_yes_no() {
-  local prompt="$1"
-  local ans=""
-  if ! is_interactive_tty; then
-    warn "Non-interactive shell detected; skipping prompt: ${prompt}"
-    return 1
-  fi
-
+  local prompt="$1" ans=""
+  (( ASSUME_YES == 1 )) && return 0
+  is_interactive || return 1
   while true; do
-    read -r -p "${prompt} [y/n] " ans
-    case "${ans}" in
+    printf '%s [y/N] ' "$prompt" >/dev/tty
+    IFS= read -r ans </dev/tty || return 1
+    case "$ans" in
       y|Y|yes|YES) return 0 ;;
-      n|N|no|NO) return 1 ;;
-      *) printf '%s\n' "Please answer y or n." ;;
+      ""|n|N|no|NO) return 1 ;;
     esac
   done
 }
 
-print_wrapped_list() {
-  local -n _items_ref="$1"
-  local prefix="${2:-  - }"
-  local i
-  for i in "${_items_ref[@]}"; do
-    printf '%s%s\n' "${prefix}" "${i}"
-  done
+acquire_lock() {
+  need_cmd flock
+  local runtime="${XDG_RUNTIME_DIR:-/run/user/$(id -u "$TARGET_USER")}"
+  mkdir -p -- "$runtime" 2>/dev/null || true
+  exec 9>"${runtime}/awtarchy-update.lock"
+  flock -n 9 || die "Another Awtarchy update is already running."
 }
 
-parse_bash_array_from_script() {
-  local file="$1"
-  local array_name="$2"
-  local mode="$3" # plain | arch-groups
+copy_target() {
+  local src="$1" dest="$2"
+  [[ -e "$src" || -L "$src" ]] || return 0
+  mkdir -p -- "$(dirname "$dest")"
+  cp -a --no-preserve=ownership -- "$src" "$dest"
+}
 
-  python3 - "$file" "$array_name" "$mode" <<'PY'
-import re
-import shlex
-import sys
-from pathlib import Path
+build_target_home() {
+  local repo_dir="$1" target_home="$2" d
+  mkdir -p -- "$target_home"
 
-path, array_name, mode = sys.argv[1], sys.argv[2], sys.argv[3]
-text = Path(path).read_text(encoding="utf-8")
+  copy_target "${repo_dir}/bashrc" "${target_home}/.bashrc"
+  copy_target "${repo_dir}/bash_profile" "${target_home}/.bash_profile"
+  copy_target "${repo_dir}/Xresources" "${target_home}/.Xresources"
+  copy_target "${repo_dir}/config/mimeapps.list" "${target_home}/.config/mimeapps.list"
+  copy_target "${repo_dir}/config/gamemode.ini" "${target_home}/.config/gamemode.ini"
 
-m = re.search(rf'(?ms)^\s*(?:declare\s+-a\s+)?{re.escape(array_name)}=\(\s*(.*?)^\s*\)', text)
-if not m:
-    raise SystemExit(2)
+  # Every directory under config/ is Awtarchy-managed. Discover them from
+  # the exact release instead of maintaining a list that can omit new paths.
+  while IFS= read -r -d '' config_dir; do
+    d="${config_dir##*/}"
+    mkdir -p -- "${target_home}/.config/${d}"
+    cp -a --no-preserve=ownership -- "${config_dir}/." "${target_home}/.config/${d}/"
+  done < <(find "${repo_dir}/config" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
 
-body = m.group(1)
+  copy_target "${repo_dir}/local/share/nwg-look/gsettings" \
+    "${target_home}/.local/share/nwg-look/gsettings"
 
-lex = shlex.shlex(body, posix=True)
-lex.whitespace_split = True
-lex.commenters = '#'
-items = list(lex)
+  if [[ -d "${repo_dir}/local/share/SpeedCrunch/color-schemes" ]]; then
+    mkdir -p -- "${target_home}/.local/share/SpeedCrunch/color-schemes"
+    cp -a --no-preserve=ownership -- \
+      "${repo_dir}/local/share/SpeedCrunch/color-schemes/." \
+      "${target_home}/.local/share/SpeedCrunch/color-schemes/"
+  fi
 
-out = []
-seen = set()
+  if [[ -d "${repo_dir}/local/share/applications" ]]; then
+    mkdir -p -- "${target_home}/.local/share/applications"
+    cp -a --no-preserve=ownership -- \
+      "${repo_dir}/local/share/applications/." \
+      "${target_home}/.local/share/applications/"
+  fi
 
-def emit(token: str):
-    token = token.strip()
-    if not token:
-        return
-    if token in seen:
-        return
-    seen.add(token)
-    out.append(token)
+  copy_target "${repo_dir}/awtarchy_geology.png" \
+    "${target_home}/Pictures/wallpapers/awtarchy_geology.png"
+}
 
-if mode == "arch-groups":
-    for entry in items:
-        if ":" in entry:
-            _, pkg_blob = entry.split(":", 1)
-        else:
-            pkg_blob = entry
-        for pkg in pkg_blob.split():
-            emit(pkg)
-elif mode == "plain":
-    for entry in items:
-        emit(entry)
-else:
-    raise SystemExit(3)
+valid_theme_name() {
+  local name="$1"
+  [[ -n "$name" && "$name" != */* && "$name" != "." && "$name" != ".." && "$name" != *$'\n'* ]]
+}
 
-sys.stdout.write("\n".join(out))
+infer_active_theme() {
+  local repo_dir="$1" theme="" speed="${HOME_DIR}/.config/SpeedCrunch/SpeedCrunch.ini"
+  if [[ -r "$ACTIVE_THEME_FILE" ]]; then
+    IFS= read -r theme <"$ACTIVE_THEME_FILE" || true
+    if valid_theme_name "$theme" && [[ -f "${repo_dir}/config/hypr/themes/${theme}" ]]; then
+      printf '%s\n' "$theme"
+      return 0
+    fi
+  fi
+
+  if [[ -r "$speed" ]]; then
+    theme="$(sed -n 's/^Display\\ColorSchemeName=//p' "$speed" | head -n1 | tr -d '\r')"
+    if valid_theme_name "$theme" && [[ -f "${repo_dir}/config/hypr/themes/${theme}" ]]; then
+      printf '%s\n' "$theme"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+apply_theme_to_target() {
+  local repo_dir="$1" target_home="$2" theme="$3"
+  [[ -n "$theme" ]] || return 0
+  local theme_script="${repo_dir}/config/hypr/themes/${theme}"
+  [[ -f "$theme_script" ]] || {
+    warn "Selected theme no longer exists in this release: ${theme}"
+    return 1
+  }
+
+  local stub_dir="${TMPD}/theme-stubs"
+  local support_manifest="${TMPD}/theme-support.paths"
+  mkdir -p -- "$stub_dir"
+  : >"$support_manifest"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"${stub_dir}/hyprctl"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"${stub_dir}/makoctl"
+  chmod +x "${stub_dir}/hyprctl" "${stub_dir}/makoctl"
+
+  # Theme scripts may touch application-owned files that are not stored in the
+  # repository. Seed throwaway staging copies so target generation can run,
+  # then remove them before the managed-file manifest is built.
+  local micro_rel=".config/micro/settings.json"
+  local micro_target="${target_home}/${micro_rel}"
+  if [[ ! -e "$micro_target" && ! -L "$micro_target" ]]; then
+    mkdir -p -- "$(dirname "$micro_target")"
+    if [[ -f "${HOME_DIR}/${micro_rel}" ]]; then
+      cp -a --no-preserve=ownership -- "${HOME_DIR}/${micro_rel}" "$micro_target"
+    else
+      cat >"$micro_target" <<'EOF'
+{
+    "colorscheme": "default",
+    "autosave": 0
+}
+EOF
+    fi
+    printf '%s\n' "$micro_rel" >>"$support_manifest"
+  fi
+
+  log "Generating release target with theme: ${theme}"
+  local rc=0 support_rel=""
+  HOME="$target_home" \
+  XDG_CONFIG_HOME="${target_home}/.config" \
+  PATH="${stub_dir}:${PATH}" \
+  bash "$theme_script" >/dev/null || rc=$?
+
+  while IFS= read -r support_rel; do
+    [[ -n "$support_rel" ]] || continue
+    rm -f -- "${target_home}/${support_rel}"
+    rmdir --ignore-fail-on-non-empty "$(dirname "${target_home}/${support_rel}")" 2>/dev/null || true
+  done <"$support_manifest"
+
+  return "$rc"
+}
+
+capture_fuzzel_anchor() {
+  local file="${HOME_DIR}/.config/fuzzel/fuzzel.ini"
+  [[ -f "$file" ]] || return 1
+  python3 - "$file" <<'PY'
+import re, sys
+path = sys.argv[1]
+in_main = False
+for raw in open(path, encoding="utf-8", errors="replace"):
+    line = raw.rstrip("\n")
+    if re.match(r"^\s*\[main\]\s*$", line):
+        in_main = True
+        continue
+    if re.match(r"^\s*\[", line):
+        in_main = False
+    if in_main and not re.match(r"^\s*[#;]", line):
+        m = re.match(r"^\s*anchor\s*=\s*(.*?)\s*$", line)
+        if m:
+            print(m.group(1))
+            raise SystemExit(0)
+raise SystemExit(1)
 PY
 }
 
-pkg_installed_pacman() {
-  local pkg="$1"
-  command -v pacman >/dev/null 2>&1 || return 1
-  pacman -Qq "$pkg" >/dev/null 2>&1 && return 0
-  pkg_equivalent_installed_pacman "$pkg"
+restore_fuzzel_anchor() {
+  local value="$1" file="${HOME_DIR}/.config/fuzzel/fuzzel.ini"
+  [[ -n "$value" && -f "$file" ]] || return 0
+  python3 - "$file" "$value" <<'PY'
+from pathlib import Path
+import re, sys
+path = Path(sys.argv[1])
+value = sys.argv[2]
+lines = path.read_text(encoding="utf-8").splitlines()
+out = []
+in_main = False
+main_seen = False
+written = False
+for line in lines:
+    if re.match(r"^\s*\[main\]\s*$", line):
+        if in_main and not written:
+            out.append(f"anchor={value}")
+            written = True
+        in_main = True
+        main_seen = True
+        out.append(line)
+        continue
+    if re.match(r"^\s*\[", line):
+        if in_main and not written:
+            out.append(f"anchor={value}")
+            written = True
+        in_main = False
+    if in_main and not re.match(r"^\s*[#;]", line) and re.match(r"^\s*anchor\s*=", line):
+        if not written:
+            out.append(f"anchor={value}")
+            written = True
+        continue
+    out.append(line)
+if in_main and not written:
+    out.append(f"anchor={value}")
+    written = True
+if not main_seen:
+    out.extend(["", "[main]", f"anchor={value}"])
+path.write_text("\n".join(out) + "\n", encoding="utf-8")
+PY
 }
 
-pkg_equivalent_installed_pacman() {
-  local pkg="$1"
-  command -v pacman >/dev/null 2>&1 || return 1
+detect_hardware() {
+  CPU_VENDOR="unknown"
+  GPU_VENDORS=""
+  GPU_DETECTION_RELIABLE=0
+  IS_LAPTOP_NOW=0
 
-  case "$pkg" in
-    obs-pipewire-audio-capture|obs-pipewire-audio-capture-bin)
-      pacman -Qq obs-pipewire-audio-capture >/dev/null 2>&1         && return 0
-      pacman -Qq obs-pipewire-audio-capture-bin >/dev/null 2>&1         && return 0
-      obs_pipewire_audio_capture_user_plugin_installed         && return 0
-      return 1
-      ;;
-  esac
+  if grep -qi 'GenuineIntel' /proc/cpuinfo 2>/dev/null; then
+    CPU_VENDOR="intel"
+  elif grep -qi 'AuthenticAMD' /proc/cpuinfo 2>/dev/null; then
+    CPU_VENDOR="amd"
+  fi
 
-  local -a equivalents=()
-  case "$pkg" in
-    alacritty|alacritty-graphics)
-      equivalents=(alacritty alacritty-graphics)
-      ;;
-    qimgv|qimgv-git)
-      equivalents=(qimgv qimgv-git)
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+  if command -v lspci >/dev/null 2>&1; then
+    local lines
+    lines="$(lspci -nn 2>/dev/null | grep -Ei 'VGA compatible controller|3D controller|Display controller|2D controller' || true)"
+    if [[ -n "$lines" ]]; then
+      local -a vendors=()
+      grep -qi '\[1002:' <<<"$lines" && vendors+=(amd)
+      grep -qi '\[8086:' <<<"$lines" && vendors+=(intel)
+      grep -qi '\[10de:' <<<"$lines" && vendors+=(nvidia)
+      if (( ${#vendors[@]} )); then
+        GPU_DETECTION_RELIABLE=1
+        GPU_VENDORS="$(IFS=,; printf '%s' "${vendors[*]}")"
+      fi
+    fi
+  fi
 
-  local alt=""
-  for alt in "${equivalents[@]}"; do
-    pacman -Qq "$alt" >/dev/null 2>&1 && return 0
-  done
-
-  return 1
+  if [[ -d /sys/class/power_supply ]] && find /sys/class/power_supply -maxdepth 1 -type l -name 'BAT*' -print -quit 2>/dev/null | grep -q .; then
+    IS_LAPTOP_NOW=1
+  fi
 }
 
-flatpak_app_installed_any_scope() {
-  local app_id="$1"
-  command -v flatpak >/dev/null 2>&1 || return 1
-
-  flatpak info --system "$app_id" >/dev/null 2>&1 && return 0
-  run_target flatpak --user info "$app_id" >/dev/null 2>&1 && return 0
-  flatpak info "$app_id" >/dev/null 2>&1 && return 0
-  return 1
+state_value() {
+  local key="$1" file="$2"
+  [[ -r "$file" ]] || return 1
+  sed -n "s/^${key}=//p" "$file" | head -n1
 }
 
-detect_repo_scripts_dir() {
-  local downloaded_repo_dir="${1:-}"
-  local self_dir="" pwd_dir=""
+vendor_present() {
+  local vendor="$1" list=",${2},"
+  [[ "$list" == *",${vendor},"* ]]
+}
 
-  self_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-  pwd_dir="$(pwd -P)"
+managed_packages_file() {
+  printf '%s\n' '/var/lib/awtarchy/managed-packages'
+}
 
-  if [[ -d "${self_dir}/scripts" ]]; then
-    printf '%s\n' "${self_dir}/scripts"
+managed_package_recorded() {
+  local package="$1" manifest
+  manifest="$(managed_packages_file)"
+  [[ -r "$manifest" ]] && grep -Fxq "$package" "$manifest"
+}
+
+remove_managed_packages_matching() {
+  local label="$1" regex="$2"
+  [[ "${EUID}" -eq 0 ]] || {
+    warn "${label} cleanup requires sudo/root; no packages were removed."
     return 0
-  fi
+  }
 
-  if [[ -d "${pwd_dir}/scripts" ]]; then
-    printf '%s\n' "${pwd_dir}/scripts"
+  local manifest
+  manifest="$(managed_packages_file)"
+  [[ -r "$manifest" ]] || {
+    warn "No Awtarchy package ownership manifest exists; refusing automatic ${label} package removal."
     return 0
-  fi
+  }
 
-  if [[ -n "${downloaded_repo_dir}" && -d "${downloaded_repo_dir}/scripts" ]]; then
-    printf '%s\n' "${downloaded_repo_dir}/scripts"
-    return 0
-  fi
+  local -a pkgs=()
+  while IFS= read -r pkg; do
+    [[ -n "$pkg" ]] || continue
+    [[ "$pkg" =~ $regex ]] || continue
+    pacman -Qq "$pkg" >/dev/null 2>&1 && pkgs+=("$pkg")
+  done <"$manifest"
 
-  return 1
-}
-
-flatpak_effective_install_scope() {
-  if [[ "${EUID}" -ne 0 ]]; then
-    printf '%s\n' "user"
-    return 0
-  fi
-  local root_fs_type=""
-  root_fs_type="$(df -T / | awk 'NR==2 {print $2}' 2>/dev/null || true)"
-  if [[ "${root_fs_type}" == "btrfs" ]]; then
-    printf '%s\n' "system"
-  else
-    printf '%s\n' "user"
-  fi
-}
-
-ensure_flatpak_remote_for_scope() {
-  local scope="$1"
-  local remote_name="flathub"
-  local remote_url="https://flathub.org/repo/flathub.flatpakrepo"
-
-  if [[ "${scope}" == "user" ]]; then
-    run_target flatpak --user remotes --columns=name | grep -Fxq "${remote_name}" \
-      || run_target flatpak --user remote-add --if-not-exists "${remote_name}" "${remote_url}"
-  else
-    flatpak remotes --columns=name | grep -Fxq "${remote_name}" \
-      || flatpak remote-add --if-not-exists "${remote_name}" "${remote_url}"
-  fi
-}
-
-install_missing_arch_repo_packages() {
-  local -a pkgs=("$@")
   (( ${#pkgs[@]} )) || return 0
-
-  if ! command -v pacman >/dev/null 2>&1; then
-    warn "pacman not found; cannot install Arch repo packages."
-    return 1
-  fi
-  if [[ "${EUID}" -ne 0 ]]; then
-    warn "Arch repo installs require root. Re-run update-reset-backup.sh with sudo to install missing packages."
-    return 1
-  fi
-
-  log "Installing missing Arch repo packages (${#pkgs[@]}):"
-  print_wrapped_list pkgs "  - "
-  pacman -S --needed --noconfirm "${pkgs[@]}"
+  printf '%s\n' "${label} packages installed by Awtarchy:" >&2
+  printf '  %s\n' "${pkgs[@]}" >&2
+  ask_yes_no "Remove these obsolete ${label} packages?" || return 0
+  pacman -Rns --noconfirm "${pkgs[@]}"
+  local tmp
+  tmp="$(mktemp)"
+  grep -Fvx -f <(printf '%s\n' "${pkgs[@]}") "$manifest" >"$tmp" || true
+  install -m 0644 "$tmp" "$manifest"
+  rm -f -- "$tmp"
 }
 
-run_update_aur_guard_package() {
-  local guard_bashrc="$1"
-  local pkg="$2"
 
-  # The single-quoted script expands inside the child Bash process.
-  # shellcheck disable=SC2016
-  run_target env \
-    HOME="$HOME_DIR" \
-    USER="$TARGET_USER" \
-    LOGNAME="$TARGET_USER" \
-    bash --noprofile --norc -c '
-      guard_bashrc=$1
-      pkg=$2
-      source <(sed -n "/^# --- AUR Guard ---/,$p" "$guard_bashrc")
-      aurinstall "$pkg"
-    ' awtarchy-update-aur "$guard_bashrc" "$pkg"
+record_managed_packages() {
+  [[ "${EUID}" -eq 0 ]] || return 0
+  local manifest package
+  manifest="$(managed_packages_file)"
+  install -d -m 0755 "$(dirname "$manifest")"
+  touch "$manifest"
+  for package in "$@"; do
+    [[ -n "$package" ]] || continue
+    pacman -Qq "$package" >/dev/null 2>&1 || continue
+    grep -Fxq "$package" "$manifest" || printf '%s\n' "$package" >>"$manifest"
+  done
+  LC_ALL=C sort -u -o "$manifest" "$manifest"
+  chmod 0644 "$manifest"
 }
 
-install_missing_aur_packages() {
-  local guard_bashrc="$1"
+install_managed_pacman_packages() {
+  local label="$1"
   shift
-  local -a pkgs=("$@")
-  (( ${#pkgs[@]} )) || return 0
+  local -a requested=("$@") missing=()
+  local package
 
-  if [[ "${EUID}" -ne 0 ]]; then
-    warn "AUR installs require root. Re-run update-reset-backup with sudo to install missing packages."
-    return 1
-  fi
-
-  [[ -f "$guard_bashrc" ]] || {
-    warn "AUR Guard configuration not found: ${guard_bashrc}"
-    return 1
+  [[ "${EUID}" -eq 0 ]] || {
+    warn "${label} installation requires sudo/root."
+    return 0
   }
-  grep -q '^aurinstall()' "$guard_bashrc" || {
-    warn "AUR Guard aurinstall function not found in: ${guard_bashrc}"
-    return 1
-  }
+  command -v pacman >/dev/null 2>&1 || return 0
 
-  log "Installing AUR Guard requirements for missing-package restoration..."
-  pacman -S --needed --noconfirm \
-    base-devel git bubblewrap devtools gnupg coreutils jq libarchive file curl sudo
+  for package in "${requested[@]}"; do
+    pacman -Qq "$package" >/dev/null 2>&1 || missing+=("$package")
+  done
+  (( ${#missing[@]} )) || return 0
 
-  local sudoers_tmp="" sudoers_file=""
-  sudoers_tmp="$(mktemp /tmp/awtarchy-update-aur-sudoers.XXXXXX)"
-  sudoers_file="/etc/sudoers.d/awtarchy_update_aur_${TARGET_USER}_$$"
-
-  (
-    trap 'rm -f -- "$sudoers_tmp" "$sudoers_file"' EXIT HUP INT TERM
-
-    printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$TARGET_USER" > "$sudoers_tmp"
-    if ! visudo -c -f "$sudoers_tmp" >/dev/null 2>&1; then
-      warn "Generated temporary sudoers file is invalid."
-      exit 1
-    fi
-
-    install -m 0440 "$sudoers_tmp" "$sudoers_file"
-    rm -f -- "$sudoers_tmp"
-
-    log "Installing missing AUR packages through AUR Guard practical mode (${#pkgs[@]}):"
-    print_wrapped_list pkgs "  - "
-
-    local pkg=""
-    for pkg in "${pkgs[@]}"; do
-      if [[ "$pkg" == "obs-pipewire-audio-capture" ]]; then
-        if obs_pipewire_audio_capture_user_plugin_installed; then
-          printf '%s\n' "${COLOR_YELLOW}${pkg} already installed in OBS user plugins. Skipping...${COLOR_RESET}"
-          continue
-        fi
-
-        if run_update_aur_guard_package "$guard_bashrc" "$pkg"; then
-          continue
-        fi
-
-        warn "${pkg} failed through AUR Guard during update missing-package restoration. Falling back to upstream per-user OBS plugin install."
-        install_obs_pipewire_audio_capture_user_plugin
-      else
-        run_update_aur_guard_package "$guard_bashrc" "$pkg"
-      fi
-    done
-  )
+  printf '%s\n' "Required ${label} packages are missing:" >&2
+  printf '  %s\n' "${missing[@]}" >&2
+  ask_yes_no "Install the missing ${label} packages?" || return 0
+  pacman -S --needed --noconfirm "${missing[@]}"
+  record_managed_packages "${missing[@]}"
 }
 
-install_missing_flatpak_apps() {
-  local -a app_ids=("$@")
-  (( ${#app_ids[@]} )) || return 0
+multilib_enabled_update() {
+  [[ -f /etc/pacman.conf ]] || return 1
+  awk '
+    /^[[:space:]]*#/ { next }
+    /^\[multilib\]/ { found=1; next }
+    found && /^[[:space:]]*Include[[:space:]]*=/ { ok=1 }
+    END { exit(ok ? 0 : 1) }
+  ' /etc/pacman.conf
+}
 
-  if ! command -v flatpak >/dev/null 2>&1; then
-    if [[ "${EUID}" -eq 0 ]]; then
-      log "flatpak not found. Installing flatpak package first."
-      pacman -S --needed --noconfirm flatpak
+nvidia_stack_installed() {
+  command -v pacman >/dev/null 2>&1 || return 1
+  pacman -Qq 2>/dev/null | grep -Eq '^(nvidia|nvidia-open|nvidia-[0-9]{3}xx|linux-cachyos.*-nvidia)(-|$)|^nvidia-utils$'
+}
+
+ensure_current_hardware_packages() {
+  [[ "${EUID}" -eq 0 ]] || {
+    warn "Hardware package reconciliation requires sudo/root."
+    return 0
+  }
+  command -v pacman >/dev/null 2>&1 || return 0
+
+  local -a common=(mesa libglvnd vulkan-icd-loader)
+  local -a amd=(vulkan-radeon) intel=(vulkan-intel)
+  if multilib_enabled_update; then
+    common+=(lib32-mesa lib32-libglvnd lib32-vulkan-icd-loader)
+    amd+=(lib32-vulkan-radeon)
+    intel+=(lib32-vulkan-intel)
+  fi
+  install_managed_pacman_packages "common graphics" "${common[@]}"
+  if vendor_present amd "$GPU_VENDORS"; then
+    install_managed_pacman_packages "AMD Vulkan" "${amd[@]}"
+  fi
+  if vendor_present intel "$GPU_VENDORS"; then
+    install_managed_pacman_packages "Intel Vulkan" "${intel[@]}"
+  fi
+
+  if vendor_present nvidia "$GPU_VENDORS" && ! nvidia_stack_installed; then
+    warn "NVIDIA hardware is detected but no NVIDIA driver stack is installed."
+    if ask_yes_no "Run Awtarchy GPU dependency automation for the detected GPU hardware?"; then
+      if ! ( install_gpu_dependencies_main ); then
+        warn "GPU dependency automation failed. Existing configuration was not removed."
+      fi
+    fi
+  fi
+
+  local tlp_was_missing=0 thermald_was_missing=0
+  if (( IS_LAPTOP_NOW == 1 )); then
+    pacman -Qq tlp >/dev/null 2>&1 || tlp_was_missing=1
+    install_managed_pacman_packages "laptop power-management" tlp
+    if (( tlp_was_missing == 1 )) && pacman -Qq tlp >/dev/null 2>&1; then
+      systemctl enable --now tlp.service || true
+    fi
+
+    if [[ "$CPU_VENDOR" == "intel" ]]; then
+      pacman -Qq thermald >/dev/null 2>&1 || thermald_was_missing=1
+      install_managed_pacman_packages "Intel laptop thermald" thermald
+      if (( thermald_was_missing == 1 )) && pacman -Qq thermald >/dev/null 2>&1; then
+        systemctl enable --now thermald.service || true
+      fi
+    fi
+  fi
+}
+
+comment_nvidia_lua_env() {
+  local rel=".config/hypr/hyprland.lua"
+  local file="${HOME_DIR}/${rel}" tmp
+  [[ -f "$file" ]] || return 0
+  tmp="$(mktemp)"
+  python3 - "$file" "$tmp" <<'PY'
+from pathlib import Path
+import re, sys
+source = Path(sys.argv[1])
+out = Path(sys.argv[2])
+keys = {
+    "GBM_BACKEND", "__GLX_VENDOR_LIBRARY_NAME", "LIBVA_DRIVER_NAME",
+    "NVD_BACKEND", "__GL_GSYNC_ALLOWED", "__GL_VRR_ALLOWED"
+}
+lines = []
+for line in source.read_text(encoding="utf-8").splitlines():
+    match = re.match(r'^(\s*)(?!--)hl\.env\("([^"]+)"', line)
+    if match and match.group(2) in keys:
+        line = match.group(1) + "-- " + line[len(match.group(1)):]
+    lines.append(line)
+out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+PY
+
+  if cmp -s -- "$file" "$tmp"; then
+    rm -f -- "$tmp"
+    return 0
+  fi
+
+  local already_changed=0 item
+  for item in "${CHANGED[@]}"; do
+    [[ "$item" == "$rel" ]] && already_changed=1
+  done
+  if (( already_changed == 0 )); then
+    snapshot_for_rollback "$rel" "$file"
+    ROLLBACK_PATHS+=("$rel")
+    make_persistent_backup "$file"
+    CHANGED+=("$rel")
+  fi
+  if ! validate_candidate "$tmp" "$rel" || ! atomic_copy "$tmp" "$file"; then
+    rm -f -- "$tmp"
+    rollback_changes
+    return 1
+  fi
+  rm -f -- "$tmp"
+}
+
+remove_exact_nvidia_files() {
+  [[ "${EUID}" -eq 0 ]] || return 0
+  local file normalized
+  for file in /etc/modprobe.d/nvidia-drm.conf /etc/modprobe.d/blacklist-nouveau.conf; do
+    [[ -f "$file" ]] || continue
+    normalized="$(sed '/^[[:space:]]*$/d' "$file" | sed 's/[[:space:]]*$//')"
+    case "$file:$normalized" in
+      "/etc/modprobe.d/nvidia-drm.conf:options nvidia_drm modeset=1") rm -f -- "$file" ;;
+      "/etc/modprobe.d/blacklist-nouveau.conf:"$'blacklist nouveau\noptions nouveau modeset=0') rm -f -- "$file" ;;
+      *) warn "Leaving modified NVIDIA system file untouched: $file" ;;
+    esac
+  done
+}
+
+remove_nvidia_boot_entries() {
+  [[ "${EUID}" -eq 0 ]] || return 0
+  local changed=0 file tmp
+  local -a files=()
+  [[ -d /boot/loader/entries ]] && while IFS= read -r -d '' file; do files+=("$file"); done < <(find /boot/loader/entries -maxdepth 1 -type f -name '*.conf' -print0)
+  for file in /etc/default/grub /boot/limine/limine.conf /boot/limine.conf /boot/EFI/limine/limine.conf /boot/limine/limine.cfg /boot/limine.cfg; do
+    [[ -f "$file" ]] && files+=("$file")
+  done
+
+  for file in "${files[@]}"; do
+    grep -Eq 'nvidia[-_]drm\.modeset=1' "$file" || continue
+    cp -a -- "$file" "${file}.backup.$(stamp)"
+    tmp="$(mktemp)"
+    sed -E 's/(^|[[:space:]])nvidia[-_]drm\.modeset=1([[:space:]]|$)/ /g; s/[[:space:]]+/ /g; s/ =/=/g; s/[[:space:]]+$//' "$file" >"$tmp"
+    install -m "$(stat -c '%a' "$file")" "$tmp" "$file"
+    rm -f -- "$tmp"
+    changed=1
+  done
+
+  if [[ -f /etc/mkinitcpio.conf ]] && grep -Eq 'MODULES=.*nvidia' /etc/mkinitcpio.conf; then
+    cp -a -- /etc/mkinitcpio.conf "/etc/mkinitcpio.conf.backup.$(stamp)"
+    python3 - /etc/mkinitcpio.conf <<'PY'
+from pathlib import Path
+import re, sys
+path = Path(sys.argv[1])
+remove = {"nvidia", "nvidia_modeset", "nvidia_uvm", "nvidia_drm"}
+out = []
+for line in path.read_text().splitlines():
+    m = re.match(r'^(\s*MODULES=\()(.*)(\)\s*)$', line)
+    if m:
+        words = [w for w in m.group(2).split() if w not in remove]
+        line = m.group(1) + " ".join(words) + m.group(3)
+    out.append(line)
+path.write_text("\n".join(out) + "\n")
+PY
+    changed=1
+  fi
+
+  if (( changed == 1 )); then
+    command -v grub-mkconfig >/dev/null 2>&1 && [[ -f /boot/grub/grub.cfg ]] && grub-mkconfig -o /boot/grub/grub.cfg || true
+    if command -v mkinitcpio >/dev/null 2>&1; then
+      mkinitcpio -P
+    elif command -v dracut >/dev/null 2>&1; then
+      dracut --regenerate-all --force
+    fi
+  fi
+}
+
+hardware_reconcile() {
+  detect_hardware
+  local prev_cpu="" prev_gpu="" prev_laptop="" gpu_cleanup_allowed=1
+  prev_cpu="$(state_value cpu_vendor "$HARDWARE_FILE" || true)"
+  prev_gpu="$(state_value gpu_vendors "$HARDWARE_FILE" || true)"
+  prev_laptop="$(state_value is_laptop "$HARDWARE_FILE" || true)"
+
+  {
+    printf 'Hardware detected:\n'
+    printf '  CPU vendor: %s\n' "$CPU_VENDOR"
+    printf '  GPU vendors: %s\n' "${GPU_VENDORS:-unknown}"
+    printf '  Laptop: %s\n' "$IS_LAPTOP_NOW"
+    if [[ -n "$prev_cpu" ]]; then
+      printf 'Previous Awtarchy state: CPU=%s GPU=%s laptop=%s\n' "$prev_cpu" "$prev_gpu" "$prev_laptop"
+    fi
+  } | tee -a "$AUDIT_LOG"
+
+  if (( GPU_DETECTION_RELIABLE == 0 )); then
+    gpu_cleanup_allowed=0
+    warn "GPU detection was inconclusive; no vendor cleanup will be attempted."
+  fi
+
+  if (( gpu_cleanup_allowed == 1 )); then
+    if vendor_present nvidia "$prev_gpu" && ! vendor_present nvidia "$GPU_VENDORS"; then
+      warn "NVIDIA hardware was previously recorded but is no longer detected."
+      if ask_yes_no "Disable obsolete NVIDIA Hyprland settings and clean Awtarchy-owned NVIDIA system state?"; then
+        comment_nvidia_lua_env
+        remove_managed_packages_matching "NVIDIA" '^(nvidia|lib32-nvidia|opencl-nvidia|lib32-opencl-nvidia|libva-nvidia-driver|egl-wayland|linux-cachyos.*-nvidia)'
+        remove_exact_nvidia_files
+        remove_nvidia_boot_entries
+      fi
+    fi
+
+    if vendor_present amd "$prev_gpu" && ! vendor_present amd "$GPU_VENDORS"; then
+      remove_managed_packages_matching "AMD Vulkan" '^(vulkan-radeon|lib32-vulkan-radeon)$'
+    fi
+
+    if vendor_present intel "$prev_gpu" && ! vendor_present intel "$GPU_VENDORS"; then
+      remove_managed_packages_matching "Intel Vulkan" '^(vulkan-intel|lib32-vulkan-intel)$'
+    fi
+  fi
+
+  if [[ "$prev_cpu" == "intel" && "$CPU_VENDOR" != "intel" && "$CPU_VENDOR" != "unknown" ]]; then
+    if managed_package_recorded thermald; then
+      if [[ "${EUID}" -eq 0 ]] && systemctl is-enabled thermald.service >/dev/null 2>&1; then
+        systemctl disable --now thermald.service || true
+      fi
+      remove_managed_packages_matching "Intel CPU thermald" '^thermald$'
     else
-      warn "flatpak is not installed and this script is not running as root. Skipping Flatpak app installs."
+      warn "thermald is not recorded as Awtarchy-owned; leaving it untouched."
+    fi
+  fi
+
+  if [[ "$prev_laptop" == "1" && "$IS_LAPTOP_NOW" == "0" ]]; then
+    if managed_package_recorded tlp; then
+      if [[ "${EUID}" -eq 0 ]] && systemctl is-enabled tlp.service >/dev/null 2>&1; then
+        systemctl disable --now tlp.service || true
+      fi
+    fi
+    remove_managed_packages_matching "laptop power-management" '^(tlp|tlpui)$'
+  fi
+
+  if (( gpu_cleanup_allowed == 0 )); then
+    local saved_gpu="$GPU_VENDORS"
+    GPU_VENDORS=""
+    ensure_current_hardware_packages
+    GPU_VENDORS="$saved_gpu"
+  else
+    ensure_current_hardware_packages
+  fi
+}
+
+
+print_hardware_preview() {
+  detect_hardware
+  local prev_cpu="" prev_gpu="" prev_laptop=""
+  prev_cpu="$(state_value cpu_vendor "$HARDWARE_FILE" || true)"
+  prev_gpu="$(state_value gpu_vendors "$HARDWARE_FILE" || true)"
+  prev_laptop="$(state_value is_laptop "$HARDWARE_FILE" || true)"
+
+  printf '\nHardware review:\n'
+  printf '  Current CPU vendor: %s\n' "$CPU_VENDOR"
+  printf '  Current GPU vendors: %s\n' "${GPU_VENDORS:-unknown}"
+  printf '  Current form factor: %s\n' "$([[ "$IS_LAPTOP_NOW" == 1 ]] && printf laptop || printf desktop)"
+  if [[ -n "$prev_cpu" || -n "$prev_gpu" || -n "$prev_laptop" ]]; then
+    printf '  Previous state: CPU=%s GPU=%s laptop=%s\n' "${prev_cpu:-unknown}" "${prev_gpu:-unknown}" "${prev_laptop:-unknown}"
+  else
+    printf '  Previous state: not recorded yet\n'
+  fi
+
+  if (( GPU_DETECTION_RELIABLE == 0 )); then
+    printf '  GPU cleanup: disabled because detection is inconclusive\n'
+  else
+    vendor_present nvidia "$prev_gpu" && ! vendor_present nvidia "$GPU_VENDORS" \
+      && printf '  Proposed transition: remove Awtarchy-owned NVIDIA state after confirmation\n'
+    vendor_present amd "$prev_gpu" && ! vendor_present amd "$GPU_VENDORS" \
+      && printf '  Proposed transition: remove Awtarchy-owned AMD Vulkan packages after confirmation\n'
+    vendor_present intel "$prev_gpu" && ! vendor_present intel "$GPU_VENDORS" \
+      && printf '  Proposed transition: remove Awtarchy-owned Intel Vulkan packages after confirmation\n'
+  fi
+  if [[ "$prev_cpu" == intel && "$CPU_VENDOR" != intel && "$CPU_VENDOR" != unknown ]]; then
+    printf '  Proposed transition: disable/remove Awtarchy-owned thermald after confirmation\n'
+  fi
+  if [[ "$prev_laptop" == 1 && "$IS_LAPTOP_NOW" == 0 ]]; then
+    printf '  Proposed transition: disable/remove Awtarchy-owned laptop power tools after confirmation\n'
+  fi
+  printf '\n'
+}
+
+write_hardware_state() {
+  local saved_cpu="$CPU_VENDOR" saved_gpu="$GPU_VENDORS"
+  if [[ "$saved_cpu" == "unknown" && -r "$HARDWARE_FILE" ]]; then
+    saved_cpu="$(state_value cpu_vendor "$HARDWARE_FILE" || printf 'unknown')"
+  fi
+  if (( GPU_DETECTION_RELIABLE == 0 )) && [[ -r "$HARDWARE_FILE" ]]; then
+    saved_gpu="$(state_value gpu_vendors "$HARDWARE_FILE" || true)"
+  fi
+
+  mkdir -p -- "$(dirname "$HARDWARE_FILE")"
+  {
+    printf 'cpu_vendor=%s\n' "$saved_cpu"
+    printf 'gpu_vendors=%s\n' "$saved_gpu"
+    printf 'is_laptop=%s\n' "$IS_LAPTOP_NOW"
+    printf 'updated_at=%s\n' "$(ts)"
+  } >"$HARDWARE_FILE"
+}
+
+bootstrap_previous_baseline() {
+  local active_theme="$1"
+  local version_file="${HOME_DIR}/.cache/awtarchy/version"
+  local old_tag="" old_updated_at=""
+  local old_tgz old_top old_repo old_home old_manifest
+  local source_repo="" local_ref="" history_ref="" archive_ready=0 recovered_locally=0
+
+  [[ -d "$BASELINE_HOME" && -r "$MANIFEST_FILE" ]] && return 0
+
+  old_tag="$(sed -n 's/^tag=//p' "$version_file" 2>/dev/null | head -n1 || true)"
+  old_updated_at="$(sed -n 's/^updated_at=//p' "$version_file" 2>/dev/null | head -n1 || true)"
+
+  [[ -n "$old_tag" ]] || {
+    warn "No previous release tag is available; legacy differences will be preserved conservatively."
+    return 0
+  }
+
+  log "Reconstructing previous generated baseline from release: ${old_tag}"
+  old_tgz="${TMPD}/previous-awtarchy.tgz"
+
+  if download_release_tarball "$old_tag" "$old_tgz" 30; then
+    archive_ready=1
+  else
+    warn "The previous release tag ${old_tag} is no longer available from GitHub."
+
+    source_repo="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+    if command -v git >/dev/null 2>&1 && git -C "$source_repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      local_ref="$(
+        git -C "$source_repo" rev-parse --verify "refs/tags/${old_tag}^{commit}" 2>/dev/null \
+          || true
+      )"
+
+      if [[ -z "$local_ref" && -n "$old_updated_at" ]]; then
+        for history_ref in refs/remotes/origin/main refs/heads/main HEAD; do
+          git -C "$source_repo" rev-parse --verify "${history_ref}^{commit}" >/dev/null 2>&1 \
+            || continue
+          local_ref="$(
+            git -C "$source_repo" rev-list -1 --before="$old_updated_at" "$history_ref" 2>/dev/null \
+              || true
+          )"
+          [[ -n "$local_ref" ]] && break
+        done
+      fi
+
+      if [[ -n "$local_ref" ]]; then
+        local prefix="awtarchy-previous-${local_ref:0:12}"
+        if git -C "$source_repo" archive \
+          --format=tar.gz \
+          --prefix="${prefix}/" \
+          --output="$old_tgz" \
+          "$local_ref"
+        then
+          archive_ready=1
+          recovered_locally=1
+          log "Recovered a previous-release candidate from local Git history: ${local_ref:0:12}"
+        fi
+      fi
+    fi
+  fi
+
+  if (( archive_ready == 0 )); then
+    warn "Could not reconstruct previous release ${old_tag}; using conservative legacy handling."
+    return 0
+  fi
+
+  if ! old_top="$(tar_topdir "$old_tgz")"; then
+    warn "Previous release archive ${old_tag} was unreadable; using conservative legacy handling."
+    return 0
+  fi
+
+  mkdir -p -- "${TMPD}/previous-release"
+  tar -xzf "$old_tgz" -C "${TMPD}/previous-release"
+  old_repo="${TMPD}/previous-release/${old_top}"
+  old_home="${TMPD}/previous-target-home"
+  build_target_home "$old_repo" "$old_home"
+
+  if [[ -n "$active_theme" && -f "${old_repo}/config/hypr/themes/${active_theme}" ]]; then
+    if ! apply_theme_to_target "$old_repo" "$old_home" "$active_theme"; then
+      warn "Could not generate the previous themed baseline; using conservative legacy handling."
+      return 0
+    fi
+  fi
+
+  if (( recovered_locally == 1 )); then
+    local score exact comparable percent
+    score="$(
+      python3 - "$HOME_DIR" "$old_home" <<'PY'
+from pathlib import Path
+import os
+import sys
+
+live = Path(sys.argv[1])
+candidate = Path(sys.argv[2])
+
+exact = 0
+comparable = 0
+
+for candidate_path in candidate.rglob("*"):
+    if not (candidate_path.is_file() or candidate_path.is_symlink()):
+        continue
+
+    rel = candidate_path.relative_to(candidate)
+    live_path = live / rel
+
+    if not (live_path.exists() or live_path.is_symlink()):
+        continue
+
+    comparable += 1
+
+    if candidate_path.is_symlink() or live_path.is_symlink():
+        if (
+            candidate_path.is_symlink()
+            and live_path.is_symlink()
+            and os.readlink(candidate_path) == os.readlink(live_path)
+        ):
+            exact += 1
+        continue
+
+    try:
+        if candidate_path.read_bytes() == live_path.read_bytes():
+            exact += 1
+    except OSError:
+        pass
+
+percent = int((exact * 100) / comparable) if comparable else 0
+print(exact, comparable, percent)
+PY
+    )"
+    IFS=" " read -r exact comparable percent <<<"$score"
+
+    log "Recovered baseline confidence: ${exact}/${comparable} comparable files match exactly (${percent}%)."
+
+    if (( comparable < 10 || exact < 5 || percent < 35 )); then
+      warn "The recovered local-history candidate does not match enough installed files to trust."
+      warn "Using conservative legacy handling instead of risking an incorrect three-way baseline."
+      return 0
+    fi
+  fi
+
+  old_manifest="${TMPD}/previous-manifest.paths"
+  find "$old_home" \( -type f -o -type l \) -printf '%P\n' | LC_ALL=C sort >"$old_manifest"
+  BASELINE_HOME="$old_home"
+  MANIFEST_FILE="$old_manifest"
+}
+build_plan() {
+  local target_home="$1" plan_file="$2"
+  python3 - "$HOME_DIR" "$target_home" "$BASELINE_HOME" "$MANIFEST_FILE" "$plan_file" <<'PY'
+from pathlib import Path
+import os, stat, sys
+home, target, baseline, manifest, out = map(Path, sys.argv[1:])
+
+def paths(root):
+    if not root.exists():
+        return set()
+    found = set()
+    for p in root.rglob("*"):
+        if p.is_file() or p.is_symlink():
+            found.add(p.relative_to(root).as_posix())
+    return found
+
+def identity(path):
+    if not path.exists() and not path.is_symlink():
+        return None
+    if path.is_symlink():
+        return ("link", os.readlink(path))
+    mode = stat.S_IMODE(path.stat().st_mode)
+    return ("file", mode, path.read_bytes())
+
+new_paths = paths(target)
+old_paths = set()
+if manifest.is_file():
+    old_paths = {line.strip() for line in manifest.read_text().splitlines() if line.strip()}
+all_paths = sorted(new_paths | old_paths)
+rows = []
+for rel in all_paths:
+    local = home / rel
+    new = target / rel
+    old = baseline / rel
+    li, ni, oi = identity(local), identity(new), identity(old)
+    if ni is not None and li == ni:
+        continue
+    if ni is None:
+        cls = "REMOVED" if oi is not None and li == oi else "ORPHANED"
+    elif li is None:
+        cls = "NEW"
+    elif oi is None:
+        cls = "LEGACY"
+    elif li == oi:
+        cls = "OUTDATED"
+    elif ni == oi:
+        cls = "USER"
+    else:
+        cls = "BOTH"
+    rows.append((cls, rel, str(local), str(new), str(old)))
+with out.open("w", encoding="utf-8") as f:
+    for row in rows:
+        f.write("\t".join(row) + "\n")
+PY
+}
+
+read_update_key() {
+  local key="" rest="" c=""
+  IFS= read -rsn1 key </dev/tty || return 1
+  if [[ "$key" == $'\033' ]]; then
+    rest=""
+    while IFS= read -rsn1 -t 0.02 c </dev/tty; do
+      rest+="$c"
+      [[ "$c" == "M" || "$c" == "m" || ${#rest} -ge 32 ]] && break
+    done
+    key+="$rest"
+  fi
+  printf '%s' "$key"
+}
+
+enable_mouse() {
+  printf '\033[?1000h\033[?1006h' >/dev/tty
+  MOUSE_ENABLED=1
+}
+
+disable_mouse() {
+  printf '\033[?1000l\033[?1006l' >/dev/tty 2>/dev/null || true
+  MOUSE_ENABLED=0
+}
+
+file_summary() {
+  local label="$1" file="$2"
+  if [[ -f "$file" ]]; then
+    printf '%s SHA-256: %s\n' "$label" "$(sha256sum "$file" | awk '{print $1}')"
+    printf '%s lines: %s\n' "$label" "$(wc -l <"$file")"
+  elif [[ -L "$file" ]]; then
+    printf '%s symlink: %s\n' "$label" "$(readlink "$file")"
+  else
+    printf '%s: missing\n' "$label"
+  fi
+}
+
+show_diff() {
+  local class="$1" rel="$2" local_file="$3" target_file="$4" baseline_file="$5"
+  disable_mouse
+  local tmp="${TMPD}/diff.$RANDOM" left="$local_file" right="$target_file"
+  [[ -e "$left" || -L "$left" ]] || left=/dev/null
+  [[ -e "$right" || -L "$right" ]] || right=/dev/null
+  {
+    printf 'Classification: %s\n' "$class"
+    printf 'Managed path: %s\n' "$rel"
+    file_summary Local "$local_file"
+    file_summary Release "$target_file"
+    printf '\nLines beginning with - are local. Lines beginning with + are the release target.\n\n'
+    if command -v git >/dev/null 2>&1; then
+      git --no-pager diff --no-index --color=always -- "$left" "$right" || true
+    else
+      diff -u -- "$left" "$right" || true
+    fi
+  } >"$tmp"
+
+  if command -v less >/dev/null 2>&1; then
+    less -R "$tmp" </dev/tty >/dev/tty
+  else
+    cat "$tmp" >/dev/tty
+    printf '\nPress any key to return...' >/dev/tty
+    read_update_key >/dev/null || true
+  fi
+  rm -f -- "$tmp"
+  enable_mouse
+}
+
+review_plan() {
+  local plan_file="$1"
+  local -a classes=() rels=() locals=() targets=() baselines=()
+  local class rel local_file target_file baseline_file
+  while IFS=$'\t' read -r class rel local_file target_file baseline_file; do
+    [[ -n "$class" ]] || continue
+    classes+=("$class")
+    rels+=("$rel")
+    locals+=("$local_file")
+    targets+=("$target_file")
+    baselines+=("$baseline_file")
+  done <"$plan_file"
+
+  if (( ${#classes[@]} == 0 )); then
+    log "All managed files exactly match the generated release target."
+    return 0
+  fi
+
+  if ! is_interactive; then
+    warn "Non-interactive shell: printing mismatch list without the browser."
+    local i
+    for i in "${!classes[@]}"; do
+      printf '%4d  %-12s  %s\n' "$((i + 1))" "[${classes[i]}]" "${rels[i]}"
+    done
+    return 0
+  fi
+
+  local index=0 page_start=0 page_size=12 key="" i mouse_y mouse_index
+  enable_mouse
+  while true; do
+    local lines
+    lines="$(tput lines 2>/dev/null || printf '24')"
+    [[ "$lines" =~ ^[0-9]+$ ]] || lines=24
+    page_size=$((lines - 9))
+    (( page_size < 5 )) && page_size=5
+    page_start=$((index / page_size * page_size))
+
+    printf '\033[H\033[2J' >/dev/tty
+    printf 'Awtarchy managed-file differences: %d\n\n' "${#classes[@]}" >/dev/tty
+    printf 'Click an entry, use Up/Down + Enter, or press 1-9 for a visible entry.\n' >/dev/tty
+    printf 'Page Up/Page Down changes pages. q continues to update choices.\n\n' >/dev/tty
+
+    for (( i = 0; i < page_size && page_start + i < ${#classes[@]}; i++ )); do
+      local absolute=$((page_start + i)) marker=' '
+      (( absolute == index )) && marker='>'
+      printf '%s %2d. %-12s %s\n' "$marker" "$((i + 1))" "[${classes[absolute]}]" "${rels[absolute]}" >/dev/tty
+    done
+
+    key="$(read_update_key || true)"
+    case "$key" in
+      $'\033[A') (( index > 0 )) && ((index--)) || true ;;
+      $'\033[B') (( index + 1 < ${#classes[@]} )) && ((index++)) || true ;;
+      $'\033[5~') index=$((index - page_size)); (( index < 0 )) && index=0 ;;
+      $'\033[6~') index=$((index + page_size)); (( index >= ${#classes[@]} )) && index=$((${#classes[@]} - 1)) ;;
+      $'\n'|$'\r'|"")
+        show_diff "${classes[index]}" "${rels[index]}" "${locals[index]}" "${targets[index]}" "${baselines[index]}"
+        ;;
+      q|Q)
+        disable_mouse
+        return 0
+        ;;
+      [1-9])
+        i=$((10#$key - 1))
+        if (( i < page_size && page_start + i < ${#classes[@]} )); then
+          index=$((page_start + i))
+          show_diff "${classes[index]}" "${rels[index]}" "${locals[index]}" "${targets[index]}" "${baselines[index]}"
+        fi
+        ;;
+      $'\033[<'*M|$'\033[<'*m)
+        if [[ "$key" =~ ^$'\033'\[\<([0-9]+)\;([0-9]+)\;([0-9]+)(M|m)$ ]]; then
+          mouse_y="${BASH_REMATCH[3]}"
+          mouse_index=$((mouse_y - 6))
+          if (( mouse_index >= 0 && mouse_index < page_size && page_start + mouse_index < ${#classes[@]} )); then
+            index=$((page_start + mouse_index))
+            show_diff "${classes[index]}" "${rels[index]}" "${locals[index]}" "${targets[index]}" "${baselines[index]}"
+          fi
+        fi
+        ;;
+    esac
+  done
+}
+
+select_update_mode() {
+  [[ -n "$UPDATE_MODE" ]] && return 0
+  if ! is_interactive; then
+    UPDATE_MODE="preserve"
+    warn "Non-interactive shell: defaulting to preserve mode."
+    return 0
+  fi
+
+  local choice=""
+  while true; do
+    printf '\nUpdate mode:\n' >/dev/tty
+    printf '  1. Preserve personal modifications (recommended)\n' >/dev/tty
+    printf '  2. Clean-slate managed files\n' >/dev/tty
+    printf '  3. Cancel\n' >/dev/tty
+    printf 'Choose [1]: ' >/dev/tty
+    IFS= read -r choice </dev/tty || die "Update canceled."
+    case "$choice" in
+      ""|1) UPDATE_MODE="preserve"; return 0 ;;
+      2) UPDATE_MODE="clean"; return 0 ;;
+      3) die "Update canceled." ;;
+    esac
+  done
+}
+
+make_persistent_backup() {
+  local dest="$1"
+  [[ -e "$dest" || -L "$dest" ]] || return 0
+  local backup="${dest}.backup"
+  [[ -e "$backup" || -L "$backup" ]] && backup="${dest}.backup.$(stamp)"
+  cp -a -- "$dest" "$backup"
+  BACKUPS+=("$backup")
+}
+
+snapshot_for_rollback() {
+  local rel="$1" dest="$2"
+  local root="${TMPD}/rollback/home/${rel}"
+  mkdir -p -- "$(dirname "$root")"
+  if [[ -e "$dest" || -L "$dest" ]]; then
+    cp -a -- "$dest" "$root"
+  else
+    : >"${root}.awtarchy-absent"
+  fi
+}
+
+rollback_changes() {
+  warn "Rolling back changed user files."
+  local rel dest saved
+  for rel in "${ROLLBACK_PATHS[@]}"; do
+    dest="${HOME_DIR}/${rel}"
+    saved="${TMPD}/rollback/home/${rel}"
+    rm -rf -- "$dest" 2>/dev/null || true
+    if [[ -e "$saved" || -L "$saved" ]]; then
+      mkdir -p -- "$(dirname "$dest")"
+      cp -a -- "$saved" "$dest"
+    fi
+  done
+}
+
+atomic_copy() {
+  local src="$1" dest="$2" tmp
+  [[ -e "$src" || -L "$src" ]] || return 1
+  mkdir -p -- "$(dirname "$dest")"
+  tmp="$(mktemp --tmpdir="$(dirname "$dest")" '.awtarchy.tmp.XXXXXX')"
+  rm -f -- "$tmp"
+  cp -a --no-preserve=ownership -- "$src" "$tmp"
+  [[ "${EUID}" -eq 0 ]] && chown -h "${TARGET_USER}:${TARGET_USER}" "$tmp" 2>/dev/null || true
+  mv -Tf -- "$tmp" "$dest"
+}
+
+validate_candidate() {
+  local file="$1" rel="$2"
+  [[ -f "$file" ]] || return 0
+  case "$rel" in
+    *.sh|.bashrc|.bash_profile) bash -n "$file" ;;
+    *.lua)
+      command -v lua >/dev/null 2>&1 || return 0
+      lua -e 'assert(loadfile(arg[1]))' "$file"
+      ;;
+    *.json)
+      python3 -m json.tool "$file" >/dev/null
+      ;;
+    *.toml)
+      python3 - "$file" <<'PY'
+import sys, tomllib
+with open(sys.argv[1], "rb") as f:
+    tomllib.load(f)
+PY
+      ;;
+    *.desktop)
+      command -v desktop-file-validate >/dev/null 2>&1 || return 0
+      desktop-file-validate "$file"
+      ;;
+  esac
+}
+
+attempt_merge() {
+  local local_file="$1" baseline_file="$2" target_file="$3" rel="$4" out="$5"
+  command -v git >/dev/null 2>&1 || return 1
+  [[ -f "$local_file" && -f "$baseline_file" && -f "$target_file" ]] || return 1
+  set +e
+  git merge-file -p -- "$local_file" "$baseline_file" "$target_file" >"$out"
+  local rc=$?
+  set -e
+  (( rc == 0 )) || return 1
+  validate_candidate "$out" "$rel"
+}
+
+install_live_file() {
+  local rel="$1" target_file="$2" local_file="$3" persistent_backup="${4:-0}"
+  if ! validate_candidate "$target_file" "$rel"; then
+    FAILED+=("$rel")
+    return 1
+  fi
+  snapshot_for_rollback "$rel" "$local_file"
+  ROLLBACK_PATHS+=("$rel")
+  (( persistent_backup == 1 )) && make_persistent_backup "$local_file"
+  if [[ -d "$local_file" && ! -L "$local_file" ]]; then
+    rm -rf -- "$local_file"
+  fi
+  if ! atomic_copy "$target_file" "$local_file"; then
+    FAILED+=("$rel")
+    rollback_changes
+    return 1
+  fi
+  CHANGED+=("$rel")
+}
+
+remove_live_file() {
+  local rel="$1" local_file="$2" persistent_backup="${3:-0}"
+  snapshot_for_rollback "$rel" "$local_file"
+  ROLLBACK_PATHS+=("$rel")
+  (( persistent_backup == 1 )) && make_persistent_backup "$local_file"
+  if ! rm -rf -- "$local_file"; then
+    FAILED+=("$rel")
+    rollback_changes
+    return 1
+  fi
+  CHANGED+=("$rel")
+  REMOVED+=("$rel")
+}
+
+apply_plan() {
+  local plan_file="$1"
+  local class rel local_file target_file baseline_file merge_tmp
+  while IFS=$'\t' read -r class rel local_file target_file baseline_file; do
+    [[ -n "$class" ]] || continue
+    case "$class" in
+      NEW|OUTDATED)
+        install_live_file "$rel" "$target_file" "$local_file" 0 || return 1
+        ;;
+      USER)
+        if [[ "$UPDATE_MODE" == "preserve" ]]; then
+          PRESERVED+=("$rel")
+        else
+          install_live_file "$rel" "$target_file" "$local_file" 1 || return 1
+        fi
+        ;;
+      LEGACY)
+        if [[ "$UPDATE_MODE" == "preserve" ]]; then
+          PRESERVED+=("$rel")
+          warn "Legacy difference retained because no trusted old baseline exists: $rel"
+        else
+          install_live_file "$rel" "$target_file" "$local_file" 1 || return 1
+        fi
+        ;;
+      BOTH)
+        if [[ "$UPDATE_MODE" == "preserve" ]]; then
+          merge_tmp="${TMPD}/merge/${rel}"
+          mkdir -p -- "$(dirname "$merge_tmp")"
+          if attempt_merge "$local_file" "$baseline_file" "$target_file" "$rel" "$merge_tmp"; then
+            install_live_file "$rel" "$merge_tmp" "$local_file" 1 || return 1
+            MERGED+=("$rel")
+          else
+            install_live_file "$rel" "$target_file" "$local_file" 1 || return 1
+            warn "Automatic merge was unsafe; installed release file and kept a backup: $rel"
+          fi
+        else
+          install_live_file "$rel" "$target_file" "$local_file" 1 || return 1
+        fi
+        ;;
+      REMOVED)
+        remove_live_file "$rel" "$local_file" 0 || return 1
+        ;;
+      ORPHANED)
+        if [[ "$UPDATE_MODE" == "preserve" ]]; then
+          PRESERVED+=("$rel")
+        else
+          remove_live_file "$rel" "$local_file" 1 || return 1
+        fi
+        ;;
+    esac
+  done <"$plan_file"
+}
+
+fix_managed_perms() {
+  local target_home="$1" rel dest mode
+  while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    dest="${HOME_DIR}/${rel}"
+    [[ -e "$dest" || -L "$dest" ]] || continue
+    if [[ ! -L "$target_home/$rel" ]]; then
+      mode="$(stat -c '%a' "$target_home/$rel" 2>/dev/null || true)"
+      [[ -n "$mode" ]] && chmod "$mode" "$dest" 2>/dev/null || true
+    fi
+    if [[ "${EUID}" -eq 0 ]]; then
+      chown -h "${TARGET_USER}:${TARGET_USER}" "$dest" 2>/dev/null || true
+      chown "${TARGET_USER}:${TARGET_USER}" "$(dirname "$dest")" 2>/dev/null || true
+    fi
+  done < <(find "$target_home" \( -type f -o -type l \) -printf '%P\n' | LC_ALL=C sort)
+}
+
+validate_live() {
+  local rel file
+  for rel in "${CHANGED[@]}"; do
+    file="${HOME_DIR}/${rel}"
+    [[ -e "$file" || -L "$file" ]] || continue
+    validate_candidate "$file" "$rel" || return 1
+  done
+
+  if command -v hyprctl >/dev/null 2>&1 && [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
+    local errors
+    errors="$(hyprctl configerrors 2>&1 || true)"
+    if [[ -n "${errors//[[:space:]]/}" ]] && ! grep -Eqi 'no (config )?errors' <<<"$errors"; then
+      warn "Hyprland reported configuration errors:"
+      printf '%s\n' "$errors" >&2
       return 1
     fi
   fi
+}
 
-  local scope=""
-  scope="$(flatpak_effective_install_scope)"
-  ensure_flatpak_remote_for_scope "${scope}"
+commit_baseline() {
+  local target_home="$1" tag="$2" active_theme="$3" new_baseline="${STATE_DIR}/baseline.new"
+  rm -rf -- "$new_baseline"
+  mkdir -p -- "$new_baseline/home"
+  cp -a --no-preserve=ownership -- "$target_home/." "$new_baseline/home/"
+  find "$target_home" \( -type f -o -type l \) -printf '%P\n' | LC_ALL=C sort >"$new_baseline/manifest.paths"
+  {
+    printf 'tag=%s\n' "$tag"
+    printf 'theme=%s\n' "$active_theme"
+    printf 'generated_at=%s\n' "$(ts)"
+  } >"$new_baseline/metadata"
+  rm -rf -- "${STATE_DIR}/baseline"
+  mv -- "$new_baseline" "${STATE_DIR}/baseline"
+  BASELINE_HOME="${STATE_DIR}/baseline/home"
+  MANIFEST_FILE="${STATE_DIR}/baseline/manifest.paths"
+}
 
-  log "Installing missing Flatpak apps in ${scope} scope (${#app_ids[@]}):"
-  print_wrapped_list app_ids "  - "
-  if [[ "${scope}" == "user" ]]; then
-    run_target flatpak --user install -y flathub "${app_ids[@]}"
-  else
-    flatpak install -y flathub "${app_ids[@]}"
+refresh_cursor_assets() {
+  mkdir -p -- "${HOME_DIR}/.local/share/icons/ComixCursors-White"
+  if [[ -d /usr/share/icons/ComixCursors-White ]]; then
+    cp -a --no-preserve=ownership /usr/share/icons/ComixCursors-White/. \
+      "${HOME_DIR}/.local/share/icons/ComixCursors-White/" 2>/dev/null || true
+    [[ "${EUID}" -eq 0 ]] && chown -R "${TARGET_USER}:${TARGET_USER}" \
+      "${HOME_DIR}/.local/share/icons/ComixCursors-White" 2>/dev/null || true
+  fi
+
+  if [[ "${EUID}" -eq 0 ]]; then
+    install -d -m 0755 /usr/share/icons/default
+    printf '%s\n' '[Icon Theme]' 'Inherits=ComixCursors-White' >/usr/share/icons/default/index.theme
+    chmod 0644 /usr/share/icons/default/index.theme
+  fi
+
+  if command -v flatpak >/dev/null 2>&1; then
+    run_target flatpak override --user --env=GTK_CURSOR_THEME=ComixCursors-White >/dev/null 2>&1 || true
   fi
 }
 
-check_and_offer_missing_installs() {
-  local downloaded_repo_dir="${1:-}"
-  local scripts_dir=""
+write_version_stamp() {
+  local tag="$1" dest="${HOME_DIR}/.cache/awtarchy/version"
+  mkdir -p -- "$(dirname "$dest")"
+  {
+    printf 'tag=%s\n' "$tag"
+    printf 'updated_at=%s\n' "$(ts)"
+  } >"$dest"
+  [[ "${EUID}" -eq 0 ]] && chown "${TARGET_USER}:${TARGET_USER}" "$dest" 2>/dev/null || true
+}
 
-  if ! scripts_dir="$(detect_repo_scripts_dir "${downloaded_repo_dir}")"; then
-    warn "Could not locate repo scripts directory for package checks."
-    return 0
-  fi
-
-  local arch_script="${scripts_dir}/install_arch_repo_apps.sh"
-  local aur_script="${scripts_dir}/install_aur_repo_apps.sh"
-  local flatpak_script="${scripts_dir}/install_flatpak_apps.sh"
-
-  if [[ ! -f "${arch_script}" || ! -f "${aur_script}" || ! -f "${flatpak_script}" ]]; then
-    warn "Package install scripts not found in ${scripts_dir}; skipping missing package checks."
-    return 0
-  fi
-
-  log "Checking installed packages against:"
-  printf '  %s\n' "${arch_script}"
-  printf '  %s\n' "${aur_script}"
-  printf '  %s\n' "${flatpak_script}"
-
-  local -a declared_arch=() declared_aur=() declared_flatpak=()
-  local -a missing_arch=() missing_aur=() missing_flatpak=()
-  local item=""
-
-  if ! mapfile -t declared_arch < <(parse_bash_array_from_script "${arch_script}" "PKG_GROUPS" "arch-groups"); then
-    warn "Failed to parse PKG_GROUPS from ${arch_script}"
-    declared_arch=()
-  fi
-
-  if ! mapfile -t declared_aur < <(parse_bash_array_from_script "${aur_script}" "PACKAGES_AUR" "plain"); then
-    warn "Failed to parse PACKAGES_AUR from ${aur_script}"
-    declared_aur=()
-  fi
-
-  if ! mapfile -t declared_flatpak < <(parse_bash_array_from_script "${flatpak_script}" "FLATPAK_APPS" "plain"); then
-    warn "Failed to parse FLATPAK_APPS from ${flatpak_script}"
-    declared_flatpak=()
-  fi
-
-  for item in "${declared_arch[@]}"; do
-    [[ -n "${item}" ]] || continue
-    if ! pkg_installed_pacman "${item}"; then
-      missing_arch+=("${item}")
-    fi
-  done
-
-  for item in "${declared_aur[@]}"; do
-    [[ -n "${item}" ]] || continue
-    if ! pkg_installed_pacman "${item}"; then
-      missing_aur+=("${item}")
-    fi
-  done
-
-  for item in "${declared_flatpak[@]}"; do
-    [[ -n "${item}" ]] || continue
-    if ! flatpak_app_installed_any_scope "${item}"; then
-      missing_flatpak+=("${item}")
-    fi
-  done
-
-  if (( ${#declared_arch[@]} )); then
-    if (( ${#missing_arch[@]} )); then
-      warn "Missing Arch repo packages (${#missing_arch[@]}) from install_arch_repo_apps.sh:"
-      print_wrapped_list missing_arch "  - "
-      if ask_yes_no "Install all missing Arch repo packages now?"; then
-        install_missing_arch_repo_packages "${missing_arch[@]}" || true
-      else
-        log "Skipped Arch repo package installation."
-      fi
-    else
-      log "Arch repo package check: nothing missing."
-    fi
-  fi
-
-  if (( ${#declared_aur[@]} )); then
-    if (( ${#missing_aur[@]} )); then
-      warn "Missing AUR packages (${#missing_aur[@]}) from install_aur_repo_apps.sh:"
-      print_wrapped_list missing_aur "  - "
-      if ask_yes_no "Install all missing AUR packages now?"; then
-        install_missing_aur_packages "${repo_dir}/bashrc" "${missing_aur[@]}" || true
-      else
-        log "Skipped AUR package installation."
-      fi
-    else
-      log "AUR package check: nothing missing."
-    fi
-  fi
-
-  if (( ${#declared_flatpak[@]} )); then
-    if (( ${#missing_flatpak[@]} )); then
-      warn "Missing Flatpak apps (${#missing_flatpak[@]}) from install_flatpak_apps.sh:"
-      print_wrapped_list missing_flatpak "  - "
-      if ask_yes_no "Install all missing Flatpak apps now?"; then
-        install_missing_flatpak_apps "${missing_flatpak[@]}" || true
-      else
-        log "Skipped Flatpak app installation."
-      fi
-    else
-      log "Flatpak app check: nothing missing."
-    fi
-  fi
+write_audit() {
+  local tag="$1" theme="$2"
+  {
+    printf 'Awtarchy update completed\n'
+    printf 'target_user=%s\n' "$TARGET_USER"
+    printf 'release=%s\n' "$tag"
+    printf 'mode=%s\n' "$UPDATE_MODE"
+    printf 'theme=%s\n' "$theme"
+    printf 'changed=%s\n' "${#CHANGED[@]}"
+    printf 'preserved=%s\n' "${#PRESERVED[@]}"
+    printf 'merged=%s\n' "${#MERGED[@]}"
+    printf 'removed=%s\n' "${#REMOVED[@]}"
+    printf 'backups=%s\n' "${#BACKUPS[@]}"
+    printf '\nChanged files:\n'; printf '  %s\n' "${CHANGED[@]:-}"
+    printf '\nPreserved files:\n'; printf '  %s\n' "${PRESERVED[@]:-}"
+    printf '\nMerged files:\n'; printf '  %s\n' "${MERGED[@]:-}"
+    printf '\nRemoved files:\n'; printf '  %s\n' "${REMOVED[@]:-}"
+    printf '\nFailed files:\n'; printf '  %s\n' "${FAILED[@]:-}"
+    printf '\nBackups:\n'; printf '  %s\n' "${BACKUPS[@]:-}"
+  } >>"$AUDIT_LOG"
 }
 
 main() {
+  parse_args "$@" || return 0
   need_cmd curl
   need_cmd tar
   need_cmd find
@@ -4695,126 +5563,84 @@ main() {
   need_cmd mktemp
   need_cmd getent
   need_cmd python3
+  need_cmd sha256sum
 
   init_target_user
+  acquire_lock
   curl_headers
 
-  local tag=""
-  if [[ "${1:-}" == "--tag" ]]; then
-    tag="${2:-}"
-    [[ -n "$tag" ]] || die "Usage: $0 [--tag <tag>]"
-  else
-    tag="$(fetch_latest_release_tag)" || die "No GitHub release found for ${REPO_OWNER}/${REPO_NAME}"
-  fi
-
+  TMPD="$(mktemp -d)"
+  local tag="$TAG_OVERRIDE"
+  [[ -n "$tag" ]] || tag="$(fetch_latest_release_tag)"
   log "Target user: ${TARGET_USER}"
   log "Release tag: ${tag}"
 
-  local tmpd
-  tmpd="$(mktemp -d)"
-  trap 'rm -rf -- "${tmpd:-}" 2>/dev/null || true' EXIT
+  local tgz="${TMPD}/awtarchy.tgz" top repo_dir target_home plan_file active_theme="" fuzzel_anchor=""
+  download_release_tarball "$tag" "$tgz" || die "Failed to download release tarball for ${tag}"
+  top="$(tar_topdir "$tgz")" || die "Could not read the release archive for ${tag}"
+  tar -xzf "$tgz" -C "$TMPD"
+  repo_dir="${TMPD}/${top}"
+  [[ -d "$repo_dir" ]] || die "Extracted repo directory is missing"
 
-  local tgz="${tmpd}/awtarchy.tgz"
-  download_release_tarball "$tag" "$tgz"
+  target_home="${TMPD}/target-home"
+  build_target_home "$repo_dir" "$target_home"
 
-  local top repo_dir
-  top="$(tar_topdir "$tgz")"
-  tar -xzf "$tgz" -C "$tmpd"
-  repo_dir="${tmpd}/${top}"
-  [[ -d "$repo_dir" ]] || die "Extracted repo dir missing: $repo_dir"
-
-  log "Deploying (latest Release tag; backups on change; refuses empty overwrites)."
-
-  if [[ -f "${repo_dir}/bashrc" ]]; then
-    deploy_file "${repo_dir}/bashrc" "${HOME_DIR}/.bashrc"
+  active_theme="$(infer_active_theme "$repo_dir" || true)"
+  if [[ -n "$active_theme" ]]; then
+    apply_theme_to_target "$repo_dir" "$target_home" "$active_theme"       || die "Theme generation failed for ${active_theme}; no live files were changed."
   else
-    warn "Upstream missing: bashrc (skipped)"
+    warn "No trusted active-theme state was found. The release defaults will be used."
   fi
 
-  if [[ -f "${repo_dir}/bash_profile" ]]; then
-    deploy_file "${repo_dir}/bash_profile" "${HOME_DIR}/.bash_profile"
-  else
-    warn "Upstream missing: bash_profile (skipped)"
+  bootstrap_previous_baseline "$active_theme"
+  print_hardware_preview
+
+  fuzzel_anchor="$(capture_fuzzel_anchor || true)"
+  plan_file="${TMPD}/plan.tsv"
+  build_plan "$target_home" "$plan_file"
+  review_plan "$plan_file"
+
+  if (( REVIEW_ONLY == 1 )); then
+    log "Review-only mode complete. No files were changed."
+    return 0
   fi
 
-  if [[ -f "${repo_dir}/Xresources" ]]; then
-    deploy_file "${repo_dir}/Xresources" "${HOME_DIR}/.Xresources"
-  else
-    warn "Upstream missing: Xresources (skipped)"
+  select_update_mode
+  log "Selected update mode: ${UPDATE_MODE}"
+
+  apply_plan "$plan_file" || die "Update failed and user files were rolled back."
+  if [[ "$UPDATE_MODE" == "preserve" && -n "$fuzzel_anchor" ]]; then
+    restore_fuzzel_anchor "$fuzzel_anchor"
   fi
 
-  if [[ -f "${repo_dir}/config/mimeapps.list" ]]; then
-    deploy_file "${repo_dir}/config/mimeapps.list" "${HOME_DIR}/.config/mimeapps.list"
-  else
-    warn "Upstream missing: config/mimeapps.list (skipped)"
+  hardware_reconcile
+  fix_managed_perms "$target_home"
+  refresh_cursor_assets
+
+  if ! validate_live; then
+    rollback_changes
+    die "Live validation failed. User files were rolled back."
   fi
 
-  if [[ -f "${repo_dir}/config/gamemode.ini" ]]; then
-    deploy_file "${repo_dir}/config/gamemode.ini" "${HOME_DIR}/.config/gamemode.ini"
-  else
-    warn "Upstream missing: config/gamemode.ini (skipped)"
-  fi
-
-  local -a CONFIG_DIRS=(
-    "hypr" "waybar" "alacritty" "wlogout" "mako" "fuzzel"
-    "gtk-3.0" "Kvantum" "SpeedCrunch" "fastfetch" "pcmanfm-qt" "yazi"
-    "xdg-desktop-portal" "qt5ct" "qt6ct" "lsfg-vk" "wiremix" "cava" "YouTube Music" "ddcutil"
-  )
-
-  for d in "${CONFIG_DIRS[@]}"; do
-    if [[ -d "${repo_dir}/config/${d}" ]]; then
-      deploy_tree "${repo_dir}/config/${d}" "${HOME_DIR}/.config/${d}"
-    else
-      warn "Upstream missing dir: config/${d} (skipped)"
-    fi
-  done
-
-  if [[ -f "${repo_dir}/local/share/nwg-look/gsettings" ]]; then
-    deploy_file "${repo_dir}/local/share/nwg-look/gsettings" "${HOME_DIR}/.local/share/nwg-look/gsettings"
-  fi
-
-  if [[ -d "${repo_dir}/local/share/SpeedCrunch/color-schemes" ]]; then
-    deploy_tree "${repo_dir}/local/share/SpeedCrunch/color-schemes" "${HOME_DIR}/.local/share/SpeedCrunch/color-schemes"
-  fi
-
-  if [[ -d "${repo_dir}/local/share/applications" ]]; then
-    deploy_tree "${repo_dir}/local/share/applications" "${HOME_DIR}/.local/share/applications"
-  fi
-
-  mkdir -p -- "${HOME_DIR}/Pictures/wallpapers" "${HOME_DIR}/Pictures/Screenshots"
-  if [[ -f "${repo_dir}/awtarchy_geology.png" ]]; then
-    deploy_file "${repo_dir}/awtarchy_geology.png" "${HOME_DIR}/Pictures/wallpapers/awtarchy_geology.png"
-  fi
-
-  mkdir -p -- "${HOME_DIR}/.local/share/icons/ComixCursors-White"
-  if [[ -d "/usr/share/icons/ComixCursors-White" ]]; then
-    cp -a --no-preserve=ownership /usr/share/icons/ComixCursors-White/. "${HOME_DIR}/.local/share/icons/ComixCursors-White/" 2>/dev/null || true
-    if [[ "${EUID}" -eq 0 ]]; then
-      chown -R "${TARGET_USER}:${TARGET_USER}" "${HOME_DIR}/.local/share/icons/ComixCursors-White" 2>/dev/null || true
-    fi
-  fi
-
-  update_system_cursor_default
-
-  if command -v flatpak >/dev/null 2>&1; then
-    run_target flatpak override --user --env=GTK_CURSOR_THEME=ComixCursors-White >/dev/null 2>&1 || true
-  fi
-
-  fix_managed_perms "${CONFIG_DIRS[@]}"
+  commit_baseline "$target_home" "$tag" "$active_theme"
+  write_hardware_state
+  [[ -n "$active_theme" ]] && printf '%s\n' "$active_theme" >"$ACTIVE_THEME_FILE"
   write_version_stamp "$tag"
-  maybe_hyprctl_reload
-  check_and_offer_missing_installs "${repo_dir}"
+  write_audit "$tag" "$active_theme"
+  [[ "${EUID}" -eq 0 ]] && chown -R "${TARGET_USER}:${TARGET_USER}" "$STATE_DIR" 2>/dev/null || true
   apply_awtarchy_gsettings_defaults
+  command -v hyprctl >/dev/null 2>&1 && run_target hyprctl reload >/dev/null 2>&1 || true
+  command -v makoctl >/dev/null 2>&1 && run_target makoctl reload >/dev/null 2>&1 || true
 
   if (( ${#BACKUPS[@]} )); then
     warn "Backups created:"
-    for b in "${BACKUPS[@]}"; do
-      printf '  %s\n' "$b"
-    done
+    printf '  %s\n' "${BACKUPS[@]}"
   else
-    log "No backups created."
+    log "No persistent backups were required."
   fi
 
+  log "Changed: ${#CHANGED[@]}, preserved: ${#PRESERVED[@]}, merged: ${#MERGED[@]}, removed: ${#REMOVED[@]}"
+  log "Audit log: ${AUDIT_LOG}"
   log "Done."
 }
 

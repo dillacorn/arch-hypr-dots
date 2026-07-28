@@ -269,5 +269,13 @@ else
 fi
 
 if [[ -n "${THEME:-}" ]]; then
-  exec "${THEME_DIR}/${THEME}"
+  if "${THEME_DIR}/${THEME}"; then
+    STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/awtarchy"
+    mkdir -p "$STATE_DIR"
+    printf '%s\n' "$THEME" >"${STATE_DIR}/active-theme"
+    exit 0
+  else
+    status=$?
+    exit "$status"
+  fi
 fi
