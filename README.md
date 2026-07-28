@@ -60,7 +60,7 @@ It can:
 
 * install the awtarchy overlay
 * run a dry-run install plan
-* update/reset managed configs from the current main branch
+* update/reset managed configs from the latest release
 * clean old awtarchy backup files
 
 ## 📦 Install
@@ -115,7 +115,7 @@ Available actions:
 ```text
 Install Awtarchy
 Dry-run Awtarchy install plan
-Update/reset Awtarchy configs from current main
+Update/reset Awtarchy configs from latest release
 Clean Awtarchy backup files
 Exit
 ```
@@ -150,7 +150,7 @@ awtarchy updates overwrite managed config files. If you modified a managed file,
 
 You must manually merge your changes back in.
 
-Update/reset managed configs from the current main branch:
+Update/reset managed configs from the latest release:
 
 ```bash
 cd ~/awtarchy
