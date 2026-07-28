@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "awtarchy.sh"
+      - "README.md"
       - "config/waybar/config"
       - "config/waybar/scripts/ddc_brightness.sh"
       - "config/waybar/scripts/ddc_brightness_vertical.sh"
@@ -15,6 +16,7 @@ on:
   pull_request:
     paths:
       - "awtarchy.sh"
+      - "README.md"
       - "config/waybar/config"
       - "config/waybar/scripts/ddc_brightness.sh"
       - "config/waybar/scripts/ddc_brightness_vertical.sh"
@@ -84,6 +86,33 @@ jobs:
               raise SystemExit("fresh installer does not deploy config/ddcutil")
           if updater not in text:
               raise SystemExit("update/reset path does not deploy config/ddcutil")
+          PY
+
+      - name: Validate updater source selection
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          script = Path("awtarchy.sh").read_text(encoding="utf-8")
+          readme = Path("README.md").read_text(encoding="utf-8")
+
+          required = (
+              'local ref_kind="heads"',
+              'local source_ref="main"',
+              'ref_kind="tags"',
+              'download_repo_tarball "$ref_kind" "$source_ref" "$tgz"',
+              'archive/refs/${ref_kind}/${ref_enc}.tar.gz',
+          )
+          for item in required:
+              if item not in script:
+                  raise SystemExit(f"missing updater source marker: {item}")
+
+          if "fetch_latest_release_tag()" in script:
+              raise SystemExit("default updater still depends on the stale latest release")
+          if "current main branch" not in readme:
+              raise SystemExit("README does not describe the default main-branch update source")
+          if "Update to a specific release tag:" not in readme:
+              raise SystemExit("README no longer documents pinned release updates")
           PY
 
       - name: Verify cached status avoids DDC access
