@@ -1,0 +1,173 @@
+name: Temporary updater source revert
+
+on:
+  push:
+    branches:
+      - revert-updater-to-latest-release
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: revert-updater-to-latest-release
+
+      - name: Restore latest-release updater behavior
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              if old not in text:
+                  raise SystemExit(f"{label} did not match expected text")
+              return text.replace(old, new, 1)
+
+          awtarchy = Path("awtarchy.sh")
+          text = awtarchy.read_text(encoding="utf-8")
+
+          text = text.replace(
+              "Update/reset Awtarchy configs from current main",
+              "Update/reset Awtarchy configs from latest release",
+          )
+
+          old_downloader = '''download_repo_tarball() {
+            local ref_kind="$1"
+            local ref="$2"
+            local out="$3"
+            local ref_enc
+            ref_enc="$(urlencode_path_segment "$ref")"
+
+            local url="https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/${ref_kind}/${ref_enc}.tar.gz"
+            curl "${CURL_ARGS[@]}" -L -o "$out" "$url" || die "Failed to download repository tarball: $url"
+          }
+          '''
+          new_downloader = '''download_release_tarball() {
+            local tag="$1"
+            local out="$2"
+            local tag_enc
+            tag_enc="$(urlencode_path_segment "$tag")"
+
+            local url="https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/tags/${tag_enc}.tar.gz"
+            curl "${CURL_ARGS[@]}" -L -o "$out" "$url" || die "Failed to download release tarball: $url"
+          }
+          '''
+          text = replace_once(text, old_downloader, new_downloader, "release tarball downloader")
+
+          release_lookup = '''fetch_latest_release_tag() {
+            local api="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest"
+            local json
+
+            json="$(curl "${CURL_ARGS[@]}" -H "Accept: application/vnd.github+json" "$api")" || die "Failed to query GitHub latest release API"
+
+            python3 - <<'PY' "$json"
+          import json, sys
+          j = json.loads(sys.argv[1])
+          tag = (j.get("tag_name") or "").strip()
+          if not tag:
+            raise SystemExit(2)
+          print(tag)
+          PY
+          }
+
+          '''
+          marker = "urlencode_path_segment() {\n"
+          if marker not in text:
+              raise SystemExit("urlencode marker not found")
+          text = text.replace(marker, release_lookup + marker, 1)
+
+          old_source = '''  local ref_kind="heads"
+            local source_ref="main"
+            if [[ "${1:-}" == "--tag" ]]; then
+              ref_kind="tags"
+              source_ref="${2:-}"
+              [[ -n "$source_ref" ]] || die "Usage: $0 [--tag <tag>]"
+            elif [[ $# -gt 0 ]]; then
+              die "Usage: $0 [--tag <tag>]"
+            fi
+
+            log "Target user: ${TARGET_USER}"
+            if [[ "$ref_kind" == "tags" ]]; then
+              log "Release tag: ${source_ref}"
+            else
+              log "Branch: ${source_ref}"
+            fi
+          '''
+          new_source = '''  local tag=""
+            if [[ "${1:-}" == "--tag" ]]; then
+              tag="${2:-}"
+              [[ -n "$tag" ]] || die "Usage: $0 [--tag <tag>]"
+            else
+              tag="$(fetch_latest_release_tag)" || die "No GitHub release found for ${REPO_OWNER}/${REPO_NAME}"
+            fi
+
+            log "Target user: ${TARGET_USER}"
+            log "Release tag: ${tag}"
+          '''
+          text = replace_once(text, old_source, new_source, "updater source selection")
+          text = replace_once(
+              text,
+              '  download_repo_tarball "$ref_kind" "$source_ref" "$tgz"\n',
+              '  download_release_tarball "$tag" "$tgz"\n',
+              "updater tarball call",
+          )
+          text = replace_once(
+              text,
+              '  log "Deploying from ${ref_kind}/${source_ref} (backups on change; refuses empty overwrites)."\n',
+              '  log "Deploying (latest Release tag; backups on change; refuses empty overwrites)."\n',
+              "deployment log",
+          )
+          text = replace_once(
+              text,
+              '  write_version_stamp "$source_ref"\n',
+              '  write_version_stamp "$tag"\n',
+              "version stamp",
+          )
+          awtarchy.write_text(text, encoding="utf-8")
+
+          readme = Path("README.md")
+          doc = readme.read_text(encoding="utf-8")
+          doc = doc.replace(
+              "update/reset managed configs from the current main branch",
+              "update/reset managed configs from the latest release",
+          )
+          doc = doc.replace(
+              "Update/reset Awtarchy configs from current main",
+              "Update/reset Awtarchy configs from latest release",
+          )
+          doc = doc.replace(
+              "Update/reset managed configs from the current main branch:",
+              "Update/reset managed configs from the latest release:",
+          )
+          readme.write_text(doc, encoding="utf-8")
+
+          workflow = Path(".github/workflows/waybar-event-driven-checks.yml")
+          wf = workflow.read_text(encoding="utf-8")
+          wf = wf.replace('      - "README.md"\n', "")
+          start = wf.find("      - name: Validate updater source selection\n")
+          if start == -1:
+              raise SystemExit("updater source validation step not found")
+          end = wf.find("      - name: Verify cached status avoids DDC access\n", start)
+          if end == -1:
+              raise SystemExit("next validation step not found")
+          wf = wf[:start] + wf[end:]
+          workflow.write_text(wf, encoding="utf-8")
+          PY
+
+          bash -n awtarchy.sh
+          grep -Fq 'fetch_latest_release_tag()' awtarchy.sh
+          grep -Fq 'download_release_tarball "$tag" "$tgz"' awtarchy.sh
+          grep -Fq 'micro ddcutil)' awtarchy.sh
+          grep -Fq '"YouTube Music" "ddcutil"' awtarchy.sh
+          ! grep -Fq 'local source_ref="main"' awtarchy.sh
+
+      - name: Commit revert
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add awtarchy.sh README.md .github/workflows/waybar-event-driven-checks.yml
+          git commit -m "Restore latest-release updater behavior"
+          git push origin HEAD:revert-updater-to-latest-release
