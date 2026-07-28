@@ -4,10 +4,12 @@
 
 set -euo pipefail
 
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}"
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}"
 uid="$(id -u)"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${uid}}"
 
+BRIGHTNESS_SCRIPT="${HYPR_BRIGHTNESS_SCRIPT:-${CONF}/hypr/scripts/hypr-ddc-brightness.sh}"
 LOG_FILE="${HYPRIDLE_ACTION_LOG:-${CACHE}/hypridle/actions.log}"
 BR_FILE="${RUNTIME_DIR}/hypridle-brightness-level"
 DIM_MARKER="${RUNTIME_DIR}/hypridle-ddc-dimmed"
@@ -22,6 +24,11 @@ mkdir -p "$RUNTIME_DIR" "$(dirname "$LOG_FILE")"
 
 log() {
     printf '%s %s\n' "$(date '+%F %T')" "$*" >>"$LOG_FILE" 2>/dev/null || true
+}
+
+sync_brightness_state() {
+    [[ -x "$BRIGHTNESS_SCRIPT" ]] || return 0
+    HYPR_DDC_NOTIFY=0 "$BRIGHTNESS_SCRIPT" status >/dev/null 2>&1 || true
 }
 
 # Do nothing unless this idle cycle actually dimmed the monitor.
@@ -46,6 +53,7 @@ fi
 
 if timeout 3 ddcutil "${DDCUTIL_ARGS[@]}" setvcp 0x10 "$BRIGHTNESS" >/dev/null 2>&1; then
     rm -f "$DIM_MARKER"
+    sync_brightness_state
     log "DDC brightness restored: ${BRIGHTNESS}"
     exit 0
 fi
@@ -54,6 +62,7 @@ sleep 0.35
 
 if timeout 3 ddcutil "${DDCUTIL_ARGS[@]}" setvcp 0x10 "$BRIGHTNESS" >/dev/null 2>&1; then
     rm -f "$DIM_MARKER"
+    sync_brightness_state
     log "DDC brightness restored after retry: ${BRIGHTNESS}"
 else
     log "DDC brightness restore failed; marker retained"
