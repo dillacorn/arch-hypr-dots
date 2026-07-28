@@ -94,7 +94,52 @@ jobs:
 
           jq -e '.text == " 42" and .percentage == 42' <<<"$output" >/dev/null
           test ! -e "$tmp/ddc-called"
-          rm -rf "$tmp"
+
+      - name: Verify concurrent startup performs one DDC query
+        run: |
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          mkdir -p "$tmp/cache/hypr-ddc-brightness" "$tmp/bin"
+          printf '0\n' > "$tmp/query-count"
+
+          cat > "$tmp/bin/fake-brightness" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          exec 9>"${QUERY_COUNT_LOCK:?}"
+          flock -x 9
+          read -r count < "${QUERY_COUNT_FILE:?}"
+          printf '%s\n' "$((count + 1))" > "$QUERY_COUNT_FILE"
+          flock -u 9
+          exec 9>&-
+
+          sleep 0.25
+          now_ms="$(date +%s%3N)"
+          printf '44\t100\t%s\n' "$now_ms" > "${STATE_FILE:?}.tmp"
+          mv -f "$STATE_FILE.tmp" "$STATE_FILE"
+          printf 'conn=DP-1\ncur=44\nmax=100\nbus=3\n'
+          SH
+          chmod +x "$tmp/bin/fake-brightness"
+
+          pids=()
+          for output in one two; do
+            WAYBAR_OUTPUT_NAME=DP-1 \
+            XDG_CACHE_HOME="$tmp/cache" \
+            HYPR_BRIGHTNESS_SCRIPT="$tmp/bin/fake-brightness" \
+            QUERY_COUNT_FILE="$tmp/query-count" \
+            QUERY_COUNT_LOCK="$tmp/query-count.lock" \
+            STATE_FILE="$tmp/cache/hypr-ddc-brightness/state_DP-1.tsv" \
+              config/waybar/scripts/ddc_brightness.sh status > "$tmp/$output.json" &
+            pids+=("$!")
+          done
+
+          for pid in "${pids[@]}"; do
+            wait "$pid"
+          done
+
+          test "$(cat "$tmp/query-count")" = 1
+          jq -e '.text == " 44" and .percentage == 44' "$tmp/one.json" >/dev/null
+          jq -e '.text == " 44" and .percentage == 44' "$tmp/two.json" >/dev/null
 
       - name: Verify inotify updates every watcher
         run: |
