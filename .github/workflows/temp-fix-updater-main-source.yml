@@ -31,117 +31,82 @@ jobs:
           awtarchy = Path("awtarchy.sh")
           text = awtarchy.read_text(encoding="utf-8")
 
-          old_release_lookup = '''fetch_latest_release_tag() {
-            local api="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest"
-            local json
+          lookup_start = "fetch_latest_release_tag() {\n"
+          lookup_end = "urlencode_path_segment() {\n"
+          if lookup_start in text:
+              start = text.index(lookup_start)
+              end = text.index(lookup_end, start)
+              text = text[:start] + text[end:]
+          elif lookup_end not in text:
+              raise SystemExit("release lookup markers were not found")
 
-            json="$(curl "${CURL_ARGS[@]}" -H "Accept: application/vnd.github+json" "$api")" || die "Failed to query GitHub latest release API"
+          old_download_start = "download_release_tarball() {\n"
+          new_download_start = "download_repo_tarball() {\n"
+          tar_marker = "tar_topdir() {\n"
+          new_download = "\n".join([
+              "download_repo_tarball() {",
+              "  local ref_kind=\"$1\"",
+              "  local ref=\"$2\"",
+              "  local out=\"$3\"",
+              "  local ref_enc",
+              "  ref_enc=\"$(urlencode_path_segment \"$ref\")\"",
+              "",
+              "  local url=\"https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/${ref_kind}/${ref_enc}.tar.gz\"",
+              "  curl \"${CURL_ARGS[@]}\" -L -o \"$out\" \"$url\" || die \"Failed to download repository tarball: $url\"",
+              "}",
+              "",
+          ])
+          if old_download_start in text:
+              start = text.index(old_download_start)
+              end = text.index(tar_marker, start)
+              text = text[:start] + new_download + text[end:]
+          elif new_download_start not in text:
+              raise SystemExit("tarball downloader markers were not found")
 
-            python3 - <<'PY' "$json"
-          import json, sys
-          j = json.loads(sys.argv[1])
-          tag = (j.get("tag_name") or "").strip()
-          if not tag:
-            raise SystemExit(2)
-          print(tag)
-          PY
-          }
-
-          '''
-          text = replace_once(text, old_release_lookup, "", "latest-release lookup removal")
-
-          old_download = '''download_release_tarball() {
-            local tag="$1"
-            local out="$2"
-            local tag_enc
-            tag_enc="$(urlencode_path_segment "$tag")"
-
-            local url="https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/tags/${tag_enc}.tar.gz"
-            curl "${CURL_ARGS[@]}" -L -o "$out" "$url" || die "Failed to download release tarball: $url"
-          }
-          '''
-          new_download = '''download_repo_tarball() {
-            local ref_kind="$1"
-            local ref="$2"
-            local out="$3"
-            local ref_enc
-            ref_enc="$(urlencode_path_segment "$ref")"
-
-            local url="https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/${ref_kind}/${ref_enc}.tar.gz"
-            curl "${CURL_ARGS[@]}" -L -o "$out" "$url" || die "Failed to download repository tarball: $url"
-          }
-          '''
-          text = replace_once(text, old_download, new_download, "tarball downloader")
-
-          old_source = '''  local tag=""
-            if [[ "${1:-}" == "--tag" ]]; then
-              tag="${2:-}"
-              [[ -n "$tag" ]] || die "Usage: $0 [--tag <tag>]"
-            else
-              tag="$(fetch_latest_release_tag)" || die "No GitHub release found for ${REPO_OWNER}/${REPO_NAME}"
-            fi
-
-            log "Target user: ${TARGET_USER}"
-            log "Release tag: ${tag}"
-          '''
-          new_source = '''  local ref_kind="heads"
-            local source_ref="main"
-            if [[ "${1:-}" == "--tag" ]]; then
-              ref_kind="tags"
-              source_ref="${2:-}"
-              [[ -n "$source_ref" ]] || die "Usage: $0 [--tag <tag>]"
-            elif [[ $# -gt 0 ]]; then
-              die "Usage: $0 [--tag <tag>]"
-            fi
-
-            log "Target user: ${TARGET_USER}"
-            if [[ "$ref_kind" == "tags" ]]; then
-              log "Release tag: ${source_ref}"
-            else
-              log "Branch: ${source_ref}"
-            fi
-          '''
+          old_source = "\n".join([
+              "  local tag=\"\"",
+              "  if [[ \"${1:-}\" == \"--tag\" ]]; then",
+              "    tag=\"${2:-}\"",
+              "    [[ -n \"$tag\" ]] || die \"Usage: $0 [--tag <tag>]\"",
+              "  else",
+              "    tag=\"$(fetch_latest_release_tag)\" || die \"No GitHub release found for ${REPO_OWNER}/${REPO_NAME}\"",
+              "  fi",
+              "",
+              "  log \"Target user: ${TARGET_USER}\"",
+              "  log \"Release tag: ${tag}\"",
+              "",
+          ])
+          new_source = "\n".join([
+              "  local ref_kind=\"heads\"",
+              "  local source_ref=\"main\"",
+              "  if [[ \"${1:-}\" == \"--tag\" ]]; then",
+              "    ref_kind=\"tags\"",
+              "    source_ref=\"${2:-}\"",
+              "    [[ -n \"$source_ref\" ]] || die \"Usage: $0 [--tag <tag>]\"",
+              "  elif [[ $# -gt 0 ]]; then",
+              "    die \"Usage: $0 [--tag <tag>]\"",
+              "  fi",
+              "",
+              "  log \"Target user: ${TARGET_USER}\"",
+              "  if [[ \"$ref_kind\" == \"tags\" ]]; then",
+              "    log \"Release tag: ${source_ref}\"",
+              "  else",
+              "    log \"Branch: ${source_ref}\"",
+              "  fi",
+              "",
+          ])
           text = replace_once(text, old_source, new_source, "updater source selection")
-
-          text = replace_once(
-              text,
-              '  download_release_tarball "$tag" "$tgz"\n',
-              '  download_repo_tarball "$ref_kind" "$source_ref" "$tgz"\n',
-              "updater tarball call",
-          )
-          text = replace_once(
-              text,
-              '  log "Deploying (latest Release tag; backups on change; refuses empty overwrites)."\n',
-              '  log "Deploying from ${ref_kind}/${source_ref} (backups on change; refuses empty overwrites)."\n',
-              "updater deployment log",
-          )
-          text = replace_once(
-              text,
-              '  write_version_stamp "$tag"\n',
-              '  write_version_stamp "$source_ref"\n',
-              "updater version stamp",
-          )
-          text = text.replace(
-              'Update/reset Awtarchy configs from latest release',
-              'Update/reset Awtarchy configs from current main',
-          )
-
+          text = replace_once(text, '  download_release_tarball "$tag" "$tgz"\n', '  download_repo_tarball "$ref_kind" "$source_ref" "$tgz"\n', "tarball call")
+          text = replace_once(text, '  log "Deploying (latest Release tag; backups on change; refuses empty overwrites)."\n', '  log "Deploying from ${ref_kind}/${source_ref} (backups on change; refuses empty overwrites)."\n', "deployment log")
+          text = replace_once(text, '  write_version_stamp "$tag"\n', '  write_version_stamp "$source_ref"\n', "version stamp")
+          text = text.replace('Update/reset Awtarchy configs from latest release', 'Update/reset Awtarchy configs from current main')
           awtarchy.write_text(text, encoding="utf-8")
 
           readme = Path("README.md")
           doc = readme.read_text(encoding="utf-8")
-          doc = doc.replace(
-              'update/reset managed configs from the latest release',
-              'update/reset managed configs from the current main branch',
-          )
-          doc = doc.replace(
-              'Update/reset Awtarchy configs from latest release',
-              'Update/reset Awtarchy configs from current main',
-          )
-          doc = doc.replace(
-              'Update/reset managed configs from the latest release:',
-              'Update/reset managed configs from the current main branch:',
-          )
+          doc = doc.replace('update/reset managed configs from the latest release', 'update/reset managed configs from the current main branch')
+          doc = doc.replace('Update/reset Awtarchy configs from latest release', 'Update/reset Awtarchy configs from current main')
+          doc = doc.replace('Update/reset managed configs from the latest release:', 'Update/reset managed configs from the current main branch:')
           readme.write_text(doc, encoding="utf-8")
           PY
 
