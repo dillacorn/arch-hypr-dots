@@ -87,7 +87,7 @@ state_file() {
 }
 
 safe_name() {
-  printf '%s' "$1" | tr '/[:space:]' '__'
+  printf '%s' "$1" | tr '/[:space:]' '_'
 }
 
 read_cached_status() {
@@ -129,22 +129,34 @@ query_status_unlocked() {
 }
 
 query_status() {
-  local monitor="$1" lock_file
+  local monitor="$1" lock_file lock_fd result rc=0
 
   mkdir -p "$CACHE_DIR"
   lock_file="${CACHE_DIR}/query_$(safe_name "$monitor").lock"
 
-  if command -v flock >/dev/null 2>&1; then
-    exec 9>"$lock_file"
-    flock -w "$QUERY_LOCK_TIMEOUT" 9 || return 1
-
-    # Another Waybar instance may have refreshed this display while we waited.
-    if read_cached_status "$monitor"; then
-      return 0
-    fi
+  if ! command -v flock >/dev/null 2>&1; then
+    query_status_unlocked "$monitor"
+    return $?
   fi
 
-  query_status_unlocked "$monitor"
+  exec {lock_fd}>"$lock_file"
+  if ! flock -w "$QUERY_LOCK_TIMEOUT" "$lock_fd"; then
+    exec {lock_fd}>&-
+    return 1
+  fi
+
+  # Another Waybar instance may have refreshed this display while we waited.
+  if result="$(read_cached_status "$monitor")"; then
+    exec {lock_fd}>&-
+    printf '%s\n' "$result"
+    return 0
+  fi
+
+  result="$(query_status_unlocked "$monitor")" || rc=$?
+  exec {lock_fd}>&-
+
+  (( rc == 0 )) || return "$rc"
+  printf '%s\n' "$result"
 }
 
 print_status_for_monitor() {
