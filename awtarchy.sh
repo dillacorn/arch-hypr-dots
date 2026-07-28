@@ -2890,7 +2890,7 @@ top_menu() {
     choice="$(single_select_menu "Awtarchy" 0 \
       "Install Awtarchy" \
       "Dry-run Awtarchy install plan" \
-      "Update/reset Awtarchy configs from current main" \
+      "Update/reset Awtarchy configs from latest release" \
       "Clean Awtarchy backup files" \
       "Exit")" || exit 0
 
@@ -4084,6 +4084,22 @@ curl_headers() {
   fi
 }
 
+fetch_latest_release_tag() {
+  local api="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest"
+  local json
+
+  json="$(curl "${CURL_ARGS[@]}" -H "Accept: application/vnd.github+json" "$api")" || die "Failed to query GitHub latest release API"
+
+  python3 - <<'PY' "$json"
+import json, sys
+j = json.loads(sys.argv[1])
+tag = (j.get("tag_name") or "").strip()
+if not tag:
+  raise SystemExit(2)
+print(tag)
+PY
+}
+
 urlencode_path_segment() {
   python3 - "$1" <<'PY'
 import sys
@@ -4093,16 +4109,16 @@ print(quote(sys.argv[1], safe="/-._~"))
 PY
 }
 
-download_repo_tarball() {
-  local ref_kind="$1"
-  local ref="$2"
-  local out="$3"
-  local ref_enc
-  ref_enc="$(urlencode_path_segment "$ref")"
+download_release_tarball() {
+  local tag="$1"
+  local out="$2"
+  local tag_enc
+  tag_enc="$(urlencode_path_segment "$tag")"
 
-  local url="https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/${ref_kind}/${ref_enc}.tar.gz"
-  curl "${CURL_ARGS[@]}" -L -o "$out" "$url" || die "Failed to download repository tarball: $url"
+  local url="https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/tags/${tag_enc}.tar.gz"
+  curl "${CURL_ARGS[@]}" -L -o "$out" "$url" || die "Failed to download release tarball: $url"
 }
+
 tar_topdir() {
   local tgz="$1"
   local top
@@ -4683,29 +4699,23 @@ main() {
   init_target_user
   curl_headers
 
-  local ref_kind="heads"
-  local source_ref="main"
+  local tag=""
   if [[ "${1:-}" == "--tag" ]]; then
-    ref_kind="tags"
-    source_ref="${2:-}"
-    [[ -n "$source_ref" ]] || die "Usage: $0 [--tag <tag>]"
-  elif [[ $# -gt 0 ]]; then
-    die "Usage: $0 [--tag <tag>]"
+    tag="${2:-}"
+    [[ -n "$tag" ]] || die "Usage: $0 [--tag <tag>]"
+  else
+    tag="$(fetch_latest_release_tag)" || die "No GitHub release found for ${REPO_OWNER}/${REPO_NAME}"
   fi
 
   log "Target user: ${TARGET_USER}"
-  if [[ "$ref_kind" == "tags" ]]; then
-    log "Release tag: ${source_ref}"
-  else
-    log "Branch: ${source_ref}"
-  fi
+  log "Release tag: ${tag}"
 
   local tmpd
   tmpd="$(mktemp -d)"
   trap 'rm -rf -- "${tmpd:-}" 2>/dev/null || true' EXIT
 
   local tgz="${tmpd}/awtarchy.tgz"
-  download_repo_tarball "$ref_kind" "$source_ref" "$tgz"
+  download_release_tarball "$tag" "$tgz"
 
   local top repo_dir
   top="$(tar_topdir "$tgz")"
@@ -4713,7 +4723,7 @@ main() {
   repo_dir="${tmpd}/${top}"
   [[ -d "$repo_dir" ]] || die "Extracted repo dir missing: $repo_dir"
 
-  log "Deploying from ${ref_kind}/${source_ref} (backups on change; refuses empty overwrites)."
+  log "Deploying (latest Release tag; backups on change; refuses empty overwrites)."
 
   if [[ -f "${repo_dir}/bashrc" ]]; then
     deploy_file "${repo_dir}/bashrc" "${HOME_DIR}/.bashrc"
@@ -4791,7 +4801,7 @@ main() {
   fi
 
   fix_managed_perms "${CONFIG_DIRS[@]}"
-  write_version_stamp "$source_ref"
+  write_version_stamp "$tag"
   maybe_hyprctl_reload
   check_and_offer_missing_installs "${repo_dir}"
   apply_awtarchy_gsettings_defaults
