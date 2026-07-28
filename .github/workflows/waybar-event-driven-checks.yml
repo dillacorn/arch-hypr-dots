@@ -3,6 +3,7 @@ name: Waybar event-driven checks
 on:
   push:
     paths:
+      - "awtarchy.sh"
       - "config/waybar/config"
       - "config/waybar/scripts/ddc_brightness.sh"
       - "config/waybar/scripts/ddc_brightness_vertical.sh"
@@ -13,6 +14,7 @@ on:
       - ".github/workflows/waybar-event-driven-checks.yml"
   pull_request:
     paths:
+      - "awtarchy.sh"
       - "config/waybar/config"
       - "config/waybar/scripts/ddc_brightness.sh"
       - "config/waybar/scripts/ddc_brightness_vertical.sh"
@@ -37,6 +39,7 @@ jobs:
 
       - name: Validate shell syntax
         run: |
+          bash -n awtarchy.sh
           bash -n config/waybar/scripts/ddc_brightness.sh
           bash -n config/waybar/scripts/ddc_brightness_vertical.sh
           bash -n config/waybar/scripts/idle_inhibitor_global.sh
@@ -67,6 +70,21 @@ jobs:
           ' config/waybar/config >/dev/null
 
           grep -Fxq 'options: --syslog never' config/ddcutil/ddcutilrc
+
+      - name: Validate ddcutil config deployment
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          text = Path("awtarchy.sh").read_text(encoding="utf-8")
+          installer = "local -a config_dirs=(hypr waybar alacritty wlogout mako wofi fuzzel gtk-3.0 Kvantum SpeedCrunch fastfetch pcmanfm-qt yazi xdg-desktop-portal qt5ct qt6ct lsfg-vk wiremix cava micro ddcutil)"
+          updater = '    "xdg-desktop-portal" "qt5ct" "qt6ct" "lsfg-vk" "wiremix" "cava" "YouTube Music" "ddcutil"\n'
+
+          if installer not in text:
+              raise SystemExit("fresh installer does not deploy config/ddcutil")
+          if updater not in text:
+              raise SystemExit("update/reset path does not deploy config/ddcutil")
+          PY
 
       - name: Verify cached status avoids DDC access
         run: |
