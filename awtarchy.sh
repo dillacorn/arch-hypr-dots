@@ -4303,6 +4303,19 @@ copy_target() {
   cp -a --no-preserve=ownership -- "$src" "$dest"
 }
 
+normalize_managed_executables() {
+  local root="$1" rel dir
+  for rel in \
+    .config/hypr/scripts \
+    .config/hypr/themes \
+    .config/waybar/scripts
+  do
+    dir="${root}/${rel}"
+    [[ -d "$dir" ]] || continue
+    find "$dir" -type f -exec chmod 0755 {} +
+  done
+}
+
 build_target_home() {
   local repo_dir="$1" target_home="$2" d
   mkdir -p -- "$target_home"
@@ -4340,6 +4353,11 @@ build_target_home() {
 
   copy_target "${repo_dir}/awtarchy_geology.png" \
     "${target_home}/Pictures/wallpapers/awtarchy_geology.png"
+
+  # GitHub release archives can expose managed scripts without executable bits.
+  # Normalize staging so comparison, installation, and saved baselines all use
+  # the executable modes expected by Awtarchy.
+  normalize_managed_executables "$target_home"
 }
 
 valid_theme_name() {
@@ -5055,6 +5073,120 @@ PY
   BASELINE_HOME="$old_home"
   MANIFEST_FILE="$old_manifest"
 }
+
+home_rel_to_repo_path() {
+  local rel="$1"
+  case "$rel" in
+    .config/*)
+      printf 'config/%s\n' "${rel#.config/}"
+      ;;
+    .local/share/*)
+      printf 'local/share/%s\n' "${rel#.local/share/}"
+      ;;
+    .bashrc)
+      printf 'bashrc\n'
+      ;;
+    .bash_profile)
+      printf 'bash_profile\n'
+      ;;
+    .Xresources)
+      printf 'Xresources\n'
+      ;;
+    Pictures/wallpapers/awtarchy_geology.png)
+      printf 'awtarchy_geology.png\n'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+augment_baseline_from_local_git_history() {
+  local target_home="$1"
+  local source_repo augmented_root augmented_home augmented_manifest
+  local rel repo_path local_file recovered_file commit tree_mode
+  local recovered=0
+
+  source_repo="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+  command -v git >/dev/null 2>&1 || return 0
+  git -C "$source_repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+
+  augmented_root="${TMPD}/augmented-baseline"
+  augmented_home="${augmented_root}/home"
+  augmented_manifest="${augmented_root}/manifest.paths"
+  rm -rf -- "$augmented_root"
+  mkdir -p -- "$augmented_home"
+
+  if [[ -d "$BASELINE_HOME" ]]; then
+    cp -a --no-preserve=ownership -- "$BASELINE_HOME/." "$augmented_home/"
+  fi
+  if [[ -r "$MANIFEST_FILE" ]]; then
+    cp -- "$MANIFEST_FILE" "$augmented_manifest"
+  else
+    : >"$augmented_manifest"
+  fi
+
+  while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    [[ -e "${augmented_home}/${rel}" || -L "${augmented_home}/${rel}" ]] && continue
+
+    local_file="${HOME_DIR}/${rel}"
+    [[ -f "$local_file" && ! -L "$local_file" ]] || continue
+
+    repo_path="$(home_rel_to_repo_path "$rel" || true)"
+    [[ -n "$repo_path" ]] || continue
+
+    recovered_file="${augmented_root}/candidate"
+    while IFS= read -r commit; do
+      [[ -n "$commit" ]] || continue
+      if ! git -C "$source_repo" show "${commit}:${repo_path}" >"$recovered_file" 2>/dev/null; then
+        continue
+      fi
+      cmp -s -- "$local_file" "$recovered_file" || continue
+
+      mkdir -p -- "$(dirname -- "${augmented_home}/${rel}")"
+      cp -- "$recovered_file" "${augmented_home}/${rel}"
+
+      tree_mode="$(
+        git -C "$source_repo" ls-tree "$commit" -- "$repo_path" 2>/dev/null \
+          | awk 'NR == 1 { print $1 }'
+      )"
+      case "$rel" in
+        .config/hypr/scripts/*|.config/hypr/themes/*|.config/waybar/scripts/*)
+          chmod 0755 "${augmented_home}/${rel}"
+          ;;
+        *)
+          if [[ "$tree_mode" == "100755" ]]; then
+            chmod 0755 "${augmented_home}/${rel}"
+          else
+            chmod 0644 "${augmented_home}/${rel}"
+          fi
+          ;;
+      esac
+
+      printf '%s\n' "$rel" >>"$augmented_manifest"
+      ((recovered++)) || true
+      break
+    done < <(
+      git -C "$source_repo" log --all --format='%H' -- "$repo_path" 2>/dev/null
+    )
+  done < <(
+    find "$target_home" \( -type f -o -type l \) -printf '%P\n' \
+      | LC_ALL=C sort
+  )
+
+  if (( recovered == 0 )); then
+    rm -rf -- "$augmented_root"
+    return 0
+  fi
+
+  LC_ALL=C sort -u -o "$augmented_manifest" "$augmented_manifest"
+  normalize_managed_executables "$augmented_home"
+  BASELINE_HOME="$augmented_home"
+  MANIFEST_FILE="$augmented_manifest"
+  log "Recovered ${recovered} missing baseline file(s) by matching installed content to local Git history."
+}
+
 build_plan() {
   local target_home="$1" plan_file="$2"
   python3 - "$HOME_DIR" "$target_home" "$BASELINE_HOME" "$MANIFEST_FILE" "$plan_file" <<'PY'
@@ -5597,6 +5729,7 @@ main() {
   fi
 
   bootstrap_previous_baseline "$active_theme"
+  augment_baseline_from_local_git_history "$target_home"
   print_hardware_preview
 
   fuzzel_anchor="$(capture_fuzzel_anchor || true)"
@@ -5619,6 +5752,7 @@ main() {
 
   hardware_reconcile
   fix_managed_perms "$target_home"
+  normalize_managed_executables "$HOME_DIR"
   refresh_cursor_assets
 
   if ! validate_live; then
