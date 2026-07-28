@@ -15,20 +15,14 @@ BR_FILE="${RUNTIME_DIR}/hypridle-brightness-level"
 DIM_MARKER="${RUNTIME_DIR}/hypridle-ddc-dimmed"
 DEFAULT_BRIGHTNESS="70"
 
-# Optional: pin a display. Use exactly one token, e.g. "--bus=5"
+# Optional: pin a display. The brightness controller inherits this value.
 : "${DDCUTIL_BUS:=}"
-DDCUTIL_ARGS=()
-[[ -n "$DDCUTIL_BUS" ]] && DDCUTIL_ARGS+=("$DDCUTIL_BUS")
+export DDCUTIL_BUS
 
 mkdir -p "$RUNTIME_DIR" "$(dirname "$LOG_FILE")"
 
 log() {
     printf '%s %s\n' "$(date '+%F %T')" "$*" >>"$LOG_FILE" 2>/dev/null || true
-}
-
-sync_brightness_state() {
-    [[ -x "$BRIGHTNESS_SCRIPT" ]] || return 0
-    HYPR_DDC_NOTIFY=0 "$BRIGHTNESS_SCRIPT" status >/dev/null 2>&1 || true
 }
 
 # Do nothing unless this idle cycle actually dimmed the monitor.
@@ -51,19 +45,17 @@ if [[ ! "$BRIGHTNESS" =~ ^[0-9]+$ ]] ||
     BRIGHTNESS="$DEFAULT_BRIGHTNESS"
 fi
 
-if timeout 3 ddcutil "${DDCUTIL_ARGS[@]}" setvcp 0x10 "$BRIGHTNESS" >/dev/null 2>&1; then
+if [[ ! -x "$BRIGHTNESS_SCRIPT" ]]; then
+    log "DDC brightness restore failed: brightness controller unavailable"
+    exit 1
+fi
+
+# The controller performs the DDC write and publishes the restored cached value.
+if HYPR_DDC_NOTIFY=0 "$BRIGHTNESS_SCRIPT" set "$BRIGHTNESS" >/dev/null 2>&1; then
     rm -f "$DIM_MARKER"
-    sync_brightness_state
     log "DDC brightness restored: ${BRIGHTNESS}"
     exit 0
 fi
 
-sleep 0.35
-
-if timeout 3 ddcutil "${DDCUTIL_ARGS[@]}" setvcp 0x10 "$BRIGHTNESS" >/dev/null 2>&1; then
-    rm -f "$DIM_MARKER"
-    sync_brightness_state
-    log "DDC brightness restored after retry: ${BRIGHTNESS}"
-else
-    log "DDC brightness restore failed; marker retained"
-fi
+log "DDC brightness restore failed; marker retained"
+exit 1
