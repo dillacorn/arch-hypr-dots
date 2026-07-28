@@ -2715,7 +2715,7 @@ copy_awtarchy_configs_stage() {
     retry_command chmod 644 "$dest"
   done
 
-  local -a config_dirs=(hypr waybar alacritty wlogout mako wofi fuzzel gtk-3.0 Kvantum SpeedCrunch fastfetch pcmanfm-qt yazi xdg-desktop-portal qt5ct qt6ct lsfg-vk wiremix cava micro)
+  local -a config_dirs=(hypr waybar alacritty wlogout mako wofi fuzzel gtk-3.0 Kvantum SpeedCrunch fastfetch pcmanfm-qt yazi xdg-desktop-portal qt5ct qt6ct lsfg-vk wiremix cava micro ddcutil)
   local dir
   for dir in "${config_dirs[@]}"; do
     if [[ -d "${REPO_DIR}/config/${dir}" ]]; then
@@ -4758,7 +4758,7 @@ main() {
   local -a CONFIG_DIRS=(
     "hypr" "waybar" "alacritty" "wlogout" "mako" "fuzzel"
     "gtk-3.0" "Kvantum" "SpeedCrunch" "fastfetch" "pcmanfm-qt" "yazi"
-    "xdg-desktop-portal" "qt5ct" "qt6ct" "lsfg-vk" "wiremix" "cava" "YouTube Music"
+    "xdg-desktop-portal" "qt5ct" "qt6ct" "lsfg-vk" "wiremix" "cava" "YouTube Music" "ddcutil"
   )
 
   for d in "${CONFIG_DIRS[@]}"; do
