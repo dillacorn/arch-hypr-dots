@@ -115,7 +115,8 @@ Available actions:
 ```text
 Install Awtarchy
 Dry-run Awtarchy install plan
-Update/reset Awtarchy configs from latest release
+Update configs (preserve personal modifications)
+Reset configs (clean-slate managed files)
 Clean Awtarchy backup files
 Exit
 ```
@@ -146,28 +147,41 @@ Up/Down = move
 
 ## 🔄 Updating awtarchy
 
-awtarchy updates overwrite managed config files. If you modified a managed file, the updater creates a sibling backup next to it ending in `.backup` or `.backup.<timestamp>` if one already exists.
+The main menu exposes two update modes:
 
-You must manually merge your changes back in.
+* **Update configs (preserve personal modifications)** compares the previous generated baseline, your current files, and the new release. It preserves local edits when possible and creates sibling `.backup` files before replacing modified files.
+* **Reset configs (clean-slate managed files)** replaces managed files with the release versions after backing up modified files.
 
-Update/reset managed configs from the latest release:
+Run the menu:
 
 ```bash
 cd ~/awtarchy
 chmod +x awtarchy.sh
-./awtarchy.sh update-reset-backup
+./awtarchy.sh
 ```
 
-Shortcut:
+Preview the preserve-mode update without changing files:
 
 ```bash
-./awtarchy.sh update-reset
+./awtarchy.sh update-reset-backup --mode preserve --review-only
 ```
 
-Update to a specific release tag:
+Run preserve mode directly:
 
 ```bash
-./awtarchy.sh update-reset-backup --tag v1.0.0
+./awtarchy.sh update-reset-backup --mode preserve
+```
+
+Run clean-slate mode directly:
+
+```bash
+./awtarchy.sh update-reset-backup --mode clean
+```
+
+Update from a specific release tag:
+
+```bash
+./awtarchy.sh update-reset-backup --mode preserve --tag v1.0.0
 ```
 
 ## 🧹 Clean Backup Files

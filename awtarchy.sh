@@ -2907,7 +2907,8 @@ top_menu() {
     choice="$(single_select_menu "Awtarchy" 0 \
       "Install Awtarchy" \
       "Dry-run Awtarchy install plan" \
-      "Update/reset Awtarchy configs from latest release" \
+      "Update configs (preserve personal modifications)" \
+      "Reset configs (clean-slate managed files)" \
       "Clean Awtarchy backup files" \
       "Exit")" || exit 0
 
@@ -2929,9 +2930,12 @@ top_menu() {
         fi
         ;;
       2)
-        update_reset_backup_main
+        update_reset_backup_main --mode preserve
         ;;
       3)
+        update_reset_backup_main --mode clean
+        ;;
+      4)
         run_backup_cleaner_entry
         ;;
       *)
