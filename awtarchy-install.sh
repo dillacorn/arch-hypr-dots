@@ -104,4 +104,4 @@ if (( REINSTALL == 0 )) && [[ -x "${TARGET_HOME}/.local/bin/awtarchy" ]]; then
   exit 0
 fi
 
-exec bash "$RUNTIME" install "${ARGS[@]}"
+exec env AWTARCHY_REPO_DIR="$SCRIPT_DIR" bash "$RUNTIME" install "${ARGS[@]}"
