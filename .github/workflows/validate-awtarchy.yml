@@ -24,4 +24,4 @@ jobs:
       - name: ShellCheck new command code
         run: shellcheck local/bin/awtarchy tests/test-awtarchy-command.sh
       - name: Command and updater integration tests
-        run: tests/test-awtarchy-command.sh
+        run: bash tests/test-awtarchy-command.sh
