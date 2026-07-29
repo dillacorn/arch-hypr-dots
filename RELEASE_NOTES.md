@@ -17,7 +17,11 @@ The `awtarchy` command owns command updates, config updates, config resets, revi
 
 ### Existing-install detection
 
-When `awtarchy-install.sh` detects an existing `~/.local/bin/awtarchy`, it prints the new maintenance commands and exits without rerunning the installer.
+When `awtarchy-install.sh` detects the installed `~/.local/bin/awtarchy` command, it prints the maintenance commands and exits without rerunning the installer.
+
+When it detects a legacy Awtarchy installation without the command, it performs a command-only migration. It installs the command, internal runtime, and version state without reinstalling packages or replacing managed configs.
+
+Legacy detection uses Awtarchy state, the previous cache version stamp, the managed-package manifest, or a matching set of Awtarchy-managed shell and Hyprland files.
 
 An intentional complete reinstall remains available with:
 
@@ -49,7 +53,7 @@ git pull --ff-only
 sudo ./awtarchy-install.sh
 ```
 
-Legacy installations without `~/.local/bin/awtarchy` are allowed through this migration. Afterward, future maintenance starts with `awtarchy` and no repository directory is required.
+The installer detects the legacy installation and performs only the command migration. Afterward, future maintenance starts with `awtarchy` and no repository directory is required.
 
 Persistent version state is stored under:
 
