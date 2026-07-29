@@ -27,11 +27,15 @@ jobs:
       - name: Install validation tools
         run: sudo apt-get update && sudo apt-get install -y shellcheck
 
-      - name: Validate patcher
-        run: python -m py_compile tools/apply-awtarchy-command.py
+      - name: Validate patchers
+        run: |
+          python -m py_compile tools/fix-awtarchy-test-cleanup.py
+          python -m py_compile tools/apply-awtarchy-command.py
 
-      - name: Apply runtime integration
-        run: python tools/apply-awtarchy-command.py
+      - name: Apply test and runtime integration
+        run: |
+          python tools/fix-awtarchy-test-cleanup.py
+          python tools/apply-awtarchy-command.py
 
       - name: Validate patched source
         run: |
