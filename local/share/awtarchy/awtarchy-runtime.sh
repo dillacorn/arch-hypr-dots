@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # github.com/dillacorn/awtarchy
-# awtarchy.sh
-# Single-file Awtarchy installer / updater / backup cleaner.
+# awtarchy-runtime.sh
+# Internal Awtarchy install and maintenance runtime.
 
 set -Eeuo pipefail
 IFS=$'\n\t'
@@ -154,7 +154,7 @@ detect_target_user_install() {
   [[ -n "${TARGET_USER}" ]] || die "Could not determine target user. Run with sudo from the user account to install for."
   HOME_DIR="$(getent passwd "${TARGET_USER}" | cut -d: -f6 || true)"
   [[ -n "${HOME_DIR}" && -d "${HOME_DIR}" ]] || die "Home directory for ${TARGET_USER} not found."
-  REPO_DIR="${HOME_DIR}/awtarchy"
+  REPO_DIR="${AWTARCHY_REPO_DIR:-${HOME_DIR}/awtarchy}"
 }
 
 user_config_has_no_files() {
@@ -2710,6 +2710,81 @@ EOF
   systemctl set-default graphical.target
 }
 
+detect_installed_release_tag() {
+  local latest="" release_commit="" head_commit=""
+
+  if have curl && have python3; then
+    latest="$(
+      curl -fsSL --connect-timeout 5 --max-time 10 \
+        -H 'Accept: application/vnd.github+json' \
+        -H 'User-Agent: awtarchy-installer' \
+        'https://api.github.com/repos/dillacorn/awtarchy/releases/latest' 2>/dev/null \
+      | python3 -c '
+import json, sys
+try:
+    value = json.load(sys.stdin).get("tag_name", "")
+except Exception:
+    value = ""
+print(str(value).strip())
+' 2>/dev/null
+    )" || true
+  fi
+
+  if [[ -n "$latest" ]] && have git \
+    && git -C "$REPO_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    release_commit="$(git -C "$REPO_DIR" rev-parse "${latest}^{commit}" 2>/dev/null || true)"
+    head_commit="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || true)"
+    if [[ -n "$release_commit" && -n "$head_commit" ]] \
+      && git -C "$REPO_DIR" merge-base --is-ancestor "$release_commit" "$head_commit" 2>/dev/null; then
+      printf '%s\n' "$latest"
+      return 0
+    fi
+  fi
+
+  printf '%s\n' unreleased
+}
+
+install_awtarchy_command_stage() {
+  local install_dir="${HOME_DIR}/.local/share/awtarchy"
+  local bin_dir="${HOME_DIR}/.local/bin"
+  local state_dir="${HOME_DIR}/.local/state/awtarchy"
+  local command_version_file="${state_dir}/command-version"
+  local config_version_file="${state_dir}/config-version"
+  local runtime_src="${REPO_DIR}/local/share/awtarchy/awtarchy-runtime.sh"
+  local launcher_src="${REPO_DIR}/local/bin/awtarchy"
+  local tag="" revision=""
+
+  [[ -f "$runtime_src" ]] || die "Missing Awtarchy runtime: ${runtime_src}"
+  [[ -f "$launcher_src" ]] || die "Missing Awtarchy command: ${launcher_src}"
+  bash -n "$runtime_src" || die "Awtarchy runtime failed Bash syntax validation."
+  bash -n "$launcher_src" || die "Awtarchy command failed Bash syntax validation."
+
+  create_directory "$install_dir"
+  create_directory "$bin_dir"
+  create_directory "$state_dir"
+
+  retry_command install -m 0755 "$runtime_src" "${install_dir}/awtarchy-runtime.sh"
+  retry_command install -m 0755 "$launcher_src" "${bin_dir}/awtarchy"
+  retry_command chown "${TARGET_USER}:${TARGET_USER}" \
+    "${install_dir}/awtarchy-runtime.sh" "${bin_dir}/awtarchy"
+
+  tag="$(detect_installed_release_tag)"
+  if have git && git -C "$REPO_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    revision="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || true)"
+  fi
+
+  {
+    printf 'tag=%s\n' "$tag"
+    [[ -n "$revision" ]] && printf 'revision=%s\n' "$revision"
+    printf 'installed_at=%s\n' "$(date -Iseconds)"
+  } >"$command_version_file"
+  cp -- "$command_version_file" "$config_version_file"
+  chown "${TARGET_USER}:${TARGET_USER}" "$command_version_file" "$config_version_file"
+  chmod 0644 "$command_version_file" "$config_version_file"
+
+  ok "Installed Awtarchy command: ${bin_dir}/awtarchy"
+}
+
 copy_awtarchy_configs_stage() {
   log "Copying Awtarchy configuration files..."
   mkdir -p "${HOME_DIR}/.config"
@@ -2873,6 +2948,7 @@ run_install() {
   enable_keyring_pam_stage
   install_ly_stage
   copy_awtarchy_configs_stage
+  install_awtarchy_command_stage
   apply_awtarchy_gsettings_defaults
   repair_home_ownership_stage
 
@@ -5659,7 +5735,7 @@ refresh_cursor_assets() {
 }
 
 write_version_stamp() {
-  local tag="$1" dest="${HOME_DIR}/.cache/awtarchy/version"
+  local tag="$1" dest="${HOME_DIR}/.local/state/awtarchy/config-version"
   mkdir -p -- "$(dirname "$dest")"
   {
     printf 'tag=%s\n' "$tag"
@@ -5801,10 +5877,10 @@ need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing required command: $
 usage() {
   cat <<'EOF'
 Usage:
-  update-backup-cleaner.sh [options]
+  awtarchy clean-backups [options]
 
 IMPORTANT:
-  - Do NOT run with sudo. This scans under your $HOME. Running with sudo usually makes $HOME=/root.
+  - Do NOT run with sudo. This scans backups under your home directory.
 
 Default (interactive TTY):
   - Scans common awtarchy-managed paths under $HOME for:
@@ -5824,15 +5900,12 @@ Options:
 Paging config:
   - Default page size: 20
   - Change via:
-      AWTARCHY_BACKUP_CLEAN_PAGE_SIZE_DEFAULT=40 ./update-backup-cleaner.sh
+      AWTARCHY_BACKUP_CLEAN_PAGE_SIZE_DEFAULT=40 awtarchy clean-backups
     or press [G] in the menu (saved in ~/.config/awtarchy/backup_clean_page_size)
 
 Examples:
-  cd ~/awtarchy
-  chmod +x ./update-backup-cleaner.sh
-  ./update-backup-cleaner.sh
-
-  ./update-backup-cleaner.sh --dry-run
+  awtarchy clean-backups
+  awtarchy clean-backups --dry-run
 EOF
 }
 
@@ -5840,9 +5913,7 @@ EOF
 if [[ "${EUID}" -eq 0 ]]; then
   die "Do not run this with sudo. Run as your normal user.
 Example:
-  cd ~/awtarchy
-  chmod +x ./update-backup-cleaner.sh
-  ./update-backup-cleaner.sh"
+  awtarchy clean-backups"
 fi
 
 # --- args ---
