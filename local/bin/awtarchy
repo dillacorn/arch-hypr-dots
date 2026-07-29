@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # github.com/dillacorn/awtarchy
-# Installed Awtarchy command launcher and self-updater.
+# Installed Awtarchy maintenance command and self-updater.
 
 set -Eeuo pipefail
 IFS=$'\n\t'
@@ -13,8 +13,9 @@ TARGET_HOME=""
 DATA_HOME=""
 STATE_HOME=""
 INSTALL_DIR=""
-INSTALLED_SCRIPT=""
-VERSION_FILE=""
+RUNTIME=""
+COMMAND_VERSION_FILE=""
+CONFIG_VERSION_FILE=""
 
 log()  { printf '%s\n' "$*"; }
 die()  { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -35,19 +36,29 @@ init_target() {
   DATA_HOME="${XDG_DATA_HOME:-${TARGET_HOME}/.local/share}"
   STATE_HOME="${XDG_STATE_HOME:-${TARGET_HOME}/.local/state}"
   INSTALL_DIR="${DATA_HOME}/awtarchy"
-  INSTALLED_SCRIPT="${INSTALL_DIR}/awtarchy.sh"
-  VERSION_FILE="${STATE_HOME}/awtarchy/version"
+  RUNTIME="${INSTALL_DIR}/awtarchy-runtime.sh"
+  COMMAND_VERSION_FILE="${STATE_HOME}/awtarchy/command-version"
+  CONFIG_VERSION_FILE="${STATE_HOME}/awtarchy/config-version"
 }
 
 state_value() {
-  local key="$1"
-  [[ -r $VERSION_FILE ]] || return 1
-  sed -n "s/^${key}=//p" "$VERSION_FILE" | head -n1
+  local key="$1" file="$2"
+  [[ -r $file ]] || return 1
+  sed -n "s/^${key}=//p" "$file" | head -n1
 }
 
-installed_tag() {
+installed_command_tag() {
   local tag=""
-  tag="$(state_value tag 2>/dev/null || true)"
+  tag="$(state_value tag "$COMMAND_VERSION_FILE" 2>/dev/null || true)"
+  [[ -n $tag ]] && printf '%s\n' "$tag" || printf '%s\n' unknown
+}
+
+installed_config_tag() {
+  local tag=""
+  tag="$(state_value tag "$CONFIG_VERSION_FILE" 2>/dev/null || true)"
+  if [[ -z $tag ]]; then
+    tag="$(state_value tag "${STATE_HOME}/awtarchy/baseline/metadata" 2>/dev/null || true)"
+  fi
   [[ -n $tag ]] && printf '%s\n' "$tag" || printf '%s\n' unknown
 }
 
@@ -55,9 +66,8 @@ curl_args() {
   CURL_ARGS=(
     -fsSL
     --connect-timeout 5
-    --max-time 15
-    --retry 2
-    --retry-delay 1
+    --max-time 10
+    --retry 1
     -H "Accept: application/vnd.github+json"
     -H "User-Agent: awtarchy-command"
   )
@@ -102,8 +112,7 @@ import sys
 import tarfile
 from pathlib import PurePosixPath
 
-archive_path = sys.argv[1]
-with tarfile.open(archive_path, "r:gz") as archive:
+with tarfile.open(sys.argv[1], "r:gz") as archive:
     members = archive.getmembers()
     if not members:
         raise SystemExit(1)
@@ -112,8 +121,8 @@ with tarfile.open(archive_path, "r:gz") as archive:
         path = PurePosixPath(member.name)
         if path.is_absolute() or ".." in path.parts:
             raise SystemExit("unsafe archive path")
-        if member.issym() or member.islnk():
-            raise SystemExit("archive links are not accepted")
+        if not (member.isfile() or member.isdir()):
+            raise SystemExit("unsupported archive entry")
         if path.parts and not top:
             top = path.parts[0]
         elif path.parts and path.parts[0] != top:
@@ -136,10 +145,11 @@ atomic_install() {
   mv -Tf -- "$tmp" "$dest"
 }
 
-write_version_state() {
-  local tag="$1" revision="${2:-}" tmp
-  mkdir -p -- "$(dirname "$VERSION_FILE")"
-  tmp="$(mktemp --tmpdir="$(dirname "$VERSION_FILE")" '.version.tmp.XXXXXX')"
+write_command_version() {
+  local tag="$1" revision="${2:-}" tmp dir
+  dir="$(dirname "$COMMAND_VERSION_FILE")"
+  mkdir -p -- "$dir"
+  tmp="$(mktemp --tmpdir="$dir" '.command-version.tmp.XXXXXX')"
   {
     printf 'tag=%s\n' "$tag"
     [[ -n $revision ]] && printf 'revision=%s\n' "$revision"
@@ -149,54 +159,73 @@ write_version_state() {
   if [[ ${EUID} -eq 0 ]]; then
     chown "$TARGET_USER:$TARGET_USER" "$tmp"
   fi
-  mv -Tf -- "$tmp" "$VERSION_FILE"
+  mv -Tf -- "$tmp" "$COMMAND_VERSION_FILE"
 }
 
 self_update() {
-  local tag="${1:-}" tmp archive encoded top repo_dir new_script new_launcher revision=""
+  local tag="${1:-}" tmp archive encoded top repo_dir new_runtime new_launcher revision=""
   have curl || die "curl is required for self-update."
   have tar || die "tar is required for self-update."
   have python3 || die "python3 is required for self-update."
+  have sha256sum || die "sha256sum is required for self-update."
 
   [[ -n $tag ]] || tag="$(latest_release_tag)" || die "Could not determine the latest Awtarchy release."
   encoded="$(urlencode_tag "$tag")"
   tmp="$(mktemp -d)"
-  trap 'rm -rf -- "${tmp:-}"' RETURN
   archive="${tmp}/awtarchy.tar.gz"
 
   curl_args
   log "Downloading Awtarchy ${tag}..."
-  curl "${CURL_ARGS[@]}" -L -o "$archive" \
-    "https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/tags/${encoded}.tar.gz" \
-    || die "Failed to download release ${tag}."
+  if ! curl "${CURL_ARGS[@]}" -L -o "$archive" \
+    "https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/tags/${encoded}.tar.gz"; then
+    rm -rf -- "$tmp"
+    die "Failed to download release ${tag}."
+  fi
 
-  top="$(archive_topdir "$archive")" || die "Release archive validation failed."
+  top="$(archive_topdir "$archive")" || {
+    rm -rf -- "$tmp"
+    die "Release archive validation failed."
+  }
   tar -xzf "$archive" -C "$tmp"
   repo_dir="${tmp}/${top}"
-  new_script="${repo_dir}/awtarchy.sh"
+  new_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
   new_launcher="${repo_dir}/local/bin/awtarchy"
 
-  [[ -f $new_script ]] || die "Release ${tag} does not contain awtarchy.sh."
-  [[ -f $new_launcher ]] || die "Release ${tag} does not contain the installed awtarchy launcher."
-  bash -n "$new_script" || die "Downloaded awtarchy.sh failed Bash syntax validation."
-  bash -n "$new_launcher" || die "Downloaded awtarchy launcher failed Bash syntax validation."
+  [[ -f $new_runtime ]] || {
+    rm -rf -- "$tmp"
+    die "Release ${tag} does not contain the Awtarchy runtime."
+  }
+  [[ -f $new_launcher ]] || {
+    rm -rf -- "$tmp"
+    die "Release ${tag} does not contain the Awtarchy command."
+  }
+  bash -n "$new_runtime" || {
+    rm -rf -- "$tmp"
+    die "Downloaded Awtarchy runtime failed Bash syntax validation."
+  }
+  bash -n "$new_launcher" || {
+    rm -rf -- "$tmp"
+    die "Downloaded Awtarchy command failed Bash syntax validation."
+  }
 
-  revision="$(sha256sum "$new_script" | awk '{print $1}')"
-  atomic_install "$new_script" "$INSTALLED_SCRIPT" 0755
+  revision="$(sha256sum "$new_runtime" | awk '{print $1}')"
+  atomic_install "$new_runtime" "$RUNTIME" 0755
   atomic_install "$new_launcher" "${TARGET_HOME}/.local/bin/awtarchy" 0755
-  write_version_state "$tag" "$revision"
+  write_command_version "$tag" "$revision"
+  rm -rf -- "$tmp"
 
   log "Awtarchy command updated to ${tag}."
 }
 
 print_version_status() {
-  local installed latest="" status="Unknown"
-  installed="$(installed_tag)"
+  local installed latest="" status="Unknown" config
+  installed="$(installed_command_tag)"
+  config="$(installed_config_tag)"
   if latest="$(latest_release_tag 2>/dev/null)"; then
     if [[ $installed == "$latest" ]]; then
       status="Up to date"
     elif [[ $installed == unknown || $installed == unreleased ]]; then
-      status="Installed version is not tied to a release"
+      status="Local or untracked command build"
     else
       status="Update available"
     fi
@@ -204,24 +233,27 @@ print_version_status() {
     status="Latest release unavailable"
   fi
 
-  printf 'Installed release: %s\n' "$installed"
+  printf 'Command release:   %s\n' "$installed"
+  printf 'Config release:    %s\n' "$config"
   printf 'Latest release:    %s\n' "${latest:-unavailable}"
-  printf 'Status:            %s\n' "$status"
+  printf 'Command status:    %s\n' "$status"
 }
 
 maybe_offer_update() {
   [[ ${AWTARCHY_SKIP_UPDATE_CHECK:-0} == 1 ]] && return 0
   local installed latest answer=""
-  installed="$(installed_tag)"
+  installed="$(installed_command_tag)"
   latest="$(latest_release_tag 2>/dev/null || true)"
   [[ -n $latest ]] || return 0
 
   if [[ $installed == "$latest" ]]; then
-    printf 'Awtarchy: %s is current.\n' "$installed"
+    return 0
+  fi
+  if [[ $installed == unknown || $installed == unreleased ]]; then
     return 0
   fi
 
-  printf 'Awtarchy update available: %s -> %s\n' "$installed" "$latest"
+  printf 'Awtarchy command update available: %s -> %s\n' "$installed" "$latest"
   [[ -t 0 && -t 1 && -r /dev/tty && -w /dev/tty ]] || return 0
   printf 'Update the Awtarchy command now? [Y/n] ' >/dev/tty
   IFS= read -r answer </dev/tty || true
@@ -231,24 +263,134 @@ maybe_offer_update() {
   esac
 }
 
-run_installed() {
-  [[ -x $INSTALLED_SCRIPT ]] || die "Installed script is missing: ${INSTALLED_SCRIPT}. Run the repository installer once to repair it."
-  exec "$INSTALLED_SCRIPT" "$@"
+require_runtime() {
+  [[ -f $RUNTIME ]] || die "Installed runtime is missing: ${RUNTIME}. Run awtarchy-install.sh once to repair it."
+}
+
+run_runtime() {
+  require_runtime
+  bash "$RUNTIME" "$@"
+}
+
+exec_runtime() {
+  require_runtime
+  exec bash "$RUNTIME" "$@"
+}
+
+clear_screen() {
+  if have clear; then
+    clear >/dev/tty 2>/dev/null || clear
+  else
+    printf '\033[H\033[2J' >/dev/tty 2>/dev/null || printf '\033[H\033[2J'
+  fi
+}
+
+read_key() {
+  local key="" rest=""
+  IFS= read -rsn1 key </dev/tty || return 1
+  if [[ $key == $'\033' ]]; then
+    IFS= read -rsn2 -t 0.05 rest </dev/tty || true
+    key+="$rest"
+  fi
+  printf '%s' "$key"
+}
+
+single_select_menu() {
+  local title="$1" default_index="$2"
+  shift 2
+  local -a items=("$@")
+  local index="$default_index" key="" i
+
+  while true; do
+    clear_screen
+    printf '%s\n\n' "$title" >/dev/tty
+    for i in "${!items[@]}"; do
+      if (( i == index )); then
+        printf '  > %s\n' "${items[i]}" >/dev/tty
+      else
+        printf '    %s\n' "${items[i]}" >/dev/tty
+      fi
+    done
+    printf '\nUp/Down = move, Enter = select, q = quit\n' >/dev/tty
+    key="$(read_key || true)"
+    case "$key" in
+      $'\033[A') (( index > 0 )) && ((index--)) || true ;;
+      $'\033[B') (( index + 1 < ${#items[@]} )) && ((index++)) || true ;;
+      $'\n'|$'\r'|"") printf '%s\n' "$index"; return 0 ;;
+      q|Q) return 1 ;;
+    esac
+  done
+}
+
+pause_menu() {
+  printf '\nPress any key to continue...' >/dev/tty
+  read_key >/dev/null || true
+}
+
+maintenance_menu() {
+  [[ -t 0 && -t 1 && -r /dev/tty && -w /dev/tty ]] || die "The Awtarchy menu requires an interactive terminal."
+  maybe_offer_update
+
+  local choice rc
+  while true; do
+    choice="$(single_select_menu "Awtarchy Maintenance" 0 \
+      "Update Awtarchy command" \
+      "Update configs (preserve personal modifications)" \
+      "Reset configs (clean-slate managed files)" \
+      "Review config changes without applying" \
+      "Clean Awtarchy backup files" \
+      "Version information" \
+      "Exit")" || exit 0
+
+    case "$choice" in
+      0)
+        self_update
+        pause_menu
+        ;;
+      1)
+        run_runtime update-reset-backup --mode preserve || rc=$?
+        pause_menu
+        [[ -z ${rc:-} ]] || return "$rc"
+        ;;
+      2)
+        run_runtime update-reset-backup --mode clean || rc=$?
+        pause_menu
+        [[ -z ${rc:-} ]] || return "$rc"
+        ;;
+      3)
+        run_runtime update-reset-backup --mode preserve --review-only || rc=$?
+        pause_menu
+        [[ -z ${rc:-} ]] || return "$rc"
+        ;;
+      4)
+        run_runtime clean-backups || rc=$?
+        pause_menu
+        [[ -z ${rc:-} ]] || return "$rc"
+        ;;
+      5)
+        clear_screen
+        print_version_status >/dev/tty
+        pause_menu
+        ;;
+      *) exit 0 ;;
+    esac
+    unset rc
+  done
 }
 
 usage() {
   cat <<'EOF'
 Usage:
   awtarchy
-  awtarchy install [--no-reboot] [--dry-run]
-  awtarchy dry-run
-  awtarchy update [update options]
-  awtarchy reset [update options]
-  awtarchy review [update options]
+  awtarchy update [--tag <tag>] [update options]
+  awtarchy reset [--tag <tag>] [update options]
+  awtarchy review [--tag <tag>]
   awtarchy clean-backups [options]
   awtarchy version
   awtarchy check-update
   awtarchy self-update [--tag <tag>]
+
+Installation is handled only by awtarchy-install.sh.
 EOF
 }
 
@@ -262,9 +404,11 @@ main() {
     check-update)
       print_version_status
       local installed latest
-      installed="$(installed_tag)"
+      installed="$(installed_command_tag)"
       latest="$(latest_release_tag 2>/dev/null || true)"
-      [[ -n $latest && $installed != "$latest" ]] && return 10
+      if [[ -n $latest && $installed != unknown && $installed != unreleased && $installed != "$latest" ]]; then
+        return 10
+      fi
       ;;
     self-update)
       shift
@@ -288,28 +432,39 @@ main() {
     update)
       shift
       maybe_offer_update
-      run_installed update-reset-backup --mode preserve "$@"
+      exec_runtime update-reset-backup --mode preserve "$@"
       ;;
     reset)
       shift
       maybe_offer_update
-      run_installed update-reset-backup --mode clean "$@"
+      exec_runtime update-reset-backup --mode clean "$@"
       ;;
     review)
       shift
       maybe_offer_update
-      run_installed update-reset-backup --mode preserve --review-only "$@"
+      exec_runtime update-reset-backup --mode preserve --review-only "$@"
+      ;;
+    clean-backups|update-backup-cleaner|backup-cleaner)
+      shift
+      maybe_offer_update
+      exec_runtime clean-backups "$@"
+      ;;
+    update-reset-backup)
+      shift
+      maybe_offer_update
+      exec_runtime update-reset-backup "$@"
+      ;;
+    install|dry-run|dryrun|test)
+      die "Installation is handled by awtarchy-install.sh, not the awtarchy maintenance command."
       ;;
     help|-h|--help)
       usage
       ;;
     "")
-      maybe_offer_update
-      run_installed
+      maintenance_menu
       ;;
     *)
-      maybe_offer_update
-      run_installed "$@"
+      die "Unknown command: $1"
       ;;
   esac
 }
