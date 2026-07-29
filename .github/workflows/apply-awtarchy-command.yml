@@ -3,6 +3,8 @@ name: Apply Awtarchy Command Integration
 on:
   push:
     branches: [feature/awtarchy-command]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
