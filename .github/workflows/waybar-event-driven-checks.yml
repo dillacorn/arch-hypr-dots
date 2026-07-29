@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "awtarchy-install.sh"
+      - "local/bin/awtarchy"
       - "local/share/awtarchy/awtarchy-runtime.sh"
       - "config/waybar/config"
       - "config/waybar/scripts/ddc_brightness.sh"
@@ -16,6 +17,7 @@ on:
   pull_request:
     paths:
       - "awtarchy-install.sh"
+      - "local/bin/awtarchy"
       - "local/share/awtarchy/awtarchy-runtime.sh"
       - "config/waybar/config"
       - "config/waybar/scripts/ddc_brightness.sh"
@@ -42,6 +44,7 @@ jobs:
       - name: Validate shell syntax
         run: |
           bash -n awtarchy-install.sh
+          bash -n local/bin/awtarchy
           bash -n local/share/awtarchy/awtarchy-runtime.sh
           bash -n config/waybar/scripts/ddc_brightness.sh
           bash -n config/waybar/scripts/ddc_brightness_vertical.sh
