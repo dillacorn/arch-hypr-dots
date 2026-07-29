@@ -18,7 +18,7 @@ pronounced: **aw-tar-chee**
 * Flexible: works over any clean Arch install.
 * Lightweight: no separate ISO or custom repositories required.
 * Low maintenance: relies on Arch’s installer and official repositories.
-* Transparent: the installer is a single local shell script that can be reviewed before use.
+* Transparent: the local installer and maintenance scripts can be reviewed before use.
 
 ## Workflow expectations
 
@@ -46,22 +46,28 @@ awtarchy targets users who prefer TTY login, direct shell interaction, and manua
 | **Window Manager** | [Hyprland](https://github.com/hyprwm/Hyprland) ([config](https://github.com/dillacorn/awtarchy/tree/main/config/hypr))                                                                                 |
 | **Kernel**         | [Arch Linux](https://archlinux.org/packages/core/x86_64/linux/) · [Arch Linux LTS](https://archlinux.org/packages/core/x86_64/linux-lts/) · [CachyOS kernel](https://github.com/CachyOS/linux-cachyos) |
 
-## 🚀 Installer
+## 🚀 Installer and Maintenance Command
 
-awtarchy now uses one main script:
+Awtarchy uses two user-facing entrypoints:
 
-```bash
-awtarchy.sh
+```text
+awtarchy-install.sh    Initial installation only
+awtarchy               Updates, config maintenance, version checks, and backup cleanup
 ```
 
-The script provides a built-in terminal menu without depending on `fzf`, `gum`, `dialog`, or `whiptail`.
+The installer deploys the permanent command to:
 
-It can:
+```text
+~/.local/bin/awtarchy
+```
 
-* install the awtarchy overlay
-* run a dry-run install plan
-* update/reset managed configs from the latest release
-* clean old awtarchy backup files
+Its internal runtime is stored at:
+
+```text
+~/.local/share/awtarchy/awtarchy-runtime.sh
+```
+
+The installer and maintenance command use built-in terminal menus without depending on `fzf`, `gum`, `dialog`, or `whiptail`.
 
 ## 📦 Install
 
@@ -73,53 +79,59 @@ Then install Git:
 sudo pacman -S git --noconfirm
 ```
 
-Clone the repo and start the installer:
+Clone the repo and start the install-only entrypoint:
 
 ```bash
 git clone https://github.com/dillacorn/awtarchy
 cd awtarchy
-chmod +x awtarchy.sh
-sudo ./awtarchy.sh
+sudo ./awtarchy-install.sh
 ```
 
-Direct install command:
+After installation, open a new shell and run:
 
 ```bash
-sudo ./awtarchy.sh install
+awtarchy
 ```
 
-## 🧪 Dry-run
+### Existing-install detection
 
-Dry-run lets you test the installer menu and review the install plan without changing the system:
+When `awtarchy-install.sh` detects an existing `~/.local/bin/awtarchy` command, it stops before rerunning the installer and prints the new maintenance commands.
+
+To intentionally run the complete installer again:
 
 ```bash
-./awtarchy.sh dry-run
+sudo ./awtarchy-install.sh --reinstall
 ```
 
-Alternative:
+## 🧪 Installer Dry-run
+
+Dry-run lets you test the installer questionnaire and review the install plan without changing the system:
 
 ```bash
-./awtarchy.sh install --dry-run
+./awtarchy-install.sh --dry-run
 ```
 
-## 🧭 Main Menu
+## 🧭 Maintenance Menu
 
-Running the script without arguments opens the main menu:
+Running the installed command without arguments opens the maintenance menu:
 
 ```bash
-./awtarchy.sh
+awtarchy
 ```
 
 Available actions:
 
 ```text
-Install Awtarchy
-Dry-run Awtarchy install plan
+Update Awtarchy command
 Update configs (preserve personal modifications)
 Reset configs (clean-slate managed files)
+Review config changes without applying
 Clean Awtarchy backup files
+Version information
 Exit
 ```
+
+Installation is deliberately excluded from this menu. Use `awtarchy-install.sh` only when performing an initial installation or intentional full reinstall.
 
 ## ⚙️ Installer Behavior
 
@@ -145,44 +157,57 @@ b = back
 Up/Down = move
 ```
 
-## 🔄 Updating awtarchy
+## 🔄 Updating Awtarchy
 
-The main menu exposes two update modes:
+The installed command checks the latest GitHub release when maintenance starts. Command updates and config updates remain separate operations.
 
-* **Update configs (preserve personal modifications)** compares the previous generated baseline, your current files, and the new release. It preserves local edits when possible and creates sibling `.backup` files before replacing modified files.
-* **Reset configs (clean-slate managed files)** replaces managed files with the release versions after backing up modified files.
+Update only the installed command and runtime:
 
-Run the menu:
+```bash
+awtarchy self-update
+```
+
+Show the installed command release, installed config release, and latest release:
+
+```bash
+awtarchy version
+```
+
+Update configs while preserving personal modifications:
+
+```bash
+awtarchy update
+```
+
+Reset managed configs to the release defaults:
+
+```bash
+awtarchy reset
+```
+
+Preview config changes without applying them:
+
+```bash
+awtarchy review
+```
+
+Use a specific release tag:
+
+```bash
+awtarchy update --tag v1.0.0
+```
+
+### Existing installation migration
+
+Existing users need one final repository-based update to install the new command:
 
 ```bash
 cd ~/awtarchy
-chmod +x awtarchy.sh
-./awtarchy.sh
+git pull --ff-only
+sudo ./awtarchy-install.sh
 ```
 
-Preview the preserve-mode update without changing files:
-
-```bash
-./awtarchy.sh update-reset-backup --mode preserve --review-only
-```
-
-Run preserve mode directly:
-
-```bash
-./awtarchy.sh update-reset-backup --mode preserve
-```
-
-Run clean-slate mode directly:
-
-```bash
-./awtarchy.sh update-reset-backup --mode clean
-```
-
-Update from a specific release tag:
-
-```bash
-./awtarchy.sh update-reset-backup --mode preserve --tag v1.0.0
-```
+Legacy installations without `~/.local/bin/awtarchy` are allowed through this one-time migration. After the command is installed, rerunning `awtarchy-install.sh` prints the new update method and exits unless `--reinstall` is supplied.
 
 ## 🧹 Clean Backup Files
 
@@ -191,39 +216,31 @@ The backup cleaner scans common awtarchy-managed paths under your home directory
 Interactive cleaner:
 
 ```bash
-cd ~/awtarchy
-chmod +x awtarchy.sh
-./awtarchy.sh update-backup-cleaner
-```
-
-Shortcut:
-
-```bash
-./awtarchy.sh clean-backups
+awtarchy clean-backups
 ```
 
 List only, no prompt, no deletes:
 
 ```bash
-./awtarchy.sh clean-backups --dry-run
+awtarchy clean-backups --dry-run
 ```
 
 Delete without prompting:
 
 ```bash
-./awtarchy.sh clean-backups --yes
+awtarchy clean-backups --yes
 ```
 
 Only match backups older than 14 days:
 
 ```bash
-./awtarchy.sh clean-backups --older-than 14
+awtarchy clean-backups --older-than 14
 ```
 
 Archive matches before deletion:
 
 ```bash
-./awtarchy.sh clean-backups --archive "$HOME/awtarchy-backups.tar.gz"
+awtarchy clean-backups --archive "$HOME/awtarchy-backups.tar.gz"
 ```
 
 ## 🎨 Wallpaper Collections
