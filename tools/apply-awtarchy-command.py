@@ -209,7 +209,26 @@ Example:
 
 runtime.write_text(text, encoding="utf-8")
 
-apply_workflow = root / ".github/workflows/apply-awtarchy-command.yml"
-apply_workflow.unlink(missing_ok=True)
+launcher = root / "local/bin/awtarchy"
+launcher_text = launcher.read_text(encoding="utf-8")
+launcher_text = replace_once(
+    launcher_text,
+    """      $'\\033[A') (( index > 0 )) && ((index--)) || true ;;
+      $'\\033[B') (( index + 1 < ${#items[@]} )) && ((index++)) || true ;;""",
+    """      $'\\033[A')
+        if (( index > 0 )); then
+          ((index--)) || true
+        fi
+        ;;
+      $'\\033[B')
+        if (( index + 1 < ${#items[@]} )); then
+          ((index++)) || true
+        fi
+        ;;""",
+    "maintenance menu navigation",
+)
+launcher.write_text(launcher_text, encoding="utf-8")
+
+(root / ".github/workflows/apply-awtarchy-command.yml").unlink(missing_ok=True)
 (root / "tools/apply-awtarchy-command.py").unlink(missing_ok=True)
 shutil.rmtree(root / "tools/__pycache__", ignore_errors=True)
