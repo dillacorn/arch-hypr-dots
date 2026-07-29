@@ -81,12 +81,13 @@ jobs:
 
           text = Path("local/share/awtarchy/awtarchy-runtime.sh").read_text(encoding="utf-8")
           installer = "local -a config_dirs=(hypr waybar alacritty wlogout mako wofi fuzzel gtk-3.0 Kvantum SpeedCrunch fastfetch pcmanfm-qt yazi xdg-desktop-portal qt5ct qt6ct lsfg-vk wiremix cava micro ddcutil)"
-          updater = '    "xdg-desktop-portal" "qt5ct" "qt6ct" "lsfg-vk" "wiremix" "cava" "YouTube Music" "ddcutil"\n'
+          updater_find = 'done < <(find "${repo_dir}/config" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)'
+          updater_copy = 'cp -a --no-preserve=ownership -- "${config_dir}/." "${target_home}/.config/${d}/"'
 
           if installer not in text:
               raise SystemExit("fresh installer does not deploy config/ddcutil")
-          if updater not in text:
-              raise SystemExit("update/reset path does not deploy config/ddcutil")
+          if updater_find not in text or updater_copy not in text:
+              raise SystemExit("update/reset path does not dynamically deploy config directories")
           PY
 
       - name: Verify cached status avoids DDC access
