@@ -1,0 +1,317 @@
+#!/usr/bin/env bash
+# github.com/dillacorn/awtarchy
+# Installed Awtarchy command launcher and self-updater.
+
+set -Eeuo pipefail
+IFS=$'\n\t'
+umask 022
+
+REPO_OWNER="dillacorn"
+REPO_NAME="awtarchy"
+TARGET_USER=""
+TARGET_HOME=""
+DATA_HOME=""
+STATE_HOME=""
+INSTALL_DIR=""
+INSTALLED_SCRIPT=""
+VERSION_FILE=""
+
+log()  { printf '%s\n' "$*"; }
+die()  { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+init_target() {
+  if [[ ${EUID} -eq 0 && -n ${SUDO_USER:-} && ${SUDO_USER} != root ]]; then
+    TARGET_USER="$SUDO_USER"
+    TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6 || true)"
+  else
+    TARGET_USER="${USER:-$(id -un)}"
+    TARGET_HOME="${HOME:-}"
+  fi
+
+  [[ -n $TARGET_USER ]] || die "Could not determine target user."
+  [[ -n $TARGET_HOME && -d $TARGET_HOME ]] || die "Could not determine home directory for ${TARGET_USER}."
+
+  DATA_HOME="${XDG_DATA_HOME:-${TARGET_HOME}/.local/share}"
+  STATE_HOME="${XDG_STATE_HOME:-${TARGET_HOME}/.local/state}"
+  INSTALL_DIR="${DATA_HOME}/awtarchy"
+  INSTALLED_SCRIPT="${INSTALL_DIR}/awtarchy.sh"
+  VERSION_FILE="${STATE_HOME}/awtarchy/version"
+}
+
+state_value() {
+  local key="$1"
+  [[ -r $VERSION_FILE ]] || return 1
+  sed -n "s/^${key}=//p" "$VERSION_FILE" | head -n1
+}
+
+installed_tag() {
+  local tag=""
+  tag="$(state_value tag 2>/dev/null || true)"
+  [[ -n $tag ]] && printf '%s\n' "$tag" || printf '%s\n' unknown
+}
+
+curl_args() {
+  CURL_ARGS=(
+    -fsSL
+    --connect-timeout 5
+    --max-time 15
+    --retry 2
+    --retry-delay 1
+    -H "Accept: application/vnd.github+json"
+    -H "User-Agent: awtarchy-command"
+  )
+  if [[ -n ${GITHUB_TOKEN:-} ]]; then
+    CURL_ARGS+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+  fi
+}
+
+latest_release_tag() {
+  have curl || return 1
+  have python3 || return 1
+  curl_args
+  local json=""
+  json="$(curl "${CURL_ARGS[@]}" "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest")" || return 1
+  python3 - "$json" <<'PY'
+import json
+import sys
+
+try:
+    payload = json.loads(sys.argv[1])
+except (IndexError, json.JSONDecodeError):
+    raise SystemExit(1)
+
+tag = str(payload.get("tag_name") or "").strip()
+if not tag:
+    raise SystemExit(1)
+print(tag)
+PY
+}
+
+urlencode_tag() {
+  python3 - "$1" <<'PY'
+import sys
+from urllib.parse import quote
+print(quote(sys.argv[1], safe="-._~"))
+PY
+}
+
+archive_topdir() {
+  python3 - "$1" <<'PY'
+import sys
+import tarfile
+from pathlib import PurePosixPath
+
+archive_path = sys.argv[1]
+with tarfile.open(archive_path, "r:gz") as archive:
+    members = archive.getmembers()
+    if not members:
+        raise SystemExit(1)
+    top = ""
+    for member in members:
+        path = PurePosixPath(member.name)
+        if path.is_absolute() or ".." in path.parts:
+            raise SystemExit("unsafe archive path")
+        if member.issym() or member.islnk():
+            raise SystemExit("archive links are not accepted")
+        if path.parts and not top:
+            top = path.parts[0]
+        elif path.parts and path.parts[0] != top:
+            raise SystemExit("archive has multiple top-level paths")
+    if not top:
+        raise SystemExit(1)
+    print(top)
+PY
+}
+
+atomic_install() {
+  local src="$1" dest="$2" mode="$3" dir tmp
+  dir="$(dirname "$dest")"
+  mkdir -p -- "$dir"
+  tmp="$(mktemp --tmpdir="$dir" ".$(basename "$dest").tmp.XXXXXX")"
+  install -m "$mode" -- "$src" "$tmp"
+  if [[ ${EUID} -eq 0 ]]; then
+    chown "$TARGET_USER:$TARGET_USER" "$tmp"
+  fi
+  mv -Tf -- "$tmp" "$dest"
+}
+
+write_version_state() {
+  local tag="$1" revision="${2:-}" tmp
+  mkdir -p -- "$(dirname "$VERSION_FILE")"
+  tmp="$(mktemp --tmpdir="$(dirname "$VERSION_FILE")" '.version.tmp.XXXXXX')"
+  {
+    printf 'tag=%s\n' "$tag"
+    [[ -n $revision ]] && printf 'revision=%s\n' "$revision"
+    printf 'updated_at=%s\n' "$(date -Iseconds)"
+  } >"$tmp"
+  chmod 0644 "$tmp"
+  if [[ ${EUID} -eq 0 ]]; then
+    chown "$TARGET_USER:$TARGET_USER" "$tmp"
+  fi
+  mv -Tf -- "$tmp" "$VERSION_FILE"
+}
+
+self_update() {
+  local tag="${1:-}" tmp archive encoded top repo_dir new_script new_launcher revision=""
+  have curl || die "curl is required for self-update."
+  have tar || die "tar is required for self-update."
+  have python3 || die "python3 is required for self-update."
+
+  [[ -n $tag ]] || tag="$(latest_release_tag)" || die "Could not determine the latest Awtarchy release."
+  encoded="$(urlencode_tag "$tag")"
+  tmp="$(mktemp -d)"
+  trap 'rm -rf -- "${tmp:-}"' RETURN
+  archive="${tmp}/awtarchy.tar.gz"
+
+  curl_args
+  log "Downloading Awtarchy ${tag}..."
+  curl "${CURL_ARGS[@]}" -L -o "$archive" \
+    "https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/tags/${encoded}.tar.gz" \
+    || die "Failed to download release ${tag}."
+
+  top="$(archive_topdir "$archive")" || die "Release archive validation failed."
+  tar -xzf "$archive" -C "$tmp"
+  repo_dir="${tmp}/${top}"
+  new_script="${repo_dir}/awtarchy.sh"
+  new_launcher="${repo_dir}/local/bin/awtarchy"
+
+  [[ -f $new_script ]] || die "Release ${tag} does not contain awtarchy.sh."
+  [[ -f $new_launcher ]] || die "Release ${tag} does not contain the installed awtarchy launcher."
+  bash -n "$new_script" || die "Downloaded awtarchy.sh failed Bash syntax validation."
+  bash -n "$new_launcher" || die "Downloaded awtarchy launcher failed Bash syntax validation."
+
+  revision="$(sha256sum "$new_script" | awk '{print $1}')"
+  atomic_install "$new_script" "$INSTALLED_SCRIPT" 0755
+  atomic_install "$new_launcher" "${TARGET_HOME}/.local/bin/awtarchy" 0755
+  write_version_state "$tag" "$revision"
+
+  log "Awtarchy command updated to ${tag}."
+}
+
+print_version_status() {
+  local installed latest="" status="Unknown"
+  installed="$(installed_tag)"
+  if latest="$(latest_release_tag 2>/dev/null)"; then
+    if [[ $installed == "$latest" ]]; then
+      status="Up to date"
+    elif [[ $installed == unknown || $installed == unreleased ]]; then
+      status="Installed version is not tied to a release"
+    else
+      status="Update available"
+    fi
+  else
+    status="Latest release unavailable"
+  fi
+
+  printf 'Installed release: %s\n' "$installed"
+  printf 'Latest release:    %s\n' "${latest:-unavailable}"
+  printf 'Status:            %s\n' "$status"
+}
+
+maybe_offer_update() {
+  [[ ${AWTARCHY_SKIP_UPDATE_CHECK:-0} == 1 ]] && return 0
+  local installed latest answer=""
+  installed="$(installed_tag)"
+  latest="$(latest_release_tag 2>/dev/null || true)"
+  [[ -n $latest ]] || return 0
+
+  if [[ $installed == "$latest" ]]; then
+    printf 'Awtarchy: %s is current.\n' "$installed"
+    return 0
+  fi
+
+  printf 'Awtarchy update available: %s -> %s\n' "$installed" "$latest"
+  [[ -t 0 && -t 1 && -r /dev/tty && -w /dev/tty ]] || return 0
+  printf 'Update the Awtarchy command now? [Y/n] ' >/dev/tty
+  IFS= read -r answer </dev/tty || true
+  case "$answer" in
+    n|N|no|NO) return 0 ;;
+    *) self_update "$latest" ;;
+  esac
+}
+
+run_installed() {
+  [[ -x $INSTALLED_SCRIPT ]] || die "Installed script is missing: ${INSTALLED_SCRIPT}. Run the repository installer once to repair it."
+  exec "$INSTALLED_SCRIPT" "$@"
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  awtarchy
+  awtarchy install [--no-reboot] [--dry-run]
+  awtarchy dry-run
+  awtarchy update [update options]
+  awtarchy reset [update options]
+  awtarchy review [update options]
+  awtarchy clean-backups [options]
+  awtarchy version
+  awtarchy check-update
+  awtarchy self-update [--tag <tag>]
+EOF
+}
+
+main() {
+  init_target
+
+  case "${1:-}" in
+    version)
+      print_version_status
+      ;;
+    check-update)
+      print_version_status
+      local installed latest
+      installed="$(installed_tag)"
+      latest="$(latest_release_tag 2>/dev/null || true)"
+      [[ -n $latest && $installed != "$latest" ]] && return 10
+      ;;
+    self-update)
+      shift
+      local tag=""
+      while (( $# )); do
+        case "$1" in
+          --tag)
+            tag="${2:-}"
+            [[ -n $tag ]] || die "--tag requires a release tag."
+            shift 2
+            ;;
+          -h|--help)
+            usage
+            return 0
+            ;;
+          *) die "Unknown self-update option: $1" ;;
+        esac
+      done
+      self_update "$tag"
+      ;;
+    update)
+      shift
+      maybe_offer_update
+      run_installed update-reset-backup --mode preserve "$@"
+      ;;
+    reset)
+      shift
+      maybe_offer_update
+      run_installed update-reset-backup --mode clean "$@"
+      ;;
+    review)
+      shift
+      maybe_offer_update
+      run_installed update-reset-backup --mode preserve --review-only "$@"
+      ;;
+    help|-h|--help)
+      usage
+      ;;
+    "")
+      maybe_offer_update
+      run_installed
+      ;;
+    *)
+      maybe_offer_update
+      run_installed "$@"
+      ;;
+  esac
+}
+
+main "$@"
