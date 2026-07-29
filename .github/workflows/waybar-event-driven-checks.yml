@@ -3,7 +3,8 @@ name: Waybar event-driven checks
 on:
   push:
     paths:
-      - "awtarchy.sh"
+      - "awtarchy-install.sh"
+      - "local/share/awtarchy/awtarchy-runtime.sh"
       - "config/waybar/config"
       - "config/waybar/scripts/ddc_brightness.sh"
       - "config/waybar/scripts/ddc_brightness_vertical.sh"
@@ -14,7 +15,8 @@ on:
       - ".github/workflows/waybar-event-driven-checks.yml"
   pull_request:
     paths:
-      - "awtarchy.sh"
+      - "awtarchy-install.sh"
+      - "local/share/awtarchy/awtarchy-runtime.sh"
       - "config/waybar/config"
       - "config/waybar/scripts/ddc_brightness.sh"
       - "config/waybar/scripts/ddc_brightness_vertical.sh"
@@ -39,7 +41,8 @@ jobs:
 
       - name: Validate shell syntax
         run: |
-          bash -n awtarchy.sh
+          bash -n awtarchy-install.sh
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
           bash -n config/waybar/scripts/ddc_brightness.sh
           bash -n config/waybar/scripts/ddc_brightness_vertical.sh
           bash -n config/waybar/scripts/idle_inhibitor_global.sh
@@ -76,7 +79,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          text = Path("awtarchy.sh").read_text(encoding="utf-8")
+          text = Path("local/share/awtarchy/awtarchy-runtime.sh").read_text(encoding="utf-8")
           installer = "local -a config_dirs=(hypr waybar alacritty wlogout mako wofi fuzzel gtk-3.0 Kvantum SpeedCrunch fastfetch pcmanfm-qt yazi xdg-desktop-portal qt5ct qt6ct lsfg-vk wiremix cava micro ddcutil)"
           updater = '    "xdg-desktop-portal" "qt5ct" "qt6ct" "lsfg-vk" "wiremix" "cava" "YouTube Music" "ddcutil"\n'
 
