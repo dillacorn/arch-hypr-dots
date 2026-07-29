@@ -95,7 +95,9 @@ awtarchy
 
 ### Existing-install detection
 
-When `awtarchy-install.sh` detects an existing `~/.local/bin/awtarchy` command, it stops before rerunning the installer and prints the new maintenance commands.
+When `awtarchy-install.sh` finds the installed command, it stops before rerunning the installer and prints the maintenance commands.
+
+When it detects a legacy Awtarchy installation without the command, it installs only `~/.local/bin/awtarchy`, the internal runtime, and version state. It does not reinstall packages or replace managed configs.
 
 To intentionally run the complete installer again:
 
@@ -110,6 +112,8 @@ Dry-run lets you test the installer questionnaire and review the install plan wi
 ```bash
 ./awtarchy-install.sh --dry-run
 ```
+
+For a detected legacy installation, dry-run reports the command migration without installing it.
 
 ## 🧭 Maintenance Menu
 
@@ -199,7 +203,7 @@ awtarchy update --tag v1.0.0
 
 ### Existing installation migration
 
-Existing users need one final repository-based update to install the new command:
+Existing users need one final repository-based migration to install the new command:
 
 ```bash
 cd ~/awtarchy
@@ -207,7 +211,7 @@ git pull --ff-only
 sudo ./awtarchy-install.sh
 ```
 
-Legacy installations without `~/.local/bin/awtarchy` are allowed through this one-time migration. After the command is installed, rerunning `awtarchy-install.sh` prints the new update method and exits unless `--reinstall` is supplied.
+The installer detects the legacy Awtarchy state and performs a command-only migration. Existing packages and managed configs are left untouched. After migration, rerunning `awtarchy-install.sh` prints the maintenance commands and exits unless `--reinstall` is supplied.
 
 ## 🧹 Clean Backup Files
 

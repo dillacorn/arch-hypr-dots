@@ -123,6 +123,37 @@ grep -Fq 'Awtarchy is already installed' <<<"$existing_output" \
 grep -Fq 'awtarchy self-update' <<<"$existing_output" \
   || fail "installer did not explain the new update command"
 
+legacy_home="${TMP}/legacy-home"
+mkdir -p "$legacy_home/.cache/awtarchy"
+printf 'tag=v0.8.0\nupdated_at=2000-01-01T00:00:00Z\n' \
+  >"$legacy_home/.cache/awtarchy/version"
+legacy_output="$(
+  HOME="$legacy_home" USER="$(id -un)" AWTARCHY_INSTALL_TAG=v9.9.9 \
+    bash "$INSTALLER_SOURCE"
+)"
+assert_executable "$legacy_home/.local/bin/awtarchy"
+assert_executable "$legacy_home/.local/share/awtarchy/awtarchy-runtime.sh"
+grep -Fxq 'tag=v9.9.9' "$legacy_home/.local/state/awtarchy/command-version" \
+  || fail "legacy migration did not record the command release"
+grep -Fxq 'tag=v0.8.0' "$legacy_home/.local/state/awtarchy/config-version" \
+  || fail "legacy migration did not preserve the prior config release"
+grep -Fq 'No packages or managed configs were changed' <<<"$legacy_output" \
+  || fail "legacy migration did not explain its safe scope"
+[[ ! -d "$legacy_home/.config" ]] \
+  || fail "legacy migration unexpectedly created managed config files"
+
+legacy_dry_home="${TMP}/legacy-dry-home"
+mkdir -p "$legacy_dry_home/.cache/awtarchy"
+printf 'tag=v0.8.0\n' >"$legacy_dry_home/.cache/awtarchy/version"
+legacy_dry_output="$(
+  HOME="$legacy_dry_home" USER="$(id -un)" \
+    bash "$INSTALLER_SOURCE" --dry-run
+)"
+[[ ! -e "$legacy_dry_home/.local/bin/awtarchy" ]] \
+  || fail "legacy dry-run installed the maintenance command"
+grep -Fq 'No files were changed because --dry-run was used' <<<"$legacy_dry_output" \
+  || fail "legacy dry-run did not explain the migration"
+
 set +e
 maintenance_output="$(HOME="$home" USER="$(id -un)" bash "$INSTALLER_SOURCE" update 2>&1)"
 maintenance_rc=$?
