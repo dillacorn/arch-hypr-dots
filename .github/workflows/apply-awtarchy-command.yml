@@ -30,17 +30,17 @@ jobs:
       - name: Validate patcher
         run: python -m py_compile tools/apply-awtarchy-command.py
 
-      - name: Apply command integration
-        run: |
-          python tools/apply-awtarchy-command.py
-          git restore -- .github/workflows/apply-awtarchy-command.yml
+      - name: Apply runtime integration
+        run: python tools/apply-awtarchy-command.py
 
       - name: Validate patched source
         run: |
-          bash -n awtarchy.sh
+          test ! -e awtarchy.sh
+          bash -n awtarchy-install.sh
           bash -n local/bin/awtarchy
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
           bash -n tests/test-awtarchy-command.sh
-          shellcheck local/bin/awtarchy tests/test-awtarchy-command.sh
+          shellcheck awtarchy-install.sh local/bin/awtarchy tests/test-awtarchy-command.sh
           git diff --check
 
       - name: Run command integration tests
