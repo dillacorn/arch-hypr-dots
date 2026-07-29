@@ -1,0 +1,27 @@
+name: Validate Awtarchy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Bash syntax
+        run: |
+          bash -n awtarchy.sh
+          bash -n local/bin/awtarchy
+          bash -n tests/test-awtarchy-command.sh
+      - name: ShellCheck new command code
+        run: shellcheck local/bin/awtarchy tests/test-awtarchy-command.sh
+      - name: Command and updater integration tests
+        run: tests/test-awtarchy-command.sh
