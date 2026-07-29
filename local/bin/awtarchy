@@ -314,8 +314,16 @@ single_select_menu() {
     printf '\nUp/Down = move, Enter = select, q = quit\n' >/dev/tty
     key="$(read_key || true)"
     case "$key" in
-      $'\033[A') (( index > 0 )) && ((index--)) || true ;;
-      $'\033[B') (( index + 1 < ${#items[@]} )) && ((index++)) || true ;;
+      $'\033[A')
+        if (( index > 0 )); then
+          ((index--)) || true
+        fi
+        ;;
+      $'\033[B')
+        if (( index + 1 < ${#items[@]} )); then
+          ((index++)) || true
+        fi
+        ;;
       $'\n'|$'\r'|"") printf '%s\n' "$index"; return 0 ;;
       q|Q) return 1 ;;
     esac

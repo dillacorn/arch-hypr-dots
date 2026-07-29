@@ -13,7 +13,11 @@ cleanup() {
   if [[ -n ${TEST_USER:-} ]] && command -v sudo >/dev/null 2>&1; then
     sudo userdel "$TEST_USER" >/dev/null 2>&1 || true
   fi
-  rm -rf -- "$TMP"
+  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+    sudo rm -rf -- "$TMP"
+  else
+    rm -rf -- "$TMP"
+  fi
 }
 trap cleanup EXIT
 
