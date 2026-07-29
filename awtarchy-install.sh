@@ -155,10 +155,20 @@ write_version_file() {
 
 repair_target_ownership() {
   [[ ${EUID} -eq 0 ]] || return 0
-  chown -R "${TARGET_USER}:${TARGET_USER}" \
+
+  local path
+  for path in \
     "${TARGET_HOME}/.local/bin" \
+    "${TARGET_HOME}/.local/bin/awtarchy" \
     "${TARGET_HOME}/.local/share/awtarchy" \
-    "${TARGET_HOME}/.local/state/awtarchy"
+    "${TARGET_HOME}/.local/share/awtarchy/awtarchy-runtime.sh" \
+    "${TARGET_HOME}/.local/state/awtarchy" \
+    "${TARGET_HOME}/.local/state/awtarchy/command-version" \
+    "${TARGET_HOME}/.local/state/awtarchy/config-version"
+  do
+    [[ -e $path || -L $path ]] || continue
+    chown -h "${TARGET_USER}:${TARGET_USER}" "$path"
+  done
 }
 
 show_existing_install_message() {
