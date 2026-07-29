@@ -44,7 +44,7 @@ jobs:
           git diff --check
 
       - name: Run command integration tests
-        run: tests/test-awtarchy-command.sh
+        run: bash tests/test-awtarchy-command.sh
 
       - name: Commit validated integration
         run: |
