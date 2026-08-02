@@ -28,6 +28,7 @@ grep -Fxq 'Exec=/bin/sh -c "exec ~/.config/hypr/scripts/awtwall_launcher.sh"' \
     "$AWTWALL_DESKTOP" \
     || fail "awtwall desktop entry does not use the managed launcher"
 
+# shellcheck disable=SC2016
 grep -Fq 'exec "$launch_handler"' "$AWTWALL_LAUNCHER" \
     || fail "awtwall launcher does not preserve launch_handler behavior"
 grep -Fq 'alacritty --class wallpicker -e awtwall --resume' "$AWTWALL_LAUNCHER" \
