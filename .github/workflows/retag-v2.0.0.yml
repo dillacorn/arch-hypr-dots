@@ -1,0 +1,52 @@
+name: Refresh v2.0.0 release tag
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/retag-v2.0.0.yml
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-retag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Validate corrected release
+        run: |
+          test ! -e awtarchy.sh
+          bash -n awtarchy-install.sh
+          bash -n local/bin/awtarchy
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n tests/test-awtarchy-command.sh
+          bash -n tests/test-awtarchy-command-shim.sh
+          shellcheck \
+            awtarchy-install.sh \
+            local/bin/awtarchy \
+            tests/test-awtarchy-command.sh \
+            tests/test-awtarchy-command-shim.sh
+          bash tests/test-awtarchy-command.sh
+          bash tests/test-awtarchy-command-shim.sh
+
+      - name: Move v2.0.0 to the validated commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -f v2.0.0 "$GITHUB_SHA"
+          git push --force origin refs/tags/v2.0.0
+
+      - name: Remove one-time workflow and finalize the tag
+        run: |
+          git rm .github/workflows/retag-v2.0.0.yml
+          git commit -m 'Remove one-time v2.0.0 retag workflow'
+          git push origin HEAD:main
+          git tag -f v2.0.0 HEAD
+          git push --force origin refs/tags/v2.0.0
