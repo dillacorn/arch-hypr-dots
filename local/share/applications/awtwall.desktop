@@ -9,6 +9,6 @@ Comment=Browse and apply wallpapers
 Keywords=wallpaper;picker;awtwall;background;
 Icon=utilities-terminal
 Terminal=false
-Exec=/bin/sh -c 'if command -v awtwall >/dev/null 2>&1; then exec "$HOME/.config/hypr/scripts/launch_handler.sh" wallpicker "alacritty --class wallpicker -e awtwall --resume"; else hyprctl notify 3 5000 "rgb(ff5555)" "awtwall is not installed."; fi'
+Exec=/bin/sh -c "exec ~/.config/hypr/scripts/awtwall_launcher.sh"
 Categories=Utility;Settings;
 StartupNotify=false
