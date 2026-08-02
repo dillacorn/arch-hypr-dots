@@ -10,6 +10,7 @@ umask 022
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 RUNTIME_SOURCE="${SCRIPT_DIR}/local/share/awtarchy/awtarchy-runtime.sh"
 LAUNCHER_SOURCE="${SCRIPT_DIR}/local/bin/awtarchy"
+SYSTEM_BIN_DIR="${AWTARCHY_SYSTEM_BIN_DIR:-/usr/local/bin}"
 TARGET_USER=""
 TARGET_HOME=""
 REINSTALL=0
@@ -17,7 +18,7 @@ DRY_RUN_REQUESTED=0
 ARGS=()
 
 usage() {
-  cat <<'EOF'
+  cat <<'EOF_USAGE'
 Usage:
   sudo ./awtarchy-install.sh
   sudo ./awtarchy-install.sh --no-reboot
@@ -33,7 +34,7 @@ package installation or replacing managed configs.
 
 Options:
   --reinstall    Run the complete installer even when Awtarchy is already installed
-EOF
+EOF_USAGE
 }
 
 resolve_target() {
@@ -153,6 +154,51 @@ write_version_file() {
   chmod 0644 "$destination"
 }
 
+install_system_launcher() {
+  local destination="${SYSTEM_BIN_DIR}/awtarchy"
+  local marker='# Awtarchy user-local command shim'
+  local temporary=""
+
+  if [[ ${EUID} -ne 0 && -z ${AWTARCHY_SYSTEM_BIN_DIR:-} ]]; then
+    printf 'WARNING: Could not install the system command shim without sudo.\n' >&2
+    printf 'Ensure %s is included in PATH.\n' "${TARGET_HOME}/.local/bin" >&2
+    return 0
+  fi
+
+  if [[ -e $destination || -L $destination ]]; then
+    if ! grep -Fq "$marker" "$destination" 2>/dev/null; then
+      printf 'WARNING: Refusing to replace an existing non-Awtarchy command: %s\n' \
+        "$destination" >&2
+      printf 'Ensure %s is included in PATH.\n' "${TARGET_HOME}/.local/bin" >&2
+      return 0
+    fi
+  fi
+
+  install -d -m 0755 "$SYSTEM_BIN_DIR"
+  temporary="$(mktemp "${SYSTEM_BIN_DIR}/.awtarchy.tmp.XXXXXX")"
+  cat >"$temporary" <<'EOF_SHIM'
+#!/usr/bin/env bash
+# Awtarchy user-local command shim
+
+set -Eeuo pipefail
+
+target="${HOME}/.local/bin/awtarchy"
+
+if [[ -x $target && $target != "${BASH_SOURCE[0]}" ]]; then
+  exec "$target" "$@"
+fi
+
+printf 'ERROR: Awtarchy is not installed for %s: %s\n' \
+  "${USER:-current user}" "$target" >&2
+exit 127
+EOF_SHIM
+  chmod 0755 "$temporary"
+  if [[ ${EUID} -eq 0 ]]; then
+    chown root:root "$temporary"
+  fi
+  mv -Tf -- "$temporary" "$destination"
+}
+
 repair_target_ownership() {
   [[ ${EUID} -eq 0 ]] || return 0
 
@@ -172,7 +218,7 @@ repair_target_ownership() {
 }
 
 show_existing_install_message() {
-  cat <<EOF
+  cat <<EOF_MESSAGE
 Awtarchy is already installed for ${TARGET_USER}.
 
 Do not rerun the installer to update Awtarchy. Use the installed command:
@@ -186,11 +232,11 @@ Do not rerun the installer to update Awtarchy. Use the installed command:
 To intentionally run the complete installer again:
 
   sudo ./awtarchy-install.sh --reinstall
-EOF
+EOF_MESSAGE
 }
 
 show_legacy_dry_run_message() {
-  cat <<EOF
+  cat <<EOF_MESSAGE
 An existing legacy Awtarchy installation was detected for ${TARGET_USER}.
 
 No files were changed because --dry-run was used. Run this once to install the
@@ -201,7 +247,7 @@ new maintenance command without changing packages or managed configs:
 Future updates will then use:
 
   awtarchy
-EOF
+EOF_MESSAGE
 }
 
 migrate_legacy_install() {
@@ -236,7 +282,7 @@ migrate_legacy_install() {
 
   repair_target_ownership
 
-  cat <<EOF
+  cat <<EOF_MESSAGE
 Existing legacy Awtarchy installation detected for ${TARGET_USER}.
 
 Installed the new maintenance command:
@@ -250,7 +296,7 @@ No packages or managed configs were changed. Future maintenance now uses:
   awtarchy update          Update configs and preserve personal changes
   awtarchy reset           Reset managed configs to release defaults
   awtarchy version         Show installed and latest releases
-EOF
+EOF_MESSAGE
 }
 
 [[ -f $RUNTIME_SOURCE ]] || {
@@ -292,6 +338,10 @@ while (( $# )); do
 done
 
 resolve_target
+
+if (( DRY_RUN_REQUESTED == 0 )); then
+  install_system_launcher
+fi
 
 if (( REINSTALL == 0 )); then
   if installed_command_exists; then
