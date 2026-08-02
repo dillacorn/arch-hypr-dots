@@ -1,0 +1,51 @@
+name: Validate and refresh v2.0.0 hotfix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/refresh-v2.0.0-hotfix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  validate-retag-cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck lua5.4
+
+      - name: Validate release contents
+        run: |
+          test ! -e awtarchy.sh
+          bash -n awtarchy-install.sh
+          bash -n local/bin/awtarchy
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n tests/test-awtarchy-command.sh
+          bash -n tests/test-awtarchy-command-shim.sh
+          bash -n tests/test-lua-validation.sh
+          shellcheck \
+            awtarchy-install.sh \
+            local/bin/awtarchy \
+            tests/test-awtarchy-command.sh \
+            tests/test-awtarchy-command-shim.sh \
+            tests/test-lua-validation.sh
+          bash tests/test-lua-validation.sh
+          bash tests/test-awtarchy-command.sh
+          bash tests/test-awtarchy-command-shim.sh
+          git diff --check
+
+      - name: Remove workflow and move v2.0.0
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/refresh-v2.0.0-hotfix.yml
+          git commit -m 'Remove one-time v2.0.0 hotfix workflow'
+          git push origin HEAD:main
+          git tag -f v2.0.0 HEAD
+          git push --force origin refs/tags/v2.0.0
