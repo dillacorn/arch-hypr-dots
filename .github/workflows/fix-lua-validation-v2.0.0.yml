@@ -32,16 +32,20 @@ jobs:
 
           path = Path("local/share/awtarchy/awtarchy-runtime.sh")
           text = path.read_text(encoding="utf-8")
-          old = """    *.lua)
-                command -v lua >/dev/null 2>&1 || return 0
-                lua -e 'assert(loadfile(arg[1]))' \"$file\"
-                ;;
-          """
-          new = """    *.lua)
-                command -v lua >/dev/null 2>&1 || return 0
-                AWTARCHY_LUA_VALIDATE_FILE=\"$file\" lua -e 'local path = assert(os.getenv(\"AWTARCHY_LUA_VALIDATE_FILE\")); assert(loadfile(path))'
-                ;;
-          """
+          old = "\n".join([
+              "    *.lua)",
+              "      command -v lua >/dev/null 2>&1 || return 0",
+              "      lua -e 'assert(loadfile(arg[1]))' \"$file\"",
+              "      ;;",
+              "",
+          ])
+          new = "\n".join([
+              "    *.lua)",
+              "      command -v lua >/dev/null 2>&1 || return 0",
+              "      AWTARCHY_LUA_VALIDATE_FILE=\"$file\" lua -e 'local path = assert(os.getenv(\"AWTARCHY_LUA_VALIDATE_FILE\")); assert(loadfile(path))'",
+              "      ;;",
+              "",
+          ])
           if text.count(old) != 1:
               raise SystemExit(f"expected exactly one legacy Lua validator, found {text.count(old)}")
           path.write_text(text.replace(old, new), encoding="utf-8")
@@ -125,41 +129,48 @@ jobs:
 
       - name: Add regression test to normal CI
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
+          cat > .github/workflows/validate-awtarchy.yml <<'EOF_CI'
+          name: Validate Awtarchy
 
-          path = Path(".github/workflows/validate-awtarchy.yml")
-          text = path.read_text(encoding="utf-8")
+          on:
+            push:
+              branches: [main]
+            pull_request:
+            workflow_dispatch:
 
-          replacements = [
-              (
-                  "run: sudo apt-get update && sudo apt-get install -y shellcheck",
-                  "run: sudo apt-get update && sudo apt-get install -y shellcheck lua5.4",
-              ),
-              (
-                  "          bash -n tests/test-awtarchy-command-shim.sh\n",
-                  "          bash -n tests/test-awtarchy-command-shim.sh\n"
-                  "          bash -n tests/test-lua-validation.sh\n",
-              ),
-              (
-                  "            tests/test-awtarchy-command-shim.sh\n",
-                  "            tests/test-awtarchy-command-shim.sh \\\n"
-                  "            tests/test-lua-validation.sh\n",
-              ),
-              (
-                  "          bash tests/test-awtarchy-command-shim.sh\n",
-                  "          bash tests/test-awtarchy-command-shim.sh\n"
-                  "          bash tests/test-lua-validation.sh\n",
-              ),
-          ]
+          permissions:
+            contents: read
 
-          for old, new in replacements:
-              if text.count(old) != 1:
-                  raise SystemExit(f"expected exactly one CI fragment: {old!r}")
-              text = text.replace(old, new)
-
-          path.write_text(text, encoding="utf-8")
-          PY
+          jobs:
+            validate:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - name: Install validation tools
+                  run: sudo apt-get update && sudo apt-get install -y shellcheck lua5.4
+                - name: Bash syntax
+                  run: |
+                    test ! -e awtarchy.sh
+                    bash -n awtarchy-install.sh
+                    bash -n local/bin/awtarchy
+                    bash -n local/share/awtarchy/awtarchy-runtime.sh
+                    bash -n tests/test-awtarchy-command.sh
+                    bash -n tests/test-awtarchy-command-shim.sh
+                    bash -n tests/test-lua-validation.sh
+                - name: ShellCheck command code
+                  run: |
+                    shellcheck \
+                      awtarchy-install.sh \
+                      local/bin/awtarchy \
+                      tests/test-awtarchy-command.sh \
+                      tests/test-awtarchy-command-shim.sh \
+                      tests/test-lua-validation.sh
+                - name: Command and updater integration tests
+                  run: |
+                    bash tests/test-awtarchy-command.sh
+                    bash tests/test-awtarchy-command-shim.sh
+                    bash tests/test-lua-validation.sh
+          EOF_CI
 
       - name: Validate complete patch
         run: |
