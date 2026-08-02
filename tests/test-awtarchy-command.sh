@@ -44,6 +44,11 @@ grep -Fq 'install_awtarchy_command_stage' "$RUNTIME_SOURCE" \
   || fail "runtime does not call the command installation stage"
 grep -Fq 'AWTARCHY_REPO_DIR' "$RUNTIME_SOURCE" \
   || fail "runtime does not accept the installer source directory"
+grep -Fq 'refresh_existing_command()' "$INSTALLER_SOURCE" \
+  || fail "installer does not refresh an existing command"
+# shellcheck disable=SC2016
+grep -Fq '"${bin_dir}/awtarchy" self-update' "$RUNTIME_SOURCE" \
+  || fail "fresh install command stage does not verify the latest release"
 
 release_root="${TMP}/awtarchy-v9.9.9"
 mkdir -p "$release_root"
@@ -117,19 +122,44 @@ grep -Fxq 'tag=v0.0.1' "$home/.local/state/awtarchy/config-version" \
 HOME="$home" USER="$(id -un)" AWTARCHY_SKIP_UPDATE_CHECK=1 \
   "$home/.local/bin/awtarchy" help >/dev/null
 
-existing_output="$(HOME="$home" USER="$(id -un)" bash "$INSTALLER_SOURCE")"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 99' >"$home/.local/bin/awtarchy"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 98' >"$home/.local/share/awtarchy/awtarchy-runtime.sh"
+chmod 0755 \
+  "$home/.local/bin/awtarchy" \
+  "$home/.local/share/awtarchy/awtarchy-runtime.sh"
+printf 'tag=v0.0.0\nupdated_at=2000-01-01T00:00:00Z\n' \
+  >"$home/.local/state/awtarchy/command-version"
+
+existing_output="$(
+  HOME="$home" USER="$(id -un)" PATH="${fakebin}:$PATH" \
+    AWTARCHY_SYSTEM_BIN_DIR="${TMP}/existing-system-bin" \
+    AWTARCHY_TEST_ARCHIVE="${TMP}/release.tar.gz" \
+    bash "$INSTALLER_SOURCE"
+)"
 grep -Fq 'Awtarchy is already installed' <<<"$existing_output" \
   || fail "installer did not detect the existing command"
-grep -Fq 'awtarchy self-update' <<<"$existing_output" \
-  || fail "installer did not explain the new update command"
+grep -Fq "verified against GitHub's latest release" <<<"$existing_output" \
+  || fail "installer did not report latest-release verification"
+cmp -s "$home/.local/bin/awtarchy" "$release_root/local/bin/awtarchy" \
+  || fail "installer did not replace the stale command launcher"
+cmp -s \
+  "$home/.local/share/awtarchy/awtarchy-runtime.sh" \
+  "$release_root/local/share/awtarchy/awtarchy-runtime.sh" \
+  || fail "installer did not replace the stale command runtime"
+grep -Fxq 'tag=v9.9.9' "$home/.local/state/awtarchy/command-version" \
+  || fail "installer did not record the latest command release"
+grep -Fxq 'tag=v0.0.1' "$home/.local/state/awtarchy/config-version" \
+  || fail "command refresh changed the installed config release"
 
 legacy_home="${TMP}/legacy-home"
 mkdir -p "$legacy_home/.cache/awtarchy"
 printf 'tag=v0.8.0\nupdated_at=2000-01-01T00:00:00Z\n' \
   >"$legacy_home/.cache/awtarchy/version"
 legacy_output="$(
-  HOME="$legacy_home" USER="$(id -un)" AWTARCHY_INSTALL_TAG=v9.9.9 \
-    bash "$INSTALLER_SOURCE"
+  HOME="$legacy_home" USER="$(id -un)" PATH="${fakebin}:$PATH" \
+    AWTARCHY_SYSTEM_BIN_DIR="${TMP}/legacy-system-bin" \
+    AWTARCHY_TEST_ARCHIVE="${TMP}/release.tar.gz" \
+    AWTARCHY_INSTALL_TAG=v9.9.9 bash "$INSTALLER_SOURCE"
 )"
 assert_executable "$legacy_home/.local/bin/awtarchy"
 assert_executable "$legacy_home/.local/share/awtarchy/awtarchy-runtime.sh"

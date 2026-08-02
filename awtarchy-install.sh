@@ -217,11 +217,51 @@ repair_target_ownership() {
   done
 }
 
+refresh_existing_command() {
+  local bin_dir="${TARGET_HOME}/.local/bin"
+  local data_dir="${TARGET_HOME}/.local/share/awtarchy"
+  local state_dir="${TARGET_HOME}/.local/state/awtarchy"
+  local command_version="${state_dir}/command-version"
+  local command_tag revision
+
+  bash -n "$RUNTIME_SOURCE" || {
+    printf 'ERROR: Awtarchy runtime failed Bash syntax validation.
+' >&2
+    exit 1
+  }
+  bash -n "$LAUNCHER_SOURCE" || {
+    printf 'ERROR: Awtarchy command failed Bash syntax validation.
+' >&2
+    exit 1
+  }
+
+  install -d -m 0755 "$bin_dir" "$data_dir" "$state_dir"
+  install -m 0755 "$LAUNCHER_SOURCE" "${bin_dir}/awtarchy"
+  install -m 0755 "$RUNTIME_SOURCE" "${data_dir}/awtarchy-runtime.sh"
+
+  command_tag="$(source_release_tag)"
+  revision="$(source_revision)"
+  write_version_file "$command_version" "$command_tag" "$revision" installed_at
+  repair_target_ownership
+
+  printf '%s
+' "Verifying the Awtarchy command against GitHub's latest release..."
+  if ! env -u XDG_DATA_HOME -u XDG_STATE_HOME     HOME="$TARGET_HOME" USER="$TARGET_USER" LOGNAME="$TARGET_USER"     "${bin_dir}/awtarchy" self-update
+  then
+    printf '%s
+' "ERROR: Could not verify the Awtarchy command against GitHub's latest release." >&2
+    exit 1
+  fi
+  repair_target_ownership
+}
+
 show_existing_install_message() {
   cat <<EOF_MESSAGE
 Awtarchy is already installed for ${TARGET_USER}.
 
-Do not rerun the installer to update Awtarchy. Use the installed command:
+The installed launcher and runtime were replaced from this installer, then
+verified against GitHub's latest release. No packages or managed configs
+were changed.
 
   awtarchy                 Open the maintenance menu
   awtarchy self-update     Update the Awtarchy command
@@ -281,6 +321,7 @@ migrate_legacy_install() {
   fi
 
   repair_target_ownership
+  refresh_existing_command
 
   cat <<EOF_MESSAGE
 Existing legacy Awtarchy installation detected for ${TARGET_USER}.
@@ -345,7 +386,13 @@ fi
 
 if (( REINSTALL == 0 )); then
   if installed_command_exists; then
-    show_existing_install_message
+    if (( DRY_RUN_REQUESTED == 1 )); then
+      printf 'Awtarchy is already installed for %s. No files were changed because --dry-run was used.\n' \
+        "$TARGET_USER"
+    else
+      refresh_existing_command
+      show_existing_install_message
+    fi
     exit 0
   fi
 

@@ -2782,6 +2782,14 @@ install_awtarchy_command_stage() {
   chown "${TARGET_USER}:${TARGET_USER}" "$command_version_file" "$config_version_file"
   chmod 0644 "$command_version_file" "$config_version_file"
 
+  log "Verifying the installed Awtarchy command against GitHub's latest release..."
+  if ! env -u XDG_DATA_HOME -u XDG_STATE_HOME \
+    HOME="$HOME_DIR" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
+    "${bin_dir}/awtarchy" self-update
+  then
+    die "Could not verify the installed Awtarchy command against GitHub's latest release."
+  fi
+
   ok "Installed Awtarchy command: ${bin_dir}/awtarchy"
 }
 
@@ -5543,7 +5551,7 @@ validate_candidate() {
     *.sh|.bashrc|.bash_profile) bash -n "$file" ;;
     *.lua)
       command -v lua >/dev/null 2>&1 || return 0
-      lua -e 'assert(loadfile(arg[1]))' "$file"
+      AWTARCHY_LUA_VALIDATE_FILE="$file" lua -e 'local path = assert(os.getenv("AWTARCHY_LUA_VALIDATE_FILE")); assert(loadfile(path))'
       ;;
     *.json)
       python3 -m json.tool "$file" >/dev/null
