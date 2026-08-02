@@ -42,21 +42,14 @@ jobs:
           bash tests/test-awtarchy-command-shim.sh
           git diff --check
 
-      - name: Commit validated hotfix
+      - name: Commit validated source hotfix
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git rm -f \
-            .github/workflows/fix-lua-validation-v2.0.0.yml \
-            .github/workflows/pr-hotfix-updater-v2.yml \
-            tools/apply-updater-hotfix.py \
-            tools/apply-updater-hotfix-v2.py \
-            tools/apply-updater-hotfix-v3.py
           git add \
             awtarchy-install.sh \
             local/share/awtarchy/awtarchy-runtime.sh \
             tests/test-awtarchy-command.sh \
-            tests/test-lua-validation.sh \
-            .github/workflows/validate-awtarchy.yml
+            tests/test-lua-validation.sh
           git commit -m 'Fix updater validation and command freshness'
           git push origin "HEAD:${GITHUB_HEAD_REF}"
