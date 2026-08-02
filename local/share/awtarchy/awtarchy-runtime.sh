@@ -5568,7 +5568,9 @@ PY
       # target desktop environment but are rejected by desktop-file-validate.
       # Validate the required desktop-entry structure without making those
       # intentional shell commands fatal to an update.
-      grep -Fqx '[Desktop Entry]' "$file"         && grep -Eq '^Type=(Application|Link|Directory)$' "$file"         && grep -Eq '^Name=.+$' "$file"
+      grep -Fqx '[Desktop Entry]' "$file" \
+        && grep -Eq '^Type=(Application|Link|Directory)$' "$file" \
+        && grep -Eq '^Name=.+$' "$file"
       ;;
   esac
 }
