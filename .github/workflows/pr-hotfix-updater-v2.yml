@@ -20,7 +20,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck lua5.4
 
       - name: Apply hotfix
-        run: python3 tools/apply-updater-hotfix.py
+        run: python3 tools/apply-updater-hotfix-v2.py
 
       - name: Validate hotfix
         run: |
@@ -49,7 +49,8 @@ jobs:
           git rm -f \
             .github/workflows/fix-lua-validation-v2.0.0.yml \
             .github/workflows/pr-hotfix-updater-v2.yml \
-            tools/apply-updater-hotfix.py
+            tools/apply-updater-hotfix.py \
+            tools/apply-updater-hotfix-v2.py
           git add \
             awtarchy-install.sh \
             local/share/awtarchy/awtarchy-runtime.sh \
