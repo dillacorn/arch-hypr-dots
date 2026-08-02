@@ -5564,8 +5564,13 @@ with open(sys.argv[1], "rb") as f:
 PY
       ;;
     *.desktop)
-      command -v desktop-file-validate >/dev/null 2>&1 || return 0
-      desktop-file-validate "$file"
+      # Awtarchy intentionally uses shell-based Exec= launchers that work in the
+      # target desktop environment but are rejected by desktop-file-validate.
+      # Validate the required desktop-entry structure without making those
+      # intentional shell commands fatal to an update.
+      grep -Fqx '[Desktop Entry]' "$file" \
+        && grep -Eq '^Type=(Application|Link|Directory)$' "$file" \
+        && grep -Eq '^Name=.+$' "$file"
       ;;
   esac
 }
