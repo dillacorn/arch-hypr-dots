@@ -1,0 +1,201 @@
+name: Fix Lua validation and refresh v2.0.0
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-lua-validation-v2.0.0.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-validate-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck lua5.4
+          if ! command -v lua >/dev/null 2>&1; then
+            sudo ln -s "$(command -v lua5.4)" /usr/local/bin/lua
+          fi
+
+      - name: Patch Lua candidate validation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("local/share/awtarchy/awtarchy-runtime.sh")
+          text = path.read_text(encoding="utf-8")
+          old = """    *.lua)
+                command -v lua >/dev/null 2>&1 || return 0
+                lua -e 'assert(loadfile(arg[1]))' \"$file\"
+                ;;
+          """
+          new = """    *.lua)
+                command -v lua >/dev/null 2>&1 || return 0
+                AWTARCHY_LUA_VALIDATE_FILE=\"$file\" lua -e 'local path = assert(os.getenv(\"AWTARCHY_LUA_VALIDATE_FILE\")); assert(loadfile(path))'
+                ;;
+          """
+          if text.count(old) != 1:
+              raise SystemExit(f"expected exactly one legacy Lua validator, found {text.count(old)}")
+          path.write_text(text.replace(old, new), encoding="utf-8")
+          PY
+
+      - name: Add Lua validation regression test
+        run: |
+          cat > tests/test-lua-validation.sh <<'EOF_TEST'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          IFS=$'\n\t'
+
+          ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+          RUNTIME_SOURCE="${ROOT}/local/share/awtarchy/awtarchy-runtime.sh"
+          TMP="$(mktemp -d)"
+          trap 'rm -rf -- "$TMP"' EXIT
+
+          fail() {
+            printf 'FAIL: %s\n' "$*" >&2
+            exit 1
+          }
+
+          command -v lua >/dev/null 2>&1 || fail "lua is required for this test"
+
+          if grep -Fq "lua -e 'assert(loadfile(arg[1]))'" "$RUNTIME_SOURCE"; then
+            fail "runtime still validates Lua through arg[1] and standard input"
+          fi
+
+          awk '
+            /^validate_candidate\(\) \{/ { capture=1 }
+            capture { print }
+            capture && /^}$/ { exit }
+          ' "$RUNTIME_SOURCE" > "$TMP/validate_candidate.sh"
+
+          grep -Fq 'AWTARCHY_LUA_VALIDATE_FILE="$file" lua -e' "$TMP/validate_candidate.sh" \
+            || fail "validate_candidate does not pass the Lua path explicitly"
+
+          # shellcheck source=/dev/null
+          source "$TMP/validate_candidate.sh"
+          declare -F validate_candidate >/dev/null \
+            || fail "could not load validate_candidate from the runtime"
+
+          valid_lua="$TMP/valid config.lua"
+          invalid_lua="$TMP/invalid config.lua"
+          execution_marker="$TMP/lua-config-executed"
+
+          cat > "$valid_lua" <<'EOF_LUA'
+          local marker = os.getenv("AWTARCHY_LUA_EXECUTION_MARKER")
+          if marker then
+            local output = assert(io.open(marker, "w"))
+            output:write("executed\n")
+            output:close()
+          end
+          return true
+          EOF_LUA
+
+          cat > "$invalid_lua" <<'EOF_LUA'
+          local broken =
+          EOF_LUA
+
+          export AWTARCHY_LUA_EXECUTION_MARKER="$execution_marker"
+
+          validate_candidate "$valid_lua" '.config/hypr/valid config.lua' </dev/null \
+            || fail "valid Lua failed validation with closed standard input"
+          [[ ! -e $execution_marker ]] \
+            || fail "Lua validation executed the config instead of only compiling it"
+
+          printf '/terminal input must not be parsed as Lua\n' \
+            | validate_candidate "$valid_lua" '.config/hypr/valid config.lua' \
+            || fail "Lua validation consumed terminal input"
+          [[ ! -e $execution_marker ]] \
+            || fail "Lua validation executed the config while terminal input was present"
+
+          if validate_candidate "$invalid_lua" '.config/hypr/invalid config.lua' </dev/null; then
+            fail "invalid Lua passed validation"
+          fi
+
+          printf 'Lua validation tests passed.\n'
+          EOF_TEST
+          chmod 0755 tests/test-lua-validation.sh
+
+      - name: Add regression test to normal CI
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path(".github/workflows/validate-awtarchy.yml")
+          text = path.read_text(encoding="utf-8")
+
+          replacements = [
+              (
+                  "run: sudo apt-get update && sudo apt-get install -y shellcheck",
+                  "run: sudo apt-get update && sudo apt-get install -y shellcheck lua5.4",
+              ),
+              (
+                  "          bash -n tests/test-awtarchy-command-shim.sh\n",
+                  "          bash -n tests/test-awtarchy-command-shim.sh\n"
+                  "          bash -n tests/test-lua-validation.sh\n",
+              ),
+              (
+                  "            tests/test-awtarchy-command-shim.sh\n",
+                  "            tests/test-awtarchy-command-shim.sh \\\n"
+                  "            tests/test-lua-validation.sh\n",
+              ),
+              (
+                  "          bash tests/test-awtarchy-command-shim.sh\n",
+                  "          bash tests/test-awtarchy-command-shim.sh\n"
+                  "          bash tests/test-lua-validation.sh\n",
+              ),
+          ]
+
+          for old, new in replacements:
+              if text.count(old) != 1:
+                  raise SystemExit(f"expected exactly one CI fragment: {old!r}")
+              text = text.replace(old, new)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Validate complete patch
+        run: |
+          test ! -e awtarchy.sh
+          bash -n awtarchy-install.sh
+          bash -n local/bin/awtarchy
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n tests/test-awtarchy-command.sh
+          bash -n tests/test-awtarchy-command-shim.sh
+          bash -n tests/test-lua-validation.sh
+          shellcheck \
+            awtarchy-install.sh \
+            local/bin/awtarchy \
+            tests/test-awtarchy-command.sh \
+            tests/test-awtarchy-command-shim.sh \
+            tests/test-lua-validation.sh
+          bash tests/test-lua-validation.sh
+          bash tests/test-awtarchy-command.sh
+          bash tests/test-awtarchy-command-shim.sh
+          git diff --check
+
+      - name: Commit validated fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            local/share/awtarchy/awtarchy-runtime.sh \
+            tests/test-lua-validation.sh \
+            .github/workflows/validate-awtarchy.yml
+          git commit -m 'Fix Lua config validation during updates'
+          git push origin HEAD:main
+
+      - name: Remove one-time workflow and refresh v2.0.0
+        run: |
+          git rm .github/workflows/fix-lua-validation-v2.0.0.yml
+          git commit -m 'Remove one-time Lua validation release workflow'
+          git push origin HEAD:main
+          git tag -f v2.0.0 HEAD
+          git push --force origin refs/tags/v2.0.0
