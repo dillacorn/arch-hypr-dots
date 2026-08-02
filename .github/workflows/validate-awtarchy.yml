@@ -37,9 +37,10 @@ jobs:
             tests/test-awtarchy-command-shim.sh \
             tests/test-desktop-files.sh \
             tests/test-lua-validation.sh
+      - name: Managed desktop entries
+        run: bash tests/test-desktop-files.sh
       - name: Command and updater integration tests
         run: |
           bash tests/test-awtarchy-command.sh
           bash tests/test-awtarchy-command-shim.sh
-          bash tests/test-desktop-files.sh
           bash tests/test-lua-validation.sh
