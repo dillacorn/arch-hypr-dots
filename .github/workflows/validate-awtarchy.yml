@@ -23,7 +23,15 @@ jobs:
           bash -n local/bin/awtarchy
           bash -n local/share/awtarchy/awtarchy-runtime.sh
           bash -n tests/test-awtarchy-command.sh
+          bash -n tests/test-awtarchy-command-shim.sh
       - name: ShellCheck command code
-        run: shellcheck awtarchy-install.sh local/bin/awtarchy tests/test-awtarchy-command.sh
+        run: |
+          shellcheck \
+            awtarchy-install.sh \
+            local/bin/awtarchy \
+            tests/test-awtarchy-command.sh \
+            tests/test-awtarchy-command-shim.sh
       - name: Command and updater integration tests
-        run: bash tests/test-awtarchy-command.sh
+        run: |
+          bash tests/test-awtarchy-command.sh
+          bash tests/test-awtarchy-command-shim.sh
