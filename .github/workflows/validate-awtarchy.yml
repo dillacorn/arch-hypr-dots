@@ -15,26 +15,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install validation tools
-        run: sudo apt-get update && sudo apt-get install -y shellcheck lua5.4
+        run: sudo apt-get update && sudo apt-get install -y desktop-file-utils shellcheck lua5.4
       - name: Bash syntax
         run: |
           test ! -e awtarchy.sh
           bash -n awtarchy-install.sh
           bash -n local/bin/awtarchy
           bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n config/hypr/scripts/awtwall_launcher.sh
           bash -n tests/test-awtarchy-command.sh
           bash -n tests/test-awtarchy-command-shim.sh
+          bash -n tests/test-desktop-files.sh
           bash -n tests/test-lua-validation.sh
       - name: ShellCheck command code
         run: |
           shellcheck \
             awtarchy-install.sh \
             local/bin/awtarchy \
+            config/hypr/scripts/awtwall_launcher.sh \
             tests/test-awtarchy-command.sh \
             tests/test-awtarchy-command-shim.sh \
+            tests/test-desktop-files.sh \
             tests/test-lua-validation.sh
       - name: Command and updater integration tests
         run: |
           bash tests/test-awtarchy-command.sh
           bash tests/test-awtarchy-command-shim.sh
+          bash tests/test-desktop-files.sh
           bash tests/test-lua-validation.sh
