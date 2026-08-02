@@ -40,8 +40,14 @@ mapfile -d '' desktop_files < <(
 (( ${#desktop_files[@]} > 0 )) \
     || fail "no managed desktop entries were found"
 
+validation_failed=0
 for desktop_file in "${desktop_files[@]}"; do
-    desktop-file-validate "$desktop_file"
+    if ! desktop-file-validate "$desktop_file"; then
+        validation_failed=1
+    fi
 done
+
+(( validation_failed == 0 )) \
+    || fail "one or more managed desktop entries failed validation"
 
 printf 'Managed desktop-entry tests passed.\n'
