@@ -1233,11 +1233,11 @@ hl.window_rule({ match = { class = "^(hyprbars)$" }, size = { "(monitor_w*0.30)"
 hl.window_rule({ match = { class = "^(hyprbars)$" }, center = true })
 
 hl.window_rule({ match = { class = "^(smtty)$" }, float = true })
-hl.window_rule({ match = { class = "^(smtty)$" }, size = { "(monitor_w*0.80)", "(monitor_h*0.88)" } })
+hl.window_rule({ match = { class = "^(smtty)$" }, size = { "(monitor_w*0.50)", "(monitor_h*0.65)" } })
 hl.window_rule({ match = { class = "^(smtty)$" }, center = true })
 
 hl.window_rule({ match = { class = "^(smtty-O)$" }, float = true })
-hl.window_rule({ match = { class = "^(smtty-O)$" }, size = { "(monitor_w*0.50)", "(monitor_h*0.50)" } })
+hl.window_rule({ match = { class = "^(smtty-O)$" }, size = { "(monitor_w*0.50)", "(monitor_h*0.65)" } })
 hl.window_rule({ match = { class = "^(smtty-O)$" }, center = true })
 
 hl.window_rule({ match = { class = "^(wallpicker)$" }, float = true })
