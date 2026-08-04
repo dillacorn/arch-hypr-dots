@@ -1,0 +1,68 @@
+name: Update v2.0.0 installation guidance
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/update-v2-release-guidance.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update-release-and-cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update existing v2.0.0 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          repo="$GITHUB_REPOSITORY"
+          tag="v2.0.0"
+          marker='<!-- awtarchy-before-installing -->'
+
+          release_json="$(gh api "repos/${repo}/releases/tags/${tag}")"
+          release_id="$(jq -r '.id' <<<"$release_json")"
+          current_body="$(jq -r '.body // ""' <<<"$release_json")"
+
+          if ! grep -Fq "$marker" <<<"$current_body"; then
+            section="$(cat <<'EOF'
+          <!-- awtarchy-before-installing -->
+          ## Before Installing
+
+          Awtarchy is built to run on top of a fresh, vanilla Arch Linux installation.
+
+          1. Install Arch manually, or use `archinstall` with the **Minimal** profile.
+          2. Boot into the new Arch installation, then follow the Awtarchy installation steps below.
+          EOF
+          )"
+
+            updated_body="${section}"$'\n\n---\n\n'"${current_body}"
+            jq -n --arg body "$updated_body" '{body: $body}' |
+              gh api --method PATCH "repos/${repo}/releases/${release_id}" --input -
+          fi
+
+          verified_body="$(gh api "repos/${repo}/releases/tags/${tag}" --jq '.body // ""')"
+          grep -Fq "$marker" <<<"$verified_body"
+          grep -Fq 'fresh, vanilla Arch Linux installation' <<<"$verified_body"
+          grep -Fq 'archinstall' <<<"$verified_body"
+
+      - name: Remove temporary branch and workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method DELETE \
+            "repos/${GITHUB_REPOSITORY}/git/refs/heads/release-v2-guidance-update" \
+            >/dev/null 2>&1 || true
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/update-v2-release-guidance.yml
+          git commit -m 'Remove one-time v2.0.0 guidance workflow'
+          git push origin HEAD:main
