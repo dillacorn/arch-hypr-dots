@@ -47,11 +47,17 @@ Singleton {
     readonly property color dark: value("dark", "#1a1a1a")
     readonly property color muted: value("muted", "#4a4a4a")
 
+    // Match the current Waybar CSS interaction states.
     readonly property color subtleHover: Qt.rgba(foreground.r, foreground.g, foreground.b, 0.08)
     readonly property color subtleActive: Qt.rgba(foreground.r, foreground.g, foreground.b, 0.10)
-    readonly property color popupBackground: Qt.rgba(background.r, background.g, background.b, 0.94)
-    readonly property color popupButton: Qt.rgba(active.r, active.g, active.b, 0.92)
-    readonly property color popupButtonHover: Qt.rgba(focus.r, focus.g, focus.b, 0.96)
+    readonly property color strongHover: Qt.rgba(115 / 255, 121 / 255, 148 / 255, 0.25)
+
+    // Fuzzel and Mako use the configured background without transparency.
+    readonly property color popupBackground: background
+
+    // Match the existing wlogout button CSS exactly.
+    readonly property color popupButton: Qt.rgba(active.r, active.g, active.b, 0.85)
+    readonly property color popupButtonHover: Qt.rgba(focus.r, focus.g, focus.b, 0.92)
 
     readonly property string fontFamily: "NotoSansM Nerd Font Mono"
     readonly property int fontPixelSize: 14
