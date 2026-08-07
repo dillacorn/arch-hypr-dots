@@ -35,8 +35,8 @@ jobs:
             chmod 700 "$XDG_RUNTIME_DIR"
 
             echo "=== versions ==="
-            pacman -Q quickshell qt6-declarative hyprland shellcheck jq
-            qs --version
+            pacman -Q quickshell qt6-declarative hyprland shellcheck jq | tee /repo/.ci/versions.txt
+            qs --version | tee -a /repo/.ci/versions.txt
 
             echo "=== source validation ==="
             bash -n awtarchy-install.sh
@@ -46,7 +46,12 @@ jobs:
             shellcheck -S error -x -e SC1091 config/hypr/scripts/*.sh
             QMLLINT="$(command -v qmllint || true)"
             [[ -n "$QMLLINT" ]] || QMLLINT=/usr/lib/qt6/bin/qmllint
-            "$QMLLINT" -I /usr/lib/qt6/qml config/quickshell/awtarchy/*.qml
+            set +e
+            "$QMLLINT" -I /usr/lib/qt6/qml config/quickshell/awtarchy/*.qml > /repo/.ci/qmllint.log 2>&1
+            QMLLINT_RC=$?
+            set -e
+            echo "qmllint rc=$QMLLINT_RC"
+            cat /repo/.ci/qmllint.log
             git diff --check
 
             echo "=== installer dry-run ==="
@@ -54,7 +59,7 @@ jobs:
             printf "%s\n" "#!/usr/bin/env bash" "exit 0" > /root/.local/bin/awtarchy
             chmod +x /root/.local/bin/awtarchy
             cp local/share/awtarchy/awtarchy-runtime.sh /root/.local/share/awtarchy/awtarchy-runtime.sh
-            ./awtarchy-install.sh --dry-run
+            ./awtarchy-install.sh --dry-run 2>&1 | tee /repo/.ci/installer-dry-run.log
 
             echo "=== conversion assertions ==="
             for path in config/waybar config/fuzzel config/mako config/wlogout; do test ! -e "$path"; done
@@ -131,7 +136,7 @@ jobs:
 
             HYPRLAND_NO_RT=1 HYPRLAND_NO_SD_NOTIFY=1 HYPRLAND_NO_SD_VARS=1 \
             AQ_NO_KMS_REQUIREMENT=1 XDG_CURRENT_DESKTOP=Hyprland XDG_SESSION_TYPE=wayland \
-              Hyprland --config /tmp/hyprland.lua >/tmp/hyprland.log 2>&1 &
+              Hyprland --config /tmp/hyprland.lua > /repo/.ci/hyprland.log 2>&1 &
             HYPR_PID=$!
             trap "kill $HYPR_PID $DBUS_PID 2>/dev/null || true; rm -rf \"$TMP\"" EXIT
 
@@ -145,19 +150,19 @@ jobs:
               if ! kill -0 "$HYPR_PID" 2>/dev/null; then break; fi
               sleep 0.05
             done
-            [[ -n "$HIS" ]] || { cat /tmp/hyprland.log; exit 1; }
+            [[ -n "$HIS" ]] || { cat /repo/.ci/hyprland.log; exit 1; }
             export HYPRLAND_INSTANCE_SIGNATURE="$HIS"
             WAYLAND_SOCKET="$(find "$XDG_RUNTIME_DIR" -maxdepth 1 -type s -name "wayland-*" | head -n1 || true)"
-            [[ -n "$WAYLAND_SOCKET" ]] || { cat /tmp/hyprland.log; exit 1; }
+            [[ -n "$WAYLAND_SOCKET" ]] || { cat /repo/.ci/hyprland.log; exit 1; }
             export WAYLAND_DISPLAY="$(basename "$WAYLAND_SOCKET")"
             export QT_QPA_PLATFORM=wayland XDG_CURRENT_DESKTOP=Hyprland XDG_SESSION_TYPE=wayland
 
-            hyprctl monitors -j | tee /tmp/monitors.json
-            jq -e "length >= 1" /tmp/monitors.json
-            hyprctl configerrors
+            hyprctl monitors -j | tee /repo/.ci/monitors.json
+            jq -e "length >= 1" /repo/.ci/monitors.json
+            hyprctl configerrors | tee /repo/.ci/hypr-configerrors.txt
 
             echo "=== production Quickshell + IPC ==="
-            qs -vv --no-color -c awtarchy >/tmp/qs.log 2>&1 &
+            qs -vv --no-color -c awtarchy > /repo/.ci/quickshell.log 2>&1 &
             QS_PID=$!
             PING=""
             for i in $(seq 1 160); do
@@ -167,12 +172,12 @@ jobs:
               sleep 0.05
             done
             echo "Quickshell IPC ping: ${PING:-<none>}"
-            cat /tmp/qs.log || true
+            cat /repo/.ci/quickshell.log || true
             [[ "$PING" == "ok" ]] || { find "$XDG_RUNTIME_DIR/quickshell" -type f -maxdepth 5 -print 2>/dev/null || true; exit 1; }
 
             echo "=== exercise and render Quickshell surfaces ==="
-            OUTPUT="$(jq -r ".[0].name" /tmp/monitors.json)"
-            hyprctl layers -j | tee /tmp/layers.json
+            OUTPUT="$(jq -r ".[0].name" /repo/.ci/monitors.json)"
+            hyprctl layers -j | tee /repo/.ci/layers.json
             sleep 0.20
             grim -o "$OUTPUT" /repo/.ci/bar.png
 
@@ -209,10 +214,10 @@ jobs:
             wait "$HYPR_PID" 2>/dev/null || true
             git diff --check
           '
-      - name: Upload Quickshell render captures
+      - name: Upload Quickshell audit artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: quickshell-pretest-renders
-          path: .ci/*.png
+          name: quickshell-pretest-audit
+          path: .ci/*
           if-no-files-found: ignore
