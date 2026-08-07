@@ -1,72 +1,95 @@
 # Quickshell conversion testing
 
-This branch moves Awtarchy's desktop-shell UI from Waybar, Fuzzel, Mako, and wlogout to one Quickshell process while preserving the existing Awtarchy entrypoints during testing.
+This branch replaces Awtarchy's Waybar, Fuzzel, Mako, and wlogout runtime stack with one Quickshell shell.
 
-## Current scope
+## Replaced components
 
-Quickshell currently owns:
+Quickshell now owns:
 
 - Per-monitor bars with top, bottom, left, and right layouts.
 - Hyprland workspaces, workspace movement controls, taskbar, scratchpad count, submap display, and active-window title.
 - Idle inhibitor status/control.
-- CPU, CPU temperature, memory, DDC brightness, battery, PipeWire volume, clock/date, and system tray.
+- CPU, CPU temperature, memory, debounced DDC brightness, battery, PipeWire volume, clock/date, and system tray.
 - Application launcher.
 - Clipboard history with image thumbnails.
-- Notification daemon and DND state.
+- Notification daemon, notification popups, dismiss, and DND state.
 - Power/session menu.
 - Theme picker.
 
-The current Awtarchy theme scripts remain the palette source during testing, but Quickshell now reads its own `theme.json`. The theme picker extracts the existing Awtarchy shell color variables into that native Quickshell theme file, so Quickshell no longer depends on Waybar CSS at runtime.
+## Package conversion
 
-## Compatibility
+The Awtarchy installer now installs the official Arch `quickshell` package.
 
-The existing command paths remain valid during conversion:
+These packages are no longer selected by Awtarchy:
 
-- `~/.config/hypr/scripts/waybar.sh`
-- `~/.config/hypr/scripts/fuzzel_toggle.sh`
-- `~/.config/hypr/scripts/cliphist-fuzzel.sh`
-- `~/.config/hypr/scripts/wlogout_toggle.sh`
-- `~/.config/hypr/scripts/mako_dismiss.sh`
-- `~/.config/hypr/scripts/theme_select.sh`
+- `waybar-git`
+- `fuzzel`
+- `wlogout`
+- `mako`
 
-These now route to Quickshell. This keeps the existing Hyprland keybinds, autostart commands, desktop entries, and hypridle configuration working while the conversion is tested.
+During a full reinstall/conversion, an obsolete package is removed automatically only when it is recorded in `/var/lib/awtarchy/managed-packages`. If one of these packages was installed independently by the user, Awtarchy leaves it installed.
 
-The first Quickshell launch imports `~/.cache/waybar/state.json` when available so existing per-monitor bar positions and enabled state are retained.
+## Config conversion
 
-## Install Quickshell
+Fresh/reinstall config copying now includes:
 
-On Arch Linux:
+- `~/.config/hypr`
+- `~/.config/quickshell`
 
-```bash
-sudo pacman -S quickshell
+The repository no longer ships the old `config/waybar`, `config/fuzzel`, `config/mako`, or `config/wlogout` trees.
+
+Awtarchy helper scripts previously stored below `config/waybar/scripts` were moved to `config/hypr/scripts` because they are Awtarchy/Hyprland helpers, not Waybar components.
+
+The first Quickshell launch may still import `~/.cache/waybar/state.json` when it exists. That is migration-only behavior so existing per-monitor bar positions/enabled state survive the conversion; Waybar is not required or launched.
+
+## Themes
+
+Awtarchy theme files are now data-only palettes. They contain `QS_*` colors plus Hyprland/Wofi/application-theme metadata and no longer mutate Waybar, Fuzzel, Mako, or wlogout configs.
+
+`quickshell_theme_apply.sh` writes Quickshell's native:
+
+```text
+~/.config/quickshell/awtarchy/theme.json
 ```
 
-## Test
+It also preserves the existing Awtarchy theme behavior for Hyprland borders, Wofi, Micro, Alacritty, and SpeedCrunch.
 
-Start the shell:
+## Testing branch installer behavior
+
+The testing installer deliberately keeps the unreleased branch runtime instead of immediately replacing it with the latest stable GitHub release. An explicit later `awtarchy self-update` will return the command/runtime to the published release channel.
+
+For an existing Awtarchy machine, use the full reinstall path so package/config conversion actually runs:
 
 ```bash
-~/.config/hypr/scripts/quickshell.sh start
+cd ~/awtarchy
+git fetch origin
+git switch quickshell-conversion-testing
+git pull --ff-only
+sudo ./awtarchy-install.sh --reinstall --no-reboot
 ```
 
-Verify IPC and state:
+Then start or restart the Hyprland session. Quickshell is started directly by `hyprland.lua`.
+
+Verify the shell:
 
 ```bash
-qs -c awtarchy ipc call control ping
+pacman -Q quickshell
 ~/.config/hypr/scripts/quickshell.sh status
+qs -c awtarchy ipc call control ping
 ~/.config/hypr/scripts/quickshell.sh dump-state
 ```
 
-Exercise the existing entrypoints:
+Expected IPC result:
+
+```text
+ok
+```
+
+Check that Awtarchy no longer owns the old packages:
 
 ```bash
-~/.config/hypr/scripts/fuzzel_toggle.sh
-~/.config/hypr/scripts/cliphist-fuzzel.sh
-~/.config/hypr/scripts/wlogout_toggle.sh
-~/.config/hypr/scripts/theme_select.sh
-~/.config/hypr/scripts/waybar_toggle.sh
-~/.config/hypr/scripts/waybar_flip.sh
-~/.config/hypr/scripts/waybar_rotate.sh
+pacman -Q waybar-git fuzzel wlogout mako 2>/dev/null || true
+grep -E '^(waybar-git|fuzzel|wlogout|mako)$' /var/lib/awtarchy/managed-packages 2>/dev/null || true
 ```
 
 Watch the Quickshell log:
@@ -75,14 +98,16 @@ Watch the Quickshell log:
 tail -f ~/.cache/awtarchy/quickshell.log
 ```
 
-Stop the whole Quickshell process manually if needed:
+## Current validation
 
-```bash
-~/.config/hypr/scripts/quickshell.sh stop
-```
+The conversion branch has passed repository-side checks for:
 
-## Testing-phase compatibility retained intentionally
+- `bash -n` on the installer/runtime and Hypr shell scripts.
+- Runtime package/default selection: Quickshell present and the four legacy packages absent.
+- Runtime config-copy selection: Quickshell present and the four legacy config directories absent.
+- Hyprland autostart: Quickshell direct start and no Mako start.
+- Quickshell bar helper paths: no dependency on `~/.config/waybar/scripts`.
+- Converted themes: no legacy shell-program theme tokens.
+- `git diff --check`.
 
-The old Waybar/Fuzzel/Mako/wlogout config files and package selections are not removed in this first test commit. They provide rollback/reference data while the Quickshell replacement is visually and behaviorally verified. After parity is confirmed, the conversion can remove the old package dependencies, obsolete configs, and compatibility shims that are no longer needed.
-
-Notification actions are not advertised in the first test build. Basic notification display, timeout, dismiss, DND, images, summary, and body handling are implemented first so notification ownership is predictable during testing.
+Actual rendering/input behavior still needs testing inside a real Arch + Hyprland + Quickshell session.
