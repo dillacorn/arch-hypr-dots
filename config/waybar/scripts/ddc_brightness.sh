@@ -10,6 +10,8 @@ QUICK_SETTINGS="${HYPR_QUICK_SETTINGS_SCRIPT:-${XDG_CONFIG_HOME:-$HOME/.config}/
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/hypr-ddc-brightness"
 CACHE_MAX_AGE_MS="${WAYBAR_DDC_CACHE_MAX_AGE_MS:-30000}"
 STEP="${WAYBAR_DDC_STEP:-5}"
+SCROLL_DEBOUNCE_MS="${WAYBAR_DDC_SCROLL_DEBOUNCE_MS:-1000}"
+SCROLL_MAX_WAIT_MS="${WAYBAR_DDC_SCROLL_MAX_WAIT_MS:-60000}"
 QUERY_LOCK_TIMEOUT="${WAYBAR_DDC_QUERY_LOCK_TIMEOUT:-5}"
 
 now_ms() {
@@ -295,7 +297,9 @@ adjust() {
   monitor="$(monitor_under_cursor || true)"
   [[ -n "$monitor" ]] || monitor="$(resolve_monitor)"
 
-  "$BRIGHTNESS_SCRIPT" --monitor "$monitor" "$direction" "$STEP"
+  HYPR_DDC_DEBOUNCE_MS="$SCROLL_DEBOUNCE_MS" \
+    HYPR_DDC_MAX_WAIT_MS="$SCROLL_MAX_WAIT_MS" \
+    "$BRIGHTNESS_SCRIPT" --monitor "$monitor" "$direction" "$STEP"
 }
 
 quick_settings_addresses() {
