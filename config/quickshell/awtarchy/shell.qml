@@ -2,6 +2,7 @@
 //@ pragma CacheDir $BASE/awtarchy-quickshell
 //@ pragma StateDir $BASE/awtarchy-quickshell
 //@ pragma IconTheme Papirus-Dark
+//@ pragma UseQApplication
 
 import QtQuick
 import Quickshell
