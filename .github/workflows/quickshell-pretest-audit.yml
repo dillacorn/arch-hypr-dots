@@ -107,18 +107,14 @@ jobs:
               trap "rm -rf \"$TMP\"" EXIT
               mkdir -p "$TMP/bin" "$TMP/home/.config/hypr/scripts"
               cp config/hypr/scripts/quickshell.sh "$TMP/home/.config/hypr/scripts/quickshell.sh"
-              cat > "$TMP/bin/hyprctl" <<"EOF"
-#!/usr/bin/env bash
-case "$*" in
-  "monitors -j") printf "%s\n" "[{\"name\":\"DP-3\",\"focused\":true},{\"name\":\"DP-1\",\"focused\":false}]" ;;
-  "activeworkspace -j") printf "%s\n" "{\"monitor\":\"DP-3\"}" ;;
-  *) exit 0 ;;
-esac
-EOF
-              cat > "$TMP/bin/qs" <<"EOF"
-#!/usr/bin/env bash
-exit 1
-EOF
+              printf "%s\n" \
+                "#!/usr/bin/env bash" \
+                "case \"\$*\" in" \
+                "  \"monitors -j\") printf \"%s\\n\" \"[{\\\"name\\\":\\\"DP-3\\\",\\\"focused\\\":true},{\\\"name\\\":\\\"DP-1\\\",\\\"focused\\\":false}]\" ;;" \
+                "  \"activeworkspace -j\") printf \"%s\\n\" \"{\\\"monitor\\\":\\\"DP-3\\\"}\" ;;" \
+                "  *) exit 0 ;;" \
+                "esac" > "$TMP/bin/hyprctl"
+              printf "%s\n" "#!/usr/bin/env bash" "exit 1" > "$TMP/bin/qs"
               chmod +x "$TMP/bin/hyprctl" "$TMP/bin/qs"
               HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH" \
                 "$TMP/home/.config/hypr/scripts/quickshell.sh" dump-state > "$TMP/state1.json"
