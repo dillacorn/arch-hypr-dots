@@ -1,4 +1,5 @@
 pragma Singleton
+pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
@@ -70,7 +71,8 @@ Singleton {
         bodySupported: true
         bodyMarkupSupported: false
         imageSupported: true
-        actionsSupported: false
+        actionsSupported: true
+        actionIconsSupported: false
         persistenceSupported: true
         keepOnReload: true
 
@@ -93,10 +95,16 @@ Singleton {
         focusable: false
         aboveWindows: true
         exclusionMode: ExclusionMode.Ignore
-        anchors.top: true
-        anchors.right: true
-        margins.top: 10
-        margins.right: 10
+
+        anchors {
+            top: true
+            right: true
+        }
+        margins {
+            top: 10
+            right: 10
+        }
+
         implicitWidth: 380
         implicitHeight: Math.min(700, notificationColumn.implicitHeight)
 
@@ -112,7 +120,7 @@ Singleton {
                     id: card
                     required property var modelData
                     width: notificationColumn.width
-                    height: Math.max(86, content.implicitHeight + 20)
+                    height: Math.max(86, cardContent.implicitHeight + 20)
                     color: Theme.popupBackground
                     border.width: 1
                     border.color: Theme.active
@@ -125,57 +133,101 @@ Singleton {
                         onTriggered: card.modelData.expire()
                     }
 
-                    RowLayout {
-                        id: content
+                    ColumnLayout {
+                        id: cardContent
                         anchors.fill: parent
                         anchors.margins: 10
-                        spacing: 10
+                        spacing: 7
 
-                        IconImage {
-                            visible: source.toString().length > 0
-                            Layout.preferredWidth: visible ? 42 : 0
-                            Layout.preferredHeight: visible ? 42 : 0
-                            implicitSize: 42
-                            source: card.modelData.image || (card.modelData.appIcon ? Quickshell.iconPath(card.modelData.appIcon, true) : "")
-                        }
-
-                        ColumnLayout {
+                        RowLayout {
                             Layout.fillWidth: true
-                            spacing: 4
+                            spacing: 10
 
-                            Text {
+                            IconImage {
+                                visible: source.toString().length > 0
+                                Layout.preferredWidth: visible ? 42 : 0
+                                Layout.preferredHeight: visible ? 42 : 0
+                                implicitSize: 42
+                                source: card.modelData.image || (card.modelData.appIcon ? Quickshell.iconPath(card.modelData.appIcon, true) : "")
+                            }
+
+                            ColumnLayout {
                                 Layout.fillWidth: true
-                                text: card.modelData.summary || "Notification"
-                                color: Theme.foreground
-                                font.family: Theme.fontFamily
-                                font.pixelSize: 14
-                                font.bold: true
-                                elide: Text.ElideRight
+                                spacing: 4
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: card.modelData.summary || "Notification"
+                                    color: Theme.foreground
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: 14
+                                    font.bold: true
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    visible: text.length > 0
+                                    text: card.modelData.body || ""
+                                    textFormat: Text.PlainText
+                                    color: Theme.foreground
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: 13
+                                    wrapMode: Text.Wrap
+                                    maximumLineCount: 5
+                                    elide: Text.ElideRight
+                                }
                             }
 
                             Text {
-                                Layout.fillWidth: true
-                                visible: text.length > 0
-                                text: card.modelData.body || ""
-                                textFormat: Text.PlainText
+                                text: "×"
                                 color: Theme.foreground
                                 font.family: Theme.fontFamily
-                                font.pixelSize: 13
-                                wrapMode: Text.Wrap
-                                maximumLineCount: 5
-                                elide: Text.ElideRight
+                                font.pixelSize: 20
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    anchors.margins: -8
+                                    onClicked: card.modelData.dismiss()
+                                }
                             }
                         }
 
-                        Text {
-                            text: "×"
-                            color: Theme.foreground
-                            font.pixelSize: 20
+                        RowLayout {
+                            Layout.fillWidth: true
+                            visible: card.modelData.actions.length > 0
+                            spacing: 6
 
-                            MouseArea {
-                                anchors.fill: parent
-                                anchors.margins: -8
-                                onClicked: card.modelData.dismiss()
+                            Repeater {
+                                model: card.modelData.actions
+
+                                delegate: Rectangle {
+                                    id: actionButton
+                                    required property var modelData
+                                    visible: modelData.text && modelData.text.length > 0
+                                    Layout.preferredHeight: visible ? 26 : 0
+                                    Layout.preferredWidth: visible ? Math.max(70, actionText.implicitWidth + 18) : 0
+                                    color: actionMouse.containsMouse ? Theme.focus : Theme.active
+                                    border.width: 0
+                                    radius: 0
+
+                                    Text {
+                                        id: actionText
+                                        anchors.centerIn: parent
+                                        text: actionButton.modelData.text || ""
+                                        color: Theme.foreground
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: 12
+                                        elide: Text.ElideRight
+                                    }
+
+                                    MouseArea {
+                                        id: actionMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        onClicked: actionButton.modelData.invoke()
+                                    }
+                                }
                             }
                         }
                     }
