@@ -131,18 +131,11 @@ jobs:
             export DBUS_SESSION_BUS_ADDRESS="${DBUS_INFO[0]}"
             DBUS_PID="${DBUS_INFO[1]}"
 
-            cat > /tmp/hyprland.lua <<"LUA"
-hl.config({
-    ecosystem = {
-        no_update_news = true,
-        enforce_permissions = false,
-    },
-    misc = {
-        disable_hyprland_logo = true,
-        disable_splash_rendering = true,
-    },
-})
-LUA
+            printf "%s\n" \
+              "hl.config({" \
+              "    ecosystem = { no_update_news = true, enforce_permissions = false }," \
+              "    misc = { disable_hyprland_logo = true, disable_splash_rendering = true }," \
+              "})" > /tmp/hyprland.lua
 
             HYPRLAND_NO_RT=1 \
             HYPRLAND_NO_SD_NOTIFY=1 \
