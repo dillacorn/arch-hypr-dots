@@ -1,0 +1,52 @@
+name: Quickshell UPower dependency patch
+
+on:
+  push:
+    branches: [quickshell-conversion-testing]
+    paths: ['.github/workflows/quickshell-upower-dependency.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: quickshell-conversion-testing
+          fetch-depth: 0
+      - name: Add UPower to Quickshell package group
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          for filename in [
+              'awtarchy-install.sh',
+              'local/share/awtarchy/awtarchy-runtime.sh',
+          ]:
+              path = Path(filename)
+              text = path.read_text()
+              old = 'hyprpicker qt6ct polkit-gnome hypridle hyprlock quickshell'
+              new = 'hyprpicker qt6ct upower polkit-gnome hypridle hyprlock quickshell'
+              if new not in text:
+                  if old not in text:
+                      raise SystemExit(f'missing Quickshell Utilities package anchor in {filename}')
+                  text = text.replace(old, new, 1)
+              path.write_text(text)
+          PY
+          bash -n awtarchy-install.sh
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          grep -q 'qt6ct upower polkit-gnome hypridle hyprlock quickshell' awtarchy-install.sh
+          grep -q 'qt6ct upower polkit-gnome hypridle hyprlock quickshell' local/share/awtarchy/awtarchy-runtime.sh
+          git diff --check
+      - name: Commit source patch
+        run: |
+          set -euo pipefail
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add awtarchy-install.sh local/share/awtarchy/awtarchy-runtime.sh
+          git diff --cached --check
+          git commit -m 'Add UPower dependency for Quickshell battery support'
+          git push origin HEAD:quickshell-conversion-testing
