@@ -1,0 +1,168 @@
+name: Quickshell pretest audit
+
+on:
+  push:
+    branches:
+      - quickshell-conversion-testing
+    paths:
+      - '.github/workflows/quickshell-pretest-audit.yml'
+      - 'config/quickshell/**'
+      - 'config/hypr/**'
+      - 'local/share/applications/**'
+      - 'awtarchy-install.sh'
+      - 'local/share/awtarchy/awtarchy-runtime.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Arch Linux checks
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD:/repo" \
+            -w /repo \
+            archlinux:latest \
+            bash -lc '
+              set -euo pipefail
+              pacman -Syu --noconfirm --needed \
+                bash coreutils findutils grep sed gawk jq python shellcheck \
+                quickshell qt6-declarative weston
+
+              echo "=== versions ==="
+              pacman -Q quickshell qt6-declarative shellcheck jq weston
+              qs --version || true
+
+              echo "=== bash syntax ==="
+              bash -n awtarchy-install.sh
+              bash -n local/share/awtarchy/awtarchy-runtime.sh
+              while IFS= read -r -d "" script; do bash -n "$script"; done \
+                < <(find config/hypr/scripts -maxdepth 1 -type f -name "*.sh" -print0)
+              for theme in config/hypr/themes/*; do bash -n "$theme"; done
+
+              echo "=== shellcheck converted scripts ==="
+              shellcheck -x -e SC1091 \
+                config/hypr/scripts/quickshell.sh \
+                config/hypr/scripts/quickshell_bar_flip.sh \
+                config/hypr/scripts/quickshell_bar_idle_hide.sh \
+                config/hypr/scripts/quickshell_bar_restore.sh \
+                config/hypr/scripts/quickshell_bar_rotate.sh \
+                config/hypr/scripts/quickshell_bar_toggle.sh \
+                config/hypr/scripts/quickshell_clipboard.sh \
+                config/hypr/scripts/quickshell_clipboard_toggle.sh \
+                config/hypr/scripts/quickshell_launcher.sh \
+                config/hypr/scripts/quickshell_launcher_position.sh \
+                config/hypr/scripts/quickshell_notification_dismiss.sh \
+                config/hypr/scripts/quickshell_power_menu.sh \
+                config/hypr/scripts/quickshell_ready_sound.sh \
+                config/hypr/scripts/quickshell_theme_apply.sh \
+                config/hypr/scripts/cpu_temp.sh \
+                config/hypr/scripts/ddc_brightness.sh \
+                config/hypr/scripts/idle_inhibitor_global.sh \
+                config/hypr/scripts/toggle_mouse_submap.sh \
+                config/hypr/scripts/wiremix-toggle.sh
+
+              echo "=== QML lint ==="
+              QMLLINT="$(command -v qmllint || true)"
+              [[ -n "$QMLLINT" ]] || QMLLINT=/usr/lib/qt6/bin/qmllint
+              test -x "$QMLLINT"
+              "$QMLLINT" -I /usr/lib/qt6/qml config/quickshell/awtarchy/*.qml
+
+              echo "=== removed runtime/config audit ==="
+              for path in config/waybar config/fuzzel config/mako config/wlogout; do test ! -e "$path"; done
+              for path in \
+                config/hypr/scripts/waybar.sh \
+                config/hypr/scripts/waybar_flip.sh \
+                config/hypr/scripts/waybar_rotate.sh \
+                config/hypr/scripts/waybar_toggle.sh \
+                config/hypr/scripts/fuzzel_toggle.sh \
+                config/hypr/scripts/mako_dismiss.sh \
+                config/hypr/scripts/wlogout_toggle.sh; do
+                test ! -e "$path"
+              done
+
+              echo "=== Quickshell desktop controls ==="
+              for action in flip rotate toggle; do
+                file="local/share/applications/quickshell_bar_${action}.desktop"
+                test -f "$file"
+                grep -q "quickshell_bar_${action}.sh" "$file"
+              done
+
+              echo "=== Quickshell bind targets ==="
+              grep -q "quickshell_launcher.sh" config/hypr/hyprland.lua
+              grep -q "quickshell_power_menu.sh" config/hypr/hyprland.lua
+              grep -q "quickshell_notification_dismiss.sh" config/hypr/hyprland.lua
+              grep -q "quickshell_clipboard_toggle.sh" config/hypr/hyprland.lua
+              grep -q "quickshell_bar_rotate.sh" config/hypr/hyprland.lua
+              grep -q "quickshell_bar_toggle.sh" config/hypr/hyprland.lua
+              grep -q "quickshell_bar_flip.sh" config/hypr/hyprland.lua
+
+              echo "=== manager mocked monitor state ==="
+              TMP="$(mktemp -d)"
+              trap "rm -rf \"$TMP\"" EXIT
+              mkdir -p "$TMP/bin" "$TMP/home/.config/hypr/scripts"
+              cp config/hypr/scripts/quickshell.sh "$TMP/home/.config/hypr/scripts/quickshell.sh"
+              cat > "$TMP/bin/hyprctl" <<"EOF"
+#!/usr/bin/env bash
+case "$*" in
+  "monitors -j") printf "%s\n" "[{\"name\":\"DP-3\",\"focused\":true},{\"name\":\"DP-1\",\"focused\":false}]" ;;
+  "activeworkspace -j") printf "%s\n" "{\"monitor\":\"DP-3\"}" ;;
+  *) exit 0 ;;
+esac
+EOF
+              cat > "$TMP/bin/qs" <<"EOF"
+#!/usr/bin/env bash
+exit 1
+EOF
+              chmod +x "$TMP/bin/hyprctl" "$TMP/bin/qs"
+              HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH" \
+                "$TMP/home/.config/hypr/scripts/quickshell.sh" dump-state > "$TMP/state1.json"
+              jq -e ".enabled == true and .monitors[\"DP-3\"].position == \"top\" and .monitors[\"DP-1\"].position == \"top\"" "$TMP/state1.json"
+              HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH" \
+                "$TMP/home/.config/hypr/scripts/quickshell.sh" rotate-focused
+              HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH" \
+                "$TMP/home/.config/hypr/scripts/quickshell.sh" getpos-focused | grep -qx right
+              HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH" \
+                "$TMP/home/.config/hypr/scripts/quickshell.sh" flip-focused
+              HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH" \
+                "$TMP/home/.config/hypr/scripts/quickshell.sh" getpos-focused | grep -qx left
+              HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH" \
+                "$TMP/home/.config/hypr/scripts/quickshell.sh" rotate-focused
+              HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH" \
+                "$TMP/home/.config/hypr/scripts/quickshell.sh" getpos-focused | grep -qx top
+              HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH" \
+                "$TMP/home/.config/hypr/scripts/quickshell.sh" toggle-focused
+              HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH" \
+                "$TMP/home/.config/hypr/scripts/quickshell.sh" getenabled-focused | grep -qx false
+
+              echo "=== headless Quickshell startup smoke test ==="
+              export XDG_RUNTIME_DIR="$(mktemp -d)"
+              chmod 700 "$XDG_RUNTIME_DIR"
+              weston --backend=headless-backend.so --socket=wayland-test --idle-time=0 >/tmp/weston.log 2>&1 &
+              WESTON_PID=$!
+              trap "kill $WESTON_PID 2>/dev/null || true; rm -rf \"$XDG_RUNTIME_DIR\" \"$TMP\"" EXIT
+              for i in $(seq 1 50); do test -S "$XDG_RUNTIME_DIR/wayland-test" && break; sleep 0.1; done
+              test -S "$XDG_RUNTIME_DIR/wayland-test"
+              export WAYLAND_DISPLAY=wayland-test
+              export QT_QPA_PLATFORM=wayland
+              set +e
+              timeout 6s qs -p config/quickshell/awtarchy >/tmp/qs.log 2>&1
+              QS_RC=$?
+              set -e
+              cat /tmp/qs.log
+              if grep -Eiq "(QQmlApplicationEngine failed|Type .* unavailable|is not a type|Cannot assign|Cannot override FINAL|Syntax error|Expected token|module .* is not installed)" /tmp/qs.log; then
+                echo "Quickshell emitted a fatal QML/runtime error" >&2
+                exit 1
+              fi
+              case "$QS_RC" in
+                0|124|143) ;;
+                *) echo "Unexpected Quickshell exit code: $QS_RC" >&2; exit "$QS_RC" ;;
+              esac
+
+              git diff --check
+            '
