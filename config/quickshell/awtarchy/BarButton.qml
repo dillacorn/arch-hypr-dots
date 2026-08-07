@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls
 
 Rectangle {
     id: root
@@ -14,6 +13,7 @@ Rectangle {
     property int verticalPadding: 0
     property int fixedWidth: 0
     property int fixedHeight: 0
+    property int fontPixelSize: Theme.fontPixelSize
     readonly property bool hovered: pointer.containsMouse
 
     signal clicked()
@@ -32,7 +32,7 @@ Rectangle {
         text: root.label
         color: root.foreground
         font.family: Theme.fontFamily
-        font.pixelSize: Theme.fontPixelSize
+        font.pixelSize: root.fontPixelSize
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
     }
@@ -58,7 +58,10 @@ Rectangle {
         }
     }
 
-    ToolTip.visible: pointer.containsMouse && tooltip.length > 0
-    ToolTip.text: tooltip
-    ToolTip.delay: 350
+    BarTooltip {
+        anchorItem: root
+        text: root.tooltip
+        hovered: pointer.containsMouse
+        vertical: root.vertical
+    }
 }
