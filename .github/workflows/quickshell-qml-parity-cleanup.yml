@@ -1,0 +1,191 @@
+name: Quickshell QML parity cleanup
+
+on:
+  push:
+    branches: [quickshell-conversion-testing]
+    paths: ['.github/workflows/quickshell-qml-parity-cleanup.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: quickshell-conversion-testing
+          fetch-depth: 0
+
+      - name: Harden QML scoping and Waybar spacing parity
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def add_bound(path: str):
+              p = Path(path)
+              text = p.read_text()
+              if "pragma ComponentBehavior: Bound" not in text:
+                  if text.startswith("pragma Singleton\n"):
+                      text = text.replace("pragma Singleton\n", "pragma Singleton\npragma ComponentBehavior: Bound\n", 1)
+                  else:
+                      text = "pragma ComponentBehavior: Bound\n\n" + text
+              p.write_text(text)
+
+          for path in [
+              "config/quickshell/awtarchy/Bar.qml",
+              "config/quickshell/awtarchy/ClipboardMenu.qml",
+              "config/quickshell/awtarchy/ThemePicker.qml",
+          ]:
+              add_bound(path)
+
+          # Launcher delegates use the injected ListView index. Declare it so
+          # bound component scoping and qmllint both know it exists.
+          p = Path("config/quickshell/awtarchy/Launcher.qml")
+          text = p.read_text()
+          needle = """                        required property var modelData
+                        property var entry: modelData
+"""
+          replacement = """                        required property var modelData
+                        required property int index
+                        property var entry: modelData
+"""
+          if needle in text and replacement not in text:
+              text = text.replace(needle, replacement, 1)
+          p.write_text(text)
+
+          # Match Waybar's 6px horizontal outer padding and compact 6px clock.
+          p = Path("config/quickshell/awtarchy/Bar.qml")
+          text = p.read_text()
+          old = """    Item {
+        id: horizontalLayout
+        anchors.fill: parent
+        visible: !bar.vertical
+"""
+          new = """    Item {
+        id: horizontalLayout
+        anchors.fill: parent
+        anchors.leftMargin: 6
+        anchors.rightMargin: 6
+        visible: !bar.vertical
+"""
+          if old not in text and new not in text:
+              raise SystemExit("horizontal layout anchor not found")
+          text = text.replace(old, new, 1)
+
+          # Strong clickable module hover matches the current Waybar CSS.
+          replacements = {
+              '''            BarButton {
+                label: ""
+                tooltip: "app-launcher"
+''': '''            BarButton {
+                label: ""
+                tooltip: "app-launcher"
+                hoverBackground: Theme.strongHover
+''',
+              '''            BarButton {
+                label: SystemState.idleBroken ? "" : (SystemState.idleInhibited ? "" : "")
+                tooltip: SystemState.idleInhibited ? "Idle inhibitor: activated\\nClick to deactivate" : "Idle inhibitor: deactivated\\nClick to activate"
+''': '''            BarButton {
+                label: SystemState.idleBroken ? "" : (SystemState.idleInhibited ? "" : "")
+                tooltip: SystemState.idleInhibited ? "Idle inhibitor: activated\\nClick to deactivate" : "Idle inhibitor: deactivated\\nClick to activate"
+                hoverBackground: Theme.strongHover
+''',
+              '''            BarButton {
+                label: bar.clockDate ? " " + Qt.formatDateTime(bar.now, "ddd M/d") : " " + Qt.formatDateTime(bar.now, "HH:mm")
+                tooltip: Qt.formatDateTime(bar.now, "dddd, MMMM d, yyyy") + "\\n24h: " + Qt.formatDateTime(bar.now, "HH:mm") + "\\n12h: " + Qt.formatDateTime(bar.now, "h:mm AP")
+''': '''            BarButton {
+                label: bar.clockDate ? " " + Qt.formatDateTime(bar.now, "ddd M/d") : " " + Qt.formatDateTime(bar.now, "HH:mm")
+                tooltip: Qt.formatDateTime(bar.now, "dddd, MMMM d, yyyy") + "\\n24h: " + Qt.formatDateTime(bar.now, "HH:mm") + "\\n12h: " + Qt.formatDateTime(bar.now, "h:mm AP")
+                horizontalPadding: 6
+''',
+              '''            BarButton {
+                label: ""
+                tooltip: "Clipboard history"
+''': '''            BarButton {
+                label: ""
+                tooltip: "Clipboard history"
+                hoverBackground: Theme.strongHover
+''',
+              '''            BarButton {
+                label: Notifications.dnd ? "" : ""
+                foreground: Notifications.dnd ? Theme.critical : Theme.foreground
+''': '''            BarButton {
+                label: Notifications.dnd ? "" : ""
+                foreground: Notifications.dnd ? Theme.critical : Theme.foreground
+                hoverBackground: Theme.strongHover
+''',
+              '''            BarButton {
+                label: ""
+                tooltip: "power menu"
+                horizontalPadding: 10
+''': '''            BarButton {
+                label: ""
+                tooltip: "power menu"
+                horizontalPadding: 10
+                hoverBackground: Theme.strongHover
+''',
+          }
+          for old_block, new_block in replacements.items():
+              if old_block in text:
+                  text = text.replace(old_block, new_block, 1)
+
+          # Vertical clickable modules use the same stronger hover treatment.
+          vertical_replacements = {
+              'vertical: true; fixedWidth: 36; label: ""; tooltip: "app-launcher"': 'vertical: true; fixedWidth: 36; label: ""; tooltip: "app-launcher"\n                hoverBackground: Theme.strongHover',
+              'vertical: true; fixedWidth: 36; label: ""; tooltip: "Clipboard history"': 'vertical: true; fixedWidth: 36; label: ""; tooltip: "Clipboard history"\n                hoverBackground: Theme.strongHover',
+              'vertical: true; fixedWidth: 36; label: ""; tooltip: "power menu"': 'vertical: true; fixedWidth: 36; label: ""; tooltip: "power menu"\n                hoverBackground: Theme.strongHover',
+          }
+          for old_line, new_line in vertical_replacements.items():
+              if old_line in text and new_line not in text:
+                  text = text.replace(old_line, new_line, 1)
+
+          # Vertical DND/idle are also clickable Waybar modules.
+          old_vdnd = '''            BarButton {
+                vertical: true; fixedWidth: 36
+                label: Notifications.dnd ? "" : ""
+                foreground: Notifications.dnd ? Theme.critical : Theme.foreground
+'''
+          new_vdnd = '''            BarButton {
+                vertical: true; fixedWidth: 36
+                label: Notifications.dnd ? "" : ""
+                foreground: Notifications.dnd ? Theme.critical : Theme.foreground
+                hoverBackground: Theme.strongHover
+'''
+          if old_vdnd in text:
+              text = text.replace(old_vdnd, new_vdnd, 1)
+
+          old_vidle = '''            BarButton {
+                vertical: true; fixedWidth: 36
+                label: SystemState.idleBroken ? "" : (SystemState.idleInhibited ? "" : "")
+                foreground: SystemState.idleBroken ? Theme.urgent : Theme.foreground
+'''
+          new_vidle = '''            BarButton {
+                vertical: true; fixedWidth: 36
+                label: SystemState.idleBroken ? "" : (SystemState.idleInhibited ? "" : "")
+                foreground: SystemState.idleBroken ? Theme.urgent : Theme.foreground
+                hoverBackground: Theme.strongHover
+'''
+          if old_vidle in text:
+              text = text.replace(old_vidle, new_vidle, 1)
+
+          p.write_text(text)
+          PY
+
+          git diff --check
+          grep -q 'pragma ComponentBehavior: Bound' config/quickshell/awtarchy/Bar.qml
+          grep -q 'anchors.leftMargin: 6' config/quickshell/awtarchy/Bar.qml
+          grep -q 'horizontalPadding: 6' config/quickshell/awtarchy/Bar.qml
+          grep -q 'required property int index' config/quickshell/awtarchy/Launcher.qml
+
+      - name: Commit cleanup and remove workflow
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/quickshell-qml-parity-cleanup.yml
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add config/quickshell/awtarchy .github/workflows/quickshell-qml-parity-cleanup.yml
+          git diff --cached --check
+          git commit -m 'Tighten Quickshell bar visual parity'
+          git push origin HEAD:quickshell-conversion-testing
