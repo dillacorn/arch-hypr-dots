@@ -8,7 +8,9 @@ export LC_ALL=C
 BRIGHTNESS_SCRIPT="${HYPR_BRIGHTNESS_SCRIPT:-${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/hypr-ddc-brightness.sh}"
 QUICK_SETTINGS="${HYPR_QUICK_SETTINGS_SCRIPT:-${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/hypr_quicksettings.sh}"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/hypr-ddc-brightness"
+HELPER_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}/hypr-ddc-brightness-$(id -u)"
 CACHE_MAX_AGE_MS="${WAYBAR_DDC_CACHE_MAX_AGE_MS:-30000}"
+PREVIEW_MAX_AGE_MS="${WAYBAR_DDC_PREVIEW_MAX_AGE_MS:-10000}"
 STEP="${WAYBAR_DDC_STEP:-5}"
 SCROLL_DEBOUNCE_MS="${WAYBAR_DDC_SCROLL_DEBOUNCE_MS:-1000}"
 SCROLL_MAX_WAIT_MS="${WAYBAR_DDC_SCROLL_MAX_WAIT_MS:-60000}"
@@ -88,28 +90,72 @@ state_file() {
   printf '%s/state_%s.tsv\n' "$CACHE_DIR" "$1"
 }
 
+preview_file() {
+  printf '%s/preview_%s.tsv\n' "$CACHE_DIR" "$1"
+}
+
+helper_pending_file() {
+  printf '%s/pending_%s.txt\n' "$HELPER_RUNTIME_DIR" "$1"
+}
+
 safe_name() {
   printf '%s' "$1" | tr '/[:space:]' '_'
 }
 
-read_cached_status() {
-  local monitor="$1"
-  local file cur max timestamp current age
+read_status_record() {
+  local file="$1"
+  local cur max timestamp
 
-  file="$(state_file "$monitor")"
   [[ -r "$file" ]] || return 1
-
   read -r cur max timestamp <"$file" || return 1
 
   [[ "$cur" =~ ^[0-9]+$ ]] || return 1
   [[ "$max" =~ ^[1-9][0-9]*$ ]] || return 1
   [[ "$timestamp" =~ ^[0-9]+$ ]] || return 1
 
+  printf '%s %s %s\n' "$cur" "$max" "$timestamp"
+}
+
+read_cached_status() {
+  local monitor="$1"
+  local cur max timestamp current age
+
+  read -r cur max timestamp < <(read_status_record "$(state_file "$monitor")") || return 1
+
   current="$(now_ms)"
   age=$((current - timestamp))
 
   (( age >= 0 && age <= CACHE_MAX_AGE_MS )) || return 1
   printf '%s %s\n' "$cur" "$max"
+}
+
+read_preview_status() {
+  local monitor="$1"
+  local cur max timestamp state_cur state_max state_timestamp current age
+
+  read -r cur max timestamp < <(read_status_record "$(preview_file "$monitor")") || return 1
+
+  current="$(now_ms)"
+  age=$((current - timestamp))
+  (( age >= 0 && age <= PREVIEW_MAX_AGE_MS )) || return 1
+
+  if read -r state_cur state_max state_timestamp < <(read_status_record "$(state_file "$monitor")"); then
+    (( timestamp >= state_timestamp )) || return 1
+  fi
+
+  printf '%s %s\n' "$cur" "$max"
+}
+
+write_preview_status() {
+  local monitor="$1" cur="$2" max="$3" timestamp file tmp
+
+  mkdir -p "$CACHE_DIR"
+  timestamp="$(now_ms)"
+  file="$(preview_file "$monitor")"
+  tmp="${file}.tmp.$$"
+
+  printf '%s\t%s\t%s\n' "$cur" "$max" "$timestamp" >"$tmp"
+  mv -f "$tmp" "$file"
 }
 
 query_status_unlocked() {
@@ -164,16 +210,18 @@ query_status() {
 print_status_for_monitor() {
   local monitor="$1" cur max percent tooltip
 
-  if ! read -r cur max < <(read_cached_status "$monitor"); then
-    if ! read -r cur max < <(query_status "$monitor"); then
-      jq -cn \
-        --arg monitor "$monitor" \
-        '{
-          text:" ?",
-          tooltip:("Brightness " + $monitor + ": DDC unavailable"),
-          class:["error"]
-        }'
-      return 0
+  if ! read -r cur max < <(read_preview_status "$monitor"); then
+    if ! read -r cur max < <(read_cached_status "$monitor"); then
+      if ! read -r cur max < <(query_status "$monitor"); then
+        jq -cn \
+          --arg monitor "$monitor" \
+          '{
+            text:" ?",
+            tooltip:("Brightness " + $monitor + ": DDC unavailable"),
+            class:["error"]
+          }'
+        return 0
+      fi
     fi
   fi
 
@@ -207,22 +255,29 @@ print_status() {
 }
 
 watch_state_events() {
-  local monitor="$1" file
+  local monitor="$1" state_name preview_name
 
-  file="$(basename "$(state_file "$monitor")")"
+  state_name="$(basename "$(state_file "$monitor")")"
+  preview_name="$(basename "$(preview_file "$monitor")")"
   mkdir -p "$CACHE_DIR"
 
-  python3 - "$CACHE_DIR" "$file" <<'PY'
+  python3 - "$CACHE_DIR" "$state_name" "$preview_name" "$PREVIEW_MAX_AGE_MS" <<'PY'
 import ctypes
 import os
+import select
 import struct
 import sys
 import signal
+import time
 
 signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
 watch_dir = os.fsencode(sys.argv[1])
-target = sys.argv[2]
+state_target = sys.argv[2]
+preview_target = sys.argv[3]
+preview_max_age_ms = int(sys.argv[4])
+targets = {state_target, preview_target}
+preview_path = os.path.join(sys.argv[1], preview_target)
 
 IN_ATTRIB = 0x00000004
 IN_CLOSE_WRITE = 0x00000008
@@ -252,16 +307,36 @@ print("ready", flush=True)
 
 header = struct.Struct("iIII")
 while True:
+    readable, _, _ = select.select([fd], [], [], 0.25)
+
+    if not readable:
+        try:
+            with open(preview_path, "r", encoding="utf-8") as preview:
+                fields = preview.readline().split()
+            if len(fields) >= 3:
+                timestamp = int(fields[2])
+                age = int(time.time() * 1000) - timestamp
+                if age > preview_max_age_ms:
+                    os.unlink(preview_path)
+        except (FileNotFoundError, PermissionError, ValueError, OSError):
+            pass
+        continue
+
     data = os.read(fd, 65536)
     offset = 0
+    changed = False
+
     while offset + header.size <= len(data):
         _wd, event_mask, _cookie, name_len = header.unpack_from(data, offset)
         offset += header.size
         raw_name = data[offset:offset + name_len]
         offset += name_len
         name = raw_name.split(b"\0", 1)[0].decode(errors="replace")
-        if name == target and event_mask & mask:
-            print("changed", flush=True)
+        if name in targets and event_mask & mask:
+            changed = True
+
+    if changed:
+        print("changed", flush=True)
 PY
 }
 
@@ -290,6 +365,25 @@ watch_status() {
   exec sleep infinity
 }
 
+update_preview_from_pending() {
+  local monitor="$1" cur max _timestamp pending target pending_path
+
+  read -r cur max _timestamp < <(read_status_record "$(state_file "$monitor")") || return 0
+
+  pending_path="$(helper_pending_file "$monitor")"
+  pending=0
+  if [[ -r "$pending_path" ]]; then
+    IFS= read -r pending <"$pending_path" || pending=0
+  fi
+  [[ "$pending" =~ ^-?[0-9]+$ ]] || pending=0
+
+  target=$((cur + pending))
+  (( target < 0 )) && target=0
+  (( target > max )) && target="$max"
+
+  write_preview_status "$monitor" "$target" "$max"
+}
+
 adjust() {
   local direction="$1"
   local monitor
@@ -300,6 +394,8 @@ adjust() {
   HYPR_DDC_DEBOUNCE_MS="$SCROLL_DEBOUNCE_MS" \
     HYPR_DDC_MAX_WAIT_MS="$SCROLL_MAX_WAIT_MS" \
     "$BRIGHTNESS_SCRIPT" --monitor "$monitor" "$direction" "$STEP"
+
+  update_preview_from_pending "$monitor"
 }
 
 quick_settings_addresses() {
