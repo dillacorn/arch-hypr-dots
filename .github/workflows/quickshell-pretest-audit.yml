@@ -24,11 +24,14 @@ jobs:
           set -euo pipefail
           docker run --rm -v "$PWD:/repo" -w /repo archlinux:latest bash -lc '
             set -euo pipefail
-            pacman -Syu --noconfirm --needed bash coreutils findutils grep sed gawk jq python shellcheck quickshell qt6-declarative weston
+            pacman -Syu --noconfirm --needed \
+              bash coreutils findutils grep sed gawk jq python shellcheck \
+              quickshell qt6-declarative sway
 
             echo "=== versions ==="
-            pacman -Q quickshell qt6-declarative shellcheck jq weston
+            pacman -Q quickshell qt6-declarative shellcheck jq sway
             qs --version
+            sway --version
 
             echo "=== bash syntax ==="
             bash -n awtarchy-install.sh
@@ -45,9 +48,26 @@ jobs:
             test -x "$QMLLINT"
             "$QMLLINT" -I /usr/lib/qt6/qml config/quickshell/awtarchy/*.qml
 
+            echo "=== installer runtime transform dry-run ==="
+            mkdir -p /root/.local/bin /root/.local/share/awtarchy
+            printf "%s\n" "#!/usr/bin/env bash" "exit 0" > /root/.local/bin/awtarchy
+            chmod +x /root/.local/bin/awtarchy
+            cp local/share/awtarchy/awtarchy-runtime.sh /root/.local/share/awtarchy/awtarchy-runtime.sh
+            ./awtarchy-install.sh --dry-run >/tmp/installer-dry-run.log 2>&1
+            cat /tmp/installer-dry-run.log
+
             echo "=== removed legacy shell files ==="
             for path in config/waybar config/fuzzel config/mako config/wlogout; do test ! -e "$path"; done
-            for path in config/hypr/scripts/waybar.sh config/hypr/scripts/waybar_flip.sh config/hypr/scripts/waybar_rotate.sh config/hypr/scripts/waybar_toggle.sh config/hypr/scripts/fuzzel_toggle.sh config/hypr/scripts/mako_dismiss.sh config/hypr/scripts/wlogout_toggle.sh; do test ! -e "$path"; done
+            for path in \
+              config/hypr/scripts/waybar.sh \
+              config/hypr/scripts/waybar_flip.sh \
+              config/hypr/scripts/waybar_rotate.sh \
+              config/hypr/scripts/waybar_toggle.sh \
+              config/hypr/scripts/fuzzel_toggle.sh \
+              config/hypr/scripts/mako_dismiss.sh \
+              config/hypr/scripts/wlogout_toggle.sh; do
+              test ! -e "$path"
+            done
 
             echo "=== desktop controls and binds ==="
             for action in flip rotate toggle; do
@@ -55,7 +75,16 @@ jobs:
               test -f "$file"
               grep -q "quickshell_bar_${action}.sh" "$file"
             done
-            for target in quickshell_launcher.sh quickshell_power_menu.sh quickshell_notification_dismiss.sh quickshell_clipboard_toggle.sh quickshell_bar_rotate.sh quickshell_bar_toggle.sh quickshell_bar_flip.sh; do grep -q "$target" config/hypr/hyprland.lua; done
+            for target in \
+              quickshell_launcher.sh \
+              quickshell_power_menu.sh \
+              quickshell_notification_dismiss.sh \
+              quickshell_clipboard_toggle.sh \
+              quickshell_bar_rotate.sh \
+              quickshell_bar_toggle.sh \
+              quickshell_bar_flip.sh; do
+              grep -q "$target" config/hypr/hyprland.lua
+            done
 
             echo "=== migration cleanup hooks ==="
             grep -q "remove_legacy_shell_files_stage" awtarchy-install.sh
@@ -65,7 +94,13 @@ jobs:
             TMP="$(mktemp -d)"
             mkdir -p "$TMP/bin" "$TMP/home/.config/hypr/scripts"
             cp config/hypr/scripts/quickshell.sh "$TMP/home/.config/hypr/scripts/quickshell.sh"
-            printf "%s\n" "#!/usr/bin/env bash" "case \"\$*\" in" "  \"monitors -j\") printf \"%s\\n\" \"[{\\\"name\\\":\\\"DP-3\\\",\\\"focused\\\":true},{\\\"name\\\":\\\"DP-1\\\",\\\"focused\\\":false}]\" ;;" "  \"activeworkspace -j\") printf \"%s\\n\" \"{\\\"monitor\\\":\\\"DP-3\\\"}\" ;;" "  *) exit 0 ;;" "esac" > "$TMP/bin/hyprctl"
+            printf "%s\n" \
+              "#!/usr/bin/env bash" \
+              "case \"\$*\" in" \
+              "  \"monitors -j\") printf \"%s\\n\" \"[{\\\"name\\\":\\\"DP-3\\\",\\\"focused\\\":true},{\\\"name\\\":\\\"DP-1\\\",\\\"focused\\\":false}]\" ;;" \
+              "  \"activeworkspace -j\") printf \"%s\\n\" \"{\\\"monitor\\\":\\\"DP-3\\\"}\" ;;" \
+              "  *) exit 0 ;;" \
+              "esac" > "$TMP/bin/hyprctl"
             printf "%s\n" "#!/usr/bin/env bash" "exit 1" > "$TMP/bin/qs"
             chmod +x "$TMP/bin/hyprctl" "$TMP/bin/qs"
             export HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH"
@@ -80,24 +115,47 @@ jobs:
             "$HOME/.config/hypr/scripts/quickshell.sh" toggle-focused
             "$HOME/.config/hypr/scripts/quickshell.sh" getenabled-focused | grep -qx false
 
-            echo "=== headless Quickshell startup ==="
+            echo "=== headless Sway + Quickshell startup ==="
             unset HOME XDG_CACHE_HOME
             export HOME=/root
             export XDG_RUNTIME_DIR="$(mktemp -d)"
             chmod 700 "$XDG_RUNTIME_DIR"
-            weston -B headless --renderer=pixman --socket=wayland-test --idle-time=0 --width=1920 --height=1080 >/tmp/weston.log 2>&1 &
-            WESTON_PID=$!
-            trap "kill $WESTON_PID 2>/dev/null || true; rm -rf \"$XDG_RUNTIME_DIR\" \"$TMP\"" EXIT
-            for i in $(seq 1 50); do test -S "$XDG_RUNTIME_DIR/wayland-test" && break; sleep 0.1; done
-            if ! test -S "$XDG_RUNTIME_DIR/wayland-test"; then cat /tmp/weston.log; exit 1; fi
-            cat /tmp/weston.log
-            export WAYLAND_DISPLAY=wayland-test QT_QPA_PLATFORM=wayland
+            printf "%s\n" "output * mode 1920x1080" "seat * hide_cursor 1000" > /tmp/sway.conf
+            WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 \
+              sway -c /tmp/sway.conf -d >/tmp/sway.log 2>&1 &
+            SWAY_PID=$!
+            trap "kill $SWAY_PID 2>/dev/null || true; rm -rf \"$XDG_RUNTIME_DIR\" \"$TMP\"" EXIT
+
+            for i in $(seq 1 80); do
+              WAYLAND_SOCKET="$(find "$XDG_RUNTIME_DIR" -maxdepth 1 -type s -name "wayland-*" | head -n1 || true)"
+              [[ -n "$WAYLAND_SOCKET" ]] && break
+              sleep 0.1
+            done
+            if [[ -z "${WAYLAND_SOCKET:-}" ]]; then
+              cat /tmp/sway.log
+              exit 1
+            fi
+            export WAYLAND_DISPLAY="$(basename "$WAYLAND_SOCKET")"
+            export QT_QPA_PLATFORM=wayland
+            echo "WAYLAND_DISPLAY=$WAYLAND_DISPLAY"
+            tail -n 80 /tmp/sway.log
+
+            echo "starting Quickshell"
             set +e
-            timeout 6s qs -p config/quickshell/awtarchy >/tmp/qs.log 2>&1
+            timeout 8s qs -p config/quickshell/awtarchy >/tmp/qs.log 2>&1
             QS_RC=$?
             set -e
-            cat /tmp/qs.log
-            if grep -Eiq "(QQmlApplicationEngine failed|Type .* unavailable|is not a type|Cannot assign|Cannot override FINAL|Syntax error|Expected token|module .* is not installed)" /tmp/qs.log; then exit 1; fi
-            case "$QS_RC" in 0|124|143) ;; *) exit "$QS_RC" ;; esac
+            echo "Quickshell rc=$QS_RC"
+            test -e /tmp/qs.log
+            cat /tmp/qs.log || true
+            if grep -Eiq "(QQmlApplicationEngine failed|Type .* unavailable|is not a type|Cannot assign|Cannot override FINAL|Syntax error|Expected token|module .* is not installed|Failed to load configuration)" /tmp/qs.log; then
+              echo "fatal Quickshell/QML error detected" >&2
+              exit 1
+            fi
+            case "$QS_RC" in
+              0|124|143) ;;
+              *) exit "$QS_RC" ;;
+            esac
+
             git diff --check
           '
