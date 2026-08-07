@@ -25,7 +25,7 @@ jobs:
           bash -n awtarchy-install.sh
           bash -n local/share/awtarchy/awtarchy-runtime.sh
           grep -q 'Quickshell battery integration requires the UPower daemon' awtarchy-install.sh
-          grep -q 'qt6ct upower' local/share/awtarchy/awtarchy-runtime.sh
+          grep -q '"Utilities:upower ' local/share/awtarchy/awtarchy-runtime.sh
           git diff --check
       - name: Commit
         run: |
