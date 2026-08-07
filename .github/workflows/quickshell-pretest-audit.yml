@@ -28,35 +28,33 @@ jobs:
               bash coreutils findutils grep sed gawk jq python shellcheck dbus \
               quickshell qt6-declarative hyprland grim ttf-noto-nerd
 
+            export XDG_RUNTIME_DIR=/tmp/awtarchy-ci-runtime
+            mkdir -p "$XDG_RUNTIME_DIR"
+            chmod 700 "$XDG_RUNTIME_DIR"
+
             echo "=== versions ==="
             pacman -Q quickshell qt6-declarative hyprland shellcheck jq
             qs --version
-            Hyprland --version || hyprland --version
 
-            echo "=== bash syntax ==="
+            echo "=== source validation ==="
             bash -n awtarchy-install.sh
             bash -n local/share/awtarchy/awtarchy-runtime.sh
             while IFS= read -r -d "" script; do bash -n "$script"; done < <(find config/hypr/scripts -maxdepth 1 -type f -name "*.sh" -print0)
             for theme in config/hypr/themes/*; do bash -n "$theme"; done
-
-            echo "=== shellcheck errors ==="
             shellcheck -S error -x -e SC1091 config/hypr/scripts/*.sh
-
-            echo "=== QML parse/lint pass ==="
             QMLLINT="$(command -v qmllint || true)"
             [[ -n "$QMLLINT" ]] || QMLLINT=/usr/lib/qt6/bin/qmllint
-            test -x "$QMLLINT"
             "$QMLLINT" -I /usr/lib/qt6/qml config/quickshell/awtarchy/*.qml
+            git diff --check
 
-            echo "=== installer runtime transform dry-run ==="
+            echo "=== installer dry-run ==="
             mkdir -p /root/.local/bin /root/.local/share/awtarchy
             printf "%s\n" "#!/usr/bin/env bash" "exit 0" > /root/.local/bin/awtarchy
             chmod +x /root/.local/bin/awtarchy
             cp local/share/awtarchy/awtarchy-runtime.sh /root/.local/share/awtarchy/awtarchy-runtime.sh
-            ./awtarchy-install.sh --dry-run >/tmp/installer-dry-run.log 2>&1
-            cat /tmp/installer-dry-run.log
+            ./awtarchy-install.sh --dry-run
 
-            echo "=== removed legacy shell files ==="
+            echo "=== conversion assertions ==="
             for path in config/waybar config/fuzzel config/mako config/wlogout; do test ! -e "$path"; done
             for path in \
               config/hypr/scripts/waybar.sh \
@@ -68,8 +66,6 @@ jobs:
               config/hypr/scripts/wlogout_toggle.sh; do
               test ! -e "$path"
             done
-
-            echo "=== desktop controls and binds ==="
             for action in flip rotate toggle; do
               file="local/share/applications/quickshell_bar_${action}.desktop"
               test -f "$file"
@@ -85,12 +81,10 @@ jobs:
               quickshell_bar_flip.sh; do
               grep -q "$target" config/hypr/hyprland.lua
             done
-
-            echo "=== migration cleanup hooks ==="
             grep -q "remove_legacy_shell_files_stage" awtarchy-install.sh
             grep -q "CACHE_HOME}/waybar" config/hypr/scripts/quickshell.sh
 
-            echo "=== manager mocked two-monitor state ==="
+            echo "=== mocked two-monitor bar state ==="
             TMP="$(mktemp -d)"
             mkdir -p "$TMP/bin" "$TMP/home/.config/hypr/scripts"
             cp config/hypr/scripts/quickshell.sh "$TMP/home/.config/hypr/scripts/quickshell.sh"
@@ -103,20 +97,18 @@ jobs:
               "esac" > "$TMP/bin/hyprctl"
             printf "%s\n" "#!/usr/bin/env bash" "exit 1" > "$TMP/bin/qs"
             chmod +x "$TMP/bin/hyprctl" "$TMP/bin/qs"
-            export HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH"
-            "$HOME/.config/hypr/scripts/quickshell.sh" dump-state > "$TMP/state.json"
+            HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH" "$TMP/home/.config/hypr/scripts/quickshell.sh" dump-state > "$TMP/state.json"
             jq -e ".enabled == true and .monitors[\"DP-3\"].position == \"top\" and .monitors[\"DP-1\"].position == \"top\"" "$TMP/state.json"
-            "$HOME/.config/hypr/scripts/quickshell.sh" rotate-focused
-            "$HOME/.config/hypr/scripts/quickshell.sh" getpos-focused | grep -qx right
-            "$HOME/.config/hypr/scripts/quickshell.sh" flip-focused
-            "$HOME/.config/hypr/scripts/quickshell.sh" getpos-focused | grep -qx left
-            "$HOME/.config/hypr/scripts/quickshell.sh" rotate-focused
-            "$HOME/.config/hypr/scripts/quickshell.sh" getpos-focused | grep -qx top
-            "$HOME/.config/hypr/scripts/quickshell.sh" toggle-focused
-            "$HOME/.config/hypr/scripts/quickshell.sh" getenabled-focused | grep -qx false
+            HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH" "$TMP/home/.config/hypr/scripts/quickshell.sh" rotate-focused
+            HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH" "$TMP/home/.config/hypr/scripts/quickshell.sh" getpos-focused | grep -qx right
+            HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH" "$TMP/home/.config/hypr/scripts/quickshell.sh" flip-focused
+            HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH" "$TMP/home/.config/hypr/scripts/quickshell.sh" getpos-focused | grep -qx left
+            HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH" "$TMP/home/.config/hypr/scripts/quickshell.sh" rotate-focused
+            HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH" "$TMP/home/.config/hypr/scripts/quickshell.sh" getpos-focused | grep -qx top
+            HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH" "$TMP/home/.config/hypr/scripts/quickshell.sh" toggle-focused
+            HOME="$TMP/home" XDG_CACHE_HOME="$TMP/home/.cache" PATH="$TMP/bin:$PATH" "$TMP/home/.config/hypr/scripts/quickshell.sh" getenabled-focused | grep -qx false
 
-            echo "=== install exact production Quickshell paths ==="
-            unset HOME XDG_CACHE_HOME
+            echo "=== install production paths ==="
             export HOME=/root
             mkdir -p /root/.config/quickshell /root/.config/hypr
             rm -rf /root/.config/quickshell/awtarchy /root/.config/hypr/scripts
@@ -124,31 +116,25 @@ jobs:
             cp -a config/hypr/scripts /root/.config/hypr/scripts
             chmod +x /root/.config/hypr/scripts/*.sh
 
-            echo "=== headless Hyprland + production Quickshell startup ==="
-            export XDG_RUNTIME_DIR="$(mktemp -d)"
-            chmod 700 "$XDG_RUNTIME_DIR"
+            echo "=== headless Hyprland ==="
+            rm -rf "$XDG_RUNTIME_DIR"/*
             mapfile -t DBUS_INFO < <(dbus-daemon --session --fork --print-address=1 --print-pid=1)
             export DBUS_SESSION_BUS_ADDRESS="${DBUS_INFO[0]}"
             DBUS_PID="${DBUS_INFO[1]}"
-
             printf "%s\n" \
               "hl.config({" \
               "    ecosystem = { no_update_news = true, enforce_permissions = false }," \
               "    misc = { disable_hyprland_logo = true, disable_splash_rendering = true }," \
               "})" > /tmp/hyprland.lua
 
-            HYPRLAND_NO_RT=1 \
-            HYPRLAND_NO_SD_NOTIFY=1 \
-            HYPRLAND_NO_SD_VARS=1 \
-            AQ_NO_KMS_REQUIREMENT=1 \
-            XDG_CURRENT_DESKTOP=Hyprland \
-            XDG_SESSION_TYPE=wayland \
+            HYPRLAND_NO_RT=1 HYPRLAND_NO_SD_NOTIFY=1 HYPRLAND_NO_SD_VARS=1 \
+            AQ_NO_KMS_REQUIREMENT=1 XDG_CURRENT_DESKTOP=Hyprland XDG_SESSION_TYPE=wayland \
               Hyprland --config /tmp/hyprland.lua >/tmp/hyprland.log 2>&1 &
             HYPR_PID=$!
-            trap "kill $HYPR_PID $DBUS_PID 2>/dev/null || true; rm -rf \"$XDG_RUNTIME_DIR\" \"$TMP\"" EXIT
+            trap "kill $HYPR_PID $DBUS_PID 2>/dev/null || true; rm -rf \"$TMP\"" EXIT
 
             HIS=""
-            for i in $(seq 1 120); do
+            for i in $(seq 1 160); do
               HIS_DIR="$(find "$XDG_RUNTIME_DIR/hypr" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1 || true)"
               if [[ -n "$HIS_DIR" && -S "$HIS_DIR/.socket.sock" ]]; then
                 HIS="$(basename "$HIS_DIR")"
@@ -157,44 +143,31 @@ jobs:
               if ! kill -0 "$HYPR_PID" 2>/dev/null; then break; fi
               sleep 0.05
             done
-            if [[ -z "$HIS" ]]; then
-              echo "Hyprland did not expose IPC" >&2
-              cat /tmp/hyprland.log
-              exit 1
-            fi
-
+            [[ -n "$HIS" ]] || { cat /tmp/hyprland.log; exit 1; }
             export HYPRLAND_INSTANCE_SIGNATURE="$HIS"
             WAYLAND_SOCKET="$(find "$XDG_RUNTIME_DIR" -maxdepth 1 -type s -name "wayland-*" | head -n1 || true)"
             [[ -n "$WAYLAND_SOCKET" ]] || { cat /tmp/hyprland.log; exit 1; }
             export WAYLAND_DISPLAY="$(basename "$WAYLAND_SOCKET")"
-            export QT_QPA_PLATFORM=wayland
-            export XDG_CURRENT_DESKTOP=Hyprland
-            export XDG_SESSION_TYPE=wayland
+            export QT_QPA_PLATFORM=wayland XDG_CURRENT_DESKTOP=Hyprland XDG_SESSION_TYPE=wayland
 
-            echo "HIS=$HYPRLAND_INSTANCE_SIGNATURE WAYLAND_DISPLAY=$WAYLAND_DISPLAY"
             hyprctl monitors -j | tee /tmp/monitors.json
             jq -e "length >= 1" /tmp/monitors.json
-            hyprctl configerrors | tee /tmp/hypr-errors.txt
+            hyprctl configerrors
 
+            echo "=== production Quickshell + IPC ==="
             qs -vv --no-color -c awtarchy >/tmp/qs.log 2>&1 &
             QS_PID=$!
             PING=""
-            for i in $(seq 1 120); do
+            for i in $(seq 1 160); do
               PING="$(qs -c awtarchy ipc call control ping 2>/dev/null || true)"
               [[ "$PING" == "ok" ]] && break
               if ! kill -0 "$QS_PID" 2>/dev/null; then break; fi
               sleep 0.05
             done
-
             echo "Quickshell IPC ping: ${PING:-<none>}"
             cat /tmp/qs.log || true
-            if [[ "$PING" != "ok" ]]; then
-              echo "Quickshell failed production startup" >&2
-              find "$XDG_RUNTIME_DIR/quickshell" -type f -maxdepth 5 -print -exec sh -c "echo --- {}; tail -n 300 \"{}\" 2>/dev/null || true" \; 2>/dev/null || true
-              exit 1
-            fi
+            [[ "$PING" == "ok" ]] || { find "$XDG_RUNTIME_DIR/quickshell" -type f -maxdepth 5 -print 2>/dev/null || true; exit 1; }
 
-            echo "=== exercise Quickshell IPC surfaces ==="
             qs -c awtarchy ipc call launcher open
             qs -c awtarchy ipc call launcher close
             qs -c awtarchy ipc call powermenu open
@@ -205,9 +178,10 @@ jobs:
             qs -c awtarchy ipc call themes close
             qs -c awtarchy ipc call notifications dndEnabled
 
-            echo "=== verify bar layer exists and screenshot output ==="
+            echo "=== layer and render smoke test ==="
             hyprctl layers -j | tee /tmp/layers.json
-            grim -o "$(jq -r ".[0].name" /tmp/monitors.json)" /tmp/quickshell-bar.png
+            OUTPUT="$(jq -r ".[0].name" /tmp/monitors.json)"
+            grim -o "$OUTPUT" /tmp/quickshell-bar.png
             test -s /tmp/quickshell-bar.png
             file /tmp/quickshell-bar.png
 
@@ -215,6 +189,5 @@ jobs:
             wait "$QS_PID" || true
             kill "$HYPR_PID" "$DBUS_PID" 2>/dev/null || true
             wait "$HYPR_PID" 2>/dev/null || true
-
             git diff --check
           '
