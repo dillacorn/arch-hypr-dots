@@ -1,4 +1,5 @@
 pragma Singleton
+pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
@@ -20,15 +21,28 @@ Singleton {
         return matches.length > 0 ? matches[0] : (Quickshell.screens.length > 0 ? Quickshell.screens[0] : null);
     }
 
+    function filteredThemes() {
+        const query = search.text.trim().toLowerCase();
+        if (query.length === 0)
+            return themes;
+        return themes.filter(name => name.toLowerCase().indexOf(query) >= 0);
+    }
+
     function openFocused() {
         const target = focusedScreen();
         if (target)
             pickerWindow.screen = target;
+        search.text = "";
         pickerWindow.visible = true;
         listProcess.running = true;
+        Qt.callLater(() => search.forceActiveFocus());
     }
 
-    function close() { pickerWindow.visible = false; }
+    function close() {
+        pickerWindow.visible = false;
+        search.text = "";
+    }
+
     function toggleFocused() { pickerWindow.visible ? close() : openFocused(); }
 
     function choose(name) {
@@ -68,68 +82,118 @@ Singleton {
         anchors.left: true
         anchors.right: true
 
-        MouseArea { anchors.fill: parent; onClicked: root.close() }
+        MouseArea {
+            anchors.fill: parent
+            onClicked: root.close()
+        }
 
         Rectangle {
             anchors.centerIn: parent
-            width: Math.min(520, Math.max(360, pickerWindow.width * 0.36))
-            height: Math.min(620, Math.max(320, pickerWindow.height * 0.60))
+            width: 420
+            height: 372
             color: Theme.popupBackground
+            border.width: 0
+            radius: 0
 
-            MouseArea { anchors.fill: parent; onPressed: mouse => mouse.accepted = true }
+            MouseArea {
+                anchors.fill: parent
+                onPressed: mouse => mouse.accepted = true
+            }
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 12
-                spacing: 8
+                spacing: 0
 
-                Text {
+                Rectangle {
                     Layout.fillWidth: true
-                    text: "Choose theme"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 16
+                    Layout.preferredHeight: 36
+                    color: Theme.active
+                    border.width: 0
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 6
+
+                        Text {
+                            text: "Choose theme:"
+                            color: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 14
+                            font.weight: Font.Medium
+                        }
+
+                        TextInput {
+                            id: search
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            color: Theme.foreground
+                            selectionColor: Theme.focus
+                            selectedTextColor: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 14
+                            font.weight: Font.Medium
+                            verticalAlignment: TextInput.AlignVCenter
+                            clip: true
+
+                            Keys.onPressed: event => {
+                                if (event.key === Qt.Key_Escape) {
+                                    root.close();
+                                    event.accepted = true;
+                                } else if (event.key === Qt.Key_Down) {
+                                    if (themeList.count > 0)
+                                        themeList.currentIndex = Math.min(themeList.count - 1, themeList.currentIndex + 1);
+                                    themeList.positionViewAtIndex(themeList.currentIndex, ListView.Contain);
+                                    event.accepted = true;
+                                } else if (event.key === Qt.Key_Up) {
+                                    if (themeList.count > 0)
+                                        themeList.currentIndex = Math.max(0, themeList.currentIndex - 1);
+                                    themeList.positionViewAtIndex(themeList.currentIndex, ListView.Contain);
+                                    event.accepted = true;
+                                } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && themeList.currentItem) {
+                                    root.choose(themeList.currentItem.themeName);
+                                    event.accepted = true;
+                                }
+                            }
+
+                            onTextChanged: themeList.currentIndex = 0
+                        }
+                    }
                 }
 
                 ListView {
                     id: themeList
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    model: root.themes
                     clip: true
+                    spacing: 0
+                    currentIndex: count > 0 ? 0 : -1
 
-                    Keys.onPressed: event => {
-                        if (event.key === Qt.Key_Escape) {
-                            root.close();
-                            event.accepted = true;
-                        } else if (event.key === Qt.Key_Down && count > 0) {
-                            currentIndex = Math.min(count - 1, currentIndex + 1);
-                            event.accepted = true;
-                        } else if (event.key === Qt.Key_Up && count > 0) {
-                            currentIndex = Math.max(0, currentIndex - 1);
-                            event.accepted = true;
-                        } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && currentIndex >= 0) {
-                            root.choose(root.themes[currentIndex]);
-                            event.accepted = true;
-                        }
+                    model: ScriptModel {
+                        values: root.filteredThemes()
                     }
 
                     delegate: Rectangle {
                         id: row
                         required property string modelData
                         required property int index
+                        property string themeName: modelData
                         width: ListView.view.width
-                        height: 42
+                        height: 28
                         color: ListView.isCurrentItem ? Theme.focus : (mouse.containsMouse ? Theme.subtleHover : "transparent")
 
                         Text {
                             anchors.fill: parent
-                            anchors.leftMargin: 10
-                            text: row.modelData
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            text: row.themeName
                             color: Theme.foreground
                             font.family: Theme.fontFamily
                             font.pixelSize: 14
+                            font.weight: Font.Medium
                             verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
                         }
 
                         MouseArea {
@@ -137,13 +201,16 @@ Singleton {
                             anchors.fill: parent
                             hoverEnabled: true
                             onEntered: themeList.currentIndex = row.index
-                            onClicked: root.choose(row.modelData)
+                            onClicked: root.choose(row.themeName)
                         }
                     }
                 }
             }
         }
 
-        onVisibleChanged: if (visible) Qt.callLater(() => themeList.forceActiveFocus())
+        onVisibleChanged: {
+            if (visible)
+                Qt.callLater(() => search.forceActiveFocus());
+        }
     }
 }
