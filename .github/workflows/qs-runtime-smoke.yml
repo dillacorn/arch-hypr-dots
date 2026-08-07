@@ -1,0 +1,19 @@
+name: QS runtime smoke
+
+on:
+  push:
+    branches:
+      - quickshell-conversion-testing
+    paths:
+      - '.github/workflows/qs-runtime-smoke.yml'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: quickshell-conversion-testing
+          fetch-depth: 0
+      - name: Run current Arch Hyprland and Quickshell
+        run: docker run --rm -v "$PWD:/repo" -w /repo archlinux:latest bash .github/qs_runtime_test.sh
