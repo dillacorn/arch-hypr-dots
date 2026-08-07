@@ -94,18 +94,13 @@ jobs:
 
           path = Path("config/hypr/scripts/quickshell.sh")
           text = path.read_text()
-          old = '''        if [[ -s "$LEGACY_STATE_FILE" ]] && jq -e 'type == "object" and (.monitors | type == "object")' "$LEGACY_STATE_FILE" >/dev/null 2>&1; then
-                  jq '{enabled:(if .enabled == null then true else .enabled end), monitors:(.monitors // {})}' "$LEGACY_STATE_FILE" >"$STATE_FILE"
-              else
-          '''
-          new = '''        if [[ -s "$LEGACY_STATE_FILE" ]] && jq -e 'type == "object" and (.monitors | type == "object")' "$LEGACY_STATE_FILE" >/dev/null 2>&1; then
-                  jq '{enabled:(if .enabled == null then true else .enabled end), monitors:(.monitors // {})}' "$LEGACY_STATE_FILE" >"$STATE_FILE"
-                  rm -rf -- "${CACHE_HOME}/waybar"
-              else
-          '''
-          if old not in text:
-              raise SystemExit("legacy state migration anchor not found")
-          path.write_text(text.replace(old, new, 1))
+          line = '''            jq '{enabled:(if .enabled == null then true else .enabled end), monitors:(.monitors // {})}' "$LEGACY_STATE_FILE" >"$STATE_FILE"'''
+          replacement = line + '\n            rm -rf -- "${CACHE_HOME}/waybar"'
+          if replacement not in text:
+              if line not in text:
+                  raise SystemExit("legacy state migration line not found")
+              text = text.replace(line, replacement, 1)
+          path.write_text(text)
           PY
 
           bash -n awtarchy-install.sh
