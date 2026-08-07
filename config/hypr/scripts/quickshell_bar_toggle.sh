@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compatibility entrypoint: toggle the Quickshell bar on one monitor.
+# Toggle the Quickshell bar on the focused or requested monitor.
 set -euo pipefail
 QS_SH="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/quickshell.sh"
 case "${1:-}" in

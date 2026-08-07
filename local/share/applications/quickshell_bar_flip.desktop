@@ -1,5 +1,5 @@
-# github.com/dillacorn/awtarchy/tree/main/local/share/applications
-# ~/.local/share/applications/waybar_flip.desktop
+# github.com/dillacorn/awtarchy
+# ~/.local/share/applications/quickshell_bar_flip.desktop
 
 [Desktop Entry]
 Type=Application
@@ -9,4 +9,3 @@ Exec=sh -lc 'exec "$HOME/.config/hypr/scripts/quickshell_bar_flip.sh"'
 Icon=view-refresh
 Terminal=false
 Categories=Utility;
-

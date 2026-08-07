@@ -44,6 +44,14 @@ PanelWindow {
     readonly property string wiremixScript: configHome + "/hypr/scripts/wiremix-toggle.sh"
     readonly property string mouseSubmapScript: configHome + "/hypr/scripts/toggle_mouse_submap.sh"
 
+    function focusWorkspace(selector) {
+        Quickshell.execDetached([
+            "hyprctl",
+            "eval",
+            "hl.dispatch(hl.dsp.focus({ workspace = \"" + selector + "\" }))"
+        ]);
+    }
+
     function workspaceIcon(id) {
         const icons = {
             1: "1 󰞷", 2: "2 ", 3: "3 ", 4: "4 ", 5: "5 ",
@@ -216,9 +224,9 @@ PanelWindow {
                 normalBackground: modelData.urgent ? Theme.urgent : (modelData.active ? Theme.subtleActive : "transparent")
                 foreground: modelData.urgent ? Theme.dark : Theme.foreground
                 tooltip: "Workspace " + modelData.name
-                onClicked: modelData.activate()
-                onWheelUp: Hyprland.dispatch("workspace e-1")
-                onWheelDown: Hyprland.dispatch("workspace e+1")
+                onClicked: bar.focusWorkspace(String(modelData.id))
+                onWheelUp: bar.focusWorkspace("e-1")
+                onWheelDown: bar.focusWorkspace("e+1")
             }
         }
     }
@@ -240,9 +248,9 @@ PanelWindow {
                 normalBackground: modelData.urgent ? Theme.urgent : (modelData.active ? Theme.subtleActive : "transparent")
                 foreground: modelData.urgent ? Theme.dark : Theme.foreground
                 tooltip: "Workspace " + modelData.name
-                onClicked: modelData.activate()
-                onWheelUp: Hyprland.dispatch("workspace e-1")
-                onWheelDown: Hyprland.dispatch("workspace e+1")
+                onClicked: bar.focusWorkspace(String(modelData.id))
+                onWheelUp: bar.focusWorkspace("e-1")
+                onWheelDown: bar.focusWorkspace("e+1")
             }
         }
     }

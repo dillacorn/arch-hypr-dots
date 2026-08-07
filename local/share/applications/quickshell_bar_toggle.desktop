@@ -1,5 +1,5 @@
-# github.com/dillacorn/awtarchy/tree/main/local/share/applications
-# ~/.local/share/applications/waybar_toggle.desktop
+# github.com/dillacorn/awtarchy
+# ~/.local/share/applications/quickshell_bar_toggle.desktop
 
 [Desktop Entry]
 Type=Application
@@ -9,4 +9,3 @@ Exec=sh -lc 'exec "$HOME/.config/hypr/scripts/quickshell_bar_toggle.sh"'
 Icon=preferences-desktop-display
 Terminal=false
 Categories=Utility;
-

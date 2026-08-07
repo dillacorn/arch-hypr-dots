@@ -347,6 +347,18 @@ if hl.plugin and hl.plugin.hyprbars and hl.plugin.hyprbars.add_button then
     end
 end
 
+-- Quickshell application launcher: Fuzzel-like floating search window.
+hl.window_rule({
+    name = "awtarchy-quickshell-launcher",
+    match = { title = "Awtarchy Application Search" },
+    float = true,
+    border_size = 0,
+    rounding = 0,
+    decorate = false,
+    no_shadow = true,
+    no_follow_mouse = true,
+})
+
 -- ───────────────────────────────────────────────────────────────────────────────
 -- INPUT
 -- ───────────────────────────────────────────────────────────────────────────────
