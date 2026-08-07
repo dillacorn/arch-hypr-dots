@@ -273,8 +273,9 @@ Singleton {
                                     appList.positionViewAtIndex(appList.currentIndex, ListView.Contain);
                                     event.accepted = true;
                                 } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                                    if (appList.currentItem && appList.currentItem.entry)
-                                        root.launchEntry(appList.currentItem.entry);
+                                    const values = root.filteredApps();
+                                    if (appList.currentIndex >= 0 && appList.currentIndex < values.length)
+                                        root.launchEntry(values[appList.currentIndex]);
                                     event.accepted = true;
                                 }
                             }
@@ -307,6 +308,7 @@ Singleton {
                     delegate: Rectangle {
                         id: row
                         required property var modelData
+                        required property int index
                         property var entry: modelData
 
                         width: ListView.view.width

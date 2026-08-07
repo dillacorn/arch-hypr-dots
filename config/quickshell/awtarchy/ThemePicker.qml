@@ -151,8 +151,10 @@ Singleton {
                                         themeList.currentIndex = Math.max(0, themeList.currentIndex - 1);
                                     themeList.positionViewAtIndex(themeList.currentIndex, ListView.Contain);
                                     event.accepted = true;
-                                } else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && themeList.currentItem) {
-                                    root.choose(themeList.currentItem.themeName);
+                                } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                                    const values = root.filteredThemes();
+                                    if (themeList.currentIndex >= 0 && themeList.currentIndex < values.length)
+                                        root.choose(values[themeList.currentIndex]);
                                     event.accepted = true;
                                 }
                             }

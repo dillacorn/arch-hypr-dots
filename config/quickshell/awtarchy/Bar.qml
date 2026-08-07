@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
@@ -407,6 +409,8 @@ PanelWindow {
     Item {
         id: horizontalLayout
         anchors.fill: parent
+        anchors.leftMargin: 6
+        anchors.rightMargin: 6
         visible: !bar.vertical
 
         Row {
@@ -419,6 +423,7 @@ PanelWindow {
             BarButton {
                 label: ""
                 tooltip: "app-launcher"
+                hoverBackground: Theme.strongHover
                 onClicked: Launcher.openForScreen(bar.screen)
                 onRightClicked: Launcher.openForScreen(bar.screen)
             }
@@ -544,6 +549,7 @@ PanelWindow {
             BarButton {
                 label: bar.clockDate ? " " + Qt.formatDateTime(bar.now, "ddd M/d") : " " + Qt.formatDateTime(bar.now, "HH:mm")
                 tooltip: Qt.formatDateTime(bar.now, "dddd, MMMM d, yyyy") + "\n24h: " + Qt.formatDateTime(bar.now, "HH:mm") + "\n12h: " + Qt.formatDateTime(bar.now, "h:mm AP")
+                horizontalPadding: 6
                 onClicked: bar.clockDate = !bar.clockDate
                 onRightClicked: bar.clockDate = !bar.clockDate
                 onWheelUp: bar.clockDate = !bar.clockDate
