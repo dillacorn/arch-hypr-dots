@@ -10,22 +10,50 @@ import Quickshell.Widgets
 Singleton {
     id: root
 
+    // Preserve the old Awtarchy/Fuzzel placement behavior:
+    // - Bar button: pin to the corner beside that monitor's visible bar.
+    // - Keyboard/desktop launcher: pin to the visible bar edge.
+    // - Hidden bar: use a centered floating launcher on the focused monitor.
+    property string placementMode: "center" // center | edge | corner
+    property string placementPosition: "top"
+    readonly property int horizontalBarSize: 28
+    readonly property int verticalBarSize: 36
+
     function focusedScreen() {
         const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
         const matches = Quickshell.screens.filter(screen => screen.name === name);
         return matches.length > 0 ? matches[0] : (Quickshell.screens.length > 0 ? Quickshell.screens[0] : null);
     }
 
-    function openForScreen(targetScreen) {
+    function configurePlacement(targetScreen, fromBar) {
+        if (!targetScreen || !BarState.enabledFor(targetScreen.name)) {
+            placementMode = "center";
+            placementPosition = "top";
+            return;
+        }
+
+        placementPosition = BarState.positionFor(targetScreen.name);
+        placementMode = fromBar ? "corner" : "edge";
+    }
+
+    function openWindow(targetScreen, fromBar) {
         if (targetScreen)
             launcherWindow.screen = targetScreen;
+        configurePlacement(targetScreen, fromBar);
         search.text = "";
+        appList.currentIndex = 0;
         launcherWindow.visible = true;
         Qt.callLater(() => search.forceActiveFocus());
     }
 
+    // Bar.qml calls this directly. Treat it as the old --from-waybar path.
+    function openForScreen(targetScreen) {
+        openWindow(targetScreen, true);
+    }
+
+    // Hyprland binds and desktop launchers use this path.
     function openFocused() {
-        openForScreen(focusedScreen());
+        openWindow(focusedScreen(), false);
     }
 
     function close() {
@@ -38,6 +66,50 @@ Singleton {
             close();
         else
             openFocused();
+    }
+
+    function panelX(panelWidth) {
+        const width = launcherWindow.width;
+        const centered = Math.max(0, Math.round((width - panelWidth) / 2));
+
+        if (placementMode === "center")
+            return centered;
+
+        if (placementMode === "corner") {
+            if (placementPosition === "right")
+                return Math.max(0, width - panelWidth - verticalBarSize);
+            if (placementPosition === "left")
+                return verticalBarSize;
+            return 0;
+        }
+
+        if (placementPosition === "left")
+            return verticalBarSize;
+        if (placementPosition === "right")
+            return Math.max(0, width - panelWidth - verticalBarSize);
+        return centered;
+    }
+
+    function panelY(panelHeight) {
+        const height = launcherWindow.height;
+        const centered = Math.max(0, Math.round((height - panelHeight) / 2));
+
+        if (placementMode === "center")
+            return centered;
+
+        if (placementMode === "corner") {
+            if (placementPosition === "bottom")
+                return Math.max(0, height - panelHeight - horizontalBarSize);
+            if (placementPosition === "top")
+                return horizontalBarSize;
+            return 0;
+        }
+
+        if (placementPosition === "top")
+            return horizontalBarSize;
+        if (placementPosition === "bottom")
+            return Math.max(0, height - panelHeight - horizontalBarSize);
+        return centered;
     }
 
     function filteredApps() {
@@ -83,9 +155,10 @@ Singleton {
 
         Rectangle {
             id: panel
-            anchors.centerIn: parent
             width: Math.min(660, Math.max(420, launcherWindow.width * 0.52))
             height: Math.min(660, Math.max(360, launcherWindow.height * 0.68))
+            x: root.panelX(width)
+            y: root.panelY(height)
             color: Theme.popupBackground
             border.width: 0
             radius: 0
