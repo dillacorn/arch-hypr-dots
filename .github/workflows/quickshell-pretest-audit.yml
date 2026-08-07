@@ -19,26 +19,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run Arch Linux checks
+      - name: Run Arch Linux checks and headless Hyprland smoke test
         run: |
           set -euo pipefail
           docker run --rm -v "$PWD:/repo" -w /repo archlinux:latest bash -lc '
             set -euo pipefail
             pacman -Syu --noconfirm --needed \
-              bash coreutils findutils grep sed gawk jq python shellcheck \
-              quickshell qt6-declarative sway libcap dbus
-
-            # Arch grants sway tty/session file capabilities. The default Docker
-            # capability bounding set rejects executing such a binary even for
-            # a purely headless backend, so strip them inside this disposable
-            # test container. Headless wlroots does not need those privileges.
-            getcap "$(command -v sway)" || true
-            setcap -r "$(command -v sway)" || true
+              bash coreutils findutils grep sed gawk jq python shellcheck dbus \
+              quickshell qt6-declarative hyprland grim ttf-noto-nerd
 
             echo "=== versions ==="
-            pacman -Q quickshell qt6-declarative shellcheck jq sway
+            pacman -Q quickshell qt6-declarative hyprland shellcheck jq
             qs --version
-            sway --version
+            Hyprland --version || hyprland --version
 
             echo "=== bash syntax ==="
             bash -n awtarchy-install.sh
@@ -49,7 +42,7 @@ jobs:
             echo "=== shellcheck errors ==="
             shellcheck -S error -x -e SC1091 config/hypr/scripts/*.sh
 
-            echo "=== QML lint ==="
+            echo "=== QML parse/lint pass ==="
             QMLLINT="$(command -v qmllint || true)"
             [[ -n "$QMLLINT" ]] || QMLLINT=/usr/lib/qt6/bin/qmllint
             test -x "$QMLLINT"
@@ -97,7 +90,7 @@ jobs:
             grep -q "remove_legacy_shell_files_stage" awtarchy-install.sh
             grep -q "CACHE_HOME}/waybar" config/hypr/scripts/quickshell.sh
 
-            echo "=== manager mocked monitor state ==="
+            echo "=== manager mocked two-monitor state ==="
             TMP="$(mktemp -d)"
             mkdir -p "$TMP/bin" "$TMP/home/.config/hypr/scripts"
             cp config/hypr/scripts/quickshell.sh "$TMP/home/.config/hypr/scripts/quickshell.sh"
@@ -122,62 +115,113 @@ jobs:
             "$HOME/.config/hypr/scripts/quickshell.sh" toggle-focused
             "$HOME/.config/hypr/scripts/quickshell.sh" getenabled-focused | grep -qx false
 
-            echo "=== headless Sway + Quickshell startup and IPC ==="
+            echo "=== install exact production Quickshell paths ==="
             unset HOME XDG_CACHE_HOME
             export HOME=/root
+            mkdir -p /root/.config/quickshell /root/.config/hypr
+            rm -rf /root/.config/quickshell/awtarchy /root/.config/hypr/scripts
+            cp -a config/quickshell/awtarchy /root/.config/quickshell/awtarchy
+            cp -a config/hypr/scripts /root/.config/hypr/scripts
+            chmod +x /root/.config/hypr/scripts/*.sh
+
+            echo "=== headless Hyprland + production Quickshell startup ==="
             export XDG_RUNTIME_DIR="$(mktemp -d)"
             chmod 700 "$XDG_RUNTIME_DIR"
-
             mapfile -t DBUS_INFO < <(dbus-daemon --session --fork --print-address=1 --print-pid=1)
             export DBUS_SESSION_BUS_ADDRESS="${DBUS_INFO[0]}"
             DBUS_PID="${DBUS_INFO[1]}"
 
-            printf "%s\n" "output * mode 1920x1080" "seat * hide_cursor 1000" > /tmp/sway.conf
-            WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 \
-              sway -c /tmp/sway.conf -d >/tmp/sway.log 2>&1 &
-            SWAY_PID=$!
-            trap "kill $SWAY_PID $DBUS_PID 2>/dev/null || true; rm -rf \"$XDG_RUNTIME_DIR\" \"$TMP\"" EXIT
+            cat > /tmp/hyprland.lua <<"LUA"
+hl.config({
+    ecosystem = {
+        no_update_news = true,
+        enforce_permissions = false,
+    },
+    misc = {
+        disable_hyprland_logo = true,
+        disable_splash_rendering = true,
+    },
+})
+LUA
 
-            for i in $(seq 1 80); do
-              WAYLAND_SOCKET="$(find "$XDG_RUNTIME_DIR" -maxdepth 1 -type s -name "wayland-*" | head -n1 || true)"
-              [[ -n "$WAYLAND_SOCKET" ]] && break
-              sleep 0.1
-            done
-            if [[ -z "${WAYLAND_SOCKET:-}" ]]; then
-              cat /tmp/sway.log
-              exit 1
-            fi
-            export WAYLAND_DISPLAY="$(basename "$WAYLAND_SOCKET")"
-            export QT_QPA_PLATFORM=wayland
-            echo "WAYLAND_DISPLAY=$WAYLAND_DISPLAY"
+            HYPRLAND_NO_RT=1 \
+            HYPRLAND_NO_SD_NOTIFY=1 \
+            HYPRLAND_NO_SD_VARS=1 \
+            AQ_NO_KMS_REQUIREMENT=1 \
+            XDG_CURRENT_DESKTOP=Hyprland \
+            XDG_SESSION_TYPE=wayland \
+              Hyprland --config /tmp/hyprland.lua >/tmp/hyprland.log 2>&1 &
+            HYPR_PID=$!
+            trap "kill $HYPR_PID $DBUS_PID 2>/dev/null || true; rm -rf \"$XDG_RUNTIME_DIR\" \"$TMP\"" EXIT
 
-            CONFIG="$(pwd)/config/quickshell/awtarchy/shell.qml"
-            echo "starting Quickshell entrypoint: $CONFIG"
-            qs -p "$CONFIG" >/tmp/qs.log 2>&1 &
-            QS_PID=$!
-
-            PING=""
-            for i in $(seq 1 100); do
-              if ! kill -0 "$QS_PID" 2>/dev/null; then
+            HIS=""
+            for i in $(seq 1 120); do
+              HIS_DIR="$(find "$XDG_RUNTIME_DIR/hypr" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1 || true)"
+              if [[ -n "$HIS_DIR" && -S "$HIS_DIR/.socket.sock" ]]; then
+                HIS="$(basename "$HIS_DIR")"
                 break
               fi
-              PING="$(qs -p "$CONFIG" ipc call control ping 2>/dev/null || true)"
+              if ! kill -0 "$HYPR_PID" 2>/dev/null; then break; fi
+              sleep 0.05
+            done
+            if [[ -z "$HIS" ]]; then
+              echo "Hyprland did not expose IPC" >&2
+              cat /tmp/hyprland.log
+              exit 1
+            fi
+
+            export HYPRLAND_INSTANCE_SIGNATURE="$HIS"
+            WAYLAND_SOCKET="$(find "$XDG_RUNTIME_DIR" -maxdepth 1 -type s -name "wayland-*" | head -n1 || true)"
+            [[ -n "$WAYLAND_SOCKET" ]] || { cat /tmp/hyprland.log; exit 1; }
+            export WAYLAND_DISPLAY="$(basename "$WAYLAND_SOCKET")"
+            export QT_QPA_PLATFORM=wayland
+            export XDG_CURRENT_DESKTOP=Hyprland
+            export XDG_SESSION_TYPE=wayland
+
+            echo "HIS=$HYPRLAND_INSTANCE_SIGNATURE WAYLAND_DISPLAY=$WAYLAND_DISPLAY"
+            hyprctl monitors -j | tee /tmp/monitors.json
+            jq -e "length >= 1" /tmp/monitors.json
+            hyprctl configerrors | tee /tmp/hypr-errors.txt
+
+            qs -vv --no-color -c awtarchy >/tmp/qs.log 2>&1 &
+            QS_PID=$!
+            PING=""
+            for i in $(seq 1 120); do
+              PING="$(qs -c awtarchy ipc call control ping 2>/dev/null || true)"
               [[ "$PING" == "ok" ]] && break
+              if ! kill -0 "$QS_PID" 2>/dev/null; then break; fi
               sleep 0.05
             done
 
             echo "Quickshell IPC ping: ${PING:-<none>}"
             cat /tmp/qs.log || true
-            find "$XDG_RUNTIME_DIR/quickshell" -type f -maxdepth 4 -print -exec sh -c "echo --- {}; tail -n 200 \"{}\" 2>/dev/null || true" \; 2>/dev/null || true
-
             if [[ "$PING" != "ok" ]]; then
-              echo "Quickshell did not expose the control IPC endpoint" >&2
-              wait "$QS_PID" || true
+              echo "Quickshell failed production startup" >&2
+              find "$XDG_RUNTIME_DIR/quickshell" -type f -maxdepth 5 -print -exec sh -c "echo --- {}; tail -n 300 \"{}\" 2>/dev/null || true" \; 2>/dev/null || true
               exit 1
             fi
 
-            qs -p "$CONFIG" ipc call control quit >/dev/null 2>&1 || kill "$QS_PID" 2>/dev/null || true
+            echo "=== exercise Quickshell IPC surfaces ==="
+            qs -c awtarchy ipc call launcher open
+            qs -c awtarchy ipc call launcher close
+            qs -c awtarchy ipc call powermenu open
+            qs -c awtarchy ipc call powermenu close
+            qs -c awtarchy ipc call clipboard open
+            qs -c awtarchy ipc call clipboard close
+            qs -c awtarchy ipc call themes open
+            qs -c awtarchy ipc call themes close
+            qs -c awtarchy ipc call notifications dndEnabled
+
+            echo "=== verify bar layer exists and screenshot output ==="
+            hyprctl layers -j | tee /tmp/layers.json
+            grim -o "$(jq -r ".[0].name" /tmp/monitors.json)" /tmp/quickshell-bar.png
+            test -s /tmp/quickshell-bar.png
+            file /tmp/quickshell-bar.png
+
+            qs -c awtarchy ipc call control quit >/dev/null 2>&1 || true
             wait "$QS_PID" || true
+            kill "$HYPR_PID" "$DBUS_PID" 2>/dev/null || true
+            wait "$HYPR_PID" 2>/dev/null || true
 
             git diff --check
           '
