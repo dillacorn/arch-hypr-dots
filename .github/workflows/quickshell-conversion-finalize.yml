@@ -1,0 +1,336 @@
+name: Finalize Quickshell conversion branch
+
+on:
+  push:
+    branches:
+      - quickshell-conversion-testing
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: quickshell-conversion-testing
+          fetch-depth: 0
+
+      - name: Convert large Awtarchy sources
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 <<'PY'
+          from pathlib import Path
+          import json
+          import re
+
+          root = Path('.')
+          legacy_packages = {'waybar-git', 'fuzzel', 'wlogout', 'mako'}
+
+          def read(path):
+              return Path(path).read_text(encoding='utf-8')
+
+          def write(path, text):
+              Path(path).write_text(text, encoding='utf-8')
+
+          def shell_assignment(text, key, fallback=''):
+              match = re.search(rf'(?m)^{re.escape(key)}\s*=\s*["\047]([^"\047]*)["\047]\s*$', text)
+              return match.group(1) if match else fallback
+
+          # ------------------------------------------------------------------
+          # Runtime package/config selections
+          # ------------------------------------------------------------------
+          runtime_path = root / 'local/share/awtarchy/awtarchy-runtime.sh'
+          runtime = runtime_path.read_text(encoding='utf-8')
+
+          group = re.search(r'("Window Management:)([^"]+)(")', runtime)
+          if not group:
+              raise SystemExit('missing Window Management package group')
+          packages = [p for p in group.group(2).split() if p not in legacy_packages]
+          if 'quickshell' not in packages:
+              idx = packages.index('hyprsunset') + 1 if 'hyprsunset' in packages else 0
+              packages.insert(idx, 'quickshell')
+          runtime = runtime[:group.start()] + group.group(1) + ' '.join(packages) + group.group(3) + runtime[group.end():]
+
+          aur = re.search(r'declare -a PACKAGES_AUR=\(\n(?P<body>.*?)\n\)', runtime, re.S)
+          if not aur:
+              raise SystemExit('missing PACKAGES_AUR')
+          aur_lines = [line for line in aur.group('body').splitlines() if line.strip() not in legacy_packages]
+          runtime = runtime[:aur.start('body')] + '\n'.join(aur_lines) + runtime[aur.end('body'):]
+
+          config_dirs = re.search(r'local -a config_dirs=\(([^)]*)\)', runtime)
+          if not config_dirs:
+              raise SystemExit('missing config_dirs')
+          dirs = [d for d in config_dirs.group(1).split() if d not in {'waybar', 'fuzzel', 'mako', 'wlogout'}]
+          if 'quickshell' not in dirs:
+              idx = dirs.index('hypr') + 1 if 'hypr' in dirs else 0
+              dirs.insert(idx, 'quickshell')
+          runtime = runtime[:config_dirs.start(1)] + ' '.join(dirs) + runtime[config_dirs.end(1):]
+          runtime_path.write_text(runtime, encoding='utf-8')
+
+          # ------------------------------------------------------------------
+          # Hyprland/Hypridle entrypoints
+          # ------------------------------------------------------------------
+          replacements = {
+              'waybar_toggle.sh': 'quickshell_bar_toggle.sh',
+              'waybar_flip.sh': 'quickshell_bar_flip.sh',
+              'waybar_rotate.sh': 'quickshell_bar_rotate.sh',
+              'waybar_ready_sound.sh': 'quickshell_ready_sound.sh',
+              'waybar_restore_resume.sh': 'quickshell_bar_restore.sh',
+              'waybar_toggle_idle.sh': 'quickshell_bar_idle_hide.sh',
+              'fuzzel_toggle.sh': 'quickshell_launcher.sh',
+              'cliphist-fuzzel.sh': 'quickshell_clipboard_toggle.sh',
+              'wlogout_toggle.sh': 'quickshell_power_menu.sh',
+              'mako_dismiss.sh': 'quickshell_notification_dismiss.sh',
+              '/waybar/scripts/ddc_brightness.sh': '/hypr/scripts/ddc_brightness.sh',
+              '/waybar/scripts/cpu_temp.sh': '/hypr/scripts/cpu_temp.sh',
+              '/waybar/scripts/idle_inhibitor_global.sh': '/hypr/scripts/idle_inhibitor_global.sh',
+              '/waybar/scripts/toggle_mouse_submap.sh': '/hypr/scripts/toggle_mouse_submap.sh',
+              '/waybar/scripts/wiremix-toggle.sh': '/hypr/scripts/wiremix-toggle.sh',
+              'WAYBAR_OUTPUT_NAME': 'AWTARCHY_OUTPUT_NAME',
+          }
+
+          text_suffixes = {'.sh', '.lua', '.conf', '.qml', '.desktop', '.md'}
+          roots = [root / 'config/hypr', root / 'config/quickshell', root / 'local/share/applications']
+          for base in roots:
+              if not base.exists():
+                  continue
+              for path in base.rglob('*'):
+                  if not path.is_file() or path.suffix not in text_suffixes:
+                      continue
+                  text = path.read_text(encoding='utf-8', errors='strict')
+                  original = text
+                  for old, new in replacements.items():
+                      text = text.replace(old, new)
+                  if text != original:
+                      path.write_text(text, encoding='utf-8')
+
+          hypr_path = root / 'config/hypr/hyprland.lua'
+          hypr = hypr_path.read_text(encoding='utf-8')
+          hypr = hypr.replace(
+              'hl.exec_cmd("~/.config/hypr/scripts/waybar.sh start &")',
+              'hl.exec_cmd("~/.config/hypr/scripts/quickshell.sh start &")'
+          )
+          hypr = re.sub(r'(?m)^\s*hl\.exec_cmd\("mako &"\)\s*\n', '', hypr)
+          hypr = re.sub(r'\blocal wlogout\b', 'local power_menu', hypr)
+          hypr = re.sub(r'\bwlogout\b', 'power_menu', hypr)
+          hypr_path.write_text(hypr, encoding='utf-8')
+
+          hypridle_path = root / 'config/hypr/hypridle.conf'
+          if hypridle_path.exists():
+              text = hypridle_path.read_text(encoding='utf-8')
+              text = text.replace('Waybar', 'Quickshell bar').replace('waybar', 'quickshell bar')
+              hypridle_path.write_text(text, encoding='utf-8')
+
+          # Quickshell bar helpers now live with the rest of Awtarchy's Hypr scripts.
+          bar_path = root / 'config/quickshell/awtarchy/Bar.qml'
+          bar = bar_path.read_text(encoding='utf-8')
+          bar = bar.replace('configHome + "/waybar/scripts/ddc_brightness.sh"', 'configHome + "/hypr/scripts/ddc_brightness.sh"')
+          bar = bar.replace('configHome + "/waybar/scripts/wiremix-toggle.sh"', 'configHome + "/hypr/scripts/wiremix-toggle.sh"')
+          bar = bar.replace('configHome + "/waybar/scripts/toggle_mouse_submap.sh"', 'configHome + "/hypr/scripts/toggle_mouse_submap.sh"')
+          bar = bar.replace('WAYBAR_OUTPUT_NAME', 'AWTARCHY_OUTPUT_NAME')
+          bar = bar.replace('"wofi", "fuzzel", "tofi", "rofi", "mako", "wlogout", ', '"wofi", "tofi", "rofi", ')
+          bar_path.write_text(bar, encoding='utf-8')
+
+          # ------------------------------------------------------------------
+          # Convert all theme scripts to Quickshell-native palette files.
+          # ------------------------------------------------------------------
+          theme_dir = root / 'config/hypr/themes'
+          for path in sorted(theme_dir.iterdir()):
+              if not path.is_file():
+                  continue
+              old = path.read_text(encoding='utf-8')
+
+              def value(key, fallback):
+                  return shell_assignment(old, key, fallback)
+
+              micro = re.search(r'"colorscheme"\s*:\s*"([^"]+)"', old)
+              alacritty = re.search(r'themes/themes/([^"\047|]+\.toml)', old)
+              speedcrunch = re.search(r'Display\\ColorSchemeName=([^|\047"\n]+)', old)
+
+              vals = {
+                  'NEW_ACTIVE_BORDER': value('NEW_ACTIVE_BORDER', 'a0a0a0ff'),
+                  'NEW_INACTIVE_BORDER': value('NEW_INACTIVE_BORDER', '4b4b4bff'),
+                  'QS_BACKGROUND': value('W_BG', '#353535'),
+                  'QS_FOREGROUND': value('W_COLOR', '#d0d0d0'),
+                  'QS_HOVER': value('W_CUSTOM_HOVER_BG', value('W_HOVER', '#404040')),
+                  'QS_FOCUS': value('W_FOCUS_BG', '#4a4a4a'),
+                  'QS_ACTIVE': value('W_ACTIVE_BG', '#2b2b2b'),
+                  'QS_URGENT': value('W_URGENT_BG', '#ff5555'),
+                  'QS_DARK': value('W_URGENT_COLOR', '#1a1a1a'),
+                  'QS_CHARGING': value('W_BATT_CHARGING_BG', '#6a9955'),
+                  'QS_CRITICAL': value('W_BATT_CRITICAL_BG', '#ff5555'),
+                  'QS_MUTED': value('W_MUTED', value('W_HOVER', '#5c5c5c')),
+                  'WO_BORDER': value('WO_BORDER', '2px none #4a4a4a'),
+                  'WO_BG': value('WO_BG', value('W_BG', '#353535')),
+                  'WO_INPUT_COLOR': value('WO_INPUT_COLOR', value('W_COLOR', '#d0d0d0')),
+                  'WO_OUTER_BORDER': value('WO_OUTER_BORDER', '0px solid #4a4a4a'),
+                  'WO_OUTER_BG': value('WO_OUTER_BG', value('W_BG', '#353535')),
+                  'WO_TEXT_UNSEL': value('WO_TEXT_UNSEL', '#ffffff'),
+                  'MICRO_COLORSCHEME': micro.group(1) if micro else 'geany',
+                  'ALACRITTY_THEME': alacritty.group(1) if alacritty else 'wombat.toml',
+                  'SPEEDCRUNCH_COLORSCHEME': speedcrunch.group(1).strip() if speedcrunch else path.name,
+              }
+
+              lines = [
+                  '#!/usr/bin/env bash',
+                  '# Awtarchy theme palette consumed by quickshell_theme_apply.sh.',
+                  '# This file is data-only; it does not launch or mutate shell UI programs.',
+                  '',
+              ]
+              for key, val in vals.items():
+                  lines.append(f'{key}={json.dumps(val, ensure_ascii=False)}')
+              lines.append('')
+              path.write_text('\n'.join(lines), encoding='utf-8')
+
+          helper_path = root / 'config/hypr/scripts/quickshell_theme_apply.sh'
+          helper = helper_path.read_text(encoding='utf-8')
+          helper = helper.replace('legacy Waybar/Fuzzel/Mako/wlogout mutations', 'obsolete shell-program mutations')
+          mapping = {
+              'W_BG': 'QS_BACKGROUND',
+              'W_CUSTOM_HOVER_BG': 'QS_HOVER',
+              'W_FOCUS_BG': 'QS_FOCUS',
+              'W_ACTIVE_BG': 'QS_ACTIVE',
+              'W_URGENT_BG': 'QS_URGENT',
+              'W_BATT_CHARGING_BG': 'QS_CHARGING',
+              'W_BATT_CRITICAL_BG': 'QS_CRITICAL',
+              'W_COLOR': 'QS_FOREGROUND',
+              'W_URGENT_COLOR': 'QS_DARK',
+              'W_MUTED': 'QS_MUTED',
+          }
+          for old, new in mapping.items():
+              helper = helper.replace(old, new)
+          helper = re.sub(r'micro_scheme="\$\(extract_theme_metadata micro\)"', 'micro_scheme="$(theme_value MICRO_COLORSCHEME \'geany\')"', helper)
+          helper = re.sub(r'alacritty_theme="\$\(extract_theme_metadata alacritty\)"', 'alacritty_theme="$(theme_value ALACRITTY_THEME \'wombat.toml\')"', helper)
+          helper = re.sub(r'speedcrunch_scheme="\$\(extract_theme_metadata speedcrunch\)"', 'speedcrunch_scheme="$(theme_value SPEEDCRUNCH_COLORSCHEME "$name")"', helper)
+          helper_path.write_text(helper, encoding='utf-8')
+          PY
+
+          # Rename Quickshell bar lifecycle helpers now that all callers were updated.
+          declare -A renames=(
+            [waybar_toggle.sh]=quickshell_bar_toggle.sh
+            [waybar_flip.sh]=quickshell_bar_flip.sh
+            [waybar_rotate.sh]=quickshell_bar_rotate.sh
+            [waybar_ready_sound.sh]=quickshell_ready_sound.sh
+            [waybar_restore_resume.sh]=quickshell_bar_restore.sh
+            [waybar_toggle_idle.sh]=quickshell_bar_idle_hide.sh
+          )
+
+          for old in "${!renames[@]}"; do
+            src="config/hypr/scripts/${old}"
+            dst="config/hypr/scripts/${renames[$old]}"
+            if [[ -f "$src" ]]; then
+              git mv "$src" "$dst"
+              sed -i \
+                -e 's/Waybar/Quickshell/g' \
+                -e 's/waybar/quickshell/g' \
+                "$dst"
+            fi
+          done
+
+          # Remove compatibility shims now that real callers use Quickshell names.
+          git rm -f \
+            config/hypr/scripts/waybar.sh \
+            config/hypr/scripts/fuzzel_toggle.sh \
+            config/hypr/scripts/cliphist-fuzzel.sh \
+            config/hypr/scripts/wlogout_toggle.sh \
+            config/hypr/scripts/mako_dismiss.sh \
+            local/bin/mako \
+            local/bin/makoctl \
+            2>/dev/null || true
+
+          # Remove obsolete shell program configs entirely.
+          git rm -rf config/waybar config/fuzzel config/mako config/wlogout 2>/dev/null || true
+
+          # Rename desktop controls that still used Waybar terminology.
+          for stem in toggle flip rotate; do
+            old="local/share/applications/waybar_${stem}.desktop"
+            new="local/share/applications/quickshell_bar_${stem}.desktop"
+            if [[ -f "$old" ]]; then
+              git mv "$old" "$new"
+              sed -i \
+                -e 's/Waybar/Quickshell Bar/g' \
+                -e "s/waybar_${stem}\.sh/quickshell_bar_${stem}.sh/g" \
+                "$new"
+            fi
+          done
+
+          # The old Waybar-specific CI no longer tests the active shell.
+          git rm -f .github/workflows/waybar-event-driven-checks.yml 2>/dev/null || true
+
+      - name: Validate conversion
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          bash -n awtarchy-install.sh
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+
+          while IFS= read -r -d '' script; do
+            bash -n "$script"
+          done < <(find config/hypr/scripts -type f -name '*.sh' -print0)
+
+          python3 -m json.tool config/quickshell/awtarchy/theme.json >/dev/null
+
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          runtime = Path('local/share/awtarchy/awtarchy-runtime.sh').read_text()
+          window = re.search(r'"Window Management:([^"]+)"', runtime)
+          aur = re.search(r'declare -a PACKAGES_AUR=\(\n(?P<body>.*?)\n\)', runtime, re.S)
+          dirs = re.search(r'local -a config_dirs=\(([^)]*)\)', runtime)
+          if not (window and aur and dirs):
+              raise SystemExit('runtime validation anchors missing')
+
+          old = {'waybar-git', 'fuzzel', 'wlogout', 'mako'}
+          if old & set(window.group(1).split()):
+              raise SystemExit('legacy package remains in Arch package group')
+          if old & set(aur.group('body').split()):
+              raise SystemExit('legacy package remains in AUR defaults')
+          if {'waybar', 'fuzzel', 'wlogout', 'mako'} & set(dirs.group(1).split()):
+              raise SystemExit('legacy config dir remains in installer copy list')
+          if 'quickshell' not in window.group(1).split() or 'quickshell' not in dirs.group(1).split():
+              raise SystemExit('quickshell missing from runtime selection')
+
+          hypr = Path('config/hypr/hyprland.lua').read_text()
+          forbidden = [
+              'hl.exec_cmd("mako &")',
+              'fuzzel_toggle.sh',
+              'wlogout_toggle.sh',
+              'cliphist-fuzzel.sh',
+              'waybar.sh start',
+          ]
+          for token in forbidden:
+              if token in hypr:
+                  raise SystemExit(f'legacy Hyprland runtime call remains: {token}')
+
+          bar = Path('config/quickshell/awtarchy/Bar.qml').read_text()
+          if '/waybar/scripts/' in bar or 'WAYBAR_OUTPUT_NAME' in bar:
+              raise SystemExit('Quickshell bar still depends on Waybar helper paths')
+
+          for path in Path('config/hypr/themes').iterdir():
+              if not path.is_file():
+                  continue
+              text = path.read_text()
+              for token in ('Waybar', 'Fuzzel', 'Mako', 'Wlogout', 'WAYBAR_', 'WLOGOUT_', 'FUZZEL_', 'MAKO_'):
+                  if token in text:
+                      raise SystemExit(f'legacy theme token remains in {path}: {token}')
+          PY
+
+          git diff --check
+
+      - name: Commit finalized conversion
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -f .github/workflows/quickshell-conversion-finalize.yml
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add -A
+          git commit -m "Complete Quickshell dependency cutover"
+          git push origin HEAD:quickshell-conversion-testing
