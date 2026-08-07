@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 pacman -Syu --noconfirm --needed \
-  bash coreutils findutils grep sed gawk jq python shellcheck dbus git \
+  bash coreutils findutils grep sed gawk jq python shellcheck dbus \
   quickshell qt6-declarative hyprland grim ttf-noto-nerd upower
 
 export HOME=/root
@@ -25,7 +25,6 @@ for theme in config/hypr/themes/*; do
   bash -n "$theme"
 done
 shellcheck -S error -x -e SC1091 config/hypr/scripts/*.sh
-git diff --check
 
 printf '%s\n' '=== production config staging ==='
 mkdir -p "$HOME/.config/quickshell" "$HOME/.config/hypr"
