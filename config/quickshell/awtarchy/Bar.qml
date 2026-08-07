@@ -510,6 +510,7 @@ PanelWindow {
                 label: SystemState.idleBroken ? "" : (SystemState.idleInhibited ? "" : "")
                 tooltip: SystemState.idleInhibited ? "Idle inhibitor: activated\nClick to deactivate" : "Idle inhibitor: deactivated\nClick to activate"
                 foreground: SystemState.idleBroken ? Theme.urgent : Theme.foreground
+                hoverBackground: Theme.strongHover
                 onClicked: SystemState.toggleIdle()
                 onRightClicked: SystemState.toggleIdle()
             }
@@ -561,6 +562,7 @@ PanelWindow {
             BarButton {
                 label: ""
                 tooltip: "Clipboard history"
+                hoverBackground: Theme.strongHover
                 onClicked: ClipboardMenu.openFocused()
                 onRightClicked: ClipboardMenu.openFocused()
             }
@@ -568,6 +570,7 @@ PanelWindow {
             BarButton {
                 label: Notifications.dnd ? "" : ""
                 foreground: Notifications.dnd ? Theme.critical : Theme.foreground
+                hoverBackground: Theme.strongHover
                 tooltip: Notifications.dnd ? "Notifications disabled\nLeft: enable notifications" : "Notifications enabled\nLeft: disable notifications"
                 onClicked: Notifications.toggleDnd()
             }
@@ -576,6 +579,7 @@ PanelWindow {
                 label: ""
                 tooltip: "power menu"
                 horizontalPadding: 10
+                hoverBackground: Theme.strongHover
                 onClicked: PowerMenu.openForScreen(bar.screen)
                 onRightClicked: PowerMenu.openForScreen(bar.screen)
             }
@@ -585,6 +589,8 @@ PanelWindow {
     Item {
         id: verticalLayout
         anchors.fill: parent
+        anchors.topMargin: 4
+        anchors.bottomMargin: 4
         visible: bar.vertical
 
         Column {
@@ -594,6 +600,7 @@ PanelWindow {
 
             BarButton {
                 vertical: true; fixedWidth: 36; label: ""; tooltip: "app-launcher"
+                hoverBackground: Theme.strongHover
                 onClicked: Launcher.openForScreen(bar.screen)
                 onRightClicked: Launcher.openForScreen(bar.screen)
             }
@@ -693,6 +700,7 @@ PanelWindow {
 
             BarButton {
                 vertical: true; fixedWidth: 36; label: ""; tooltip: "Clipboard history"
+                hoverBackground: Theme.strongHover
                 onClicked: ClipboardMenu.openFocused()
                 onRightClicked: ClipboardMenu.openFocused()
             }
@@ -700,10 +708,12 @@ PanelWindow {
                 vertical: true; fixedWidth: 36
                 label: Notifications.dnd ? "" : ""
                 foreground: Notifications.dnd ? Theme.critical : Theme.foreground
+                hoverBackground: Theme.strongHover
                 onClicked: Notifications.toggleDnd()
             }
             BarButton {
                 vertical: true; fixedWidth: 36; label: ""; tooltip: "power menu"
+                hoverBackground: Theme.strongHover
                 onClicked: PowerMenu.openForScreen(bar.screen)
                 onRightClicked: PowerMenu.openForScreen(bar.screen)
             }
