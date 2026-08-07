@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 
 pacman -Syu --noconfirm --needed \
-  bash coreutils findutils grep sed gawk jq python shellcheck dbus \
-  quickshell qt6-declarative hyprland grim ttf-noto-nerd upower
+  bash coreutils findutils grep sed gawk jq python shellcheck dbus libcap \
+  quickshell qt6-declarative hyprland grim sway ttf-noto-nerd upower
 
 export HOME=/root
 export XDG_RUNTIME_DIR=/tmp/awtarchy-qs-runtime
@@ -12,7 +12,7 @@ mkdir -p "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
 
 printf '%s\n' '=== package versions ==='
-pacman -Q quickshell hyprland qt6-declarative upower jq shellcheck
+pacman -Q quickshell hyprland qt6-declarative sway upower jq shellcheck
 qs --version
 
 printf '%s\n' '=== source validation ==='
@@ -54,22 +54,51 @@ hl.config({
 LUA
 
 cleanup() {
-  kill "${QS_PID:-}" "${HYPR_PID:-}" "$DBUS_PID" 2>/dev/null || true
+  kill "${QS_PID:-}" "${HYPR_PID:-}" "${SWAY_PID:-}" "$DBUS_PID" 2>/dev/null || true
 }
 trap cleanup EXIT
 
-printf '%s\n' '=== starting headless Hyprland ==='
+# Arch Sway carries session/tty file capabilities that Docker refuses to execute
+# under its default capability bounding set. They are not needed for headless.
+setcap -r "$(command -v sway)" 2>/dev/null || true
+
+printf '%s\n' '=== starting outer headless Sway ==='
+printf '%s\n' \
+  'output * mode 1920x1080' \
+  'seat * hide_cursor 1000' > /tmp/awtarchy-ci-sway.conf
+WLR_BACKENDS=headless \
+WLR_RENDERER=pixman \
+WLR_LIBINPUT_NO_DEVICES=1 \
+sway -c /tmp/awtarchy-ci-sway.conf -d >/tmp/sway.log 2>&1 &
+SWAY_PID=$!
+
+OUTER_WAYLAND=''
+for _ in $(seq 1 200); do
+  OUTER_WAYLAND="$(find "$XDG_RUNTIME_DIR" -maxdepth 1 -type s -name 'wayland-*' | head -n1 || true)"
+  [[ -n "$OUTER_WAYLAND" ]] && break
+  kill -0 "$SWAY_PID" 2>/dev/null || break
+  sleep 0.05
+done
+if [[ -z "$OUTER_WAYLAND" ]]; then
+  printf '%s\n' 'Outer Sway failed:' >&2
+  cat /tmp/sway.log >&2
+  exit 1
+fi
+OUTER_DISPLAY="$(basename "$OUTER_WAYLAND")"
+printf 'outer WAYLAND_DISPLAY=%s\n' "$OUTER_DISPLAY"
+
+printf '%s\n' '=== starting nested Hyprland ==='
 HYPRLAND_NO_RT=1 \
 HYPRLAND_NO_SD_NOTIFY=1 \
 HYPRLAND_NO_SD_VARS=1 \
-AQ_NO_KMS_REQUIREMENT=1 \
+WAYLAND_DISPLAY="$OUTER_DISPLAY" \
 XDG_CURRENT_DESKTOP=Hyprland \
 XDG_SESSION_TYPE=wayland \
 Hyprland --i-am-really-stupid --config /tmp/awtarchy-ci-hyprland.lua >/tmp/hyprland.log 2>&1 &
 HYPR_PID=$!
 
 HIS=''
-for _ in $(seq 1 200); do
+for _ in $(seq 1 240); do
   HIS_DIR="$(find "$XDG_RUNTIME_DIR/hypr" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -n1 || true)"
   if [[ -n "$HIS_DIR" && -S "$HIS_DIR/.socket.sock" ]]; then
     HIS="$(basename "$HIS_DIR")"
@@ -80,23 +109,26 @@ for _ in $(seq 1 200); do
 done
 
 if [[ -z "$HIS" ]]; then
-  printf '%s\n' 'Hyprland failed before IPC:' >&2
+  printf '%s\n' 'Nested Hyprland failed before IPC:' >&2
   cat /tmp/hyprland.log >&2
   exit 1
 fi
 
 export HYPRLAND_INSTANCE_SIGNATURE="$HIS"
-WAYLAND_SOCKET="$(find "$XDG_RUNTIME_DIR" -maxdepth 1 -type s -name 'wayland-*' | head -n1 || true)"
-if [[ -z "$WAYLAND_SOCKET" ]]; then
-  printf '%s\n' 'Hyprland has no Wayland socket:' >&2
+# Pick the newest Wayland socket, which belongs to nested Hyprland rather than
+# the already-running outer Sway compositor.
+NESTED_WAYLAND="$(find "$XDG_RUNTIME_DIR" -maxdepth 1 -type s -name 'wayland-*' -printf '%T@ %p\n' | sort -nr | head -n1 | cut -d' ' -f2- || true)"
+if [[ -z "$NESTED_WAYLAND" ]]; then
+  printf '%s\n' 'Nested Hyprland has no Wayland socket:' >&2
   cat /tmp/hyprland.log >&2
   exit 1
 fi
-export WAYLAND_DISPLAY="$(basename "$WAYLAND_SOCKET")"
+export WAYLAND_DISPLAY="$(basename "$NESTED_WAYLAND")"
 export QT_QPA_PLATFORM=wayland
 export XDG_CURRENT_DESKTOP=Hyprland
 export XDG_SESSION_TYPE=wayland
 
+printf 'nested HIS=%s WAYLAND_DISPLAY=%s\n' "$HYPRLAND_INSTANCE_SIGNATURE" "$WAYLAND_DISPLAY"
 hyprctl monitors -j | tee /tmp/monitors.json
 jq -e 'length >= 1' /tmp/monitors.json >/dev/null
 hyprctl configerrors | tee /tmp/configerrors.txt
@@ -106,7 +138,7 @@ qs -vv --no-color -c awtarchy >/tmp/quickshell.log 2>&1 &
 QS_PID=$!
 
 PING=''
-for _ in $(seq 1 200); do
+for _ in $(seq 1 240); do
   PING="$(qs -c awtarchy ipc call control ping 2>/dev/null || true)"
   [[ "$PING" == 'ok' ]] && break
   kill -0 "$QS_PID" 2>/dev/null || break
