@@ -10,14 +10,10 @@ import Quickshell.Widgets
 Singleton {
     id: root
 
-    // Preserve the old Awtarchy/Fuzzel placement behavior:
-    // - Bar button: pin to the corner beside that monitor's visible bar.
-    // - Keyboard/desktop launcher: pin to the visible bar edge.
-    // - Hidden bar: use a centered floating launcher on the focused monitor.
-    property string placementMode: "center" // center | edge | corner
-    property string placementPosition: "top"
-    readonly property int horizontalBarSize: 28
-    readonly property int verticalBarSize: 36
+    readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
+    readonly property string positionScript: configHome + "/hypr/scripts/quickshell_launcher_position.sh"
+    property string targetMonitorName: ""
+    property string requestedPlacement: "center"
 
     function focusedScreen() {
         const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
@@ -25,38 +21,46 @@ Singleton {
         return matches.length > 0 ? matches[0] : (Quickshell.screens.length > 0 ? Quickshell.screens[0] : null);
     }
 
-    function configurePlacement(targetScreen, fromBar) {
-        if (!targetScreen || !BarState.enabledFor(targetScreen.name)) {
-            placementMode = "center";
-            placementPosition = "top";
-            return;
-        }
-
-        placementPosition = BarState.positionFor(targetScreen.name);
-        placementMode = fromBar ? "corner" : "edge";
+    function placementForScreen(targetScreen) {
+        if (!targetScreen || !BarState.enabledFor(targetScreen.name))
+            return "center";
+        return BarState.positionFor(targetScreen.name);
     }
 
-    function openWindow(targetScreen, fromBar) {
-        if (targetScreen)
-            launcherWindow.screen = targetScreen;
-        configurePlacement(targetScreen, fromBar);
+    function showOnScreen(targetScreen) {
+        if (!targetScreen)
+            return;
+
+        targetMonitorName = targetScreen.name;
+        requestedPlacement = placementForScreen(targetScreen);
+        launcherWindow.screen = targetScreen;
         search.text = "";
         appList.currentIndex = 0;
         launcherWindow.visible = true;
+
+        positionTimer.restart();
         Qt.callLater(() => search.forceActiveFocus());
     }
 
-    // Bar.qml calls this directly. Treat it as the old --from-waybar path.
+    // Used by the Apps button on each bar. Clicking the button behaves as a toggle.
     function openForScreen(targetScreen) {
-        openWindow(targetScreen, true);
+        if (launcherWindow.visible) {
+            close();
+            return;
+        }
+        showOnScreen(targetScreen);
     }
 
-    // Hyprland binds and desktop launchers use this path.
     function openFocused() {
-        openWindow(focusedScreen(), false);
+        if (launcherWindow.visible) {
+            search.forceActiveFocus();
+            return;
+        }
+        showOnScreen(focusedScreen());
     }
 
     function close() {
+        focusGrab.active = false;
         launcherWindow.visible = false;
         search.text = "";
     }
@@ -65,51 +69,13 @@ Singleton {
         if (launcherWindow.visible)
             close();
         else
-            openFocused();
+            showOnScreen(focusedScreen());
     }
 
-    function panelX(panelWidth) {
-        const width = launcherWindow.width;
-        const centered = Math.max(0, Math.round((width - panelWidth) / 2));
-
-        if (placementMode === "center")
-            return centered;
-
-        if (placementMode === "corner") {
-            if (placementPosition === "right")
-                return Math.max(0, width - panelWidth - verticalBarSize);
-            if (placementPosition === "left")
-                return verticalBarSize;
-            return 0;
-        }
-
-        if (placementPosition === "left")
-            return verticalBarSize;
-        if (placementPosition === "right")
-            return Math.max(0, width - panelWidth - verticalBarSize);
-        return centered;
-    }
-
-    function panelY(panelHeight) {
-        const height = launcherWindow.height;
-        const centered = Math.max(0, Math.round((height - panelHeight) / 2));
-
-        if (placementMode === "center")
-            return centered;
-
-        if (placementMode === "corner") {
-            if (placementPosition === "bottom")
-                return Math.max(0, height - panelHeight - horizontalBarSize);
-            if (placementPosition === "top")
-                return horizontalBarSize;
-            return 0;
-        }
-
-        if (placementPosition === "top")
-            return horizontalBarSize;
-        if (placementPosition === "bottom")
-            return Math.max(0, height - panelHeight - horizontalBarSize);
-        return centered;
+    function positionLauncher() {
+        if (!launcherWindow.visible || targetMonitorName.length === 0)
+            return;
+        Quickshell.execDetached([positionScript, targetMonitorName, requestedPlacement]);
     }
 
     function filteredApps() {
@@ -136,36 +102,67 @@ Singleton {
         function close(): void { root.close(); }
     }
 
-    PanelWindow {
+    Timer {
+        id: positionTimer
+        interval: 20
+        repeat: false
+        onTriggered: root.positionLauncher()
+    }
+
+    HyprlandFocusGrab {
+        id: focusGrab
+        windows: [launcherWindow]
+        onCleared: {
+            if (launcherWindow.visible)
+                root.close();
+        }
+    }
+
+    FloatingWindow {
         id: launcherWindow
         visible: false
-        color: "transparent"
-        focusable: true
-        aboveWindows: true
-        exclusionMode: ExclusionMode.Ignore
-        anchors.top: true
-        anchors.bottom: true
-        anchors.left: true
-        anchors.right: true
+        title: "Awtarchy Application Search"
+        color: Theme.popupBackground
+        surfaceFormat.opaque: true
 
-        MouseArea {
-            anchors.fill: parent
-            onClicked: root.close()
+        implicitWidth: Math.min(660, Math.max(420, (screen ? screen.width : 1280) * 0.52))
+        implicitHeight: Math.min(660, Math.max(360, (screen ? screen.height : 720) * 0.68))
+        minimumSize: Qt.size(420, 360)
+        maximumSize: Qt.size(660, 660)
+
+        onBackingWindowVisibleChanged: {
+            if (backingWindowVisible && visible) {
+                positionTimer.restart();
+                focusGrab.active = true;
+                Qt.callLater(() => search.forceActiveFocus());
+            }
         }
 
+        onVisibleChanged: {
+            if (!visible)
+                focusGrab.active = false;
+        }
+
+        onClosed: root.close()
+
         Rectangle {
-            id: panel
-            width: Math.min(660, Math.max(420, launcherWindow.width * 0.52))
-            height: Math.min(660, Math.max(360, launcherWindow.height * 0.68))
-            x: root.panelX(width)
-            y: root.panelY(height)
+            anchors.fill: parent
             color: Theme.popupBackground
             border.width: 0
             radius: 0
 
-            MouseArea {
-                anchors.fill: parent
-                onPressed: mouse => mouse.accepted = true
+            // Alt + left-drag anywhere in the launcher uses the compositor's
+            // native move operation. Normal clicks remain available to controls.
+            DragHandler {
+                target: null
+                acceptedButtons: Qt.LeftButton
+                acceptedModifiers: Qt.AltModifier
+                onActiveChanged: {
+                    if (active) {
+                        positionTimer.stop();
+                        launcherWindow.startSystemMove();
+                    }
+                }
             }
 
             ColumnLayout {
