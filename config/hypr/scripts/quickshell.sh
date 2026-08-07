@@ -32,6 +32,7 @@ ensure_state() {
     if [[ ! -s "$STATE_FILE" ]] || ! jq -e '.' "$STATE_FILE" >/dev/null 2>&1; then
         if [[ -s "$LEGACY_STATE_FILE" ]] && jq -e 'type == "object" and (.monitors | type == "object")' "$LEGACY_STATE_FILE" >/dev/null 2>&1; then
             jq '{enabled:(if .enabled == null then true else .enabled end), monitors:(.monitors // {})}' "$LEGACY_STATE_FILE" >"$STATE_FILE"
+            rm -rf -- "${CACHE_HOME}/waybar"
         else
             printf '{"enabled":true,"monitors":{}}\n' >"$STATE_FILE"
         fi

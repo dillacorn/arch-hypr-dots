@@ -169,16 +169,52 @@ remove_legacy_shell_packages_stage() {
 }
 
 '''
+legacy_file_cleanup_function = r'''
+remove_legacy_shell_files_stage() {
+  local scripts_dir="${HOME_DIR}/.config/hypr/scripts"
+  local applications_dir="${HOME_DIR}/.local/share/applications"
+  local obsolete
+
+  rm -rf -- \
+    "${HOME_DIR}/.config/waybar" \
+    "${HOME_DIR}/.config/fuzzel" \
+    "${HOME_DIR}/.config/mako" \
+    "${HOME_DIR}/.config/wlogout"
+
+  for obsolete in \
+    cliphist-fuzzel.sh \
+    fuzzel_toggle.sh \
+    mako_dismiss.sh \
+    waybar.sh \
+    waybar_flip.sh \
+    waybar_ready_sound.sh \
+    waybar_restore_resume.sh \
+    waybar_rotate.sh \
+    waybar_toggle.sh \
+    waybar_toggle_idle.sh \
+    wlogout_toggle.sh
+  do
+    rm -f -- "${scripts_dir}/${obsolete}"
+  done
+
+  rm -f -- \
+    "${applications_dir}/waybar_flip.desktop" \
+    "${applications_dir}/waybar_rotate.desktop" \
+    "${applications_dir}/waybar_toggle.desktop"
+}
+
+'''
 run_install_marker = 'run_install() {\n'
 if run_install_marker not in text:
     raise SystemExit("ERROR: could not locate run_install")
-text = text.replace(run_install_marker, cleanup_function + run_install_marker, 1)
+text = text.replace(run_install_marker, cleanup_function + legacy_file_cleanup_function + run_install_marker, 1)
 
 install_sequence = '''  copy_awtarchy_configs_stage
   install_awtarchy_command_stage
   apply_awtarchy_gsettings_defaults
 '''
 install_sequence_replacement = '''  copy_awtarchy_configs_stage
+  remove_legacy_shell_files_stage
   install_awtarchy_command_stage
   remove_legacy_shell_packages_stage
   apply_awtarchy_gsettings_defaults
