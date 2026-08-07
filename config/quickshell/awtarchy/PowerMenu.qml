@@ -1,4 +1,5 @@
 pragma Singleton
+pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
@@ -9,13 +10,14 @@ import Quickshell.Io
 Singleton {
     id: root
 
+    // Preserve the existing wlogout layout order and keybinds.
     readonly property var actions: [
         { label: "", text: "Lock (L)", key: "l", command: "hyprlock" },
-        { label: "", text: "Logout (O)", key: "o", command: "loginctl kill-session \"$XDG_SESSION_ID\"" },
-        { label: "", text: "Suspend (Z)", key: "z", command: "hyprlock & sleep 1; systemctl suspend -i" },
         { label: "", text: "Hibernate (H)", key: "h", command: "hyprlock & sleep 1; systemctl hibernate || loginctl hibernate" },
         { label: "", text: "Reboot (R)", key: "r", command: "systemctl reboot" },
-        { label: "", text: "Shutdown (S)", key: "s", command: "systemctl poweroff" }
+        { label: "", text: "Shutdown (S)", key: "s", command: "systemctl poweroff" },
+        { label: "", text: "Logout (O)", key: "o", command: "loginctl kill-session \"$XDG_SESSION_ID\"" },
+        { label: "", text: "Suspend (Z)", key: "z", command: "hyprlock & sleep 1; systemctl suspend -i" }
     ]
 
     function focusedScreen() {
@@ -82,6 +84,8 @@ Singleton {
                     return;
                 }
 
+                // Lowercase the typed character so Caps Lock no longer breaks
+                // the existing l/h/r/s/o/z shortcuts.
                 const typed = event.text ? event.text.toLowerCase() : "";
                 for (let i = 0; i < root.actions.length; ++i) {
                     if (typed === root.actions[i].key) {
@@ -103,6 +107,7 @@ Singleton {
                 model: root.actions
 
                 delegate: Rectangle {
+                    id: actionTile
                     required property var modelData
                     width: Math.min(220, Math.max(150, powerWindow.width * 0.14))
                     height: Math.min(150, Math.max(110, powerWindow.height * 0.16))
@@ -116,7 +121,7 @@ Singleton {
 
                         Text {
                             anchors.horizontalCenter: parent.horizontalCenter
-                            text: modelData.label
+                            text: actionTile.modelData.label
                             color: Theme.foreground
                             font.family: Theme.fontFamily
                             font.pixelSize: 30
@@ -124,7 +129,7 @@ Singleton {
 
                         Text {
                             anchors.horizontalCenter: parent.horizontalCenter
-                            text: modelData.text
+                            text: actionTile.modelData.text
                             color: Theme.foreground
                             font.family: Theme.fontFamily
                             font.pixelSize: 14
@@ -135,7 +140,7 @@ Singleton {
                         id: hover
                         anchors.fill: parent
                         hoverEnabled: true
-                        onClicked: root.runAction(modelData)
+                        onClicked: root.runAction(actionTile.modelData)
                     }
                 }
             }
