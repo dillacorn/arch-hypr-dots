@@ -26,7 +26,14 @@ jobs:
             set -euo pipefail
             pacman -Syu --noconfirm --needed \
               bash coreutils findutils grep sed gawk jq python shellcheck \
-              quickshell qt6-declarative sway
+              quickshell qt6-declarative sway libcap
+
+            # Arch grants sway tty/session file capabilities. Docker's default
+            # capability bounding set rejects executing such a binary even for
+            # a purely headless backend, so strip them inside this disposable
+            # test container. Headless wlroots does not need those privileges.
+            getcap "$(command -v sway)" || true
+            setcap -r "$(command -v sway)" || true
 
             echo "=== versions ==="
             pacman -Q quickshell qt6-declarative shellcheck jq sway
