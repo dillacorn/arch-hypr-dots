@@ -65,7 +65,7 @@ HYPRLAND_NO_SD_VARS=1 \
 AQ_NO_KMS_REQUIREMENT=1 \
 XDG_CURRENT_DESKTOP=Hyprland \
 XDG_SESSION_TYPE=wayland \
-Hyprland --config /tmp/awtarchy-ci-hyprland.lua >/tmp/hyprland.log 2>&1 &
+Hyprland --i-am-really-stupid --config /tmp/awtarchy-ci-hyprland.lua >/tmp/hyprland.log 2>&1 &
 HYPR_PID=$!
 
 HIS=''
