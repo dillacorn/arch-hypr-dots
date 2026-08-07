@@ -20,7 +20,7 @@ jobs:
           fetch-depth: 0
       - name: Apply source patch
         run: python3 .github/qs_upower_patch.py
-      - name: Validate
+      - name: Validate source patch
         run: |
           bash -n awtarchy-install.sh
           bash -n local/share/awtarchy/awtarchy-runtime.sh
