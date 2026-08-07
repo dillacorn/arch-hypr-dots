@@ -15,6 +15,7 @@ Singleton {
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_launcher_position.sh"
     property string targetMonitorName: ""
     property string requestedPlacement: "center"
+    property bool launcherPositioned: false
 
     function focusedScreen() {
         const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
@@ -34,12 +35,11 @@ Singleton {
 
         targetMonitorName = targetScreen.name;
         requestedPlacement = placementForScreen(targetScreen);
+        launcherPositioned = false;
         launcherWindow.screen = targetScreen;
         search.text = "";
         appList.currentIndex = 0;
         launcherWindow.visible = true;
-        positionTimer.restart();
-        Qt.callLater(() => search.forceActiveFocus());
     }
 
     // Apps icon behavior: toggle on the bar that was clicked.
@@ -62,6 +62,7 @@ Singleton {
     function close() {
         focusGrab.active = false;
         launcherWindow.visible = false;
+        launcherPositioned = false;
         search.text = "";
     }
 
@@ -75,7 +76,7 @@ Singleton {
     function positionLauncher() {
         if (!launcherWindow.visible || targetMonitorName.length === 0)
             return;
-        Quickshell.execDetached([positionScript, targetMonitorName, requestedPlacement]);
+        positionProcess.exec([positionScript, targetMonitorName, requestedPlacement]);
     }
 
     function searchText(entry) {
@@ -159,9 +160,20 @@ Singleton {
 
     Timer {
         id: positionTimer
-        interval: 20
+        interval: 0
         repeat: false
         onTriggered: root.positionLauncher()
+    }
+
+    Process {
+        id: positionProcess
+        onExited: {
+            if (!launcherWindow.visible)
+                return;
+            root.launcherPositioned = true;
+            focusGrab.active = true;
+            Qt.callLater(() => search.forceActiveFocus());
+        }
     }
 
     HyprlandFocusGrab {
@@ -177,8 +189,8 @@ Singleton {
         id: launcherWindow
         visible: false
         title: "Awtarchy Application Search"
-        color: Theme.popupBackground
-        surfaceFormat.opaque: true
+        color: "transparent"
+        surfaceFormat.opaque: false
 
         // Closely match Awtarchy's Fuzzel width=40, lines=20 presentation.
         implicitWidth: Math.min(520, Math.max(420, (screen ? screen.width : 1920) * 0.27))
@@ -186,17 +198,13 @@ Singleton {
         minimumSize: Qt.size(420, 360)
         maximumSize: Qt.size(520, 604)
 
-        onBackingWindowVisibleChanged: {
-            if (backingWindowVisible && visible) {
-                positionTimer.restart();
-                focusGrab.active = true;
-                Qt.callLater(() => search.forceActiveFocus());
-            }
-        }
-
         onVisibleChanged: {
-            if (!visible)
+            if (visible) {
+                root.launcherPositioned = false;
+                positionTimer.restart();
+            } else {
                 focusGrab.active = false;
+            }
         }
 
         onClosed: root.close()
@@ -206,6 +214,7 @@ Singleton {
             color: Theme.popupBackground
             border.width: 0
             radius: 0
+            opacity: root.launcherPositioned ? 1 : 0
 
             // Alt + left-drag anywhere in the launcher uses the compositor move.
             DragHandler {
@@ -256,7 +265,7 @@ Singleton {
                             font.weight: Font.Medium
                             verticalAlignment: TextInput.AlignVCenter
                             clip: true
-                            focus: launcherWindow.visible
+                            focus: launcherWindow.visible && root.launcherPositioned
 
                             Keys.onPressed: event => {
                                 if (event.key === Qt.Key_Escape) {
