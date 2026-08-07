@@ -100,8 +100,8 @@ Singleton {
         GridLayout {
             anchors.centerIn: parent
             columns: 3
-            rowSpacing: 10
-            columnSpacing: 10
+            rowSpacing: 14
+            columnSpacing: 14
 
             Repeater {
                 model: root.actions
@@ -109,22 +109,22 @@ Singleton {
                 delegate: Rectangle {
                     id: actionTile
                     required property var modelData
-                    width: Math.min(220, Math.max(150, powerWindow.width * 0.14))
-                    height: Math.min(150, Math.max(110, powerWindow.height * 0.16))
+                    width: Math.min(280, Math.max(200, powerWindow.width * 0.18))
+                    height: Math.min(190, Math.max(150, powerWindow.height * 0.20))
                     radius: 20
                     color: hover.containsMouse ? Theme.popupButtonHover : Theme.popupButton
                     border.width: 0
 
                     Column {
                         anchors.centerIn: parent
-                        spacing: 8
+                        spacing: 12
 
                         Text {
                             anchors.horizontalCenter: parent.horizontalCenter
                             text: actionTile.modelData.label
                             color: Theme.foreground
                             font.family: Theme.fontFamily
-                            font.pixelSize: 30
+                            font.pixelSize: 42
                         }
 
                         Text {
@@ -132,7 +132,7 @@ Singleton {
                             text: actionTile.modelData.text
                             color: Theme.foreground
                             font.family: Theme.fontFamily
-                            font.pixelSize: 14
+                            font.pixelSize: 16
                         }
                     }
 
