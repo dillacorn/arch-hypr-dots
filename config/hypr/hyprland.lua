@@ -528,11 +528,11 @@ local play_pause = "~/.config/hypr/scripts/play_pause.sh"
 
 -- Bars / UI toggles
 local hyprbars_toggle = "~/.config/hypr/scripts/hyprbars_toggle.sh"
-local waybar_toggle = "~/.config/hypr/scripts/quickshell_bar_toggle.sh"
-local waybar_flip = "~/.config/hypr/scripts/quickshell_bar_flip.sh"
-local waybar_rotate = "~/.config/hypr/scripts/quickshell_bar_rotate.sh"
+local bar_toggle = "~/.config/hypr/scripts/quickshell_bar_toggle.sh"
+local bar_flip = "~/.config/hypr/scripts/quickshell_bar_flip.sh"
+local bar_rotate = "~/.config/hypr/scripts/quickshell_bar_rotate.sh"
 local toggle_animations = "~/.config/hypr/scripts/toggle_animations.sh"
-local mako_dismiss = "~/.config/hypr/scripts/quickshell_notification_dismiss.sh"
+local notification_dismiss = "~/.config/hypr/scripts/quickshell_notification_dismiss.sh"
 
 -- Themes / wallpaper
 local wallpicker = "~/.config/hypr/scripts/launch_handler.sh wallpicker \"alacritty --class wallpicker -e awtwall --resume\""
@@ -657,7 +657,7 @@ for _, key in ipairs({
     "ALT + CTRL + SHIFT + SPACE",
     "SUPER + SPACE",
 }) do
-    hl.bind(key, hl.dsp.exec_cmd(mako_dismiss), {})
+    hl.bind(key, hl.dsp.exec_cmd(notification_dismiss), {})
 end
 
 -- Terminal utilities (smtty)
@@ -669,9 +669,9 @@ hl.bind("SUPER + ALT + K", hl.dsp.exec_cmd("smtty -k"), {})
 -- UI / compositor toggles
 for _, bind in ipairs({
     { "SUPER + ALT + T", hyprbars_toggle },
-    { "SUPER + ALT + B", waybar_rotate },
-    { "SUPER + ALT + CTRL + B", waybar_toggle },
-    { "SUPER + CTRL + B", waybar_flip },
+    { "SUPER + ALT + B", bar_rotate },
+    { "SUPER + ALT + CTRL + B", bar_toggle },
+    { "SUPER + CTRL + B", bar_flip },
     { "SUPER + A", toggle_animations },
 }) do
     hl.bind(bind[1], hl.dsp.exec_cmd(bind[2]), {})
@@ -899,7 +899,7 @@ hl.define_submap("noalt", function()
         "ALT + CTRL + SHIFT + SPACE",
         "SUPER + SPACE",
     }) do
-        hl.bind(key, hl.dsp.exec_cmd(mako_dismiss), {})
+        hl.bind(key, hl.dsp.exec_cmd(notification_dismiss), {})
     end
 
     -- Terminal utilities (smtty) in "noalt"
@@ -911,9 +911,9 @@ hl.define_submap("noalt", function()
     -- UI / compositor toggles in "noalt"
     for _, bind in ipairs({
         { "SUPER + ALT + T", hyprbars_toggle },
-        { "SUPER + ALT + B", waybar_rotate },
-        { "SUPER + ALT + CTRL + B", waybar_toggle },
-        { "SUPER + CTRL + B", waybar_flip },
+        { "SUPER + ALT + B", bar_rotate },
+        { "SUPER + ALT + CTRL + B", bar_toggle },
+        { "SUPER + CTRL + B", bar_flip },
         { "SUPER + A", toggle_animations },
     }) do
         hl.bind(bind[1], hl.dsp.exec_cmd(bind[2]), {})
@@ -1111,7 +1111,7 @@ hl.define_submap("vm", function()
         { "SUPER + ALT + D", hl.dsp.exec_cmd(screenshot_display), {} },
         { "SUPER + ALT + G", hl.dsp.exec_cmd(gif_capture), {} },
         { "SUPER + ALT + RETURN", hl.dsp.exec_cmd(terminal), {} },
-        { "SUPER + ALT + SPACE", hl.dsp.exec_cmd(mako_dismiss), { repeating = true } },
+        { "SUPER + ALT + SPACE", hl.dsp.exec_cmd(notification_dismiss), { repeating = true } },
         { "SUPER + ALT + mouse:272", hl.dsp.window.drag(), { mouse = true } },
         { "SUPER + ALT + mouse:273", hl.dsp.window.resize(), { mouse = true } },
         { "SUPER + ALT + mouse:274", hl.dsp.window.float({ action = "toggle" }), {} },
