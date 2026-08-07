@@ -28,7 +28,7 @@ jobs:
               bash coreutils findutils grep sed gawk jq python shellcheck \
               quickshell qt6-declarative sway libcap
 
-            # Arch grants sway tty/session file capabilities. Docker's default
+            # Arch grants sway tty/session file capabilities. The default Docker
             # capability bounding set rejects executing such a binary even for
             # a purely headless backend, so strip them inside this disposable
             # test container. Headless wlroots does not need those privileges.
