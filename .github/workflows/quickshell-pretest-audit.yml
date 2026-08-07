@@ -85,11 +85,12 @@ jobs:
             export HOME=/root
             export XDG_RUNTIME_DIR="$(mktemp -d)"
             chmod 700 "$XDG_RUNTIME_DIR"
-            weston --backend=headless --socket=wayland-test --idle-time=0 --width=1920 --height=1080 >/tmp/weston.log 2>&1 &
+            weston -B headless --renderer=pixman --socket=wayland-test --idle-time=0 --width=1920 --height=1080 >/tmp/weston.log 2>&1 &
             WESTON_PID=$!
             trap "kill $WESTON_PID 2>/dev/null || true; rm -rf \"$XDG_RUNTIME_DIR\" \"$TMP\"" EXIT
             for i in $(seq 1 50); do test -S "$XDG_RUNTIME_DIR/wayland-test" && break; sleep 0.1; done
             if ! test -S "$XDG_RUNTIME_DIR/wayland-test"; then cat /tmp/weston.log; exit 1; fi
+            cat /tmp/weston.log
             export WAYLAND_DISPLAY=wayland-test QT_QPA_PLATFORM=wayland
             set +e
             timeout 6s qs -p config/quickshell/awtarchy >/tmp/qs.log 2>&1
