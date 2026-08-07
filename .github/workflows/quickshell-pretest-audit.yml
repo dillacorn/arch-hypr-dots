@@ -22,10 +22,12 @@ jobs:
       - name: Run Arch Linux checks and headless Hyprland smoke test
         run: |
           set -euo pipefail
+          rm -rf .ci
+          mkdir -p .ci
           docker run --rm -v "$PWD:/repo" -w /repo archlinux:latest bash -lc '
             set -euo pipefail
             pacman -Syu --noconfirm --needed \
-              bash coreutils findutils grep sed gawk jq python shellcheck dbus \
+              bash coreutils findutils grep sed gawk jq python shellcheck dbus git \
               quickshell qt6-declarative hyprland grim ttf-noto-nerd
 
             export XDG_RUNTIME_DIR=/tmp/awtarchy-ci-runtime
@@ -168,22 +170,38 @@ jobs:
             cat /tmp/qs.log || true
             [[ "$PING" == "ok" ]] || { find "$XDG_RUNTIME_DIR/quickshell" -type f -maxdepth 5 -print 2>/dev/null || true; exit 1; }
 
+            echo "=== exercise and render Quickshell surfaces ==="
+            OUTPUT="$(jq -r ".[0].name" /tmp/monitors.json)"
+            hyprctl layers -j | tee /tmp/layers.json
+            sleep 0.20
+            grim -o "$OUTPUT" /repo/.ci/bar.png
+
             qs -c awtarchy ipc call launcher open
+            sleep 0.25
+            grim -o "$OUTPUT" /repo/.ci/launcher.png
             qs -c awtarchy ipc call launcher close
+
             qs -c awtarchy ipc call powermenu open
+            sleep 0.20
+            grim -o "$OUTPUT" /repo/.ci/power-menu.png
             qs -c awtarchy ipc call powermenu close
+
             qs -c awtarchy ipc call clipboard open
+            sleep 0.20
+            grim -o "$OUTPUT" /repo/.ci/clipboard.png
             qs -c awtarchy ipc call clipboard close
+
             qs -c awtarchy ipc call themes open
+            sleep 0.20
+            grim -o "$OUTPUT" /repo/.ci/theme-picker.png
             qs -c awtarchy ipc call themes close
+
             qs -c awtarchy ipc call notifications dndEnabled
 
-            echo "=== layer and render smoke test ==="
-            hyprctl layers -j | tee /tmp/layers.json
-            OUTPUT="$(jq -r ".[0].name" /tmp/monitors.json)"
-            grim -o "$OUTPUT" /tmp/quickshell-bar.png
-            test -s /tmp/quickshell-bar.png
-            file /tmp/quickshell-bar.png
+            for shot in /repo/.ci/*.png; do
+              test -s "$shot"
+              file "$shot"
+            done
 
             qs -c awtarchy ipc call control quit >/dev/null 2>&1 || true
             wait "$QS_PID" || true
@@ -191,3 +209,10 @@ jobs:
             wait "$HYPR_PID" 2>/dev/null || true
             git diff --check
           '
+      - name: Upload Quickshell render captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quickshell-pretest-renders
+          path: .ci/*.png
+          if-no-files-found: ignore
