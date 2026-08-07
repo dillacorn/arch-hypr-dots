@@ -57,6 +57,10 @@ jobs:
             done
             for target in quickshell_launcher.sh quickshell_power_menu.sh quickshell_notification_dismiss.sh quickshell_clipboard_toggle.sh quickshell_bar_rotate.sh quickshell_bar_toggle.sh quickshell_bar_flip.sh; do grep -q "$target" config/hypr/hyprland.lua; done
 
+            echo "=== migration cleanup hooks ==="
+            grep -q "remove_legacy_shell_files_stage" awtarchy-install.sh
+            grep -q "CACHE_HOME}/waybar" config/hypr/scripts/quickshell.sh
+
             echo "=== manager mocked monitor state ==="
             TMP="$(mktemp -d)"
             mkdir -p "$TMP/bin" "$TMP/home/.config/hypr/scripts"
@@ -81,11 +85,11 @@ jobs:
             export HOME=/root
             export XDG_RUNTIME_DIR="$(mktemp -d)"
             chmod 700 "$XDG_RUNTIME_DIR"
-            weston --backend=headless-backend.so --socket=wayland-test --idle-time=0 >/tmp/weston.log 2>&1 &
+            weston --backend=headless --socket=wayland-test --idle-time=0 --width=1920 --height=1080 >/tmp/weston.log 2>&1 &
             WESTON_PID=$!
             trap "kill $WESTON_PID 2>/dev/null || true; rm -rf \"$XDG_RUNTIME_DIR\" \"$TMP\"" EXIT
             for i in $(seq 1 50); do test -S "$XDG_RUNTIME_DIR/wayland-test" && break; sleep 0.1; done
-            test -S "$XDG_RUNTIME_DIR/wayland-test"
+            if ! test -S "$XDG_RUNTIME_DIR/wayland-test"; then cat /tmp/weston.log; exit 1; fi
             export WAYLAND_DISPLAY=wayland-test QT_QPA_PLATFORM=wayland
             set +e
             timeout 6s qs -p config/quickshell/awtarchy >/tmp/qs.log 2>&1
