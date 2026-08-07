@@ -347,7 +347,7 @@ if hl.plugin and hl.plugin.hyprbars and hl.plugin.hyprbars.add_button then
     end
 end
 
--- Quickshell application launcher: Fuzzel-like floating search window.
+-- Quickshell application launcher: bar-aware floating search window.
 hl.window_rule({
     name = "awtarchy-quickshell-launcher",
     match = { title = "Awtarchy Application Search" },
@@ -661,7 +661,7 @@ end
 hl.bind("ALT + V", hl.dsp.exec_cmd(wiremix), {})
 hl.bind("SUPER + V", hl.dsp.exec_cmd(wiremix), {})
 
--- Mako dismiss
+-- Notification dismiss
 for _, key in ipairs({
     "ALT + SPACE",
     "ALT + CTRL + SPACE",
@@ -903,7 +903,7 @@ hl.define_submap("noalt", function()
     hl.bind("ALT + V", hl.dsp.exec_cmd(wiremix), {})
     hl.bind("SUPER + V", hl.dsp.exec_cmd(wiremix), {})
 
-    -- Mako dismiss in "noalt"
+    -- Notification dismiss in "noalt"
     for _, key in ipairs({
         "ALT + SPACE",
         "ALT + CTRL + SPACE",
