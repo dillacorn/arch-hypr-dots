@@ -1,4 +1,5 @@
 pragma Singleton
+pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
@@ -37,12 +38,11 @@ Singleton {
         search.text = "";
         appList.currentIndex = 0;
         launcherWindow.visible = true;
-
         positionTimer.restart();
         Qt.callLater(() => search.forceActiveFocus());
     }
 
-    // Used by the Apps button on each bar. Clicking the button behaves as a toggle.
+    // Apps icon behavior: toggle on the bar that was clicked.
     function openForScreen(targetScreen) {
         if (launcherWindow.visible) {
             close();
@@ -78,21 +78,76 @@ Singleton {
         Quickshell.execDetached([positionScript, targetMonitorName, requestedPlacement]);
     }
 
+    function searchText(entry) {
+        return [entry.name, entry.genericName, entry.comment, entry.id, ...(entry.keywords || [])]
+            .filter(value => value && String(value).length > 0)
+            .join(" ")
+            .toLowerCase();
+    }
+
+    // Lightweight fzf-like subsequence scoring. Exact/prefix matches win, then
+    // consecutive characters and word-boundary matches. Non-subsequences lose.
+    function fuzzyScore(haystack, query) {
+        if (query.length === 0)
+            return 0;
+
+        const exact = haystack.indexOf(query);
+        if (exact >= 0)
+            return 5000 - exact * 4 + (exact === 0 ? 1000 : 0);
+
+        let score = 0;
+        let at = 0;
+        let previous = -2;
+        for (let i = 0; i < query.length; ++i) {
+            const ch = query[i];
+            const found = haystack.indexOf(ch, at);
+            if (found < 0)
+                return -1;
+
+            score += 20;
+            if (found === previous + 1)
+                score += 35;
+            if (found === 0 || " -_./".indexOf(haystack[found - 1]) >= 0)
+                score += 45;
+            score -= Math.min(20, found - at);
+            previous = found;
+            at = found + 1;
+        }
+        return score - Math.min(200, haystack.length);
+    }
+
     function filteredApps() {
         const query = search.text.trim().toLowerCase();
         const apps = [...DesktopEntries.applications.values]
             .filter(app => !app.noDisplay)
-            .sort((a, b) => a.name.localeCompare(b.name));
-        if (query.length === 0)
-            return apps;
+            .map(app => ({ entry: app, score: fuzzyScore(searchText(app), query) }))
+            .filter(item => item.score >= 0);
 
-        return apps.filter(app => {
-            const haystack = [app.name, app.genericName, app.comment, app.id]
-                .filter(value => value && value.length > 0)
-                .join(" ")
-                .toLowerCase();
-            return haystack.indexOf(query) >= 0;
+        apps.sort((a, b) => {
+            if (a.score !== b.score)
+                return b.score - a.score;
+            return a.entry.name.localeCompare(b.entry.name);
         });
+        return apps.map(item => item.entry);
+    }
+
+    function launchEntry(entry) {
+        if (!entry)
+            return;
+
+        const workingDirectory = entry.workingDirectory || "";
+        if (entry.runInTerminal) {
+            Quickshell.execDetached({
+                command: ["alacritty", "-e", ...entry.command],
+                workingDirectory: workingDirectory
+            });
+        } else {
+            Quickshell.execDetached({
+                command: entry.command,
+                workingDirectory: workingDirectory
+            });
+        }
+        close();
     }
 
     IpcHandler {
@@ -125,10 +180,11 @@ Singleton {
         color: Theme.popupBackground
         surfaceFormat.opaque: true
 
-        implicitWidth: Math.min(660, Math.max(420, (screen ? screen.width : 1280) * 0.52))
-        implicitHeight: Math.min(660, Math.max(360, (screen ? screen.height : 720) * 0.68))
+        // Closely match Awtarchy's Fuzzel width=40, lines=20 presentation.
+        implicitWidth: Math.min(520, Math.max(420, (screen ? screen.width : 1920) * 0.27))
+        implicitHeight: Math.min(604, Math.max(360, (screen ? screen.height : 1080) - 80))
         minimumSize: Qt.size(420, 360)
-        maximumSize: Qt.size(660, 660)
+        maximumSize: Qt.size(520, 604)
 
         onBackingWindowVisibleChanged: {
             if (backingWindowVisible && visible) {
@@ -151,8 +207,7 @@ Singleton {
             border.width: 0
             radius: 0
 
-            // Alt + left-drag anywhere in the launcher uses the compositor's
-            // native move operation. Normal clicks remain available to controls.
+            // Alt + left-drag anywhere in the launcher uses the compositor move.
             DragHandler {
                 target: null
                 acceptedButtons: Qt.LeftButton
@@ -167,62 +222,73 @@ Singleton {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 12
-                spacing: 8
+                spacing: 0
 
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 44
+                    Layout.preferredHeight: 36
                     color: Theme.active
                     border.width: 0
 
-                    TextInput {
-                        id: search
+                    RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: 12
-                        anchors.rightMargin: 12
-                        color: Theme.foreground
-                        selectionColor: Theme.focus
-                        selectedTextColor: Theme.foreground
-                        font.family: Theme.fontFamily
-                        font.pixelSize: 16
-                        verticalAlignment: TextInput.AlignVCenter
-                        clip: true
-                        focus: launcherWindow.visible
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 6
 
                         Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: search.text.length === 0
-                            text: ">> "
+                            text: ">>"
+                            color: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 14
+                            font.weight: Font.Medium
+                        }
+
+                        TextInput {
+                            id: search
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            color: Theme.foreground
+                            selectionColor: Theme.focus
+                            selectedTextColor: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 14
+                            font.weight: Font.Medium
+                            verticalAlignment: TextInput.AlignVCenter
+                            clip: true
+                            focus: launcherWindow.visible
+
+                            Keys.onPressed: event => {
+                                if (event.key === Qt.Key_Escape) {
+                                    root.close();
+                                    event.accepted = true;
+                                } else if (event.key === Qt.Key_Down) {
+                                    if (appList.count > 0)
+                                        appList.currentIndex = Math.min(appList.count - 1, appList.currentIndex + 1);
+                                    appList.positionViewAtIndex(appList.currentIndex, ListView.Contain);
+                                    event.accepted = true;
+                                } else if (event.key === Qt.Key_Up) {
+                                    if (appList.count > 0)
+                                        appList.currentIndex = Math.max(0, appList.currentIndex - 1);
+                                    appList.positionViewAtIndex(appList.currentIndex, ListView.Contain);
+                                    event.accepted = true;
+                                } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                                    if (appList.currentItem && appList.currentItem.entry)
+                                        root.launchEntry(appList.currentItem.entry);
+                                    event.accepted = true;
+                                }
+                            }
+
+                            onTextChanged: appList.currentIndex = 0
+                        }
+
+                        Text {
+                            readonly property int matches: appList.count
+                            text: matches + "/" + DesktopEntries.applications.values.filter(app => !app.noDisplay).length
                             color: Theme.muted
                             font.family: Theme.fontFamily
-                            font.pixelSize: 16
+                            font.pixelSize: 11
                         }
-
-                        Keys.onPressed: event => {
-                            if (event.key === Qt.Key_Escape) {
-                                root.close();
-                                event.accepted = true;
-                            } else if (event.key === Qt.Key_Down) {
-                                if (appList.count > 0)
-                                    appList.currentIndex = Math.min(appList.count - 1, appList.currentIndex + 1);
-                                appList.positionViewAtIndex(appList.currentIndex, ListView.Contain);
-                                event.accepted = true;
-                            } else if (event.key === Qt.Key_Up) {
-                                if (appList.count > 0)
-                                    appList.currentIndex = Math.max(0, appList.currentIndex - 1);
-                                appList.positionViewAtIndex(appList.currentIndex, ListView.Contain);
-                                event.accepted = true;
-                            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                                if (appList.currentItem && appList.currentItem.entry) {
-                                    appList.currentItem.entry.execute();
-                                    root.close();
-                                }
-                                event.accepted = true;
-                            }
-                        }
-
-                        onTextChanged: appList.currentIndex = 0
                     }
                 }
 
@@ -244,47 +310,33 @@ Singleton {
                         property var entry: modelData
 
                         width: ListView.view.width
-                        height: 46
+                        height: 28
                         color: ListView.isCurrentItem ? Theme.focus : (hover.containsMouse ? Theme.subtleHover : "transparent")
                         border.width: 0
 
                         RowLayout {
                             anchors.fill: parent
-                            anchors.leftMargin: 10
-                            anchors.rightMargin: 10
-                            spacing: 10
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            spacing: 8
 
                             IconImage {
-                                Layout.preferredWidth: 24
-                                Layout.preferredHeight: 24
-                                implicitSize: 24
+                                Layout.preferredWidth: 18
+                                Layout.preferredHeight: 18
+                                implicitSize: 18
                                 source: row.entry.icon && row.entry.icon.length > 0
                                     ? Quickshell.iconPath(row.entry.icon, true)
                                     : Quickshell.iconPath("application-x-executable", true)
                             }
 
-                            ColumnLayout {
+                            Text {
                                 Layout.fillWidth: true
-                                spacing: 0
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: row.entry.name
-                                    color: Theme.foreground
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: 14
-                                    elide: Text.ElideRight
-                                }
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    visible: row.entry.genericName && row.entry.genericName.length > 0
-                                    text: row.entry.genericName
-                                    color: Theme.muted
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: 11
-                                    elide: Text.ElideRight
-                                }
+                                text: row.entry.name
+                                color: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 14
+                                font.weight: Font.Medium
+                                elide: Text.ElideRight
                             }
                         }
 
@@ -292,11 +344,8 @@ Singleton {
                             id: hover
                             anchors.fill: parent
                             hoverEnabled: true
-                            onEntered: appList.currentIndex = index
-                            onClicked: {
-                                row.entry.execute();
-                                root.close();
-                            }
+                            onEntered: appList.currentIndex = row.index
+                            onClicked: root.launchEntry(row.entry)
                         }
                     }
                 }
