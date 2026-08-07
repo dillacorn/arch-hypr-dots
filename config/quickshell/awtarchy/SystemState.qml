@@ -17,8 +17,8 @@ Singleton {
     property real previousCpuIdle: 0
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
-    readonly property string cpuTempScript: configHome + "/waybar/scripts/cpu_temp.sh"
-    readonly property string idleScript: configHome + "/waybar/scripts/idle_inhibitor_global.sh"
+    readonly property string cpuTempScript: configHome + "/hypr/scripts/cpu_temp.sh"
+    readonly property string idleScript: configHome + "/hypr/scripts/idle_inhibitor_global.sh"
 
     Process {
         id: metricsProcess
