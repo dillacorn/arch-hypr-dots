@@ -74,6 +74,16 @@ if "quickshell" not in packages:
     packages.insert(insert_at, "quickshell")
 text = text[:match.start()] + match.group(1) + " ".join(packages) + match.group(3) + text[match.end():]
 
+# Quickshell battery integration requires the UPower daemon.
+utility_match = re.search(r'("Utilities:)([^"]+)(")', text)
+if not utility_match:
+    raise SystemExit("ERROR: could not locate Utilities package group")
+utility_packages = utility_match.group(2).split()
+if "upower" not in utility_packages:
+    insert_at = utility_packages.index("qt6ct") + 1 if "qt6ct" in utility_packages else 0
+    utility_packages.insert(insert_at, "upower")
+text = text[:utility_match.start()] + utility_match.group(1) + " ".join(utility_packages) + utility_match.group(3) + text[utility_match.end():]
+
 # AUR defaults: Waybar-git and wlogout are no longer part of Awtarchy.
 aur = re.search(r'declare -a PACKAGES_AUR=\(\n(?P<body>.*?)\n\)', text, re.S)
 if not aur:
