@@ -1,0 +1,44 @@
+name: Fix temporary Quickshell audit YAML
+
+on:
+  push:
+    branches: [quickshell-conversion-testing]
+    paths: ['.github/workflows/fix-quickshell-audit.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: quickshell-conversion-testing
+          fetch-depth: 0
+      - name: Replace invalid Lua heredoc
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/workflows/quickshell-pretest-audit.yml')
+          text = p.read_text()
+          start = text.index('            cat > /tmp/hyprland.lua <<"LUA"\n')
+          end = text.index('\n            HYPRLAND_NO_RT=1', start)
+          replacement = '''            printf "%s\\n" \\
+              "hl.config({" \\
+              "    ecosystem = { no_update_news = true, enforce_permissions = false }," \\
+              "    misc = { disable_hyprland_logo = true, disable_splash_rendering = true }," \\
+              "})" > /tmp/hyprland.lua\n'''
+          text = text[:start] + replacement + text[end:]
+          p.write_text(text)
+          PY
+          git diff --check
+      - name: Commit fix and delete helper
+        run: |
+          rm .github/workflows/fix-quickshell-audit.yml
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add .github/workflows/quickshell-pretest-audit.yml .github/workflows/fix-quickshell-audit.yml
+          git diff --cached --check
+          git commit -m 'Fix temporary headless Hyprland audit'
+          git push origin HEAD:quickshell-conversion-testing
