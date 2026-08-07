@@ -15,5 +15,5 @@ jobs:
         with:
           ref: quickshell-conversion-testing
           fetch-depth: 0
-      - name: Run current Arch Hyprland and Quickshell
+      - name: Run current Arch Hyprland and production Quickshell
         run: docker run --rm -v "$PWD:/repo" -w /repo archlinux:latest bash .github/qs_runtime_test.sh
