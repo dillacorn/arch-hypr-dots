@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Temporary Awtarchy conversion shim.
+# hyprland.lua still contains the legacy `mako` autostart line on this testing
+# branch. Wait briefly for the Quickshell notification server. If Quickshell is
+# unavailable, fall back to the real Mako binary so notifications are not lost.
+
+set -u
+
+if command -v qs >/dev/null 2>&1; then
+    for _ in {1..60}; do
+        if qs -c awtarchy ipc call control ping >/dev/null 2>&1; then
+            exit 0
+        fi
+        sleep 0.05
+    done
+fi
+
+exec /usr/bin/mako "$@"
