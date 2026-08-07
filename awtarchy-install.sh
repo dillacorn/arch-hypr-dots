@@ -8,7 +8,8 @@ IFS=$'\n\t'
 umask 022
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-RUNTIME_SOURCE="${SCRIPT_DIR}/local/share/awtarchy/awtarchy-runtime.sh"
+RUNTIME_TEMPLATE="${SCRIPT_DIR}/local/share/awtarchy/awtarchy-runtime.sh"
+RUNTIME_SOURCE="$RUNTIME_TEMPLATE"
 LAUNCHER_SOURCE="${SCRIPT_DIR}/local/bin/awtarchy"
 SYSTEM_BIN_DIR="${AWTARCHY_SYSTEM_BIN_DIR:-/usr/local/bin}"
 TARGET_USER=""
@@ -16,6 +17,7 @@ TARGET_HOME=""
 REINSTALL=0
 DRY_RUN_REQUESTED=0
 ARGS=()
+RUNTIME_TEMP=""
 
 usage() {
   cat <<'EOF_USAGE'
@@ -35,6 +37,188 @@ package installation or replacing managed configs.
 Options:
   --reinstall    Run the complete installer even when Awtarchy is already installed
 EOF_USAGE
+}
+
+cleanup() {
+  [[ -n ${RUNTIME_TEMP:-} ]] && rm -f -- "$RUNTIME_TEMP" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+prepare_runtime_source() {
+  command -v python3 >/dev/null 2>&1 || {
+    printf 'ERROR: python3 is required to prepare the Quickshell conversion runtime.\n' >&2
+    exit 1
+  }
+
+  RUNTIME_TEMP="$(mktemp "${TMPDIR:-/tmp}/awtarchy-runtime-quickshell.XXXXXX")"
+
+  python3 - "$RUNTIME_TEMPLATE" "$RUNTIME_TEMP" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+src = Path(sys.argv[1])
+dst = Path(sys.argv[2])
+text = src.read_text(encoding="utf-8")
+
+legacy = {"waybar-git", "fuzzel", "wlogout", "mako"}
+
+# Arch package group: Quickshell replaces the old shell UI packages.
+match = re.search(r'("Window Management:)([^"]+)(")', text)
+if not match:
+    raise SystemExit("ERROR: could not locate Window Management package group")
+packages = match.group(2).split()
+packages = [pkg for pkg in packages if pkg not in legacy]
+if "quickshell" not in packages:
+    insert_at = packages.index("hyprsunset") + 1 if "hyprsunset" in packages else 0
+    packages.insert(insert_at, "quickshell")
+text = text[:match.start()] + match.group(1) + " ".join(packages) + match.group(3) + text[match.end():]
+
+# AUR defaults: Waybar-git and wlogout are no longer part of Awtarchy.
+aur = re.search(r'declare -a PACKAGES_AUR=\(\n(?P<body>.*?)\n\)', text, re.S)
+if not aur:
+    raise SystemExit("ERROR: could not locate PACKAGES_AUR")
+body_lines = [line for line in aur.group("body").splitlines() if line.strip() not in legacy]
+text = text[:aur.start("body")] + "\n".join(body_lines) + text[aur.end("body"):]
+
+# Fresh config copy: Quickshell replaces Waybar/Fuzzel/Mako/wlogout config trees.
+config_dirs = re.search(r'local -a config_dirs=\(([^)]*)\)', text)
+if not config_dirs:
+    raise SystemExit("ERROR: could not locate config_dirs")
+dirs = config_dirs.group(1).split()
+dirs = [item for item in dirs if item not in {"waybar", "fuzzel", "mako", "wlogout"}]
+if "quickshell" not in dirs:
+    insert_at = dirs.index("hypr") + 1 if "hypr" in dirs else 0
+    dirs.insert(insert_at, "quickshell")
+text = text[:config_dirs.start(1)] + " ".join(dirs) + text[config_dirs.end(1):]
+
+# Install the exact transformed runtime used by this testing branch instead of
+# copying the untransformed repository template back into ~/.local/share.
+runtime_line = '  local runtime_src="${REPO_DIR}/local/share/awtarchy/awtarchy-runtime.sh"'
+runtime_replacement = '  local runtime_src="${AWTARCHY_RUNTIME_SOURCE_OVERRIDE:-${REPO_DIR}/local/share/awtarchy/awtarchy-runtime.sh}"'
+if runtime_line not in text:
+    raise SystemExit("ERROR: could not locate install runtime source")
+text = text.replace(runtime_line, runtime_replacement, 1)
+
+# An unreleased testing branch must not replace itself with the latest stable
+# release during install. Stable/tagged installers keep the existing behavior.
+verify_block = '''  log "Verifying the installed Awtarchy command against GitHub's latest release..."
+  if ! env -u XDG_DATA_HOME -u XDG_STATE_HOME \\
+    HOME="$HOME_DIR" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \\
+    "${bin_dir}/awtarchy" self-update
+  then
+    die "Could not verify the installed Awtarchy command against GitHub's latest release."
+  fi
+'''
+verify_replacement = '''  if [[ "${AWTARCHY_SKIP_SELF_UPDATE:-0}" != "1" ]]; then
+    log "Verifying the installed Awtarchy command against GitHub's latest release..."
+    if ! env -u XDG_DATA_HOME -u XDG_STATE_HOME \\
+      HOME="$HOME_DIR" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \\
+      "${bin_dir}/awtarchy" self-update
+    then
+      die "Could not verify the installed Awtarchy command against GitHub's latest release."
+    fi
+  else
+    log "Keeping the unreleased Quickshell conversion runtime installed for testing."
+  fi
+'''
+if verify_block not in text:
+    raise SystemExit("ERROR: could not locate install self-update verification block")
+text = text.replace(verify_block, verify_replacement, 1)
+
+# Updater theme application must use the Quickshell-aware theme helper instead
+# of executing legacy theme scripts that mutate removed shell configs.
+text = text.replace(
+    'bash "$theme_script"',
+    'bash "${repo_dir}/config/hypr/scripts/quickshell_theme_apply.sh" "$theme"'
+)
+
+# No notification reload should depend on makoctl after the conversion.
+text = re.sub(
+    r'(?m)^(?P<indent>[ \t]*)makoctl reload(?:[^\n]*)$',
+    r'\g<indent>: # Quickshell owns notifications',
+    text,
+)
+
+# Remove Awtarchy-managed legacy shell packages after Quickshell and its configs
+# are installed. Packages the user installed independently are deliberately kept.
+cleanup_function = r'''
+remove_legacy_shell_packages_stage() {
+  local managed_file="/var/lib/awtarchy/managed-packages"
+  local pkg tmp
+  local -a obsolete=(waybar-git fuzzel wlogout mako)
+
+  for pkg in "${obsolete[@]}"; do
+    pacman -Q "$pkg" >/dev/null 2>&1 || continue
+
+    if [[ ! -f "$managed_file" ]] || ! grep -Fxq "$pkg" "$managed_file"; then
+      warn "Keeping ${pkg}: it is installed but is not recorded as Awtarchy-managed."
+      continue
+    fi
+
+    log "Removing obsolete Awtarchy shell package: ${pkg}"
+    if pacman -Rns --noconfirm "$pkg"; then
+      tmp="$(mktemp)"
+      grep -Fxv "$pkg" "$managed_file" >"$tmp" || true
+      cat "$tmp" >"$managed_file"
+      rm -f "$tmp"
+    else
+      warn "Could not remove obsolete package ${pkg}; continuing conversion."
+    fi
+  done
+}
+
+'''
+run_install_marker = 'run_install() {\n'
+if run_install_marker not in text:
+    raise SystemExit("ERROR: could not locate run_install")
+text = text.replace(run_install_marker, cleanup_function + run_install_marker, 1)
+
+install_sequence = '''  copy_awtarchy_configs_stage
+  install_awtarchy_command_stage
+  apply_awtarchy_gsettings_defaults
+'''
+install_sequence_replacement = '''  copy_awtarchy_configs_stage
+  install_awtarchy_command_stage
+  remove_legacy_shell_packages_stage
+  apply_awtarchy_gsettings_defaults
+'''
+if install_sequence not in text:
+    raise SystemExit("ERROR: could not locate install stage sequence")
+text = text.replace(install_sequence, install_sequence_replacement, 1)
+
+# The old Waybar script chmod block is obsolete because those helpers were moved
+# under config/hypr/scripts.
+text = re.sub(
+    r'\n  if \[\[ -d "\$\{HOME_DIR\}/\.config/waybar/scripts" \]\]; then\n'
+    r'    find "\$\{HOME_DIR\}/\.config/waybar/scripts" -type f -exec chmod \+x \{\} \+ 2>/dev/null \|\| true\n'
+    r'  fi',
+    '',
+    text,
+)
+
+# Validate the effective install selections. Compatibility/migration code may
+# still recognize old paths, but none of the four programs may be selected.
+window = re.search(r'"Window Management:([^"]+)"', text)
+aur = re.search(r'declare -a PACKAGES_AUR=\(\n(?P<body>.*?)\n\)', text, re.S)
+config_dirs = re.search(r'local -a config_dirs=\(([^)]*)\)', text)
+if not (window and aur and config_dirs):
+    raise SystemExit("ERROR: transformed runtime validation anchors missing")
+for old in legacy:
+    if old in window.group(1).split() or old in aur.group("body").split() or old in config_dirs.group(1).split():
+        raise SystemExit(f"ERROR: legacy shell dependency still selected: {old}")
+if "quickshell" not in window.group(1).split() or "quickshell" not in config_dirs.group(1).split():
+    raise SystemExit("ERROR: quickshell was not added to effective runtime")
+
+dst.write_text(text, encoding="utf-8")
+PY
+
+  chmod 0755 "$RUNTIME_TEMP"
+  bash -n "$RUNTIME_TEMP" || {
+    printf 'ERROR: Generated Quickshell runtime failed Bash syntax validation.\n' >&2
+    exit 1
+  }
+  RUNTIME_SOURCE="$RUNTIME_TEMP"
 }
 
 resolve_target() {
@@ -85,7 +269,27 @@ legacy_install_exists() {
 }
 
 source_release_tag() {
-  local source_name="${SCRIPT_DIR##*/}" tag=""
+  local source_name="${SCRIPT_DIR##*/}" tag="" branch=""
+
+  if [[ ${AWTARCHY_INSTALL_BRANCH:-} == quickshell-conversion-testing ]]; then
+    printf '%s\n' unreleased
+    return 0
+  fi
+
+  if command -v git >/dev/null 2>&1 \
+    && git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1;
+  then
+    branch="$(git -C "$SCRIPT_DIR" branch --show-current 2>/dev/null || true)"
+    if [[ $branch == quickshell-conversion-testing ]]; then
+      printf '%s\n' unreleased
+      return 0
+    fi
+  fi
+
+  if [[ $source_name == awtarchy-quickshell-conversion-testing ]]; then
+    printf '%s\n' unreleased
+    return 0
+  fi
 
   if [[ -n ${AWTARCHY_INSTALL_TAG:-} ]]; then
     printf '%s\n' "$AWTARCHY_INSTALL_TAG"
@@ -225,13 +429,11 @@ refresh_existing_command() {
   local command_tag revision
 
   bash -n "$RUNTIME_SOURCE" || {
-    printf 'ERROR: Awtarchy runtime failed Bash syntax validation.
-' >&2
+    printf 'ERROR: Awtarchy runtime failed Bash syntax validation.\n' >&2
     exit 1
   }
   bash -n "$LAUNCHER_SOURCE" || {
-    printf 'ERROR: Awtarchy command failed Bash syntax validation.
-' >&2
+    printf 'ERROR: Awtarchy command failed Bash syntax validation.\n' >&2
     exit 1
   }
 
@@ -244,32 +446,36 @@ refresh_existing_command() {
   write_version_file "$command_version" "$command_tag" "$revision" installed_at
   repair_target_ownership
 
-  printf '%s
-' "Verifying the Awtarchy command against GitHub's latest release..."
-  if ! env -u XDG_DATA_HOME -u XDG_STATE_HOME     HOME="$TARGET_HOME" USER="$TARGET_USER" LOGNAME="$TARGET_USER"     "${bin_dir}/awtarchy" self-update
-  then
-    printf '%s
-' "ERROR: Could not verify the Awtarchy command against GitHub's latest release." >&2
-    exit 1
+  if [[ $command_tag == unreleased ]]; then
+    printf '%s\n' "Installed the unreleased Quickshell conversion runtime without replacing it from stable."
+  else
+    printf '%s\n' "Verifying the Awtarchy command against GitHub's latest release..."
+    if ! env -u XDG_DATA_HOME -u XDG_STATE_HOME \
+      HOME="$TARGET_HOME" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
+      "${bin_dir}/awtarchy" self-update
+    then
+      printf '%s\n' "ERROR: Could not verify the Awtarchy command against GitHub's latest release." >&2
+      exit 1
+    fi
+    repair_target_ownership
   fi
-  repair_target_ownership
 }
 
 show_existing_install_message() {
   cat <<EOF_MESSAGE
 Awtarchy is already installed for ${TARGET_USER}.
 
-The installed launcher and runtime were replaced from this installer, then
-verified against GitHub's latest release. No packages or managed configs
-were changed.
+The installed launcher/runtime were refreshed from this installer. For this
+unreleased Quickshell branch, the runtime is intentionally not replaced by the
+latest stable GitHub release. No packages or managed configs were changed.
 
   awtarchy                 Open the maintenance menu
-  awtarchy self-update     Update the Awtarchy command
+  awtarchy self-update     Explicitly leave the testing runtime for a release
   awtarchy update          Update configs and preserve personal changes
   awtarchy reset           Reset managed configs to release defaults
   awtarchy version         Show installed and latest releases
 
-To intentionally run the complete installer again:
+To intentionally run the complete Quickshell conversion installer:
 
   sudo ./awtarchy-install.sh --reinstall
 EOF_MESSAGE
@@ -330,18 +536,13 @@ Installed the new maintenance command:
 
   ${bin_dir}/awtarchy
 
-No packages or managed configs were changed. Future maintenance now uses:
-
-  awtarchy                 Open the maintenance menu
-  awtarchy self-update     Update the Awtarchy command
-  awtarchy update          Update configs and preserve personal changes
-  awtarchy reset           Reset managed configs to release defaults
-  awtarchy version         Show installed and latest releases
+No packages or managed configs were changed. Use --reinstall when you are ready
+to apply the actual Quickshell conversion.
 EOF_MESSAGE
 }
 
-[[ -f $RUNTIME_SOURCE ]] || {
-  printf 'ERROR: Missing installer runtime: %s\n' "$RUNTIME_SOURCE" >&2
+[[ -f $RUNTIME_TEMPLATE ]] || {
+  printf 'ERROR: Missing installer runtime template: %s\n' "$RUNTIME_TEMPLATE" >&2
   exit 1
 }
 [[ -f $LAUNCHER_SOURCE ]] || {
@@ -378,6 +579,7 @@ while (( $# )); do
   esac
 done
 
+prepare_runtime_source
 resolve_target
 
 if (( DRY_RUN_REQUESTED == 0 )); then
@@ -406,4 +608,13 @@ if (( REINSTALL == 0 )); then
   fi
 fi
 
-exec env AWTARCHY_REPO_DIR="$SCRIPT_DIR" bash "$RUNTIME_SOURCE" install "${ARGS[@]}"
+set +e
+env \
+  AWTARCHY_REPO_DIR="$SCRIPT_DIR" \
+  AWTARCHY_RUNTIME_SOURCE_OVERRIDE="$RUNTIME_SOURCE" \
+  AWTARCHY_SKIP_SELF_UPDATE=1 \
+  AWTARCHY_INSTALL_BRANCH=quickshell-conversion-testing \
+  bash "$RUNTIME_SOURCE" install "${ARGS[@]}"
+status=$?
+set -e
+exit "$status"
