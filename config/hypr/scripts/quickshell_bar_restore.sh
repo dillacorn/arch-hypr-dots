@@ -5,8 +5,8 @@ set -euo pipefail
 CONF="${XDG_CONFIG_HOME:-$HOME/.config}"
 QS_SH="$CONF/hypr/scripts/quickshell.sh"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-IDLE_MARKER="${IDLE_MARKER:-$RUNTIME_DIR/waybar.idle_restore}"
-TRANSITION_LOCK="${TRANSITION_LOCK:-$RUNTIME_DIR/waybar.idle_transition.lock}"
+IDLE_MARKER="${IDLE_MARKER:-$RUNTIME_DIR/quickshell.idle_restore}"
+TRANSITION_LOCK="${TRANSITION_LOCK:-$RUNTIME_DIR/quickshell.idle_transition.lock}"
 mkdir -p "$RUNTIME_DIR"
 
 if command -v flock >/dev/null 2>&1; then

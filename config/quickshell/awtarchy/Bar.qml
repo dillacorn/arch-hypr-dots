@@ -40,9 +40,9 @@ PanelWindow {
     anchors.right: position === "right" || !vertical
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
-    readonly property string ddcScript: configHome + "/waybar/scripts/ddc_brightness.sh"
-    readonly property string wiremixScript: configHome + "/waybar/scripts/wiremix-toggle.sh"
-    readonly property string mouseSubmapScript: configHome + "/waybar/scripts/toggle_mouse_submap.sh"
+    readonly property string ddcScript: configHome + "/hypr/scripts/ddc_brightness.sh"
+    readonly property string wiremixScript: configHome + "/hypr/scripts/wiremix-toggle.sh"
+    readonly property string mouseSubmapScript: configHome + "/hypr/scripts/toggle_mouse_submap.sh"
 
     function workspaceIcon(id) {
         const icons = {
@@ -84,7 +84,7 @@ PanelWindow {
             return false;
         const ipc = toplevel.lastIpcObject || {};
         const cls = String(ipc.class || ipc.initialClass || "").toLowerCase();
-        const ignored = ["wofi", "fuzzel", "tofi", "rofi", "mako", "wlogout", "hyprlock", "swaylock", "swww", "mpvpaper", "pulsemixer", "org.waytrogen.waytrogen", "org.pulseaudio.pavucontrol", "wiremix", "quickshell"];
+        const ignored = ["wofi", "tofi", "rofi", "hyprlock", "swaylock", "swww", "mpvpaper", "pulsemixer", "org.waytrogen.waytrogen", "org.pulseaudio.pavucontrol", "wiremix", "quickshell"];
         return ignored.indexOf(cls) < 0;
     }
 
@@ -138,7 +138,7 @@ PanelWindow {
     function ddcAction(action) {
         Quickshell.execDetached({
             command: [ddcScript, action],
-            environment: ({ WAYBAR_OUTPUT_NAME: monitorName })
+            environment: ({ AWTARCHY_OUTPUT_NAME: monitorName })
         });
     }
 
@@ -163,7 +163,7 @@ PanelWindow {
         id: ddcWatch
         running: bar.visible
         command: [bar.ddcScript, "watch"]
-        environment: ({ WAYBAR_OUTPUT_NAME: bar.monitorName })
+        environment: ({ AWTARCHY_OUTPUT_NAME: bar.monitorName })
         stdout: SplitParser {
             onRead: line => bar.parseBrightness(line)
         }

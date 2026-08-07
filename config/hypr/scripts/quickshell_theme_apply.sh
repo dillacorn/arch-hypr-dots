@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Apply an Awtarchy theme without executing legacy Waybar/Fuzzel/Mako/wlogout mutations.
+# Apply an Awtarchy theme without executing obsolete shell-program mutations.
 # Existing theme files remain the palette source while Quickshell conversion is tested.
 
 set -euo pipefail
@@ -48,16 +48,16 @@ PY
 active_border="$(theme_value NEW_ACTIVE_BORDER 'a0a0a0ff')"
 inactive_border="$(theme_value NEW_INACTIVE_BORDER '4b4b4bff')"
 
-background="$(theme_value W_BG '#353535')"
-hover="$(theme_value W_CUSTOM_HOVER_BG '#404040')"
-focus="$(theme_value W_FOCUS_BG '#4a4a4a')"
-active="$(theme_value W_ACTIVE_BG '#2b2b2b')"
-urgent="$(theme_value W_URGENT_BG '#ff5555')"
-charging="$(theme_value W_BATT_CHARGING_BG '#6a9955')"
-critical="$(theme_value W_BATT_CRITICAL_BG '#ff5555')"
-foreground="$(theme_value W_COLOR '#d0d0d0')"
-dark="$(theme_value W_URGENT_COLOR '#1a1a1a')"
-muted="$(theme_value W_MUTED "$hover")"
+background="$(theme_value QS_BACKGROUND '#353535')"
+hover="$(theme_value QS_HOVER '#404040')"
+focus="$(theme_value QS_FOCUS '#4a4a4a')"
+active="$(theme_value QS_ACTIVE '#2b2b2b')"
+urgent="$(theme_value QS_URGENT '#ff5555')"
+charging="$(theme_value QS_CHARGING '#6a9955')"
+critical="$(theme_value QS_CRITICAL '#ff5555')"
+foreground="$(theme_value QS_FOREGROUND '#d0d0d0')"
+dark="$(theme_value QS_DARK '#1a1a1a')"
+muted="$(theme_value QS_MUTED "$hover")"
 
 wo_border="$(theme_value WO_BORDER '2px none #4a4a4a')"
 wo_bg="$(theme_value WO_BG "$background")"
@@ -66,9 +66,9 @@ wo_outer_border="$(theme_value WO_OUTER_BORDER '0px solid #4a4a4a')"
 wo_outer_bg="$(theme_value WO_OUTER_BG "$background")"
 wo_text="$(theme_value WO_TEXT_UNSEL '#ffffff')"
 
-micro_scheme="$(extract_theme_metadata micro)"
-alacritty_theme="$(extract_theme_metadata alacritty)"
-speedcrunch_scheme="$(extract_theme_metadata speedcrunch)"
+micro_scheme="$(theme_value MICRO_COLORSCHEME 'geany')"
+alacritty_theme="$(theme_value ALACRITTY_THEME 'wombat.toml')"
+speedcrunch_scheme="$(theme_value SPEEDCRUNCH_COLORSCHEME "$name")"
 
 if [[ -f "$HYPR_LUA" ]]; then
     python3 - "$HYPR_LUA" "$active_border" "$inactive_border" <<'PY'

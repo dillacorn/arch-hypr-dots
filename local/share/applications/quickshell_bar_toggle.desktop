@@ -3,9 +3,9 @@
 
 [Desktop Entry]
 Type=Application
-Name=Waybar toggle (focused display)
-Comment=Toggle Waybar on the currently focused monitor
-Exec=sh -lc 'exec "$HOME/.config/hypr/scripts/waybar_toggle.sh"'
+Name=Quickshell Bar toggle (focused display)
+Comment=Toggle Quickshell Bar on the currently focused monitor
+Exec=sh -lc 'exec "$HOME/.config/hypr/scripts/quickshell_bar_toggle.sh"'
 Icon=preferences-desktop-display
 Terminal=false
 Categories=Utility;

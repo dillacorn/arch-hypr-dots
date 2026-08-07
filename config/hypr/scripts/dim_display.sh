@@ -9,7 +9,7 @@ CACHE="${XDG_CACHE_HOME:-$HOME/.cache}"
 uid="$(id -u)"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${uid}}"
 
-INHIBITOR_SH="${INHIBITOR_SH:-${CONF}/waybar/scripts/idle_inhibitor_global.sh}"
+INHIBITOR_SH="${INHIBITOR_SH:-${CONF}/hypr/scripts/idle_inhibitor_global.sh}"
 BRIGHTNESS_SCRIPT="${HYPR_BRIGHTNESS_SCRIPT:-${CONF}/hypr/scripts/hypr-ddc-brightness.sh}"
 LOG_FILE="${HYPRIDLE_ACTION_LOG:-${CACHE}/hypridle/actions.log}"
 BR_FILE="${RUNTIME_DIR}/hypridle-brightness-level"

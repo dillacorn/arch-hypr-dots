@@ -7,7 +7,7 @@ set -euo pipefail
 CONF="${XDG_CONFIG_HOME:-$HOME/.config}"
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}"
 
-INHIBITOR_SH="${INHIBITOR_SH:-${CONF}/waybar/scripts/idle_inhibitor_global.sh}"
+INHIBITOR_SH="${INHIBITOR_SH:-${CONF}/hypr/scripts/idle_inhibitor_global.sh}"
 SCRIPTS_DIR="${CONF}/hypr/scripts"
 LOG_FILE="${HYPRIDLE_ACTION_LOG:-${CACHE}/hypridle/actions.log}"
 
@@ -1437,7 +1437,7 @@ log "allowed timeout action: ${action:-missing}"
 
 case "$action" in
     waybar-hide)
-        exec "${SCRIPTS_DIR}/waybar_toggle_idle.sh"
+        exec "${SCRIPTS_DIR}/quickshell_bar_idle_hide.sh"
         ;;
 
     dim)

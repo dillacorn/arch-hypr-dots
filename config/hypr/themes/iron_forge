@@ -1,237 +1,25 @@
 #!/usr/bin/env bash
-# github.com/dillacorn/awtarchy/tree/main/config/hypr/themes
-# ~/.config/hypr/themes/iron_forge
+# Awtarchy theme palette consumed by quickshell_theme_apply.sh.
+# This file is data-only; it does not launch or mutate shell UI programs.
 
-# iron forge
-
-set -euo pipefail
-
-###########   THEME COLORS   ###########
-# Hyprland
 NEW_ACTIVE_BORDER="ffffffff"
 NEW_INACTIVE_BORDER="242a32ff"
-
-# Waybar
-W_COLOR="#bcd2d2"
-W_BG="#0f1113"
-W_HOVER="#1a1f24"
-W_FOCUS_BG="#242a32"
-W_ACTIVE_BG="#0d0f12"
-W_ACTIVE_COLOR="#b74141"
-W_URGENT_BG="#a31717"
-W_URGENT_COLOR="#ffffff"
-W_MODE_BG="#0d0f12"
-W_MODE_COLOR="#b74141"
-W_CUSTOM_HOVER_BG="#1f2328"
-W_BATT_CHARGING_BG="#1f6f6f"
-W_BATT_CHARGING_COLOR="#0d0f12"
-W_BATT_CRITICAL_BG="#a31717"
-W_FOCUS="#242a32"
-W_MUTED="#6a7b86"
-
-# Wlogout
-WL_COLOR="#cfd6d8"
-WL_BG="rgba(13, 15, 18, 0.92)"
-WL_BTN_COLOR="#cfd6d8"
-WL_BTN_BG="rgba(13, 15, 18, 0.88)"
-WL_BTN_HOVER_BG="rgba(31, 35, 40, 0.96)"
-WL_BTN_FOCUS_BG="rgba(36, 42, 50, 0.96)"
-
-# Wofi
+QS_BACKGROUND="#0f1113"
+QS_FOREGROUND="#bcd2d2"
+QS_HOVER="#1f2328"
+QS_FOCUS="#242a32"
+QS_ACTIVE="#0d0f12"
+QS_URGENT="#a31717"
+QS_DARK="#ffffff"
+QS_CHARGING="#1f6f6f"
+QS_CRITICAL="#a31717"
+QS_MUTED="#6a7b86"
 WO_BORDER="1px solid #1a1f24"
 WO_BG="#0f1113"
 WO_INPUT_COLOR="#c7d9d9"
 WO_OUTER_BORDER="1px solid #1a1f24"
 WO_OUTER_BG="#0f1113"
 WO_TEXT_UNSEL="#ffffff"
-
-# Fuzzel
-FZ_BACKGROUND="0f1113ff"
-FZ_TEXT="ffffffff"
-FZ_SELECTION="1a1f24ff"
-FZ_SELECTION_TEXT="ffffffff"
-FZ_BORDER="1a1f24ff"
-FZ_MATCH="c7d9d9ff"
-FZ_SELECTION_MATCH="0f1113ff"
-
-# Mako
-MKO_BG="#0f1113"
-MKO_TEXT="#cfd6d8"
-MKO_BORDER="#1a1f24"
-MKO_PROG="#2a9c9c"
-
-###########   FILE PATHS   ###########
-HYPR_LUA="$HOME/.config/hypr/hyprland.lua"
-HYPR_CONF="$HOME/.config/hypr/hyprland.conf"
-WAYBAR_CSS="$HOME/.config/waybar/style.css"
-WLOGOUT_CSS="$HOME/.config/wlogout/style.css"
-WOFI_CSS="$HOME/.config/wofi/style.css"
-FUZZEL_THEME_INI="$HOME/.config/fuzzel/fuzzel.ini"
-MAKO_CONF="$HOME/.config/mako/config"
-MICRO_SETTINGS="$HOME/.config/micro/settings.json"
-ALACRITTY_CONF="$HOME/.config/alacritty/alacritty.toml"
-SPEEDCRUNCH_INI="$HOME/.config/SpeedCrunch/SpeedCrunch.ini"
-
-###########   HELPERS   ###########
-set_hypr_lua_border_colors() {
-    local active_border="$1"
-    local inactive_border="$2"
-
-    python - "$HYPR_LUA" "$active_border" "$inactive_border" <<'PY'
-from pathlib import Path
-import re
-import sys
-
-path = Path(sys.argv[1])
-active = f"rgba({sys.argv[2]})"
-inactive = f"rgba({sys.argv[3]})"
-
-text = path.read_text()
-
-def lua_quote(value: str) -> str:
-    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-def replace_lua_key(text: str, key: str, value: str) -> tuple[str, int]:
-    # Supports both the old one-line style:
-    #   hl.config({ general = { col = { active_border = "rgba(...)" } } })
-    # and the cleaned grouped-table style:
-    #   col = {
-    #       active_border = "rgba(...)",
-    #   }
-    pattern = re.compile(
-        r'(^[ \t]*(?!--)[^\n]*?\b'
-        + re.escape(key)
-        + r'\s*=\s*)"[^"\\]*(?:\\.[^"\\]*)*"',
-        re.MULTILINE,
-    )
-
-    text, count = pattern.subn(
-        lambda m: m.group(1) + lua_quote(value),
-        text,
-    )
-
-    # Optional legacy comment support if you still keep old hyprland.conf-style
-    # color notes in the Lua file.
-    comment_pattern = re.compile(
-        r'(^[ \t]*--\s*col\.'
-        + re.escape(key)
-        + r'\s*=\s*)rgba\([^)]+\)',
-        re.MULTILINE,
-    )
-
-    text = comment_pattern.sub(
-        lambda m: m.group(1) + value,
-        text,
-    )
-
-    return text, count
-
-text, active_count = replace_lua_key(text, "active_border", active)
-text, inactive_count = replace_lua_key(text, "inactive_border", inactive)
-
-missing = []
-if active_count == 0:
-    missing.append("general.col.active_border")
-if inactive_count == 0:
-    missing.append("general.col.inactive_border")
-
-if missing:
-    raise SystemExit("ERROR: did not find native Lua config key(s): " + ", ".join(missing))
-
-path.write_text(text)
-PY
-}
-apply_hyprland_colors() {
-    if [[ -f "$HYPR_LUA" ]]; then
-        set_hypr_lua_border_colors "$NEW_ACTIVE_BORDER" "$NEW_INACTIVE_BORDER"
-
-        lua -e 'assert(loadfile(os.getenv("HOME") .. "/.config/hypr/hyprland.lua"))' >/dev/null
-        command -v hyprctl >/dev/null 2>&1 && hyprctl reload >/dev/null || true
-        return 0
-    fi
-
-    if [[ -f "$HYPR_CONF" ]]; then
-        sed -i \
-            -e "s/^ *col\.active_border *= *.*/col.active_border = rgba(${NEW_ACTIVE_BORDER})/" \
-            -e "s/^ *col\.inactive_border *= *.*/col.inactive_border = rgba(${NEW_INACTIVE_BORDER})/" \
-            "$HYPR_CONF"
-
-        command -v hyprctl >/dev/null 2>&1 && hyprctl reload >/dev/null || true
-        return 0
-    fi
-
-    printf 'WARNING: no hyprland.lua or hyprland.conf found. Skipping Hyprland colors.\n' >&2
-}
-
-###########   APPLY CHANGES   ###########
-echo "Applying iron forge theme..."
-
-# Hyprland
-apply_hyprland_colors
-
-# Waybar
-sed -i \
-  -e "2s|.*|@define-color bg-default ${W_BG};|" \
-  -e "3s|.*|@define-color bg-hover ${W_CUSTOM_HOVER_BG};|" \
-  -e "4s|.*|@define-color bg-focus ${W_FOCUS_BG};|" \
-  -e "5s|.*|@define-color bg-active ${W_ACTIVE_BG};|" \
-  -e "6s|.*|@define-color bg-urgent ${W_URGENT_BG};|" \
-  -e "7s|.*|@define-color bg-charging ${W_BATT_CHARGING_BG};|" \
-  -e "8s|.*|@define-color bg-critical ${W_BATT_CRITICAL_BG};|" \
-  -e "9s|.*|@define-color color-default ${W_COLOR};|" \
-  -e "10s|.*|@define-color color-dark ${W_URGENT_COLOR};|" \
-  -e "11s|.*|@define-color color-hover ${W_HOVER};|" \
-  "$WAYBAR_CSS"
-
-# Wlogout
-sed -i \
-  -e "4s|.*|    color: ${WL_COLOR};|" \
-  -e "5s|.*|    background-color: ${WL_BG};|" \
-  -e "13s|.*|    color: ${WL_BTN_COLOR};|" \
-  -e "17s|.*|    background-color: ${WL_BTN_BG};|" \
-  -e "23s|.*|    background-color: ${WL_BTN_HOVER_BG};|" \
-  -e "27s|.*|    background-color: ${WL_BTN_FOCUS_BG};|" \
-  "$WLOGOUT_CSS"
-
-# Wofi
-sed -i \
-    -e "/^window[[:space:]]*{/,/^[[:space:]]*}/ s|^[[:space:]]*border:.*;|    border: ${WO_BORDER};|" \
-    -e "/^window[[:space:]]*{/,/^[[:space:]]*}/ s|^[[:space:]]*background-color:.*;|    background-color: ${WO_BG};|" \
-    -e "/^#input[[:space:]]*{/,/^[[:space:]]*}/ s|^[[:space:]]*color:.*;|    color: ${WO_INPUT_COLOR};|" \
-    -e "/^#outer-box[[:space:]]*{/,/^[[:space:]]*}/ s|^[[:space:]]*border:.*;|    border: ${WO_OUTER_BORDER};|" \
-    -e "/^#outer-box[[:space:]]*{/,/^[[:space:]]*}/ s|^[[:space:]]*background-color:.*;|    background-color: ${WO_OUTER_BG};|" \
-    -e "/^#text/,/^[[:space:]]*}/ s|^[[:space:]]*color:.*;|    color: ${WO_TEXT_UNSEL};|" \
-    "$WOFI_CSS"
-
-# Mako
-sed -i \
-  -e "3s|.*|background-color=${MKO_BG}|" \
-  -e "4s|.*|text-color=${MKO_TEXT}|" \
-  -e "5s|.*|border-color=${MKO_BORDER}|" \
-  -e "6s|.*|progress-color=over ${MKO_PROG}|" \
-  "$MAKO_CONF"
-
-# Micro (keep)
-sed -i '2s|.*|    "colorscheme": "gotham",|' "$MICRO_SETTINGS"
-
-# Alacritty (keep)
-sed -i '331s|.*|  "~\/.config\/alacritty\/themes\/themes\/terafox.toml"|' "$ALACRITTY_CONF"
-
-# SpeedCrunch (keep)
-sed -i '5s|.*|Display\\ColorSchemeName=iron_forge|' "$SPEEDCRUNCH_INI"
-
-# Fuzzel
-sed -i \
-  -e "2s|.*|background=${FZ_BACKGROUND}|" \
-  -e "3s|.*|text=${FZ_TEXT}|" \
-  -e "4s|.*|selection=${FZ_SELECTION}|" \
-  -e "5s|.*|selection-text=${FZ_SELECTION_TEXT}|" \
-  -e "6s|.*|selection-match=${FZ_BORDER}|" \
-  -e "7s|.*|match=${FZ_MATCH}|" \
-  -e "8s|.*|border=${FZ_SELECTION_MATCH}|" \
-  "$FUZZEL_THEME_INI"
-  
-# Reload Mako
-makoctl reload
-
-echo "iron forge theme applied."
+MICRO_COLORSCHEME="gotham"
+ALACRITTY_THEME="wombat.toml"
+SPEEDCRUNCH_COLORSCHEME="iron_forge"

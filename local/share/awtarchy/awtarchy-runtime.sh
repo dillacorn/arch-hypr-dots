@@ -29,7 +29,7 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # Package defaults
 # ──────────────────────────────────────────────────────────────────────────────
 declare -a PKG_GROUPS=(
-  "Window Management:hyprland hyprpaper hyprlock hypridle hyprpicker hyprsunset wofi fuzzel grim satty slurp wl-clipboard cliphist zbar wf-recorder zenity qt5ct qt5-wayland kvantum-qt5 qt6ct qt6-wayland xdg-desktop-portal-hyprland xdg-desktop-portal-gtk mako libnotify nwg-look"
+  "Window Management:hyprland hyprpaper hyprlock hypridle hyprpicker hyprsunset quickshell wofi grim satty slurp wl-clipboard cliphist zbar wf-recorder zenity qt5ct qt5-wayland kvantum-qt5 qt6ct qt6-wayland xdg-desktop-portal-hyprland xdg-desktop-portal-gtk libnotify nwg-look"
   "Fonts:woff2-font-awesome otf-font-awesome ttf-dejavu ttf-liberation ttf-noto-nerd noto-fonts-emoji"
   "Themes:papirus-icon-theme materia-gtk-theme xcursor-comix kvantum-theme-materia"
   "Terminal Apps:nano micro fastfetch btop htop curl passt devtools wget git dos2unix brightnessctl ipcalc cmatrix asciiquarium figlet termdown espeak-ng cava man-db man-pages unzip xarchiver ncdu ddcutil scx-scheds scx-tools"
@@ -43,10 +43,8 @@ declare -a PACKAGES_AUR=(
   smtty
   awtwall
   mpvpaper
-  wlogout
   qimgv
   alacritty-graphics
-  waybar-git
   obs-pipewire-audio-capture-bin
 )
 
@@ -2815,7 +2813,7 @@ copy_awtarchy_configs_stage() {
     retry_command chmod 644 "$dest"
   done
 
-  local -a config_dirs=(hypr waybar alacritty wlogout mako wofi fuzzel gtk-3.0 Kvantum SpeedCrunch fastfetch pcmanfm-qt yazi xdg-desktop-portal qt5ct qt6ct lsfg-vk wiremix cava micro ddcutil)
+  local -a config_dirs=(hypr quickshell alacritty wofi gtk-3.0 Kvantum SpeedCrunch fastfetch pcmanfm-qt yazi xdg-desktop-portal qt5ct qt6ct lsfg-vk wiremix cava micro ddcutil)
   local dir
   for dir in "${config_dirs[@]}"; do
     if [[ -d "${REPO_DIR}/config/${dir}" ]]; then

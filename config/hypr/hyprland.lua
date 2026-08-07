@@ -108,11 +108,10 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("gnome-keyring-daemon --start --password-store=secrets")
 
     -- hl.exec_cmd("~/.config/hypr/scripts/last_to_load_recorder.sh &")
-    hl.exec_cmd("~/.config/hypr/scripts/waybar.sh start &")
-    hl.exec_cmd("~/.config/hypr/scripts/waybar_ready_sound.sh &")
+    hl.exec_cmd("~/.config/hypr/scripts/quickshell.sh start &")
+    hl.exec_cmd("~/.config/hypr/scripts/quickshell_ready_sound.sh &")
 
     hl.exec_cmd("hyprsunset &")
-    hl.exec_cmd("mako &")
     hl.exec_cmd("nm-applet &")
     hl.exec_cmd("blueman-applet &")
     hl.exec_cmd("nwg-look -a &")
@@ -515,8 +514,8 @@ local calculator = "speedcrunch"
 local yazi = "alacritty -e yazi"
 
 -- App/menu launchers
-local app_launcher = "~/.config/hypr/scripts/fuzzel_toggle.sh"
-local wlogout = "~/.config/hypr/scripts/wlogout_toggle.sh"
+local app_launcher = "~/.config/hypr/scripts/quickshell_launcher.sh"
+local power_menu = "~/.config/hypr/scripts/quickshell_power_menu.sh"
 local hypr_quicksettings = "~/.config/hypr/scripts/launch_handler.sh hypr_quicksettings \"alacritty --class hypr_quicksettings -e bash ~/.config/hypr/scripts/hypr_quicksettings.sh --ui\""
 local awtarchy_tips_tui = "~/.config/hypr/scripts/launch_handler.sh awtarchy-tips-tui \"alacritty --class awtarchy-tips-tui -e ~/.config/hypr/scripts/awtarchy-tips-tui.sh\""
 
@@ -529,11 +528,11 @@ local play_pause = "~/.config/hypr/scripts/play_pause.sh"
 
 -- Bars / UI toggles
 local hyprbars_toggle = "~/.config/hypr/scripts/hyprbars_toggle.sh"
-local waybar_toggle = "~/.config/hypr/scripts/waybar_toggle.sh"
-local waybar_flip = "~/.config/hypr/scripts/waybar_flip.sh"
-local waybar_rotate = "~/.config/hypr/scripts/waybar_rotate.sh"
+local waybar_toggle = "~/.config/hypr/scripts/quickshell_bar_toggle.sh"
+local waybar_flip = "~/.config/hypr/scripts/quickshell_bar_flip.sh"
+local waybar_rotate = "~/.config/hypr/scripts/quickshell_bar_rotate.sh"
 local toggle_animations = "~/.config/hypr/scripts/toggle_animations.sh"
-local mako_dismiss = "~/.config/hypr/scripts/mako_dismiss.sh"
+local mako_dismiss = "~/.config/hypr/scripts/quickshell_notification_dismiss.sh"
 
 -- Themes / wallpaper
 local wallpicker = "~/.config/hypr/scripts/launch_handler.sh wallpicker \"alacritty --class wallpicker -e awtwall --resume\""
@@ -544,7 +543,7 @@ local screenshot_select = "env XDG_ACTIVATION_TOKEN=$XDG_ACTIVATION_TOKEN ~/.con
 local screenshot_full = "~/.config/hypr/scripts/screenshot_fullscreen.sh"
 local screenshot_display = "~/.config/hypr/scripts/screenshot_display.sh"
 local gif_capture = "~/.config/hypr/scripts/gif_capture.sh"
-local clipboard_history = "~/.config/hypr/scripts/cliphist-fuzzel.sh"
+local clipboard_history = "~/.config/hypr/scripts/quickshell_clipboard_toggle.sh"
 local qr_scan = "~/.config/hypr/scripts/qr_scan.sh"
 
 -- Utilities
@@ -691,7 +690,7 @@ hl.bind("SUPER + E", hl.dsp.exec_cmd("pcmanfm-qt"), {})
 hl.bind("SUPER + SHIFT + E", hl.dsp.exec_cmd(yazi), {})
 hl.bind("SUPER + L", hl.dsp.exec_cmd("hyprlock"), {})
 hl.bind("SUPER + I", hl.dsp.exec_cmd(hyprpicker), {})
-hl.bind("SUPER + P", hl.dsp.exec_cmd(wlogout), {})
+hl.bind("SUPER + P", hl.dsp.exec_cmd(power_menu), {})
 
 -- Themes / wallpaper
 for _, bind in ipairs({
@@ -933,7 +932,7 @@ hl.define_submap("noalt", function()
     hl.bind("SUPER + SHIFT + E", hl.dsp.exec_cmd(yazi), {})
     hl.bind("SUPER + L", hl.dsp.exec_cmd("hyprlock"), {})
     hl.bind("SUPER + I", hl.dsp.exec_cmd(hyprpicker), {})
-    hl.bind("SUPER + P", hl.dsp.exec_cmd(wlogout), {})
+    hl.bind("SUPER + P", hl.dsp.exec_cmd(power_menu), {})
 
     -- Themes / wallpaper
     for _, bind in ipairs({

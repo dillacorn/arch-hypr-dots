@@ -3,9 +3,9 @@
 
 [Desktop Entry]
 Type=Application
-Name=Waybar flip (focused display)
-Comment=Flip Waybar side on the currently focused monitor
-Exec=sh -lc 'exec "$HOME/.config/hypr/scripts/waybar_flip.sh"'
+Name=Quickshell Bar flip (focused display)
+Comment=Flip Quickshell Bar side on the currently focused monitor
+Exec=sh -lc 'exec "$HOME/.config/hypr/scripts/quickshell_bar_flip.sh"'
 Icon=view-refresh
 Terminal=false
 Categories=Utility;
