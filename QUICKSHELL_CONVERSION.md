@@ -16,7 +16,7 @@ Quickshell currently owns:
 - Power/session menu.
 - Theme picker.
 
-The current Awtarchy theme scripts remain the theme source during testing. Quickshell watches the existing Waybar color variables, so the existing theme definitions apply immediately without duplicating all theme color tables yet.
+The current Awtarchy theme scripts remain the palette source during testing, but Quickshell now reads its own `theme.json`. The theme picker extracts the existing Awtarchy shell color variables into that native Quickshell theme file, so Quickshell no longer depends on Waybar CSS at runtime.
 
 ## Compatibility
 
