@@ -1,0 +1,137 @@
+name: Finalize Quickshell migration cleanup
+
+on:
+  push:
+    branches: [quickshell-conversion-testing]
+    paths: ['.github/workflows/quickshell-migration-cleanup.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: quickshell-conversion-testing
+          fetch-depth: 0
+
+      - name: Add installed legacy-file cleanup
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('awtarchy-install.sh')
+          text = path.read_text()
+
+          marker = "run_install_marker = 'run_install() {\\n'\n"
+          if marker not in text:
+              raise SystemExit('run_install marker not found')
+
+          cleanup = r'''legacy_file_cleanup_function = r'''
+          remove_legacy_shell_files_stage() {
+            local scripts_dir="${HOME_DIR}/.config/hypr/scripts"
+            local applications_dir="${HOME_DIR}/.local/share/applications"
+            local obsolete
+
+            # These directories were Awtarchy-managed by the pre-Quickshell stack.
+            # Remove them during the explicit full reinstall/conversion so stale
+            # configs cannot keep pretending the old shell programs are active.
+            rm -rf -- \
+              "${HOME_DIR}/.config/waybar" \
+              "${HOME_DIR}/.config/fuzzel" \
+              "${HOME_DIR}/.config/mako" \
+              "${HOME_DIR}/.config/wlogout"
+
+            for obsolete in \
+              cliphist-fuzzel.sh \
+              fuzzel_toggle.sh \
+              mako_dismiss.sh \
+              waybar.sh \
+              waybar_flip.sh \
+              waybar_ready_sound.sh \
+              waybar_restore_resume.sh \
+              waybar_rotate.sh \
+              waybar_toggle.sh \
+              waybar_toggle_idle.sh \
+              wlogout_toggle.sh
+            do
+              rm -f -- "${scripts_dir}/${obsolete}"
+            done
+
+            rm -f -- \
+              "${applications_dir}/waybar_flip.desktop" \
+              "${applications_dir}/waybar_rotate.desktop" \
+              "${applications_dir}/waybar_toggle.desktop"
+          }
+
+          '''
+          '''
+
+          # Build the Python source text without nested-quote ambiguity.
+          cleanup = """legacy_file_cleanup_function = r'''\nremove_legacy_shell_files_stage() {\n  local scripts_dir=\"${HOME_DIR}/.config/hypr/scripts\"\n  local applications_dir=\"${HOME_DIR}/.local/share/applications\"\n  local obsolete\n\n  rm -rf -- \\\n    \"${HOME_DIR}/.config/waybar\" \\\n    \"${HOME_DIR}/.config/fuzzel\" \\\n    \"${HOME_DIR}/.config/mako\" \\\n    \"${HOME_DIR}/.config/wlogout\"\n\n  for obsolete in \\\n    cliphist-fuzzel.sh \\\n    fuzzel_toggle.sh \\\n    mako_dismiss.sh \\\n    waybar.sh \\\n    waybar_flip.sh \\\n    waybar_ready_sound.sh \\\n    waybar_restore_resume.sh \\\n    waybar_rotate.sh \\\n    waybar_toggle.sh \\\n    waybar_toggle_idle.sh \\\n    wlogout_toggle.sh\n  do\n    rm -f -- \"${scripts_dir}/${obsolete}\"\n  done\n\n  rm -f -- \\\n    \"${applications_dir}/waybar_flip.desktop\" \\\n    \"${applications_dir}/waybar_rotate.desktop\" \\\n    \"${applications_dir}/waybar_toggle.desktop\"\n}\n\n'''\n\n"""
+
+          if 'legacy_file_cleanup_function =' not in text:
+              text = text.replace(marker, cleanup + marker, 1)
+
+          old_insert = 'text = text.replace(run_install_marker, cleanup_function + run_install_marker, 1)'
+          new_insert = 'text = text.replace(run_install_marker, cleanup_function + legacy_file_cleanup_function + run_install_marker, 1)'
+          if old_insert in text:
+              text = text.replace(old_insert, new_insert, 1)
+          elif new_insert not in text:
+              raise SystemExit('cleanup insertion anchor not found')
+
+          old_sequence = '''  copy_awtarchy_configs_stage
+            install_awtarchy_command_stage
+            remove_legacy_shell_packages_stage
+            apply_awtarchy_gsettings_defaults
+          '''
+          # Match the actual triple-quoted source without relying on indentation in this script.
+          needle = "install_sequence_replacement = '''  copy_awtarchy_configs_stage\\n  install_awtarchy_command_stage\\n  remove_legacy_shell_packages_stage\\n  apply_awtarchy_gsettings_defaults\\n'''"
+          replacement = "install_sequence_replacement = '''  copy_awtarchy_configs_stage\\n  remove_legacy_shell_files_stage\\n  install_awtarchy_command_stage\\n  remove_legacy_shell_packages_stage\\n  apply_awtarchy_gsettings_defaults\\n'''"
+          if needle in text:
+              text = text.replace(needle, replacement, 1)
+          elif 'remove_legacy_shell_files_stage\n  install_awtarchy_command_stage' not in text:
+              raise SystemExit('install sequence replacement anchor not found')
+
+          path.write_text(text)
+          PY
+
+          # Quickshell state migration consumes the old Waybar cache once, then removes it.
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('config/hypr/scripts/quickshell.sh')
+          text = path.read_text()
+          old = '''        if [[ -s "$LEGACY_STATE_FILE" ]] && jq -e 'type == "object" and (.monitors | type == "object")' "$LEGACY_STATE_FILE" >/dev/null 2>&1; then
+                  jq '{enabled:(if .enabled == null then true else .enabled end), monitors:(.monitors // {})}' "$LEGACY_STATE_FILE" >"$STATE_FILE"
+              else
+          '''
+          new = '''        if [[ -s "$LEGACY_STATE_FILE" ]] && jq -e 'type == "object" and (.monitors | type == "object")' "$LEGACY_STATE_FILE" >/dev/null 2>&1; then
+                  jq '{enabled:(if .enabled == null then true else .enabled end), monitors:(.monitors // {})}' "$LEGACY_STATE_FILE" >"$STATE_FILE"
+                  rm -rf -- "${CACHE_HOME}/waybar"
+              else
+          '''
+          if old not in text:
+              raise SystemExit('legacy state migration anchor not found')
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+
+          bash -n awtarchy-install.sh
+          bash -n config/hypr/scripts/quickshell.sh
+          grep -q 'remove_legacy_shell_files_stage' awtarchy-install.sh
+          grep -q 'rm -rf --.*CACHE_HOME' <(tr '\n' ' ' < config/hypr/scripts/quickshell.sh) || grep -q 'CACHE_HOME}/waybar' config/hypr/scripts/quickshell.sh
+          git diff --check
+
+      - name: Commit migration cleanup and remove one-shot workflow
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/quickshell-migration-cleanup.yml
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add awtarchy-install.sh config/hypr/scripts/quickshell.sh .github/workflows/quickshell-migration-cleanup.yml
+          git diff --cached --check
+          git commit -m 'Remove legacy shell files during Quickshell conversion'
+          git push origin HEAD:quickshell-conversion-testing
