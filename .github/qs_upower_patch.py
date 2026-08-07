@@ -3,7 +3,7 @@ import re
 
 runtime = Path("local/share/awtarchy/awtarchy-runtime.sh")
 text = runtime.read_text(encoding="utf-8")
-match = re.search(r'("Utilities": ")([^"]+)(")', text)
+match = re.search(r'("Utilities:)([^"]+)(")', text)
 if not match:
     raise SystemExit("Utilities package group missing from runtime")
 packages = match.group(2).split()
@@ -21,7 +21,7 @@ if marker not in text:
     if anchor not in text:
         raise SystemExit("installer package-transform anchor missing")
     block = '''# Quickshell battery integration requires the UPower daemon.
-utility_match = re.search(r'("Utilities": ")([^"]+)(")', text)
+utility_match = re.search(r'("Utilities:)([^"]+)(")', text)
 if not utility_match:
     raise SystemExit("ERROR: could not locate Utilities package group")
 utility_packages = utility_match.group(2).split()
