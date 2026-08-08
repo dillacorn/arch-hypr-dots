@@ -386,7 +386,7 @@ Singleton {
 
                     ListScrollBar {
                         id: appScrollBar
-                        parent: appList.parent
+                        parent: appList
                         anchors.top: appList.top
                         anchors.bottom: appList.bottom
                         anchors.right: appList.right
