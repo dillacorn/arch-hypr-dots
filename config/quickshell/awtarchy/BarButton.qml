@@ -17,10 +17,14 @@ Rectangle {
     property bool hovered: false
 
     readonly property string displayLabel: label.replace(/ {2,}/g, " ")
-    readonly property bool workspaceLabel: /^\d+[\s\u202f]+\S/.test(displayLabel)
-    readonly property string workspaceNumber: workspaceLabel ? (displayLabel.match(/^\d+/) || [""])[0] : ""
-    readonly property string workspaceGlyph: workspaceLabel ? displayLabel.replace(/^\d+[\s\u202f]+/, "") : ""
-    readonly property int resolvedFontPixelSize: fontPixelSize > 0 ? fontPixelSize : suggestedFontPixelSize()
+    readonly property var horizontalParts: vertical
+        ? []
+        : displayLabel.split(/\s+/).filter(part => part.length > 0)
+    readonly property var verticalParts: vertical
+        ? displayLabel.split("\n").filter(part => part.length > 0)
+        : []
+    readonly property bool useHorizontalParts: !vertical && horizontalParts.length > 1
+    readonly property bool useVerticalParts: vertical && verticalParts.length > 1
 
     signal clicked()
     signal rightClicked()
@@ -28,106 +32,111 @@ Rectangle {
     signal wheelUp()
     signal wheelDown()
 
-    function suggestedFontPixelSize() {
-        // Keep the two glyphs the user already identified as correctly sized.
-        if (label.indexOf("🖱") >= 0 || label.indexOf("°") >= 0)
+    function partFontPixelSize(part) {
+        if (fontPixelSize > 0)
+            return fontPixelSize;
+
+        // Keep the glyphs the user already identified as correctly sized.
+        if (part.indexOf("🖱") >= 0 || part.indexOf("°") >= 0)
             return 14;
 
-        // Larger control/status glyphs better match the visual weight of the
-        // existing Waybar while leaving tray icons and temperature unchanged.
-        if (label.indexOf("") >= 0)
+        // Only enlarge the icon token. Numeric/text values remain at 14px,
+        // which prevents the mixed-size modules from drifting vertically.
+        if (part.indexOf("") >= 0)
             return 19;
-        if (label.indexOf("") >= 0 || label.indexOf("") >= 0)
+        if (part.indexOf("") >= 0 || part.indexOf("") >= 0)
             return 18;
-        if (label.indexOf("") >= 0 || label.indexOf("") >= 0 || label.indexOf("") >= 0)
+        if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
             return 18;
-        if (label.indexOf("") >= 0 || label.indexOf("") >= 0 || label.indexOf("") >= 0 || label.indexOf("") >= 0)
+        if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
             return 18;
-        if (label.indexOf("") >= 0 || label.indexOf("") >= 0)
+        if (part.indexOf("") >= 0 || part.indexOf("") >= 0)
             return 17;
-        if (label.indexOf("") >= 0 || label.indexOf("") >= 0 || label.indexOf("") >= 0)
+        if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
             return 17;
-        if (label.indexOf("") >= 0 || label.indexOf("") >= 0 || label.indexOf("") >= 0 || label.indexOf("") >= 0 || label.indexOf("") >= 0 || label.indexOf("") >= 0)
+        if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
             return 16;
+
+        // Workspace/application glyphs. The number beside them stays 14px.
+        if (/^[󰀀-󰿿-]$/u.test(part))
+            return 17;
 
         return Theme.fontPixelSize;
     }
 
-    implicitWidth: fixedWidth > 0 ? fixedWidth : (vertical ? 36 : labelContent.implicitWidth + horizontalPadding * 2)
-    implicitHeight: fixedHeight > 0 ? fixedHeight : (vertical ? Math.max(28, labelContent.implicitHeight + 12) : 28)
+    implicitWidth: fixedWidth > 0
+        ? fixedWidth
+        : (vertical ? 36 : labelContent.implicitWidth + horizontalPadding * 2)
+    implicitHeight: fixedHeight > 0
+        ? fixedHeight
+        : (vertical ? Math.max(28, labelContent.implicitHeight + 12) : 28)
     color: pointer.containsMouse ? hoverBackground : normalBackground
 
     Item {
         id: labelContent
         anchors.centerIn: parent
-        implicitWidth: root.workspaceLabel
-            ? (root.vertical
-                ? Math.max(workspaceNumberVertical.implicitWidth, workspaceGlyphVertical.implicitWidth)
-                : workspaceNumberHorizontal.implicitWidth + 2 + workspaceGlyphHorizontal.implicitWidth)
-            : normalText.implicitWidth
-        implicitHeight: root.workspaceLabel
-            ? (root.vertical
-                ? workspaceNumberVertical.implicitHeight + workspaceGlyphVertical.implicitHeight
-                : Math.max(workspaceNumberHorizontal.implicitHeight, workspaceGlyphHorizontal.implicitHeight))
-            : normalText.implicitHeight
+        implicitWidth: root.useHorizontalParts
+            ? horizontalRow.implicitWidth
+            : (root.useVerticalParts ? verticalColumn.implicitWidth : normalText.implicitWidth)
+        implicitHeight: root.useHorizontalParts
+            ? 28
+            : (root.useVerticalParts ? verticalColumn.implicitHeight : normalText.implicitHeight)
 
         Text {
             id: normalText
             anchors.centerIn: parent
-            visible: !root.workspaceLabel
+            visible: !root.useHorizontalParts && !root.useVerticalParts
             text: root.displayLabel
             color: root.foreground
             font.family: Theme.fontFamily
-            font.pixelSize: root.resolvedFontPixelSize
+            font.pixelSize: root.partFontPixelSize(root.displayLabel)
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
         }
 
         Row {
+            id: horizontalRow
             anchors.centerIn: parent
-            spacing: 2
-            visible: root.workspaceLabel && !root.vertical
+            height: 28
+            spacing: 4
+            visible: root.useHorizontalParts
 
-            Text {
-                id: workspaceNumberHorizontal
-                text: root.workspaceNumber
-                color: root.foreground
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontPixelSize
-                verticalAlignment: Text.AlignVCenter
-            }
+            Repeater {
+                model: root.horizontalParts
 
-            Text {
-                id: workspaceGlyphHorizontal
-                text: root.workspaceGlyph
-                color: root.foreground
-                font.family: Theme.fontFamily
-                font.pixelSize: 19
-                verticalAlignment: Text.AlignVCenter
+                delegate: Text {
+                    required property var modelData
+                    height: horizontalRow.height
+                    text: String(modelData)
+                    color: root.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: root.partFontPixelSize(String(modelData))
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
             }
         }
 
         Column {
+            id: verticalColumn
             anchors.centerIn: parent
-            spacing: -1
-            visible: root.workspaceLabel && root.vertical
+            spacing: 0
+            visible: root.useVerticalParts
 
-            Text {
-                id: workspaceNumberVertical
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: root.workspaceNumber
-                color: root.foreground
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontPixelSize
-            }
+            Repeater {
+                model: root.verticalParts
 
-            Text {
-                id: workspaceGlyphVertical
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: root.workspaceGlyph
-                color: root.foreground
-                font.family: Theme.fontFamily
-                font.pixelSize: 19
+                delegate: Text {
+                    required property var modelData
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    height: Math.max(16, implicitHeight)
+                    text: String(modelData)
+                    color: root.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: root.partFontPixelSize(String(modelData))
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
             }
         }
     }
@@ -162,6 +171,7 @@ Rectangle {
             else
                 root.clicked();
         }
+
         onWheel: wheel => {
             if (wheel.angleDelta.y > 0)
                 root.wheelUp();
