@@ -295,7 +295,7 @@ Singleton {
 
                     ListScrollBar {
                         id: clipboardScrollBar
-                        parent: clipboardList.parent
+                        parent: clipboardList
                         anchors.top: clipboardList.top
                         anchors.bottom: clipboardList.bottom
                         anchors.right: clipboardList.right
