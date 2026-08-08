@@ -214,9 +214,10 @@ Singleton {
                             spacing: 8
 
                             IconImage {
-                                visible: source.toString().length > 0
-                                Layout.preferredWidth: visible ? 34 : 0
-                                Layout.preferredHeight: visible ? 34 : 0
+                                id: notificationIcon
+                                visible: Boolean(source && source.toString().length > 0)
+                                Layout.preferredWidth: 34
+                                Layout.preferredHeight: 34
                                 implicitSize: 34
                                 source: card.modelData.image || (card.modelData.appIcon ? Quickshell.iconPath(card.modelData.appIcon, true) : "")
                             }
