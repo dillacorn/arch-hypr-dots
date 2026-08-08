@@ -1,6 +1,6 @@
 # Quickshell conversion testing
 
-This branch replaces Awtarchy's Waybar, Fuzzel, Mako, and wlogout runtime stack with one Quickshell shell.
+This branch replaces Awtarchy's Waybar, Fuzzel, Wofi, Mako, and wlogout runtime stack with one Quickshell shell.
 
 ## Replaced components
 
@@ -24,6 +24,7 @@ These packages are no longer selected by Awtarchy:
 
 - `waybar-git`
 - `fuzzel`
+- `wofi`
 - `wlogout`
 - `mako`
 
@@ -36,7 +37,7 @@ Fresh/reinstall config copying now includes:
 - `~/.config/hypr`
 - `~/.config/quickshell`
 
-The repository no longer ships the old `config/waybar`, `config/fuzzel`, `config/mako`, or `config/wlogout` trees.
+The repository no longer ships the old `config/waybar`, `config/fuzzel`, `config/wofi`, `config/mako`, or `config/wlogout` trees.
 
 Awtarchy helper scripts previously stored below `config/waybar/scripts` were moved to `config/hypr/scripts` because they are Awtarchy/Hyprland helpers, not Waybar components.
 
@@ -44,7 +45,7 @@ The first Quickshell launch may still import `~/.cache/waybar/state.json` when i
 
 ## Themes
 
-Awtarchy theme files are now data-only palettes. They contain `QS_*` colors plus Hyprland/Wofi/application-theme metadata and no longer mutate Waybar, Fuzzel, Mako, or wlogout configs.
+Awtarchy theme files are now data-only palettes. They contain native `QS_*` shell colors plus Hyprland/application-theme metadata and no longer mutate legacy launcher, bar, notification, or logout UI configs.
 
 `quickshell_theme_apply.sh` writes Quickshell's native:
 
@@ -52,7 +53,7 @@ Awtarchy theme files are now data-only palettes. They contain `QS_*` colors plus
 ~/.config/quickshell/awtarchy/theme.json
 ```
 
-It also preserves the existing Awtarchy theme behavior for Hyprland borders, Wofi, Micro, Alacritty, and SpeedCrunch.
+It also preserves the existing Awtarchy theme behavior for Hyprland borders, Micro, Alacritty, and SpeedCrunch.
 
 ## Testing branch installer behavior
 
@@ -88,8 +89,8 @@ ok
 Check that Awtarchy no longer owns the old packages:
 
 ```bash
-pacman -Q waybar-git fuzzel wlogout mako 2>/dev/null || true
-grep -E '^(waybar-git|fuzzel|wlogout|mako)$' /var/lib/awtarchy/managed-packages 2>/dev/null || true
+pacman -Q waybar-git fuzzel wofi wlogout mako 2>/dev/null || true
+grep -E '^(waybar-git|fuzzel|wofi|wlogout|mako)$' /var/lib/awtarchy/managed-packages 2>/dev/null || true
 ```
 
 Watch the Quickshell log:
@@ -103,8 +104,8 @@ tail -f ~/.cache/awtarchy/quickshell.log
 The conversion branch has passed repository-side checks for:
 
 - `bash -n` on the installer/runtime and Hypr shell scripts.
-- Runtime package/default selection: Quickshell present and the four legacy packages absent.
-- Runtime config-copy selection: Quickshell present and the four legacy config directories absent.
+- Runtime package/default selection: Quickshell present and the legacy shell UI packages absent.
+- Runtime config-copy selection: Quickshell present and the legacy shell UI config directories absent.
 - Hyprland autostart: Quickshell direct start and no Mako start.
 - Quickshell bar helper paths: no dependency on `~/.config/waybar/scripts`.
 - Converted themes: no legacy shell-program theme tokens.
