@@ -151,14 +151,18 @@ Singleton {
                                     root.close();
                                     event.accepted = true;
                                 } else if (event.key === Qt.Key_Down) {
-                                    if (themeList.count > 0)
-                                        themeList.currentIndex = Math.min(themeList.count - 1, themeList.currentIndex + 1);
-                                    themeList.positionViewAtIndex(themeList.currentIndex, ListView.Contain);
+                                    if (themeList.count > 0) {
+                                        const current = Math.max(0, themeList.currentIndex);
+                                        themeList.currentIndex = (current + 1) % themeList.count;
+                                        themeList.positionViewAtIndex(themeList.currentIndex, ListView.Contain);
+                                    }
                                     event.accepted = true;
                                 } else if (event.key === Qt.Key_Up) {
-                                    if (themeList.count > 0)
-                                        themeList.currentIndex = Math.max(0, themeList.currentIndex - 1);
-                                    themeList.positionViewAtIndex(themeList.currentIndex, ListView.Contain);
+                                    if (themeList.count > 0) {
+                                        const current = Math.max(0, themeList.currentIndex);
+                                        themeList.currentIndex = (current - 1 + themeList.count) % themeList.count;
+                                        themeList.positionViewAtIndex(themeList.currentIndex, ListView.Contain);
+                                    }
                                     event.accepted = true;
                                 } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                                     const values = root.filteredThemes();
