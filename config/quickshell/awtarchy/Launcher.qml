@@ -46,6 +46,7 @@ Singleton {
         search.text = "";
         appList.currentIndex = 0;
         launcherWindow.visible = true;
+        Qt.callLater(() => appList.positionViewAtBeginning());
     }
 
     // Clicking the Apps button keeps edge/button placement on that bar.
@@ -301,7 +302,10 @@ Singleton {
                                 }
                             }
 
-                            onTextChanged: appList.currentIndex = 0
+                            onTextChanged: {
+                                appList.currentIndex = 0;
+                                Qt.callLater(() => appList.positionViewAtBeginning());
+                            }
                         }
 
                         Text {
@@ -321,6 +325,7 @@ Singleton {
                     clip: true
                     spacing: 0
                     currentIndex: 0
+                    boundsBehavior: Flickable.StopAtBounds
 
                     model: ScriptModel {
                         values: root.filteredApps()
@@ -340,7 +345,7 @@ Singleton {
                         RowLayout {
                             anchors.fill: parent
                             anchors.leftMargin: 8
-                            anchors.rightMargin: 8
+                            anchors.rightMargin: appScrollBar.visible ? 18 : 8
                             spacing: 8
 
                             IconImage {
@@ -370,11 +375,23 @@ Singleton {
                             onEntered: appList.currentIndex = row.index
                             onClicked: root.launchEntry(row.entry)
                             onWheel: wheel => {
-                                const maxY = Math.max(0, appList.contentHeight - appList.height);
-                                appList.contentY = Math.max(0, Math.min(maxY, appList.contentY - wheel.angleDelta.y));
+                                const minY = appList.originY;
+                                const maxY = Math.max(minY, minY + appList.contentHeight - appList.height);
+                                appList.contentY = Math.max(minY,
+                                    Math.min(maxY, appList.contentY - wheel.angleDelta.y));
                                 wheel.accepted = true;
                             }
                         }
+                    }
+
+                    ListScrollBar {
+                        id: appScrollBar
+                        parent: appList.parent
+                        anchors.top: appList.top
+                        anchors.bottom: appList.bottom
+                        anchors.right: appList.right
+                        flickable: appList
+                        z: 10
                     }
                 }
             }
