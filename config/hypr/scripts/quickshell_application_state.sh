@@ -108,6 +108,34 @@ set_size() {
     mv -f "$tmp" "$STATE_FILE"
 }
 
+set_all() {
+    local width="$1" height="$2" text_size="$3" icon_size="$4" tmp
+
+    validate_int_range "$width" "$MIN_WIDTH" "$MAX_WIDTH" 'width'
+    validate_int_range "$height" "$MIN_HEIGHT" "$MAX_HEIGHT" 'height'
+    validate_int_range "$text_size" "$MIN_TEXT_SIZE" "$MAX_TEXT_SIZE" 'text size'
+    validate_int_range "$icon_size" "$MIN_ICON_SIZE" "$MAX_ICON_SIZE" 'icon size'
+
+    ensure_state
+    tmp="${STATE_FILE}.tmp.$$"
+    jq \
+        --argjson width "$width" \
+        --argjson height "$height" \
+        --argjson text_size "$text_size" \
+        --argjson icon_size "$icon_size" '
+        .application_view = {
+            width:$width,
+            height:$height,
+            text_size:$text_size,
+            icon_size:$icon_size,
+            customized:true
+        }
+        | .monitors = (.monitors // {})
+        | .monitors |= with_entries(.value |= del(.application_view))
+    ' "$STATE_FILE" >"$tmp"
+    mv -f "$tmp" "$STATE_FILE"
+}
+
 reset_defaults() {
     local tmp
     ensure_state
@@ -136,11 +164,15 @@ case "$cmd" in
         [[ -n ${2:-} && -n ${3:-} ]] || exit 2
         set_size "$2" "$3"
         ;;
+    set-all)
+        [[ -n ${2:-} && -n ${3:-} && -n ${4:-} && -n ${5:-} ]] || exit 2
+        set_all "$2" "$3" "$4" "$5"
+        ;;
     reset)
         reset_defaults
         ;;
     *)
-        printf 'usage: %s {set <width|height|text_size|icon_size> <value>|set-size <width> <height>|reset}\n' "${0##*/}" >&2
+        printf 'usage: %s {set <width|height|text_size|icon_size> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
         exit 2
         ;;
 esac
