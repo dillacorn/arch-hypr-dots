@@ -8,6 +8,10 @@ Singleton {
     id: root
 
     readonly property string statePath: (Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")) + "/awtarchy/quickshell-state.json"
+    readonly property int defaultLauncherWidth: 520
+    readonly property int defaultLauncherHeight: 604
+    readonly property int defaultAppTextSize: 14
+    readonly property int defaultAppIconSize: 18
     property int revision: 0
 
     FileView {
@@ -27,18 +31,20 @@ Singleton {
         const dependency = revision;
         const text = stateFile.text();
         if (!text || text.length === 0)
-            return ({ enabled: true, monitors: {} });
+            return ({ enabled: true, monitors: {}, application_view: {} });
 
         try {
             const parsed = JSON.parse(text);
             if (!parsed.monitors)
                 parsed.monitors = {};
+            if (!parsed.application_view)
+                parsed.application_view = {};
             if (parsed.enabled === undefined)
                 parsed.enabled = true;
             return parsed;
         } catch (error) {
-            console.warn("Awtarchy Quickshell: invalid bar state:", error);
-            return ({ enabled: true, monitors: {} });
+            console.warn("Awtarchy Quickshell: invalid shell state:", error);
+            return ({ enabled: true, monitors: {}, application_view: {} });
         }
     }
 
@@ -75,5 +81,47 @@ Singleton {
         if (!Number.isFinite(percent))
             return 1.0;
         return Math.max(50, Math.min(200, percent)) / 100.0;
+    }
+
+    function globalApplicationView() {
+        const d = data();
+        const view = d.application_view || ({});
+        return ({
+            width: Math.max(420, Math.min(3840, Math.round(Number(view.width === undefined ? defaultLauncherWidth : view.width)))),
+            height: Math.max(360, Math.min(2160, Math.round(Number(view.height === undefined ? defaultLauncherHeight : view.height)))),
+            textSize: Math.max(10, Math.min(28, Math.round(Number(view.text_size === undefined ? defaultAppTextSize : view.text_size)))),
+            iconSize: Math.max(12, Math.min(48, Math.round(Number(view.icon_size === undefined ? defaultAppIconSize : view.icon_size))))
+        });
+    }
+
+    function applicationViewFor(name, globalOnly) {
+        const globalView = globalApplicationView();
+        if (globalOnly)
+            return globalView;
+
+        const mon = monitorState(name);
+        const view = mon.application_view || ({});
+        return ({
+            width: Math.max(420, Math.min(3840, Math.round(Number(view.width === undefined ? globalView.width : view.width)))),
+            height: Math.max(360, Math.min(2160, Math.round(Number(view.height === undefined ? globalView.height : view.height)))),
+            textSize: Math.max(10, Math.min(28, Math.round(Number(view.text_size === undefined ? globalView.textSize : view.text_size)))),
+            iconSize: Math.max(12, Math.min(48, Math.round(Number(view.icon_size === undefined ? globalView.iconSize : view.icon_size))))
+        });
+    }
+
+    function launcherWidthFor(name, globalOnly) {
+        return applicationViewFor(name, globalOnly).width;
+    }
+
+    function launcherHeightFor(name, globalOnly) {
+        return applicationViewFor(name, globalOnly).height;
+    }
+
+    function appTextSizeFor(name, globalOnly) {
+        return applicationViewFor(name, globalOnly).textSize;
+    }
+
+    function appIconSizeFor(name, globalOnly) {
+        return applicationViewFor(name, globalOnly).iconSize;
     }
 }
