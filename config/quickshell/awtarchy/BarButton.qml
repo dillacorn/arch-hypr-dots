@@ -17,6 +17,9 @@ Rectangle {
     property bool hovered: false
 
     readonly property string displayLabel: label.replace(/ {2,}/g, " ")
+    readonly property bool workspaceLabel: /^\d+[\s\u202f]+\S/.test(displayLabel)
+    readonly property string workspaceNumber: workspaceLabel ? (displayLabel.match(/^\d+/) || [""])[0] : ""
+    readonly property string workspaceGlyph: workspaceLabel ? displayLabel.replace(/^\d+[\s\u202f]+/, "") : ""
     readonly property int resolvedFontPixelSize: fontPixelSize > 0 ? fontPixelSize : suggestedFontPixelSize()
 
     signal clicked()
@@ -33,38 +36,100 @@ Rectangle {
         // Larger control/status glyphs better match the visual weight of the
         // existing Waybar while leaving tray icons and temperature unchanged.
         if (label.indexOf("") >= 0)
-            return 18;
+            return 19;
         if (label.indexOf("") >= 0 || label.indexOf("") >= 0)
-            return 17;
+            return 18;
         if (label.indexOf("") >= 0 || label.indexOf("") >= 0 || label.indexOf("") >= 0)
-            return 17;
+            return 18;
         if (label.indexOf("") >= 0 || label.indexOf("") >= 0 || label.indexOf("") >= 0 || label.indexOf("") >= 0)
-            return 17;
+            return 18;
         if (label.indexOf("") >= 0 || label.indexOf("") >= 0)
-            return 16;
+            return 17;
         if (label.indexOf("") >= 0 || label.indexOf("") >= 0 || label.indexOf("") >= 0)
-            return 15;
+            return 17;
         if (label.indexOf("") >= 0 || label.indexOf("") >= 0 || label.indexOf("") >= 0 || label.indexOf("") >= 0 || label.indexOf("") >= 0 || label.indexOf("") >= 0)
-            return 15;
-        if (/^\d+/.test(label))
-            return 15;
+            return 16;
 
         return Theme.fontPixelSize;
     }
 
-    implicitWidth: fixedWidth > 0 ? fixedWidth : (vertical ? 36 : textItem.implicitWidth + horizontalPadding * 2)
-    implicitHeight: fixedHeight > 0 ? fixedHeight : (vertical ? Math.max(28, textItem.implicitHeight + 12) : 28)
+    implicitWidth: fixedWidth > 0 ? fixedWidth : (vertical ? 36 : labelContent.implicitWidth + horizontalPadding * 2)
+    implicitHeight: fixedHeight > 0 ? fixedHeight : (vertical ? Math.max(28, labelContent.implicitHeight + 12) : 28)
     color: pointer.containsMouse ? hoverBackground : normalBackground
 
-    Text {
-        id: textItem
+    Item {
+        id: labelContent
         anchors.centerIn: parent
-        text: root.displayLabel
-        color: root.foreground
-        font.family: Theme.fontFamily
-        font.pixelSize: root.resolvedFontPixelSize
-        horizontalAlignment: Text.AlignHCenter
-        verticalAlignment: Text.AlignVCenter
+        implicitWidth: root.workspaceLabel
+            ? (root.vertical
+                ? Math.max(workspaceNumberVertical.implicitWidth, workspaceGlyphVertical.implicitWidth)
+                : workspaceNumberHorizontal.implicitWidth + 2 + workspaceGlyphHorizontal.implicitWidth)
+            : normalText.implicitWidth
+        implicitHeight: root.workspaceLabel
+            ? (root.vertical
+                ? workspaceNumberVertical.implicitHeight + workspaceGlyphVertical.implicitHeight
+                : Math.max(workspaceNumberHorizontal.implicitHeight, workspaceGlyphHorizontal.implicitHeight))
+            : normalText.implicitHeight
+
+        Text {
+            id: normalText
+            anchors.centerIn: parent
+            visible: !root.workspaceLabel
+            text: root.displayLabel
+            color: root.foreground
+            font.family: Theme.fontFamily
+            font.pixelSize: root.resolvedFontPixelSize
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+        }
+
+        Row {
+            anchors.centerIn: parent
+            spacing: 2
+            visible: root.workspaceLabel && !root.vertical
+
+            Text {
+                id: workspaceNumberHorizontal
+                text: root.workspaceNumber
+                color: root.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontPixelSize
+                verticalAlignment: Text.AlignVCenter
+            }
+
+            Text {
+                id: workspaceGlyphHorizontal
+                text: root.workspaceGlyph
+                color: root.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: 19
+                verticalAlignment: Text.AlignVCenter
+            }
+        }
+
+        Column {
+            anchors.centerIn: parent
+            spacing: -1
+            visible: root.workspaceLabel && root.vertical
+
+            Text {
+                id: workspaceNumberVertical
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: root.workspaceNumber
+                color: root.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontPixelSize
+            }
+
+            Text {
+                id: workspaceGlyphVertical
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: root.workspaceGlyph
+                color: root.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: 19
+            }
+        }
     }
 
     Timer {
