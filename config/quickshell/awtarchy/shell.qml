@@ -121,6 +121,7 @@ ShellRoot {
                         dragging = false;
                         if (dragSurface.hasCandidate
                                 && dragSurface.candidateEdge !== barInstance.position) {
+                            BarState.setLivePosition(barInstance.monitorName, dragSurface.candidateEdge);
                             barMoveWriter.exec([
                                 root.configHome + "/hypr/scripts/quickshell.sh",
                                 "setpos",
