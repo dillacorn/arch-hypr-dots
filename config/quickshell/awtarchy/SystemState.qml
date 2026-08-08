@@ -10,6 +10,10 @@ Singleton {
 
     property int cpuUsage: 0
     property int memoryUsage: 0
+    property int memoryPopulatedSlots: -1
+    property int memoryTotalSlots: -1
+    property int memoryEmptySlots: -1
+    property string memoryTopologySource: "unavailable"
     property string cpuTemp: "?°"
     property string gpuTemp: "N/A"
     property var driveTemps: []
@@ -24,12 +28,14 @@ Singleton {
     property var previousCoreIdles: ({})
 
     readonly property string cpuTooltip: buildCpuTooltip()
+    readonly property string memoryTooltip: buildMemoryTooltip()
     readonly property string temperatureTooltip: buildTemperatureTooltip()
     readonly property string audioOutputName: buildAudioOutputName()
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string cpuTempScript: configHome + "/hypr/scripts/cpu_temp.sh"
     readonly property string systemTempScript: configHome + "/hypr/scripts/system_temperatures.sh"
+    readonly property string memoryTopologyScript: configHome + "/hypr/scripts/memory_topology.sh"
     readonly property string idleScript: configHome + "/hypr/scripts/idle_inhibitor_global.sh"
 
     PwObjectTracker {
@@ -41,6 +47,15 @@ Singleton {
         command: ["sh", "-lc", "grep -E '^cpu([0-9]+)? ' /proc/stat; awk '/^MemTotal:/{t=$2}/^MemAvailable:/{a=$2}END{if(t>0)printf \"MEM %d\\n\",100*(t-a)/t}' /proc/meminfo; if [ -x '" + root.systemTempScript + "' ]; then '" + root.systemTempScript + "'; elif [ -x '" + root.cpuTempScript + "' ]; then printf 'CPU_TEMP '; '" + root.cpuTempScript + "'; printf 'GPU_TEMP N/A\\n'; else printf 'CPU_TEMP ?°\\nGPU_TEMP N/A\\n'; fi"]
         stdout: StdioCollector {
             onStreamFinished: root.parseMetrics(text)
+        }
+    }
+
+    Process {
+        id: memoryTopologyProcess
+        running: true
+        command: ["sh", "-lc", "if [ -x '" + root.memoryTopologyScript + "' ]; then '" + root.memoryTopologyScript + "'; else printf 'MEMORY_SLOTS\\t?\\t?\\t?\\tunavailable\\n'; fi"]
+        stdout: StdioCollector {
+            onStreamFinished: root.parseMemoryTopology(text)
         }
     }
 
@@ -89,6 +104,36 @@ Singleton {
         const idle = values[3] + (values.length > 4 ? values[4] : 0);
         const total = values.reduce((sum, value) => sum + value, 0);
         return ({ name: name, idle: idle, total: total });
+    }
+
+    function parseSlotCount(value) {
+        if (value === "?" || value === "")
+            return -1;
+        const parsed = Number(value);
+        return Number.isNaN(parsed) ? -1 : Math.max(0, Math.round(parsed));
+    }
+
+    function parseMemoryTopology(text) {
+        const lines = String(text || "").split("\n");
+        for (let i = 0; i < lines.length; ++i) {
+            if (!lines[i].startsWith("MEMORY_SLOTS\t"))
+                continue;
+
+            const parts = lines[i].split("\t");
+            if (parts.length < 5)
+                continue;
+
+            root.memoryPopulatedSlots = parseSlotCount(parts[1]);
+            root.memoryTotalSlots = parseSlotCount(parts[2]);
+            root.memoryEmptySlots = parseSlotCount(parts[3]);
+            root.memoryTopologySource = parts[4].trim() || "unavailable";
+            return;
+        }
+
+        root.memoryPopulatedSlots = -1;
+        root.memoryTotalSlots = -1;
+        root.memoryEmptySlots = -1;
+        root.memoryTopologySource = "unavailable";
     }
 
     function parseMetrics(text) {
@@ -172,6 +217,22 @@ Singleton {
         }
         if (row.length > 0)
             lines.push(row.join("   "));
+
+        return lines.join("\n");
+    }
+
+    function buildMemoryTooltip() {
+        const lines = ["Memory usage: " + memoryUsage + "%"];
+
+        if (memoryPopulatedSlots >= 0 && memoryTotalSlots >= 0 && memoryEmptySlots >= 0) {
+            lines.push("DIMMs: " + memoryPopulatedSlots + " populated / " + memoryTotalSlots + " slots");
+            lines.push("Empty slots: " + memoryEmptySlots);
+        } else if (memoryPopulatedSlots >= 0) {
+            lines.push("DIMMs detected: " + memoryPopulatedSlots + " populated");
+            lines.push("Empty slots: unavailable");
+        } else {
+            lines.push("DIMM slots: unavailable");
+        }
 
         return lines.join("\n");
     }
