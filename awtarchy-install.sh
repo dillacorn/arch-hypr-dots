@@ -82,7 +82,7 @@ utility_packages = utility_match.group(2).split()
 if "upower" not in utility_packages:
     insert_at = utility_packages.index("qt6ct") + 1 if "qt6ct" in utility_packages else 0
     utility_packages.insert(insert_at, "upower")
-text = text[:utility_match.start()] + utility_match.group(1) + " ".join(utility_packages) + utility_match.group(3) + text[utility_match.end():]
+text = text[:utility_match.start()] + utility_match.group(1) + " ".join(utility_packages) + match.group(3) + text[utility_match.end():]
 
 # AUR defaults: Waybar-git and wlogout are no longer part of Awtarchy.
 aur = re.search(r'declare -a PACKAGES_AUR=\(\n(?P<body>.*?)\n\)', text, re.S)
@@ -156,7 +156,8 @@ text = re.sub(
 cleanup_function = r'''
 remove_legacy_shell_packages_stage() {
   local managed_file="/var/lib/awtarchy/managed-packages"
-  local pkg tmp
+  local marker="${HOME_DIR}/.local/state/awtarchy/quickshell-migration-complete"
+  local pkg tmp cleanup_ok=1
   local -a obsolete=(waybar-git fuzzel wlogout mako wofi)
 
   for pkg in "${obsolete[@]}"; do
@@ -171,9 +172,22 @@ remove_legacy_shell_packages_stage() {
         rm -f "$tmp"
       fi
     else
+      cleanup_ok=0
       warn "Could not remove retired package ${pkg}; continuing conversion."
     fi
   done
+
+  if (( cleanup_ok == 1 )); then
+    for pkg in "${obsolete[@]}"; do
+      pacman -Q "$pkg" >/dev/null 2>&1 && cleanup_ok=0
+    done
+  fi
+
+  if (( cleanup_ok == 1 )); then
+    install -d -m 0755 "$(dirname "$marker")"
+    : >"$marker"
+    chown "${TARGET_USER}:${TARGET_USER}" "$marker" 2>/dev/null || true
+  fi
 }
 
 '''
@@ -221,6 +235,7 @@ remove_legacy_shell_files_stage() {
 # may not have a complete baseline or managed-package ledger.
 update_cleanup_function = r'''
 remove_legacy_shell_update_artifacts() {
+  local marker="${STATE_DIR}/quickshell-migration-complete"
   local scripts_dir="${HOME_DIR}/.config/hypr/scripts"
   local applications_dir="${HOME_DIR}/.local/share/applications"
   local managed_file="/var/lib/awtarchy/managed-packages"
@@ -228,6 +243,8 @@ remove_legacy_shell_update_artifacts() {
   local -a obsolete_packages=(waybar-git fuzzel wlogout mako wofi)
   local -a obsolete_processes=(waybar fuzzel wlogout mako wofi)
   local -a installed=()
+
+  [[ -e "$marker" ]] && return 0
 
   # Stop only the target user's retired shell processes. Quickshell stays alive.
   for process in "${obsolete_processes[@]}"; do
@@ -264,6 +281,8 @@ remove_legacy_shell_update_artifacts() {
   done
 
   if (( ${#installed[@]} == 0 )); then
+    : >"$marker"
+    [[ "${EUID}" -eq 0 ]] && chown "${TARGET_USER}:${TARGET_USER}" "$marker" 2>/dev/null || true
     return 0
   fi
 
@@ -282,21 +301,25 @@ remove_legacy_shell_update_artifacts() {
   fi
 
   if (( package_cleanup_ok == 0 )); then
-    warn "Could not remove all retired shell packages; the config migration will continue."
+    warn "Could not remove all retired shell packages; the config migration will continue and retry later."
     return 0
   fi
 
-  [[ -f "$managed_file" ]] || return 0
-  tmp="$(mktemp)"
-  grep -Ev '^(waybar-git|fuzzel|wlogout|mako|wofi)$' "$managed_file" >"$tmp" || true
-  if [[ "${EUID}" -eq 0 ]]; then
-    install -m 0644 "$tmp" "$managed_file"
-  elif (( sudo_ok == 1 )); then
-    sudo install -m 0644 "$tmp" "$managed_file"
-  else
-    warn "Retired packages were removed but the Awtarchy package ledger could not be updated."
+  if [[ -f "$managed_file" ]]; then
+    tmp="$(mktemp)"
+    grep -Ev '^(waybar-git|fuzzel|wlogout|mako|wofi)$' "$managed_file" >"$tmp" || true
+    if [[ "${EUID}" -eq 0 ]]; then
+      install -m 0644 "$tmp" "$managed_file"
+    elif (( sudo_ok == 1 )); then
+      sudo install -m 0644 "$tmp" "$managed_file"
+    else
+      warn "Retired packages were removed but the Awtarchy package ledger could not be updated."
+    fi
+    rm -f -- "$tmp"
   fi
-  rm -f -- "$tmp"
+
+  : >"$marker"
+  [[ "${EUID}" -eq 0 ]] && chown "${TARGET_USER}:${TARGET_USER}" "$marker" 2>/dev/null || true
 }
 
 '''
