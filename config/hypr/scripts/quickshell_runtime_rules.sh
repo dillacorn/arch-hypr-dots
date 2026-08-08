@@ -31,9 +31,15 @@ local function pointer_is_on_awtarchy_bar()
         return false
     end
 
-    for _, layer in ipairs(hl.get_layers({ namespace = "awtarchy-bar" })) do
+    for _, layer in ipairs(hl.get_layers()) do
         local monitor = layer.monitor
-        if layer.mapped and monitor ~= nil
+        local namespace = layer.namespace
+        local named_bar = namespace == "awtarchy-bar"
+        local legacy_quickshell_bar = namespace == "quickshell"
+            and ((layer.h >= 20 and layer.h <= 80 and layer.w > layer.h * 4)
+                or (layer.w >= 20 and layer.w <= 80 and layer.h > layer.w * 4))
+
+        if layer.mapped and monitor ~= nil and (named_bar or legacy_quickshell_bar)
             and cursor.x >= monitor.x + layer.x
             and cursor.x < monitor.x + layer.x + layer.w
             and cursor.y >= monitor.y + layer.y
@@ -54,7 +60,9 @@ hl.bind("ALT + mouse:272", function()
         return { ok = true, pass_event = true }
     end
 
-    return drag_window()
+    -- Dispatcher factories return dispatcher objects. Lua callbacks must route
+    -- those objects through hl.dispatch instead of calling them as functions.
+    return hl.dispatch(drag_window)
 end, { mouse = true })
 hl.bind("ALT + mouse:273", hl.dsp.window.resize(), { mouse = true })
 ' >/dev/null; then
