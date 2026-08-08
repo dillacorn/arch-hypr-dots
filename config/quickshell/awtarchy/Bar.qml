@@ -18,7 +18,10 @@ PanelWindow {
     readonly property string monitorName: modelData ? modelData.name : ""
     readonly property string position: BarState.positionFor(monitorName)
     readonly property bool vertical: position === "left" || position === "right"
-    readonly property int barSize: vertical ? 36 : 28
+    readonly property int barSize: BarState.barSizeFor(monitorName, vertical)
+    readonly property real iconScale: BarState.iconScaleFor(monitorName)
+    readonly property int smallIconSize: Math.max(8, Math.min(barSize - 6, Math.round(14 * iconScale)))
+    readonly property int verticalItemSize: Math.max(28, smallIconSize + 8)
 
     property string brightnessText: " ?"
     property string brightnessTooltip: "Brightness: DDC unavailable"
@@ -32,8 +35,8 @@ PanelWindow {
     aboveWindows: true
     focusable: false
     exclusiveZone: barSize
-    implicitWidth: vertical ? 36 : 0
-    implicitHeight: vertical ? 0 : 28
+    implicitWidth: vertical ? barSize : 0
+    implicitHeight: vertical ? 0 : barSize
 
     anchors.top: position === "top" || vertical
     anchors.bottom: position === "bottom" || vertical
@@ -304,13 +307,13 @@ PanelWindow {
             delegate: Rectangle {
                 id: task
                 required property var modelData
-                width: 26
-                height: 28
+                width: Math.max(26, bar.smallIconSize + 12)
+                height: bar.barSize
                 color: modelData.urgent ? Theme.urgent : (modelData.activated ? Theme.subtleActive : (taskMouse.containsMouse ? Theme.subtleHover : "transparent"))
 
                 IconImage {
                     anchors.centerIn: parent
-                    implicitSize: 14
+                    implicitSize: bar.smallIconSize
                     source: bar.appIcon(task.modelData)
                 }
 
@@ -360,11 +363,11 @@ PanelWindow {
             delegate: Rectangle {
                 id: task
                 required property var modelData
-                width: 36
-                height: 28
+                width: bar.barSize
+                height: bar.verticalItemSize
                 color: modelData.urgent ? Theme.urgent : (modelData.activated ? Theme.subtleActive : (taskMouse.containsMouse ? Theme.subtleHover : "transparent"))
 
-                IconImage { anchors.centerIn: parent; implicitSize: 14; source: bar.appIcon(task.modelData) }
+                IconImage { anchors.centerIn: parent; implicitSize: bar.smallIconSize; source: bar.appIcon(task.modelData) }
 
                 BarTooltip {
                     anchorItem: task
@@ -400,10 +403,10 @@ PanelWindow {
             delegate: Item {
                 id: trayItem
                 required property var modelData
-                width: 14
-                height: 28
+                width: Math.max(14, bar.smallIconSize)
+                height: bar.barSize
 
-                IconImage { anchors.centerIn: parent; implicitSize: 14; source: trayItem.modelData.icon }
+                IconImage { anchors.centerIn: parent; implicitSize: bar.smallIconSize; source: trayItem.modelData.icon }
 
                 BarTooltip {
                     anchorItem: trayItem
@@ -450,10 +453,10 @@ PanelWindow {
             delegate: Item {
                 id: trayItem
                 required property var modelData
-                width: 36
-                height: 20
+                width: bar.barSize
+                height: Math.max(20, bar.smallIconSize + 6)
 
-                IconImage { anchors.centerIn: parent; implicitSize: 14; source: trayItem.modelData.icon }
+                IconImage { anchors.centerIn: parent; implicitSize: bar.smallIconSize; source: trayItem.modelData.icon }
 
                 BarTooltip {
                     anchorItem: trayItem
@@ -543,7 +546,7 @@ PanelWindow {
                     delegate: Item {
                         id: arrowSlot
                         required property var modelData
-                        height: 28
+                        height: bar.barSize
                         width: bar.wsDrawerOpen ? arrowButton.implicitWidth : 0
                         opacity: bar.wsDrawerOpen ? 1 : 0
                         clip: true
@@ -736,8 +739,8 @@ PanelWindow {
                     delegate: Item {
                         id: arrowSlotVertical
                         required property var modelData
-                        width: 36
-                        height: bar.wsDrawerOpen ? 28 : 0
+                        width: bar.barSize
+                        height: bar.wsDrawerOpen ? bar.verticalItemSize : 0
                         opacity: bar.wsDrawerOpen ? 1 : 0
                         clip: true
 
@@ -752,7 +755,7 @@ PanelWindow {
                             anchors.top: parent.top
                             vertical: true
                             fixedWidth: 36
-                            fixedHeight: 28
+                            fixedHeight: bar.verticalItemSize
                             label: arrowSlotVertical.modelData.label
                             tooltip: arrowSlotVertical.modelData.tip
                             onClicked: Quickshell.execDetached(["hyprctl", "eval", "hl.dispatch(hl.dsp.workspace.move({ monitor = \"" + arrowSlotVertical.modelData.dir + "\" }))"])
