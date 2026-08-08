@@ -7,7 +7,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CORE_SCRIPT="${SCRIPT_DIR}/hypr_quicksettings_core.sh"
-BAR_SETTINGS_SCRIPT="${SCRIPT_DIR}/quickshell_bar_settings.sh"
 APPLICATION_SETTINGS_SCRIPT="${SCRIPT_DIR}/quickshell_application_settings.sh"
 
 [[ -r "$CORE_SCRIPT" ]] || {
@@ -72,16 +71,17 @@ launch_terminal() {
 }
 
 select_bar() {
-  if [[ ! -x "$BAR_SETTINGS_SCRIPT" ]]; then
-    MSG='bar settings: helper not found'
+  if ! "$QUICKSHELL_SCRIPT" start >/dev/null 2>&1; then
+    MSG='bar settings: Quickshell failed to start'
     return 1
   fi
 
-  "$BAR_SETTINGS_SCRIPT" --embedded || true
-  mouse_enable
-  printf '\033[?25l'
-  refresh_bar
-  MSG="bar: $(format_bar)"
+  if qs -c awtarchy ipc call barsettings open >/dev/null 2>&1; then
+    MSG='bar settings opened - ALT+drag a bar to move it between edges'
+  else
+    MSG='bar settings: native editor unavailable'
+    return 1
+  fi
 }
 
 select_application_view() {
