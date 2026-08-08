@@ -99,6 +99,11 @@ list_monitors() {
     "$QUICKSHELL_SCRIPT" list-monitors 2>/dev/null || true
 }
 
+refresh_bar_state() {
+    command -v qs >/dev/null 2>&1 || return 0
+    qs -c awtarchy ipc call barstate refresh >/dev/null 2>&1 || true
+}
+
 target_label() {
     local focused
     case "$TARGET" in
@@ -174,6 +179,7 @@ apply_each() {
         [[ -n $monitor ]] || continue
         "$QUICKSHELL_SCRIPT" "$command" "$monitor" "$@" >/dev/null 2>&1 || failed=1
     done < <(resolve_targets)
+    refresh_bar_state
     return "$failed"
 }
 
@@ -341,7 +347,12 @@ set_icon_scale() {
 reset_defaults() {
     confirm_reset || { MSG='reset cancelled'; return 0; }
     if [[ $TARGET == all ]]; then
-        "$QUICKSHELL_SCRIPT" reset-all >/dev/null 2>&1 && MSG='all display bar settings reset' || MSG='reset failed'
+        if "$QUICKSHELL_SCRIPT" reset-all >/dev/null 2>&1; then
+            refresh_bar_state
+            MSG='all display bar settings reset'
+        else
+            MSG='reset failed'
+        fi
     else
         apply_each reset-mon && MSG="reset: $(target_label)" || MSG='reset failed'
     fi
