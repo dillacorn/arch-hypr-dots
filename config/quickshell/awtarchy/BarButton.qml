@@ -59,7 +59,7 @@ Rectangle {
 
     function scaledIconSize(baseSize) {
         const scaled = Math.round(baseSize * iconScale);
-        const maxForBar = Math.max(8, barThickness - 4);
+        const maxForBar = Math.max(8, barThickness - 2);
         return Math.max(8, Math.min(maxForBar, scaled));
     }
 
