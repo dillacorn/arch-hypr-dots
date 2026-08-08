@@ -7,8 +7,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CORE_SCRIPT="${SCRIPT_DIR}/hypr_quicksettings_core.sh"
-APPLICATION_SETTINGS_SCRIPT="${SCRIPT_DIR}/quickshell_application_settings.sh"
-STATE_FILE="${XDG_CACHE_HOME:-$HOME/.cache}/awtarchy/quickshell-state.json"
 
 [[ -r "$CORE_SCRIPT" ]] || {
   printf 'missing: %s\n' "$CORE_SCRIPT" >&2
@@ -21,7 +19,7 @@ STATE_FILE="${XDG_CACHE_HOME:-$HOME/.cache}/awtarchy/quickshell-state.json"
 source <(sed '/^main "\$@"$/d' "$CORE_SCRIPT")
 
 # Keep the established core behavior while inserting Quickshell-specific
-# nested editors into the visible menu.
+# native editors into the visible menu.
 MENU_ITEMS=(
   "Brightness"
   "Display"
@@ -85,42 +83,18 @@ select_bar() {
   fi
 }
 
-prepare_application_view_state() {
-  local tmp
-
-  "$QUICKSHELL_SCRIPT" dump-state >/dev/null 2>&1 || return 1
-  [[ -s "$STATE_FILE" ]] || return 1
-
-  if jq -e '.application_view.customized == true' "$STATE_FILE" >/dev/null 2>&1; then
-    return 0
-  fi
-
-  tmp="${STATE_FILE}.tmp.$$"
-  jq '
-    .application_view = {
-      width: 520,
-      height: 604,
-      text_size: 14,
-      icon_size: 18,
-      customized: true
-    }
-    | .monitors = (.monitors // {})
-    | .monitors |= with_entries(.value |= del(.application_view))
-  ' "$STATE_FILE" >"$tmp"
-  mv -f "$tmp" "$STATE_FILE"
-}
-
 select_application_view() {
-  if [[ ! -x "$APPLICATION_SETTINGS_SCRIPT" ]]; then
-    MSG='Application View settings: helper not found'
+  if ! "$QUICKSHELL_SCRIPT" start >/dev/null 2>&1; then
+    MSG='Application View: Quickshell failed to start'
     return 1
   fi
 
-  prepare_application_view_state || true
-  "$APPLICATION_SETTINGS_SCRIPT" --embedded || true
-  mouse_enable
-  printf '\033[?25l'
-  MSG='Application View settings updated'
+  if qs -c awtarchy ipc call appsettings open >/dev/null 2>&1; then
+    MSG='Application View editor opened'
+  else
+    MSG='Application View: native editor unavailable'
+    return 1
+  fi
 }
 
 do_action() {
