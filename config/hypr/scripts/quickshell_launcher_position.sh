@@ -15,6 +15,7 @@ export LC_ALL=C
 monitor="${1:-}"
 placement="${2:-center}"
 title="Awtarchy Application Search"
+state_file="${XDG_CACHE_HOME:-$HOME/.cache}/awtarchy/quickshell-state.json"
 
 [[ -n "$monitor" ]] || {
     printf 'quickshell_launcher_position.sh: monitor is required\n' >&2
@@ -86,6 +87,13 @@ read -r mon_x mon_y mon_w mon_h < <(
 
 horizontal_bar=28
 vertical_bar=36
+if [[ -s "$state_file" ]] && jq -e '.' "$state_file" >/dev/null 2>&1; then
+    custom_bar="$(jq -r --arg monitor "$monitor" '.monitors[$monitor].bar_size // 0' "$state_file" 2>/dev/null || printf '0')"
+    if [[ "$custom_bar" =~ ^[0-9]+$ ]] && (( custom_bar >= 20 && custom_bar <= 80 )); then
+        horizontal_bar="$custom_bar"
+        vertical_bar="$custom_bar"
+    fi
+fi
 
 case "$placement" in
     top)
