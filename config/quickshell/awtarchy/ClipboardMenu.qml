@@ -274,6 +274,11 @@ Singleton {
                             hoverEnabled: true
                             onEntered: clipboardList.currentIndex = row.index
                             onClicked: root.choose(row.modelData)
+                            onWheel: wheel => {
+                                const maxY = Math.max(0, clipboardList.contentHeight - clipboardList.height);
+                                clipboardList.contentY = Math.max(0, Math.min(maxY, clipboardList.contentY - wheel.angleDelta.y));
+                                wheel.accepted = true;
+                            }
                         }
                     }
                 }
