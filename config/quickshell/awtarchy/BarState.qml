@@ -14,6 +14,11 @@ Singleton {
     readonly property int defaultAppIconSize: 18
     property int revision: 0
 
+    function refresh() {
+        stateFile.reload();
+        revision++;
+    }
+
     FileView {
         id: stateFile
         path: root.statePath
@@ -21,10 +26,7 @@ Singleton {
         blockLoading: false
         printErrors: false
         onLoaded: root.revision++
-        onFileChanged: {
-            reload();
-            root.revision++;
-        }
+        onFileChanged: root.refresh()
     }
 
     function data() {
