@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Hypridle timeout compatibility: hide Quickshell bars while leaving shell
-# services (notifications/launcher/etc.) alive.
+# Hypridle timeout compatibility: hide only the focused monitor's Quickshell
+# bar while leaving the Quickshell process and all other shell services alive.
 
 set -euo pipefail
 CONF="${XDG_CONFIG_HOME:-$HOME/.config}"
@@ -21,12 +21,17 @@ if [[ -x "$INHIBITOR_SH" ]] && "$INHIBITOR_SH" is-active >/dev/null 2>&1; then
     exit 0
 fi
 
-# Preserve an intentionally disabled bar state.
-if ! "$QS_SH" dump-state 2>/dev/null | jq -e '.enabled == true' >/dev/null 2>&1; then
+monitor="$($QS_SH focused-monitor 2>/dev/null || true)"
+[[ -n "$monitor" ]] || exit 0
+
+# Preserve a bar the user already disabled manually. Only create a restore
+# marker when Hypridle is the thing that actually hides this monitor's bar.
+if [[ "$($QS_SH getenabled "$monitor" 2>/dev/null || true)" != "true" ]]; then
     exit 0
 fi
 
 marker_tmp="${IDLE_MARKER}.tmp.$$"
-printf 'running\n' >"$marker_tmp"
+printf '%s\n' "$monitor" >"$marker_tmp"
 mv -f "$marker_tmp" "$IDLE_MARKER"
-"$QS_SH" disable >/dev/null 2>&1 || true
+
+"$QS_SH" setenabled "$monitor" false >/dev/null 2>&1 || true
