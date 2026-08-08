@@ -25,12 +25,31 @@ Rectangle {
         : []
     readonly property bool useHorizontalParts: !vertical && horizontalParts.length > 1
     readonly property bool useVerticalParts: vertical && verticalParts.length > 1
+    readonly property bool workspaceLabel: /^\d+\s/.test(displayLabel)
 
     signal clicked()
     signal rightClicked()
     signal middleClicked()
     signal wheelUp()
     signal wheelDown()
+
+    function isBmpIconPart(part) {
+        return /^[\uF000-\uF8FF]$/u.test(part);
+    }
+
+    function isSupplementaryIconPart(part) {
+        return /^[\u{F0000}-\u{FFFFF}]$/u.test(part);
+    }
+
+    function partFontFamily(part) {
+        // The old Waybar globally used FontAwesome. Keep ordinary text and
+        // Nerd Font supplementary-plane glyphs on the normal Awtarchy font,
+        // but render classic Font Awesome PUA icons with the same family the
+        // old bar used. This also restores the old clipboard glyph mapping.
+        if (isBmpIconPart(part))
+            return "FontAwesome";
+        return Theme.fontFamily;
+    }
 
     function partFontPixelSize(part) {
         if (fontPixelSize > 0)
@@ -40,27 +59,32 @@ Rectangle {
         if (part.indexOf("🖱") >= 0 || part.indexOf("°") >= 0)
             return 14;
 
+        // Workspace numbers remain 14px, while their icon token gets a larger
+        // dedicated size. This applies to both horizontal and vertical forms.
+        if (workspaceLabel && (isBmpIconPart(part) || isSupplementaryIconPart(part)))
+            return 23;
+
         // Numeric/text values remain at 14px. Icons get their own size but are
         // geometrically centered in a fixed-height wrapper below, so mixed
-        // Nerd Font metrics cannot drag adjacent values off-axis.
+        // font metrics cannot drag adjacent values off-axis.
         if (part.indexOf("") >= 0)
             return 20;
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0)
             return 19;
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
-            return 19;
+            return 22;
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
             return 19;
-        if (part.indexOf("") >= 0 || part.indexOf("") >= 0)
+        if (part.indexOf("") >= 0)
+            return 20;
+        if (part.indexOf("") >= 0)
             return 18;
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
             return 18;
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
             return 17;
 
-        // Workspace/application glyphs need more visual weight than their
-        // neighboring workspace number, which remains at 14px.
-        if (/^[󰀀-󰿿-]$/u.test(part))
+        if (isBmpIconPart(part) || isSupplementaryIconPart(part))
             return 20;
 
         return Theme.fontPixelSize;
@@ -90,7 +114,7 @@ Rectangle {
             visible: !root.useHorizontalParts && !root.useVerticalParts
             text: root.displayLabel
             color: root.foreground
-            font.family: Theme.fontFamily
+            font.family: root.partFontFamily(root.displayLabel)
             font.pixelSize: root.partFontPixelSize(root.displayLabel)
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
@@ -116,7 +140,7 @@ Rectangle {
                         anchors.centerIn: parent
                         text: String(parent.modelData)
                         color: root.foreground
-                        font.family: Theme.fontFamily
+                        font.family: root.partFontFamily(String(parent.modelData))
                         font.pixelSize: root.partFontPixelSize(String(parent.modelData))
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
@@ -145,7 +169,7 @@ Rectangle {
                         anchors.centerIn: parent
                         text: String(parent.modelData)
                         color: root.foreground
-                        font.family: Theme.fontFamily
+                        font.family: root.partFontFamily(String(parent.modelData))
                         font.pixelSize: root.partFontPixelSize(String(parent.modelData))
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
