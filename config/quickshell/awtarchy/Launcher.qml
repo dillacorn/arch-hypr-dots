@@ -441,7 +441,7 @@ Singleton {
                             Text {
                                 id: lockText
                                 anchors.centerIn: parent
-                                text: root.sizeLocked ? " Locked" : " Lock"
+                                text: root.sizeLocked ? " Locked" : " Unlocked"
                                 color: Theme.foreground
                                 font.family: Theme.fontFamily
                                 font.pixelSize: 11
