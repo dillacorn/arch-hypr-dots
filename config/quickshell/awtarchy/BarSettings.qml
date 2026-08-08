@@ -5,6 +5,7 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Hyprland
+import Quickshell.Io
 
 Singleton {
     id: root
@@ -79,69 +80,90 @@ Singleton {
     function commonValue(getter) {
         const names = targetNames();
         if (names.length === 0)
-            return null;
+            return "";
+
         let first = getter(names[0]);
         for (let i = 1; i < names.length; ++i) {
             if (getter(names[i]) !== first)
-                return null;
+                return "mixed";
         }
         return first;
     }
 
-    function commonPosition() {
+    function positionLabel() {
         return commonValue(name => BarState.positionFor(name));
     }
 
-    function commonEnabled() {
-        return commonValue(name => BarState.enabledFor(name));
+    function enabledLabel() {
+        return commonValue(name => BarState.enabledFor(name) ? "visible" : "hidden");
     }
 
-    function rawBarSize(name) {
-        const state = BarState.monitorState(name);
-        const value = Number(state.bar_size || 0);
-        return Number.isFinite(value) ? Math.round(value) : 0;
-    }
-
-    function commonRawBarSize() {
-        return commonValue(name => rawBarSize(name));
-    }
-
-    function iconScalePercent(name) {
-        return Math.round(BarState.iconScaleFor(name) * 100);
-    }
-
-    function commonIconScale() {
-        return commonValue(name => iconScalePercent(name));
-    }
-
-    function currentActualBarSize() {
+    function barSizeValue() {
         const names = targetNames();
         if (names.length === 0)
-            return 28;
-        const pos = BarState.positionFor(names[0]);
-        return BarState.barSizeFor(names[0], pos === "left" || pos === "right");
+            return 0;
+        let first = BarState.monitorState(names[0]).bar_size || 0;
+        for (let i = 1; i < names.length; ++i) {
+            const next = BarState.monitorState(names[i]).bar_size || 0;
+            if (next !== first)
+                return -1;
+        }
+        return Number(first);
     }
 
-    function adjustBarSize(delta) {
-        const raw = commonRawBarSize();
-        let base = raw === null || raw === 0 ? currentActualBarSize() : raw;
-        base = Math.max(20, Math.min(80, base + delta));
-        runForTargets("setsize", base);
+    function iconScaleValue() {
+        const names = targetNames();
+        if (names.length === 0)
+            return 100;
+        let first = BarState.monitorState(names[0]).icon_scale;
+        first = first === undefined ? 100 : Number(first);
+        for (let i = 1; i < names.length; ++i) {
+            let next = BarState.monitorState(names[i]).icon_scale;
+            next = next === undefined ? 100 : Number(next);
+            if (next !== first)
+                return -1;
+        }
+        return first;
     }
 
-    function adjustIconScale(delta) {
-        const current = commonIconScale();
-        let base = current === null ? 100 : current;
-        base = Math.max(50, Math.min(200, base + delta));
-        runForTargets("setscale", base);
+    function setPosition(position) {
+        runForTargets("setpos", position);
+    }
+
+    function setVisible(visible) {
+        runForTargets("setenabled", visible ? "true" : "false");
+    }
+
+    function changeBarSize(delta) {
+        let current = barSizeValue();
+        if (current < 0)
+            current = 0;
+        if (current === 0)
+            current = 28;
+        const value = Math.max(20, Math.min(80, current + delta));
+        runForTargets("setsize", value);
+    }
+
+    function resetBarSize() {
+        runForTargets("setsize", 0);
+    }
+
+    function changeIconScale(delta) {
+        let current = iconScaleValue();
+        if (current < 0)
+            current = 100;
+        const value = Math.max(50, Math.min(200, current + delta));
+        runForTargets("setscale", value);
+    }
+
+    function resetIconScale() {
+        runForTargets("setscale", 100);
     }
 
     function resetTargets() {
-        if (targetAll) {
-            Quickshell.execDetached([quickshellScript, "reset-all"]);
-        } else if (targetMonitorName.length > 0) {
-            Quickshell.execDetached([quickshellScript, "reset-mon", targetMonitorName]);
-        }
+        const names = targetNames();
+        for (let i = 0; i < names.length; ++i)
+            Quickshell.execDetached([quickshellScript, "reset-mon", names[i]]);
     }
 
     IpcHandler {
@@ -151,137 +173,70 @@ Singleton {
         function toggle(): void { root.toggle(); }
     }
 
-    component ActionButton: Rectangle {
-        required property string label
-        property bool selected: false
-        property bool destructive: false
-        signal clicked()
-
-        Layout.fillWidth: true
-        Layout.preferredHeight: 34
-        radius: 0
-        border.width: selected ? 1 : 0
-        border.color: Theme.foreground
-        color: selected ? Theme.focus : (buttonMouse.containsMouse ? Theme.subtleHover : Theme.active)
-
-        Text {
-            anchors.centerIn: parent
-            text: parent.label
-            color: parent.destructive ? Theme.urgent : Theme.foreground
-            font.family: Theme.fontFamily
-            font.pixelSize: 12
-            font.weight: Font.Medium
-        }
-
-        MouseArea {
-            id: buttonMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: parent.clicked()
-        }
-    }
-
     FloatingWindow {
         id: settingsWindow
         visible: false
         title: "Awtarchy Bar Settings"
         color: "transparent"
         surfaceFormat.opaque: false
-        implicitWidth: 560
-        implicitHeight: 470
-        minimumSize: Qt.size(520, 430)
-        maximumSize: Qt.size(720, 620)
-
-        Shortcut {
-            sequence: "Esc"
-            onActivated: root.close()
-        }
+        implicitWidth: 520
+        implicitHeight: 560
+        minimumSize: Qt.size(420, 460)
+        maximumSize: Qt.size(760, 820)
 
         Rectangle {
             anchors.fill: parent
             color: Theme.popupBackground
             border.width: 1
-            border.color: Theme.active
+            border.color: Theme.subtleActive
             radius: 0
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 14
-                spacing: 12
-
-                RowLayout {
-                    Layout.fillWidth: true
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-
-                        Text {
-                            text: "Bar Settings"
-                            color: Theme.foreground
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 18
-                            font.bold: true
-                        }
-
-                        Text {
-                            text: "Click controls below. ALT + left-drag a bar to snap it to another edge."
-                            color: Theme.muted
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 11
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.preferredWidth: 34
-                        Layout.preferredHeight: 34
-                        color: closeMouse.containsMouse ? Theme.subtleHover : Theme.active
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: "×"
-                            color: Theme.foreground
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 18
-                        }
-
-                        MouseArea {
-                            id: closeMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.close()
-                        }
-                    }
-                }
+                anchors.margins: 18
+                spacing: 14
 
                 Text {
-                    text: "Target"
+                    Layout.fillWidth: true
+                    text: "Bar Settings"
                     color: Theme.foreground
                     font.family: Theme.fontFamily
-                    font.pixelSize: 12
+                    font.pixelSize: 20
                     font.bold: true
                 }
 
-                RowLayout {
+                Text {
                     Layout.fillWidth: true
-                    spacing: 6
+                    text: "ALT + left-drag a bar toward a screen edge to move it."
+                    color: Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 12
+                    wrapMode: Text.WordWrap
+                }
 
-                    ActionButton {
-                        label: "All displays"
-                        selected: root.targetAll
-                        onClicked: root.selectAll()
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Rectangle {
+                        width: allText.implicitWidth + 22
+                        height: 32
+                        color: root.targetAll ? Theme.focus : Theme.active
+                        border.width: 0
+                        Text { id: allText; anchors.centerIn: parent; text: "All displays"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.selectAll() }
                     }
 
                     Repeater {
                         model: Quickshell.screens
-
-                        delegate: ActionButton {
+                        delegate: Rectangle {
                             required property var modelData
-                            label: modelData.name
-                            selected: !root.targetAll && root.targetMonitorName === modelData.name
-                            onClicked: root.selectMonitor(modelData.name)
+                            width: monitorText.implicitWidth + 22
+                            height: 32
+                            color: !root.targetAll && root.targetMonitorName === modelData.name ? Theme.focus : Theme.active
+                            border.width: 0
+                            Text { id: monitorText; anchors.centerIn: parent; text: modelData.name; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
+                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.selectMonitor(modelData.name) }
                         }
                     }
                 }
@@ -290,143 +245,136 @@ Singleton {
                     text: "Position"
                     color: Theme.foreground
                     font.family: Theme.fontFamily
-                    font.pixelSize: 12
+                    font.pixelSize: 13
                     font.bold: true
                 }
 
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: 6
+                    spacing: 8
 
-                    ActionButton { label: "Top"; selected: root.commonPosition() === "top"; onClicked: root.runForTargets("setpos", "top") }
-                    ActionButton { label: "Bottom"; selected: root.commonPosition() === "bottom"; onClicked: root.runForTargets("setpos", "bottom") }
-                    ActionButton { label: "Left"; selected: root.commonPosition() === "left"; onClicked: root.runForTargets("setpos", "left") }
-                    ActionButton { label: "Right"; selected: root.commonPosition() === "right"; onClicked: root.runForTargets("setpos", "right") }
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 10
-
-                    Text {
-                        Layout.fillWidth: true
-                        text: "Visibility"
-                        color: Theme.foreground
-                        font.family: Theme.fontFamily
-                        font.pixelSize: 12
-                        font.bold: true
-                    }
-
-                    ActionButton {
-                        Layout.preferredWidth: 150
-                        Layout.fillWidth: false
-                        label: root.commonEnabled() === null ? "Mixed" : (root.commonEnabled() ? "Visible" : "Hidden")
-                        selected: root.commonEnabled() === true
-                        onClicked: {
-                            const enabled = root.commonEnabled();
-                            root.runForTargets("setenabled", enabled === true ? "false" : "true");
+                    Repeater {
+                        model: ["top", "bottom", "left", "right"]
+                        delegate: Rectangle {
+                            required property string modelData
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 38
+                            color: root.positionLabel() === modelData ? Theme.focus : Theme.active
+                            border.width: 0
+                            Text { anchors.centerIn: parent; text: modelData.charAt(0).toUpperCase() + modelData.slice(1); color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
+                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.setPosition(modelData) }
                         }
                     }
+                }
+
+                Text {
+                    text: "Visibility"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 13
+                    font.bold: true
                 }
 
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 8
 
-                    Text {
-                        Layout.preferredWidth: 150
-                        text: "Bar thickness"
-                        color: Theme.foreground
-                        font.family: Theme.fontFamily
-                        font.pixelSize: 12
-                    }
-
-                    ActionButton {
-                        Layout.preferredWidth: 42
-                        Layout.fillWidth: false
-                        label: "−"
-                        onClicked: root.adjustBarSize(-2)
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 38
+                        color: root.enabledLabel() === "visible" ? Theme.focus : Theme.active
+                        border.width: 0
+                        Text { anchors.centerIn: parent; text: "Visible"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.setVisible(true) }
                     }
 
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 34
-                        color: Theme.active
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: {
-                                const value = root.commonRawBarSize();
-                                if (value === null) return "Mixed";
-                                if (value === 0) return "Default";
-                                return value + " px";
-                            }
-                            color: Theme.foreground
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 12
-                        }
+                        Layout.preferredHeight: 38
+                        color: root.enabledLabel() === "hidden" ? Theme.focus : Theme.active
+                        border.width: 0
+                        Text { anchors.centerIn: parent; text: "Hidden"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.setVisible(false) }
                     }
+                }
 
-                    ActionButton {
-                        Layout.preferredWidth: 42
-                        Layout.fillWidth: false
-                        label: "+"
-                        onClicked: root.adjustBarSize(2)
-                    }
-
-                    ActionButton {
-                        Layout.preferredWidth: 80
-                        Layout.fillWidth: false
-                        label: "Default"
-                        onClicked: root.runForTargets("setsize", 0)
-                    }
+                Text {
+                    text: "Bar thickness"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 13
+                    font.bold: true
                 }
 
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 8
 
+                    Rectangle {
+                        Layout.preferredWidth: 52; Layout.preferredHeight: 36; color: Theme.active
+                        Text { anchors.centerIn: parent; text: "−"; color: Theme.foreground; font.pixelSize: 18 }
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.changeBarSize(-2) }
+                    }
                     Text {
-                        Layout.preferredWidth: 150
-                        text: "Icon size"
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignHCenter
+                        text: {
+                            const value = root.barSizeValue();
+                            return value < 0 ? "Mixed" : value === 0 ? "Default" : value + " px";
+                        }
                         color: Theme.foreground
                         font.family: Theme.fontFamily
-                        font.pixelSize: 12
+                        font.pixelSize: 13
                     }
+                    Rectangle {
+                        Layout.preferredWidth: 52; Layout.preferredHeight: 36; color: Theme.active
+                        Text { anchors.centerIn: parent; text: "+"; color: Theme.foreground; font.pixelSize: 18 }
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.changeBarSize(2) }
+                    }
+                    Rectangle {
+                        Layout.preferredWidth: 78; Layout.preferredHeight: 36; color: Theme.active
+                        Text { anchors.centerIn: parent; text: "Default"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 12 }
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.resetBarSize() }
+                    }
+                }
 
-                    ActionButton {
-                        Layout.preferredWidth: 42
-                        Layout.fillWidth: false
-                        label: "−"
-                        onClicked: root.adjustIconScale(-5)
-                    }
+                Text {
+                    text: "Icon size"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 13
+                    font.bold: true
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
 
                     Rectangle {
+                        Layout.preferredWidth: 52; Layout.preferredHeight: 36; color: Theme.active
+                        Text { anchors.centerIn: parent; text: "−"; color: Theme.foreground; font.pixelSize: 18 }
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.changeIconScale(-5) }
+                    }
+                    Text {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 34
-                        color: Theme.active
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: root.commonIconScale() === null ? "Mixed" : root.commonIconScale() + "%"
-                            color: Theme.foreground
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 12
+                        horizontalAlignment: Text.AlignHCenter
+                        text: {
+                            const value = root.iconScaleValue();
+                            return value < 0 ? "Mixed" : value + "%";
                         }
+                        color: Theme.foreground
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 13
                     }
-
-                    ActionButton {
-                        Layout.preferredWidth: 42
-                        Layout.fillWidth: false
-                        label: "+"
-                        onClicked: root.adjustIconScale(5)
+                    Rectangle {
+                        Layout.preferredWidth: 52; Layout.preferredHeight: 36; color: Theme.active
+                        Text { anchors.centerIn: parent; text: "+"; color: Theme.foreground; font.pixelSize: 18 }
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.changeIconScale(5) }
                     }
-
-                    ActionButton {
-                        Layout.preferredWidth: 80
-                        Layout.fillWidth: false
-                        label: "100%"
-                        onClicked: root.runForTargets("setscale", 100)
+                    Rectangle {
+                        Layout.preferredWidth: 78; Layout.preferredHeight: 36; color: Theme.active
+                        Text { anchors.centerIn: parent; text: "100%"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 12 }
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.resetIconScale() }
                     }
                 }
 
@@ -436,16 +384,20 @@ Singleton {
                     Layout.fillWidth: true
                     spacing: 8
 
-                    ActionButton {
-                        label: "Reset selected target"
-                        destructive: true
-                        onClicked: root.resetTargets()
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 40
+                        color: Theme.active
+                        Text { anchors.centerIn: parent; text: "Reset selected"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.resetTargets() }
                     }
 
-                    ActionButton {
-                        label: "Done"
-                        selected: true
-                        onClicked: root.close()
+                    Rectangle {
+                        Layout.preferredWidth: 110
+                        Layout.preferredHeight: 40
+                        color: Theme.focus
+                        Text { anchors.centerIn: parent; text: "Close"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.close() }
                     }
                 }
             }
