@@ -19,12 +19,14 @@ Singleton {
     readonly property int minimumLauncherWidth: 420
     readonly property int minimumLauncherHeight: 360
     readonly property int applicationColumnMinimumWidth: 300
-    readonly property int configuredAppTextSize: BarState.appTextSizeFor(targetMonitorName, false)
-    readonly property int configuredAppIconSize: BarState.appIconSizeFor(targetMonitorName, false)
+    readonly property string activeMonitorName: launcherWindow.screen && launcherWindow.screen.name
+        ? launcherWindow.screen.name : targetMonitorName
+    readonly property int configuredAppTextSize: BarState.appTextSizeFor(activeMonitorName, false)
+    readonly property int configuredAppIconSize: BarState.appIconSizeFor(activeMonitorName, false)
     readonly property int liveWidth: Math.round(launcherWindow.width)
     readonly property int liveHeight: Math.round(launcherWindow.height)
-    readonly property bool sizeLocked: targetMonitorName.length > 0
-        && BarState.applicationSizeLockedFor(targetMonitorName)
+    readonly property bool sizeLocked: activeMonitorName.length > 0
+        && BarState.applicationSizeLockedFor(activeMonitorName)
     property string targetMonitorName: ""
     property string requestedPlacement: "center"
     property bool launcherPositioned: false
@@ -83,16 +85,17 @@ Singleton {
     }
 
     function toggleSizeLock() {
-        if (targetMonitorName.length === 0 || sizeStateWriter.running)
+        const monitor = activeMonitorName;
+        if (monitor.length === 0 || sizeStateWriter.running)
             return;
 
-        if (sizeLocked) {
-            sizeStateWriter.exec([stateScript, "unlock-size", targetMonitorName]);
+        if (BarState.applicationSizeLockedFor(monitor)) {
+            sizeStateWriter.exec([stateScript, "unlock-size", monitor]);
         } else {
             sizeStateWriter.exec([
                 stateScript,
                 "lock-size",
-                targetMonitorName,
+                monitor,
                 String(liveWidth),
                 String(liveHeight)
             ]);
