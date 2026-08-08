@@ -151,5 +151,4 @@ hyprctl eval "
     hl.dispatch(hl.dsp.window.float({ action = \"enable\", window = \"${selector_lua}\" }))
     hl.dispatch(hl.dsp.window.move({ monitor = \"${monitor_lua}\", follow = false, window = \"${selector_lua}\" }))
     hl.dispatch(hl.dsp.window.move({ x = ${x}, y = ${y}, relative = false, window = \"${selector_lua}\" }))
-    hl.dispatch(hl.dsp.focus({ window = \"${selector_lua}\" }))
 " >/dev/null
