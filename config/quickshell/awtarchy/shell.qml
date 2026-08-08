@@ -18,6 +18,7 @@ ShellRoot {
     readonly property bool powerReady: PowerMenu !== null
     readonly property bool themesReady: ThemePicker !== null
     readonly property bool barSettingsReady: BarSettings !== null
+    readonly property bool applicationSettingsReady: ApplicationSettings !== null
 
     Variants {
         model: Quickshell.screens
