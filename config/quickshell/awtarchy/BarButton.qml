@@ -29,7 +29,9 @@ Rectangle {
     readonly property bool useHorizontalParts: !vertical && horizontalParts.length > 1
     readonly property bool useVerticalParts: vertical && verticalParts.length > 1
     readonly property bool workspaceLabel: /^\d+\s/.test(displayLabel)
-    readonly property string effectiveTooltip: tooltip === "Audio volume" ? SystemState.audioOutputName : tooltip
+    readonly property string effectiveTooltip: tooltip === "Audio volume"
+        ? SystemState.audioOutputName
+        : (tooltip.indexOf("Memory usage: ") === 0 ? SystemState.memoryTooltip : tooltip)
 
     signal clicked()
     signal rightClicked()
