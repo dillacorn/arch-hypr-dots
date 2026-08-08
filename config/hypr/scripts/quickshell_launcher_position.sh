@@ -2,9 +2,12 @@
 # Position the Awtarchy Quickshell application launcher on a specific monitor.
 #
 # placement:
-#   center               center on the requested monitor
+#   center
+#       true center of the requested monitor
 #   top|bottom|left|right
-#                        place beside the Apps icon on that bar edge
+#       place beside the Apps button on that bar edge
+#   top-center|bottom-center|left-center|right-center
+#       attach to that bar edge while centering along the bar
 
 set -euo pipefail
 export LC_ALL=C
@@ -19,7 +22,7 @@ title="Awtarchy Application Search"
 }
 
 case "$placement" in
-    center|top|bottom|left|right) ;;
+    center|top|bottom|left|right|top-center|bottom-center|left-center|right-center) ;;
     *)
         printf 'quickshell_launcher_position.sh: invalid placement: %s\n' "$placement" >&2
         exit 2
@@ -101,6 +104,22 @@ case "$placement" in
         x=$((mon_x + mon_w - vertical_bar - win_w))
         y="$mon_y"
         ;;
+    top-center)
+        x=$((mon_x + (mon_w - win_w) / 2))
+        y=$((mon_y + horizontal_bar))
+        ;;
+    bottom-center)
+        x=$((mon_x + (mon_w - win_w) / 2))
+        y=$((mon_y + mon_h - horizontal_bar - win_h))
+        ;;
+    left-center)
+        x=$((mon_x + vertical_bar))
+        y=$((mon_y + (mon_h - win_h) / 2))
+        ;;
+    right-center)
+        x=$((mon_x + mon_w - vertical_bar - win_w))
+        y=$((mon_y + (mon_h - win_h) / 2))
+        ;;
     center)
         x=$((mon_x + (mon_w - win_w) / 2))
         y=$((mon_y + (mon_h - win_h) / 2))
@@ -124,7 +143,11 @@ monitor_lua="${monitor_lua//\"/\\\"}"
 selector_lua="${selector//\\/\\\\}"
 selector_lua="${selector_lua//\"/\\\"}"
 
+# Disable animation on this launcher window before moving it. The Quickshell
+# surface stays transparent until this process exits, so the user sees only the
+# final position instead of a center-to-edge compositor animation.
 hyprctl eval "
+    hl.dispatch(hl.dsp.window.set_prop({ prop = \"no_anim\", value = \"1\", window = \"${selector_lua}\" }))
     hl.dispatch(hl.dsp.window.float({ action = \"enable\", window = \"${selector_lua}\" }))
     hl.dispatch(hl.dsp.window.move({ monitor = \"${monitor_lua}\", follow = false, window = \"${selector_lua}\" }))
     hl.dispatch(hl.dsp.window.move({ x = ${x}, y = ${y}, relative = false, window = \"${selector_lua}\" }))
