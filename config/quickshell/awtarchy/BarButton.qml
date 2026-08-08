@@ -66,7 +66,7 @@ Rectangle {
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0)
             return 19;
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
-            return 22;
+            return 23;
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
             return 20;
         if (part.indexOf("") >= 0)
