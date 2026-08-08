@@ -12,6 +12,14 @@ STATE_FILE="${STATE_DIR}/quickshell-state.json"
 LEGACY_STATE_FILE="${CACHE_HOME}/waybar/state.json"
 LOG_FILE="${STATE_DIR}/quickshell.log"
 
+DEFAULT_HORIZONTAL_SIZE=28
+DEFAULT_VERTICAL_SIZE=36
+DEFAULT_ICON_SCALE=100
+MIN_BAR_SIZE=20
+MAX_BAR_SIZE=80
+MIN_ICON_SCALE=50
+MAX_ICON_SCALE=200
+
 need() {
     command -v "$1" >/dev/null 2>&1 || {
         printf 'quickshell.sh: missing: %s\n' "$1" >&2
@@ -44,7 +52,15 @@ ensure_state() {
         .enabled = (if .enabled == null then true else .enabled end)
         | .monitors = (.monitors // {})
         | .monitors = reduce $monitors[] as $m
-            (.monitors; .[$m] = ({position:"top",enabled:true} * (.[$m] // {})))
+            (.monitors;
+                .[$m] = ({
+                    position:"top",
+                    enabled:true,
+                    bar_size:0,
+                    icon_scale:100,
+                    last_horizontal:"top",
+                    last_vertical:"right"
+                } * (.[$m] // {})))
     ' "$STATE_FILE" >"$tmp"
     mv -f "$tmp" "$STATE_FILE"
 }
@@ -84,6 +100,10 @@ restart_shell() {
     fi
 }
 
+list_monitors() {
+    hyprctl monitors -j 2>/dev/null | jq -r '.[] | select((.disabled // false) == false) | .name'
+}
+
 focused_monitor() {
     local monitor
     monitor="$(hyprctl monitors -j 2>/dev/null | jq -r '.[] | select(.focused == true) | .name' | head -n1)"
@@ -103,6 +123,16 @@ getenabled() {
     jq -r --arg monitor "$1" '(if .monitors[$monitor].enabled == null then true else .monitors[$monitor].enabled end) | if . then "true" else "false" end' "$STATE_FILE"
 }
 
+getsize() {
+    ensure_state
+    jq -r --arg monitor "$1" '(.monitors[$monitor].bar_size // 0) | tonumber' "$STATE_FILE"
+}
+
+getscale() {
+    ensure_state
+    jq -r --arg monitor "$1" '(.monitors[$monitor].icon_scale // 100) | tonumber' "$STATE_FILE"
+}
+
 set_monitor_enabled() {
     local monitor="$1" enabled="$2" tmp
     case "$enabled" in
@@ -120,8 +150,63 @@ setpos() {
     case "$pos" in top|bottom|left|right) ;; *) printf 'quickshell.sh: invalid position: %s\n' "$pos" >&2; exit 2 ;; esac
     ensure_state
     tmp="${STATE_FILE}.tmp.$$"
-    jq --arg monitor "$monitor" --arg pos "$pos" '.monitors[$monitor].position = $pos' "$STATE_FILE" >"$tmp"
+    if [[ "$pos" == "top" || "$pos" == "bottom" ]]; then
+        jq --arg monitor "$monitor" --arg pos "$pos" '.monitors[$monitor].position = $pos | .monitors[$monitor].last_horizontal = $pos' "$STATE_FILE" >"$tmp"
+    else
+        jq --arg monitor "$monitor" --arg pos "$pos" '.monitors[$monitor].position = $pos | .monitors[$monitor].last_vertical = $pos' "$STATE_FILE" >"$tmp"
+    fi
     mv -f "$tmp" "$STATE_FILE"
+}
+
+setsize() {
+    local monitor="$1" size="$2" tmp
+    [[ "$size" =~ ^[0-9]+$ ]] || { printf 'quickshell.sh: bar size must be an integer\n' >&2; exit 2; }
+    if (( size != 0 && (size < MIN_BAR_SIZE || size > MAX_BAR_SIZE) )); then
+        printf 'quickshell.sh: bar size must be 0 or %d-%d\n' "$MIN_BAR_SIZE" "$MAX_BAR_SIZE" >&2
+        exit 2
+    fi
+    ensure_state
+    tmp="${STATE_FILE}.tmp.$$"
+    jq --arg monitor "$monitor" --argjson size "$size" '.monitors[$monitor].bar_size = $size' "$STATE_FILE" >"$tmp"
+    mv -f "$tmp" "$STATE_FILE"
+}
+
+setscale() {
+    local monitor="$1" scale="$2" tmp
+    [[ "$scale" =~ ^[0-9]+$ ]] || { printf 'quickshell.sh: icon scale must be an integer\n' >&2; exit 2; }
+    if (( scale < MIN_ICON_SCALE || scale > MAX_ICON_SCALE )); then
+        printf 'quickshell.sh: icon scale must be %d-%d\n' "$MIN_ICON_SCALE" "$MAX_ICON_SCALE" >&2
+        exit 2
+    fi
+    ensure_state
+    tmp="${STATE_FILE}.tmp.$$"
+    jq --arg monitor "$monitor" --argjson scale "$scale" '.monitors[$monitor].icon_scale = $scale' "$STATE_FILE" >"$tmp"
+    mv -f "$tmp" "$STATE_FILE"
+}
+
+reset_mon() {
+    local monitor="$1" tmp
+    ensure_state
+    tmp="${STATE_FILE}.tmp.$$"
+    jq --arg monitor "$monitor" '
+        .monitors[$monitor] = {
+            position:"top",
+            enabled:true,
+            bar_size:0,
+            icon_scale:100,
+            last_horizontal:"top",
+            last_vertical:"right"
+        }
+    ' "$STATE_FILE" >"$tmp"
+    mv -f "$tmp" "$STATE_FILE"
+}
+
+reset_all() {
+    local monitor
+    while IFS= read -r monitor; do
+        [[ -n "$monitor" ]] || continue
+        reset_mon "$monitor"
+    done < <(list_monitors)
 }
 
 toggle_mon() {
@@ -196,14 +281,21 @@ global:
   start | stop | restart | status
   enable | disable
   dump-state
+  list-monitors
+  reset-all
 
 focused monitor:
   focused-monitor
   toggle-focused
   getpos-focused
   getenabled-focused
+  getsize-focused
+  getscale-focused
   setenabled-focused <true|false>
   setpos-focused <top|bottom|left|right>
+  setsize-focused <0|20-80>
+  setscale-focused <50-200>
+  reset-focused
   flip-focused
   rotate-focused
 
@@ -211,8 +303,16 @@ per monitor:
   toggle-mon <MON>
   getpos <MON>
   getenabled <MON>
+  getsize <MON>
+  getscale <MON>
   setenabled <MON> <true|false>
   setpos <MON> <top|bottom|left|right>
+  setsize <MON> <0|20-80>
+  setscale <MON> <50-200>
+  reset-mon <MON>
+
+bar_size 0 means Awtarchy defaults: 28px horizontal, 36px vertical.
+icon_scale is a percentage; 100 preserves the tuned default icon sizes.
 USAGE
 }
 
@@ -225,6 +325,8 @@ case "$cmd" in
     enable) set_global_enabled true; start_shell ;;
     disable) set_global_enabled false ;;
     dump-state) ensure_state; cat "$STATE_FILE" ;;
+    list-monitors) list_monitors ;;
+    reset-all) reset_all ;;
     focused-monitor) focused_monitor ;;
     toggle-focused) monitor="$(focused_monitor)"; toggle_mon "$monitor" ;;
     toggle-mon) [[ -n "${2:-}" ]] || { usage; exit 2; }; toggle_mon "$2" ;;
@@ -232,10 +334,20 @@ case "$cmd" in
     getpos-focused) monitor="$(focused_monitor)"; getpos "$monitor" ;;
     getenabled) [[ -n "${2:-}" ]] || { usage; exit 2; }; getenabled "$2" ;;
     getenabled-focused) monitor="$(focused_monitor)"; getenabled "$monitor" ;;
+    getsize) [[ -n "${2:-}" ]] || { usage; exit 2; }; getsize "$2" ;;
+    getsize-focused) monitor="$(focused_monitor)"; getsize "$monitor" ;;
+    getscale) [[ -n "${2:-}" ]] || { usage; exit 2; }; getscale "$2" ;;
+    getscale-focused) monitor="$(focused_monitor)"; getscale "$monitor" ;;
     setenabled) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage; exit 2; }; set_monitor_enabled "$2" "$3" ;;
     setenabled-focused) [[ -n "${2:-}" ]] || { usage; exit 2; }; monitor="$(focused_monitor)"; set_monitor_enabled "$monitor" "$2" ;;
     setpos) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage; exit 2; }; setpos "$2" "$3" ;;
     setpos-focused) [[ -n "${2:-}" ]] || { usage; exit 2; }; monitor="$(focused_monitor)"; setpos "$monitor" "$2" ;;
+    setsize) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage; exit 2; }; setsize "$2" "$3" ;;
+    setsize-focused) [[ -n "${2:-}" ]] || { usage; exit 2; }; monitor="$(focused_monitor)"; setsize "$monitor" "$2" ;;
+    setscale) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage; exit 2; }; setscale "$2" "$3" ;;
+    setscale-focused) [[ -n "${2:-}" ]] || { usage; exit 2; }; monitor="$(focused_monitor)"; setscale "$monitor" "$2" ;;
+    reset-mon) [[ -n "${2:-}" ]] || { usage; exit 2; }; reset_mon "$2" ;;
+    reset-focused) monitor="$(focused_monitor)"; reset_mon "$monitor" ;;
     flip-focused) monitor="$(focused_monitor)"; flip_mon "$monitor" ;;
     rotate-focused) monitor="$(focused_monitor)"; rotate_mon "$monitor" ;;
     ""|-h|--help|help) usage ;;
