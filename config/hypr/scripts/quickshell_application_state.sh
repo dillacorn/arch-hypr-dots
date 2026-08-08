@@ -7,8 +7,8 @@ CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 STATE_FILE="${CACHE_HOME}/awtarchy/quickshell-state.json"
 QUICKSHELL_SCRIPT="${HYPR_QUICKSHELL_SCRIPT:-${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/quickshell.sh}"
 
-DEFAULT_WIDTH=520
-DEFAULT_HEIGHT=604
+DEFAULT_WIDTH=420
+DEFAULT_HEIGHT=582
 DEFAULT_TEXT_SIZE=14
 DEFAULT_ICON_SIZE=18
 MIN_WIDTH=420
@@ -55,14 +55,6 @@ validate_int_range() {
     }
 }
 
-write_state() {
-    local filter="$1" tmp
-    ensure_state
-    tmp="${STATE_FILE}.tmp.$$"
-    jq "$filter" "$STATE_FILE" >"$tmp"
-    mv -f "$tmp" "$STATE_FILE"
-}
-
 set_field() {
     local field="$1" value="$2" min max label tmp
 
@@ -79,8 +71,8 @@ set_field() {
     tmp="${STATE_FILE}.tmp.$$"
     jq --arg field "$field" --argjson value "$value" '
         .application_view = ({
-            width:520,
-            height:604,
+            width:420,
+            height:582,
             text_size:14,
             icon_size:18,
             customized:true
@@ -101,8 +93,8 @@ set_size() {
     tmp="${STATE_FILE}.tmp.$$"
     jq --argjson width "$width" --argjson height "$height" '
         .application_view = ({
-            width:520,
-            height:604,
+            width:420,
+            height:582,
             text_size:14,
             icon_size:18,
             customized:true
@@ -122,8 +114,8 @@ reset_defaults() {
     tmp="${STATE_FILE}.tmp.$$"
     jq '
         .application_view = {
-            width:520,
-            height:604,
+            width:420,
+            height:582,
             text_size:14,
             icon_size:18,
             customized:false
