@@ -14,8 +14,8 @@ Singleton {
     readonly property int defaultAppIconSize: 18
     property int revision: 0
 
-    // Immediate in-process overrides keep PanelWindow geometry and icon sizing
-    // responsive while the persistent JSON write completes in the background.
+    // Immediate in-process overrides keep bar geometry and icon sizing
+    // responsive while persistent JSON writes complete in the background.
     property var livePositions: ({})
     property var liveEnabled: ({})
     property var liveBarSizes: ({})
@@ -80,24 +80,27 @@ Singleton {
         onFileChanged: root.refresh()
     }
 
+    IpcHandler {
+        target: "barstate"
+        function refresh(): void { root.refresh(); }
+    }
+
     function data() {
         const dependency = revision;
         const text = stateFile.text();
         if (!text || text.length === 0)
-            return ({ enabled: true, monitors: {}, application_view: {} });
+            return ({ enabled: true, monitors: {} });
 
         try {
             const parsed = JSON.parse(text);
             if (!parsed.monitors)
                 parsed.monitors = {};
-            if (!parsed.application_view)
-                parsed.application_view = {};
             if (parsed.enabled === undefined)
                 parsed.enabled = true;
             return parsed;
         } catch (error) {
             console.warn("Awtarchy Quickshell: invalid shell state:", error);
-            return ({ enabled: true, monitors: {}, application_view: {} });
+            return ({ enabled: true, monitors: {} });
         }
     }
 
@@ -149,36 +152,39 @@ Singleton {
         return Math.max(50, Math.min(200, percent)) / 100.0;
     }
 
-    function globalApplicationView() {
-        const d = data();
-        const view = d.application_view || ({});
-        const customized = view.customized === true;
+    function launcherLockFor(name) {
+        const mon = monitorState(name);
+        const view = mon.application_view || ({});
+        const width = Number(view.width);
+        const height = Number(view.height);
+        const locked = view.locked === true
+            && Number.isFinite(width) && width >= 420 && width <= 3840
+            && Number.isFinite(height) && height >= 360 && height <= 2160;
+
         return ({
-            width: Math.max(420, Math.min(3840, Math.round(Number(customized && view.width !== undefined ? view.width : defaultLauncherWidth)))),
-            height: Math.max(360, Math.min(2160, Math.round(Number(customized && view.height !== undefined ? view.height : defaultLauncherHeight)))),
-            textSize: Math.max(10, Math.min(28, Math.round(Number(customized && view.text_size !== undefined ? view.text_size : defaultAppTextSize)))),
-            iconSize: Math.max(12, Math.min(48, Math.round(Number(customized && view.icon_size !== undefined ? view.icon_size : defaultAppIconSize)))),
-            customized: customized
+            locked: locked,
+            width: locked ? Math.round(width) : defaultLauncherWidth,
+            height: locked ? Math.round(height) : defaultLauncherHeight
         });
     }
 
-    function applicationViewFor(name, globalOnly) {
-        return globalApplicationView();
+    function applicationSizeLockedFor(name) {
+        return launcherLockFor(name).locked;
     }
 
     function launcherWidthFor(name, globalOnly) {
-        return applicationViewFor(name, globalOnly).width;
+        return launcherLockFor(name).width;
     }
 
     function launcherHeightFor(name, globalOnly) {
-        return applicationViewFor(name, globalOnly).height;
+        return launcherLockFor(name).height;
     }
 
     function appTextSizeFor(name, globalOnly) {
-        return applicationViewFor(name, globalOnly).textSize;
+        return defaultAppTextSize;
     }
 
     function appIconSizeFor(name, globalOnly) {
-        return applicationViewFor(name, globalOnly).iconSize;
+        return defaultAppIconSize;
     }
 }
