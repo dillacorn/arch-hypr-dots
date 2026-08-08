@@ -33,11 +33,10 @@ Singleton {
     }
 
     function selectMonitor(name) {
+        // Selecting a target must not move/rescale the editor window. The
+        // settings window stays on the display where it was opened.
         targetAll = false;
         targetMonitorName = name;
-        const target = screenByName(name);
-        if (target)
-            settingsWindow.screen = target;
     }
 
     function selectAll() {
@@ -67,6 +66,11 @@ Singleton {
             open();
     }
 
+    function scheduleStateRefresh() {
+        stateRefreshQuick.restart();
+        stateRefreshFollowup.restart();
+    }
+
     function runForTargets(command, value) {
         const names = targetNames();
         for (let i = 0; i < names.length; ++i) {
@@ -75,6 +79,7 @@ Singleton {
                 args.push(String(value));
             Quickshell.execDetached(args);
         }
+        scheduleStateRefresh();
     }
 
     function commonValue(getter) {
@@ -111,6 +116,19 @@ Singleton {
         return Number(first);
     }
 
+    function defaultBarSizeForTarget() {
+        const names = targetNames();
+        if (names.length === 0)
+            return 28;
+        let vertical = ["left", "right"].indexOf(BarState.positionFor(names[0])) >= 0;
+        for (let i = 1; i < names.length; ++i) {
+            const nextVertical = ["left", "right"].indexOf(BarState.positionFor(names[i])) >= 0;
+            if (nextVertical !== vertical)
+                return 28;
+        }
+        return vertical ? 36 : 28;
+    }
+
     function iconScaleValue() {
         const names = targetNames();
         if (names.length === 0)
@@ -137,9 +155,9 @@ Singleton {
     function changeBarSize(delta) {
         let current = barSizeValue();
         if (current < 0)
-            current = 0;
+            current = defaultBarSizeForTarget();
         if (current === 0)
-            current = 28;
+            current = defaultBarSizeForTarget();
         const value = Math.max(20, Math.min(80, current + delta));
         runForTargets("setsize", value);
     }
@@ -164,6 +182,21 @@ Singleton {
         const names = targetNames();
         for (let i = 0; i < names.length; ++i)
             Quickshell.execDetached([quickshellScript, "reset-mon", names[i]]);
+        scheduleStateRefresh();
+    }
+
+    Timer {
+        id: stateRefreshQuick
+        interval: 100
+        repeat: false
+        onTriggered: BarState.refresh()
+    }
+
+    Timer {
+        id: stateRefreshFollowup
+        interval: 350
+        repeat: false
+        onTriggered: BarState.refresh()
     }
 
     IpcHandler {
@@ -181,8 +214,8 @@ Singleton {
         surfaceFormat.opaque: false
         implicitWidth: 520
         implicitHeight: 560
-        minimumSize: Qt.size(420, 460)
-        maximumSize: Qt.size(760, 820)
+        minimumSize: Qt.size(520, 560)
+        maximumSize: Qt.size(520, 560)
 
         Rectangle {
             anchors.fill: parent
@@ -207,7 +240,7 @@ Singleton {
 
                 Text {
                     Layout.fillWidth: true
-                    text: "ALT + left-drag a bar toward a screen edge to move it."
+                    text: "ALT + left-drag the bar toward top, bottom, left, or right to move it."
                     color: Theme.muted
                     font.family: Theme.fontFamily
                     font.pixelSize: 12
@@ -320,7 +353,7 @@ Singleton {
                         horizontalAlignment: Text.AlignHCenter
                         text: {
                             const value = root.barSizeValue();
-                            return value < 0 ? "Mixed" : value === 0 ? "Default" : value + " px";
+                            return value < 0 ? "Mixed" : value === 0 ? "Default (" + root.defaultBarSizeForTarget() + " px)" : value + " px";
                         }
                         color: Theme.foreground
                         font.family: Theme.fontFamily
