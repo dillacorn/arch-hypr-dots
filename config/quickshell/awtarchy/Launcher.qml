@@ -29,12 +29,18 @@ Singleton {
         return BarState.positionFor(targetScreen.name);
     }
 
-    function showOnScreen(targetScreen) {
+    function centeredPlacementForScreen(targetScreen) {
+        if (!targetScreen || !BarState.enabledFor(targetScreen.name))
+            return "center";
+        return BarState.positionFor(targetScreen.name) + "-center";
+    }
+
+    function showOnScreen(targetScreen, placement) {
         if (!targetScreen)
             return;
 
         targetMonitorName = targetScreen.name;
-        requestedPlacement = placementForScreen(targetScreen);
+        requestedPlacement = placement || "center";
         launcherPositioned = false;
         launcherWindow.screen = targetScreen;
         search.text = "";
@@ -42,20 +48,24 @@ Singleton {
         launcherWindow.visible = true;
     }
 
+    // Clicking the Apps button keeps edge/button placement on that bar.
     function openForScreen(targetScreen) {
         if (launcherWindow.visible) {
             close();
             return;
         }
-        showOnScreen(targetScreen);
+        showOnScreen(targetScreen, placementForScreen(targetScreen));
     }
 
+    // Keyboard launch is centered along the active bar edge. If that monitor's
+    // bar is hidden, fall back to the true center of the focused monitor.
     function openFocused() {
+        const target = focusedScreen();
         if (launcherWindow.visible) {
             search.forceActiveFocus();
             return;
         }
-        showOnScreen(focusedScreen());
+        showOnScreen(target, centeredPlacementForScreen(target));
     }
 
     function close() {
@@ -66,10 +76,12 @@ Singleton {
     }
 
     function toggleFocused() {
-        if (launcherWindow.visible)
+        if (launcherWindow.visible) {
             close();
-        else
-            showOnScreen(focusedScreen());
+            return;
+        }
+        const target = focusedScreen();
+        showOnScreen(target, centeredPlacementForScreen(target));
     }
 
     function positionLauncher() {
