@@ -5,6 +5,7 @@ BRIGHTNESS_SCRIPT="${HYPR_BRIGHTNESS_SCRIPT:-${XDG_CONFIG_HOME:-$HOME/.config}/h
 BRIGHTNESS_MONITOR="${HYPR_BRIGHTNESS_MONITOR:-}"
 SUNSET_SCRIPT="${HYPR_SUNSET_SCRIPT:-${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/hyprsunset_ctl.sh}"
 VIBRANCE_SCRIPT="${HYPR_VIBRANCE_SCRIPT:-${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/vibrance_shader.sh}"
+QUICKSHELL_SCRIPT="${HYPR_QUICKSHELL_SCRIPT:-${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/quickshell.sh}"
 HYPR_LUA="${HYPRLAND_LUA:-${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hyprland.lua}"
 HYPR_CONF="${HYPRLAND_CONF:-${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hyprland.conf}"
 VIBRANCE_SHADER="${VIBRANCE_SHADER_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/hypr/shaders/vibrance}"
@@ -17,7 +18,7 @@ CMD_TIMEOUT="${HYPR_SETTINGS_TIMEOUT:-6}"
 TITLE="Awtarchy Quick Settings"
 TERM_CLASS="hypr_quicksettings"
 
-MENU_ITEMS=("Brightness" "Display" "Night Light" "Vibrance" "Submap" "Wallpaper Picker" "sched-ext" "Stop sched-ext")
+MENU_ITEMS=("Brightness" "Display" "Bar" "Night Light" "Vibrance" "Submap" "Wallpaper Picker" "sched-ext" "Stop sched-ext")
 SEL=0
 MSG=""
 SHOULD_QUIT=0
@@ -31,6 +32,9 @@ SUN_ENABLED="0"
 VIB_VAL="N/A"
 VIB_ENABLED="?"
 SUBMAP_CURRENT="reset"
+BAR_MONITOR="N/A"
+BAR_POSITION="N/A"
+BAR_ENABLED="?"
 
 DISPLAY_FOCUSED=""
 DISPLAY_LAYOUT_AVAILABLE=0
@@ -325,6 +329,23 @@ PY_QS_VIB
       VIB_ENABLED="0"
     fi
   fi
+}
+
+refresh_bar() {
+  local monitor position enabled
+
+  BAR_MONITOR="N/A"
+  BAR_POSITION="N/A"
+  BAR_ENABLED="?"
+  [[ -x "$QUICKSHELL_SCRIPT" ]] || return 0
+
+  monitor="$(run_capture "$QUICKSHELL_SCRIPT" focused-monitor || true)"
+  position="$(run_capture "$QUICKSHELL_SCRIPT" getpos-focused || true)"
+  enabled="$(run_capture "$QUICKSHELL_SCRIPT" getenabled-focused || true)"
+
+  [[ -n "$monitor" ]] && BAR_MONITOR="$monitor"
+  case "$position" in top|bottom|left|right) BAR_POSITION="$position" ;; esac
+  case "$enabled" in true|false) BAR_ENABLED="$enabled" ;; esac
 }
 
 hypr_notify() {
@@ -656,6 +677,7 @@ set_submap() {
 refresh_all() {
   refresh_display_choices
   refresh_brightness
+  refresh_bar
   refresh_sunset
   refresh_vibrance
   refresh_submap
@@ -692,8 +714,7 @@ sched_ext_state_save() {
   mkdir -p "$STATE_DIR"
   tmpfile="$(mktemp)"
   {
-    printf '#!/usr/bin/env bash
-'
+    printf '#!/usr/bin/env bash\n'
     declare -p SCHED_EXT_PROFILE_MAP
     declare -p SCHED_EXT_CUSTOM_ARGS_MAP
     declare -p SCHED_EXT_LAVD_AUTOPOWER_MAP
@@ -705,32 +726,25 @@ sched_ext_state_save() {
 sched_ext_profiles_for() {
   case "$1" in
     scx_bpfland)
-      printf '%s
-' 'Default' 'Low Latency' 'Power Save' 'Server'
+      printf '%s\n' 'Default' 'Low Latency' 'Power Save' 'Server'
       ;;
     scx_cosmos)
-      printf '%s
-' 'Default' 'Auto' 'Gaming' 'Power Save' 'Low Latency' 'Server'
+      printf '%s\n' 'Default' 'Auto' 'Gaming' 'Power Save' 'Low Latency' 'Server'
       ;;
     scx_flash)
-      printf '%s
-' 'Default' 'Low Latency' 'Gaming' 'Power Save' 'Server'
+      printf '%s\n' 'Default' 'Low Latency' 'Gaming' 'Power Save' 'Server'
       ;;
     scx_lavd)
-      printf '%s
-' 'Default' 'Performance' 'Power Save'
+      printf '%s\n' 'Default' 'Performance' 'Power Save'
       ;;
     scx_p2dq)
-      printf '%s
-' 'Default' 'Gaming' 'Low Latency' 'Power Save' 'Server'
+      printf '%s\n' 'Default' 'Gaming' 'Low Latency' 'Power Save' 'Server'
       ;;
     scx_tickless)
-      printf '%s
-' 'Default' 'Gaming' 'Power Save' 'Low Latency' 'Server'
+      printf '%s\n' 'Default' 'Gaming' 'Power Save' 'Low Latency' 'Server'
       ;;
     *)
-      printf '%s
-' 'Default'
+      printf '%s\n' 'Default'
       ;;
   esac
 }
@@ -809,8 +823,7 @@ sched_ext_flags_for_profile() {
 
 sched_ext_normalize_args() {
   local raw="$1" out
-  raw="${raw//$'
-'/ }"
+  raw="${raw//$'\n'/ }"
   raw="$(trim_spaces "$raw")"
   if [[ -z "$raw" ]]; then
     printf '%s' ''
@@ -1004,6 +1017,15 @@ format_display_target() {
   else
     printf 'Focused display'
   fi
+}
+
+format_bar() {
+  local state='unknown'
+  case "$BAR_ENABLED" in
+    true) state='on' ;;
+    false) state='off' ;;
+  esac
+  printf '%s %s (%s)' "$BAR_MONITOR" "$BAR_POSITION" "$state"
 }
 
 format_submap() {
@@ -1350,6 +1372,64 @@ select_brightness_display() {
   MSG="display: $(format_display_target)"
 }
 
+select_bar() {
+  local target current toggle_state
+  local -a values=(top bottom left right toggle)
+  local -a labels
+
+  if [[ ! -x "$QUICKSHELL_SCRIPT" ]]; then
+    MSG='bar: quickshell manager not found'
+    return 1
+  fi
+
+  refresh_bar
+  toggle_state='currently unknown'
+  case "$BAR_ENABLED" in
+    true) toggle_state='currently on' ;;
+    false) toggle_state='currently off' ;;
+  esac
+  labels=(
+    'Top'
+    'Bottom'
+    'Left'
+    'Right'
+    "Toggle on/off - ${toggle_state}"
+  )
+
+  current="$BAR_POSITION"
+  [[ "$BAR_ENABLED" == 'false' ]] && current='toggle'
+
+  if ! option_menu "Bar on focused display (${BAR_MONITOR})" "$current" values labels 0; then
+    MSG="bar unchanged: $(format_bar)"
+    return 0
+  fi
+
+  target="$OPTION_MENU_VALUE"
+  case "$target" in
+    top|bottom|left|right)
+      if run_quiet "$QUICKSHELL_SCRIPT" setpos-focused "$target" \
+        && run_quiet "$QUICKSHELL_SCRIPT" setenabled-focused true; then
+        refresh_bar
+        MSG="bar: $(format_bar)"
+      else
+        refresh_bar
+        MSG='bar: position change failed'
+        return 1
+      fi
+      ;;
+    toggle)
+      if run_quiet "$QUICKSHELL_SCRIPT" toggle-focused; then
+        refresh_bar
+        MSG="bar: $(format_bar)"
+      else
+        refresh_bar
+        MSG='bar: toggle failed'
+        return 1
+      fi
+      ;;
+  esac
+}
+
 select_submap() {
   local target
   # Passed by variable name to option_menu through Bash namerefs.
@@ -1537,6 +1617,10 @@ draw_ui() {
         ;;
       Display)
         value="$(format_display_target)"
+        printf -v line '%-16s %s' "$label" "$value"
+        ;;
+      Bar)
+        value="$(format_bar)"
         printf -v line '%-16s %s' "$label" "$value"
         ;;
       'Night Light')
@@ -2153,6 +2237,9 @@ do_action() {
       ;;
     Display)
       select_brightness_display
+      ;;
+    Bar)
+      select_bar
       ;;
     'Night Light')
       if run_quiet "$SUNSET_SCRIPT" toggle; then
