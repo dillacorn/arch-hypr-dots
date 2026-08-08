@@ -42,6 +42,24 @@ Singleton {
         objects: [Pipewire.defaultAudioSink]
     }
 
+    Connections {
+        target: Pipewire
+        function onDefaultAudioSinkChanged() {
+            Qt.callLater(root.clampAudioVolume);
+        }
+    }
+
+    Connections {
+        target: Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio
+            ? Pipewire.defaultAudioSink.audio
+            : null
+        function onVolumeChanged() {
+            root.clampAudioVolume();
+        }
+    }
+
+    Component.onCompleted: Qt.callLater(root.clampAudioVolume)
+
     Process {
         id: metricsProcess
         command: ["sh", "-lc", "grep -E '^cpu([0-9]+)? ' /proc/stat; awk '/^MemTotal:/{t=$2}/^MemAvailable:/{a=$2}END{if(t>0)printf \"MEM %d\\n\",100*(t-a)/t}' /proc/meminfo; if [ -x '" + root.systemTempScript + "' ]; then '" + root.systemTempScript + "'; elif [ -x '" + root.cpuTempScript + "' ]; then printf 'CPU_TEMP '; '" + root.cpuTempScript + "'; printf 'GPU_TEMP N/A\\n'; else printf 'CPU_TEMP ?°\\nGPU_TEMP N/A\\n'; fi"]
@@ -88,6 +106,15 @@ Singleton {
             if (!idleStatusProcess.running)
                 idleStatusProcess.running = true;
         }
+    }
+
+    function clampAudioVolume() {
+        const sink = Pipewire.defaultAudioSink;
+        if (!sink || !sink.audio)
+            return;
+
+        if (sink.audio.volume > 1.0)
+            sink.audio.volume = 1.0;
     }
 
     function plainTemp(text) {
