@@ -4,7 +4,8 @@
 set -euo pipefail
 
 QUICKSHELL_SCRIPT="${HYPR_QUICKSHELL_SCRIPT:-${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/quickshell.sh}"
-TITLE="Awtarchy Bar Settings"
+TITLE="Awtarchy Quick Settings"
+SECTION_TITLE="Bar Settings"
 EMBEDDED=0
 TARGET="focused"
 SEL=0
@@ -92,11 +93,27 @@ parse_mouse_event() {
 }
 
 focused_monitor() {
-    "$QUICKSHELL_SCRIPT" focused-monitor 2>/dev/null || true
+    local monitor
+    monitor="$({
+        hyprctl monitors -j 2>/dev/null |
+            jq -r '.[] | select((.disabled // false) == false and .focused == true) | .name' |
+            head -n1
+    } 2>/dev/null || true)"
+    if [[ -z $monitor ]]; then
+        monitor="$(hyprctl activeworkspace -j 2>/dev/null | jq -r '.monitor // empty' 2>/dev/null || true)"
+    fi
+    if [[ -z $monitor ]]; then
+        monitor="$(list_monitors | head -n1)"
+    fi
+    if [[ -n $monitor ]]; then
+        printf '%s\n' "$monitor"
+    fi
+    return 0
 }
 
 list_monitors() {
-    "$QUICKSHELL_SCRIPT" list-monitors 2>/dev/null || true
+    hyprctl monitors -j 2>/dev/null |
+        jq -r '.[] | select((.disabled // false) == false) | .name' 2>/dev/null || true
 }
 
 refresh_bar_state() {
@@ -129,10 +146,31 @@ resolve_targets() {
 }
 
 common_value() {
-    local command="$1" monitor value first="" seen=0
+    local command="$1" monitor value first="" seen=0 failed=0
     while IFS= read -r monitor; do
         [[ -n $monitor ]] || continue
-        value="$("$QUICKSHELL_SCRIPT" "$command" "$monitor" 2>/dev/null || true)"
+        if ! value="$("$QUICKSHELL_SCRIPT" "$command" "$monitor" 2>/dev/null)"; then
+            failed=1
+            continue
+        fi
+
+        # Never allow manager diagnostics or usage text into a rendered row.
+        # Every getter has a deliberately small, single-line output contract.
+        [[ $value != *$'\n'* ]] || { failed=1; continue; }
+        case "$command" in
+            getpos) [[ $value == top || $value == bottom || $value == left || $value == right ]] || { failed=1; continue; } ;;
+            getenabled) [[ $value == true || $value == false ]] || { failed=1; continue; } ;;
+            getsize)
+                [[ $value =~ ^[0-9]+$ ]] || { failed=1; continue; }
+                (( value == 0 || (value >= MIN_BAR_SIZE && value <= MAX_BAR_SIZE) )) || { failed=1; continue; }
+                ;;
+            getscale)
+                [[ $value =~ ^[0-9]+$ ]] || { failed=1; continue; }
+                (( value >= MIN_ICON_SCALE && value <= MAX_ICON_SCALE )) || { failed=1; continue; }
+                ;;
+            *) failed=1; continue ;;
+        esac
+
         if (( seen == 0 )); then
             first="$value"
             seen=1
@@ -141,14 +179,19 @@ common_value() {
             return 0
         fi
     done < <(resolve_targets)
-    (( seen == 1 )) && printf '%s' "$first" || printf 'N/A'
+    if (( failed == 1 || seen == 0 )); then
+        printf 'unavailable'
+    else
+        printf '%s' "$first"
+    fi
 }
 
 format_visibility() {
     case "$(common_value getenabled)" in
         true) printf 'on' ;;
         false) printf 'off' ;;
-        *) printf 'mixed' ;;
+        mixed) printf 'mixed' ;;
+        *) printf 'unavailable' ;;
     esac
 }
 
@@ -157,7 +200,7 @@ format_size() {
     value="$(common_value getsize)"
     case "$value" in
         0) printf 'default (28px horizontal / 36px vertical)' ;;
-        mixed|N/A) printf '%s' "$value" ;;
+        mixed|unavailable) printf '%s' "$value" ;;
         *) printf '%spx' "$value" ;;
     esac
 }
@@ -166,7 +209,7 @@ format_scale() {
     local value
     value="$(common_value getscale)"
     case "$value" in
-        mixed|N/A) printf '%s' "$value" ;;
+        mixed|unavailable) printf '%s' "$value" ;;
         *) printf '%s%%' "$value" ;;
     esac
 }
@@ -174,12 +217,14 @@ format_scale() {
 apply_each() {
     local command="$1"
     shift
-    local monitor failed=0
+    local monitor failed=0 seen=0
     while IFS= read -r monitor; do
         [[ -n $monitor ]] || continue
+        seen=1
         "$QUICKSHELL_SCRIPT" "$command" "$monitor" "$@" >/dev/null 2>&1 || failed=1
     done < <(resolve_targets)
     refresh_bar_state
+    (( seen == 1 )) || failed=1
     return "$failed"
 }
 
@@ -203,7 +248,7 @@ option_menu() {
         lines="$(term_lines)"
         printf '\033[2J\033[H\033[?25l'
         printf '%s\n' "$TITLE"
-        printf '%s\n\n' "$title"
+        printf '%s / %s\n\n' "$SECTION_TITLE" "$title"
         row=4
         for i in "${!values[@]}"; do
             ui_goto "$row" 3
@@ -217,7 +262,7 @@ option_menu() {
         done
         ui_goto "$lines" 1
         ui_clear_line
-        printf 'Up/Down or wheel: move   Enter/click: select   Esc/q: back'
+        printf 'Up/Down or wheel: move | Enter/click: select | Esc/q: back'
 
         key="$(read_key)" || return 1
         case "$key" in
@@ -245,12 +290,18 @@ option_menu() {
 }
 
 prompt_number() {
-    local title="$1" min="$2" max="$3" suffix="$4" input="" key
+    local title="$1" min="$2" max="$3" suffix="$4" zero_label="${5:-}" input="" key
     mouse_disable
     printf '\033[2J\033[H\033[?25h'
-    printf '%s\n\n' "$TITLE"
-    printf '%s\n' "$title"
-    printf 'Allowed: %s-%s%s   Enter blank to cancel   Esc: cancel\n> ' "$min" "$max" "$suffix"
+    printf '%s\n' "$TITLE"
+    printf '%s / %s\n\n' "$SECTION_TITLE" "$title"
+    printf 'Target: %s\n' "$(target_label)"
+    if [[ -n $zero_label ]]; then
+        printf 'Enter %s-%s%s, or 0 for %s.\n' "$min" "$max" "$suffix" "$zero_label"
+    else
+        printf 'Enter %s-%s%s.\n' "$min" "$max" "$suffix"
+    fi
+    printf 'Enter blank or press Esc to cancel.\n\n> '
 
     while true; do
         key="$(read_key)" || { mouse_enable; printf '\033[?25l'; return 1; }
@@ -260,8 +311,16 @@ prompt_number() {
                 mouse_enable
                 printf '\033[?25l'
                 [[ -n $input ]] || return 1
+                if [[ $input == 0 && -n $zero_label ]]; then
+                    NUMBER_VALUE=0
+                    return 0
+                fi
                 if (( input < min || input > max )); then
-                    MSG="value must be ${min}-${max}${suffix}"
+                    if [[ -n $zero_label ]]; then
+                        MSG="value must be 0 or ${min}-${max}${suffix}"
+                    else
+                        MSG="value must be ${min}-${max}${suffix}"
+                    fi
                     return 1
                 fi
                 NUMBER_VALUE="$input"
@@ -317,29 +376,26 @@ select_position() {
 
 select_visibility() {
     local current
-    local -a values=(true false toggle)
-    local -a labels=('On' 'Off' 'Toggle current state')
+    local -a values=(true false)
+    local -a labels=('On' 'Off')
     current="$(common_value getenabled)"
     if option_menu "Bar visibility - $(target_label)" "$current" values labels; then
-        case "$OPTION_VALUE" in
-            true|false)
-                apply_each setenabled "$OPTION_VALUE" && MSG="visibility: $OPTION_VALUE" || MSG='visibility change failed'
-                ;;
-            toggle)
-                apply_each toggle-mon && MSG='visibility toggled' || MSG='visibility toggle failed'
-                ;;
-        esac
+        apply_each setenabled "$OPTION_VALUE" && MSG="visibility: $OPTION_VALUE" || MSG='visibility change failed'
     fi
 }
 
 set_bar_size() {
-    if prompt_number "Bar size / thickness for $(target_label)" "$MIN_BAR_SIZE" "$MAX_BAR_SIZE" 'px'; then
-        apply_each setsize "$NUMBER_VALUE" && MSG="bar size: ${NUMBER_VALUE}px" || MSG='bar size change failed'
+    if prompt_number 'Bar thickness' "$MIN_BAR_SIZE" "$MAX_BAR_SIZE" 'px' 'automatic 28px horizontal / 36px vertical'; then
+        if [[ $NUMBER_VALUE == 0 ]]; then
+            apply_each setsize 0 && MSG='bar thickness: automatic defaults' || MSG='bar thickness change failed'
+        else
+            apply_each setsize "$NUMBER_VALUE" && MSG="bar thickness: ${NUMBER_VALUE}px" || MSG='bar thickness change failed'
+        fi
     fi
 }
 
 set_icon_scale() {
-    if prompt_number "Uniform icon size for $(target_label)" "$MIN_ICON_SCALE" "$MAX_ICON_SCALE" '%'; then
+    if prompt_number 'Uniform icon size' "$MIN_ICON_SCALE" "$MAX_ICON_SCALE" '%'; then
         apply_each setscale "$NUMBER_VALUE" && MSG="icon size: ${NUMBER_VALUE}%" || MSG='icon size change failed'
     fi
 }
@@ -363,19 +419,19 @@ draw_main() {
     cols="$(term_cols)"
     lines="$(term_lines)"
     local -a rows=(
-        "Target            $(target_label)"
-        "Position          $(common_value getpos)"
-        "Visibility        $(format_visibility)"
-        "Bar size          $(format_size)"
-        "Icon size         $(format_scale)"
-        "Reset defaults"
-        "Back"
+        "Target         $(target_label)"
+        "Position       $(common_value getpos)"
+        "Visibility     $(format_visibility)"
+        "Thickness      $(format_size)"
+        "Icon size      $(format_scale)"
+        "$([[ $TARGET == all ]] && printf 'Reset all displays' || printf 'Reset selected target')"
+        "Back to Quick Settings"
     )
     local i row=4
 
     printf '\033[2J\033[H\033[?25l'
     printf '%s\n' "$TITLE"
-    printf '%s\n\n' 'Settings apply only to the selected target. Position changes also show the bar.'
+    printf '%s\n\n' "$SECTION_TITLE"
     for i in "${!rows[@]}"; do
         ui_goto "$row" 3
         ui_clear_line
@@ -394,7 +450,7 @@ draw_main() {
     fi
     ui_goto "$lines" 1
     ui_clear_line
-    printf 'Up/Down or wheel: move   Enter/click: select   Esc/q: back'
+    printf 'Up/Down or wheel: move | Enter/click: select | Esc/q: back'
 }
 
 activate() {
