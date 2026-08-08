@@ -86,11 +86,13 @@ Singleton {
     function globalApplicationView() {
         const d = data();
         const view = d.application_view || ({});
+        const customized = view.customized === true;
         return ({
-            width: Math.max(420, Math.min(3840, Math.round(Number(view.width === undefined ? defaultLauncherWidth : view.width)))),
-            height: Math.max(360, Math.min(2160, Math.round(Number(view.height === undefined ? defaultLauncherHeight : view.height)))),
-            textSize: Math.max(10, Math.min(28, Math.round(Number(view.text_size === undefined ? defaultAppTextSize : view.text_size)))),
-            iconSize: Math.max(12, Math.min(48, Math.round(Number(view.icon_size === undefined ? defaultAppIconSize : view.icon_size))))
+            width: Math.max(420, Math.min(3840, Math.round(Number(customized && view.width !== undefined ? view.width : defaultLauncherWidth)))),
+            height: Math.max(360, Math.min(2160, Math.round(Number(customized && view.height !== undefined ? view.height : defaultLauncherHeight)))),
+            textSize: Math.max(10, Math.min(28, Math.round(Number(customized && view.text_size !== undefined ? view.text_size : defaultAppTextSize)))),
+            iconSize: Math.max(12, Math.min(48, Math.round(Number(customized && view.icon_size !== undefined ? view.icon_size : defaultAppIconSize)))),
+            customized: customized
         });
     }
 
@@ -101,11 +103,13 @@ Singleton {
 
         const mon = monitorState(name);
         const view = mon.application_view || ({});
+        const customized = view.customized === true;
         return ({
-            width: Math.max(420, Math.min(3840, Math.round(Number(view.width === undefined ? globalView.width : view.width)))),
-            height: Math.max(360, Math.min(2160, Math.round(Number(view.height === undefined ? globalView.height : view.height)))),
-            textSize: Math.max(10, Math.min(28, Math.round(Number(view.text_size === undefined ? globalView.textSize : view.text_size)))),
-            iconSize: Math.max(12, Math.min(48, Math.round(Number(view.icon_size === undefined ? globalView.iconSize : view.icon_size))))
+            width: Math.max(420, Math.min(3840, Math.round(Number(customized && view.width !== undefined ? view.width : globalView.width)))),
+            height: Math.max(360, Math.min(2160, Math.round(Number(customized && view.height !== undefined ? view.height : globalView.height)))),
+            textSize: Math.max(10, Math.min(28, Math.round(Number(customized && view.text_size !== undefined ? view.text_size : globalView.textSize)))),
+            iconSize: Math.max(12, Math.min(48, Math.round(Number(customized && view.icon_size !== undefined ? view.icon_size : globalView.iconSize)))),
+            customized: customized || globalView.customized
         });
     }
 
