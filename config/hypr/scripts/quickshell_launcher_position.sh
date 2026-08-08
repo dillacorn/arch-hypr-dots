@@ -160,3 +160,9 @@ hyprctl eval "
     hl.dispatch(hl.dsp.window.move({ monitor = \"${monitor_lua}\", follow = false, window = \"${selector_lua}\" }))
     hl.dispatch(hl.dsp.window.move({ x = ${x}, y = ${y}, relative = false, window = \"${selector_lua}\" }))
 " >/dev/null
+
+# Make the launcher visually merge with the borderless Quickshell bar even if
+# the persistent Hyprland window rule has not yet been deployed to this system.
+hyprctl dispatch setprop "$selector" bordersize 0 >/dev/null 2>&1 || true
+hyprctl dispatch setprop "$selector" rounding 0 >/dev/null 2>&1 || true
+hyprctl dispatch setprop "$selector" decorate 0 >/dev/null 2>&1 || true
