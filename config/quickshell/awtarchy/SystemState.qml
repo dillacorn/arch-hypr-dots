@@ -3,6 +3,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Services.Pipewire
 
 Singleton {
     id: root
@@ -11,6 +12,8 @@ Singleton {
     property int memoryUsage: 0
     property string cpuTemp: "?°"
     property string gpuTemp: "N/A"
+    property var driveTemps: []
+    property var otherTemps: []
     property bool idleInhibited: false
     property bool idleBroken: false
     property var coreUsage: ({})
@@ -21,15 +24,21 @@ Singleton {
     property var previousCoreIdles: ({})
 
     readonly property string cpuTooltip: buildCpuTooltip()
-    readonly property string temperatureTooltip: "CPU: " + plainTemp(cpuTemp) + "\nGPU: " + plainTemp(gpuTemp)
+    readonly property string temperatureTooltip: buildTemperatureTooltip()
+    readonly property string audioOutputName: buildAudioOutputName()
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string cpuTempScript: configHome + "/hypr/scripts/cpu_temp.sh"
+    readonly property string systemTempScript: configHome + "/hypr/scripts/system_temperatures.sh"
     readonly property string idleScript: configHome + "/hypr/scripts/idle_inhibitor_global.sh"
+
+    PwObjectTracker {
+        objects: [Pipewire.defaultAudioSink]
+    }
 
     Process {
         id: metricsProcess
-        command: ["sh", "-lc", "grep -E '^cpu([0-9]+)? ' /proc/stat; awk '/^MemTotal:/{t=$2}/^MemAvailable:/{a=$2}END{if(t>0)printf \"MEM %d\\n\",100*(t-a)/t}' /proc/meminfo; if [ -x '" + root.cpuTempScript + "' ]; then printf 'CPU_TEMP '; '" + root.cpuTempScript + "'; else printf 'CPU_TEMP ?°\\n'; fi; gpu='N/A'; for d in /sys/class/hwmon/*; do [ -r \"$d/name\" ] || continue; name=$(cat \"$d/name\" 2>/dev/null || true); case \"$name\" in amdgpu|nouveau|nvidia) best=''; for f in \"$d\"/temp*_input; do [ -r \"$f\" ] || continue; v=$(cat \"$f\" 2>/dev/null || true); case \"$v\" in ''|*[!0-9]*) continue;; esac; c=$((v/1000)); if [ -z \"$best\" ] || [ \"$c\" -gt \"$best\" ]; then best=$c; fi; done; if [ -n \"$best\" ]; then gpu=\"${best}°\"; break; fi;; esac; done; printf 'GPU_TEMP %s\\n' \"$gpu\""]
+        command: ["sh", "-lc", "grep -E '^cpu([0-9]+)? ' /proc/stat; awk '/^MemTotal:/{t=$2}/^MemAvailable:/{a=$2}END{if(t>0)printf \"MEM %d\\n\",100*(t-a)/t}' /proc/meminfo; if [ -x '" + root.systemTempScript + "' ]; then '" + root.systemTempScript + "'; elif [ -x '" + root.cpuTempScript + "' ]; then printf 'CPU_TEMP '; '" + root.cpuTempScript + "'; printf 'GPU_TEMP N/A\\n'; else printf 'CPU_TEMP ?°\\nGPU_TEMP N/A\\n'; fi"]
         stdout: StdioCollector {
             onStreamFinished: root.parseMetrics(text)
         }
@@ -67,7 +76,7 @@ Singleton {
     }
 
     function plainTemp(text) {
-        const match = String(text || "").match(/(?:\d+°|N\/A|\?°)/);
+        const match = String(text || "").match(/(?:-?\d+°|N\/A|\?°)/);
         return match ? match[0] : String(text || "N/A");
     }
 
@@ -87,6 +96,8 @@ Singleton {
         const newCoreTotals = Object.assign({}, previousCoreTotals);
         const newCoreIdles = Object.assign({}, previousCoreIdles);
         const newCoreUsage = Object.assign({}, coreUsage);
+        const newDriveTemps = [];
+        const newOtherTemps = [];
 
         for (let i = 0; i < lines.length; ++i) {
             const line = lines[i];
@@ -123,12 +134,28 @@ Singleton {
                 root.cpuTemp = line.slice(9).trim();
             } else if (line.startsWith("GPU_TEMP ")) {
                 root.gpuTemp = line.slice(9).trim();
+            } else if (line.startsWith("TEMP\t")) {
+                const parts = line.split("\t");
+                if (parts.length < 4)
+                    continue;
+                const entry = ({
+                    label: parts[2].trim(),
+                    value: parts.slice(3).join("\t").trim()
+                });
+                if (!entry.label || !entry.value)
+                    continue;
+                if (parts[1] === "Drive")
+                    newDriveTemps.push(entry);
+                else if (parts[1] === "Other")
+                    newOtherTemps.push(entry);
             }
         }
 
         root.previousCoreTotals = newCoreTotals;
         root.previousCoreIdles = newCoreIdles;
         root.coreUsage = newCoreUsage;
+        root.driveTemps = newDriveTemps;
+        root.otherTemps = newOtherTemps;
     }
 
     function buildCpuTooltip() {
@@ -147,6 +174,44 @@ Singleton {
             lines.push(row.join("   "));
 
         return lines.join("\n");
+    }
+
+    function buildTemperatureTooltip() {
+        const lines = [
+            "CPU: " + plainTemp(cpuTemp),
+            "GPU: " + plainTemp(gpuTemp)
+        ];
+
+        if (driveTemps.length > 0) {
+            lines.push("", "Drives:");
+            for (let i = 0; i < driveTemps.length; ++i)
+                lines.push(driveTemps[i].label + ": " + plainTemp(driveTemps[i].value));
+        }
+
+        if (otherTemps.length > 0) {
+            lines.push("", "Other:");
+            for (let i = 0; i < otherTemps.length; ++i)
+                lines.push(otherTemps[i].label + ": " + plainTemp(otherTemps[i].value));
+        }
+
+        return lines.join("\n");
+    }
+
+    function buildAudioOutputName() {
+        const sink = Pipewire.defaultAudioSink;
+        if (!sink)
+            return "No audio output";
+
+        const description = String(sink.description || "").trim();
+        if (description.length > 0)
+            return description;
+
+        const nickname = String(sink.nickname || "").trim();
+        if (nickname.length > 0)
+            return nickname;
+
+        const name = String(sink.name || "").trim();
+        return name.length > 0 ? name : "Default audio output";
     }
 
     function toggleIdle() {
