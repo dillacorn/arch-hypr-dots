@@ -67,8 +67,17 @@ Singleton {
             return 0;
 
         const requested = Number(notification.expireTimeout || 0);
+        const appName = String(notification.appName || "").toLowerCase();
         const isSynchronous = synchronousKey(notification).length > 0;
-        const systemTransient = isSynchronous || notification.transient || notification.appName === "hypr-ddc-brightness";
+
+        // Hyprland mode/submap messages are status feedback, not persistent
+        // application notifications. Keep them visible briefly, then clear them.
+        if (appName === "hyprland")
+            return 2.0;
+
+        const systemTransient = isSynchronous
+            || notification.transient
+            || appName === "hypr-ddc-brightness";
 
         if (systemTransient)
             return requested > 0 ? Math.min(2.2, requested) : 2.0;
@@ -158,13 +167,13 @@ Singleton {
             right: popupWindow.barVisibleHere && popupWindow.barPositionHere === "right" ? 46 : 10
         }
 
-        implicitWidth: 380
-        implicitHeight: Math.min(700, notificationColumn.implicitHeight)
+        implicitWidth: 340
+        implicitHeight: Math.min(560, notificationColumn.implicitHeight)
 
         Column {
             id: notificationColumn
             width: parent.width
-            spacing: 8
+            spacing: 6
 
             Repeater {
                 model: server.trackedNotifications
@@ -173,7 +182,7 @@ Singleton {
                     id: card
                     required property var modelData
                     width: notificationColumn.width
-                    height: Math.max(78, cardContent.implicitHeight + 20)
+                    height: Math.max(64, cardContent.implicitHeight + 16)
                     color: Theme.popupBackground
                     border.width: 1
                     border.color: Theme.active
@@ -197,31 +206,31 @@ Singleton {
                     ColumnLayout {
                         id: cardContent
                         anchors.fill: parent
-                        anchors.margins: 10
-                        spacing: 7
+                        anchors.margins: 8
+                        spacing: 5
 
                         RowLayout {
                             Layout.fillWidth: true
-                            spacing: 10
+                            spacing: 8
 
                             IconImage {
                                 visible: source.toString().length > 0
-                                Layout.preferredWidth: visible ? 42 : 0
-                                Layout.preferredHeight: visible ? 42 : 0
-                                implicitSize: 42
+                                Layout.preferredWidth: visible ? 34 : 0
+                                Layout.preferredHeight: visible ? 34 : 0
+                                implicitSize: 34
                                 source: card.modelData.image || (card.modelData.appIcon ? Quickshell.iconPath(card.modelData.appIcon, true) : "")
                             }
 
                             ColumnLayout {
                                 Layout.fillWidth: true
-                                spacing: 4
+                                spacing: 3
 
                                 Text {
                                     Layout.fillWidth: true
                                     text: card.modelData.summary || "Notification"
                                     color: Theme.foreground
                                     font.family: Theme.fontFamily
-                                    font.pixelSize: 14
+                                    font.pixelSize: 13
                                     font.bold: true
                                     elide: Text.ElideRight
                                 }
@@ -233,9 +242,9 @@ Singleton {
                                     textFormat: Text.PlainText
                                     color: Theme.foreground
                                     font.family: Theme.fontFamily
-                                    font.pixelSize: 13
+                                    font.pixelSize: 12
                                     wrapMode: Text.Wrap
-                                    maximumLineCount: 5
+                                    maximumLineCount: 4
                                     elide: Text.ElideRight
                                 }
                             }
@@ -244,7 +253,7 @@ Singleton {
                         RowLayout {
                             Layout.fillWidth: true
                             visible: card.modelData.actions.length > 0
-                            spacing: 6
+                            spacing: 5
 
                             Repeater {
                                 model: card.modelData.actions
@@ -253,8 +262,8 @@ Singleton {
                                     id: actionButton
                                     required property var modelData
                                     visible: modelData.text && modelData.text.length > 0 && modelData.identifier !== "default"
-                                    Layout.preferredHeight: visible ? 26 : 0
-                                    Layout.preferredWidth: visible ? Math.max(70, actionText.implicitWidth + 18) : 0
+                                    Layout.preferredHeight: visible ? 24 : 0
+                                    Layout.preferredWidth: visible ? Math.max(64, actionText.implicitWidth + 16) : 0
                                     color: actionMouse.containsMouse ? Theme.focus : Theme.active
                                     border.width: 0
                                     radius: 0
@@ -265,7 +274,7 @@ Singleton {
                                         text: actionButton.modelData.text || ""
                                         color: Theme.foreground
                                         font.family: Theme.fontFamily
-                                        font.pixelSize: 12
+                                        font.pixelSize: 11
                                         elide: Text.ElideRight
                                     }
 
