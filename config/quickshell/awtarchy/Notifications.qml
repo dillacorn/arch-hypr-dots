@@ -100,10 +100,7 @@ Singleton {
         watchChanges: true
         printErrors: false
         onLoaded: root.dnd = text().trim() === "1"
-        onFileChanged: {
-            reload();
-            root.dnd = text().trim() === "1";
-        }
+        onFileChanged: reload()
     }
 
     IpcHandler {
@@ -157,8 +154,6 @@ Singleton {
             right: true
         }
         margins {
-            // Notifications remain top-right on the focused display, but move
-            // inside the usable area instead of covering a top/right bar.
             top: popupWindow.barVisibleHere && popupWindow.barPositionHere === "top" ? 38 : 10
             right: popupWindow.barVisibleHere && popupWindow.barPositionHere === "right" ? 46 : 10
         }
