@@ -29,6 +29,7 @@ Rectangle {
     readonly property bool useHorizontalParts: !vertical && horizontalParts.length > 1
     readonly property bool useVerticalParts: vertical && verticalParts.length > 1
     readonly property bool workspaceLabel: /^\d+\s/.test(displayLabel)
+    readonly property string effectiveTooltip: tooltip === "Audio volume" ? SystemState.audioOutputName : tooltip
 
     signal clicked()
     signal rightClicked()
@@ -221,7 +222,7 @@ Rectangle {
 
     BarTooltip {
         anchorItem: root
-        text: root.tooltip
+        text: root.effectiveTooltip
         hovered: pointer.containsMouse
         vertical: root.vertical
     }
