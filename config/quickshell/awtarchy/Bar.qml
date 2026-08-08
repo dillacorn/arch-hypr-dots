@@ -2,7 +2,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
-import QtQuick.Controls
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
@@ -76,6 +75,8 @@ PanelWindow {
         const apps = DesktopEntries.applications.values;
         for (let i = 0; i < apps.length; ++i) {
             const app = apps[i];
+            if (!app)
+                continue;
             const ids = [app.id || "", app.startupClass || ""]
                 .filter(value => value.length > 0)
                 .map(value => value.toLowerCase().replace(/\.desktop$/, ""));
@@ -165,6 +166,32 @@ PanelWindow {
         sink.audio.volume = Math.max(0, Math.min(1.5, sink.audio.volume + delta));
     }
 
+    function calendarText(date) {
+        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        const year = date.getFullYear();
+        const month = date.getMonth();
+        const firstDay = new Date(year, month, 1).getDay();
+        const dayCount = new Date(year, month + 1, 0).getDate();
+        const cells = [];
+
+        for (let i = 0; i < firstDay; ++i)
+            cells.push("  ");
+        for (let day = 1; day <= dayCount; ++day)
+            cells.push(String(day).padStart(2, " "));
+
+        const lines = [monthNames[month] + " " + year, "Su Mo Tu We Th Fr Sa"];
+        for (let i = 0; i < cells.length; i += 7)
+            lines.push(cells.slice(i, i + 7).join(" "));
+        return lines.join("\n");
+    }
+
+    function clockTooltip() {
+        const base = Qt.formatDateTime(now, "dddd, MMMM d, yyyy")
+            + "\n24h: " + Qt.formatDateTime(now, "HH:mm")
+            + "\n12h: " + Qt.formatDateTime(now, "h:mm AP");
+        return clockDate ? base + "\n\n" + calendarText(now) : base;
+    }
+
     PwObjectTracker {
         objects: [Pipewire.defaultAudioSink]
     }
@@ -205,7 +232,7 @@ PanelWindow {
 
     Timer {
         id: wsDrawerClose
-        interval: 250
+        interval: 500
         repeat: false
         onTriggered: bar.wsDrawerOpen = false
     }
@@ -278,9 +305,12 @@ PanelWindow {
                     source: bar.appIcon(task.modelData)
                 }
 
-                ToolTip.visible: taskMouse.containsMouse
-                ToolTip.text: task.modelData.title || "Window"
-                ToolTip.delay: 350
+                BarTooltip {
+                    anchorItem: task
+                    text: task.modelData && task.modelData.title ? task.modelData.title : "Window"
+                    hovered: taskMouse.containsMouse
+                    vertical: false
+                }
 
                 MouseArea {
                     id: taskMouse
@@ -326,9 +356,13 @@ PanelWindow {
                 color: modelData.urgent ? Theme.urgent : (modelData.activated ? Theme.subtleActive : (taskMouse.containsMouse ? Theme.subtleHover : "transparent"))
 
                 IconImage { anchors.centerIn: parent; implicitSize: 14; source: bar.appIcon(task.modelData) }
-                ToolTip.visible: taskMouse.containsMouse
-                ToolTip.text: task.modelData.title || "Window"
-                ToolTip.delay: 350
+
+                BarTooltip {
+                    anchorItem: task
+                    text: task.modelData && task.modelData.title ? task.modelData.title : "Window"
+                    hovered: taskMouse.containsMouse
+                    vertical: true
+                }
 
                 MouseArea {
                     id: taskMouse
@@ -361,9 +395,20 @@ PanelWindow {
                 height: 28
 
                 IconImage { anchors.centerIn: parent; implicitSize: 14; source: trayItem.modelData.icon }
-                ToolTip.visible: trayMouse.containsMouse
-                ToolTip.text: trayItem.modelData.tooltipTitle || trayItem.modelData.title || ""
-                ToolTip.delay: 350
+
+                BarTooltip {
+                    anchorItem: trayItem
+                    text: trayItem.modelData.tooltipTitle || trayItem.modelData.title || ""
+                    hovered: trayMouse.containsMouse && !trayMenu.menuVisible
+                    vertical: false
+                }
+
+                TrayMenu {
+                    id: trayMenu
+                    anchorItem: trayItem
+                    menu: trayItem.modelData.menu
+                    barPosition: bar.position
+                }
 
                 MouseArea {
                     id: trayMouse
@@ -371,9 +416,16 @@ PanelWindow {
                     hoverEnabled: true
                     acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
                     onClicked: mouse => {
-                        if (mouse.button === Qt.MiddleButton) trayItem.modelData.secondaryActivate();
-                        else if (mouse.button === Qt.RightButton || trayItem.modelData.onlyMenu) trayItem.modelData.display(bar, trayItem.x, trayItem.y + trayItem.height);
-                        else trayItem.modelData.activate();
+                        if (mouse.button === Qt.MiddleButton) {
+                            trayItem.modelData.secondaryActivate();
+                        } else if (mouse.button === Qt.RightButton || trayItem.modelData.onlyMenu) {
+                            if (trayItem.modelData.hasMenu)
+                                trayMenu.open();
+                            else
+                                trayItem.modelData.secondaryActivate();
+                        } else {
+                            trayItem.modelData.activate();
+                        }
                     }
                     onWheel: wheel => trayItem.modelData.scroll(wheel.angleDelta.y, false)
                 }
@@ -391,14 +443,39 @@ PanelWindow {
                 required property var modelData
                 width: 36
                 height: 20
+
                 IconImage { anchors.centerIn: parent; implicitSize: 14; source: trayItem.modelData.icon }
+
+                BarTooltip {
+                    anchorItem: trayItem
+                    text: trayItem.modelData.tooltipTitle || trayItem.modelData.title || ""
+                    hovered: trayMouse.containsMouse && !trayMenu.menuVisible
+                    vertical: true
+                }
+
+                TrayMenu {
+                    id: trayMenu
+                    anchorItem: trayItem
+                    menu: trayItem.modelData.menu
+                    barPosition: bar.position
+                }
+
                 MouseArea {
+                    id: trayMouse
                     anchors.fill: parent
+                    hoverEnabled: true
                     acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
                     onClicked: mouse => {
-                        if (mouse.button === Qt.MiddleButton) trayItem.modelData.secondaryActivate();
-                        else if (mouse.button === Qt.RightButton || trayItem.modelData.onlyMenu) trayItem.modelData.display(bar, 0, trayItem.y);
-                        else trayItem.modelData.activate();
+                        if (mouse.button === Qt.MiddleButton) {
+                            trayItem.modelData.secondaryActivate();
+                        } else if (mouse.button === Qt.RightButton || trayItem.modelData.onlyMenu) {
+                            if (trayItem.modelData.hasMenu)
+                                trayMenu.open();
+                            else
+                                trayItem.modelData.secondaryActivate();
+                        } else {
+                            trayItem.modelData.activate();
+                        }
                     }
                     onWheel: wheel => trayItem.modelData.scroll(wheel.angleDelta.y, false)
                 }
@@ -431,6 +508,7 @@ PanelWindow {
             WorkspaceStrip {}
 
             Row {
+                id: wsDrawer
                 spacing: 0
 
                 BarButton {
@@ -438,29 +516,55 @@ PanelWindow {
                     label: "🖱"
                     tooltip: "Toggle mouse submap"
                     onHoveredChanged: {
-                        if (hovered) { wsDrawerClose.stop(); bar.wsDrawerOpen = true; }
-                        else wsDrawerClose.restart();
+                        if (hovered) {
+                            wsDrawerClose.stop();
+                            bar.wsDrawerOpen = true;
+                        } else {
+                            wsDrawerClose.restart();
+                        }
                     }
                     onClicked: Quickshell.execDetached([bar.mouseSubmapScript, "toggle"])
                     onRightClicked: Quickshell.execDetached([bar.mouseSubmapScript, "toggle"])
                 }
 
                 Repeater {
-                    model: bar.wsDrawerOpen ? [
+                    model: [
                         { label: "↑", dir: "u", tip: "Move workspace UP" },
                         { label: "↓", dir: "d", tip: "Move workspace DOWN" },
                         { label: "←", dir: "l", tip: "Move workspace LEFT" },
                         { label: "→", dir: "r", tip: "Move workspace RIGHT" }
-                    ] : []
-                    delegate: BarButton {
+                    ]
+
+                    delegate: Item {
+                        id: arrowSlot
                         required property var modelData
-                        label: modelData.label
-                        tooltip: modelData.tip
-                        onHoveredChanged: {
-                            if (hovered) { wsDrawerClose.stop(); bar.wsDrawerOpen = true; }
-                            else wsDrawerClose.restart();
+                        height: 28
+                        width: bar.wsDrawerOpen ? arrowButton.implicitWidth : 0
+                        opacity: bar.wsDrawerOpen ? 1 : 0
+                        clip: true
+
+                        Behavior on width {
+                            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
                         }
-                        onClicked: Quickshell.execDetached(["hyprctl", "eval", "hl.dispatch(hl.dsp.workspace.move({ monitor = \"" + modelData.dir + "\" }))"])
+                        Behavior on opacity {
+                            NumberAnimation { duration: 120 }
+                        }
+
+                        BarButton {
+                            id: arrowButton
+                            anchors.left: parent.left
+                            label: arrowSlot.modelData.label
+                            tooltip: arrowSlot.modelData.tip
+                            onHoveredChanged: {
+                                if (hovered) {
+                                    wsDrawerClose.stop();
+                                    bar.wsDrawerOpen = true;
+                                } else {
+                                    wsDrawerClose.restart();
+                                }
+                            }
+                            onClicked: Quickshell.execDetached(["hyprctl", "eval", "hl.dispatch(hl.dsp.workspace.move({ monitor = \"" + arrowSlot.modelData.dir + "\" }))"])
+                        }
                     }
                 }
             }
@@ -515,8 +619,8 @@ PanelWindow {
                 onRightClicked: SystemState.toggleIdle()
             }
 
-            BarButton { label: SystemState.cpuUsage + " "; tooltip: "CPU usage: " + SystemState.cpuUsage + "%" }
-            BarButton { label: SystemState.cpuTemp; tooltip: "CPU temperature" }
+            BarButton { label: SystemState.cpuUsage + " "; tooltip: SystemState.cpuTooltip }
+            BarButton { label: SystemState.cpuTemp; tooltip: SystemState.temperatureTooltip }
             BarButton { label: SystemState.memoryUsage + "  "; tooltip: "Memory usage: " + SystemState.memoryUsage + "%" }
 
             BarButton {
@@ -538,7 +642,7 @@ PanelWindow {
 
             BarButton {
                 readonly property int vol: Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio ? Math.round(Pipewire.defaultAudioSink.audio.volume * 100) : 0
-                label: bar.audioIcon(vol) + "   " + (Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio && Pipewire.defaultAudioSink.audio.muted ? "mute" : vol)
+                label: bar.audioIcon(vol) + " " + (Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio && Pipewire.defaultAudioSink.audio.muted ? "mute" : vol)
                 foreground: Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio && Pipewire.defaultAudioSink.audio.muted ? Theme.muted : Theme.foreground
                 tooltip: "Audio volume"
                 onClicked: bar.toggleAudioMute()
@@ -549,7 +653,7 @@ PanelWindow {
 
             BarButton {
                 label: bar.clockDate ? " " + Qt.formatDateTime(bar.now, "ddd M/d") : " " + Qt.formatDateTime(bar.now, "HH:mm")
-                tooltip: Qt.formatDateTime(bar.now, "dddd, MMMM d, yyyy") + "\n24h: " + Qt.formatDateTime(bar.now, "HH:mm") + "\n12h: " + Qt.formatDateTime(bar.now, "h:mm AP")
+                tooltip: bar.clockTooltip()
                 horizontalPadding: 6
                 onClicked: bar.clockDate = !bar.clockDate
                 onRightClicked: bar.clockDate = !bar.clockDate
@@ -644,15 +748,16 @@ PanelWindow {
                 vertical: true; fixedWidth: 36
                 label: SystemState.idleBroken ? "" : (SystemState.idleInhibited ? "" : "")
                 foreground: SystemState.idleBroken ? Theme.urgent : Theme.foreground
+                tooltip: SystemState.idleInhibited ? "Idle inhibitor: activated\nClick to deactivate" : "Idle inhibitor: deactivated\nClick to activate"
                 onClicked: SystemState.toggleIdle()
             }
 
-            BarButton { vertical: true; fixedWidth: 36; label: "\n" + SystemState.cpuUsage; tooltip: "CPU usage: " + SystemState.cpuUsage + "%" }
+            BarButton { vertical: true; fixedWidth: 36; label: "\n" + SystemState.cpuUsage; tooltip: SystemState.cpuTooltip }
             BarButton {
                 vertical: true; fixedWidth: 36
                 readonly property string temp: SystemState.cpuTemp
                 label: temp.length > 1 ? temp.slice(-1) + "\n" + temp.slice(0, -1) : temp
-                tooltip: "CPU temperature"
+                tooltip: SystemState.temperatureTooltip
             }
             BarButton { vertical: true; fixedWidth: 36; label: "\n" + SystemState.memoryUsage; tooltip: "Memory usage: " + SystemState.memoryUsage + "%" }
 
@@ -672,6 +777,7 @@ PanelWindow {
                 readonly property int pct: Math.round(UPower.displayDevice.percentage * 100)
                 label: (UPower.displayDevice.changeRate > 0 ? "" : bar.batteryIcon(pct)) + "\n" + pct
                 foreground: pct <= 15 && UPower.displayDevice.changeRate <= 0 ? Theme.critical : (UPower.displayDevice.changeRate > 0 ? Theme.charging : Theme.foreground)
+                tooltip: "Battery: " + pct + "%"
             }
 
             BarButton {
@@ -679,6 +785,7 @@ PanelWindow {
                 readonly property int vol: Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio ? Math.round(Pipewire.defaultAudioSink.audio.volume * 100) : 0
                 label: bar.audioIcon(vol) + "\n" + (Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio && Pipewire.defaultAudioSink.audio.muted ? "mute" : vol)
                 foreground: Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio && Pipewire.defaultAudioSink.audio.muted ? Theme.muted : Theme.foreground
+                tooltip: "Audio volume"
                 onClicked: bar.toggleAudioMute()
                 onRightClicked: Quickshell.execDetached([bar.wiremixScript])
                 onWheelUp: bar.adjustAudio(0.05)
@@ -690,6 +797,7 @@ PanelWindow {
                 label: bar.clockDate
                     ? "\n" + Qt.formatDateTime(bar.now, "ddd") + "\n" + Qt.formatDateTime(bar.now, "M/d")
                     : "\n" + Qt.formatDateTime(bar.now, "HH") + "\n" + Qt.formatDateTime(bar.now, "mm")
+                tooltip: bar.clockTooltip()
                 onClicked: bar.clockDate = !bar.clockDate
                 onRightClicked: bar.clockDate = !bar.clockDate
                 onWheelUp: bar.clockDate = !bar.clockDate
@@ -709,6 +817,7 @@ PanelWindow {
                 label: Notifications.dnd ? "" : ""
                 foreground: Notifications.dnd ? Theme.critical : Theme.foreground
                 hoverBackground: Theme.strongHover
+                tooltip: Notifications.dnd ? "Notifications disabled\nLeft: enable notifications" : "Notifications enabled\nLeft: disable notifications"
                 onClicked: Notifications.toggleDnd()
             }
             BarButton {
