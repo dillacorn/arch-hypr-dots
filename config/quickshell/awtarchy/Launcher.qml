@@ -12,7 +12,9 @@ Singleton {
     id: root
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
+    readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_launcher_position.sh"
+    readonly property string animationStatePath: runtimeDir + "/hypr-animations-enabled"
     property string targetMonitorName: ""
     property string requestedPlacement: "center"
     property bool launcherPositioned: false
@@ -33,6 +35,11 @@ Singleton {
         if (!targetScreen || !BarState.enabledFor(targetScreen.name))
             return "center";
         return BarState.positionFor(targetScreen.name) + "-center";
+    }
+
+    function animationsEnabled() {
+        const state = animationStateFile.text().trim();
+        return state !== "0";
     }
 
     function showOnScreen(targetScreen, placement) {
@@ -166,6 +173,15 @@ Singleton {
         close();
     }
 
+    FileView {
+        id: animationStateFile
+        path: root.animationStatePath
+        blockLoading: false
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+    }
+
     IpcHandler {
         target: "launcher"
         function toggle(): void { root.toggleFocused(); }
@@ -229,6 +245,14 @@ Singleton {
             border.width: 0
             radius: 0
             opacity: root.launcherPositioned ? 1 : 0
+
+            Behavior on opacity {
+                enabled: root.animationsEnabled()
+                NumberAnimation {
+                    duration: 140
+                    easing.type: Easing.OutCubic
+                }
+            }
 
             DragHandler {
                 target: null
@@ -386,10 +410,9 @@ Singleton {
 
                     ListScrollBar {
                         id: appScrollBar
-                        parent: appList
-                        anchors.top: appList.top
-                        anchors.bottom: appList.bottom
-                        anchors.right: appList.right
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        anchors.right: parent.right
                         flickable: appList
                         z: 10
                     }
