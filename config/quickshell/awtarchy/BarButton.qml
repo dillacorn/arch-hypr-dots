@@ -16,7 +16,10 @@ Rectangle {
     property int fontPixelSize: 0
     property bool hovered: false
 
-    readonly property string displayLabel: label.replace(/ {2,}/g, " ")
+    // The legacy Waybar clipboard codepoint renders as an unrelated glyph in
+    // the Nerd Font used by Quickshell. Translate it to the well-supported
+    // Font Awesome paste/clipboard glyph while keeping callers unchanged.
+    readonly property string displayLabel: label.replace("", "").replace(/ {2,}/g, " ")
     readonly property var horizontalParts: vertical
         ? []
         : displayLabel.split(/\s+/).filter(part => part.length > 0)
@@ -42,10 +45,6 @@ Rectangle {
     }
 
     function partFontFamily(part) {
-        // Keep the normal bar on Awtarchy's Nerd Font. The clipboard glyph is
-        // the one legacy Waybar icon that depended on FontAwesome's mapping.
-        if (part.indexOf("") >= 0)
-            return "FontAwesome";
         return Theme.fontFamily;
     }
 
@@ -57,8 +56,8 @@ Rectangle {
         if (part.indexOf("🖱") >= 0 || part.indexOf("°") >= 0)
             return 14;
 
-        // Workspace numbers remain 14px. Their glyphs get a moderate bump
-        // without overwhelming the 28px bar.
+        // Workspace numbers remain 14px. Their current 20px glyph size is the
+        // approved visual target and should not move with other icon tuning.
         if (workspaceLabel && (isBmpIconPart(part) || isSupplementaryIconPart(part)))
             return 20;
 
@@ -67,11 +66,11 @@ Rectangle {
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0)
             return 19;
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
-            return 19;
+            return 21;
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
-            return 19;
-        if (part.indexOf("") >= 0)
-            return 17;
+            return 20;
+        if (part.indexOf("") >= 0)
+            return 18;
         if (part.indexOf("") >= 0)
             return 18;
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
