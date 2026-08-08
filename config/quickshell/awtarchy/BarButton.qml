@@ -65,8 +65,15 @@ Rectangle {
             return 20;
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0)
             return 19;
-        if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
+
+        // The inhibited/on eye already has the desired visual weight at 23px.
+        // The uninhibited/off slashed-eye glyph renders visibly smaller at the
+        // same pixel size, so tune it independently instead of changing both.
+        if (part.indexOf("") >= 0)
+            return 25;
+        if (part.indexOf("") >= 0 || part.indexOf("") >= 0)
             return 23;
+
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
             return 20;
         if (part.indexOf("") >= 0)
