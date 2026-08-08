@@ -77,16 +77,6 @@ Singleton {
         stateWriter.exec(args);
     }
 
-    function runForTargets(command, value) {
-        const names = targetNames();
-        for (let i = 0; i < names.length; ++i) {
-            const args = [quickshellScript, command, names[i]];
-            if (value !== undefined && value !== null)
-                args.push(String(value));
-            queueCommand(args);
-        }
-    }
-
     function commonValue(getter) {
         const names = targetNames();
         if (names.length === 0)
@@ -166,11 +156,19 @@ Singleton {
     }
 
     function setPosition(position) {
-        runForTargets("setpos", position);
+        const names = targetNames();
+        for (let i = 0; i < names.length; ++i) {
+            BarState.setLivePosition(names[i], position);
+            queueCommand([quickshellScript, "setpos", names[i], position]);
+        }
     }
 
     function setVisible(visible) {
-        runForTargets("setenabled", visible ? "true" : "false");
+        const names = targetNames();
+        for (let i = 0; i < names.length; ++i) {
+            BarState.setLiveEnabled(names[i], visible);
+            queueCommand([quickshellScript, "setenabled", names[i], visible ? "true" : "false"]);
+        }
     }
 
     function changeBarSize(delta) {
@@ -184,6 +182,7 @@ Singleton {
                 current = defaultBarSize(name);
             const value = Math.max(20, Math.min(80, current + delta));
             nextOptimistic[name] = value;
+            BarState.setLiveBarSize(name, value);
             queueCommand([quickshellScript, "setsize", name, String(value)]);
         }
 
@@ -195,6 +194,7 @@ Singleton {
         const nextOptimistic = Object.assign({}, optimisticBarSizes);
         for (let i = 0; i < names.length; ++i) {
             nextOptimistic[names[i]] = 0;
+            BarState.setLiveBarSize(names[i], 0);
             queueCommand([quickshellScript, "setsize", names[i], "0"]);
         }
         optimisticBarSizes = nextOptimistic;
@@ -208,6 +208,7 @@ Singleton {
             const name = names[i];
             const value = Math.max(50, Math.min(200, rawIconScale(name) + delta));
             nextOptimistic[name] = value;
+            BarState.setLiveIconScale(name, value);
             queueCommand([quickshellScript, "setscale", name, String(value)]);
         }
 
@@ -219,6 +220,7 @@ Singleton {
         const nextOptimistic = Object.assign({}, optimisticIconScales);
         for (let i = 0; i < names.length; ++i) {
             nextOptimistic[names[i]] = 100;
+            BarState.setLiveIconScale(names[i], 100);
             queueCommand([quickshellScript, "setscale", names[i], "100"]);
         }
         optimisticIconScales = nextOptimistic;
@@ -232,6 +234,10 @@ Singleton {
         for (let i = 0; i < names.length; ++i) {
             nextSizes[names[i]] = 0;
             nextScales[names[i]] = 100;
+            BarState.setLivePosition(names[i], "top");
+            BarState.setLiveEnabled(names[i], true);
+            BarState.setLiveBarSize(names[i], 0);
+            BarState.setLiveIconScale(names[i], 100);
             queueCommand([quickshellScript, "reset-mon", names[i]]);
         }
 
