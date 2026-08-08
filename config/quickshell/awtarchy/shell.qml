@@ -13,6 +13,9 @@ ShellRoot {
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
+    property bool barDragActive: false
+    property string barDragMonitor: ""
+    property string barDragCandidate: ""
 
     // Force singleton construction before the control IPC endpoint reports ready.
     readonly property bool notificationsReady: Notifications.dnd || !Notifications.dnd
@@ -20,8 +23,6 @@ ShellRoot {
     readonly property bool clipboardReady: ClipboardMenu !== null
     readonly property bool powerReady: PowerMenu !== null
     readonly property bool themesReady: ThemePicker !== null
-    readonly property bool barSettingsReady: BarSettings !== null
-    readonly property bool applicationSettingsReady: ApplicationSettings !== null
 
     Process {
         id: runtimeRules
@@ -52,21 +53,15 @@ ShellRoot {
                     if (distance < 32) {
                         candidateEdge = barInstance.position;
                         hasCandidate = false;
-                        return;
+                    } else {
+                        hasCandidate = true;
+                        if (Math.abs(dx) > Math.abs(dy))
+                            candidateEdge = dx >= 0 ? "right" : "left";
+                        else
+                            candidateEdge = dy >= 0 ? "bottom" : "top";
                     }
 
-                    hasCandidate = true;
-                    if (Math.abs(dx) > Math.abs(dy))
-                        candidateEdge = dx >= 0 ? "right" : "left";
-                    else
-                        candidateEdge = dy >= 0 ? "bottom" : "top";
-                }
-
-                function edgeGlyph(edge) {
-                    if (edge === "top") return "↑";
-                    if (edge === "bottom") return "↓";
-                    if (edge === "left") return "←";
-                    return "→";
+                    root.barDragCandidate = candidateEdge;
                 }
 
                 Process {
@@ -79,7 +74,7 @@ ShellRoot {
 
                 Timer {
                     id: dragRefreshFollowup
-                    interval: 100
+                    interval: 120
                     repeat: false
                     onTriggered: BarState.refresh()
                 }
@@ -105,6 +100,9 @@ ShellRoot {
                         startY = mouse.y;
                         dragSurface.candidateEdge = barInstance.position;
                         dragSurface.hasCandidate = false;
+                        root.barDragActive = true;
+                        root.barDragMonitor = barInstance.monitorName;
+                        root.barDragCandidate = barInstance.position;
                         mouse.accepted = true;
                     }
 
@@ -118,51 +116,86 @@ ShellRoot {
                         if (!dragging)
                             return;
 
+                        const targetEdge = dragSurface.candidateEdge;
+                        const shouldMove = dragSurface.hasCandidate
+                            && targetEdge !== barInstance.position;
+
                         dragging = false;
-                        if (dragSurface.hasCandidate
-                                && dragSurface.candidateEdge !== barInstance.position) {
-                            BarState.setLivePosition(barInstance.monitorName, dragSurface.candidateEdge);
+                        dragSurface.hasCandidate = false;
+                        root.barDragActive = false;
+                        root.barDragMonitor = "";
+                        root.barDragCandidate = "";
+
+                        if (shouldMove) {
                             barMoveWriter.exec([
                                 root.configHome + "/hypr/scripts/quickshell.sh",
                                 "setpos",
                                 barInstance.monitorName,
-                                dragSurface.candidateEdge
+                                targetEdge
                             ]);
                         }
-                        dragSurface.hasCandidate = false;
                         mouse.accepted = true;
                     }
 
                     onCanceled: {
                         dragging = false;
                         dragSurface.hasCandidate = false;
+                        root.barDragActive = false;
+                        root.barDragMonitor = "";
+                        root.barDragCandidate = "";
                     }
                 }
+            }
+        }
+    }
 
-                Rectangle {
+    // A non-interactive full-edge ghost shows exactly where the bar will land.
+    // The real bar stays in place until ALT + left-click is released.
+    Variants {
+        model: Quickshell.screens
+
+        PanelWindow {
+            id: barDropPreview
+            required property var modelData
+
+            screen: modelData
+            readonly property string monitorName: modelData ? modelData.name : ""
+            readonly property string candidate: root.barDragCandidate
+            readonly property bool candidateVertical: candidate === "left" || candidate === "right"
+            readonly property int previewSize: BarState.barSizeFor(monitorName, candidateVertical)
+
+            visible: root.barDragActive
+                && root.barDragMonitor === monitorName
+                && candidate.length > 0
+                && candidate !== BarState.positionFor(monitorName)
+            color: "transparent"
+            focusable: false
+            aboveWindows: true
+            exclusionMode: ExclusionMode.Ignore
+            exclusiveZone: 0
+
+            implicitWidth: candidateVertical ? previewSize : 0
+            implicitHeight: candidateVertical ? 0 : previewSize
+
+            anchors.top: candidate === "top" || candidateVertical
+            anchors.bottom: candidate === "bottom" || candidateVertical
+            anchors.left: candidate === "left" || !candidateVertical
+            anchors.right: candidate === "right" || !candidateVertical
+
+            Rectangle {
+                anchors.fill: parent
+                color: Theme.focus
+                opacity: 0.34
+
+                Text {
                     anchors.centerIn: parent
-                    width: barInstance.vertical ? parent.width : Math.min(150, parent.width)
-                    height: barInstance.vertical ? Math.min(90, parent.height) : parent.height
-                    color: Theme.focus
-                    radius: 0
-                    opacity: barDrag.dragging && dragSurface.hasCandidate ? 0.96 : 0
-                    visible: opacity > 0
-
-                    Behavior on opacity {
-                        NumberAnimation {
-                            duration: 90
-                            easing.type: Easing.OutCubic
-                        }
-                    }
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: dragSurface.edgeGlyph(dragSurface.candidateEdge)
-                        color: Theme.foreground
-                        font.family: Theme.fontFamily
-                        font.pixelSize: barInstance.vertical ? 20 : 18
-                        font.bold: true
-                    }
+                    text: barDropPreview.candidate === "top" ? "↑"
+                        : barDropPreview.candidate === "bottom" ? "↓"
+                        : barDropPreview.candidate === "left" ? "←" : "→"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 18
+                    font.bold: true
                 }
             }
         }
