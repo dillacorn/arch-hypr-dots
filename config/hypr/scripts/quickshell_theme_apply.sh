@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Apply an Awtarchy theme without executing obsolete shell-program mutations.
-# Existing theme files remain the palette source while Quickshell conversion is tested.
+# Apply an Awtarchy theme using Quickshell-native shell colors plus app themes.
 
 set -euo pipefail
 
@@ -14,7 +13,6 @@ QS_THEME="$CONFIG_HOME/quickshell/awtarchy/theme.json"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/awtarchy"
 HYPR_LUA="$CONFIG_HOME/hypr/hyprland.lua"
 HYPR_CONF="$CONFIG_HOME/hypr/hyprland.conf"
-WOFI_CSS="$CONFIG_HOME/wofi/style.css"
 MICRO_SETTINGS="$CONFIG_HOME/micro/settings.json"
 ALACRITTY_CONF="$CONFIG_HOME/alacritty/alacritty.toml"
 SPEEDCRUNCH_INI="$CONFIG_HOME/SpeedCrunch/SpeedCrunch.ini"
@@ -59,13 +57,6 @@ foreground="$(theme_value QS_FOREGROUND '#d0d0d0')"
 dark="$(theme_value QS_DARK '#1a1a1a')"
 muted="$(theme_value QS_MUTED "$hover")"
 
-wo_border="$(theme_value WO_BORDER '2px none #4a4a4a')"
-wo_bg="$(theme_value WO_BG "$background")"
-wo_input="$(theme_value WO_INPUT_COLOR "$foreground")"
-wo_outer_border="$(theme_value WO_OUTER_BORDER '0px solid #4a4a4a')"
-wo_outer_bg="$(theme_value WO_OUTER_BG "$background")"
-wo_text="$(theme_value WO_TEXT_UNSEL '#ffffff')"
-
 micro_scheme="$(theme_value MICRO_COLORSCHEME 'geany')"
 alacritty_theme="$(theme_value ALACRITTY_THEME 'wombat.toml')"
 speedcrunch_scheme="$(theme_value SPEEDCRUNCH_COLORSCHEME "$name")"
@@ -99,17 +90,6 @@ elif [[ -f "$HYPR_CONF" ]]; then
         -e "s/^ *col\.active_border *= *.*/col.active_border = rgba(${active_border})/" \
         -e "s/^ *col\.inactive_border *= *.*/col.inactive_border = rgba(${inactive_border})/" \
         "$HYPR_CONF"
-fi
-
-if [[ -f "$WOFI_CSS" ]]; then
-    sed -i \
-        -e "/^window[[:space:]]*{/,/^[[:space:]]*}/ s|^[[:space:]]*border:.*;|    border: ${wo_border};|" \
-        -e "/^window[[:space:]]*{/,/^[[:space:]]*}/ s|^[[:space:]]*background-color:.*;|    background-color: ${wo_bg};|" \
-        -e "/^#input[[:space:]]*{/,/^[[:space:]]*}/ s|^[[:space:]]*color:.*;|    color: ${wo_input};|" \
-        -e "/^#outer-box[[:space:]]*{/,/^[[:space:]]*}/ s|^[[:space:]]*border:.*;|    border: ${wo_outer_border};|" \
-        -e "/^#outer-box[[:space:]]*{/,/^[[:space:]]*}/ s|^[[:space:]]*background-color:.*;|    background-color: ${wo_outer_bg};|" \
-        -e "/^#text/,/^[[:space:]]*}/ s|^[[:space:]]*color:.*;|    color: ${wo_text};|" \
-        "$WOFI_CSS"
 fi
 
 if [[ -n "$micro_scheme" && -f "$MICRO_SETTINGS" ]]; then
