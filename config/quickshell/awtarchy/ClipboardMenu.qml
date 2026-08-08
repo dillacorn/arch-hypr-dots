@@ -36,7 +36,10 @@ Singleton {
         search.text = "";
         clipboardWindow.visible = true;
         listProcess.running = true;
-        Qt.callLater(() => search.forceActiveFocus());
+        Qt.callLater(() => {
+            clipboardList.positionViewAtBeginning();
+            search.forceActiveFocus();
+        });
     }
 
     function close() {
@@ -111,6 +114,7 @@ Singleton {
                 try {
                     root.entries = JSON.parse(text.trim() || "[]");
                     clipboardList.currentIndex = root.entries.length > 0 ? 0 : -1;
+                    Qt.callLater(() => clipboardList.positionViewAtBeginning());
                 } catch (error) {
                     console.warn("Awtarchy clipboard list parse failed:", error);
                     root.entries = [];
@@ -219,7 +223,10 @@ Singleton {
                                 }
                             }
 
-                            onTextChanged: clipboardList.currentIndex = 0
+                            onTextChanged: {
+                                clipboardList.currentIndex = 0;
+                                Qt.callLater(() => clipboardList.positionViewAtBeginning());
+                            }
                         }
                     }
                 }
@@ -231,6 +238,7 @@ Singleton {
                     model: ScriptModel { values: root.filteredEntries() }
                     clip: true
                     currentIndex: count > 0 ? 0 : -1
+                    boundsBehavior: Flickable.StopAtBounds
 
                     delegate: Rectangle {
                         id: row
@@ -243,7 +251,7 @@ Singleton {
                         RowLayout {
                             anchors.fill: parent
                             anchors.leftMargin: 10
-                            anchors.rightMargin: 10
+                            anchors.rightMargin: clipboardScrollBar.visible ? 20 : 10
                             spacing: 12
 
                             Image {
@@ -275,11 +283,24 @@ Singleton {
                             onEntered: clipboardList.currentIndex = row.index
                             onClicked: root.choose(row.modelData)
                             onWheel: wheel => {
-                                const maxY = Math.max(0, clipboardList.contentHeight - clipboardList.height);
-                                clipboardList.contentY = Math.max(0, Math.min(maxY, clipboardList.contentY - wheel.angleDelta.y));
+                                const minY = clipboardList.originY;
+                                const maxY = Math.max(minY,
+                                    minY + clipboardList.contentHeight - clipboardList.height);
+                                clipboardList.contentY = Math.max(minY,
+                                    Math.min(maxY, clipboardList.contentY - wheel.angleDelta.y));
                                 wheel.accepted = true;
                             }
                         }
+                    }
+
+                    ListScrollBar {
+                        id: clipboardScrollBar
+                        parent: clipboardList.parent
+                        anchors.top: clipboardList.top
+                        anchors.bottom: clipboardList.bottom
+                        anchors.right: clipboardList.right
+                        flickable: clipboardList
+                        z: 10
                     }
                 }
             }
