@@ -15,6 +15,12 @@ Singleton {
     property string placement: "center"
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string backend: configHome + "/hypr/scripts/quickshell_clipboard.sh"
+    readonly property int activeBarSize: {
+        const target = clipboardWindow.screen;
+        if (!target || placement === "center")
+            return 0;
+        return BarState.barSizeFor(target.name, placement === "left" || placement === "right");
+    }
 
     function focusedScreen() {
         const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
@@ -149,14 +155,14 @@ Singleton {
             width: implicitWidth
             height: implicitHeight
             x: root.placement === "left"
-                ? 36
+                ? root.activeBarSize
                 : root.placement === "right"
-                    ? parent.width - width - 36
+                    ? parent.width - width - root.activeBarSize
                     : Math.round((parent.width - width) / 2)
             y: root.placement === "top"
-                ? 28
+                ? root.activeBarSize
                 : root.placement === "bottom"
-                    ? parent.height - height - 28
+                    ? parent.height - height - root.activeBarSize
                     : Math.round((parent.height - height) / 2)
             color: Theme.popupBackground
             radius: 0
