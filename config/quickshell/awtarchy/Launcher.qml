@@ -80,9 +80,6 @@ Singleton {
         const desiredHeight = Math.min(screenHeight,
             Math.max(minimumLauncherHeight, Math.round(height)));
 
-        // implicitWidth/implicitHeight are Quickshell's desired-size API.
-        // Also update actual geometry so a previous manual system resize cannot
-        // leak into the next launcher spawn.
         launcherWindow.implicitWidth = desiredWidth;
         launcherWindow.implicitHeight = desiredHeight;
         launcherWindow.width = desiredWidth;
@@ -122,7 +119,6 @@ Singleton {
         resetSelection();
     }
 
-    // Clicking the Apps button keeps edge/button placement on that bar.
     function openForScreen(targetScreen) {
         if (launcherWindow.visible) {
             close();
@@ -131,8 +127,6 @@ Singleton {
         showOnScreen(targetScreen, placementForScreen(targetScreen), false, false);
     }
 
-    // Keyboard launch is centered along the active bar edge. If that monitor's
-    // bar is hidden, fall back to the true center of the focused monitor.
     function openFocused() {
         const target = focusedScreen();
         if (launcherWindow.visible) {
@@ -537,6 +531,36 @@ Singleton {
                         anchors.right: parent.right
                         flickable: appList
                         z: 10
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: root.previewMode ? 46 : 0
+                    visible: root.previewMode
+                    color: Theme.active
+                    border.width: 0
+
+                    Column {
+                        anchors.centerIn: parent
+                        spacing: 2
+
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: root.liveWidth + " × " + root.liveHeight + " px"
+                            color: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 11
+                            font.bold: true
+                        }
+
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: "ALT + left-drag move  •  ALT + right-drag resize"
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 9
+                        }
                     }
                 }
             }
