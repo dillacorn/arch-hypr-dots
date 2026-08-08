@@ -21,12 +21,17 @@ Singleton {
     property string editingField: ""
     property var editingRow: null
     property string editBuffer: ""
+
     property int textSize: defaultTextSize
     property int iconSize: defaultIconSize
+    property int savedWidth: defaultWidth
+    property int savedHeight: defaultHeight
+    property int savedTextSize: defaultTextSize
+    property int savedIconSize: defaultIconSize
     property int lastLiveWidth: defaultWidth
     property int lastLiveHeight: defaultHeight
-    property bool suppressGeometrySave: false
-    property string statusText: ""
+    property bool dirty: false
+    property string statusText: "Adjust the preview, then Save changes"
 
     function focusedScreen() {
         const focusedName = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
@@ -39,49 +44,45 @@ Singleton {
     }
 
     function liveWidth() {
-        return Launcher.liveWidth > 0 ? Launcher.liveWidth : defaultWidth;
+        return Launcher.liveWidth > 0 ? Launcher.liveWidth : savedWidth;
     }
 
     function liveHeight() {
-        return Launcher.liveHeight > 0 ? Launcher.liveHeight : defaultHeight;
+        return Launcher.liveHeight > 0 ? Launcher.liveHeight : savedHeight;
     }
 
-    function persistField(field, value) {
-        Quickshell.execDetached([stateScript, "set", field, String(value)]);
+    function recomputeDirty() {
+        dirty = liveWidth() !== savedWidth
+            || liveHeight() !== savedHeight
+            || textSize !== savedTextSize
+            || iconSize !== savedIconSize;
     }
 
-    function persistSize(width, height) {
-        Quickshell.execDetached([stateScript, "set-size", String(width), String(height)]);
-    }
-
-    function setSize(width, height, persist) {
+    function setSize(width, height) {
         const w = clamp(width, 420, 3840);
         const h = clamp(height, 360, 2160);
-        suppressGeometrySave = true;
-        releaseGeometrySuppression.restart();
         Launcher.setPreviewSize(w, h);
         lastLiveWidth = w;
         lastLiveHeight = h;
-        if (persist)
-            persistSize(w, h);
-        statusText = "Spawn size: " + w + " × " + h + " px";
+        recomputeDirty();
+        statusText = "Preview: " + w + " × " + h + " px";
     }
 
     function applyField(field, value) {
         if (field === "width") {
-            setSize(clamp(value, 420, 3840), liveHeight(), true);
+            setSize(clamp(value, 420, 3840), liveHeight());
         } else if (field === "height") {
-            setSize(liveWidth(), clamp(value, 360, 2160), true);
+            setSize(liveWidth(), clamp(value, 360, 2160));
         } else if (field === "text_size") {
             textSize = clamp(value, 10, 28);
             Launcher.setPreviewStyle(textSize, iconSize);
-            persistField("text_size", textSize);
-            statusText = "Application text: " + textSize + " px";
+            recomputeDirty();
+            statusText = "Application text preview: " + textSize + " px";
         } else if (field === "icon_size") {
             iconSize = clamp(value, 12, 48);
             Launcher.setPreviewStyle(textSize, iconSize);
-            persistField("icon_size", iconSize);
-            statusText = "Application icons: " + iconSize + " px";
+            recomputeDirty();
+            statusText = "Application icon preview: " + iconSize + " px";
         }
     }
 
@@ -94,26 +95,28 @@ Singleton {
         editingField = row.fieldName;
         editingRow = row;
         editBuffer = String(row.value);
-        statusText = "Type a value, then press Enter to input value";
+        statusText = "Type value, then press Enter to apply to preview";
     }
 
     function cancelEditing() {
         editingField = "";
         editingRow = null;
         editBuffer = "";
-        statusText = "Edit cancelled";
+        statusText = dirty ? "Unsaved changes" : "No unsaved changes";
         Qt.callLater(() => settingsPanel.forceActiveFocus());
     }
 
     function commitEditing() {
         if (!editingRow)
             return;
+
         const parsed = Number(editBuffer);
         if (!Number.isFinite(parsed) || Math.round(parsed) !== parsed
                 || parsed < editingRow.minimumValue || parsed > editingRow.maximumValue) {
             statusText = "Value must be " + editingRow.minimumValue + "-" + editingRow.maximumValue;
             return;
         }
+
         const row = editingRow;
         editingField = "";
         editingRow = null;
@@ -122,40 +125,59 @@ Singleton {
         Qt.callLater(() => settingsPanel.forceActiveFocus());
     }
 
-    function resetDefaults() {
-        suppressGeometrySave = true;
-        releaseGeometrySuppression.restart();
-        Quickshell.execDetached([stateScript, "reset"]);
+    function resetPreview() {
         textSize = defaultTextSize;
         iconSize = defaultIconSize;
         Launcher.setPreviewStyle(textSize, iconSize);
-        Launcher.setPreviewSize(defaultWidth, defaultHeight);
-        lastLiveWidth = defaultWidth;
-        lastLiveHeight = defaultHeight;
-        statusText = "Reset to default: 420 × 582 px";
+        setSize(defaultWidth, defaultHeight);
+        recomputeDirty();
+        statusText = "Default preview: 420 × 582 px. Save changes to keep it.";
+    }
+
+    function saveChanges() {
+        if (saveProcess.running)
+            return;
+
+        const width = liveWidth();
+        const height = liveHeight();
+        statusText = "Saving…";
+        saveProcess.exec([
+            stateScript,
+            "set-all",
+            String(width),
+            String(height),
+            String(textSize),
+            String(iconSize)
+        ]);
     }
 
     function open() {
         const target = focusedScreen();
         const view = BarState.globalApplicationView();
-        textSize = view.textSize;
-        iconSize = view.iconSize;
+
+        savedWidth = view.width;
+        savedHeight = view.height;
+        savedTextSize = view.textSize;
+        savedIconSize = view.iconSize;
+        textSize = savedTextSize;
+        iconSize = savedIconSize;
+        lastLiveWidth = savedWidth;
+        lastLiveHeight = savedHeight;
+        dirty = false;
         selectedIndex = 0;
         editingField = "";
         editingRow = null;
-        statusText = "Scroll a field for ±1 px, or click it to type an exact value";
+        editBuffer = "";
+        statusText = "Adjust the preview, then Save changes";
 
-        if (target) {
-            settingsWindow.screen = target;
+        if (target)
             Launcher.previewMonitor(target.name, true);
-        }
+
         Launcher.setPreviewStyle(textSize, iconSize);
+        Launcher.setPreviewSize(savedWidth, savedHeight);
         settingsWindow.visible = true;
-        settingsWindow.raise();
-        settingsWindow.requestActivate();
         Qt.callLater(() => {
-            lastLiveWidth = liveWidth();
-            lastLiveHeight = liveHeight();
+            settingsWindow.anchor.updateAnchor();
             settingsPanel.forceActiveFocus();
         });
     }
@@ -163,9 +185,9 @@ Singleton {
     function close() {
         editingField = "";
         editingRow = null;
-        geometrySave.stop();
-        Launcher.close();
+        editBuffer = "";
         settingsWindow.visible = false;
+        Launcher.close();
     }
 
     function toggle() {
@@ -181,8 +203,9 @@ Singleton {
         case 1: startEditing(heightRow); break;
         case 2: startEditing(textRow); break;
         case 3: startEditing(iconRow); break;
-        case 4: resetDefaults(); break;
-        case 5: close(); break;
+        case 4: resetPreview(); break;
+        case 5: saveChanges(); break;
+        case 6: close(); break;
         }
     }
 
@@ -197,44 +220,37 @@ Singleton {
 
     Timer {
         id: geometryWatch
-        interval: 100
+        interval: 75
         repeat: true
         running: settingsWindow.visible && Launcher.previewVisible
         onTriggered: {
             const width = root.liveWidth();
             const height = root.liveHeight();
-            if (width === root.lastLiveWidth && height === root.lastLiveHeight)
-                return;
-
-            root.lastLiveWidth = width;
-            root.lastLiveHeight = height;
-            if (!root.suppressGeometrySave)
-                geometrySave.restart();
+            if (width !== root.lastLiveWidth || height !== root.lastLiveHeight) {
+                root.lastLiveWidth = width;
+                root.lastLiveHeight = height;
+                root.recomputeDirty();
+                root.statusText = "Preview: " + width + " × " + height + " px";
+            }
+            settingsWindow.anchor.updateAnchor();
         }
     }
 
-    Timer {
-        id: geometrySave
-        interval: 350
-        repeat: false
-        onTriggered: {
-            if (!settingsWindow.visible || root.suppressGeometrySave)
+    Process {
+        id: saveProcess
+        onExited: (exitCode, exitStatus) => {
+            if (exitCode !== 0) {
+                root.statusText = "Save failed";
                 return;
-            const width = root.liveWidth();
-            const height = root.liveHeight();
-            root.persistSize(width, height);
-            root.statusText = "Spawn size saved: " + width + " × " + height + " px";
-        }
-    }
+            }
 
-    Timer {
-        id: releaseGeometrySuppression
-        interval: 450
-        repeat: false
-        onTriggered: {
-            root.suppressGeometrySave = false;
-            root.lastLiveWidth = root.liveWidth();
-            root.lastLiveHeight = root.liveHeight();
+            root.savedWidth = root.liveWidth();
+            root.savedHeight = root.liveHeight();
+            root.savedTextSize = root.textSize;
+            root.savedIconSize = root.iconSize;
+            root.dirty = false;
+            BarState.refresh();
+            root.statusText = "Saved " + root.savedWidth + " × " + root.savedHeight + " px";
         }
     }
 
@@ -243,7 +259,8 @@ Singleton {
         function open(): void { root.open(); }
         function close(): void { root.close(); }
         function toggle(): void { root.toggle(); }
-        function reset(): void { root.resetDefaults(); }
+        function reset(): void { root.resetPreview(); }
+        function save(): void { root.saveChanges(); }
     }
 
     component NumericRow: Rectangle {
@@ -258,7 +275,7 @@ Singleton {
         readonly property bool editing: root.editingField === fieldName
 
         Layout.fillWidth: true
-        Layout.preferredHeight: 44
+        Layout.preferredHeight: 42
         color: root.selectedIndex === fieldIndex
             ? Theme.subtleActive
             : (rowMouse.containsMouse ? Theme.subtleHover : "transparent")
@@ -336,7 +353,7 @@ Singleton {
                         root.commitEditing();
                         event.accepted = true;
                     } else if (event.key === Qt.Key_Escape) {
-                        root.cancelEditing();
+                        root.close();
                         event.accepted = true;
                     }
                 }
@@ -353,34 +370,42 @@ Singleton {
         }
     }
 
-    FloatingWindow {
+    PopupWindow {
         id: settingsWindow
         visible: false
-        title: "Awtarchy Application View"
         color: "transparent"
-        surfaceFormat.opaque: false
-        implicitWidth: 440
-        implicitHeight: 386
-        minimumSize: Qt.size(440, 386)
-        maximumSize: Qt.size(440, 386)
+        implicitWidth: 360
+        implicitHeight: 432
 
-        onClosed: root.close()
+        anchor.window: Launcher.windowHandle
+        anchor.rect.x: Launcher.liveWidth
+        anchor.rect.y: 0
+        anchor.edges: Edges.Top | Edges.Right
+        anchor.gravity: Edges.Bottom | Edges.Right
+        anchor.adjustment: PopupAdjustment.FlipX | PopupAdjustment.SlideY
 
         Rectangle {
             id: settingsPanel
             anchors.fill: parent
             color: Theme.popupBackground
-            focus: true
+            border.width: 0
+            focus: settingsWindow.visible
 
             Keys.onPressed: event => {
+                if (event.key === Qt.Key_Escape) {
+                    root.close();
+                    event.accepted = true;
+                    return;
+                }
+
                 if (root.editingField.length > 0)
                     return;
 
                 if (event.key === Qt.Key_Up) {
-                    root.selectedIndex = (root.selectedIndex + 5) % 6;
+                    root.selectedIndex = (root.selectedIndex + 6) % 7;
                     event.accepted = true;
                 } else if (event.key === Qt.Key_Down) {
-                    root.selectedIndex = (root.selectedIndex + 1) % 6;
+                    root.selectedIndex = (root.selectedIndex + 1) % 7;
                     event.accepted = true;
                 } else if (event.key === Qt.Key_Left && root.selectedIndex < 4) {
                     root.adjustSelected(-1);
@@ -391,15 +416,12 @@ Singleton {
                 } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                     root.activateSelected();
                     event.accepted = true;
-                } else if (event.key === Qt.Key_Escape) {
-                    root.close();
-                    event.accepted = true;
                 }
             }
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 14
+                anchors.margins: 12
                 spacing: 4
 
                 Text {
@@ -407,26 +429,17 @@ Singleton {
                     text: "Application View"
                     color: Theme.foreground
                     font.family: Theme.fontFamily
-                    font.pixelSize: 18
+                    font.pixelSize: 17
                     font.bold: true
                 }
 
                 Text {
                     Layout.fillWidth: true
-                    text: "Edit spawn dimensions"
-                    color: Theme.muted
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 12
-                }
-
-                Text {
-                    Layout.fillWidth: true
-                    Layout.bottomMargin: 3
-                    text: "Move/resize controls and live dimensions are shown on the launcher preview."
+                    text: "ALT + left-drag launcher to move\nALT + right-drag launcher to resize"
                     color: Theme.muted
                     font.family: Theme.fontFamily
                     font.pixelSize: 10
-                    wrapMode: Text.WordWrap
+                    lineHeight: 1.15
                 }
 
                 NumericRow {
@@ -471,61 +484,77 @@ Singleton {
 
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 38
+                    Layout.preferredHeight: 34
                     color: root.selectedIndex === 4
                         ? Theme.subtleActive
                         : (resetMouse.containsMouse ? Theme.subtleHover : "transparent")
-
                     Text {
                         anchors.centerIn: parent
-                        text: "Reset to default  •  420 × 582 px"
+                        text: "Reset preview to 420 × 582"
                         color: Theme.foreground
                         font.family: Theme.fontFamily
-                        font.pixelSize: 12
+                        font.pixelSize: 11
                     }
-
                     MouseArea {
                         id: resetMouse
                         anchors.fill: parent
                         hoverEnabled: true
                         onEntered: root.selectedIndex = 4
-                        onClicked: root.resetDefaults()
+                        onClicked: root.resetPreview()
                     }
                 }
 
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 32
-                    color: root.selectedIndex === 5
-                        ? Theme.subtleActive
-                        : (closeMouse.containsMouse ? Theme.subtleHover : "transparent")
-
+                    Layout.preferredHeight: 38
+                    color: root.selectedIndex === 5 || root.dirty ? Theme.focus : Theme.active
                     Text {
                         anchors.centerIn: parent
-                        text: "Close"
+                        text: saveProcess.running ? "Saving…" : (root.dirty ? "Save changes *" : "Save changes")
                         color: Theme.foreground
                         font.family: Theme.fontFamily
                         font.pixelSize: 12
+                        font.bold: root.dirty
                     }
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        enabled: !saveProcess.running
+                        onEntered: root.selectedIndex = 5
+                        onClicked: root.saveChanges()
+                    }
+                }
 
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 30
+                    color: root.selectedIndex === 6
+                        ? Theme.subtleActive
+                        : (closeMouse.containsMouse ? Theme.subtleHover : "transparent")
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Close without saving"
+                        color: Theme.foreground
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 11
+                    }
                     MouseArea {
                         id: closeMouse
                         anchors.fill: parent
                         hoverEnabled: true
-                        onEntered: root.selectedIndex = 5
+                        onEntered: root.selectedIndex = 6
                         onClicked: root.close()
                     }
                 }
 
                 Text {
                     Layout.fillWidth: true
-                    Layout.topMargin: 3
                     text: root.editingField.length > 0
-                        ? "Type value  •  press Enter to input value  •  Esc cancels"
+                        ? "Type value • Enter applies to preview • Esc closes"
                         : root.statusText
-                    color: root.editingField.length > 0 ? Theme.foreground : Theme.muted
+                    color: root.dirty ? Theme.foreground : Theme.muted
                     font.family: Theme.fontFamily
-                    font.pixelSize: 10
+                    font.pixelSize: 9
                     elide: Text.ElideRight
                 }
             }
