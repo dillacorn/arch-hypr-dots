@@ -96,26 +96,10 @@ Singleton {
         });
     }
 
+    // Application View spawn dimensions are intentionally global. ALT+P,
+    // SUPER+D, and the bar Apps button must all open the same launcher size.
     function applicationViewFor(name, globalOnly) {
-        const globalView = globalApplicationView();
-        if (globalOnly)
-            return globalView;
-
-        const mon = monitorState(name);
-        const view = mon.application_view || ({});
-        const hasOverride = view.width !== undefined
-            || view.height !== undefined
-            || view.text_size !== undefined
-            || view.icon_size !== undefined;
-        const customized = globalView.customized && hasOverride;
-
-        return ({
-            width: Math.max(420, Math.min(3840, Math.round(Number(customized && view.width !== undefined ? view.width : globalView.width)))),
-            height: Math.max(360, Math.min(2160, Math.round(Number(customized && view.height !== undefined ? view.height : globalView.height)))),
-            textSize: Math.max(10, Math.min(28, Math.round(Number(customized && view.text_size !== undefined ? view.text_size : globalView.textSize)))),
-            iconSize: Math.max(12, Math.min(48, Math.round(Number(customized && view.icon_size !== undefined ? view.icon_size : globalView.iconSize)))),
-            customized: globalView.customized || customized
-        });
+        return globalApplicationView();
     }
 
     function launcherWidthFor(name, globalOnly) {
