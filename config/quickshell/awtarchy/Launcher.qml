@@ -27,6 +27,7 @@ Singleton {
     readonly property int liveWidth: Math.round(launcherWindow.width)
     readonly property int liveHeight: Math.round(launcherWindow.height)
     readonly property bool previewVisible: launcherWindow.visible && previewMode
+    readonly property var windowHandle: launcherWindow
     property string targetMonitorName: ""
     property string requestedPlacement: "center"
     property bool launcherPositioned: false
@@ -531,36 +532,6 @@ Singleton {
                         anchors.right: parent.right
                         flickable: appList
                         z: 10
-                    }
-                }
-
-                Rectangle {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: root.previewMode ? 46 : 0
-                    visible: root.previewMode
-                    color: Theme.active
-                    border.width: 0
-
-                    Column {
-                        anchors.centerIn: parent
-                        spacing: 2
-
-                        Text {
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            text: root.liveWidth + " × " + root.liveHeight + " px"
-                            color: Theme.foreground
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 11
-                            font.bold: true
-                        }
-
-                        Text {
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            text: "ALT + left-drag move  •  ALT + right-drag resize"
-                            color: Theme.muted
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 9
-                        }
                     }
                 }
             }
