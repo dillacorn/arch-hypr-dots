@@ -8,11 +8,14 @@ Singleton {
     id: root
 
     readonly property string statePath: (Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")) + "/awtarchy/quickshell-state.json"
+    readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
+    readonly property string idleStatePath: runtimeDir + "/awtarchy-quickshell-idle-hidden"
     readonly property int defaultLauncherWidth: 420
     readonly property int defaultLauncherHeight: 582
     readonly property int defaultAppTextSize: 14
     readonly property int defaultAppIconSize: 18
     property int revision: 0
+    property int idleRevision: 0
 
     // Immediate in-process overrides keep bar geometry and icon sizing
     // responsive while persistent JSON writes complete in the background.
@@ -24,6 +27,21 @@ Singleton {
     function refresh() {
         stateFile.reload();
         revision++;
+    }
+
+    function refreshIdleState() {
+        idleStateFile.reload();
+        idleRevision++;
+    }
+
+    function setIdleHidden(hidden) {
+        idleStateFile.setText(hidden ? "1\n" : "0\n");
+        idleRevision++;
+    }
+
+    function idleHidden() {
+        const dependency = idleRevision;
+        return idleStateFile.text().trim() === "1";
     }
 
     function setLivePosition(name, value) {
@@ -80,9 +98,21 @@ Singleton {
         onFileChanged: root.refresh()
     }
 
+    FileView {
+        id: idleStateFile
+        path: root.idleStatePath
+        watchChanges: true
+        blockLoading: false
+        printErrors: false
+        onLoaded: root.idleRevision++
+        onFileChanged: root.refreshIdleState()
+    }
+
     IpcHandler {
         target: "barstate"
         function refresh(): void { root.refresh(); }
+        function refreshIdle(): void { root.refreshIdleState(); }
+        function setIdleHidden(hidden: bool): void { root.setIdleHidden(hidden); }
     }
 
     function data() {
@@ -113,6 +143,9 @@ Singleton {
 
     function enabledFor(name) {
         const dependency = revision;
+        const idleDependency = idleRevision;
+        if (idleHidden())
+            return false;
         if (liveEnabled[name] !== undefined)
             return !!liveEnabled[name];
         const d = data();
