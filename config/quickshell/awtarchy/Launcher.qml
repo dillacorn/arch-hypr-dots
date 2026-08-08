@@ -14,37 +14,25 @@ Singleton {
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_launcher_position.sh"
+    readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
     readonly property string animationStatePath: runtimeDir + "/hypr-animations-enabled"
     readonly property int minimumLauncherWidth: 420
     readonly property int minimumLauncherHeight: 360
     readonly property int applicationColumnMinimumWidth: 300
-    readonly property int configuredAppTextSize: previewMode && previewTextSizeOverride > 0
-        ? previewTextSizeOverride
-        : BarState.appTextSizeFor(targetMonitorName, previewGlobalSettings)
-    readonly property int configuredAppIconSize: previewMode && previewIconSizeOverride > 0
-        ? previewIconSizeOverride
-        : BarState.appIconSizeFor(targetMonitorName, previewGlobalSettings)
+    readonly property int configuredAppTextSize: BarState.appTextSizeFor(targetMonitorName, false)
+    readonly property int configuredAppIconSize: BarState.appIconSizeFor(targetMonitorName, false)
     readonly property int liveWidth: Math.round(launcherWindow.width)
     readonly property int liveHeight: Math.round(launcherWindow.height)
-    readonly property bool previewVisible: launcherWindow.visible && previewMode
-    readonly property var windowHandle: launcherWindow
+    readonly property bool sizeLocked: targetMonitorName.length > 0
+        && BarState.applicationSizeLockedFor(targetMonitorName)
     property string targetMonitorName: ""
     property string requestedPlacement: "center"
     property bool launcherPositioned: false
-    property bool previewMode: false
-    property bool previewGlobalSettings: false
-    property int previewTextSizeOverride: -1
-    property int previewIconSizeOverride: -1
 
     function focusedScreen() {
         const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
         const matches = Quickshell.screens.filter(screen => screen.name === name);
         return matches.length > 0 ? matches[0] : (Quickshell.screens.length > 0 ? Quickshell.screens[0] : null);
-    }
-
-    function screenByName(name) {
-        const matches = Quickshell.screens.filter(screen => screen.name === name);
-        return matches.length > 0 ? matches[0] : null;
     }
 
     function placementForScreen(targetScreen) {
@@ -72,7 +60,7 @@ Singleton {
         });
     }
 
-    function setPreviewSize(width, height) {
+    function setWindowSize(width, height) {
         const targetScreen = launcherWindow.screen;
         const screenWidth = targetScreen ? targetScreen.width : 1920;
         const screenHeight = targetScreen ? targetScreen.height : 1080;
@@ -87,34 +75,40 @@ Singleton {
         launcherWindow.height = desiredHeight;
     }
 
-    function setPreviewStyle(textSize, iconSize) {
-        previewTextSizeOverride = Math.max(10, Math.min(28, Math.round(textSize)));
-        previewIconSizeOverride = Math.max(12, Math.min(48, Math.round(iconSize)));
-    }
-
-    function applyConfiguredSize() {
-        setPreviewSize(
-            BarState.launcherWidthFor(targetMonitorName, previewGlobalSettings),
-            BarState.launcherHeightFor(targetMonitorName, previewGlobalSettings)
+    function applySpawnSize() {
+        setWindowSize(
+            BarState.launcherWidthFor(targetMonitorName, false),
+            BarState.launcherHeightFor(targetMonitorName, false)
         );
     }
 
-    function showOnScreen(targetScreen, placement, preview, globalOnly) {
+    function toggleSizeLock() {
+        if (targetMonitorName.length === 0 || sizeStateWriter.running)
+            return;
+
+        if (sizeLocked) {
+            sizeStateWriter.exec([stateScript, "unlock-size", targetMonitorName]);
+        } else {
+            sizeStateWriter.exec([
+                stateScript,
+                "lock-size",
+                targetMonitorName,
+                String(liveWidth),
+                String(liveHeight)
+            ]);
+        }
+    }
+
+    function showOnScreen(targetScreen, placement) {
         if (!targetScreen)
             return;
 
         focusGrab.active = false;
         targetMonitorName = targetScreen.name;
         requestedPlacement = placement || "center";
-        previewMode = !!preview;
-        previewGlobalSettings = !!globalOnly;
-        if (!previewMode) {
-            previewTextSizeOverride = -1;
-            previewIconSizeOverride = -1;
-        }
         launcherPositioned = false;
         launcherWindow.screen = targetScreen;
-        applyConfiguredSize();
+        applySpawnSize();
         search.text = "";
         launcherWindow.visible = true;
         resetSelection();
@@ -125,24 +119,16 @@ Singleton {
             close();
             return;
         }
-        showOnScreen(targetScreen, placementForScreen(targetScreen), false, false);
+        showOnScreen(targetScreen, placementForScreen(targetScreen));
     }
 
     function openFocused() {
         const target = focusedScreen();
         if (launcherWindow.visible) {
-            if (!previewMode)
-                search.forceActiveFocus();
+            search.forceActiveFocus();
             return;
         }
-        showOnScreen(target, centeredPlacementForScreen(target), false, false);
-    }
-
-    function previewMonitor(name, globalOnly) {
-        const target = screenByName(name) || focusedScreen();
-        if (!target)
-            return;
-        showOnScreen(target, centeredPlacementForScreen(target), true, globalOnly);
+        showOnScreen(target, centeredPlacementForScreen(target));
     }
 
     function close() {
@@ -150,10 +136,6 @@ Singleton {
         launcherWindow.visible = false;
         launcherPositioned = false;
         search.text = "";
-        previewMode = false;
-        previewGlobalSettings = false;
-        previewTextSizeOverride = -1;
-        previewIconSizeOverride = -1;
     }
 
     function toggleFocused() {
@@ -162,7 +144,7 @@ Singleton {
             return;
         }
         const target = focusedScreen();
-        showOnScreen(target, centeredPlacementForScreen(target), false, false);
+        showOnScreen(target, centeredPlacementForScreen(target));
     }
 
     function positionLauncher() {
@@ -228,7 +210,7 @@ Singleton {
     }
 
     function launchEntry(entry) {
-        if (!entry || previewMode)
+        if (!entry)
             return;
 
         const workingDirectory = entry.workingDirectory || "";
@@ -255,13 +237,17 @@ Singleton {
         onFileChanged: reload()
     }
 
+    Process {
+        id: sizeStateWriter
+        onExited: BarState.refresh()
+    }
+
     IpcHandler {
         target: "launcher"
         function toggle(): void { root.toggleFocused(); }
         function open(): void { root.openFocused(); }
         function close(): void { root.close(); }
-        function previewMonitor(name: string, globalOnly: bool): void { root.previewMonitor(name, globalOnly); }
-        function applyConfiguredSize(): void { root.applyConfiguredSize(); }
+        function applyConfiguredSize(): void { root.applySpawnSize(); }
         function currentWidth(): int { return root.liveWidth; }
         function currentHeight(): int { return root.liveHeight; }
     }
@@ -279,12 +265,8 @@ Singleton {
             if (!launcherWindow.visible)
                 return;
             root.launcherPositioned = true;
-            if (root.previewMode) {
-                focusGrab.active = false;
-            } else {
-                focusGrab.active = true;
-                Qt.callLater(() => search.forceActiveFocus());
-            }
+            focusGrab.active = true;
+            Qt.callLater(() => search.forceActiveFocus());
         }
     }
 
@@ -292,7 +274,7 @@ Singleton {
         id: focusGrab
         windows: [launcherWindow]
         onCleared: {
-            if (launcherWindow.visible && !root.previewMode)
+            if (launcherWindow.visible)
                 root.close();
         }
     }
@@ -375,7 +357,7 @@ Singleton {
                     RowLayout {
                         anchors.fill: parent
                         anchors.leftMargin: 8
-                        anchors.rightMargin: 8
+                        anchors.rightMargin: 6
                         spacing: 6
 
                         Text {
@@ -398,8 +380,7 @@ Singleton {
                             font.weight: Font.Medium
                             verticalAlignment: TextInput.AlignVCenter
                             clip: true
-                            focus: launcherWindow.visible && root.launcherPositioned && !root.previewMode
-                            enabled: !root.previewMode
+                            focus: launcherWindow.visible && root.launcherPositioned
 
                             Keys.onPressed: event => {
                                 if (event.key === Qt.Key_Escape) {
@@ -446,6 +427,33 @@ Singleton {
                             color: Theme.muted
                             font.family: Theme.fontFamily
                             font.pixelSize: 11
+                        }
+
+                        Rectangle {
+                            Layout.preferredWidth: lockText.implicitWidth + 14
+                            Layout.preferredHeight: 26
+                            color: root.sizeLocked ? Theme.focus : (lockMouse.containsMouse ? Theme.subtleHover : "transparent")
+                            border.width: 0
+
+                            Text {
+                                id: lockText
+                                anchors.centerIn: parent
+                                text: root.sizeLocked ? " Locked" : " Lock"
+                                color: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 11
+                            }
+
+                            MouseArea {
+                                id: lockMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    root.toggleSizeLock();
+                                    Qt.callLater(() => search.forceActiveFocus());
+                                }
+                            }
                         }
                     }
                 }
@@ -510,7 +518,6 @@ Singleton {
                             id: hover
                             anchors.fill: parent
                             hoverEnabled: true
-                            enabled: !root.previewMode
                             onPositionChanged: mouse => {
                                 appList.currentIndex = row.index;
                             }
