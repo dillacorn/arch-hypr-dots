@@ -149,14 +149,14 @@ Singleton {
             width: implicitWidth
             height: implicitHeight
             x: root.placement === "left"
-                ? 44
+                ? 36
                 : root.placement === "right"
-                    ? parent.width - width - 44
+                    ? parent.width - width - 36
                     : Math.round((parent.width - width) / 2)
             y: root.placement === "top"
-                ? 36
+                ? 28
                 : root.placement === "bottom"
-                    ? parent.height - height - 36
+                    ? parent.height - height - 28
                     : Math.round((parent.height - height) / 2)
             color: Theme.popupBackground
             radius: 0
