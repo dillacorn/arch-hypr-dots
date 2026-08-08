@@ -31,20 +31,28 @@ ShellRoot {
 
             Item {
                 id: dragSurface
+                parent: barInstance.contentItem
                 anchors.fill: parent
                 z: 10000
                 property string candidateEdge: barInstance.position
+                property bool hasCandidate: false
 
                 function updateCandidate() {
                     const dx = edgeDrag.activeTranslation.x;
                     const dy = edgeDrag.activeTranslation.y;
-                    if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
+                    const distance = Math.max(Math.abs(dx), Math.abs(dy));
+
+                    if (distance < 80) {
                         candidateEdge = barInstance.position;
-                    } else if (Math.abs(dx) > Math.abs(dy)) {
-                        candidateEdge = dx >= 0 ? "right" : "left";
-                    } else {
-                        candidateEdge = dy >= 0 ? "bottom" : "top";
+                        hasCandidate = false;
+                        return;
                     }
+
+                    hasCandidate = true;
+                    if (Math.abs(dx) > Math.abs(dy))
+                        candidateEdge = dx >= 0 ? "right" : "left";
+                    else
+                        candidateEdge = dy >= 0 ? "bottom" : "top";
                 }
 
                 function edgeGlyph(edge) {
@@ -56,21 +64,25 @@ ShellRoot {
 
                 DragHandler {
                     id: edgeDrag
+                    parent: barInstance.contentItem
                     target: null
                     acceptedButtons: Qt.LeftButton
                     acceptedModifiers: Qt.AltModifier
                     dragThreshold: 4
+                    grabPermissions: PointerHandler.CanTakeOverFromAnything
+                        | PointerHandler.ApprovesTakeOverByAnything
 
-                    xAxis.onActiveValueChanged: dragSurface.updateCandidate()
-                    yAxis.onActiveValueChanged: dragSurface.updateCandidate()
+                    onActiveTranslationChanged: dragSurface.updateCandidate()
 
                     onActiveChanged: {
                         if (active) {
                             dragSurface.candidateEdge = barInstance.position;
+                            dragSurface.hasCandidate = false;
                             return;
                         }
 
-                        if (dragSurface.candidateEdge !== barInstance.position) {
+                        if (dragSurface.hasCandidate
+                                && dragSurface.candidateEdge !== barInstance.position) {
                             Quickshell.execDetached([
                                 (Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")) + "/hypr/scripts/quickshell.sh",
                                 "setpos",
@@ -78,6 +90,8 @@ ShellRoot {
                                 dragSurface.candidateEdge
                             ]);
                         }
+
+                        dragSurface.hasCandidate = false;
                     }
                 }
 
@@ -87,7 +101,7 @@ ShellRoot {
                     height: barInstance.vertical ? Math.min(90, parent.height) : parent.height
                     color: Theme.focus
                     radius: 0
-                    opacity: edgeDrag.active ? 0.96 : 0
+                    opacity: edgeDrag.active && dragSurface.hasCandidate ? 0.96 : 0
                     visible: opacity > 0
 
                     Behavior on opacity {
