@@ -59,7 +59,7 @@ Singleton {
 
     Process {
         id: listProcess
-        command: ["sh", "-lc", "find '" + root.themeDir + "' -maxdepth 1 -type f -executable -printf '%f\\n' 2>/dev/null | LC_ALL=C sort"]
+        command: ["sh", "-lc", "find '" + root.themeDir + "' -maxdepth 1 -type f -executable ! -name '*.backup*' -printf '%f\\n' 2>/dev/null | LC_ALL=C sort"]
         stdout: StdioCollector {
             onStreamFinished: {
                 root.themes = text.split("\n").filter(value => value.length > 0);
