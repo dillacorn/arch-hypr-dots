@@ -105,6 +105,10 @@ getenabled() {
 
 set_monitor_enabled() {
     local monitor="$1" enabled="$2" tmp
+    case "$enabled" in
+        true|false) ;;
+        *) printf 'quickshell.sh: enabled must be true or false\n' >&2; exit 2 ;;
+    esac
     ensure_state
     tmp="${STATE_FILE}.tmp.$$"
     jq --arg monitor "$monitor" --argjson enabled "$enabled" '.monitors[$monitor].enabled = $enabled' "$STATE_FILE" >"$tmp"
@@ -122,6 +126,17 @@ setpos() {
 
 toggle_mon() {
     local monitor="$1"
+
+    # A focused-monitor toggle must always be able to recover a visible bar.
+    # Older Hypridle logic used the global enabled flag, so clear that stale
+    # state before applying the per-monitor toggle.
+    ensure_state
+    if ! jq -e '.enabled == true' "$STATE_FILE" >/dev/null 2>&1; then
+        set_global_enabled true
+        set_monitor_enabled "$monitor" true
+        return 0
+    fi
+
     if [[ "$(getenabled "$monitor")" == "true" ]]; then
         set_monitor_enabled "$monitor" false
     else
@@ -187,6 +202,7 @@ focused monitor:
   toggle-focused
   getpos-focused
   getenabled-focused
+  setenabled-focused <true|false>
   setpos-focused <top|bottom|left|right>
   flip-focused
   rotate-focused
@@ -195,6 +211,7 @@ per monitor:
   toggle-mon <MON>
   getpos <MON>
   getenabled <MON>
+  setenabled <MON> <true|false>
   setpos <MON> <top|bottom|left|right>
 USAGE
 }
@@ -215,6 +232,8 @@ case "$cmd" in
     getpos-focused) monitor="$(focused_monitor)"; getpos "$monitor" ;;
     getenabled) [[ -n "${2:-}" ]] || { usage; exit 2; }; getenabled "$2" ;;
     getenabled-focused) monitor="$(focused_monitor)"; getenabled "$monitor" ;;
+    setenabled) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage; exit 2; }; set_monitor_enabled "$2" "$3" ;;
+    setenabled-focused) [[ -n "${2:-}" ]] || { usage; exit 2; }; monitor="$(focused_monitor)"; set_monitor_enabled "$monitor" "$2" ;;
     setpos) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage; exit 2; }; setpos "$2" "$3" ;;
     setpos-focused) [[ -n "${2:-}" ]] || { usage; exit 2; }; monitor="$(focused_monitor)"; setpos "$monitor" "$2" ;;
     flip-focused) monitor="$(focused_monitor)"; flip_mon "$monitor" ;;
