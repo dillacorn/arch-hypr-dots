@@ -7,4 +7,3 @@ Terminal=false
 Exec=/bin/sh -c 'command -v ncdu >/dev/null 2>&1 && alacritty -e ncdu || hyprctl notify 3 5000 "rgb(ff5555)" "ncdu is not installed."'
 Name=ncdu (file drive disk analyzer)
 Icon=utilities-terminal
-  
