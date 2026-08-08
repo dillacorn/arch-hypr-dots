@@ -149,14 +149,14 @@ Singleton {
             width: implicitWidth
             height: implicitHeight
             x: root.placement === "left"
-                ? 8
+                ? 44
                 : root.placement === "right"
-                    ? parent.width - width - 8
+                    ? parent.width - width - 44
                     : Math.round((parent.width - width) / 2)
             y: root.placement === "top"
-                ? 8
+                ? 36
                 : root.placement === "bottom"
-                    ? parent.height - height - 8
+                    ? parent.height - height - 36
                     : Math.round((parent.height - height) / 2)
             color: Theme.popupBackground
             radius: 0
@@ -295,10 +295,9 @@ Singleton {
 
                     ListScrollBar {
                         id: clipboardScrollBar
-                        parent: clipboardList
-                        anchors.top: clipboardList.top
-                        anchors.bottom: clipboardList.bottom
-                        anchors.right: clipboardList.right
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        anchors.right: parent.right
                         flickable: clipboardList
                         z: 10
                     }
