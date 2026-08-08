@@ -14,8 +14,59 @@ Singleton {
     readonly property int defaultAppIconSize: 18
     property int revision: 0
 
+    // Immediate in-process overrides keep PanelWindow geometry and icon sizing
+    // responsive while the persistent JSON write completes in the background.
+    property var livePositions: ({})
+    property var liveEnabled: ({})
+    property var liveBarSizes: ({})
+    property var liveIconScales: ({})
+
     function refresh() {
         stateFile.reload();
+        revision++;
+    }
+
+    function setLivePosition(name, value) {
+        const next = Object.assign({}, livePositions);
+        next[name] = value;
+        livePositions = next;
+        revision++;
+    }
+
+    function setLiveEnabled(name, value) {
+        const next = Object.assign({}, liveEnabled);
+        next[name] = !!value;
+        liveEnabled = next;
+        revision++;
+    }
+
+    function setLiveBarSize(name, value) {
+        const next = Object.assign({}, liveBarSizes);
+        next[name] = Number(value);
+        liveBarSizes = next;
+        revision++;
+    }
+
+    function setLiveIconScale(name, value) {
+        const next = Object.assign({}, liveIconScales);
+        next[name] = Number(value);
+        liveIconScales = next;
+        revision++;
+    }
+
+    function clearLiveOverrides(name) {
+        const positions = Object.assign({}, livePositions);
+        const enabled = Object.assign({}, liveEnabled);
+        const sizes = Object.assign({}, liveBarSizes);
+        const scales = Object.assign({}, liveIconScales);
+        delete positions[name];
+        delete enabled[name];
+        delete sizes[name];
+        delete scales[name];
+        livePositions = positions;
+        liveEnabled = enabled;
+        liveBarSizes = sizes;
+        liveIconScales = scales;
         revision++;
     }
 
@@ -56,6 +107,9 @@ Singleton {
     }
 
     function enabledFor(name) {
+        const dependency = revision;
+        if (liveEnabled[name] !== undefined)
+            return !!liveEnabled[name];
         const d = data();
         if (!d.enabled)
             return false;
@@ -64,22 +118,32 @@ Singleton {
     }
 
     function positionFor(name) {
+        const dependency = revision;
+        if (livePositions[name] !== undefined)
+            return livePositions[name];
         const mon = monitorState(name);
         const pos = mon.position || "top";
         return ["top", "bottom", "left", "right"].indexOf(pos) >= 0 ? pos : "top";
     }
 
     function barSizeFor(name, vertical) {
-        const mon = monitorState(name);
-        const custom = Number(mon.bar_size || 0);
+        const dependency = revision;
+        const override = liveBarSizes[name];
+        const custom = override !== undefined
+            ? Number(override)
+            : Number(monitorState(name).bar_size || 0);
         if (Number.isFinite(custom) && custom >= 20 && custom <= 80)
             return Math.round(custom);
         return vertical ? 36 : 28;
     }
 
     function iconScaleFor(name) {
+        const dependency = revision;
+        const override = liveIconScales[name];
         const mon = monitorState(name);
-        const percent = Number(mon.icon_scale === undefined ? 100 : mon.icon_scale);
+        const percent = Number(override !== undefined
+            ? override
+            : (mon.icon_scale === undefined ? 100 : mon.icon_scale));
         if (!Number.isFinite(percent))
             return 1.0;
         return Math.max(50, Math.min(200, percent)) / 100.0;
@@ -98,8 +162,6 @@ Singleton {
         });
     }
 
-    // Application View spawn dimensions are intentionally global. ALT+P,
-    // SUPER+D, and the bar Apps button must all open the same launcher size.
     function applicationViewFor(name, globalOnly) {
         return globalApplicationView();
     }
