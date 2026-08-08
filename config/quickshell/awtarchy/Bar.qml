@@ -95,7 +95,7 @@ PanelWindow {
             return false;
         const ipc = toplevel.lastIpcObject || {};
         const cls = String(ipc.class || ipc.initialClass || "").toLowerCase();
-        const ignored = ["wofi", "tofi", "rofi", "hyprlock", "swaylock", "swww", "mpvpaper", "pulsemixer", "org.waytrogen.waytrogen", "org.pulseaudio.pavucontrol", "wiremix", "quickshell"];
+        const ignored = ["tofi", "rofi", "hyprlock", "swaylock", "swww", "mpvpaper", "pulsemixer", "org.waytrogen.waytrogen", "org.pulseaudio.pavucontrol", "wiremix", "quickshell"];
         return ignored.indexOf(cls) < 0;
     }
 
@@ -153,6 +153,15 @@ PanelWindow {
         });
     }
 
+    function setWorkspaceDrawerHovered(hovered) {
+        if (hovered) {
+            wsDrawerClose.stop();
+            wsDrawerOpen = true;
+        } else {
+            wsDrawerClose.restart();
+        }
+    }
+
     function toggleAudioMute() {
         const sink = Pipewire.defaultAudioSink;
         if (sink && sink.audio)
@@ -163,7 +172,7 @@ PanelWindow {
         const sink = Pipewire.defaultAudioSink;
         if (!sink || !sink.audio)
             return;
-        sink.audio.volume = Math.max(0, Math.min(1.5, sink.audio.volume + delta));
+        sink.audio.volume = Math.max(0, Math.min(1, sink.audio.volume + delta));
     }
 
     function calendarText(date) {
@@ -511,18 +520,14 @@ PanelWindow {
                 id: wsDrawer
                 spacing: 0
 
+                HoverHandler {
+                    onHoveredChanged: bar.setWorkspaceDrawerHovered(hovered)
+                }
+
                 BarButton {
                     id: wsHub
                     label: "🖱"
                     tooltip: "Toggle mouse submap"
-                    onHoveredChanged: {
-                        if (hovered) {
-                            wsDrawerClose.stop();
-                            bar.wsDrawerOpen = true;
-                        } else {
-                            wsDrawerClose.restart();
-                        }
-                    }
                     onClicked: Quickshell.execDetached([bar.mouseSubmapScript, "toggle"])
                     onRightClicked: Quickshell.execDetached([bar.mouseSubmapScript, "toggle"])
                 }
@@ -555,14 +560,6 @@ PanelWindow {
                             anchors.left: parent.left
                             label: arrowSlot.modelData.label
                             tooltip: arrowSlot.modelData.tip
-                            onHoveredChanged: {
-                                if (hovered) {
-                                    wsDrawerClose.stop();
-                                    bar.wsDrawerOpen = true;
-                                } else {
-                                    wsDrawerClose.restart();
-                                }
-                            }
                             onClicked: Quickshell.execDetached(["hyprctl", "eval", "hl.dispatch(hl.dsp.workspace.move({ monitor = \"" + arrowSlot.modelData.dir + "\" }))"])
                         }
                     }
@@ -711,16 +708,58 @@ PanelWindow {
 
             WorkspaceColumn {}
 
-            BarButton {
-                vertical: true; fixedWidth: 36; label: "🖱"; tooltip: "Toggle mouse submap"
-                onClicked: Quickshell.execDetached([bar.mouseSubmapScript, "toggle"])
-                onRightClicked: Quickshell.execDetached([bar.mouseSubmapScript, "toggle"])
-            }
+            Column {
+                id: wsDrawerVertical
+                spacing: 0
 
-            BarButton { vertical: true; fixedWidth: 36; label: "↑"; tooltip: "Move workspace UP"; onClicked: Quickshell.execDetached(["hyprctl", "eval", "hl.dispatch(hl.dsp.workspace.move({ monitor = \"u\" }))"]) }
-            BarButton { vertical: true; fixedWidth: 36; label: "↓"; tooltip: "Move workspace DOWN"; onClicked: Quickshell.execDetached(["hyprctl", "eval", "hl.dispatch(hl.dsp.workspace.move({ monitor = \"d\" }))"]) }
-            BarButton { vertical: true; fixedWidth: 36; label: "←"; tooltip: "Move workspace LEFT"; onClicked: Quickshell.execDetached(["hyprctl", "eval", "hl.dispatch(hl.dsp.workspace.move({ monitor = \"l\" }))"]) }
-            BarButton { vertical: true; fixedWidth: 36; label: "→"; tooltip: "Move workspace RIGHT"; onClicked: Quickshell.execDetached(["hyprctl", "eval", "hl.dispatch(hl.dsp.workspace.move({ monitor = \"r\" }))"]) }
+                HoverHandler {
+                    onHoveredChanged: bar.setWorkspaceDrawerHovered(hovered)
+                }
+
+                BarButton {
+                    vertical: true
+                    fixedWidth: 36
+                    label: "🖱"
+                    tooltip: "Toggle mouse submap"
+                    onClicked: Quickshell.execDetached([bar.mouseSubmapScript, "toggle"])
+                    onRightClicked: Quickshell.execDetached([bar.mouseSubmapScript, "toggle"])
+                }
+
+                Repeater {
+                    model: [
+                        { label: "↑", dir: "u", tip: "Move workspace UP" },
+                        { label: "↓", dir: "d", tip: "Move workspace DOWN" },
+                        { label: "←", dir: "l", tip: "Move workspace LEFT" },
+                        { label: "→", dir: "r", tip: "Move workspace RIGHT" }
+                    ]
+
+                    delegate: Item {
+                        id: arrowSlotVertical
+                        required property var modelData
+                        width: 36
+                        height: bar.wsDrawerOpen ? 28 : 0
+                        opacity: bar.wsDrawerOpen ? 1 : 0
+                        clip: true
+
+                        Behavior on height {
+                            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                        }
+                        Behavior on opacity {
+                            NumberAnimation { duration: 120 }
+                        }
+
+                        BarButton {
+                            anchors.top: parent.top
+                            vertical: true
+                            fixedWidth: 36
+                            fixedHeight: 28
+                            label: arrowSlotVertical.modelData.label
+                            tooltip: arrowSlotVertical.modelData.tip
+                            onClicked: Quickshell.execDetached(["hyprctl", "eval", "hl.dispatch(hl.dsp.workspace.move({ monitor = \"" + arrowSlotVertical.modelData.dir + "\" }))"])
+                        }
+                    }
+                }
+            }
 
             TaskColumn {}
 
