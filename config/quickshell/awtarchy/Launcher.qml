@@ -15,6 +15,11 @@ Singleton {
     readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_launcher_position.sh"
     readonly property string animationStatePath: runtimeDir + "/hypr-animations-enabled"
+    readonly property int defaultLauncherWidth: 520
+    readonly property int defaultLauncherHeight: 604
+    readonly property int minimumLauncherWidth: 420
+    readonly property int minimumLauncherHeight: 360
+    readonly property int applicationColumnMinimumWidth: 300
     property string targetMonitorName: ""
     property string requestedPlacement: "center"
     property bool launcherPositioned: false
@@ -42,6 +47,14 @@ Singleton {
         return state !== "0";
     }
 
+    function resetSelection() {
+        appList.currentIndex = appList.count > 0 ? 0 : -1;
+        Qt.callLater(() => {
+            appList.currentIndex = appList.count > 0 ? 0 : -1;
+            appList.positionViewAtBeginning();
+        });
+    }
+
     function showOnScreen(targetScreen, placement) {
         if (!targetScreen)
             return;
@@ -51,9 +64,8 @@ Singleton {
         launcherPositioned = false;
         launcherWindow.screen = targetScreen;
         search.text = "";
-        appList.currentIndex = 0;
         launcherWindow.visible = true;
-        Qt.callLater(() => appList.positionViewAtBeginning());
+        resetSelection();
     }
 
     // Clicking the Apps button keeps edge/button placement on that bar.
@@ -223,10 +235,15 @@ Singleton {
         color: "transparent"
         surfaceFormat.opaque: false
 
-        implicitWidth: Math.min(520, Math.max(420, (screen ? screen.width : 1920) * 0.27))
-        implicitHeight: Math.min(604, Math.max(360, (screen ? screen.height : 1080) - 80))
-        minimumSize: Qt.size(420, 360)
-        maximumSize: Qt.size(520, 604)
+        implicitWidth: Math.min(root.defaultLauncherWidth,
+            Math.max(root.minimumLauncherWidth, screen ? screen.width : 1920))
+        implicitHeight: Math.min(root.defaultLauncherHeight,
+            Math.max(root.minimumLauncherHeight, screen ? screen.height : 1080))
+        minimumSize: Qt.size(root.minimumLauncherWidth, root.minimumLauncherHeight)
+        maximumSize: Qt.size(
+            Math.max(root.minimumLauncherWidth, screen ? screen.width : 1920),
+            Math.max(root.minimumLauncherHeight, screen ? screen.height : 1080)
+        )
 
         onVisibleChanged: {
             if (visible) {
@@ -262,6 +279,18 @@ Singleton {
                     if (active) {
                         positionTimer.stop();
                         launcherWindow.startSystemMove();
+                    }
+                }
+            }
+
+            DragHandler {
+                target: null
+                acceptedButtons: Qt.RightButton
+                acceptedModifiers: Qt.AltModifier
+                onActiveChanged: {
+                    if (active) {
+                        positionTimer.stop();
+                        launcherWindow.startSystemResize(Qt.RightEdge | Qt.BottomEdge);
                     }
                 }
             }
@@ -310,13 +339,27 @@ Singleton {
                                     event.accepted = true;
                                 } else if (event.key === Qt.Key_Down) {
                                     if (appList.count > 0)
-                                        appList.currentIndex = Math.min(appList.count - 1, appList.currentIndex + 1);
-                                    appList.positionViewAtIndex(appList.currentIndex, ListView.Contain);
+                                        appList.currentIndex = Math.min(appList.count - 1,
+                                            Math.max(0, appList.currentIndex) + appList.columnCount);
+                                    appList.positionViewAtIndex(appList.currentIndex, GridView.Contain);
                                     event.accepted = true;
                                 } else if (event.key === Qt.Key_Up) {
                                     if (appList.count > 0)
-                                        appList.currentIndex = Math.max(0, appList.currentIndex - 1);
-                                    appList.positionViewAtIndex(appList.currentIndex, ListView.Contain);
+                                        appList.currentIndex = Math.max(0,
+                                            Math.max(0, appList.currentIndex) - appList.columnCount);
+                                    appList.positionViewAtIndex(appList.currentIndex, GridView.Contain);
+                                    event.accepted = true;
+                                } else if (event.key === Qt.Key_Right && appList.columnCount > 1) {
+                                    if (appList.count > 0)
+                                        appList.currentIndex = Math.min(appList.count - 1,
+                                            Math.max(0, appList.currentIndex) + 1);
+                                    appList.positionViewAtIndex(appList.currentIndex, GridView.Contain);
+                                    event.accepted = true;
+                                } else if (event.key === Qt.Key_Left && appList.columnCount > 1) {
+                                    if (appList.count > 0)
+                                        appList.currentIndex = Math.max(0,
+                                            Math.max(0, appList.currentIndex) - 1);
+                                    appList.positionViewAtIndex(appList.currentIndex, GridView.Contain);
                                     event.accepted = true;
                                 } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                                     const values = root.filteredApps();
@@ -326,10 +369,7 @@ Singleton {
                                 }
                             }
 
-                            onTextChanged: {
-                                appList.currentIndex = 0;
-                                Qt.callLater(() => appList.positionViewAtBeginning());
-                            }
+                            onTextChanged: root.resetSelection()
                         }
 
                         Text {
@@ -342,14 +382,18 @@ Singleton {
                     }
                 }
 
-                ListView {
+                GridView {
                     id: appList
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     clip: true
-                    spacing: 0
-                    currentIndex: 0
+                    currentIndex: -1
                     boundsBehavior: Flickable.StopAtBounds
+                    flow: GridView.FlowLeftToRight
+                    readonly property int columnCount: Math.max(1,
+                        Math.floor(width / root.applicationColumnMinimumWidth))
+                    cellWidth: width / columnCount
+                    cellHeight: 28
 
                     model: ScriptModel {
                         values: root.filteredApps()
@@ -361,9 +405,9 @@ Singleton {
                         required property int index
                         property var entry: modelData
 
-                        width: ListView.view.width
-                        height: 28
-                        color: ListView.isCurrentItem ? Theme.focus : (hover.containsMouse ? Theme.subtleHover : "transparent")
+                        width: GridView.view.cellWidth
+                        height: GridView.view.cellHeight
+                        color: GridView.isCurrentItem ? Theme.focus : (hover.containsMouse ? Theme.subtleHover : "transparent")
                         border.width: 0
 
                         RowLayout {
@@ -396,7 +440,6 @@ Singleton {
                             id: hover
                             anchors.fill: parent
                             hoverEnabled: true
-                            onEntered: appList.currentIndex = row.index
                             onClicked: root.launchEntry(row.entry)
                             onWheel: wheel => {
                                 const minY = appList.originY;
