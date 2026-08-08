@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 
 Rectangle {
     id: root
@@ -15,6 +16,11 @@ Rectangle {
     property int fixedHeight: 0
     property int fontPixelSize: 0
     property bool hovered: false
+
+    readonly property var containingWindow: Window.window
+    readonly property string monitorName: containingWindow && containingWindow.screen ? containingWindow.screen.name : ""
+    readonly property real iconScale: BarState.iconScaleFor(monitorName)
+    readonly property int barThickness: BarState.barSizeFor(monitorName, vertical)
 
     // The legacy Waybar clipboard codepoint renders as an unrelated glyph in
     // the Nerd Font used by Quickshell. Translate it to the well-supported
@@ -51,55 +57,58 @@ Rectangle {
         return Theme.fontFamily;
     }
 
+    function scaledIconSize(baseSize) {
+        const scaled = Math.round(baseSize * iconScale);
+        const maxForBar = Math.max(8, barThickness - 4);
+        return Math.max(8, Math.min(maxForBar, scaled));
+    }
+
     function partFontPixelSize(part) {
         if (fontPixelSize > 0)
-            return fontPixelSize;
+            return scaledIconSize(fontPixelSize);
 
-        // Keep the two glyphs the user already identified as correctly sized.
         if (part.indexOf("🖱") >= 0 || part.indexOf("°") >= 0)
-            return 14;
+            return scaledIconSize(14);
 
-        // Workspace numbers remain 14px. Their current 20px glyph size is the
-        // approved visual target and should not move with other icon tuning.
+        // Workspace numbers remain normal text while the approved workspace
+        // glyph size scales with the rest of the bar icons.
         if (workspaceLabel && (isBmpIconPart(part) || isSupplementaryIconPart(part)))
-            return 20;
+            return scaledIconSize(20);
 
         if (part.indexOf("") >= 0)
-            return 20;
+            return scaledIconSize(20);
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0)
-            return 19;
+            return scaledIconSize(19);
 
-        // The inhibited/on eye already has the desired visual weight at 23px.
-        // The uninhibited/off slashed-eye glyph renders visibly smaller at the
-        // same pixel size, so tune it independently instead of changing both.
+        // Preserve the tuned relative sizes for the idle-inhibitor glyphs.
         if (part.indexOf("") >= 0)
-            return 25;
+            return scaledIconSize(25);
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0)
-            return 23;
+            return scaledIconSize(23);
 
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
-            return 20;
+            return scaledIconSize(20);
         if (part.indexOf("") >= 0)
-            return 18;
+            return scaledIconSize(18);
         if (part.indexOf("") >= 0)
-            return 18;
+            return scaledIconSize(18);
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
-            return 18;
+            return scaledIconSize(18);
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
-            return 17;
+            return scaledIconSize(17);
 
         if (isBmpIconPart(part) || isSupplementaryIconPart(part))
-            return 18;
+            return scaledIconSize(18);
 
         return Theme.fontPixelSize;
     }
 
-    implicitWidth: fixedWidth > 0
-        ? fixedWidth
-        : (vertical ? 36 : labelContent.implicitWidth + horizontalPadding * 2)
-    implicitHeight: fixedHeight > 0
-        ? fixedHeight
-        : (vertical ? Math.max(28, labelContent.implicitHeight + 12) : 28)
+    implicitWidth: vertical
+        ? barThickness
+        : (fixedWidth > 0 ? fixedWidth : labelContent.implicitWidth + horizontalPadding * 2)
+    implicitHeight: vertical
+        ? (fixedHeight > 0 ? fixedHeight : Math.max(28, labelContent.implicitHeight + 12))
+        : (fixedHeight > 0 ? fixedHeight : barThickness)
     color: pointer.containsMouse ? hoverBackground : normalBackground
 
     Item {
@@ -109,7 +118,7 @@ Rectangle {
             ? horizontalRow.implicitWidth
             : (root.useVerticalParts ? verticalColumn.implicitWidth : normalText.implicitWidth)
         implicitHeight: root.useHorizontalParts
-            ? 28
+            ? root.barThickness
             : (root.useVerticalParts ? verticalColumn.implicitHeight : normalText.implicitHeight)
 
         Text {
@@ -127,7 +136,7 @@ Rectangle {
         Row {
             id: horizontalRow
             anchors.centerIn: parent
-            height: 28
+            height: root.barThickness
             spacing: 4
             visible: root.useHorizontalParts
 
