@@ -100,7 +100,7 @@ Singleton {
         GridLayout {
             anchors.centerIn: parent
             columns: 3
-            rowSpacing: 16
+            rowSpacing: 30
             columnSpacing: 16
 
             Repeater {
