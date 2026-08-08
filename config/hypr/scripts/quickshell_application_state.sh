@@ -39,7 +39,7 @@ ensure_state() {
     fi
 
     if [[ ! -s "$STATE_FILE" ]] || ! jq -e 'type == "object"' "$STATE_FILE" >/dev/null 2>&1; then
-        printf '{"enabled":true,"monitors":{}}\n' >"$STATE_FILE"
+        printf '{"enabled":true,"monitors":{},"launcher_sizes":{}}\n' >"$STATE_FILE"
     fi
 }
 
@@ -66,14 +66,15 @@ lock_size() {
         --arg monitor "$monitor" \
         --argjson width "$width" \
         --argjson height "$height" '
-        .monitors = (.monitors // {})
-        | .monitors[$monitor] = (.monitors[$monitor] // {})
-        | .monitors[$monitor].application_view = {
+        .launcher_sizes = (.launcher_sizes // {})
+        | .launcher_sizes[$monitor] = {
             width:$width,
             height:$height,
             locked:true
         }
         | del(.application_view)
+        | .monitors = (.monitors // {})
+        | .monitors |= with_entries(.value |= del(.application_view))
     ' "$STATE_FILE" >"$tmp"
     mv -f "$tmp" "$STATE_FILE"
 }
@@ -84,9 +85,11 @@ unlock_size() {
     ensure_state
     tmp="${STATE_FILE}.tmp.$$"
     jq --arg monitor "$monitor" '
-        .monitors = (.monitors // {})
-        | if .monitors[$monitor] then del(.monitors[$monitor].application_view) else . end
+        .launcher_sizes = (.launcher_sizes // {})
+        | del(.launcher_sizes[$monitor])
         | del(.application_view)
+        | .monitors = (.monitors // {})
+        | .monitors |= with_entries(.value |= del(.application_view))
     ' "$STATE_FILE" >"$tmp"
     mv -f "$tmp" "$STATE_FILE"
 }
@@ -96,9 +99,10 @@ reset_locks() {
     ensure_state
     tmp="${STATE_FILE}.tmp.$$"
     jq '
-        .monitors = (.monitors // {})
-        | .monitors |= with_entries(.value |= del(.application_view))
+        .launcher_sizes = {}
         | del(.application_view)
+        | .monitors = (.monitors // {})
+        | .monitors |= with_entries(.value |= del(.application_view))
     ' "$STATE_FILE" >"$tmp"
     mv -f "$tmp" "$STATE_FILE"
 }
