@@ -89,18 +89,20 @@ Singleton {
         const dependency = revision;
         const text = stateFile.text();
         if (!text || text.length === 0)
-            return ({ enabled: true, monitors: {} });
+            return ({ enabled: true, monitors: {}, launcher_sizes: {} });
 
         try {
             const parsed = JSON.parse(text);
             if (!parsed.monitors)
                 parsed.monitors = {};
+            if (!parsed.launcher_sizes)
+                parsed.launcher_sizes = {};
             if (parsed.enabled === undefined)
                 parsed.enabled = true;
             return parsed;
         } catch (error) {
             console.warn("Awtarchy Quickshell: invalid shell state:", error);
-            return ({ enabled: true, monitors: {} });
+            return ({ enabled: true, monitors: {}, launcher_sizes: {} });
         }
     }
 
@@ -153,8 +155,8 @@ Singleton {
     }
 
     function launcherLockFor(name) {
-        const mon = monitorState(name);
-        const view = mon.application_view || ({});
+        const d = data();
+        const view = (d.launcher_sizes || ({}))[name] || ({});
         const width = Number(view.width);
         const height = Number(view.height);
         const locked = view.locked === true
