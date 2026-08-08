@@ -55,9 +55,9 @@ Singleton {
     }
 
     function resetSelection() {
-        appList.currentIndex = appList.count > 0 ? 0 : -1;
+        appList.currentIndex = 0;
         Qt.callLater(() => {
-            appList.currentIndex = appList.count > 0 ? 0 : -1;
+            appList.currentIndex = 0;
             appList.positionViewAtBeginning();
         });
     }
@@ -428,7 +428,7 @@ Singleton {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     clip: true
-                    currentIndex: -1
+                    currentIndex: 0
                     boundsBehavior: Flickable.StopAtBounds
                     flow: GridView.FlowLeftToRight
                     readonly property int columnCount: Math.max(1,
@@ -484,6 +484,9 @@ Singleton {
                             anchors.fill: parent
                             hoverEnabled: true
                             enabled: !root.previewMode
+                            onPositionChanged: mouse => {
+                                appList.currentIndex = row.index;
+                            }
                             onClicked: root.launchEntry(row.entry)
                             onWheel: wheel => {
                                 const minY = appList.originY;
