@@ -166,7 +166,7 @@ Rectangle {
                     required property var modelData
                     width: Math.max(20, tokenText.implicitWidth)
                     height: Math.max(16, tokenText.implicitHeight)
-                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.horizontalCenter: verticalColumn.horizontalCenter
 
                     Text {
                         id: tokenText
