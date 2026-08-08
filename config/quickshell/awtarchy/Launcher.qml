@@ -478,6 +478,11 @@ Singleton {
 
                     model: ScriptModel {
                         values: root.filteredApps()
+
+                        // GridView may clear currentIndex after ScriptModel
+                        // replaces its rows. Re-select only after that reset so
+                        // opening and every search update highlight result 0.
+                        onValuesChanged: Qt.callLater(() => root.resetSelection())
                     }
 
                     delegate: Rectangle {
