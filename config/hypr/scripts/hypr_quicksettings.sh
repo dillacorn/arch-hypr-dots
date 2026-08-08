@@ -8,6 +8,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CORE_SCRIPT="${SCRIPT_DIR}/hypr_quicksettings_core.sh"
 BAR_SETTINGS_SCRIPT="${SCRIPT_DIR}/quickshell_bar_settings.sh"
+APPLICATION_SETTINGS_SCRIPT="${SCRIPT_DIR}/quickshell_application_settings.sh"
 
 [[ -r "$CORE_SCRIPT" ]] || {
   printf 'missing: %s\n' "$CORE_SCRIPT" >&2
@@ -18,6 +19,23 @@ BAR_SETTINGS_SCRIPT="${SCRIPT_DIR}/quickshell_bar_settings.sh"
 # final main call. Overrides below remain small and isolated.
 # shellcheck disable=SC1090
 source <(sed '/^main "\$@"$/d' "$CORE_SCRIPT")
+
+# Keep the established core behavior while inserting Quickshell-specific
+# nested editors into the visible menu.
+MENU_ITEMS=(
+  "Brightness"
+  "Display"
+  "Bar"
+  "Application View - ALT+right-drag launcher; Enter to edit"
+  "Night Light"
+  "Vibrance"
+  "Submap"
+  "Wallpaper Picker"
+  "sched-ext"
+  "Stop sched-ext"
+)
+
+eval "$(declare -f do_action | sed '1s/^do_action /core_do_action /')"
 
 launch_terminal() {
   local self
@@ -64,6 +82,26 @@ select_bar() {
   printf '\033[?25l'
   refresh_bar
   MSG="bar: $(format_bar)"
+}
+
+select_application_view() {
+  if [[ ! -x "$APPLICATION_SETTINGS_SCRIPT" ]]; then
+    MSG='Application View settings: helper not found'
+    return 1
+  fi
+
+  "$APPLICATION_SETTINGS_SCRIPT" --embedded || true
+  mouse_enable
+  printf '\033[?25l'
+  MSG='Application View settings updated'
+}
+
+do_action() {
+  if [[ "${MENU_ITEMS[$SEL]}" == Application\ View* ]]; then
+    select_application_view
+    return
+  fi
+  core_do_action
 }
 
 main "$@"
