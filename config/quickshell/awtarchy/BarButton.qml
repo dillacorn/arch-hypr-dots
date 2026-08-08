@@ -36,12 +36,13 @@ Rectangle {
         if (fontPixelSize > 0)
             return fontPixelSize;
 
-        // Keep the glyphs the user already identified as correctly sized.
+        // Keep the two glyphs the user already identified as correctly sized.
         if (part.indexOf("🖱") >= 0 || part.indexOf("°") >= 0)
             return 14;
 
-        // Only enlarge the icon token. Numeric/text values remain at 14px,
-        // which prevents the mixed-size modules from drifting vertically.
+        // Numeric/text values remain at 14px. Icons get their own size but are
+        // geometrically centered in a fixed-height wrapper below, so mixed
+        // Nerd Font metrics cannot drag adjacent values off-axis.
         if (part.indexOf("") >= 0)
             return 19;
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0)
@@ -59,7 +60,7 @@ Rectangle {
 
         // Workspace/application glyphs. The number beside them stays 14px.
         if (/^[󰀀-󰿿-]$/u.test(part))
-            return 17;
+            return 18;
 
         return Theme.fontPixelSize;
     }
@@ -104,15 +105,21 @@ Rectangle {
             Repeater {
                 model: root.horizontalParts
 
-                delegate: Text {
+                delegate: Item {
                     required property var modelData
+                    width: tokenText.implicitWidth
                     height: horizontalRow.height
-                    text: String(modelData)
-                    color: root.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: root.partFontPixelSize(String(modelData))
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
+
+                    Text {
+                        id: tokenText
+                        anchors.centerIn: parent
+                        text: String(parent.modelData)
+                        color: root.foreground
+                        font.family: Theme.fontFamily
+                        font.pixelSize: root.partFontPixelSize(String(parent.modelData))
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
                 }
             }
         }
@@ -126,16 +133,22 @@ Rectangle {
             Repeater {
                 model: root.verticalParts
 
-                delegate: Text {
+                delegate: Item {
                     required property var modelData
+                    width: Math.max(20, tokenText.implicitWidth)
+                    height: Math.max(16, tokenText.implicitHeight)
                     anchors.horizontalCenter: parent.horizontalCenter
-                    height: Math.max(16, implicitHeight)
-                    text: String(modelData)
-                    color: root.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: root.partFontPixelSize(String(modelData))
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
+
+                    Text {
+                        id: tokenText
+                        anchors.centerIn: parent
+                        text: String(parent.modelData)
+                        color: root.foreground
+                        font.family: Theme.fontFamily
+                        font.pixelSize: root.partFontPixelSize(String(parent.modelData))
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
                 }
             }
         }
