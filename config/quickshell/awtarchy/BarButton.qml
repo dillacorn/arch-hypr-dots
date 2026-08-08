@@ -44,23 +44,24 @@ Rectangle {
         // geometrically centered in a fixed-height wrapper below, so mixed
         // Nerd Font metrics cannot drag adjacent values off-axis.
         if (part.indexOf("") >= 0)
-            return 19;
+            return 20;
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0)
-            return 18;
+            return 19;
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
-            return 18;
+            return 19;
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
-            return 18;
+            return 19;
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0)
-            return 17;
-        if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
-            return 17;
-        if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
-            return 16;
-
-        // Workspace/application glyphs. The number beside them stays 14px.
-        if (/^[󰀀-󰿿-]$/u.test(part))
             return 18;
+        if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
+            return 18;
+        if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
+            return 17;
+
+        // Workspace/application glyphs need more visual weight than their
+        // neighboring workspace number, which remains at 14px.
+        if (/^[󰀀-󰿿-]$/u.test(part))
+            return 20;
 
         return Theme.fontPixelSize;
     }
