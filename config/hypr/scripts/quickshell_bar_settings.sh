@@ -19,6 +19,7 @@ MIN_BAR_SIZE=20
 MAX_BAR_SIZE=80
 MIN_ICON_SCALE=50
 MAX_ICON_SCALE=200
+KEY_SEQUENCE_TIMEOUT=0.15
 
 [[ ${1:-} == --embedded ]] && EMBEDDED=1
 
@@ -48,6 +49,15 @@ term_lines() { tput lines 2>/dev/null || printf '24'; }
 ui_goto() { printf '\033[%s;%sH' "$1" "$2"; }
 ui_clear_line() { printf '\033[2K'; }
 
+ui_footer() {
+    local message="$1" cols width
+    cols="$(term_cols)"
+    width=$((cols - 1))
+    (( width < 1 )) && width=1
+    ui_clear_line
+    printf '%-*.*s' "$width" "$width" "$message"
+}
+
 read_key() {
     local key rest
     IFS= read -rsN1 key || return 1
@@ -57,18 +67,25 @@ read_key() {
         *) printf '%s' "$key"; return 0 ;;
     esac
 
-    if ! IFS= read -rsN1 -t 0.03 rest; then
+    if ! IFS= read -rsN1 -t "$KEY_SEQUENCE_TIMEOUT" rest; then
         printf '%s' "$key"
         return 0
     fi
     key+="$rest"
     if [[ $rest == '[' ]]; then
-        while IFS= read -rsN1 -t 0.03 rest; do
+        while IFS= read -rsN1 -t "$KEY_SEQUENCE_TIMEOUT" rest; do
             key+="$rest"
-            [[ $rest =~ [A-Za-z~] ]] && break
+            # SGR mouse packets end only at M/m. Ordinary CSI sequences end at
+            # a final byte in the @-~ range. Waiting for the real terminator
+            # prevents a click or wheel packet from being split and discarded.
+            if [[ $key == $'\e[<'* ]]; then
+                [[ $rest == M || $rest == m ]] && break
+            elif [[ $rest =~ [@-~] ]]; then
+                break
+            fi
         done
     elif [[ $rest == O ]]; then
-        if IFS= read -rsN1 -t 0.03 rest; then
+        if IFS= read -rsN1 -t "$KEY_SEQUENCE_TIMEOUT" rest; then
             key+="$rest"
         fi
     fi
@@ -90,6 +107,7 @@ parse_mouse_event() {
     MOUSE_Y=$y
     MOUSE_RELEASE=0
     [[ $final == m ]] && MOUSE_RELEASE=1
+    return 0
 }
 
 focused_monitor() {
@@ -230,14 +248,14 @@ apply_each() {
 
 option_menu() {
     local title="$1" current="$2" values_name="$3" labels_name="$4"
-    local -n values="$values_name"
-    local -n labels="$labels_name"
-    local selected=0 key i count cols lines row clicked
-    count=${#values[@]}
+    local -n menu_values="$values_name"
+    local -n menu_labels="$labels_name"
+    local selected=0 key i count cols lines width row clicked
+    count=${#menu_values[@]}
     OPTION_VALUE=""
 
-    for i in "${!values[@]}"; do
-        if [[ ${values[$i]} == "$current" ]]; then
+    for i in "${!menu_values[@]}"; do
+        if [[ ${menu_values[$i]} == "$current" ]]; then
             selected=$i
             break
         fi
@@ -246,43 +264,46 @@ option_menu() {
     while true; do
         cols="$(term_cols)"
         lines="$(term_lines)"
+        width=$((cols - 5))
+        (( width < 1 )) && width=1
         printf '\033[2J\033[H\033[?25l'
         printf '%s\n' "$TITLE"
         printf '%s / %s\n\n' "$SECTION_TITLE" "$title"
         row=4
-        for i in "${!values[@]}"; do
+        for i in "${!menu_values[@]}"; do
             ui_goto "$row" 3
             ui_clear_line
             if (( i == selected )); then
-                printf '\033[7m> %-*.*s\033[0m' "$((cols - 5))" "$((cols - 5))" "${labels[$i]}"
+                printf '\033[7m> %-*.*s\033[0m' "$width" "$width" "${menu_labels[$i]}"
             else
-                printf '  %s' "${labels[$i]}"
+                printf '  %s' "${menu_labels[$i]}"
             fi
             ((row++)) || true
         done
         ui_goto "$lines" 1
-        ui_clear_line
-        printf 'Up/Down or wheel: move | Enter/click: select | Esc/q: back'
+        ui_footer 'Up/Down or wheel: move | Enter/click: select | Esc/q: back'
 
         key="$(read_key)" || return 1
         case "$key" in
             q|Q|$'\e') return 1 ;;
             $'\e[A'|k) ((selected--)) || true; (( selected < 0 )) && selected=$((count - 1)) ;;
             $'\e[B'|j) ((selected++)) || true; (( selected >= count )) && selected=0 ;;
-            __ENTER__|' ') OPTION_VALUE="${values[$selected]}"; return 0 ;;
+            __ENTER__|' ') OPTION_VALUE="${menu_values[$selected]}"; return 0 ;;
             $'\e[<'*)
                 if parse_mouse_event "$key" && (( MOUSE_RELEASE == 0 )); then
-                    case "$MOUSE_BUTTON" in
-                        64) ((selected--)) || true; (( selected < 0 )) && selected=$((count - 1)) ;;
-                        65) ((selected++)) || true; (( selected >= count )) && selected=0 ;;
-                        *)
-                            if (( (MOUSE_BUTTON & 3) == 0 && MOUSE_Y >= 4 && MOUSE_Y < 4 + count )); then
-                                clicked=$((MOUSE_Y - 4))
-                                OPTION_VALUE="${values[$clicked]}"
-                                return 0
-                            fi
-                            ;;
-                    esac
+                    if (( MOUSE_BUTTON & 64 )); then
+                        if (( MOUSE_BUTTON & 1 )); then
+                            ((selected++)) || true
+                            (( selected >= count )) && selected=0
+                        else
+                            ((selected--)) || true
+                            (( selected < 0 )) && selected=$((count - 1))
+                        fi
+                    elif (( (MOUSE_BUTTON & 3) == 0 && MOUSE_Y >= 4 && MOUSE_Y < 4 + count )); then
+                        clicked=$((MOUSE_Y - 4))
+                        OPTION_VALUE="${menu_values[$clicked]}"
+                        return 0
+                    fi
                 fi
                 ;;
         esac
@@ -415,9 +436,11 @@ reset_defaults() {
 }
 
 draw_main() {
-    local cols lines
+    local cols lines width
     cols="$(term_cols)"
     lines="$(term_lines)"
+    width=$((cols - 5))
+    (( width < 1 )) && width=1
     local -a rows=(
         "Target         $(target_label)"
         "Position       $(common_value getpos)"
@@ -436,7 +459,7 @@ draw_main() {
         ui_goto "$row" 3
         ui_clear_line
         if (( i == SEL )); then
-            printf '\033[7m> %-*.*s\033[0m' "$((cols - 5))" "$((cols - 5))" "${rows[$i]}"
+            printf '\033[7m> %-*.*s\033[0m' "$width" "$width" "${rows[$i]}"
         else
             printf '  %s' "${rows[$i]}"
         fi
@@ -449,8 +472,7 @@ draw_main() {
         printf '%.*s' "$cols" "$MSG"
     fi
     ui_goto "$lines" 1
-    ui_clear_line
-    printf 'Up/Down or wheel: move | Enter/click: select | Esc/q: back'
+    ui_footer 'Up/Down or wheel: move | Enter/click: select | Esc/q: back'
 }
 
 activate() {
@@ -480,17 +502,19 @@ main_loop() {
             __ENTER__|' ') activate || break ;;
             $'\e[<'*)
                 if parse_mouse_event "$key" && (( MOUSE_RELEASE == 0 )); then
-                    case "$MOUSE_BUTTON" in
-                        64) ((SEL--)) || true; (( SEL < 0 )) && SEL=$((count - 1)) ;;
-                        65) ((SEL++)) || true; (( SEL >= count )) && SEL=0 ;;
-                        *)
-                            if (( (MOUSE_BUTTON & 3) == 0 && MOUSE_Y >= 4 && MOUSE_Y < 4 + count )); then
-                                clicked=$((MOUSE_Y - 4))
-                                SEL=$clicked
-                                activate || return 0
-                            fi
-                            ;;
-                    esac
+                    if (( MOUSE_BUTTON & 64 )); then
+                        if (( MOUSE_BUTTON & 1 )); then
+                            ((SEL++)) || true
+                            (( SEL >= count )) && SEL=0
+                        else
+                            ((SEL--)) || true
+                            (( SEL < 0 )) && SEL=$((count - 1))
+                        fi
+                    elif (( (MOUSE_BUTTON & 3) == 0 && MOUSE_Y >= 4 && MOUSE_Y < 4 + count )); then
+                        clicked=$((MOUSE_Y - 4))
+                        SEL=$clicked
+                        activate || return 0
+                    fi
                 fi
                 ;;
         esac
