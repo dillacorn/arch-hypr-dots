@@ -12,8 +12,8 @@ Singleton {
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
-    readonly property int defaultWidth: 520
-    readonly property int defaultHeight: 604
+    readonly property int defaultWidth: 420
+    readonly property int defaultHeight: 582
     readonly property int defaultTextSize: 14
     readonly property int defaultIconSize: 18
 
@@ -132,7 +132,7 @@ Singleton {
         Launcher.setPreviewSize(defaultWidth, defaultHeight);
         lastLiveWidth = defaultWidth;
         lastLiveHeight = defaultHeight;
-        statusText = "Reset to original Awtarchy launcher defaults: 520 × 604 px";
+        statusText = "Reset to default: 420 × 582 px";
     }
 
     function open() {
@@ -258,7 +258,7 @@ Singleton {
         readonly property bool editing: root.editingField === fieldName
 
         Layout.fillWidth: true
-        Layout.preferredHeight: 46
+        Layout.preferredHeight: 44
         color: root.selectedIndex === fieldIndex
             ? Theme.subtleActive
             : (rowMouse.containsMouse ? Theme.subtleHover : "transparent")
@@ -359,10 +359,10 @@ Singleton {
         title: "Awtarchy Application View"
         color: "transparent"
         surfaceFormat.opaque: false
-        implicitWidth: 500
-        implicitHeight: 430
-        minimumSize: Qt.size(500, 430)
-        maximumSize: Qt.size(500, 430)
+        implicitWidth: 440
+        implicitHeight: 386
+        minimumSize: Qt.size(440, 386)
+        maximumSize: Qt.size(440, 386)
 
         onClosed: root.close()
 
@@ -421,16 +421,8 @@ Singleton {
 
                 Text {
                     Layout.fillWidth: true
-                    Layout.topMargin: 4
-                    text: "ALT + left-drag launcher = move     ALT + right-drag launcher = resize"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 11
-                }
-
-                Text {
-                    Layout.fillWidth: true
-                    text: "Hover a numeric field and scroll for ±1 px. Click or Enter to type an exact value."
+                    Layout.bottomMargin: 3
+                    text: "Move/resize controls and live dimensions are shown on the launcher preview."
                     color: Theme.muted
                     font.family: Theme.fontFamily
                     font.pixelSize: 10
@@ -479,14 +471,14 @@ Singleton {
 
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 40
+                    Layout.preferredHeight: 38
                     color: root.selectedIndex === 4
                         ? Theme.subtleActive
                         : (resetMouse.containsMouse ? Theme.subtleHover : "transparent")
 
                     Text {
                         anchors.centerIn: parent
-                        text: "Reset to original default  •  520 × 604 px"
+                        text: "Reset to default  •  420 × 582 px"
                         color: Theme.foreground
                         font.family: Theme.fontFamily
                         font.pixelSize: 12
@@ -503,7 +495,7 @@ Singleton {
 
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 34
+                    Layout.preferredHeight: 32
                     color: root.selectedIndex === 5
                         ? Theme.subtleActive
                         : (closeMouse.containsMouse ? Theme.subtleHover : "transparent")
