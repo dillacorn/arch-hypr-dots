@@ -11,6 +11,9 @@ import Quickshell.Io
 ShellRoot {
     id: root
 
+    readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
+    readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
+
     // Force singleton construction before the control IPC endpoint reports ready.
     readonly property bool notificationsReady: Notifications.dnd || !Notifications.dnd
     readonly property bool launcherReady: Launcher !== null
@@ -19,6 +22,12 @@ ShellRoot {
     readonly property bool themesReady: ThemePicker !== null
     readonly property bool barSettingsReady: BarSettings !== null
     readonly property bool applicationSettingsReady: ApplicationSettings !== null
+
+    Process {
+        id: runtimeRules
+        running: true
+        command: [root.runtimeRulesScript]
+    }
 
     Variants {
         model: Quickshell.screens
@@ -113,7 +122,7 @@ ShellRoot {
                         if (dragSurface.hasCandidate
                                 && dragSurface.candidateEdge !== barInstance.position) {
                             barMoveWriter.exec([
-                                (Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")) + "/hypr/scripts/quickshell.sh",
+                                root.configHome + "/hypr/scripts/quickshell.sh",
                                 "setpos",
                                 barInstance.monitorName,
                                 dragSurface.candidateEdge
