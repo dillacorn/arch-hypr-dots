@@ -67,7 +67,7 @@ Rectangle {
         if (fontPixelSize > 0)
             return scaledIconSize(fontPixelSize);
 
-        if (part.indexOf("🖱") >= 0 || part.indexOf("°") >= 0)
+        if (part.indexOf("🖱") >= 0 || part.indexOf("°") >= 0 || /^[↑↓←→]$/.test(part))
             return scaledIconSize(14);
 
         // Workspace numbers remain normal text while the approved workspace
