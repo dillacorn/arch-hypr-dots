@@ -61,7 +61,7 @@ src = Path(sys.argv[1])
 dst = Path(sys.argv[2])
 text = src.read_text(encoding="utf-8")
 
-legacy = {"waybar-git", "fuzzel", "wlogout", "mako"}
+legacy = {"waybar-git", "fuzzel", "wlogout", "mako", "wofi"}
 
 # Arch package group: Quickshell replaces the old shell UI packages.
 match = re.search(r'("Window Management:)([^"]+)(")', text)
@@ -91,12 +91,12 @@ if not aur:
 body_lines = [line for line in aur.group("body").splitlines() if line.strip() not in legacy]
 text = text[:aur.start("body")] + "\n".join(body_lines) + text[aur.end("body"):]
 
-# Fresh config copy: Quickshell replaces Waybar/Fuzzel/Mako/wlogout config trees.
+# Fresh config copy: Quickshell replaces legacy shell UI config trees.
 config_dirs = re.search(r'local -a config_dirs=\(([^)]*)\)', text)
 if not config_dirs:
     raise SystemExit("ERROR: could not locate config_dirs")
 dirs = config_dirs.group(1).split()
-dirs = [item for item in dirs if item not in {"waybar", "fuzzel", "mako", "wlogout"}]
+dirs = [item for item in dirs if item not in {"waybar", "fuzzel", "mako", "wlogout", "wofi"}]
 if "quickshell" not in dirs:
     insert_at = dirs.index("hypr") + 1 if "hypr" in dirs else 0
     dirs.insert(insert_at, "quickshell")
@@ -156,7 +156,7 @@ cleanup_function = r'''
 remove_legacy_shell_packages_stage() {
   local managed_file="/var/lib/awtarchy/managed-packages"
   local pkg tmp
-  local -a obsolete=(waybar-git fuzzel wlogout mako)
+  local -a obsolete=(waybar-git fuzzel wlogout mako wofi)
 
   for pkg in "${obsolete[@]}"; do
     pacman -Q "$pkg" >/dev/null 2>&1 || continue
@@ -189,10 +189,12 @@ remove_legacy_shell_files_stage() {
     "${HOME_DIR}/.config/waybar" \
     "${HOME_DIR}/.config/fuzzel" \
     "${HOME_DIR}/.config/mako" \
-    "${HOME_DIR}/.config/wlogout"
+    "${HOME_DIR}/.config/wlogout" \
+    "${HOME_DIR}/.config/wofi"
 
   for obsolete in \
     cliphist-fuzzel.sh \
+    cliphist-wofi.sh \
     fuzzel_toggle.sh \
     mako_dismiss.sh \
     waybar.sh \
@@ -244,7 +246,7 @@ text = re.sub(
 )
 
 # Validate the effective install selections. Compatibility/migration code may
-# still recognize old paths, but none of the four programs may be selected.
+# still recognize old paths, but no legacy shell program may be selected.
 window = re.search(r'"Window Management:([^"]+)"', text)
 aur = re.search(r'declare -a PACKAGES_AUR=\(\n(?P<body>.*?)\n\)', text, re.S)
 config_dirs = re.search(r'local -a config_dirs=\(([^)]*)\)', text)
