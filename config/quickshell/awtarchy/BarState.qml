@@ -8,8 +8,8 @@ Singleton {
     id: root
 
     readonly property string statePath: (Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")) + "/awtarchy/quickshell-state.json"
-    readonly property int defaultLauncherWidth: 520
-    readonly property int defaultLauncherHeight: 604
+    readonly property int defaultLauncherWidth: 420
+    readonly property int defaultLauncherHeight: 582
     readonly property int defaultAppTextSize: 14
     readonly property int defaultAppIconSize: 18
     property int revision: 0
