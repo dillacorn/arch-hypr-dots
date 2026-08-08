@@ -18,13 +18,22 @@ Singleton {
     readonly property int minimumLauncherWidth: 420
     readonly property int minimumLauncherHeight: 360
     readonly property int applicationColumnMinimumWidth: 300
-    readonly property int configuredAppTextSize: BarState.appTextSizeFor(targetMonitorName, previewGlobalSettings)
-    readonly property int configuredAppIconSize: BarState.appIconSizeFor(targetMonitorName, previewGlobalSettings)
+    readonly property int configuredAppTextSize: previewMode && previewTextSizeOverride > 0
+        ? previewTextSizeOverride
+        : BarState.appTextSizeFor(targetMonitorName, previewGlobalSettings)
+    readonly property int configuredAppIconSize: previewMode && previewIconSizeOverride > 0
+        ? previewIconSizeOverride
+        : BarState.appIconSizeFor(targetMonitorName, previewGlobalSettings)
+    readonly property int liveWidth: Math.round(launcherWindow.width)
+    readonly property int liveHeight: Math.round(launcherWindow.height)
+    readonly property bool previewVisible: launcherWindow.visible && previewMode
     property string targetMonitorName: ""
     property string requestedPlacement: "center"
     property bool launcherPositioned: false
     property bool previewMode: false
     property bool previewGlobalSettings: false
+    property int previewTextSizeOverride: -1
+    property int previewIconSizeOverride: -1
 
     function focusedScreen() {
         const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
@@ -62,17 +71,34 @@ Singleton {
         });
     }
 
-    function applyConfiguredSize() {
+    function setPreviewSize(width, height) {
         const targetScreen = launcherWindow.screen;
         const screenWidth = targetScreen ? targetScreen.width : 1920;
         const screenHeight = targetScreen ? targetScreen.height : 1080;
-        const desiredWidth = BarState.launcherWidthFor(targetMonitorName, previewGlobalSettings);
-        const desiredHeight = BarState.launcherHeightFor(targetMonitorName, previewGlobalSettings);
+        const desiredWidth = Math.min(screenWidth,
+            Math.max(minimumLauncherWidth, Math.round(width)));
+        const desiredHeight = Math.min(screenHeight,
+            Math.max(minimumLauncherHeight, Math.round(height)));
 
-        launcherWindow.implicitWidth = Math.min(screenWidth,
-            Math.max(minimumLauncherWidth, desiredWidth));
-        launcherWindow.implicitHeight = Math.min(screenHeight,
-            Math.max(minimumLauncherHeight, desiredHeight));
+        // implicitWidth/implicitHeight are Quickshell's desired-size API.
+        // Also update actual geometry so a previous manual system resize cannot
+        // leak into the next launcher spawn.
+        launcherWindow.implicitWidth = desiredWidth;
+        launcherWindow.implicitHeight = desiredHeight;
+        launcherWindow.width = desiredWidth;
+        launcherWindow.height = desiredHeight;
+    }
+
+    function setPreviewStyle(textSize, iconSize) {
+        previewTextSizeOverride = Math.max(10, Math.min(28, Math.round(textSize)));
+        previewIconSizeOverride = Math.max(12, Math.min(48, Math.round(iconSize)));
+    }
+
+    function applyConfiguredSize() {
+        setPreviewSize(
+            BarState.launcherWidthFor(targetMonitorName, previewGlobalSettings),
+            BarState.launcherHeightFor(targetMonitorName, previewGlobalSettings)
+        );
     }
 
     function showOnScreen(targetScreen, placement, preview, globalOnly) {
@@ -84,6 +110,10 @@ Singleton {
         requestedPlacement = placement || "center";
         previewMode = !!preview;
         previewGlobalSettings = !!globalOnly;
+        if (!previewMode) {
+            previewTextSizeOverride = -1;
+            previewIconSizeOverride = -1;
+        }
         launcherPositioned = false;
         launcherWindow.screen = targetScreen;
         applyConfiguredSize();
@@ -127,6 +157,8 @@ Singleton {
         search.text = "";
         previewMode = false;
         previewGlobalSettings = false;
+        previewTextSizeOverride = -1;
+        previewIconSizeOverride = -1;
     }
 
     function toggleFocused() {
@@ -235,8 +267,8 @@ Singleton {
         function close(): void { root.close(); }
         function previewMonitor(name: string, globalOnly: bool): void { root.previewMonitor(name, globalOnly); }
         function applyConfiguredSize(): void { root.applyConfiguredSize(); }
-        function currentWidth(): int { return Math.round(launcherWindow.width); }
-        function currentHeight(): int { return Math.round(launcherWindow.height); }
+        function currentWidth(): int { return root.liveWidth; }
+        function currentHeight(): int { return root.liveHeight; }
     }
 
     Timer {
