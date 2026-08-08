@@ -14,16 +14,14 @@ Singleton {
     readonly property string quickshellScript: configHome + "/hypr/scripts/quickshell.sh"
     property string targetMonitorName: ""
     property bool targetAll: false
+    property var pendingCommands: []
+    property var optimisticBarSizes: ({})
+    property var optimisticIconScales: ({})
 
     function focusedScreen() {
         const focusedName = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
         const matches = Quickshell.screens.filter(screen => screen.name === focusedName);
         return matches.length > 0 ? matches[0] : (Quickshell.screens.length > 0 ? Quickshell.screens[0] : null);
-    }
-
-    function screenByName(name) {
-        const matches = Quickshell.screens.filter(screen => screen.name === name);
-        return matches.length > 0 ? matches[0] : null;
     }
 
     function targetNames() {
@@ -33,8 +31,6 @@ Singleton {
     }
 
     function selectMonitor(name) {
-        // Selecting a target must not move/rescale the editor window. The
-        // settings window stays on the display where it was opened.
         targetAll = false;
         targetMonitorName = name;
     }
@@ -51,8 +47,7 @@ Singleton {
             settingsWindow.screen = target;
         }
         settingsWindow.visible = true;
-        settingsWindow.raise();
-        settingsWindow.requestActivate();
+        Qt.callLater(() => settingsPanel.forceActiveFocus());
     }
 
     function close() {
@@ -66,9 +61,20 @@ Singleton {
             open();
     }
 
-    function scheduleStateRefresh() {
-        stateRefreshQuick.restart();
-        stateRefreshFollowup.restart();
+    function queueCommand(args) {
+        const queue = pendingCommands.slice();
+        queue.push(args);
+        pendingCommands = queue;
+        runNextCommand();
+    }
+
+    function runNextCommand() {
+        if (stateWriter.running || pendingCommands.length === 0)
+            return;
+
+        const args = pendingCommands[0];
+        pendingCommands = pendingCommands.slice(1);
+        stateWriter.exec(args);
     }
 
     function runForTargets(command, value) {
@@ -77,9 +83,8 @@ Singleton {
             const args = [quickshellScript, command, names[i]];
             if (value !== undefined && value !== null)
                 args.push(String(value));
-            Quickshell.execDetached(args);
+            queueCommand(args);
         }
-        scheduleStateRefresh();
     }
 
     function commonValue(getter) {
@@ -87,7 +92,7 @@ Singleton {
         if (names.length === 0)
             return "";
 
-        let first = getter(names[0]);
+        const first = getter(names[0]);
         for (let i = 1; i < names.length; ++i) {
             if (getter(names[i]) !== first)
                 return "mixed";
@@ -103,42 +108,58 @@ Singleton {
         return commonValue(name => BarState.enabledFor(name) ? "visible" : "hidden");
     }
 
+    function rawBarSize(name) {
+        if (optimisticBarSizes[name] !== undefined)
+            return Number(optimisticBarSizes[name]);
+        return Number(BarState.monitorState(name).bar_size || 0);
+    }
+
+    function defaultBarSize(name) {
+        const position = BarState.positionFor(name);
+        return position === "left" || position === "right" ? 36 : 28;
+    }
+
     function barSizeValue() {
         const names = targetNames();
         if (names.length === 0)
             return 0;
-        let first = BarState.monitorState(names[0]).bar_size || 0;
+
+        const first = rawBarSize(names[0]);
         for (let i = 1; i < names.length; ++i) {
-            const next = BarState.monitorState(names[i]).bar_size || 0;
-            if (next !== first)
+            if (rawBarSize(names[i]) !== first)
                 return -1;
         }
-        return Number(first);
+        return first;
     }
 
     function defaultBarSizeForTarget() {
         const names = targetNames();
         if (names.length === 0)
             return 28;
-        let vertical = ["left", "right"].indexOf(BarState.positionFor(names[0])) >= 0;
+
+        const first = defaultBarSize(names[0]);
         for (let i = 1; i < names.length; ++i) {
-            const nextVertical = ["left", "right"].indexOf(BarState.positionFor(names[i])) >= 0;
-            if (nextVertical !== vertical)
+            if (defaultBarSize(names[i]) !== first)
                 return 28;
         }
-        return vertical ? 36 : 28;
+        return first;
+    }
+
+    function rawIconScale(name) {
+        if (optimisticIconScales[name] !== undefined)
+            return Number(optimisticIconScales[name]);
+        const value = BarState.monitorState(name).icon_scale;
+        return value === undefined ? 100 : Number(value);
     }
 
     function iconScaleValue() {
         const names = targetNames();
         if (names.length === 0)
             return 100;
-        let first = BarState.monitorState(names[0]).icon_scale;
-        first = first === undefined ? 100 : Number(first);
+
+        const first = rawIconScale(names[0]);
         for (let i = 1; i < names.length; ++i) {
-            let next = BarState.monitorState(names[i]).icon_scale;
-            next = next === undefined ? 100 : Number(next);
-            if (next !== first)
+            if (rawIconScale(names[i]) !== first)
                 return -1;
         }
         return first;
@@ -153,48 +174,83 @@ Singleton {
     }
 
     function changeBarSize(delta) {
-        let current = barSizeValue();
-        if (current < 0)
-            current = defaultBarSizeForTarget();
-        if (current === 0)
-            current = defaultBarSizeForTarget();
-        const value = Math.max(20, Math.min(80, current + delta));
-        runForTargets("setsize", value);
+        const names = targetNames();
+        const nextOptimistic = Object.assign({}, optimisticBarSizes);
+
+        for (let i = 0; i < names.length; ++i) {
+            const name = names[i];
+            let current = rawBarSize(name);
+            if (current === 0)
+                current = defaultBarSize(name);
+            const value = Math.max(20, Math.min(80, current + delta));
+            nextOptimistic[name] = value;
+            queueCommand([quickshellScript, "setsize", name, String(value)]);
+        }
+
+        optimisticBarSizes = nextOptimistic;
     }
 
     function resetBarSize() {
-        runForTargets("setsize", 0);
+        const names = targetNames();
+        const nextOptimistic = Object.assign({}, optimisticBarSizes);
+        for (let i = 0; i < names.length; ++i) {
+            nextOptimistic[names[i]] = 0;
+            queueCommand([quickshellScript, "setsize", names[i], "0"]);
+        }
+        optimisticBarSizes = nextOptimistic;
     }
 
     function changeIconScale(delta) {
-        let current = iconScaleValue();
-        if (current < 0)
-            current = 100;
-        const value = Math.max(50, Math.min(200, current + delta));
-        runForTargets("setscale", value);
+        const names = targetNames();
+        const nextOptimistic = Object.assign({}, optimisticIconScales);
+
+        for (let i = 0; i < names.length; ++i) {
+            const name = names[i];
+            const value = Math.max(50, Math.min(200, rawIconScale(name) + delta));
+            nextOptimistic[name] = value;
+            queueCommand([quickshellScript, "setscale", name, String(value)]);
+        }
+
+        optimisticIconScales = nextOptimistic;
     }
 
     function resetIconScale() {
-        runForTargets("setscale", 100);
+        const names = targetNames();
+        const nextOptimistic = Object.assign({}, optimisticIconScales);
+        for (let i = 0; i < names.length; ++i) {
+            nextOptimistic[names[i]] = 100;
+            queueCommand([quickshellScript, "setscale", names[i], "100"]);
+        }
+        optimisticIconScales = nextOptimistic;
     }
 
     function resetTargets() {
         const names = targetNames();
-        for (let i = 0; i < names.length; ++i)
-            Quickshell.execDetached([quickshellScript, "reset-mon", names[i]]);
-        scheduleStateRefresh();
+        const nextSizes = Object.assign({}, optimisticBarSizes);
+        const nextScales = Object.assign({}, optimisticIconScales);
+
+        for (let i = 0; i < names.length; ++i) {
+            nextSizes[names[i]] = 0;
+            nextScales[names[i]] = 100;
+            queueCommand([quickshellScript, "reset-mon", names[i]]);
+        }
+
+        optimisticBarSizes = nextSizes;
+        optimisticIconScales = nextScales;
     }
 
-    Timer {
-        id: stateRefreshQuick
-        interval: 100
-        repeat: false
-        onTriggered: BarState.refresh()
+    Process {
+        id: stateWriter
+        onExited: {
+            BarState.refresh();
+            stateRefreshFollowup.restart();
+            root.runNextCommand();
+        }
     }
 
     Timer {
         id: stateRefreshFollowup
-        interval: 350
+        interval: 100
         repeat: false
         onTriggered: BarState.refresh()
     }
@@ -217,12 +273,26 @@ Singleton {
         minimumSize: Qt.size(520, 560)
         maximumSize: Qt.size(520, 560)
 
+        onClosed: root.close()
+        onVisibleChanged: {
+            if (visible)
+                Qt.callLater(() => settingsPanel.forceActiveFocus());
+        }
+
         Rectangle {
+            id: settingsPanel
             anchors.fill: parent
             color: Theme.popupBackground
-            border.width: 1
-            border.color: Theme.subtleActive
+            border.width: 0
             radius: 0
+            focus: settingsWindow.visible
+
+            Keys.onPressed: event => {
+                if (event.key === Qt.Key_Escape) {
+                    root.close();
+                    event.accepted = true;
+                }
+            }
 
             ColumnLayout {
                 anchors.fill: parent
@@ -240,7 +310,7 @@ Singleton {
 
                 Text {
                     Layout.fillWidth: true
-                    text: "ALT + left-drag the bar toward top, bottom, left, or right to move it."
+                    text: "ALT + left-drag the actual bar toward top, bottom, left, or right to move it."
                     color: Theme.muted
                     font.family: Theme.fontFamily
                     font.pixelSize: 12
