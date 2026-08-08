@@ -150,8 +150,9 @@ text = re.sub(
     text,
 )
 
-# Remove Awtarchy-managed legacy shell packages after Quickshell and its configs
-# are installed. Packages the user installed independently are deliberately kept.
+# These package names are the retired Awtarchy shell stack. Older Awtarchy
+# installs may predate the managed-package ledger, so the Quickshell migration
+# removes them even when they are absent from /var/lib/awtarchy/managed-packages.
 cleanup_function = r'''
 remove_legacy_shell_packages_stage() {
   local managed_file="/var/lib/awtarchy/managed-packages"
@@ -161,19 +162,16 @@ remove_legacy_shell_packages_stage() {
   for pkg in "${obsolete[@]}"; do
     pacman -Q "$pkg" >/dev/null 2>&1 || continue
 
-    if [[ ! -f "$managed_file" ]] || ! grep -Fxq "$pkg" "$managed_file"; then
-      warn "Keeping ${pkg}: it is installed but is not recorded as Awtarchy-managed."
-      continue
-    fi
-
-    log "Removing obsolete Awtarchy shell package: ${pkg}"
+    log "Removing retired Awtarchy shell package: ${pkg}"
     if pacman -Rns --noconfirm "$pkg"; then
-      tmp="$(mktemp)"
-      grep -Fxv "$pkg" "$managed_file" >"$tmp" || true
-      cat "$tmp" >"$managed_file"
-      rm -f "$tmp"
+      if [[ -f "$managed_file" ]]; then
+        tmp="$(mktemp)"
+        grep -Fxv "$pkg" "$managed_file" >"$tmp" || true
+        cat "$tmp" >"$managed_file"
+        rm -f "$tmp"
+      fi
     else
-      warn "Could not remove obsolete package ${pkg}; continuing conversion."
+      warn "Could not remove retired package ${pkg}; continuing conversion."
     fi
   done
 }
@@ -190,7 +188,8 @@ remove_legacy_shell_files_stage() {
     "${HOME_DIR}/.config/fuzzel" \
     "${HOME_DIR}/.config/mako" \
     "${HOME_DIR}/.config/wlogout" \
-    "${HOME_DIR}/.config/wofi"
+    "${HOME_DIR}/.config/wofi" \
+    "${HOME_DIR}/.cache/waybar"
 
   for obsolete in \
     cliphist-fuzzel.sh \
@@ -216,6 +215,92 @@ remove_legacy_shell_files_stage() {
 }
 
 '''
+
+# The normal updater must perform the same one-time migration. This is explicit
+# instead of relying only on old baseline reconstruction because legacy systems
+# may not have a complete baseline or managed-package ledger.
+update_cleanup_function = r'''
+remove_legacy_shell_update_artifacts() {
+  local scripts_dir="${HOME_DIR}/.config/hypr/scripts"
+  local applications_dir="${HOME_DIR}/.local/share/applications"
+  local managed_file="/var/lib/awtarchy/managed-packages"
+  local pkg process tmp sudo_ok=0 package_cleanup_ok=0
+  local -a obsolete_packages=(waybar-git fuzzel wlogout mako wofi)
+  local -a obsolete_processes=(waybar fuzzel wlogout mako wofi)
+  local -a installed=()
+
+  # Stop only the target user's retired shell processes. Quickshell stays alive.
+  for process in "${obsolete_processes[@]}"; do
+    run_target pkill -x "$process" >/dev/null 2>&1 || true
+  done
+
+  rm -rf -- \
+    "${HOME_DIR}/.config/waybar" \
+    "${HOME_DIR}/.config/fuzzel" \
+    "${HOME_DIR}/.config/mako" \
+    "${HOME_DIR}/.config/wlogout" \
+    "${HOME_DIR}/.config/wofi" \
+    "${HOME_DIR}/.cache/waybar"
+
+  rm -f -- \
+    "${scripts_dir}/cliphist-fuzzel.sh" \
+    "${scripts_dir}/cliphist-wofi.sh" \
+    "${scripts_dir}/fuzzel_toggle.sh" \
+    "${scripts_dir}/mako_dismiss.sh" \
+    "${scripts_dir}/waybar.sh" \
+    "${scripts_dir}/waybar_flip.sh" \
+    "${scripts_dir}/waybar_ready_sound.sh" \
+    "${scripts_dir}/waybar_restore_resume.sh" \
+    "${scripts_dir}/waybar_rotate.sh" \
+    "${scripts_dir}/waybar_toggle.sh" \
+    "${scripts_dir}/waybar_toggle_idle.sh" \
+    "${scripts_dir}/wlogout_toggle.sh" \
+    "${applications_dir}/waybar_flip.desktop" \
+    "${applications_dir}/waybar_rotate.desktop" \
+    "${applications_dir}/waybar_toggle.desktop"
+
+  for pkg in "${obsolete_packages[@]}"; do
+    pacman -Q "$pkg" >/dev/null 2>&1 && installed+=("$pkg")
+  done
+
+  if (( ${#installed[@]} == 0 )); then
+    return 0
+  fi
+
+  log "Removing retired Awtarchy shell packages: ${installed[*]}"
+  if [[ "${EUID}" -eq 0 ]]; then
+    if pacman -Rns --noconfirm "${installed[@]}"; then
+      package_cleanup_ok=1
+    fi
+  elif command -v sudo >/dev/null 2>&1; then
+    if sudo -v && sudo pacman -Rns --noconfirm "${installed[@]}"; then
+      sudo_ok=1
+      package_cleanup_ok=1
+    fi
+  else
+    warn "sudo is unavailable; could not remove retired shell packages: ${installed[*]}"
+  fi
+
+  if (( package_cleanup_ok == 0 )); then
+    warn "Could not remove all retired shell packages; the config migration will continue."
+    return 0
+  fi
+
+  [[ -f "$managed_file" ]] || return 0
+  tmp="$(mktemp)"
+  grep -Ev '^(waybar-git|fuzzel|wlogout|mako|wofi)$' "$managed_file" >"$tmp" || true
+  if [[ "${EUID}" -eq 0 ]]; then
+    install -m 0644 "$tmp" "$managed_file"
+  elif (( sudo_ok == 1 )); then
+    sudo install -m 0644 "$tmp" "$managed_file"
+  else
+    warn "Retired packages were removed but the Awtarchy package ledger could not be updated."
+  fi
+  rm -f -- "$tmp"
+}
+
+'''
+
 run_install_marker = 'run_install() {\n'
 if run_install_marker not in text:
     raise SystemExit("ERROR: could not locate run_install")
@@ -234,6 +319,32 @@ install_sequence_replacement = '''  copy_awtarchy_configs_stage
 if install_sequence not in text:
     raise SystemExit("ERROR: could not locate install stage sequence")
 text = text.replace(install_sequence, install_sequence_replacement, 1)
+
+update_main_marker = '''main() {
+  parse_args "$@" || return 0
+'''
+if update_main_marker not in text:
+    raise SystemExit("ERROR: could not locate updater main")
+text = text.replace(update_main_marker, update_cleanup_function + update_main_marker, 1)
+
+update_apply_marker = '''  apply_plan "$plan_file" || die "Update failed and user files were rolled back."
+  if [[ "$UPDATE_MODE" == "preserve" && -n "$fuzzel_anchor" ]]; then
+    restore_fuzzel_anchor "$fuzzel_anchor"
+  fi
+
+  hardware_reconcile
+'''
+update_apply_replacement = '''  apply_plan "$plan_file" || die "Update failed and user files were rolled back."
+  if [[ "$UPDATE_MODE" == "preserve" && -n "$fuzzel_anchor" ]]; then
+    restore_fuzzel_anchor "$fuzzel_anchor"
+  fi
+
+  remove_legacy_shell_update_artifacts
+  hardware_reconcile
+'''
+if update_apply_marker not in text:
+    raise SystemExit("ERROR: could not locate updater apply sequence")
+text = text.replace(update_apply_marker, update_apply_replacement, 1)
 
 # The old Waybar script chmod block is obsolete because those helpers were moved
 # under config/hypr/scripts.
