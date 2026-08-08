@@ -42,7 +42,6 @@ Singleton {
         launcherWindow.visible = true;
     }
 
-    // Apps icon behavior: toggle on the bar that was clicked.
     function openForScreen(targetScreen) {
         if (launcherWindow.visible) {
             close();
@@ -88,8 +87,6 @@ Singleton {
             .toLowerCase();
     }
 
-    // Lightweight fzf-like subsequence scoring. Exact/prefix matches win, then
-    // consecutive characters and word-boundary matches. Non-subsequences lose.
     function fuzzyScore(haystack, query) {
         if (query.length === 0)
             return 0;
@@ -197,7 +194,6 @@ Singleton {
         color: "transparent"
         surfaceFormat.opaque: false
 
-        // Closely match Awtarchy's Fuzzel width=40, lines=20 presentation.
         implicitWidth: Math.min(520, Math.max(420, (screen ? screen.width : 1920) * 0.27))
         implicitHeight: Math.min(604, Math.max(360, (screen ? screen.height : 1080) - 80))
         minimumSize: Qt.size(420, 360)
@@ -221,7 +217,6 @@ Singleton {
             radius: 0
             opacity: root.launcherPositioned ? 1 : 0
 
-            // Alt + left-drag anywhere in the launcher uses the compositor move.
             DragHandler {
                 target: null
                 acceptedButtons: Qt.LeftButton
@@ -362,6 +357,11 @@ Singleton {
                             hoverEnabled: true
                             onEntered: appList.currentIndex = row.index
                             onClicked: root.launchEntry(row.entry)
+                            onWheel: wheel => {
+                                const maxY = Math.max(0, appList.contentHeight - appList.height);
+                                appList.contentY = Math.max(0, Math.min(maxY, appList.contentY - wheel.angleDelta.y));
+                                wheel.accepted = true;
+                            }
                         }
                     }
                 }
