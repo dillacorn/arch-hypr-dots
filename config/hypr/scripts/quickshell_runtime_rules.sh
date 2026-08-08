@@ -5,7 +5,7 @@ set -euo pipefail
 
 command -v hyprctl >/dev/null 2>&1 || exit 127
 
-hyprctl eval '
+if ! hyprctl eval '
 if awtarchy_quickshell_launcher_rule == nil then
     awtarchy_quickshell_launcher_rule = hl.window_rule({
         name = "awtarchy-quickshell-launcher-runtime",
@@ -20,11 +20,44 @@ if awtarchy_quickshell_launcher_rule == nil then
     })
 end
 
--- The normal ALT mouse binds should continue moving/resizing regular windows,
--- but must pass through when their dispatcher cannot act on a layer surface.
--- This is what allows ALT + left-drag directly on the Quickshell bar.
+-- Route ALT + left-click by the surface under the pointer. The regular
+-- window drag dispatcher can report success while the pointer is over a layer
+-- surface, so auto_consuming is not sufficient here. Returning pass_event only
+-- for Awtarchy bar layers gives Quickshell the complete pointer stream without
+-- passing ALT-clicks through ordinary application windows.
+local function pointer_is_on_awtarchy_bar()
+    local cursor = hl.get_cursor_pos()
+    if cursor == nil then
+        return false
+    end
+
+    for _, layer in ipairs(hl.get_layers({ namespace = "awtarchy-bar" })) do
+        local monitor = layer.monitor
+        if layer.mapped and monitor ~= nil
+            and cursor.x >= monitor.x + layer.x
+            and cursor.x < monitor.x + layer.x + layer.w
+            and cursor.y >= monitor.y + layer.y
+            and cursor.y < monitor.y + layer.y + layer.h then
+            return true
+        end
+    end
+
+    return false
+end
+
+local drag_window = hl.dsp.window.drag()
+
 hl.unbind("ALT + mouse:272")
 hl.unbind("ALT + mouse:273")
-hl.bind("ALT + mouse:272", hl.dsp.window.drag(), { mouse = true, auto_consuming = true })
-hl.bind("ALT + mouse:273", hl.dsp.window.resize(), { mouse = true, auto_consuming = true })
-' >/dev/null 2>&1 || true
+hl.bind("ALT + mouse:272", function()
+    if pointer_is_on_awtarchy_bar() then
+        return { ok = true, pass_event = true }
+    end
+
+    return drag_window()
+end, { mouse = true })
+hl.bind("ALT + mouse:273", hl.dsp.window.resize(), { mouse = true })
+' >/dev/null; then
+    printf '%s\n' 'quickshell_runtime_rules.sh: failed to register runtime rules' >&2
+    exit 1
+fi

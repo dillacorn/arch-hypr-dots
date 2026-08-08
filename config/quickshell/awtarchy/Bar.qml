@@ -8,11 +8,14 @@ import Quickshell.Io
 import Quickshell.Services.Pipewire
 import Quickshell.Services.SystemTray
 import Quickshell.Services.UPower
+import Quickshell.Wayland
 import Quickshell.Widgets
 
 PanelWindow {
     id: bar
     required property var modelData
+
+    WlrLayershell.namespace: "awtarchy-bar"
 
     screen: modelData
     readonly property string monitorName: modelData ? modelData.name : ""
@@ -284,7 +287,7 @@ PanelWindow {
             delegate: BarButton {
                 required property var modelData
                 vertical: true
-                fixedWidth: 36
+                fixedWidth: bar.barSize
                 label: bar.workspaceIcon(modelData.id).replace(" ", "\n")
                 normalBackground: modelData.urgent ? Theme.urgent : (modelData.active ? Theme.subtleActive : "transparent")
                 foreground: modelData.urgent ? Theme.dark : Theme.foreground
@@ -703,7 +706,7 @@ PanelWindow {
             spacing: 0
 
             BarButton {
-                vertical: true; fixedWidth: 36; label: ""; tooltip: "app-launcher"
+                vertical: true; fixedWidth: bar.barSize; label: ""; tooltip: "app-launcher"
                 hoverBackground: Theme.strongHover
                 onClicked: Launcher.openForScreen(bar.screen)
                 onRightClicked: Launcher.openForScreen(bar.screen)
@@ -721,7 +724,7 @@ PanelWindow {
 
                 BarButton {
                     vertical: true
-                    fixedWidth: 36
+                    fixedWidth: bar.barSize
                     label: "🖱"
                     tooltip: "Toggle mouse submap"
                     onClicked: Quickshell.execDetached([bar.mouseSubmapScript, "toggle"])
@@ -754,7 +757,7 @@ PanelWindow {
                         BarButton {
                             anchors.top: parent.top
                             vertical: true
-                            fixedWidth: 36
+                            fixedWidth: bar.barSize
                             fixedHeight: bar.verticalItemSize
                             label: arrowSlotVertical.modelData.label
                             tooltip: arrowSlotVertical.modelData.tip
@@ -768,13 +771,13 @@ PanelWindow {
 
             BarButton {
                 visible: bar.scratchpadCount() > 0
-                vertical: true; fixedWidth: 36
+                vertical: true; fixedWidth: bar.barSize
                 label: "\n" + bar.scratchpadCount()
             }
 
             BarButton {
                 visible: submapFile.text().trim().length > 0
-                vertical: true; fixedWidth: 36
+                vertical: true; fixedWidth: bar.barSize
                 label: submapFile.text().trim()
                 tooltip: "Current submap: " + submapFile.text().trim() + " (click to reset)"
                 onClicked: Quickshell.execDetached([bar.mouseSubmapScript, "reset"])
@@ -787,24 +790,24 @@ PanelWindow {
             spacing: 0
 
             BarButton {
-                vertical: true; fixedWidth: 36
+                vertical: true; fixedWidth: bar.barSize
                 label: SystemState.idleBroken ? "" : (SystemState.idleInhibited ? "" : "")
                 foreground: SystemState.idleBroken ? Theme.urgent : Theme.foreground
                 tooltip: SystemState.idleInhibited ? "Idle inhibitor: activated\nClick to deactivate" : "Idle inhibitor: deactivated\nClick to activate"
                 onClicked: SystemState.toggleIdle()
             }
 
-            BarButton { vertical: true; fixedWidth: 36; label: "\n" + SystemState.cpuUsage; tooltip: SystemState.cpuTooltip }
+            BarButton { vertical: true; fixedWidth: bar.barSize; label: "\n" + SystemState.cpuUsage; tooltip: SystemState.cpuTooltip }
             BarButton {
-                vertical: true; fixedWidth: 36
+                vertical: true; fixedWidth: bar.barSize
                 readonly property string temp: SystemState.cpuTemp
                 label: temp.length > 1 ? temp.slice(-1) + "\n" + temp.slice(0, -1) : temp
                 tooltip: SystemState.temperatureTooltip
             }
-            BarButton { vertical: true; fixedWidth: 36; label: "\n" + SystemState.memoryUsage; tooltip: "Memory usage: " + SystemState.memoryUsage + "%" }
+            BarButton { vertical: true; fixedWidth: bar.barSize; label: "\n" + SystemState.memoryUsage; tooltip: "Memory usage: " + SystemState.memoryUsage + "%" }
 
             BarButton {
-                vertical: true; fixedWidth: 36
+                vertical: true; fixedWidth: bar.barSize
                 label: "\n" + (bar.brightnessValue >= 0 ? bar.brightnessValue : "?")
                 tooltip: bar.brightnessTooltip
                 onClicked: bar.ddcAction("menu")
@@ -815,7 +818,7 @@ PanelWindow {
 
             BarButton {
                 visible: UPower.displayDevice.ready && UPower.displayDevice.isLaptopBattery
-                vertical: true; fixedWidth: 36
+                vertical: true; fixedWidth: bar.barSize
                 readonly property int pct: Math.round(UPower.displayDevice.percentage * 100)
                 label: (UPower.displayDevice.changeRate > 0 ? "" : bar.batteryIcon(pct)) + "\n" + pct
                 foreground: pct <= 15 && UPower.displayDevice.changeRate <= 0 ? Theme.critical : (UPower.displayDevice.changeRate > 0 ? Theme.charging : Theme.foreground)
@@ -823,7 +826,7 @@ PanelWindow {
             }
 
             BarButton {
-                vertical: true; fixedWidth: 36
+                vertical: true; fixedWidth: bar.barSize
                 readonly property int vol: Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio ? Math.round(Pipewire.defaultAudioSink.audio.volume * 100) : 0
                 label: bar.audioIcon(vol) + "\n" + (Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio && Pipewire.defaultAudioSink.audio.muted ? "mute" : vol)
                 foreground: Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio && Pipewire.defaultAudioSink.audio.muted ? Theme.muted : Theme.foreground
@@ -835,7 +838,7 @@ PanelWindow {
             }
 
             BarButton {
-                vertical: true; fixedWidth: 36
+                vertical: true; fixedWidth: bar.barSize
                 label: bar.clockDate
                     ? "\n" + Qt.formatDateTime(bar.now, "ddd") + "\n" + Qt.formatDateTime(bar.now, "M/d")
                     : "\n" + Qt.formatDateTime(bar.now, "HH") + "\n" + Qt.formatDateTime(bar.now, "mm")
@@ -849,13 +852,13 @@ PanelWindow {
             TrayColumn {}
 
             BarButton {
-                vertical: true; fixedWidth: 36; label: ""; tooltip: "Clipboard history"
+                vertical: true; fixedWidth: bar.barSize; label: ""; tooltip: "Clipboard history"
                 hoverBackground: Theme.strongHover
                 onClicked: ClipboardMenu.openFocused()
                 onRightClicked: ClipboardMenu.openFocused()
             }
             BarButton {
-                vertical: true; fixedWidth: 36
+                vertical: true; fixedWidth: bar.barSize
                 label: Notifications.dnd ? "" : ""
                 foreground: Notifications.dnd ? Theme.critical : Theme.foreground
                 hoverBackground: Theme.strongHover
@@ -863,7 +866,7 @@ PanelWindow {
                 onClicked: Notifications.toggleDnd()
             }
             BarButton {
-                vertical: true; fixedWidth: 36; label: ""; tooltip: "power menu"
+                vertical: true; fixedWidth: bar.barSize; label: ""; tooltip: "power menu"
                 hoverBackground: Theme.strongHover
                 onClicked: PowerMenu.openForScreen(bar.screen)
                 onRightClicked: PowerMenu.openForScreen(bar.screen)

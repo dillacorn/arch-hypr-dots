@@ -94,6 +94,7 @@ ShellRoot {
                     acceptedButtons: Qt.LeftButton
                     hoverEnabled: false
                     propagateComposedEvents: true
+                    preventStealing: dragging
                     property bool dragging: false
                     property real startX: 0
                     property real startY: 0
@@ -182,6 +183,7 @@ ShellRoot {
             aboveWindows: true
             exclusionMode: ExclusionMode.Ignore
             exclusiveZone: 0
+            mask: Region {}
 
             implicitWidth: candidateVertical ? previewSize : 0
             implicitHeight: candidateVertical ? 0 : previewSize
