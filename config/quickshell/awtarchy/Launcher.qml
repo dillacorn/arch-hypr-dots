@@ -15,19 +15,26 @@ Singleton {
     readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_launcher_position.sh"
     readonly property string animationStatePath: runtimeDir + "/hypr-animations-enabled"
-    readonly property int defaultLauncherWidth: 520
-    readonly property int defaultLauncherHeight: 604
     readonly property int minimumLauncherWidth: 420
     readonly property int minimumLauncherHeight: 360
     readonly property int applicationColumnMinimumWidth: 300
+    readonly property int configuredAppTextSize: BarState.appTextSizeFor(targetMonitorName, previewGlobalSettings)
+    readonly property int configuredAppIconSize: BarState.appIconSizeFor(targetMonitorName, previewGlobalSettings)
     property string targetMonitorName: ""
     property string requestedPlacement: "center"
     property bool launcherPositioned: false
+    property bool previewMode: false
+    property bool previewGlobalSettings: false
 
     function focusedScreen() {
         const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
         const matches = Quickshell.screens.filter(screen => screen.name === name);
         return matches.length > 0 ? matches[0] : (Quickshell.screens.length > 0 ? Quickshell.screens[0] : null);
+    }
+
+    function screenByName(name) {
+        const matches = Quickshell.screens.filter(screen => screen.name === name);
+        return matches.length > 0 ? matches[0] : null;
     }
 
     function placementForScreen(targetScreen) {
@@ -55,14 +62,31 @@ Singleton {
         });
     }
 
-    function showOnScreen(targetScreen, placement) {
+    function applyConfiguredSize() {
+        const targetScreen = launcherWindow.screen;
+        const screenWidth = targetScreen ? targetScreen.width : 1920;
+        const screenHeight = targetScreen ? targetScreen.height : 1080;
+        const desiredWidth = BarState.launcherWidthFor(targetMonitorName, previewGlobalSettings);
+        const desiredHeight = BarState.launcherHeightFor(targetMonitorName, previewGlobalSettings);
+
+        launcherWindow.implicitWidth = Math.min(screenWidth,
+            Math.max(minimumLauncherWidth, desiredWidth));
+        launcherWindow.implicitHeight = Math.min(screenHeight,
+            Math.max(minimumLauncherHeight, desiredHeight));
+    }
+
+    function showOnScreen(targetScreen, placement, preview, globalOnly) {
         if (!targetScreen)
             return;
 
+        focusGrab.active = false;
         targetMonitorName = targetScreen.name;
         requestedPlacement = placement || "center";
+        previewMode = !!preview;
+        previewGlobalSettings = !!globalOnly;
         launcherPositioned = false;
         launcherWindow.screen = targetScreen;
+        applyConfiguredSize();
         search.text = "";
         launcherWindow.visible = true;
         resetSelection();
@@ -74,7 +98,7 @@ Singleton {
             close();
             return;
         }
-        showOnScreen(targetScreen, placementForScreen(targetScreen));
+        showOnScreen(targetScreen, placementForScreen(targetScreen), false, false);
     }
 
     // Keyboard launch is centered along the active bar edge. If that monitor's
@@ -82,10 +106,18 @@ Singleton {
     function openFocused() {
         const target = focusedScreen();
         if (launcherWindow.visible) {
-            search.forceActiveFocus();
+            if (!previewMode)
+                search.forceActiveFocus();
             return;
         }
-        showOnScreen(target, centeredPlacementForScreen(target));
+        showOnScreen(target, centeredPlacementForScreen(target), false, false);
+    }
+
+    function previewMonitor(name, globalOnly) {
+        const target = screenByName(name) || focusedScreen();
+        if (!target)
+            return;
+        showOnScreen(target, centeredPlacementForScreen(target), true, globalOnly);
     }
 
     function close() {
@@ -93,6 +125,8 @@ Singleton {
         launcherWindow.visible = false;
         launcherPositioned = false;
         search.text = "";
+        previewMode = false;
+        previewGlobalSettings = false;
     }
 
     function toggleFocused() {
@@ -101,7 +135,7 @@ Singleton {
             return;
         }
         const target = focusedScreen();
-        showOnScreen(target, centeredPlacementForScreen(target));
+        showOnScreen(target, centeredPlacementForScreen(target), false, false);
     }
 
     function positionLauncher() {
@@ -167,7 +201,7 @@ Singleton {
     }
 
     function launchEntry(entry) {
-        if (!entry)
+        if (!entry || previewMode)
             return;
 
         const workingDirectory = entry.workingDirectory || "";
@@ -199,6 +233,10 @@ Singleton {
         function toggle(): void { root.toggleFocused(); }
         function open(): void { root.openFocused(); }
         function close(): void { root.close(); }
+        function previewMonitor(name: string, globalOnly: bool): void { root.previewMonitor(name, globalOnly); }
+        function applyConfiguredSize(): void { root.applyConfiguredSize(); }
+        function currentWidth(): int { return Math.round(launcherWindow.width); }
+        function currentHeight(): int { return Math.round(launcherWindow.height); }
     }
 
     Timer {
@@ -214,8 +252,12 @@ Singleton {
             if (!launcherWindow.visible)
                 return;
             root.launcherPositioned = true;
-            focusGrab.active = true;
-            Qt.callLater(() => search.forceActiveFocus());
+            if (root.previewMode) {
+                focusGrab.active = false;
+            } else {
+                focusGrab.active = true;
+                Qt.callLater(() => search.forceActiveFocus());
+            }
         }
     }
 
@@ -223,7 +265,7 @@ Singleton {
         id: focusGrab
         windows: [launcherWindow]
         onCleared: {
-            if (launcherWindow.visible)
+            if (launcherWindow.visible && !root.previewMode)
                 root.close();
         }
     }
@@ -235,10 +277,8 @@ Singleton {
         color: "transparent"
         surfaceFormat.opaque: false
 
-        implicitWidth: Math.min(root.defaultLauncherWidth,
-            Math.max(root.minimumLauncherWidth, screen ? screen.width : 1920))
-        implicitHeight: Math.min(root.defaultLauncherHeight,
-            Math.max(root.minimumLauncherHeight, screen ? screen.height : 1080))
+        implicitWidth: BarState.defaultLauncherWidth
+        implicitHeight: BarState.defaultLauncherHeight
         minimumSize: Qt.size(root.minimumLauncherWidth, root.minimumLauncherHeight)
         maximumSize: Qt.size(
             Math.max(root.minimumLauncherWidth, screen ? screen.width : 1920),
@@ -331,7 +371,8 @@ Singleton {
                             font.weight: Font.Medium
                             verticalAlignment: TextInput.AlignVCenter
                             clip: true
-                            focus: launcherWindow.visible && root.launcherPositioned
+                            focus: launcherWindow.visible && root.launcherPositioned && !root.previewMode
+                            enabled: !root.previewMode
 
                             Keys.onPressed: event => {
                                 if (event.key === Qt.Key_Escape) {
@@ -393,7 +434,9 @@ Singleton {
                     readonly property int columnCount: Math.max(1,
                         Math.floor(width / root.applicationColumnMinimumWidth))
                     cellWidth: width / columnCount
-                    cellHeight: 28
+                    cellHeight: Math.max(28,
+                        root.configuredAppIconSize + 10,
+                        root.configuredAppTextSize + 14)
 
                     model: ScriptModel {
                         values: root.filteredApps()
@@ -417,9 +460,9 @@ Singleton {
                             spacing: 8
 
                             IconImage {
-                                Layout.preferredWidth: 18
-                                Layout.preferredHeight: 18
-                                implicitSize: 18
+                                Layout.preferredWidth: root.configuredAppIconSize
+                                Layout.preferredHeight: root.configuredAppIconSize
+                                implicitSize: root.configuredAppIconSize
                                 source: row.entry && row.entry.icon && row.entry.icon.length > 0
                                     ? Quickshell.iconPath(row.entry.icon, true)
                                     : Quickshell.iconPath("application-x-executable", true)
@@ -430,7 +473,7 @@ Singleton {
                                 text: row.entry ? (row.entry.name || "Application") : "Application"
                                 color: Theme.foreground
                                 font.family: Theme.fontFamily
-                                font.pixelSize: 14
+                                font.pixelSize: root.configuredAppTextSize
                                 font.weight: Font.Medium
                                 elide: Text.ElideRight
                             }
@@ -440,6 +483,7 @@ Singleton {
                             id: hover
                             anchors.fill: parent
                             hoverEnabled: true
+                            enabled: !root.previewMode
                             onClicked: root.launchEntry(row.entry)
                             onWheel: wheel => {
                                 const minY = appList.originY;
