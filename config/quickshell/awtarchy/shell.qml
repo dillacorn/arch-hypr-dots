@@ -20,7 +20,11 @@ ShellRoot {
 
     Variants {
         model: Quickshell.screens
-        Bar {}
+        Bar {
+            implicitWidth: vertical ? BarState.barSizeFor(monitorName, true) : 0
+            implicitHeight: vertical ? 0 : BarState.barSizeFor(monitorName, false)
+            exclusiveZone: BarState.barSizeFor(monitorName, vertical)
+        }
     }
 
     IpcHandler {
