@@ -6,6 +6,7 @@
 
 import QtQuick
 import Quickshell
+import Quickshell.Hyprland
 import Quickshell.Io
 
 ShellRoot {
@@ -28,6 +29,14 @@ ShellRoot {
         id: runtimeRules
         running: true
         command: [root.runtimeRulesScript]
+    }
+
+    Connections {
+        target: Hyprland
+        function onRawEvent(event) {
+            if (event && event.name === "configreloaded")
+                runtimeRules.exec([root.runtimeRulesScript]);
+        }
     }
 
     Variants {
