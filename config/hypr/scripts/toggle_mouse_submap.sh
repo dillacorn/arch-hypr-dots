@@ -4,6 +4,7 @@
 set -euo pipefail
 
 SUBMAP_FILE="/tmp/hypr-submap"
+RUNTIME_RULES_SCRIPT="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/quickshell_runtime_rules.sh"
 
 lua_eval() {
   hyprctl eval "$1" >/dev/null 2>&1 || true
@@ -21,6 +22,9 @@ reset_mouse() {
   hyprctl dispatch 'hl.dsp.submap("reset")' >/dev/null 2>&1 || true
 
   lua_eval 'hl.unbind("mouse:272"); hl.unbind("mouse:273"); hl.unbind("mouse:274"); hl.unbind("ALT + mouse:272"); hl.unbind("ALT + mouse:273"); hl.bind("ALT + mouse:272", hl.dsp.window.drag(), { mouse = true }); hl.bind("ALT + mouse:273", hl.dsp.window.resize(), { mouse = true })'
+  if [[ -x "$RUNTIME_RULES_SCRIPT" ]]; then
+    "$RUNTIME_RULES_SCRIPT" >/dev/null 2>&1 || true
+  fi
 
   truncate -s 0 "$SUBMAP_FILE" 2>/dev/null || true
   notify-send -a Hyprland -t 1000 "mouse mode: OFF" >/dev/null 2>&1 || true
