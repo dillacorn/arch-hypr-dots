@@ -63,6 +63,7 @@ Item {
             anchors.fill: parent
             hoverEnabled: true
             acceptedButtons: Qt.LeftButton
+            preventStealing: true
             property real grabOffset: 0
 
             function setFromPointer(pointerY) {
@@ -76,6 +77,8 @@ Item {
             }
 
             onPressed: mouse => {
+                root.flickable.cancelFlick();
+
                 if (mouse.y >= thumb.y && mouse.y <= thumb.y + thumb.height) {
                     grabOffset = mouse.y - thumb.y;
                 } else {
