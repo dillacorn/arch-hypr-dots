@@ -28,6 +28,14 @@ Singleton {
         return themes.filter(name => name.toLowerCase().indexOf(query) >= 0);
     }
 
+    function resetSelection() {
+        themeList.currentIndex = themeList.count > 0 ? 0 : -1;
+        Qt.callLater(() => {
+            themeList.currentIndex = themeList.count > 0 ? 0 : -1;
+            themeList.positionViewAtBeginning();
+        });
+    }
+
     function openFocused() {
         const target = focusedScreen();
         if (target)
@@ -35,6 +43,7 @@ Singleton {
         search.text = "";
         pickerWindow.visible = true;
         listProcess.running = true;
+        resetSelection();
         Qt.callLater(() => search.forceActiveFocus());
     }
 
@@ -59,11 +68,11 @@ Singleton {
 
     Process {
         id: listProcess
-        command: ["sh", "-lc", "find '" + root.themeDir + "' -maxdepth 1 -type f -executable ! -name '*.backup*' -printf '%f\\n' 2>/dev/null | LC_ALL=C sort"]
+        command: ["sh", "-lc", "find '" + root.themeDir + "' -maxdepth 1 -type f ! -name '*.backup*' -printf '%f\\n' 2>/dev/null | LC_ALL=C sort"]
         stdout: StdioCollector {
             onStreamFinished: {
                 root.themes = text.split("\n").filter(value => value.length > 0);
-                themeList.currentIndex = root.themes.length > 0 ? 0 : -1;
+                root.resetSelection();
             }
         }
     }
@@ -159,7 +168,7 @@ Singleton {
                                 }
                             }
 
-                            onTextChanged: themeList.currentIndex = 0
+                            onTextChanged: root.resetSelection()
                         }
                     }
                 }
@@ -202,7 +211,6 @@ Singleton {
                             id: mouse
                             anchors.fill: parent
                             hoverEnabled: true
-                            onEntered: themeList.currentIndex = row.index
                             onClicked: root.choose(row.themeName)
                         }
                     }
