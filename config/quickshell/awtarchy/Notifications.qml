@@ -43,6 +43,56 @@ Singleton {
             values[i].dismiss();
     }
 
+    function synchronousKey(notification) {
+        if (!notification || !notification.hints)
+            return "";
+        const value = notification.hints["x-canonical-private-synchronous"];
+        return value === undefined || value === null ? "" : String(value);
+    }
+
+    function replaceSynchronous(notification) {
+        const key = synchronousKey(notification);
+        if (key.length === 0)
+            return;
+
+        const values = [...server.trackedNotifications.values];
+        for (let i = 0; i < values.length; ++i) {
+            if (values[i] !== notification && synchronousKey(values[i]) === key)
+                values[i].expire();
+        }
+    }
+
+    function timeoutFor(notification) {
+        if (!notification)
+            return 0;
+
+        const requested = Number(notification.expireTimeout || 0);
+        const isSynchronous = synchronousKey(notification).length > 0;
+        const systemTransient = isSynchronous || notification.transient || notification.appName === "hypr-ddc-brightness";
+
+        if (systemTransient)
+            return requested > 0 ? Math.min(2.2, requested) : 2.0;
+        return requested > 0 ? requested : 0;
+    }
+
+    function activateOrDismiss(notification) {
+        if (!notification)
+            return;
+
+        const actions = notification.actions || [];
+        for (let i = 0; i < actions.length; ++i) {
+            if (actions[i].identifier === "default") {
+                const resident = notification.resident;
+                actions[i].invoke();
+                if (resident)
+                    notification.dismiss();
+                return;
+            }
+        }
+
+        notification.dismiss();
+    }
+
     FileView {
         id: dndFile
         path: root.dndPath
@@ -81,7 +131,10 @@ Singleton {
                 notification.dismiss();
                 return;
             }
+
+            root.replaceSynchronous(notification);
             notification.tracked = true;
+
             const target = root.focusedScreen();
             if (target)
                 popupWindow.screen = target;
@@ -96,13 +149,18 @@ Singleton {
         aboveWindows: true
         exclusionMode: ExclusionMode.Ignore
 
+        readonly property bool barVisibleHere: screen && BarState.enabledFor(screen.name)
+        readonly property string barPositionHere: screen ? BarState.positionFor(screen.name) : "top"
+
         anchors {
             top: true
             right: true
         }
         margins {
-            top: 10
-            right: 10
+            // Notifications remain top-right on the focused display, but move
+            // inside the usable area instead of covering a top/right bar.
+            top: popupWindow.barVisibleHere && popupWindow.barPositionHere === "top" ? 38 : 10
+            right: popupWindow.barVisibleHere && popupWindow.barPositionHere === "right" ? 46 : 10
         }
 
         implicitWidth: 380
@@ -120,17 +178,25 @@ Singleton {
                     id: card
                     required property var modelData
                     width: notificationColumn.width
-                    height: Math.max(86, cardContent.implicitHeight + 20)
+                    height: Math.max(78, cardContent.implicitHeight + 20)
                     color: Theme.popupBackground
                     border.width: 1
                     border.color: Theme.active
                     radius: 0
 
+                    readonly property real timeoutSeconds: root.timeoutFor(modelData)
+
                     Timer {
-                        running: card.modelData.expireTimeout > 0
-                        interval: Math.max(1000, card.modelData.expireTimeout * 1000)
+                        running: card.timeoutSeconds > 0
+                        interval: Math.max(500, card.timeoutSeconds * 1000)
                         repeat: false
                         onTriggered: card.modelData.expire()
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: root.activateOrDismiss(card.modelData)
                     }
 
                     ColumnLayout {
@@ -178,19 +244,6 @@ Singleton {
                                     elide: Text.ElideRight
                                 }
                             }
-
-                            Text {
-                                text: "×"
-                                color: Theme.foreground
-                                font.family: Theme.fontFamily
-                                font.pixelSize: 20
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    anchors.margins: -8
-                                    onClicked: card.modelData.dismiss()
-                                }
-                            }
                         }
 
                         RowLayout {
@@ -204,7 +257,7 @@ Singleton {
                                 delegate: Rectangle {
                                     id: actionButton
                                     required property var modelData
-                                    visible: modelData.text && modelData.text.length > 0
+                                    visible: modelData.text && modelData.text.length > 0 && modelData.identifier !== "default"
                                     Layout.preferredHeight: visible ? 26 : 0
                                     Layout.preferredWidth: visible ? Math.max(70, actionText.implicitWidth + 18) : 0
                                     color: actionMouse.containsMouse ? Theme.focus : Theme.active
@@ -225,7 +278,10 @@ Singleton {
                                         id: actionMouse
                                         anchors.fill: parent
                                         hoverEnabled: true
-                                        onClicked: actionButton.modelData.invoke()
+                                        onClicked: mouse => {
+                                            mouse.accepted = true;
+                                            actionButton.modelData.invoke();
+                                        }
                                     }
                                 }
                             }
