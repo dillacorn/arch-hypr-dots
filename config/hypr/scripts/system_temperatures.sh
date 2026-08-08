@@ -39,6 +39,12 @@ sensor_label() {
   basename "${input%_input}"
 }
 
+hwmon_name() {
+  local d="$1"
+  [[ -r "$d/name" ]] || return 1
+  sanitize < "$d/name"
+}
+
 hwmon_model() {
   local d="$1" f value
   for f in "$d/device/model" "$d/device/device/model" "$d/device/name"; do
@@ -46,6 +52,45 @@ hwmon_model() {
     value="$(sanitize < "$f")"
     [[ -n "$value" ]] && { printf '%s\n' "$value"; return 0; }
   done
+  return 1
+}
+
+pci_display_device() {
+  local d="$1" p class
+  p="$(readlink -f "$d/device" 2>/dev/null || true)"
+  [[ -n "$p" ]] || return 1
+
+  while [[ "$p" == /sys/* && "$p" != /sys ]]; do
+    if [[ -r "$p/class" ]]; then
+      class="$(sanitize < "$p/class")"
+      case "$class" in
+        0x03*) return 0 ;;
+      esac
+    fi
+    p="$(dirname "$p")"
+  done
+  return 1
+}
+
+is_gpu_hwmon() {
+  local d="$1" name="$2"
+  case "$name" in
+    amdgpu|radeon|nouveau|nvidia|i915|xe) return 0 ;;
+  esac
+  pci_display_device "$d"
+}
+
+is_cpu_hwmon() {
+  case "$1" in
+    k10temp|coretemp|zenpower|cpu_thermal|x86_pkg_temp) return 0 ;;
+  esac
+  return 1
+}
+
+is_drive_hwmon() {
+  case "$1" in
+    nvme|drivetemp) return 0 ;;
+  esac
   return 1
 }
 
@@ -62,7 +107,7 @@ friendly_chip_name() {
   esac
 }
 
-emit_cpu() {
+emit_primary_cpu() {
   local value='N/A'
   if [[ -x "$CPU_TEMP_SCRIPT" ]]; then
     value="$($CPU_TEMP_SCRIPT 2>/dev/null || true)"
@@ -71,24 +116,53 @@ emit_cpu() {
   printf 'CPU_TEMP %s\n' "$value"
 }
 
-emit_gpu() {
-  local d name input c best=''
+emit_cpu_details() {
+  local d name input c label chip count=0
   shopt -s nullglob
 
   for d in /sys/class/hwmon/*; do
-    [[ -r "$d/name" ]] || continue
-    name="$(sanitize < "$d/name")"
-    case "$name" in
-      amdgpu|nouveau|nvidia)
-        for input in "$d"/temp*_input; do
-          c="$(read_temp_c "$input" 2>/dev/null || true)"
-          [[ -n "$c" ]] || continue
-          if [[ -z "$best" ]] || (( c > best )); then
-            best="$c"
-          fi
-        done
-        ;;
-    esac
+    name="$(hwmon_name "$d" 2>/dev/null || true)"
+    [[ -n "$name" ]] || continue
+    is_cpu_hwmon "$name" || continue
+    chip="$(friendly_chip_name "$name")"
+
+    for input in "$d"/temp*_input; do
+      c="$(read_temp_c "$input" 2>/dev/null || true)"
+      [[ -n "$c" ]] || continue
+      label="$(sensor_label "$input")"
+      [[ "$label" == temp[0-9]* ]] && label="$chip"
+      printf 'TEMP\tCPU\t%s\t%s°\n' "$label" "$c"
+      count=$((count + 1))
+      (( count < 8 )) || return 0
+    done
+  done
+}
+
+emit_gpu() {
+  local d name input c label chip best='' count=0
+  shopt -s nullglob
+
+  for d in /sys/class/hwmon/*; do
+    name="$(hwmon_name "$d" 2>/dev/null || true)"
+    [[ -n "$name" ]] || continue
+    is_gpu_hwmon "$d" "$name" || continue
+    chip="$(friendly_chip_name "$name")"
+
+    for input in "$d"/temp*_input; do
+      c="$(read_temp_c "$input" 2>/dev/null || true)"
+      [[ -n "$c" ]] || continue
+      label="$(sensor_label "$input")"
+      [[ "$label" == temp[0-9]* ]] && label="$chip"
+
+      if [[ -z "$best" ]] || (( c > best )); then
+        best="$c"
+      fi
+
+      if (( count < 6 )); then
+        printf 'TEMP\tGPU\t%s\t%s°\n' "$label" "$c"
+        count=$((count + 1))
+      fi
+    done
   done
 
   if [[ -n "$best" ]]; then
@@ -103,12 +177,9 @@ emit_drives() {
   shopt -s nullglob
 
   for d in /sys/class/hwmon/*; do
-    [[ -r "$d/name" ]] || continue
-    name="$(sanitize < "$d/name")"
-    case "$name" in
-      nvme|drivetemp) ;;
-      *) continue ;;
-    esac
+    name="$(hwmon_name "$d" 2>/dev/null || true)"
+    [[ -n "$name" ]] || continue
+    is_drive_hwmon "$name" || continue
 
     chosen=''
     chosen_c=''
@@ -147,19 +218,17 @@ emit_drives() {
 
 emit_other_hwmon() {
   local d name input c label chip key count=0
-  local max_sensors=8
+  local max_sensors=12
   declare -A seen=()
   shopt -s nullglob
 
   for d in /sys/class/hwmon/*; do
-    [[ -r "$d/name" ]] || continue
-    name="$(sanitize < "$d/name")"
+    name="$(hwmon_name "$d" 2>/dev/null || true)"
+    [[ -n "$name" ]] || continue
 
-    case "$name" in
-      k10temp|coretemp|zenpower|cpu_thermal|x86_pkg_temp|amdgpu|nouveau|nvidia|nvme|drivetemp)
-        continue
-        ;;
-    esac
+    is_cpu_hwmon "$name" && continue
+    is_drive_hwmon "$name" && continue
+    is_gpu_hwmon "$d" "$name" && continue
 
     chip="$(friendly_chip_name "$name")"
 
@@ -169,9 +238,7 @@ emit_other_hwmon() {
       (( c > 0 )) || continue
 
       label="$(sensor_label "$input")"
-      if [[ "$label" == temp[0-9]* ]]; then
-        label=''
-      fi
+      [[ "$label" == temp[0-9]* ]] && label=''
 
       if [[ -n "$label" ]]; then
         key="$chip $label"
@@ -189,11 +256,36 @@ emit_other_hwmon() {
   done
 }
 
+debug_hwmon() {
+  local d name p input c label class
+  shopt -s nullglob
+
+  for d in /sys/class/hwmon/*; do
+    name="$(hwmon_name "$d" 2>/dev/null || true)"
+    p="$(readlink -f "$d/device" 2>/dev/null || true)"
+    class=''
+    [[ -r "$d/device/class" ]] && class="$(sanitize < "$d/device/class")"
+    printf 'HWMON\t%s\tname=%s\tclass=%s\tdevice=%s\n' "$(basename "$d")" "${name:-?}" "${class:-?}" "${p:-?}"
+    for input in "$d"/temp*_input; do
+      c="$(read_temp_c "$input" 2>/dev/null || true)"
+      [[ -n "$c" ]] || continue
+      label="$(sensor_label "$input")"
+      printf '  TEMP\t%s\t%s°C\n' "$label" "$c"
+    done
+  done
+}
+
 main() {
-  emit_cpu
+  if [[ "${1:-}" == '--debug' ]]; then
+    debug_hwmon
+    return
+  fi
+
+  emit_primary_cpu
+  emit_cpu_details
   emit_gpu
   emit_drives
   emit_other_hwmon
 }
 
-main
+main "$@"
