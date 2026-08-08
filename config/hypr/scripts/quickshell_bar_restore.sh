@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Hypridle resume compatibility: restore Quickshell bars only when timeout hid them.
+# Hypridle resume compatibility: restore only the monitor bar that Hypridle hid.
+# The Quickshell process remains running throughout the idle transition.
 
 set -euo pipefail
 CONF="${XDG_CONFIG_HOME:-$HOME/.config}"
@@ -14,9 +15,10 @@ if command -v flock >/dev/null 2>&1; then
     flock -x 9
 fi
 
-[[ "$(tr -d ' \t\r\n' <"$IDLE_MARKER" 2>/dev/null || true)" == "running" ]] || exit 0
 [[ -x "$QS_SH" ]] || exit 0
 
-"$QS_SH" start >/dev/null 2>&1 || exit 0
-"$QS_SH" enable >/dev/null 2>&1 || exit 0
+monitor="$(tr -d '\r\n' <"$IDLE_MARKER" 2>/dev/null || true)"
+[[ -n "$monitor" ]] || exit 0
+
+"$QS_SH" setenabled "$monitor" true >/dev/null 2>&1 || exit 0
 rm -f "$IDLE_MARKER"
