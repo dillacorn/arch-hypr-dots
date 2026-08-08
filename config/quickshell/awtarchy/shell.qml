@@ -43,7 +43,7 @@ ShellRoot {
                     const dy = edgeDrag.activeTranslation.y;
                     const distance = Math.max(Math.abs(dx), Math.abs(dy));
 
-                    if (distance < 80) {
+                    if (distance < 40) {
                         candidateEdge = barInstance.position;
                         hasCandidate = false;
                         return;
@@ -61,6 +61,20 @@ ShellRoot {
                     if (edge === "bottom") return "↓";
                     if (edge === "left") return "←";
                     return "→";
+                }
+
+                Timer {
+                    id: dragRefreshQuick
+                    interval: 100
+                    repeat: false
+                    onTriggered: BarState.refresh()
+                }
+
+                Timer {
+                    id: dragRefreshFollowup
+                    interval: 350
+                    repeat: false
+                    onTriggered: BarState.refresh()
                 }
 
                 DragHandler {
@@ -90,6 +104,8 @@ ShellRoot {
                                 barInstance.monitorName,
                                 dragSurface.candidateEdge
                             ]);
+                            dragRefreshQuick.restart();
+                            dragRefreshFollowup.restart();
                         }
 
                         dragSurface.hasCandidate = false;
