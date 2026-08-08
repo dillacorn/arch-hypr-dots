@@ -42,11 +42,9 @@ Rectangle {
     }
 
     function partFontFamily(part) {
-        // The old Waybar globally used FontAwesome. Keep ordinary text and
-        // Nerd Font supplementary-plane glyphs on the normal Awtarchy font,
-        // but render classic Font Awesome PUA icons with the same family the
-        // old bar used. This also restores the old clipboard glyph mapping.
-        if (isBmpIconPart(part))
+        // Keep the normal bar on Awtarchy's Nerd Font. The clipboard glyph is
+        // the one legacy Waybar icon that depended on FontAwesome's mapping.
+        if (part.indexOf("") >= 0)
             return "FontAwesome";
         return Theme.fontFamily;
     }
@@ -59,24 +57,21 @@ Rectangle {
         if (part.indexOf("🖱") >= 0 || part.indexOf("°") >= 0)
             return 14;
 
-        // Workspace numbers remain 14px, while their icon token gets a larger
-        // dedicated size. This applies to both horizontal and vertical forms.
+        // Workspace numbers remain 14px. Their glyphs get a moderate bump
+        // without overwhelming the 28px bar.
         if (workspaceLabel && (isBmpIconPart(part) || isSupplementaryIconPart(part)))
-            return 23;
+            return 20;
 
-        // Numeric/text values remain at 14px. Icons get their own size but are
-        // geometrically centered in a fixed-height wrapper below, so mixed
-        // font metrics cannot drag adjacent values off-axis.
         if (part.indexOf("") >= 0)
             return 20;
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0)
             return 19;
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
-            return 22;
+            return 19;
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
             return 19;
         if (part.indexOf("") >= 0)
-            return 20;
+            return 17;
         if (part.indexOf("") >= 0)
             return 18;
         if (part.indexOf("") >= 0 || part.indexOf("") >= 0 || part.indexOf("") >= 0)
@@ -85,7 +80,7 @@ Rectangle {
             return 17;
 
         if (isBmpIconPart(part) || isSupplementaryIconPart(part))
-            return 20;
+            return 18;
 
         return Theme.fontPixelSize;
     }
