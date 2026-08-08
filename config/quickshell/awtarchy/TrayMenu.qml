@@ -12,6 +12,7 @@ Item {
     property string barPosition: "top"
     property var menuStack: []
     property var currentMenu: null
+    readonly property bool menuVisible: popup.visible
 
     visible: false
     implicitWidth: 0
@@ -152,6 +153,7 @@ Item {
                             height: parent.height
 
                             IconImage {
+                                id: menuIcon
                                 anchors.centerIn: parent
                                 visible: menuRow.modelData.icon && menuRow.modelData.icon.toString().length > 0
                                 implicitSize: 15
@@ -160,7 +162,7 @@ Item {
 
                             Text {
                                 anchors.centerIn: parent
-                                visible: !parent.children[0].visible && menuRow.modelData.checkState === Qt.Checked
+                                visible: !menuIcon.visible && menuRow.modelData.checkState === Qt.Checked
                                 text: "✓"
                                 color: Theme.foreground
                                 font.family: Theme.fontFamily
