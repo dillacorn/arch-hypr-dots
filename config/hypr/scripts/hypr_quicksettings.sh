@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Awtarchy Quick Settings entrypoint.
 # The existing UI implementation is kept in hypr_quicksettings_core.sh while
-# this entrypoint wires Quickshell-specific nested controls into it.
+# this entrypoint wires Quickshell-specific controls into it.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CORE_SCRIPT="${SCRIPT_DIR}/hypr_quicksettings_core.sh"
+BAR_SETTINGS_SCRIPT="${SCRIPT_DIR}/quickshell_bar_settings.sh"
 
 [[ -r "$CORE_SCRIPT" ]] || {
   printf 'missing: %s\n' "$CORE_SCRIPT" >&2
@@ -18,13 +19,10 @@ CORE_SCRIPT="${SCRIPT_DIR}/hypr_quicksettings_core.sh"
 # shellcheck disable=SC1090
 source <(sed '/^main "\$@"$/d' "$CORE_SCRIPT")
 
-# Keep the established core behavior while inserting Quickshell-specific
-# native editors into the visible menu.
 MENU_ITEMS=(
   "Brightness"
   "Display"
   "Bar"
-  "Application View - Edit spawn dimensions"
   "Night Light"
   "Vibrance"
   "Submap"
@@ -32,8 +30,6 @@ MENU_ITEMS=(
   "sched-ext"
   "Stop sched-ext"
 )
-
-eval "$(declare -f do_action | sed '1s/^do_action /core_do_action /')"
 
 launch_terminal() {
   local self
@@ -70,39 +66,16 @@ launch_terminal() {
 }
 
 select_bar() {
-  if ! "$QUICKSHELL_SCRIPT" start >/dev/null 2>&1; then
-    MSG='bar settings: Quickshell failed to start'
+  if [[ ! -x "$BAR_SETTINGS_SCRIPT" ]]; then
+    MSG="bar settings: missing $BAR_SETTINGS_SCRIPT"
     return 1
   fi
 
-  if qs -c awtarchy ipc call barsettings open >/dev/null 2>&1; then
-    MSG='bar settings opened'
+  if "$BAR_SETTINGS_SCRIPT" --embedded; then
+    MSG='bar settings updated'
   else
-    MSG='bar settings: native editor unavailable'
-    return 1
+    MSG='bar settings closed'
   fi
-}
-
-select_application_view() {
-  if ! "$QUICKSHELL_SCRIPT" start >/dev/null 2>&1; then
-    MSG='Application View: Quickshell failed to start'
-    return 1
-  fi
-
-  if qs -c awtarchy ipc call appsettings open >/dev/null 2>&1; then
-    MSG='Application View editor opened'
-  else
-    MSG='Application View: native editor unavailable'
-    return 1
-  fi
-}
-
-do_action() {
-  if [[ "${MENU_ITEMS[$SEL]}" == Application\ View* ]]; then
-    select_application_view
-    return
-  fi
-  core_do_action
 }
 
 main "$@"
