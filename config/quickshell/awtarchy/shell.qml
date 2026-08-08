@@ -38,12 +38,9 @@ ShellRoot {
                 property string candidateEdge: barInstance.position
                 property bool hasCandidate: false
 
-                function updateCandidate() {
-                    const dx = edgeDrag.activeTranslation.x;
-                    const dy = edgeDrag.activeTranslation.y;
+                function updateCandidate(dx, dy) {
                     const distance = Math.max(Math.abs(dx), Math.abs(dy));
-
-                    if (distance < 40) {
+                    if (distance < 32) {
                         candidateEdge = barInstance.position;
                         hasCandidate = false;
                         return;
@@ -63,51 +60,71 @@ ShellRoot {
                     return "→";
                 }
 
+                Process {
+                    id: barMoveWriter
+                    onExited: {
+                        BarState.refresh();
+                        dragRefreshFollowup.restart();
+                    }
+                }
+
                 Timer {
-                    id: dragRefreshQuick
+                    id: dragRefreshFollowup
                     interval: 100
                     repeat: false
                     onTriggered: BarState.refresh()
                 }
 
-                Timer {
-                    id: dragRefreshFollowup
-                    interval: 350
-                    repeat: false
-                    onTriggered: BarState.refresh()
-                }
-
-                DragHandler {
-                    id: edgeDrag
-                    parent: barInstance.contentItem
-                    target: null
+                MouseArea {
+                    id: barDrag
+                    anchors.fill: parent
                     acceptedButtons: Qt.LeftButton
-                    acceptedModifiers: Qt.AltModifier
-                    dragThreshold: 4
-                    grabPermissions: PointerHandler.CanTakeOverFromAnything
-                        | PointerHandler.ApprovesTakeOverByAnything
+                    hoverEnabled: false
+                    propagateComposedEvents: true
+                    property bool dragging: false
+                    property real startX: 0
+                    property real startY: 0
 
-                    onActiveTranslationChanged: dragSurface.updateCandidate()
-
-                    onActiveChanged: {
-                        if (active) {
-                            dragSurface.candidateEdge = barInstance.position;
-                            dragSurface.hasCandidate = false;
+                    onPressed: mouse => {
+                        if (!(mouse.modifiers & Qt.AltModifier)) {
+                            mouse.accepted = false;
                             return;
                         }
 
+                        dragging = true;
+                        startX = mouse.x;
+                        startY = mouse.y;
+                        dragSurface.candidateEdge = barInstance.position;
+                        dragSurface.hasCandidate = false;
+                        mouse.accepted = true;
+                    }
+
+                    onPositionChanged: mouse => {
+                        if (!dragging)
+                            return;
+                        dragSurface.updateCandidate(mouse.x - startX, mouse.y - startY);
+                    }
+
+                    onReleased: mouse => {
+                        if (!dragging)
+                            return;
+
+                        dragging = false;
                         if (dragSurface.hasCandidate
                                 && dragSurface.candidateEdge !== barInstance.position) {
-                            Quickshell.execDetached([
+                            barMoveWriter.exec([
                                 (Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")) + "/hypr/scripts/quickshell.sh",
                                 "setpos",
                                 barInstance.monitorName,
                                 dragSurface.candidateEdge
                             ]);
-                            dragRefreshQuick.restart();
-                            dragRefreshFollowup.restart();
                         }
+                        dragSurface.hasCandidate = false;
+                        mouse.accepted = true;
+                    }
 
+                    onCanceled: {
+                        dragging = false;
                         dragSurface.hasCandidate = false;
                     }
                 }
@@ -118,12 +135,12 @@ ShellRoot {
                     height: barInstance.vertical ? Math.min(90, parent.height) : parent.height
                     color: Theme.focus
                     radius: 0
-                    opacity: edgeDrag.active && dragSurface.hasCandidate ? 0.96 : 0
+                    opacity: barDrag.dragging && dragSurface.hasCandidate ? 0.96 : 0
                     visible: opacity > 0
 
                     Behavior on opacity {
                         NumberAnimation {
-                            duration: 100
+                            duration: 90
                             easing.type: Easing.OutCubic
                         }
                     }
