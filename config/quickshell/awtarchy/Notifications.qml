@@ -68,17 +68,20 @@ Singleton {
 
         const requested = Number(notification.expireTimeout || 0);
         const appName = String(notification.appName || "").toLowerCase();
+        const summary = String(notification.summary || "").toLowerCase();
         const isSynchronous = synchronousKey(notification).length > 0;
+        const systemSetting = appName === "hyprland"
+            || appName === "hyprsunset"
+            || appName === "hypr-ddc-brightness"
+            || summary === "night light"
+            || summary === "vibrance";
 
-        // Hyprland mode/submap messages are status feedback, not persistent
-        // application notifications. Keep them visible briefly, then clear them.
-        if (appName === "hyprland")
-            return 2.0;
+        // Brightness, Night Light, Vibrance, submaps and similar controls are
+        // transient system-setting feedback, never persistent notifications.
+        if (systemSetting)
+            return requested > 0 ? Math.min(2.2, requested) : 2.0;
 
-        const systemTransient = isSynchronous
-            || notification.transient
-            || appName === "hypr-ddc-brightness";
-
+        const systemTransient = isSynchronous || notification.transient;
         if (systemTransient)
             return requested > 0 ? Math.min(2.2, requested) : 2.0;
         return requested > 0 ? requested : 0;
