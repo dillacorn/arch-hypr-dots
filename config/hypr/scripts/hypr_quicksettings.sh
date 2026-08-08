@@ -25,7 +25,7 @@ MENU_ITEMS=(
   "Brightness"
   "Display"
   "Bar"
-  "Application View - ALT+right-drag launcher; Enter to edit"
+  "Application View - Edit spawn dimensions"
   "Night Light"
   "Vibrance"
   "Submap"
@@ -77,7 +77,7 @@ select_bar() {
   fi
 
   if qs -c awtarchy ipc call barsettings open >/dev/null 2>&1; then
-    MSG='bar settings opened - ALT+drag a bar to move it between edges'
+    MSG='bar settings opened'
   else
     MSG='bar settings: native editor unavailable'
     return 1
