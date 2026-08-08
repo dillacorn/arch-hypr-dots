@@ -80,6 +80,8 @@ Singleton {
     }
 
     function searchText(entry) {
+        if (!entry)
+            return "";
         return [entry.name, entry.genericName, entry.comment, entry.id, ...(entry.keywords || [])]
             .filter(value => value && String(value).length > 0)
             .join(" ")
@@ -117,19 +119,22 @@ Singleton {
         return score - Math.min(200, haystack.length);
     }
 
+    function visibleApps() {
+        return [...DesktopEntries.applications.values].filter(app => app && !app.noDisplay);
+    }
+
     function filteredApps() {
         const query = search.text.trim().toLowerCase();
-        const apps = [...DesktopEntries.applications.values]
-            .filter(app => !app.noDisplay)
+        const apps = visibleApps()
             .map(app => ({ entry: app, score: fuzzyScore(searchText(app), query) }))
-            .filter(item => item.score >= 0);
+            .filter(item => item.entry && item.score >= 0);
 
         apps.sort((a, b) => {
             if (a.score !== b.score)
                 return b.score - a.score;
-            return a.entry.name.localeCompare(b.entry.name);
+            return String(a.entry.name || "").localeCompare(String(b.entry.name || ""));
         });
-        return apps.map(item => item.entry);
+        return apps.map(item => item.entry).filter(entry => entry !== null && entry !== undefined);
     }
 
     function launchEntry(entry) {
@@ -294,7 +299,7 @@ Singleton {
 
                         Text {
                             readonly property int matches: appList.count
-                            text: matches + "/" + DesktopEntries.applications.values.filter(app => !app.noDisplay).length
+                            text: matches + "/" + root.visibleApps().length
                             color: Theme.muted
                             font.family: Theme.fontFamily
                             font.pixelSize: 11
@@ -335,14 +340,14 @@ Singleton {
                                 Layout.preferredWidth: 18
                                 Layout.preferredHeight: 18
                                 implicitSize: 18
-                                source: row.entry.icon && row.entry.icon.length > 0
+                                source: row.entry && row.entry.icon && row.entry.icon.length > 0
                                     ? Quickshell.iconPath(row.entry.icon, true)
                                     : Quickshell.iconPath("application-x-executable", true)
                             }
 
                             Text {
                                 Layout.fillWidth: true
-                                text: row.entry.name
+                                text: row.entry ? (row.entry.name || "Application") : "Application"
                                 color: Theme.foreground
                                 font.family: Theme.fontFamily
                                 font.pixelSize: 14
