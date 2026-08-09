@@ -703,8 +703,11 @@ sched_ext_state_init_defaults() {
 sched_ext_state_load() {
   sched_ext_state_init_defaults
   if [[ -f "$SCHED_EXT_STATE_FILE" ]]; then
+    # State is loaded from inside this function. Promote associative arrays to
+    # globals so Bash does not discard the restored maps when the function
+    # returns (and migrate existing files written with plain `declare -A`).
     # shellcheck disable=SC1090
-    source "$SCHED_EXT_STATE_FILE"
+    source <(sed -E 's/^declare -A /declare -gA /' "$SCHED_EXT_STATE_FILE")
     sched_ext_state_init_defaults
   fi
 }
@@ -715,9 +718,9 @@ sched_ext_state_save() {
   tmpfile="$(mktemp)"
   {
     printf '#!/usr/bin/env bash\n'
-    declare -p SCHED_EXT_PROFILE_MAP
-    declare -p SCHED_EXT_CUSTOM_ARGS_MAP
-    declare -p SCHED_EXT_LAVD_AUTOPOWER_MAP
+    declare -p SCHED_EXT_PROFILE_MAP | sed -E 's/^declare -A /declare -gA /'
+    declare -p SCHED_EXT_CUSTOM_ARGS_MAP | sed -E 's/^declare -A /declare -gA /'
+    declare -p SCHED_EXT_LAVD_AUTOPOWER_MAP | sed -E 's/^declare -A /declare -gA /'
   } > "$tmpfile"
   install -m 600 "$tmpfile" "$SCHED_EXT_STATE_FILE"
   rm -f "$tmpfile"

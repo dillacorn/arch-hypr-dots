@@ -17,6 +17,7 @@ Item {
     property int textScale: 100
     property int iconScale: 100
     property bool captureAllowed: false
+    property bool showCaptureControl: true
     property string message: ""
     property var otherMonitorNames: []
     property bool copyOpen: false
@@ -31,7 +32,7 @@ Item {
     signal captureToggleRequested()
     signal copyRequested(var monitorNames)
 
-    implicitHeight: copyOpen ? 104 : 170
+    implicitHeight: copyOpen ? 104 : (showCaptureControl ? 170 : 139)
 
     function targetSelected(name) {
         const dependency = copySelectionRevision;
@@ -407,7 +408,7 @@ Item {
             Layout.fillWidth: true
             Layout.preferredHeight: 28
             spacing: 6
-            visible: !root.copyOpen
+            visible: !root.copyOpen && root.showCaptureControl
 
             Text {
                 Layout.fillWidth: true

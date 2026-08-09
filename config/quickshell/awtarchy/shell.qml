@@ -64,6 +64,7 @@ ShellRoot {
     readonly property bool notificationsReady: Notifications.dnd || !Notifications.dnd
     readonly property bool launcherReady: Launcher !== null
     readonly property bool clipboardReady: ClipboardMenu !== null
+    readonly property bool quickSettingsReady: QuickSettings !== null
     readonly property bool powerReady: PowerMenu !== null
     readonly property bool themesReady: ThemePicker !== null
 

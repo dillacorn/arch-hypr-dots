@@ -6,7 +6,6 @@ set -euo pipefail
 export LC_ALL=C
 
 BRIGHTNESS_SCRIPT="${HYPR_BRIGHTNESS_SCRIPT:-${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/hypr-ddc-brightness.sh}"
-QUICK_SETTINGS="${HYPR_QUICK_SETTINGS_SCRIPT:-${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/hypr_quicksettings.sh}"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/hypr-ddc-brightness"
 HELPER_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}/hypr-ddc-brightness-$(id -u)"
 CACHE_MAX_AGE_MS="${AWTARCHY_DDC_CACHE_MAX_AGE_MS:-30000}"
@@ -396,71 +395,11 @@ adjust() {
   update_preview_from_pending "$monitor"
 }
 
-quick_settings_addresses() {
-  hyprctl clients -j 2>/dev/null |
-    jq -r '
-      (. // [])[]
-      | select(
-          .mapped == true
-          and .hidden == false
-          and (
-            .class == "hypr_quicksettings"
-            or .initialClass == "hypr_quicksettings"
-          )
-        )
-      | .address
-    '
-}
-
 toggle_quick_settings() {
-  local monitor runtime_dir lock_file lock_dir address
-  local -a addresses=()
-
-  runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-  lock_file="${runtime_dir}/awtarchy-ddc-quicksettings.lock"
-  lock_dir="${lock_file}.d"
-
-  mkdir -p "$runtime_dir"
-
-  if command -v flock >/dev/null 2>&1; then
-    exec 8>"$lock_file"
-    flock -n 8 || return 0
-  else
-    mkdir "$lock_dir" 2>/dev/null || return 0
-    trap 'rmdir "$lock_dir" 2>/dev/null || true' EXIT
-  fi
-
-  mapfile -t addresses < <(quick_settings_addresses)
-
-  if (( ${#addresses[@]} > 0 )); then
-    for address in "${addresses[@]}"; do
-      [[ -n "$address" ]] || continue
-      hyprctl dispatch "hl.dsp.window.close({ window = \"address:${address}\" })" >/dev/null 2>&1 || true
-    done
-
-    for _ in {1..20}; do
-      [[ -z "$(quick_settings_addresses)" ]] && return 0
-      sleep 0.05
-    done
-    return 0
-  fi
-
-  monitor="$(monitor_under_cursor || true)"
-  [[ -n "$monitor" ]] || monitor="$(resolve_monitor)"
-
-  HYPR_BRIGHTNESS_MONITOR="$monitor" \
-    alacritty \
-      --class hypr_quicksettings,hypr_quicksettings \
-      --title "Awtarchy Quick Settings" \
-      -e bash "$QUICK_SETTINGS" --ui \
-      >/dev/null 2>&1 8>&- &
-
-  for _ in {1..40}; do
-    [[ -n "$(quick_settings_addresses)" ]] && return 0
-    sleep 0.05
-  done
-
-  return 0
+  local quickshell_manager
+  quickshell_manager="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/quickshell.sh"
+  "$quickshell_manager" start >/dev/null 2>&1 || true
+  qs -c awtarchy ipc call quicksettings toggle >/dev/null
 }
 
 case "${1:-status}" in

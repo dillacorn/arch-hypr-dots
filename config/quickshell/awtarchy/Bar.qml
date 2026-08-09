@@ -638,8 +638,8 @@ PanelWindow {
             BarControl {
                 label: bar.brightnessText
                 tooltip: bar.brightnessTooltip
-                onClicked: bar.ddcAction("menu")
-                onRightClicked: bar.ddcAction("menu")
+                onClicked: QuickSettings.toggleForScreen(bar.screen)
+                onRightClicked: QuickSettings.toggleForScreen(bar.screen)
                 onWheelUp: bar.ddcAction("up")
                 onWheelDown: bar.ddcAction("down")
             }
@@ -824,8 +824,8 @@ PanelWindow {
                 vertical: true; fixedWidth: bar.barSize
                 label: "\n" + (bar.brightnessValue >= 0 ? bar.brightnessValue : "?")
                 tooltip: bar.brightnessTooltip
-                onClicked: bar.ddcAction("menu")
-                onRightClicked: bar.ddcAction("menu")
+                onClicked: QuickSettings.toggleForScreen(bar.screen)
+                onRightClicked: QuickSettings.toggleForScreen(bar.screen)
                 onWheelUp: bar.ddcAction("up")
                 onWheelDown: bar.ddcAction("down")
             }
