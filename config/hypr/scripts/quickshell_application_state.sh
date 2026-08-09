@@ -144,6 +144,33 @@ set_scales() {
     commit_tmp
 }
 
+set_centered() {
+    local monitor="$1" value="$2" centered
+    [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
+
+    case "$value" in
+        1|true|on) centered=true ;;
+        0|false|off) centered=false ;;
+        *)
+            printf 'centered must be true or false\n' >&2
+            exit 2
+            ;;
+    esac
+
+    new_tmp
+    jq \
+        --arg monitor "$monitor" \
+        --argjson centered "$centered" '
+        .launcher_sizes = (if (.launcher_sizes | type) == "object" then .launcher_sizes else {} end)
+        | .launcher_sizes[$monitor] = ((if (.launcher_sizes[$monitor] | type) == "object"
+            then .launcher_sizes[$monitor] else {} end) + {
+            centered:$centered
+        })
+        | del(.application_view)
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
 reset_monitor() {
     local monitor="$1"
     [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
@@ -285,6 +312,10 @@ case "$cmd" in
         [[ -n ${2:-} && -n ${3:-} && -n ${4:-} ]] || exit 2
         set_scales "$2" "$3" "$4"
         ;;
+    set-centered)
+        [[ -n ${2:-} && -n ${3:-} ]] || exit 2
+        set_centered "$2" "$3"
+        ;;
     copy-view)
         [[ -n ${2:-} && -n ${3:-} && -n ${4:-} && -n ${5:-} && -n ${6:-} ]] || exit 2
         copy_view "$2" "$3" "$4" "$5" "${@:6}"
@@ -312,7 +343,7 @@ case "$cmd" in
         reset_defaults
         ;;
     *)
-        printf 'usage: %s {lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
+        printf 'usage: %s {lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
         exit 2
         ;;
 esac
