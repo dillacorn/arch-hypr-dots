@@ -89,15 +89,28 @@ start_shell() {
 }
 
 stop_shell() {
-    is_running && ipc control quit >/dev/null 2>&1 || true
+    if ! is_running; then
+        return 0
+    fi
+
+    ipc control quit >/dev/null 2>&1 || true
+
+    for _ in {1..100}; do
+        if ! is_running; then
+            return 0
+        fi
+        sleep 0.05
+    done
+
+    printf 'quickshell.sh: Quickshell did not stop cleanly\n' >&2
+    return 1
 }
 
 restart_shell() {
-    if is_running; then
-        ipc control reload >/dev/null 2>&1 || true
-    else
-        start_shell
-    fi
+    # A soft QML reload cannot reliably discover newly installed component
+    # files. Fully stop the current shell before starting the updated tree.
+    stop_shell
+    start_shell
 }
 
 list_monitors() {
