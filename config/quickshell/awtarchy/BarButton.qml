@@ -17,10 +17,13 @@ Rectangle {
     property int fontPixelSize: 0
     property bool hovered: false
 
+    // Bar.qml supplies these explicitly. Window.window is not reliable for
+    // children of every Quickshell proxy window, so keep it only as a fallback
+    // for BarButton users outside the main bar.
     readonly property var containingWindow: Window.window
-    readonly property string monitorName: containingWindow && containingWindow.screen ? containingWindow.screen.name : ""
-    readonly property real iconScale: BarState.iconScaleFor(monitorName)
-    readonly property int barThickness: BarState.barSizeFor(monitorName, vertical)
+    property string monitorName: containingWindow && containingWindow.screen ? containingWindow.screen.name : ""
+    property real iconScale: BarState.iconScaleFor(monitorName)
+    property int barThickness: BarState.barSizeFor(monitorName, vertical)
 
     // The legacy Waybar clipboard codepoint renders as an unrelated glyph in
     // the Nerd Font used by Quickshell. Translate it to the well-supported
