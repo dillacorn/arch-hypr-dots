@@ -205,10 +205,7 @@ Singleton {
         const actions = notification.actions || [];
         for (let i = 0; i < actions.length; ++i) {
             if (actions[i].identifier === "default") {
-                const resident = notification.resident;
                 actions[i].invoke();
-                if (resident)
-                    notification.dismiss();
                 return;
             }
         }
