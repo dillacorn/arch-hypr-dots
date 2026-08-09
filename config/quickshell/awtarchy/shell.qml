@@ -18,6 +18,48 @@ ShellRoot {
     property string barDragMonitor: ""
     property string barDragCandidate: ""
 
+    function validBarEdge(edge) {
+        return ["top", "bottom", "left", "right"].indexOf(edge) >= 0;
+    }
+
+    function beginBarDrag(monitor) {
+        if (!monitor || monitor.length === 0)
+            return;
+        barDragActive = true;
+        barDragMonitor = monitor;
+        barDragCandidate = BarState.positionFor(monitor);
+    }
+
+    function previewBarDrag(monitor, candidate) {
+        if (!barDragActive || barDragMonitor !== monitor)
+            return;
+        barDragCandidate = validBarEdge(candidate)
+            ? candidate
+            : BarState.positionFor(monitor);
+    }
+
+    function cancelBarDrag() {
+        barDragActive = false;
+        barDragMonitor = "";
+        barDragCandidate = "";
+    }
+
+    function finishBarDrag(monitor, candidate) {
+        const active = barDragActive && barDragMonitor === monitor;
+        const current = BarState.positionFor(monitor);
+        const shouldMove = active && validBarEdge(candidate) && candidate !== current;
+        cancelBarDrag();
+
+        if (shouldMove) {
+            barMoveWriter.exec([
+                configHome + "/hypr/scripts/quickshell.sh",
+                "setpos",
+                monitor,
+                candidate
+            ]);
+        }
+    }
+
     // Force singleton construction before the control IPC endpoint reports ready.
     readonly property bool notificationsReady: Notifications.dnd || !Notifications.dnd
     readonly property bool launcherReady: Launcher !== null
@@ -29,6 +71,21 @@ ShellRoot {
         id: runtimeRules
         running: true
         command: [root.runtimeRulesScript]
+    }
+
+    Process {
+        id: barMoveWriter
+        onExited: {
+            BarState.refresh();
+            dragRefreshFollowup.restart();
+        }
+    }
+
+    Timer {
+        id: dragRefreshFollowup
+        interval: 120
+        repeat: false
+        onTriggered: BarState.refresh()
     }
 
     Connections {
@@ -43,119 +100,9 @@ ShellRoot {
         model: Quickshell.screens
 
         Bar {
-            id: barInstance
-
             implicitWidth: vertical ? BarState.barSizeFor(monitorName, true) : 0
             implicitHeight: vertical ? 0 : BarState.barSizeFor(monitorName, false)
             exclusiveZone: BarState.barSizeFor(monitorName, vertical)
-
-            Item {
-                id: dragSurface
-                parent: barInstance.contentItem
-                anchors.fill: parent
-                z: 10000
-                property string candidateEdge: barInstance.position
-                property bool hasCandidate: false
-
-                function updateCandidate(dx, dy) {
-                    const distance = Math.max(Math.abs(dx), Math.abs(dy));
-                    if (distance < 32) {
-                        candidateEdge = barInstance.position;
-                        hasCandidate = false;
-                    } else {
-                        hasCandidate = true;
-                        if (Math.abs(dx) > Math.abs(dy))
-                            candidateEdge = dx >= 0 ? "right" : "left";
-                        else
-                            candidateEdge = dy >= 0 ? "bottom" : "top";
-                    }
-
-                    root.barDragCandidate = candidateEdge;
-                }
-
-                Process {
-                    id: barMoveWriter
-                    onExited: {
-                        BarState.refresh();
-                        dragRefreshFollowup.restart();
-                    }
-                }
-
-                Timer {
-                    id: dragRefreshFollowup
-                    interval: 120
-                    repeat: false
-                    onTriggered: BarState.refresh()
-                }
-
-                MouseArea {
-                    id: barDrag
-                    anchors.fill: parent
-                    acceptedButtons: Qt.LeftButton
-                    hoverEnabled: false
-                    propagateComposedEvents: true
-                    preventStealing: dragging
-                    property bool dragging: false
-                    property real startX: 0
-                    property real startY: 0
-
-                    onPressed: mouse => {
-                        if (!(mouse.modifiers & Qt.AltModifier)) {
-                            mouse.accepted = false;
-                            return;
-                        }
-
-                        dragging = true;
-                        startX = mouse.x;
-                        startY = mouse.y;
-                        dragSurface.candidateEdge = barInstance.position;
-                        dragSurface.hasCandidate = false;
-                        root.barDragActive = true;
-                        root.barDragMonitor = barInstance.monitorName;
-                        root.barDragCandidate = barInstance.position;
-                        mouse.accepted = true;
-                    }
-
-                    onPositionChanged: mouse => {
-                        if (!dragging)
-                            return;
-                        dragSurface.updateCandidate(mouse.x - startX, mouse.y - startY);
-                    }
-
-                    onReleased: mouse => {
-                        if (!dragging)
-                            return;
-
-                        const targetEdge = dragSurface.candidateEdge;
-                        const shouldMove = dragSurface.hasCandidate
-                            && targetEdge !== barInstance.position;
-
-                        dragging = false;
-                        dragSurface.hasCandidate = false;
-                        root.barDragActive = false;
-                        root.barDragMonitor = "";
-                        root.barDragCandidate = "";
-
-                        if (shouldMove) {
-                            barMoveWriter.exec([
-                                root.configHome + "/hypr/scripts/quickshell.sh",
-                                "setpos",
-                                barInstance.monitorName,
-                                targetEdge
-                            ]);
-                        }
-                        mouse.accepted = true;
-                    }
-
-                    onCanceled: {
-                        dragging = false;
-                        dragSurface.hasCandidate = false;
-                        root.barDragActive = false;
-                        root.barDragMonitor = "";
-                        root.barDragCandidate = "";
-                    }
-                }
-            }
         }
     }
 
@@ -218,5 +165,9 @@ ShellRoot {
         function reload(): void { Quickshell.reload(false); }
         function hardReload(): void { Quickshell.reload(true); }
         function quit(): void { Qt.quit(); }
+        function beginBarDrag(monitor: string): void { root.beginBarDrag(monitor); }
+        function previewBarDrag(monitor: string, candidate: string): void { root.previewBarDrag(monitor, candidate); }
+        function finishBarDrag(monitor: string, candidate: string): void { root.finishBarDrag(monitor, candidate); }
+        function cancelBarDrag(): void { root.cancelBarDrag(); }
     }
 }
