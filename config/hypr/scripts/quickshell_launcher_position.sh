@@ -8,6 +8,8 @@
 #       place beside the Apps button on that bar edge
 #   top-center|bottom-center|left-center|right-center
 #       attach to that bar edge while centering along the bar
+#   clamp
+#       keep the current placement but move every edge back inside the monitor
 
 set -euo pipefail
 export LC_ALL=C
@@ -23,7 +25,7 @@ state_file="${XDG_CACHE_HOME:-$HOME/.cache}/awtarchy/quickshell-state.json"
 }
 
 case "$placement" in
-    center|top|bottom|left|right|top-center|bottom-center|left-center|right-center) ;;
+    center|top|bottom|left|right|top-center|bottom-center|left-center|right-center|clamp) ;;
     *)
         printf 'quickshell_launcher_position.sh: invalid placement: %s\n' "$placement" >&2
         exit 2
@@ -51,10 +53,13 @@ done
 }
 
 address="$(jq -r '.address // empty' <<<"$client")"
+win_x="$(jq -r '.at[0] // 0' <<<"$client")"
+win_y="$(jq -r '.at[1] // 0' <<<"$client")"
 win_w="$(jq -r '.size[0] // 0' <<<"$client")"
 win_h="$(jq -r '.size[1] // 0' <<<"$client")"
 
-[[ -n "$address" && "$win_w" =~ ^[0-9]+$ && "$win_h" =~ ^[0-9]+$ ]] || exit 1
+[[ -n "$address" && "$win_x" =~ ^-?[0-9]+$ && "$win_y" =~ ^-?[0-9]+$ \
+    && "$win_w" =~ ^[0-9]+$ && "$win_h" =~ ^[0-9]+$ ]] || exit 1
 (( win_w > 0 && win_h > 0 )) || exit 1
 
 mon="$(
@@ -131,6 +136,10 @@ case "$placement" in
     center)
         x=$((mon_x + (mon_w - win_w) / 2))
         y=$((mon_y + (mon_h - win_h) / 2))
+        ;;
+    clamp)
+        x="$win_x"
+        y="$win_y"
         ;;
 esac
 

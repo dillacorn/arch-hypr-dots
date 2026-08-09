@@ -5,20 +5,18 @@ set -euo pipefail
 
 CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 STATE_FILE="${CACHE_HOME}/awtarchy/quickshell-state.json"
+STATE_LOCK_FILE="${STATE_FILE}.lock"
 QUICKSHELL_SCRIPT="${HYPR_QUICKSHELL_SCRIPT:-${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/quickshell.sh}"
 
-DEFAULT_WIDTH=420
-DEFAULT_HEIGHT=582
-DEFAULT_TEXT_SIZE=14
-DEFAULT_ICON_SIZE=18
-MIN_WIDTH=420
-MAX_WIDTH=3840
-MIN_HEIGHT=360
-MAX_HEIGHT=2160
-MIN_TEXT_SIZE=10
-MAX_TEXT_SIZE=28
-MIN_ICON_SIZE=12
-MAX_ICON_SIZE=48
+MIN_WIDTH=1
+MAX_WIDTH=16384
+MIN_HEIGHT=1
+MAX_HEIGHT=16384
+MIN_TEXT_SCALE=50
+MAX_TEXT_SCALE=200
+MIN_ICON_SCALE=50
+MAX_ICON_SCALE=200
+TMP_FILE=""
 
 need() {
     command -v "$1" >/dev/null 2>&1 || {
@@ -28,8 +26,15 @@ need() {
 }
 
 need jq
+need flock
 
-ensure_state() {
+cleanup() {
+    [[ -z "$TMP_FILE" ]] || rm -f -- "$TMP_FILE"
+}
+
+trap cleanup EXIT
+
+bootstrap_state() {
     mkdir -p "$(dirname "$STATE_FILE")"
 
     if [[ ! -s "$STATE_FILE" ]] || ! jq -e 'type == "object"' "$STATE_FILE" >/dev/null 2>&1; then
@@ -37,10 +42,21 @@ ensure_state() {
             "$QUICKSHELL_SCRIPT" dump-state >/dev/null 2>&1 || true
         fi
     fi
+}
 
+ensure_state_locked() {
     if [[ ! -s "$STATE_FILE" ]] || ! jq -e 'type == "object"' "$STATE_FILE" >/dev/null 2>&1; then
         printf '{"enabled":true,"monitors":{},"launcher_sizes":{}}\n' >"$STATE_FILE"
     fi
+}
+
+new_tmp() {
+    TMP_FILE="$(mktemp "${STATE_FILE}.tmp.XXXXXX")"
+}
+
+commit_tmp() {
+    mv -f -- "$TMP_FILE" "$STATE_FILE"
+    TMP_FILE=""
 }
 
 validate_int_range() {
@@ -56,100 +72,178 @@ validate_int_range() {
 }
 
 lock_size() {
-    local monitor="$1" width="$2" height="$3" tmp
+    local monitor="$1" width="$2" height="$3"
     [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
     validate_int_range "$width" "$MIN_WIDTH" "$MAX_WIDTH" 'width'
     validate_int_range "$height" "$MIN_HEIGHT" "$MAX_HEIGHT" 'height'
-    ensure_state
-    tmp="${STATE_FILE}.tmp.$$"
+    new_tmp
     jq \
         --arg monitor "$monitor" \
         --argjson width "$width" \
         --argjson height "$height" '
-        .launcher_sizes = (.launcher_sizes // {})
-        | .launcher_sizes[$monitor] = {
+        .launcher_sizes = (if (.launcher_sizes | type) == "object" then .launcher_sizes else {} end)
+        | .launcher_sizes[$monitor] = ((if (.launcher_sizes[$monitor] | type) == "object"
+            then .launcher_sizes[$monitor] else {} end) + {
             width:$width,
             height:$height,
             locked:true
-        }
+        })
         | del(.application_view)
-        | .monitors = (.monitors // {})
-        | .monitors |= with_entries(.value |= del(.application_view))
-    ' "$STATE_FILE" >"$tmp"
-    mv -f "$tmp" "$STATE_FILE"
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
 }
 
 unlock_size() {
-    local monitor="$1" tmp
+    local monitor="$1"
     [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
-    ensure_state
-    tmp="${STATE_FILE}.tmp.$$"
+    new_tmp
     jq --arg monitor "$monitor" '
-        .launcher_sizes = (.launcher_sizes // {})
-        | del(.launcher_sizes[$monitor])
+        .launcher_sizes = (if (.launcher_sizes | type) == "object" then .launcher_sizes else {} end)
+        | .launcher_sizes[$monitor] = ((if (.launcher_sizes[$monitor] | type) == "object"
+            then .launcher_sizes[$monitor] else {} end)
+            | del(.width, .height, .locked))
+        | if (.launcher_sizes[$monitor] | length) == 0
+            then del(.launcher_sizes[$monitor])
+            else .
+          end
         | del(.application_view)
-        | .monitors = (.monitors // {})
-        | .monitors |= with_entries(.value |= del(.application_view))
-    ' "$STATE_FILE" >"$tmp"
-    mv -f "$tmp" "$STATE_FILE"
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
 }
 
 reset_locks() {
-    local tmp
-    ensure_state
-    tmp="${STATE_FILE}.tmp.$$"
+    new_tmp
+    jq '
+        .launcher_sizes = ((if (.launcher_sizes | type) == "object" then .launcher_sizes else {} end)
+            | with_entries(.value = (if (.value | type) == "object"
+                then (.value | del(.width, .height, .locked)) else {} end))
+            | with_entries(select((.value | length) > 0)))
+        | del(.application_view)
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
+set_scales() {
+    local monitor="$1" text_scale="$2" icon_scale="$3"
+    [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
+    validate_int_range "$text_scale" "$MIN_TEXT_SCALE" "$MAX_TEXT_SCALE" 'text scale'
+    validate_int_range "$icon_scale" "$MIN_ICON_SCALE" "$MAX_ICON_SCALE" 'icon scale'
+    new_tmp
+    jq \
+        --arg monitor "$monitor" \
+        --argjson text_scale "$text_scale" \
+        --argjson icon_scale "$icon_scale" '
+        .launcher_sizes = (if (.launcher_sizes | type) == "object" then .launcher_sizes else {} end)
+        | .launcher_sizes[$monitor] = ((if (.launcher_sizes[$monitor] | type) == "object"
+            then .launcher_sizes[$monitor] else {} end) + {
+            text_scale:$text_scale,
+            icon_scale:$icon_scale
+        })
+        | del(.application_view)
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
+reset_monitor() {
+    local monitor="$1"
+    [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
+    new_tmp
+    jq --arg monitor "$monitor" '
+        .launcher_sizes = (if (.launcher_sizes | type) == "object" then .launcher_sizes else {} end)
+        | del(.launcher_sizes[$monitor])
+        | del(.application_view)
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
+copy_view() {
+    local width="$1" height="$2" text_scale="$3" icon_scale="$4"
+    shift 4
+    local -a targets=("$@")
+    local targets_json
+
+    (( ${#targets[@]} > 0 )) || {
+        printf 'at least one target monitor is required\n' >&2
+        exit 2
+    }
+    validate_int_range "$width" "$MIN_WIDTH" "$MAX_WIDTH" 'width'
+    validate_int_range "$height" "$MIN_HEIGHT" "$MAX_HEIGHT" 'height'
+    validate_int_range "$text_scale" "$MIN_TEXT_SCALE" "$MAX_TEXT_SCALE" 'text scale'
+    validate_int_range "$icon_scale" "$MIN_ICON_SCALE" "$MAX_ICON_SCALE" 'icon scale'
+    targets_json="$(jq -cn --args '$ARGS.positional' -- "${targets[@]}")"
+
+    new_tmp
+    jq \
+        --argjson targets "$targets_json" \
+        --argjson width "$width" \
+        --argjson height "$height" \
+        --argjson text_scale "$text_scale" \
+        --argjson icon_scale "$icon_scale" '
+        .launcher_sizes = (if (.launcher_sizes | type) == "object" then .launcher_sizes else {} end)
+        | .launcher_sizes = reduce $targets[] as $monitor
+            (.launcher_sizes;
+                .[$monitor] as $current
+                | .[$monitor] = ((if ($current | type) == "object" then $current else {} end) + {
+                    width:$width,
+                    height:$height,
+                    text_scale:$text_scale,
+                    icon_scale:$icon_scale,
+                    locked:(($current.locked // false) == true)
+                }))
+        | del(.application_view)
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
+reset_all() {
+    new_tmp
     jq '
         .launcher_sizes = {}
         | del(.application_view)
-        | .monitors = (.monitors // {})
-        | .monitors |= with_entries(.value |= del(.application_view))
-    ' "$STATE_FILE" >"$tmp"
-    mv -f "$tmp" "$STATE_FILE"
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
 }
 
 # Legacy commands remain accepted so older local helpers do not fail during the
 # testing branch transition. Launcher dimensions are no longer read globally.
 set_field() {
-    local field="$1" value="$2" min max label tmp
+    local field="$1" value="$2" min max label
     case "$field" in
         width) min=$MIN_WIDTH; max=$MAX_WIDTH; label='width' ;;
         height) min=$MIN_HEIGHT; max=$MAX_HEIGHT; label='height' ;;
-        text_size) min=$MIN_TEXT_SIZE; max=$MAX_TEXT_SIZE; label='text size' ;;
-        icon_size) min=$MIN_ICON_SIZE; max=$MAX_ICON_SIZE; label='icon size' ;;
+        text_size) min=10; max=28; label='text size' ;;
+        icon_size) min=12; max=48; label='icon size' ;;
         *) printf 'invalid field: %s\n' "$field" >&2; exit 2 ;;
     esac
     validate_int_range "$value" "$min" "$max" "$label"
-    ensure_state
-    tmp="${STATE_FILE}.tmp.$$"
+    new_tmp
     jq --arg field "$field" --argjson value "$value" '
         .application_view = (.application_view // {})
         | .application_view[$field] = $value
-    ' "$STATE_FILE" >"$tmp"
-    mv -f "$tmp" "$STATE_FILE"
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
 }
 
 set_size() {
     local width="$1" height="$2"
     validate_int_range "$width" "$MIN_WIDTH" "$MAX_WIDTH" 'width'
     validate_int_range "$height" "$MIN_HEIGHT" "$MAX_HEIGHT" 'height'
-    ensure_state
-    local tmp="${STATE_FILE}.tmp.$$"
+    new_tmp
     jq --argjson width "$width" --argjson height "$height" '
         .application_view = (.application_view // {})
         | .application_view.width = $width
         | .application_view.height = $height
-    ' "$STATE_FILE" >"$tmp"
-    mv -f "$tmp" "$STATE_FILE"
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
 }
 
 set_all() {
     local width="$1" height="$2" text_size="$3" icon_size="$4"
     validate_int_range "$width" "$MIN_WIDTH" "$MAX_WIDTH" 'width'
     validate_int_range "$height" "$MIN_HEIGHT" "$MAX_HEIGHT" 'height'
-    validate_int_range "$text_size" "$MIN_TEXT_SIZE" "$MAX_TEXT_SIZE" 'text size'
-    validate_int_range "$icon_size" "$MIN_ICON_SIZE" "$MAX_ICON_SIZE" 'icon size'
-    ensure_state
-    local tmp="${STATE_FILE}.tmp.$$"
+    validate_int_range "$text_size" 10 28 'text size'
+    validate_int_range "$icon_size" 12 48 'icon size'
+    new_tmp
     jq \
         --argjson width "$width" \
         --argjson height "$height" \
@@ -161,13 +255,18 @@ set_all() {
             text_size:$text_size,
             icon_size:$icon_size
         }
-    ' "$STATE_FILE" >"$tmp"
-    mv -f "$tmp" "$STATE_FILE"
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
 }
 
 reset_defaults() {
-    reset_locks
+    reset_all
 }
+
+bootstrap_state
+exec 9>"$STATE_LOCK_FILE"
+flock -x 9
+ensure_state_locked
 
 cmd="${1:-}"
 case "$cmd" in
@@ -181,6 +280,21 @@ case "$cmd" in
         ;;
     reset-locks)
         reset_locks
+        ;;
+    set-scales)
+        [[ -n ${2:-} && -n ${3:-} && -n ${4:-} ]] || exit 2
+        set_scales "$2" "$3" "$4"
+        ;;
+    copy-view)
+        [[ -n ${2:-} && -n ${3:-} && -n ${4:-} && -n ${5:-} && -n ${6:-} ]] || exit 2
+        copy_view "$2" "$3" "$4" "$5" "${@:6}"
+        ;;
+    reset-monitor)
+        [[ -n ${2:-} ]] || exit 2
+        reset_monitor "$2"
+        ;;
+    reset-all)
+        reset_all
         ;;
     set)
         [[ -n ${2:-} && -n ${3:-} ]] || exit 2
@@ -198,7 +312,7 @@ case "$cmd" in
         reset_defaults
         ;;
     *)
-        printf 'usage: %s {lock-size <MON> <width> <height>|unlock-size <MON>|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
+        printf 'usage: %s {lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
         exit 2
         ;;
 esac

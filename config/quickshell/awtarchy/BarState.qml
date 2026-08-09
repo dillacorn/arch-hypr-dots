@@ -123,9 +123,13 @@ Singleton {
 
         try {
             const parsed = JSON.parse(text);
-            if (!parsed.monitors)
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+                return ({ enabled: true, monitors: {}, launcher_sizes: {} });
+            if (!parsed.monitors || typeof parsed.monitors !== "object"
+                || Array.isArray(parsed.monitors))
                 parsed.monitors = {};
-            if (!parsed.launcher_sizes)
+            if (!parsed.launcher_sizes || typeof parsed.launcher_sizes !== "object"
+                || Array.isArray(parsed.launcher_sizes))
                 parsed.launcher_sizes = {};
             if (parsed.enabled === undefined)
                 parsed.enabled = true;
@@ -187,39 +191,67 @@ Singleton {
         return Math.max(50, Math.min(200, percent)) / 100.0;
     }
 
-    function launcherLockFor(name) {
+    function launcherViewFor(name) {
         const d = data();
-        const view = (d.launcher_sizes || ({}))[name] || ({});
-        const width = Number(view.width);
-        const height = Number(view.height);
-        const locked = view.locked === true
-            && Number.isFinite(width) && width >= 420 && width <= 3840
-            && Number.isFinite(height) && height >= 360 && height <= 2160;
+        const rawView = (d.launcher_sizes || ({}))[name];
+        const view = rawView && typeof rawView === "object" && !Array.isArray(rawView)
+            ? rawView : ({});
+        // Copied dimensions remain a preferred size even when the destination
+        // is unlocked. This lets a one-time copy preserve each display's
+        // independent lock state. Explicitly unlocking a display removes its
+        // preferred dimensions in the state helper.
+        const rawWidth = Number(view.width);
+        const rawHeight = Number(view.height);
+        const validWidth = Number.isFinite(rawWidth) && rawWidth >= 1 && rawWidth <= 16384;
+        const validHeight = Number.isFinite(rawHeight) && rawHeight >= 1 && rawHeight <= 16384;
+
+        let rawTextScale = view.text_scale;
+        if (rawTextScale === undefined && view.text_size !== undefined)
+            rawTextScale = Number(view.text_size) * 100 / defaultAppTextSize;
+
+        let rawIconScale = view.icon_scale;
+        if (rawIconScale === undefined && view.icon_size !== undefined)
+            rawIconScale = Number(view.icon_size) * 100 / defaultAppIconSize;
+
+        const textScale = Number(rawTextScale === undefined ? 100 : rawTextScale);
+        const iconScale = Number(rawIconScale === undefined ? 100 : rawIconScale);
 
         return ({
-            locked: locked,
-            width: locked ? Math.round(width) : defaultLauncherWidth,
-            height: locked ? Math.round(height) : defaultLauncherHeight
+            locked: view.locked === true && validWidth && validHeight,
+            width: validWidth ? Math.round(rawWidth) : defaultLauncherWidth,
+            height: validHeight ? Math.round(rawHeight) : defaultLauncherHeight,
+            textScale: Number.isFinite(textScale)
+                ? Math.max(50, Math.min(200, Math.round(textScale))) : 100,
+            iconScale: Number.isFinite(iconScale)
+                ? Math.max(50, Math.min(200, Math.round(iconScale))) : 100
         });
     }
 
     function applicationSizeLockedFor(name) {
-        return launcherLockFor(name).locked;
+        return launcherViewFor(name).locked;
     }
 
     function launcherWidthFor(name, globalOnly) {
-        return launcherLockFor(name).width;
+        return launcherViewFor(name).width;
     }
 
     function launcherHeightFor(name, globalOnly) {
-        return launcherLockFor(name).height;
+        return launcherViewFor(name).height;
+    }
+
+    function appTextScaleFor(name) {
+        return launcherViewFor(name).textScale;
+    }
+
+    function appIconScaleFor(name) {
+        return launcherViewFor(name).iconScale;
     }
 
     function appTextSizeFor(name, globalOnly) {
-        return defaultAppTextSize;
+        return Math.max(7, Math.round(defaultAppTextSize * appTextScaleFor(name) / 100));
     }
 
     function appIconSizeFor(name, globalOnly) {
-        return defaultAppIconSize;
+        return Math.max(9, Math.round(defaultAppIconSize * appIconScaleFor(name) / 100));
     }
 }

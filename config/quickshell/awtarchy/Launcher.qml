@@ -18,18 +18,40 @@ Singleton {
     readonly property string animationStatePath: runtimeDir + "/hypr-animations-enabled"
     readonly property int minimumLauncherWidth: 420
     readonly property int minimumLauncherHeight: 360
+    readonly property int screenEdgeMargin: 16
+    readonly property int minimumTextScale: 50
+    readonly property int maximumTextScale: 200
+    readonly property int minimumIconScale: 50
+    readonly property int maximumIconScale: 200
     readonly property int applicationColumnMinimumWidth: 300
     readonly property string activeMonitorName: launcherWindow.screen && launcherWindow.screen.name
         ? launcherWindow.screen.name : targetMonitorName
-    readonly property int configuredAppTextSize: BarState.appTextSizeFor(activeMonitorName, false)
-    readonly property int configuredAppIconSize: BarState.appIconSizeFor(activeMonitorName, false)
+    readonly property int effectiveTextScale: textScaleOverride >= 0
+        ? textScaleOverride : BarState.appTextScaleFor(activeMonitorName)
+    readonly property int effectiveIconScale: iconScaleOverride >= 0
+        ? iconScaleOverride : BarState.appIconScaleFor(activeMonitorName)
+    readonly property int configuredAppTextSize: Math.max(7,
+        Math.round(BarState.defaultAppTextSize * effectiveTextScale / 100))
+    readonly property int configuredAppIconSize: Math.max(9,
+        Math.round(BarState.defaultAppIconSize * effectiveIconScale / 100))
     readonly property int liveWidth: Math.round(launcherWindow.width)
     readonly property int liveHeight: Math.round(launcherWindow.height)
-    readonly property bool sizeLocked: activeMonitorName.length > 0
-        && BarState.applicationSizeLockedFor(activeMonitorName)
+    readonly property bool sizeLocked: sizeLockOverride >= 0
+        ? sizeLockOverride === 1
+        : activeMonitorName.length > 0 && BarState.applicationSizeLockedFor(activeMonitorName)
     property string targetMonitorName: ""
     property string requestedPlacement: "center"
     property bool launcherPositioned: false
+    property bool settingsOpen: false
+    property bool copySettingsOpen: false
+    property int textScaleOverride: -1
+    property int iconScaleOverride: -1
+    property int sizeLockOverride: -1
+    property bool settingWindowSize: false
+    property var copyTargets: ({})
+    property int copySelectionRevision: 0
+    property var stateCommandQueue: []
+    property string settingsMessage: ""
 
     function focusedScreen() {
         const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
@@ -62,19 +84,66 @@ Singleton {
         });
     }
 
+    function safeMaximumWidth(targetScreen) {
+        const reportedWidth = targetScreen ? Math.floor(targetScreen.width) : 0;
+        const screenWidth = reportedWidth > 0 ? reportedWidth : 1920;
+        return Math.max(1, screenWidth - screenEdgeMargin * 2);
+    }
+
+    function safeMaximumHeight(targetScreen) {
+        const reportedHeight = targetScreen ? Math.floor(targetScreen.height) : 0;
+        const screenHeight = reportedHeight > 0 ? reportedHeight : 1080;
+        return Math.max(1, screenHeight - screenEdgeMargin * 2);
+    }
+
+    function safeMinimumWidth(targetScreen) {
+        return Math.min(minimumLauncherWidth, safeMaximumWidth(targetScreen));
+    }
+
+    function safeMinimumHeight(targetScreen) {
+        return Math.min(minimumLauncherHeight, safeMaximumHeight(targetScreen));
+    }
+
     function setWindowSize(width, height) {
         const targetScreen = launcherWindow.screen;
-        const screenWidth = targetScreen ? targetScreen.width : 1920;
-        const screenHeight = targetScreen ? targetScreen.height : 1080;
-        const desiredWidth = Math.min(screenWidth,
-            Math.max(minimumLauncherWidth, Math.round(width)));
-        const desiredHeight = Math.min(screenHeight,
-            Math.max(minimumLauncherHeight, Math.round(height)));
+        const desiredWidth = Math.min(safeMaximumWidth(targetScreen),
+            Math.max(safeMinimumWidth(targetScreen), Math.round(width)));
+        const desiredHeight = Math.min(safeMaximumHeight(targetScreen),
+            Math.max(safeMinimumHeight(targetScreen), Math.round(height)));
 
+        settingWindowSize = true;
         launcherWindow.implicitWidth = desiredWidth;
         launcherWindow.implicitHeight = desiredHeight;
         launcherWindow.width = desiredWidth;
         launcherWindow.height = desiredHeight;
+        Qt.callLater(() => settingWindowSize = false);
+    }
+
+    function clampWindowToScreen() {
+        const currentScreen = launcherWindow.screen;
+        if (!currentScreen || currentScreen.width <= 0 || currentScreen.height <= 0) {
+            const fallback = focusedScreen();
+            if (!fallback)
+                return;
+            resetLocalSettingsState();
+            targetMonitorName = fallback.name;
+            requestedPlacement = centeredPlacementForScreen(fallback);
+            launcherWindow.screen = fallback;
+            applySpawnSize();
+            positionTimer.restart();
+            return;
+        }
+        setWindowSize(liveWidth, liveHeight);
+        if (launcherWindow.visible)
+            positionTimer.restart();
+    }
+
+    function guardWindowBounds() {
+        if (!launcherWindow.visible || !launcherWindow.screen
+            || targetMonitorName.length === 0 || boundsProcess.running)
+            return;
+        setWindowSize(liveWidth, liveHeight);
+        boundsProcess.exec([positionScript, targetMonitorName, "clamp"]);
     }
 
     function applySpawnSize() {
@@ -86,20 +155,168 @@ Singleton {
 
     function toggleSizeLock() {
         const monitor = activeMonitorName;
-        if (monitor.length === 0 || sizeStateWriter.running)
+        if (monitor.length === 0)
             return;
 
-        if (BarState.applicationSizeLockedFor(monitor)) {
-            sizeStateWriter.exec([stateScript, "unlock-size", monitor]);
+        if (sizeLocked) {
+            sizeLockOverride = 0;
+            queueStateCommand(["unlock-size", monitor]);
+            settingsMessage = "Dimensions unlocked for " + monitor;
         } else {
-            sizeStateWriter.exec([
-                stateScript,
+            sizeLockOverride = 1;
+            queueStateCommand([
                 "lock-size",
                 monitor,
                 String(liveWidth),
                 String(liveHeight)
             ]);
+            settingsMessage = "Dimensions locked for " + monitor;
         }
+    }
+
+    function queueStateCommand(commandArgs) {
+        const nextQueue = stateCommandQueue.slice();
+        nextQueue.push(commandArgs);
+        stateCommandQueue = nextQueue;
+        runNextStateCommand();
+    }
+
+    function runNextStateCommand() {
+        if (sizeStateWriter.running || stateCommandQueue.length === 0)
+            return;
+
+        const nextCommand = stateCommandQueue[0];
+        stateCommandQueue = stateCommandQueue.slice(1);
+        sizeStateWriter.exec([stateScript, ...nextCommand]);
+    }
+
+    function adjustTextScale(delta) {
+        const monitor = activeMonitorName;
+        if (monitor.length === 0)
+            return;
+        const nextScale = Math.max(minimumTextScale,
+            Math.min(maximumTextScale, effectiveTextScale + delta));
+        textScaleOverride = nextScale;
+        queueStateCommand([
+            "set-scales",
+            monitor,
+            String(nextScale),
+            String(effectiveIconScale)
+        ]);
+        settingsMessage = "Text size " + nextScale + "%";
+    }
+
+    function adjustIconScale(delta) {
+        const monitor = activeMonitorName;
+        if (monitor.length === 0)
+            return;
+        const nextScale = Math.max(minimumIconScale,
+            Math.min(maximumIconScale, effectiveIconScale + delta));
+        iconScaleOverride = nextScale;
+        queueStateCommand([
+            "set-scales",
+            monitor,
+            String(effectiveTextScale),
+            String(nextScale)
+        ]);
+        settingsMessage = "Icon size " + nextScale + "%";
+    }
+
+    function resetDisplaySettings() {
+        const monitor = activeMonitorName;
+        if (monitor.length === 0)
+            return;
+
+        textScaleOverride = 100;
+        iconScaleOverride = 100;
+        sizeLockOverride = 0;
+        queueStateCommand(["reset-monitor", monitor]);
+        setWindowSize(BarState.defaultLauncherWidth, BarState.defaultLauncherHeight);
+        positionTimer.restart();
+        settingsMessage = "Reset " + monitor + " to launcher defaults";
+    }
+
+    function copyTargetNames() {
+        return Quickshell.screens
+            .map(targetScreen => targetScreen ? targetScreen.name : "")
+            .filter(name => name.length > 0 && name !== activeMonitorName);
+    }
+
+    function targetSelected(name) {
+        const dependency = copySelectionRevision;
+        return copyTargets[name] === true;
+    }
+
+    function selectedTargetCount() {
+        const dependency = copySelectionRevision;
+        return copyTargetNames().filter(name => targetSelected(name)).length;
+    }
+
+    function allTargetsSelected() {
+        const names = copyTargetNames();
+        return names.length > 0 && names.every(name => targetSelected(name));
+    }
+
+    function setTargetSelected(name, selected) {
+        const next = Object.assign({}, copyTargets);
+        if (selected)
+            next[name] = true;
+        else
+            delete next[name];
+        copyTargets = next;
+        copySelectionRevision++;
+    }
+
+    function toggleAllTargets() {
+        const select = !allTargetsSelected();
+        const next = {};
+        if (select) {
+            for (const name of copyTargetNames())
+                next[name] = true;
+        }
+        copyTargets = next;
+        copySelectionRevision++;
+    }
+
+    function clearCopyTargets() {
+        copyTargets = ({});
+        copySelectionRevision++;
+    }
+
+    function applyCopySettings() {
+        const targets = copyTargetNames().filter(name => targetSelected(name));
+        if (targets.length === 0)
+            return;
+
+        queueStateCommand([
+            "copy-view",
+            String(liveWidth),
+            String(liveHeight),
+            String(effectiveTextScale),
+            String(effectiveIconScale),
+            ...targets
+        ]);
+        settingsMessage = "Copied launcher settings to " + targets.length
+            + (targets.length === 1 ? " display" : " displays");
+        copySettingsOpen = false;
+        clearCopyTargets();
+    }
+
+    function toggleSettings() {
+        settingsOpen = !settingsOpen;
+        copySettingsOpen = false;
+        clearCopyTargets();
+        settingsMessage = "";
+    }
+
+    function resetLocalSettingsState() {
+        settingsOpen = false;
+        copySettingsOpen = false;
+        textScaleOverride = -1;
+        iconScaleOverride = -1;
+        sizeLockOverride = -1;
+        settingsMessage = "";
+        clearCopyTargets();
     }
 
     function showOnScreen(targetScreen, placement) {
@@ -107,6 +324,7 @@ Singleton {
             return;
 
         focusGrab.active = false;
+        resetLocalSettingsState();
         targetMonitorName = targetScreen.name;
         requestedPlacement = placement || "center";
         launcherPositioned = false;
@@ -139,6 +357,7 @@ Singleton {
         launcherWindow.visible = false;
         launcherPositioned = false;
         search.text = "";
+        resetLocalSettingsState();
     }
 
     function toggleFocused() {
@@ -242,7 +461,10 @@ Singleton {
 
     Process {
         id: sizeStateWriter
-        onExited: BarState.refresh()
+        onExited: {
+            BarState.refresh();
+            Qt.callLater(() => root.runNextStateCommand());
+        }
     }
 
     IpcHandler {
@@ -262,6 +484,34 @@ Singleton {
         onTriggered: root.positionLauncher()
     }
 
+    Timer {
+        id: screenClampTimer
+        interval: 0
+        repeat: false
+        onTriggered: root.clampWindowToScreen()
+    }
+
+    Timer {
+        id: boundsGuardTimer
+        interval: 180
+        repeat: false
+        onTriggered: root.guardWindowBounds()
+    }
+
+    Connections {
+        target: launcherWindow.screen
+        enabled: target !== null
+        ignoreUnknownSignals: true
+        function onWidthChanged() { screenClampTimer.restart(); }
+        function onHeightChanged() { screenClampTimer.restart(); }
+    }
+
+    Connections {
+        target: Quickshell
+        ignoreUnknownSignals: true
+        function onScreensChanged() { screenClampTimer.restart(); }
+    }
+
     Process {
         id: positionProcess
         onExited: {
@@ -271,6 +521,10 @@ Singleton {
             focusGrab.active = true;
             Qt.callLater(() => search.forceActiveFocus());
         }
+    }
+
+    Process {
+        id: boundsProcess
     }
 
     HyprlandFocusGrab {
@@ -291,11 +545,24 @@ Singleton {
 
         implicitWidth: BarState.defaultLauncherWidth
         implicitHeight: BarState.defaultLauncherHeight
-        minimumSize: Qt.size(root.minimumLauncherWidth, root.minimumLauncherHeight)
-        maximumSize: Qt.size(
-            Math.max(root.minimumLauncherWidth, screen ? screen.width : 1920),
-            Math.max(root.minimumLauncherHeight, screen ? screen.height : 1080)
+        minimumSize: Qt.size(
+            root.safeMinimumWidth(screen),
+            root.safeMinimumHeight(screen)
         )
+        maximumSize: Qt.size(
+            root.safeMaximumWidth(screen),
+            root.safeMaximumHeight(screen)
+        )
+
+        onScreenChanged: screenClampTimer.restart()
+        onWidthChanged: {
+            if (visible && !root.settingWindowSize)
+                boundsGuardTimer.restart();
+        }
+        onHeightChanged: {
+            if (visible && !root.settingWindowSize)
+                boundsGuardTimer.restart();
+        }
 
         onVisibleChanged: {
             if (visible) {
@@ -387,7 +654,14 @@ Singleton {
 
                             Keys.onPressed: event => {
                                 if (event.key === Qt.Key_Escape) {
-                                    root.close();
+                                    if (root.copySettingsOpen) {
+                                        root.copySettingsOpen = false;
+                                        root.clearCopyTargets();
+                                    } else if (root.settingsOpen) {
+                                        root.toggleSettings();
+                                    } else {
+                                        root.close();
+                                    }
                                     event.accepted = true;
                                 } else if (event.key === Qt.Key_Down) {
                                     if (appList.count > 0)
@@ -455,6 +729,436 @@ Singleton {
                                 onClicked: {
                                     root.toggleSizeLock();
                                     Qt.callLater(() => search.forceActiveFocus());
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.preferredWidth: 28
+                            Layout.preferredHeight: 26
+                            color: root.settingsOpen ? Theme.focus
+                                : (settingsMouse.containsMouse ? Theme.subtleHover : "transparent")
+                            border.width: 0
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: ""
+                                color: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 13
+                            }
+
+                            MouseArea {
+                                id: settingsMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    root.toggleSettings();
+                                    Qt.callLater(() => search.forceActiveFocus());
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: root.settingsOpen ? 108 : 0
+                    visible: root.settingsOpen
+                    color: Theme.popupButton
+                    border.width: 0
+                    clip: true
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 6
+                        spacing: 3
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 28
+                            spacing: 6
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.activeMonitorName + "  " + root.liveWidth + " × " + root.liveHeight
+                                color: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 11
+                                font.weight: Font.Medium
+                                elide: Text.ElideRight
+                            }
+
+                            Rectangle {
+                                Layout.preferredWidth: 112
+                                Layout.preferredHeight: 26
+                                color: resetMouse.containsMouse ? Theme.focus : Theme.subtleHover
+                                border.width: 0
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "Reset Launcher"
+                                    color: Theme.foreground
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: 11
+                                }
+
+                                MouseArea {
+                                    id: resetMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.resetDisplaySettings()
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 28
+                            spacing: 5
+                            visible: !root.copySettingsOpen
+
+                            Text {
+                                text: "Icons"
+                                color: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 11
+                            }
+
+                            Rectangle {
+                                Layout.preferredWidth: 26
+                                Layout.preferredHeight: 24
+                                color: iconMinusMouse.containsMouse ? Theme.focus : Theme.subtleHover
+                                opacity: root.effectiveIconScale > root.minimumIconScale ? 1 : 0.4
+                                border.width: 0
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "−"
+                                    color: Theme.foreground
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: 13
+                                }
+
+                                MouseArea {
+                                    id: iconMinusMouse
+                                    anchors.fill: parent
+                                    enabled: root.effectiveIconScale > root.minimumIconScale
+                                    hoverEnabled: enabled
+                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: root.adjustIconScale(-10)
+                                }
+                            }
+
+                            Text {
+                                Layout.preferredWidth: 42
+                                horizontalAlignment: Text.AlignHCenter
+                                text: root.effectiveIconScale + "%"
+                                color: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 11
+                            }
+
+                            Rectangle {
+                                Layout.preferredWidth: 26
+                                Layout.preferredHeight: 24
+                                color: iconPlusMouse.containsMouse ? Theme.focus : Theme.subtleHover
+                                opacity: root.effectiveIconScale < root.maximumIconScale ? 1 : 0.4
+                                border.width: 0
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "+"
+                                    color: Theme.foreground
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: 13
+                                }
+
+                                MouseArea {
+                                    id: iconPlusMouse
+                                    anchors.fill: parent
+                                    enabled: root.effectiveIconScale < root.maximumIconScale
+                                    hoverEnabled: enabled
+                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: root.adjustIconScale(10)
+                                }
+                            }
+
+                            Item { Layout.preferredWidth: 8 }
+
+                            Text {
+                                text: "Text"
+                                color: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 11
+                            }
+
+                            Rectangle {
+                                Layout.preferredWidth: 26
+                                Layout.preferredHeight: 24
+                                color: textMinusMouse.containsMouse ? Theme.focus : Theme.subtleHover
+                                opacity: root.effectiveTextScale > root.minimumTextScale ? 1 : 0.4
+                                border.width: 0
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "−"
+                                    color: Theme.foreground
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: 13
+                                }
+
+                                MouseArea {
+                                    id: textMinusMouse
+                                    anchors.fill: parent
+                                    enabled: root.effectiveTextScale > root.minimumTextScale
+                                    hoverEnabled: enabled
+                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: root.adjustTextScale(-10)
+                                }
+                            }
+
+                            Text {
+                                Layout.preferredWidth: 42
+                                horizontalAlignment: Text.AlignHCenter
+                                text: root.effectiveTextScale + "%"
+                                color: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 11
+                            }
+
+                            Rectangle {
+                                Layout.preferredWidth: 26
+                                Layout.preferredHeight: 24
+                                color: textPlusMouse.containsMouse ? Theme.focus : Theme.subtleHover
+                                opacity: root.effectiveTextScale < root.maximumTextScale ? 1 : 0.4
+                                border.width: 0
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "+"
+                                    color: Theme.foreground
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: 13
+                                }
+
+                                MouseArea {
+                                    id: textPlusMouse
+                                    anchors.fill: parent
+                                    enabled: root.effectiveTextScale < root.maximumTextScale
+                                    hoverEnabled: enabled
+                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: root.adjustTextScale(10)
+                                }
+                            }
+
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        Flickable {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 28
+                            visible: root.copySettingsOpen
+                            clip: true
+                            contentWidth: Math.max(width, copyTargetRow.width)
+                            contentHeight: height
+                            flickableDirection: Flickable.HorizontalFlick
+                            boundsBehavior: Flickable.StopAtBounds
+
+                            Row {
+                                id: copyTargetRow
+                                height: parent.height
+                                width: childrenRect.width
+                                spacing: 4
+
+                                Rectangle {
+                                    visible: root.copyTargetNames().length > 0
+                                    width: visible ? 96 : 0
+                                    height: 24
+                                    color: root.allTargetsSelected() ? Theme.focus
+                                        : (allTargetsMouse.containsMouse ? Theme.subtleHover : "transparent")
+                                    border.width: 1
+                                    border.color: Theme.focus
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: (root.allTargetsSelected() ? "✓ " : "") + "All displays"
+                                        color: Theme.foreground
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: 10
+                                    }
+
+                                    MouseArea {
+                                        id: allTargetsMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.toggleAllTargets()
+                                    }
+                                }
+
+                                Repeater {
+                                    model: root.copyTargetNames()
+
+                                    Rectangle {
+                                        id: copyTargetButton
+                                        required property var modelData
+                                        readonly property string monitorName: String(modelData)
+                                        width: Math.max(72, Math.min(140, targetLabel.implicitWidth + 24))
+                                        height: 24
+                                        color: root.targetSelected(monitorName) ? Theme.focus
+                                            : (targetMouse.containsMouse ? Theme.subtleHover : "transparent")
+                                        border.width: 1
+                                        border.color: Theme.focus
+
+                                        Text {
+                                            id: targetLabel
+                                            anchors.centerIn: parent
+                                            width: parent.width - 12
+                                            text: (root.targetSelected(copyTargetButton.monitorName) ? "✓ " : "")
+                                                + copyTargetButton.monitorName
+                                            color: Theme.foreground
+                                            font.family: Theme.fontFamily
+                                            font.pixelSize: 10
+                                            horizontalAlignment: Text.AlignHCenter
+                                            elide: Text.ElideRight
+                                        }
+
+                                        MouseArea {
+                                            id: targetMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: root.setTargetSelected(copyTargetButton.monitorName,
+                                                !root.targetSelected(copyTargetButton.monitorName))
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text {
+                                anchors.centerIn: parent
+                                visible: root.copyTargetNames().length === 0
+                                text: "No other displays connected"
+                                color: Theme.muted
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 10
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 28
+                            spacing: 6
+                            visible: !root.copySettingsOpen
+
+                            Rectangle {
+                                Layout.preferredWidth: 142
+                                Layout.preferredHeight: 24
+                                color: copyOpenMouse.containsMouse ? Theme.focus : Theme.subtleHover
+                                border.width: 0
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "Copy to Displays…"
+                                    color: Theme.foreground
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: 11
+                                }
+
+                                MouseArea {
+                                    id: copyOpenMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        root.clearCopyTargets();
+                                        root.copySettingsOpen = true;
+                                        root.settingsMessage = "";
+                                    }
+                                }
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.settingsMessage.length > 0
+                                    ? root.settingsMessage
+                                    : "One-time copy; display locks stay independent"
+                                color: Theme.muted
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 9
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 28
+                            spacing: 6
+                            visible: root.copySettingsOpen
+
+                            Rectangle {
+                                Layout.preferredWidth: 62
+                                Layout.preferredHeight: 24
+                                color: copyBackMouse.containsMouse ? Theme.focus : Theme.subtleHover
+                                border.width: 0
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "Back"
+                                    color: Theme.foreground
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: 11
+                                }
+
+                                MouseArea {
+                                    id: copyBackMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        root.copySettingsOpen = false;
+                                        root.clearCopyTargets();
+                                    }
+                                }
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.selectedTargetCount() + " selected"
+                                color: Theme.muted
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 10
+                                horizontalAlignment: Text.AlignRight
+                            }
+
+                            Rectangle {
+                                Layout.preferredWidth: 70
+                                Layout.preferredHeight: 24
+                                color: root.selectedTargetCount() > 0
+                                    ? (copyApplyMouse.containsMouse ? Theme.focus : Theme.subtleHover)
+                                    : "transparent"
+                                opacity: root.selectedTargetCount() > 0 ? 1 : 0.4
+                                border.width: 1
+                                border.color: Theme.focus
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "Apply"
+                                    color: Theme.foreground
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: 11
+                                }
+
+                                MouseArea {
+                                    id: copyApplyMouse
+                                    anchors.fill: parent
+                                    enabled: root.selectedTargetCount() > 0
+                                    hoverEnabled: enabled
+                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: root.applyCopySettings()
                                 }
                             }
                         }
