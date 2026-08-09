@@ -679,8 +679,8 @@ PanelWindow {
                 label: ""
                 tooltip: "Clipboard history"
                 hoverBackground: Theme.strongHover
-                onClicked: ClipboardMenu.openFocused()
-                onRightClicked: ClipboardMenu.openFocused()
+                onClicked: ClipboardMenu.toggleForScreen(bar.screen)
+                onRightClicked: ClipboardMenu.toggleForScreen(bar.screen)
             }
 
             BarControl {
@@ -863,8 +863,8 @@ PanelWindow {
             BarControl {
                 vertical: true; fixedWidth: bar.barSize; label: ""; tooltip: "Clipboard history"
                 hoverBackground: Theme.strongHover
-                onClicked: ClipboardMenu.openFocused()
-                onRightClicked: ClipboardMenu.openFocused()
+                onClicked: ClipboardMenu.toggleForScreen(bar.screen)
+                onRightClicked: ClipboardMenu.toggleForScreen(bar.screen)
             }
             BarControl {
                 vertical: true; fixedWidth: bar.barSize

@@ -14,8 +14,47 @@ Singleton {
 
     property var entries: []
     property string placement: "center"
+    property bool settingsOpen: false
+    property int panelWidthOverride: -1
+    property int panelHeightOverride: -1
+    property int textScaleOverride: -1
+    property int iconScaleOverride: -1
+    property int captureAllowedOverride: -1
+    property string settingsMessage: ""
+    property var savedView: ({
+        width: BarState.defaultClipboardWidth,
+        height: BarState.defaultClipboardHeight,
+        textScale: 100,
+        iconScale: 100,
+        captureAllowed: false
+    })
+    property var stateCommandQueue: []
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string backend: configHome + "/hypr/scripts/quickshell_clipboard.sh"
+    readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
+    readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
+    readonly property int minimumPanelWidth: Math.min(480, maximumPanelWidth)
+    readonly property int minimumPanelHeight: Math.min(360, maximumPanelHeight)
+    readonly property int maximumPanelWidth: Math.max(1, clipboardWindow.width
+        - ((placement === "left" || placement === "right") ? activeBarSize : 0) - 20)
+    readonly property int maximumPanelHeight: Math.max(1, clipboardWindow.height
+        - ((placement === "top" || placement === "bottom") ? activeBarSize : 0) - 20)
+    readonly property int livePanelWidth: clampWidth(panelWidthOverride >= 0
+        ? panelWidthOverride : BarState.clipboardViewFor(activeMonitorName).width)
+    readonly property int livePanelHeight: clampHeight(panelHeightOverride >= 0
+        ? panelHeightOverride : BarState.clipboardViewFor(activeMonitorName).height)
+    readonly property int effectiveTextScale: textScaleOverride >= 0
+        ? textScaleOverride : BarState.clipboardViewFor(activeMonitorName).textScale
+    readonly property int effectiveIconScale: iconScaleOverride >= 0
+        ? iconScaleOverride : BarState.clipboardViewFor(activeMonitorName).iconScale
+    readonly property bool captureAllowed: captureAllowedOverride >= 0
+        ? captureAllowedOverride === 1 : BarState.captureAllowedFor("clipboard")
+    readonly property string activeMonitorName: clipboardWindow.screen ? clipboardWindow.screen.name : ""
+    readonly property bool settingsDirty: savedView.width !== livePanelWidth
+        || savedView.height !== livePanelHeight
+        || savedView.textScale !== effectiveTextScale
+        || savedView.iconScale !== effectiveIconScale
+        || savedView.captureAllowed !== captureAllowed
     readonly property int activeBarSize: {
         const target = clipboardWindow.screen;
         if (!target || placement === "center")
@@ -35,11 +74,62 @@ Singleton {
         return BarState.positionFor(targetScreen.name);
     }
 
-    function openFocused() {
-        const target = focusedScreen();
-        if (target)
-            clipboardWindow.screen = target;
+    function clampWidth(value) {
+        return Math.max(minimumPanelWidth, Math.min(maximumPanelWidth, Math.round(value)));
+    }
+
+    function clampHeight(value) {
+        return Math.max(minimumPanelHeight, Math.min(maximumPanelHeight, Math.round(value)));
+    }
+
+    function loadSavedView(targetScreen) {
+        if (!targetScreen)
+            return;
+
+        BarState.refresh();
+        const persisted = BarState.clipboardViewFor(targetScreen.name);
+        panelWidthOverride = clampWidth(persisted.width);
+        panelHeightOverride = clampHeight(persisted.height);
+        textScaleOverride = persisted.textScale;
+        iconScaleOverride = persisted.iconScale;
+        captureAllowedOverride = BarState.captureAllowedFor("clipboard") ? 1 : 0;
+        savedView = ({
+            width: panelWidthOverride,
+            height: panelHeightOverride,
+            textScale: textScaleOverride,
+            iconScale: iconScaleOverride,
+            captureAllowed: captureAllowed
+        });
+    }
+
+    function acceptDraftAsSaved() {
+        savedView = ({
+            width: livePanelWidth,
+            height: livePanelHeight,
+            textScale: effectiveTextScale,
+            iconScale: effectiveIconScale,
+            captureAllowed: captureAllowed
+        });
+    }
+
+    function discardDraft() {
+        panelWidthOverride = savedView.width;
+        panelHeightOverride = savedView.height;
+        textScaleOverride = savedView.textScale;
+        iconScaleOverride = savedView.iconScale;
+        captureAllowedOverride = savedView.captureAllowed ? 1 : 0;
+    }
+
+    function openForScreen(target) {
+        if (!target)
+            return;
+
+        clipboardWindow.screen = target;
         placement = placementForScreen(target);
+        settingsOpen = false;
+        settingsPanel.resetCopySelection();
+        settingsMessage = "";
+        loadSavedView(target);
         search.text = "";
         clipboardWindow.visible = true;
         listProcess.running = true;
@@ -49,9 +139,14 @@ Singleton {
         });
     }
 
+    function openFocused() { openForScreen(focusedScreen()); }
+
     function close() {
         clipboardWindow.visible = false;
         search.text = "";
+        settingsOpen = false;
+        settingsPanel.resetCopySelection();
+        settingsMessage = "";
     }
 
     function toggleFocused() {
@@ -59,6 +154,110 @@ Singleton {
             close();
         else
             openFocused();
+    }
+
+    function toggleForScreen(target) {
+        const currentName = clipboardWindow.screen ? clipboardWindow.screen.name : "";
+        const targetName = target ? target.name : "";
+        if (clipboardWindow.visible && currentName.length > 0 && currentName === targetName)
+            close();
+        else
+            openForScreen(target);
+    }
+
+    function otherMonitorNames() {
+        return Quickshell.screens
+            .map(target => target ? target.name : "")
+            .filter(name => name.length > 0 && name !== activeMonitorName);
+    }
+
+    function queueStateCommand(commandArgs) {
+        const nextQueue = stateCommandQueue.slice();
+        nextQueue.push(commandArgs);
+        stateCommandQueue = nextQueue;
+        runNextStateCommand();
+    }
+
+    function runNextStateCommand() {
+        if (stateWriter.running || stateCommandQueue.length === 0)
+            return;
+        const nextCommand = stateCommandQueue[0];
+        stateCommandQueue = stateCommandQueue.slice(1);
+        stateWriter.exec([stateScript, ...nextCommand]);
+    }
+
+    function saveDisplaySettings() {
+        if (activeMonitorName.length === 0)
+            return;
+        queueStateCommand([
+            "save-flyout", "clipboard", activeMonitorName,
+            String(livePanelWidth), String(livePanelHeight),
+            String(effectiveTextScale), String(effectiveIconScale),
+            captureAllowed ? "true" : "false"
+        ]);
+        acceptDraftAsSaved();
+        settingsMessage = "Saved Clipboard settings for " + activeMonitorName;
+    }
+
+    function resetDisplaySettings() {
+        if (activeMonitorName.length === 0)
+            return;
+        panelWidthOverride = clampWidth(BarState.defaultClipboardWidth);
+        panelHeightOverride = clampHeight(BarState.defaultClipboardHeight);
+        textScaleOverride = 100;
+        iconScaleOverride = 100;
+        captureAllowedOverride = 0;
+        queueStateCommand(["reset-flyout", "clipboard", activeMonitorName]);
+        acceptDraftAsSaved();
+        settingsMessage = "Reset " + activeMonitorName + " to Clipboard defaults";
+    }
+
+    function copyDisplaySettings(targets) {
+        if (!targets || targets.length === 0)
+            return;
+        queueStateCommand([
+            "copy-flyout", "clipboard",
+            String(livePanelWidth), String(livePanelHeight),
+            String(effectiveTextScale), String(effectiveIconScale),
+            ...targets
+        ]);
+        settingsMessage = "Copied Clipboard settings to " + targets.length
+            + (targets.length === 1 ? " display" : " displays");
+    }
+
+    function adjustPanelWidth(delta) {
+        panelWidthOverride = clampWidth(livePanelWidth + delta);
+        settingsMessage = "Width " + panelWidthOverride + " px";
+    }
+
+    function adjustPanelHeight(delta) {
+        panelHeightOverride = clampHeight(livePanelHeight + delta);
+        settingsMessage = "Height " + panelHeightOverride + " px";
+    }
+
+    function adjustTextScale(delta) {
+        textScaleOverride = Math.max(50, Math.min(200, effectiveTextScale + delta));
+        settingsMessage = "Text size " + textScaleOverride + "%";
+    }
+
+    function adjustIconScale(delta) {
+        iconScaleOverride = Math.max(50, Math.min(200, effectiveIconScale + delta));
+        settingsMessage = "Icon size " + iconScaleOverride + "%";
+    }
+
+    function toggleCaptureAllowed() {
+        captureAllowedOverride = captureAllowed ? 0 : 1;
+        settingsMessage = captureAllowed
+            ? "Clipboard may appear in captures after Save"
+            : "Clipboard will be hidden from captures after Save";
+    }
+
+    function toggleSettings() {
+        if (settingsOpen && settingsDirty)
+            discardDraft();
+        settingsOpen = !settingsOpen;
+        settingsPanel.resetCopySelection();
+        settingsMessage = "";
     }
 
     function choose(entry) {
@@ -132,6 +331,17 @@ Singleton {
 
     Process { id: selectProcess }
 
+    Process {
+        id: stateWriter
+        onExited: {
+            BarState.refresh();
+            privacyRuleUpdater.exec([root.runtimeRulesScript]);
+            Qt.callLater(() => root.runNextStateCommand());
+        }
+    }
+
+    Process { id: privacyRuleUpdater }
+
     PanelWindow {
         id: clipboardWindow
         WlrLayershell.namespace: "awtarchy-clipboard"
@@ -152,10 +362,8 @@ Singleton {
 
         Rectangle {
             id: panel
-            implicitWidth: Math.min(880, Math.max(560, clipboardWindow.width * 0.68))
-            implicitHeight: Math.min(760, Math.max(420, clipboardWindow.height * 0.72))
-            width: implicitWidth
-            height: implicitHeight
+            width: root.livePanelWidth
+            height: root.livePanelHeight
             x: root.placement === "left"
                 ? root.activeBarSize
                 : root.placement === "right"
@@ -180,7 +388,7 @@ Singleton {
 
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 36
+                    Layout.preferredHeight: 38
                     color: Theme.active
                     border.width: 0
 
@@ -194,7 +402,7 @@ Singleton {
                             text: "Clipboard"
                             color: Theme.foreground
                             font.family: Theme.fontFamily
-                            font.pixelSize: 14
+                            font.pixelSize: Math.max(10, Math.round(14 * root.effectiveTextScale / 100))
                             font.weight: Font.Medium
                         }
 
@@ -206,7 +414,7 @@ Singleton {
                             selectionColor: Theme.focus
                             selectedTextColor: Theme.foreground
                             font.family: Theme.fontFamily
-                            font.pixelSize: 14
+                            font.pixelSize: Math.max(10, Math.round(14 * root.effectiveTextScale / 100))
                             font.weight: Font.Medium
                             verticalAlignment: TextInput.AlignVCenter
                             clip: true
@@ -236,6 +444,102 @@ Singleton {
                                 Qt.callLater(() => clipboardList.positionViewAtBeginning());
                             }
                         }
+
+                        Text {
+                            visible: root.settingsDirty
+                            text: "● Unsaved"
+                            color: Theme.focus
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 9
+                        }
+
+                        Rectangle {
+                            Layout.preferredWidth: 62
+                            Layout.preferredHeight: 26
+                            color: root.settingsDirty
+                                ? (saveMouse.containsMouse ? Theme.focus : Theme.subtleHover)
+                                : "transparent"
+                            opacity: root.settingsDirty ? 1 : 0.45
+                            border.width: 1
+                            border.color: root.settingsDirty ? Theme.focus : Theme.muted
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: " Save"
+                                color: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 10
+                            }
+
+                            MouseArea {
+                                id: saveMouse
+                                anchors.fill: parent
+                                enabled: root.settingsDirty
+                                hoverEnabled: enabled
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onClicked: root.saveDisplaySettings()
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.preferredWidth: 28
+                            Layout.preferredHeight: 26
+                            color: root.settingsOpen ? Theme.focus
+                                : (settingsMouse.containsMouse ? Theme.subtleHover : "transparent")
+                            border.width: 0
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: ""
+                                color: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 13
+                            }
+
+                            MouseArea {
+                                id: settingsMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.toggleSettings()
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: root.settingsOpen ? settingsPanel.implicitHeight + 12 : 0
+                    visible: root.settingsOpen
+                    color: Theme.popupButton
+                    border.width: 0
+                    clip: true
+
+                    FlyoutSettings {
+                        id: settingsPanel
+                        anchors.fill: parent
+                        anchors.margins: 6
+                        surfaceLabel: "Clipboard"
+                        monitorName: root.activeMonitorName
+                        panelWidth: root.livePanelWidth
+                        panelHeight: root.livePanelHeight
+                        minimumWidth: root.minimumPanelWidth
+                        maximumWidth: root.maximumPanelWidth
+                        minimumHeight: root.minimumPanelHeight
+                        maximumHeight: root.maximumPanelHeight
+                        textScale: root.effectiveTextScale
+                        iconScale: root.effectiveIconScale
+                        captureAllowed: root.captureAllowed
+                        message: root.settingsMessage
+                        otherMonitorNames: root.otherMonitorNames()
+
+                        onResetRequested: root.resetDisplaySettings()
+                        onWidthAdjustmentRequested: delta => root.adjustPanelWidth(delta)
+                        onHeightAdjustmentRequested: delta => root.adjustPanelHeight(delta)
+                        onTextScaleAdjustmentRequested: delta => root.adjustTextScale(delta)
+                        onIconScaleAdjustmentRequested: delta => root.adjustIconScale(delta)
+                        onCaptureToggleRequested: root.toggleCaptureAllowed()
+                        onCopyRequested: monitorNames => root.copyDisplaySettings(monitorNames)
                     }
                 }
 
@@ -253,7 +557,11 @@ Singleton {
                         required property var modelData
                         required property int index
                         width: ListView.view.width
-                        height: modelData.thumb && modelData.thumb.length > 0 ? 116 : 44
+                        readonly property int thumbnailSize: Math.max(48,
+                            Math.min(160, Math.round(96 * root.effectiveIconScale / 100)))
+                        height: modelData.thumb && modelData.thumb.length > 0
+                            ? thumbnailSize + 20
+                            : Math.max(40, Math.round(44 * root.effectiveTextScale / 100))
                         color: ListView.isCurrentItem ? Theme.focus : (rowMouse.containsMouse ? Theme.subtleHover : "transparent")
 
                         RowLayout {
@@ -264,8 +572,8 @@ Singleton {
 
                             Image {
                                 visible: row.modelData.thumb && row.modelData.thumb.length > 0
-                                Layout.preferredWidth: visible ? 96 : 0
-                                Layout.preferredHeight: visible ? 96 : 0
+                                Layout.preferredWidth: visible ? row.thumbnailSize : 0
+                                Layout.preferredHeight: visible ? row.thumbnailSize : 0
                                 source: visible ? "file://" + row.modelData.thumb : ""
                                 fillMode: Image.PreserveAspectFit
                                 asynchronous: true
@@ -277,7 +585,7 @@ Singleton {
                                 text: row.modelData.label
                                 color: Theme.foreground
                                 font.family: Theme.fontFamily
-                                font.pixelSize: 14
+                                font.pixelSize: Math.max(8, Math.round(14 * root.effectiveTextScale / 100))
                                 elide: Text.ElideRight
                                 maximumLineCount: 3
                                 wrapMode: Text.WrapAnywhere

@@ -1,0 +1,668 @@
+pragma ComponentBehavior: Bound
+
+import QtQuick
+import QtQuick.Layouts
+
+Item {
+    id: root
+
+    property string surfaceLabel: "Flyout"
+    property string monitorName: ""
+    property int panelWidth: 0
+    property int panelHeight: 0
+    property int minimumWidth: 320
+    property int maximumWidth: 16384
+    property int minimumHeight: 280
+    property int maximumHeight: 16384
+    property int textScale: 100
+    property int iconScale: 100
+    property bool captureAllowed: false
+    property string message: ""
+    property var otherMonitorNames: []
+    property bool copyOpen: false
+    property var copyTargets: ({})
+    property int copySelectionRevision: 0
+
+    signal resetRequested()
+    signal widthAdjustmentRequested(int delta)
+    signal heightAdjustmentRequested(int delta)
+    signal textScaleAdjustmentRequested(int delta)
+    signal iconScaleAdjustmentRequested(int delta)
+    signal captureToggleRequested()
+    signal copyRequested(var monitorNames)
+
+    implicitHeight: copyOpen ? 104 : 170
+
+    function targetSelected(name) {
+        const dependency = copySelectionRevision;
+        return copyTargets[name] === true;
+    }
+
+    function selectedTargetNames() {
+        return otherMonitorNames.filter(name => targetSelected(String(name)));
+    }
+
+    function allTargetsSelected() {
+        return otherMonitorNames.length > 0
+            && otherMonitorNames.every(name => targetSelected(String(name)));
+    }
+
+    function setTargetSelected(name, selected) {
+        const next = Object.assign({}, copyTargets);
+        if (selected)
+            next[name] = true;
+        else
+            delete next[name];
+        copyTargets = next;
+        copySelectionRevision++;
+    }
+
+    function toggleAllTargets() {
+        const next = {};
+        if (!allTargetsSelected()) {
+            for (const name of otherMonitorNames)
+                next[String(name)] = true;
+        }
+        copyTargets = next;
+        copySelectionRevision++;
+    }
+
+    function resetCopySelection() {
+        copyTargets = ({});
+        copySelectionRevision++;
+        copyOpen = false;
+    }
+
+    ColumnLayout {
+        anchors.fill: parent
+        spacing: 3
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 28
+            spacing: 6
+            visible: !root.copyOpen
+
+            Text {
+                Layout.fillWidth: true
+                text: root.monitorName + "  " + root.panelWidth + " × " + root.panelHeight
+                color: Theme.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: 11
+                font.weight: Font.Medium
+                elide: Text.ElideRight
+            }
+
+            Rectangle {
+                Layout.preferredWidth: 112
+                Layout.preferredHeight: 24
+                color: resetMouse.containsMouse ? Theme.focus : Theme.subtleHover
+                border.width: 0
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "Reset " + root.surfaceLabel
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                }
+
+                MouseArea {
+                    id: resetMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.resetRequested()
+                }
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 28
+            spacing: 5
+            visible: !root.copyOpen
+
+            Text {
+                text: "Width"
+                color: Theme.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: 11
+            }
+
+            Rectangle {
+                Layout.preferredWidth: 26
+                Layout.preferredHeight: 24
+                color: widthMinusMouse.containsMouse ? Theme.focus : Theme.subtleHover
+                opacity: root.panelWidth > root.minimumWidth ? 1 : 0.4
+                border.width: 0
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "−"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 13
+                }
+
+                MouseArea {
+                    id: widthMinusMouse
+                    anchors.fill: parent
+                    enabled: root.panelWidth > root.minimumWidth
+                    hoverEnabled: enabled
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: root.widthAdjustmentRequested(-40)
+                }
+            }
+
+            Text {
+                Layout.preferredWidth: 44
+                horizontalAlignment: Text.AlignHCenter
+                text: root.panelWidth
+                color: Theme.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: 10
+            }
+
+            Rectangle {
+                Layout.preferredWidth: 26
+                Layout.preferredHeight: 24
+                color: widthPlusMouse.containsMouse ? Theme.focus : Theme.subtleHover
+                opacity: root.panelWidth < root.maximumWidth ? 1 : 0.4
+                border.width: 0
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "+"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 13
+                }
+
+                MouseArea {
+                    id: widthPlusMouse
+                    anchors.fill: parent
+                    enabled: root.panelWidth < root.maximumWidth
+                    hoverEnabled: enabled
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: root.widthAdjustmentRequested(40)
+                }
+            }
+
+            Item { Layout.preferredWidth: 8 }
+
+            Text {
+                text: "Height"
+                color: Theme.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: 11
+            }
+
+            Rectangle {
+                Layout.preferredWidth: 26
+                Layout.preferredHeight: 24
+                color: heightMinusMouse.containsMouse ? Theme.focus : Theme.subtleHover
+                opacity: root.panelHeight > root.minimumHeight ? 1 : 0.4
+                border.width: 0
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "−"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 13
+                }
+
+                MouseArea {
+                    id: heightMinusMouse
+                    anchors.fill: parent
+                    enabled: root.panelHeight > root.minimumHeight
+                    hoverEnabled: enabled
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: root.heightAdjustmentRequested(-40)
+                }
+            }
+
+            Text {
+                Layout.preferredWidth: 44
+                horizontalAlignment: Text.AlignHCenter
+                text: root.panelHeight
+                color: Theme.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: 10
+            }
+
+            Rectangle {
+                Layout.preferredWidth: 26
+                Layout.preferredHeight: 24
+                color: heightPlusMouse.containsMouse ? Theme.focus : Theme.subtleHover
+                opacity: root.panelHeight < root.maximumHeight ? 1 : 0.4
+                border.width: 0
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "+"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 13
+                }
+
+                MouseArea {
+                    id: heightPlusMouse
+                    anchors.fill: parent
+                    enabled: root.panelHeight < root.maximumHeight
+                    hoverEnabled: enabled
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: root.heightAdjustmentRequested(40)
+                }
+            }
+
+            Item { Layout.fillWidth: true }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 28
+            spacing: 5
+            visible: !root.copyOpen
+
+            Text {
+                text: "Icons"
+                color: Theme.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: 11
+            }
+
+            Rectangle {
+                Layout.preferredWidth: 26
+                Layout.preferredHeight: 24
+                color: iconMinusMouse.containsMouse ? Theme.focus : Theme.subtleHover
+                opacity: root.iconScale > 50 ? 1 : 0.4
+                border.width: 0
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "−"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 13
+                }
+
+                MouseArea {
+                    id: iconMinusMouse
+                    anchors.fill: parent
+                    enabled: root.iconScale > 50
+                    hoverEnabled: enabled
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: root.iconScaleAdjustmentRequested(-10)
+                }
+            }
+
+            Text {
+                Layout.preferredWidth: 42
+                horizontalAlignment: Text.AlignHCenter
+                text: root.iconScale + "%"
+                color: Theme.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: 10
+            }
+
+            Rectangle {
+                Layout.preferredWidth: 26
+                Layout.preferredHeight: 24
+                color: iconPlusMouse.containsMouse ? Theme.focus : Theme.subtleHover
+                opacity: root.iconScale < 200 ? 1 : 0.4
+                border.width: 0
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "+"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 13
+                }
+
+                MouseArea {
+                    id: iconPlusMouse
+                    anchors.fill: parent
+                    enabled: root.iconScale < 200
+                    hoverEnabled: enabled
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: root.iconScaleAdjustmentRequested(10)
+                }
+            }
+
+            Item { Layout.preferredWidth: 8 }
+
+            Text {
+                text: "Text"
+                color: Theme.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: 11
+            }
+
+            Rectangle {
+                Layout.preferredWidth: 26
+                Layout.preferredHeight: 24
+                color: textMinusMouse.containsMouse ? Theme.focus : Theme.subtleHover
+                opacity: root.textScale > 50 ? 1 : 0.4
+                border.width: 0
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "−"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 13
+                }
+
+                MouseArea {
+                    id: textMinusMouse
+                    anchors.fill: parent
+                    enabled: root.textScale > 50
+                    hoverEnabled: enabled
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: root.textScaleAdjustmentRequested(-10)
+                }
+            }
+
+            Text {
+                Layout.preferredWidth: 42
+                horizontalAlignment: Text.AlignHCenter
+                text: root.textScale + "%"
+                color: Theme.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: 10
+            }
+
+            Rectangle {
+                Layout.preferredWidth: 26
+                Layout.preferredHeight: 24
+                color: textPlusMouse.containsMouse ? Theme.focus : Theme.subtleHover
+                opacity: root.textScale < 200 ? 1 : 0.4
+                border.width: 0
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "+"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 13
+                }
+
+                MouseArea {
+                    id: textPlusMouse
+                    anchors.fill: parent
+                    enabled: root.textScale < 200
+                    hoverEnabled: enabled
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: root.textScaleAdjustmentRequested(10)
+                }
+            }
+
+            Item { Layout.fillWidth: true }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 28
+            spacing: 6
+            visible: !root.copyOpen
+
+            Text {
+                Layout.fillWidth: true
+                text: "Allow in screenshots and screen recordings"
+                color: Theme.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: 11
+                elide: Text.ElideRight
+            }
+
+            Rectangle {
+                Layout.preferredWidth: 64
+                Layout.preferredHeight: 24
+                color: root.captureAllowed ? Theme.focus
+                    : (captureMouse.containsMouse ? Theme.subtleHover : "transparent")
+                border.width: 1
+                border.color: Theme.focus
+
+                Text {
+                    anchors.centerIn: parent
+                    text: root.captureAllowed ? "On" : "Off"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 11
+                }
+
+                MouseArea {
+                    id: captureMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.captureToggleRequested()
+                }
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 28
+            spacing: 6
+            visible: !root.copyOpen
+
+            Rectangle {
+                Layout.preferredWidth: 142
+                Layout.preferredHeight: 24
+                color: copyOpenMouse.containsMouse ? Theme.focus : Theme.subtleHover
+                border.width: 0
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "Copy to Displays…"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 11
+                }
+
+                MouseArea {
+                    id: copyOpenMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        root.copyTargets = ({});
+                        root.copySelectionRevision++;
+                        root.copyOpen = true;
+                    }
+                }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: root.message.length > 0 ? root.message : "Changes apply after Save"
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: 9
+                elide: Text.ElideRight
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 28
+            spacing: 6
+            visible: root.copyOpen
+
+            Rectangle {
+                Layout.preferredWidth: 62
+                Layout.preferredHeight: 24
+                color: copyBackMouse.containsMouse ? Theme.focus : Theme.subtleHover
+                border.width: 0
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "Back"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 11
+                }
+
+                MouseArea {
+                    id: copyBackMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.resetCopySelection()
+                }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: "Copy current draft to displays"
+                color: Theme.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: 10
+                horizontalAlignment: Text.AlignRight
+            }
+        }
+
+        Flickable {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 28
+            visible: root.copyOpen
+            clip: true
+            contentWidth: Math.max(width, copyTargetRow.width)
+            contentHeight: height
+            flickableDirection: Flickable.HorizontalFlick
+            boundsBehavior: Flickable.StopAtBounds
+
+            Row {
+                id: copyTargetRow
+                height: parent.height
+                width: childrenRect.width
+                spacing: 4
+
+                Rectangle {
+                    visible: root.otherMonitorNames.length > 0
+                    width: visible ? 96 : 0
+                    height: 24
+                    color: root.allTargetsSelected() ? Theme.focus
+                        : (allTargetsMouse.containsMouse ? Theme.subtleHover : "transparent")
+                    border.width: 1
+                    border.color: Theme.focus
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: (root.allTargetsSelected() ? "✓ " : "") + "All displays"
+                        color: Theme.foreground
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 10
+                    }
+
+                    MouseArea {
+                        id: allTargetsMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.toggleAllTargets()
+                    }
+                }
+
+                Repeater {
+                    model: root.otherMonitorNames
+
+                    Rectangle {
+                        id: targetButton
+                        required property var modelData
+                        readonly property string targetName: String(modelData)
+                        width: Math.max(72, Math.min(140, targetLabel.implicitWidth + 24))
+                        height: 24
+                        color: root.targetSelected(targetName) ? Theme.focus
+                            : (targetMouse.containsMouse ? Theme.subtleHover : "transparent")
+                        border.width: 1
+                        border.color: Theme.focus
+
+                        Text {
+                            id: targetLabel
+                            anchors.centerIn: parent
+                            width: parent.width - 12
+                            text: (root.targetSelected(targetButton.targetName) ? "✓ " : "")
+                                + targetButton.targetName
+                            color: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 10
+                            horizontalAlignment: Text.AlignHCenter
+                            elide: Text.ElideRight
+                        }
+
+                        MouseArea {
+                            id: targetMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.setTargetSelected(targetButton.targetName,
+                                !root.targetSelected(targetButton.targetName))
+                        }
+                    }
+                }
+            }
+
+            Text {
+                anchors.centerIn: parent
+                visible: root.otherMonitorNames.length === 0
+                text: "No other displays connected"
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: 10
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 28
+            spacing: 6
+            visible: root.copyOpen
+
+            Text {
+                Layout.fillWidth: true
+                text: root.selectedTargetNames().length + " selected"
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: 10
+                horizontalAlignment: Text.AlignRight
+            }
+
+            Rectangle {
+                Layout.preferredWidth: 70
+                Layout.preferredHeight: 24
+                color: root.selectedTargetNames().length > 0
+                    ? (copyApplyMouse.containsMouse ? Theme.focus : Theme.subtleHover)
+                    : "transparent"
+                opacity: root.selectedTargetNames().length > 0 ? 1 : 0.4
+                border.width: 1
+                border.color: Theme.focus
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "Apply"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 11
+                }
+
+                MouseArea {
+                    id: copyApplyMouse
+                    anchors.fill: parent
+                    enabled: root.selectedTargetNames().length > 0
+                    hoverEnabled: enabled
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: {
+                        const targets = root.selectedTargetNames();
+                        root.copyRequested(targets);
+                        root.resetCopySelection();
+                    }
+                }
+            }
+        }
+    }
+}
