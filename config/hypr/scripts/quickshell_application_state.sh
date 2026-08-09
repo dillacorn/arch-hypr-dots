@@ -86,7 +86,8 @@ lock_size() {
             then .launcher_sizes[$monitor] else {} end) + {
             width:$width,
             height:$height,
-            locked:true
+            locked:true,
+            saved:true
         })
         | del(.application_view)
     ' "$STATE_FILE" >"$TMP_FILE"
@@ -214,7 +215,8 @@ save_view() {
             height:$height,
             text_scale:$text_scale,
             icon_scale:$icon_scale,
-            centered:$centered
+            centered:$centered,
+            saved:true
         }) | del(.locked))
         | if $capture == null then . else
             .capture_allowed = (if (.capture_allowed | type) == "object" then .capture_allowed else {} end)
@@ -250,9 +252,23 @@ parse_bool() {
     esac
 }
 
+set_capture() {
+    local surface="$1" value="$2" surface_key capture
+    surface_key="$(capture_key "$surface")"
+    capture="$(parse_bool "$value" 'capture allowed')"
+    new_tmp
+    jq \
+        --arg surface_key "$surface_key" \
+        --argjson capture "$capture" '
+        .capture_allowed = (if (.capture_allowed | type) == "object" then .capture_allowed else {} end)
+        | .capture_allowed[$surface_key] = $capture
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
 save_flyout() {
-    local flyout="$1" monitor="$2" width="$3" height="$4" text_scale="$5" icon_scale="$6" capture_value="$7"
-    local view_key surface_key capture
+    local flyout="$1" monitor="$2" width="$3" height="$4" text_scale="$5" icon_scale="$6" capture_value="$7" popup_limit="${8:-}"
+    local view_key surface_key capture popup_limit_json=null
     [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
     view_key="$(flyout_key "$flyout")"
     surface_key="$(capture_key "$flyout")"
@@ -261,6 +277,13 @@ save_flyout() {
     validate_int_range "$height" "$MIN_HEIGHT" "$MAX_HEIGHT" 'height'
     validate_int_range "$text_scale" "$MIN_TEXT_SCALE" "$MAX_TEXT_SCALE" 'text scale'
     validate_int_range "$icon_scale" "$MIN_ICON_SCALE" "$MAX_ICON_SCALE" 'icon scale'
+    if [[ "$flyout" == notifications && -n "$popup_limit" ]]; then
+        validate_int_range "$popup_limit" 1 20 'notification popup limit'
+        popup_limit_json="$popup_limit"
+    elif [[ -n "$popup_limit" ]]; then
+        printf 'popup limit is only valid for notifications\n' >&2
+        exit 2
+    fi
 
     new_tmp
     jq \
@@ -271,7 +294,8 @@ save_flyout() {
         --argjson height "$height" \
         --argjson text_scale "$text_scale" \
         --argjson icon_scale "$icon_scale" \
-        --argjson capture "$capture" '
+        --argjson capture "$capture" \
+        --argjson popup_limit "$popup_limit_json" '
         .[$view_key] = (if (.[$view_key] | type) == "object" then .[$view_key] else {} end)
         | .[$view_key][$monitor] = {
             width:$width,
@@ -281,6 +305,7 @@ save_flyout() {
         }
         | .capture_allowed = (if (.capture_allowed | type) == "object" then .capture_allowed else {} end)
         | .capture_allowed[$surface_key] = $capture
+        | if $popup_limit == null then . else .notification_popup_limit = $popup_limit end
     ' "$STATE_FILE" >"$TMP_FILE"
     commit_tmp
 }
@@ -333,6 +358,7 @@ reset_flyout() {
         | del(.[$view_key][$monitor])
         | .capture_allowed = (if (.capture_allowed | type) == "object" then .capture_allowed else {} end)
         | .capture_allowed[$surface_key] = false
+        | if $view_key == "notification_views" then del(.notification_popup_limit) else . end
     ' "$STATE_FILE" >"$TMP_FILE"
     commit_tmp
 }
@@ -382,7 +408,8 @@ copy_view() {
                     width:$width,
                     height:$height,
                     text_scale:$text_scale,
-                    icon_scale:$icon_scale
+                    icon_scale:$icon_scale,
+                    saved:true
                 }) | del(.locked)))
         | del(.application_view)
     ' "$STATE_FILE" >"$TMP_FILE"
@@ -491,7 +518,7 @@ case "$cmd" in
         ;;
     save-flyout)
         [[ -n ${2:-} && -n ${3:-} && -n ${4:-} && -n ${5:-} && -n ${6:-} && -n ${7:-} && -n ${8:-} ]] || exit 2
-        save_flyout "$2" "$3" "$4" "$5" "$6" "$7" "$8"
+        save_flyout "$2" "$3" "$4" "$5" "$6" "$7" "$8" "${9:-}"
         ;;
     copy-flyout)
         [[ -n ${2:-} && -n ${3:-} && -n ${4:-} && -n ${5:-} && -n ${6:-} && -n ${7:-} ]] || exit 2
@@ -500,6 +527,10 @@ case "$cmd" in
     reset-flyout)
         [[ -n ${2:-} && -n ${3:-} ]] || exit 2
         reset_flyout "$2" "$3"
+        ;;
+    set-capture)
+        [[ -n ${2:-} && -n ${3:-} ]] || exit 2
+        set_capture "$2" "$3"
         ;;
     copy-view)
         [[ -n ${2:-} && -n ${3:-} && -n ${4:-} && -n ${5:-} && -n ${6:-} ]] || exit 2
@@ -528,7 +559,7 @@ case "$cmd" in
         reset_defaults
         ;;
     *)
-        printf 'usage: %s {save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
+        printf 'usage: %s {save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
         exit 2
         ;;
 esac

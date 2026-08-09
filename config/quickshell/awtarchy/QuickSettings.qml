@@ -4,10 +4,8 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
-import Quickshell.Bluetooth
 import Quickshell.Hyprland
 import Quickshell.Io
-import Quickshell.Networking
 import Quickshell.Wayland
 
 Singleton {
@@ -25,8 +23,9 @@ Singleton {
     property bool schedulerEditorOpen: false
     property string schedulerArgsDraft: ""
     property bool schedulerArgsDirty: false
-    property var pendingWifiNetwork: null
-    property string wifiPassword: ""
+    property int brightnessHoverPercent: -1
+    property int resizeStartWidth: 0
+    property int resizeStartHeight: 0
     property bool settingsOpen: false
     property int panelWidthOverride: -1
     property int panelHeightOverride: -1
@@ -42,10 +41,12 @@ Singleton {
         captureAllowed: false
     })
     property var stateCommandQueue: []
+    property bool privacyRemapPending: false
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string backend: configHome + "/hypr/scripts/hypr_quicksettings.sh"
     readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
+    readonly property string terminalLauncher: configHome + "/hypr/scripts/default_terminal.sh"
     readonly property string activeMonitorName: quickSettingsWindow.screen ? quickSettingsWindow.screen.name : ""
     readonly property int activeBarSize: {
         const target = quickSettingsWindow.screen;
@@ -53,9 +54,13 @@ Singleton {
             return 0;
         return BarState.barSizeFor(target.name, placement === "left" || placement === "right");
     }
-    readonly property int maximumPanelWidth: Math.max(1, quickSettingsWindow.width
+    readonly property int targetScreenWidth: quickSettingsWindow.screen
+        ? quickSettingsWindow.screen.width : 1920
+    readonly property int targetScreenHeight: quickSettingsWindow.screen
+        ? quickSettingsWindow.screen.height : 1080
+    readonly property int maximumPanelWidth: Math.max(1, targetScreenWidth
         - ((placement === "left" || placement === "right") ? activeBarSize : 0) - 20)
-    readonly property int maximumPanelHeight: Math.max(1, quickSettingsWindow.height
+    readonly property int maximumPanelHeight: Math.max(1, targetScreenHeight
         - ((placement === "top" || placement === "bottom") ? activeBarSize : 0) - 20)
     readonly property int minimumPanelWidth: Math.min(520, maximumPanelWidth)
     readonly property int minimumPanelHeight: Math.min(460, maximumPanelHeight)
@@ -79,8 +84,6 @@ Singleton {
     readonly property var nightLightStatus: statusData.night_light || ({})
     readonly property var vibranceStatus: statusData.vibrance || ({})
     readonly property var schedulerStatus: statusData.sched_ext || ({ schedulers: [] })
-    readonly property var wifiDevice: firstWifiDevice()
-    readonly property var bluetoothAdapter: Bluetooth.defaultAdapter
     readonly property int brightnessPercent: {
         const current = Number(brightnessStatus.current);
         const maximum = Number(brightnessStatus.max);
@@ -140,113 +143,6 @@ Singleton {
     function monitorNames() {
         const values = statusData.monitors || [];
         return values.map(monitor => String(monitor.name || "")).filter(name => name.length > 0);
-    }
-
-    function firstWifiDevice() {
-        const devices = Networking.devices ? Networking.devices.values : [];
-        for (const device of devices) {
-            if (device && device.type === DeviceType.Wifi)
-                return device;
-        }
-        return null;
-    }
-
-    function wiredDevices() {
-        const devices = Networking.devices ? Networking.devices.values : [];
-        return [...devices].filter(device => device && device.type === DeviceType.Wired);
-    }
-
-    function wifiNetworks() {
-        if (!wifiDevice || !wifiDevice.networks)
-            return [];
-        return [...wifiDevice.networks.values].sort((left, right) => {
-            if (Boolean(left.connected) !== Boolean(right.connected))
-                return left.connected ? -1 : 1;
-            if (Boolean(left.known) !== Boolean(right.known))
-                return left.known ? -1 : 1;
-            return Number(right.signalStrength || 0) - Number(left.signalStrength || 0);
-        });
-    }
-
-    function bluetoothDevices() {
-        if (!bluetoothAdapter || !bluetoothAdapter.devices)
-            return [];
-        return [...bluetoothAdapter.devices.values].sort((left, right) => {
-            if (Boolean(left.connected) !== Boolean(right.connected))
-                return left.connected ? -1 : 1;
-            if (Boolean(left.paired) !== Boolean(right.paired))
-                return left.paired ? -1 : 1;
-            return String(left.name || left.deviceName || "")
-                .localeCompare(String(right.name || right.deviceName || ""));
-        });
-    }
-
-    function wifiNeedsPassword(network) {
-        if (!network || network.known)
-            return false;
-        return network.security === WifiSecurityType.WpaPsk
-            || network.security === WifiSecurityType.Wpa2Psk
-            || network.security === WifiSecurityType.Sae;
-    }
-
-    function wifiSecurityLabel(network) {
-        if (!network)
-            return "";
-        if (network.security === WifiSecurityType.Open)
-            return "Open";
-        return WifiSecurityType.toString(network.security);
-    }
-
-    function requestWifiConnection(network) {
-        if (!network)
-            return;
-        if (network.connected) {
-            network.disconnect();
-            actionMessage = "Disconnecting from " + network.name + "…";
-            return;
-        }
-        if (!wifiNeedsPassword(network)) {
-            network.connect();
-            actionMessage = "Connecting to " + network.name + "…";
-            return;
-        }
-        pendingWifiNetwork = network;
-        wifiPassword = "";
-        actionMessage = "Enter the password for " + network.name;
-        Qt.callLater(() => wifiPasswordInput.forceActiveFocus());
-    }
-
-    function connectPendingWifi() {
-        if (!pendingWifiNetwork || wifiPassword.length === 0)
-            return;
-        const network = pendingWifiNetwork;
-        network.connectWithPsk(wifiPassword);
-        actionMessage = "Connecting to " + network.name + "…";
-        wifiPassword = "";
-        pendingWifiNetwork = null;
-    }
-
-    function cancelWifiPassword() {
-        wifiPassword = "";
-        pendingWifiNetwork = null;
-    }
-
-    function toggleBluetoothDevice(device) {
-        if (!device)
-            return;
-        if (device.connected) {
-            device.disconnect();
-            actionMessage = "Disconnecting " + (device.name || device.deviceName) + "…";
-        } else if (device.paired) {
-            device.connect();
-            actionMessage = "Connecting " + (device.name || device.deviceName) + "…";
-        } else if (device.pairing) {
-            device.cancelPair();
-            actionMessage = "Cancelling Bluetooth pairing…";
-        } else {
-            device.pair();
-            actionMessage = "Pairing " + (device.name || device.deviceName) + "…";
-        }
     }
 
     function otherMonitorNames() {
@@ -342,6 +238,11 @@ Singleton {
             "Setting brightness on " + target + "…");
     }
 
+    function openSmtty() {
+        Quickshell.execDetached([terminalLauncher, "--class", "smtty", "--", "smtty"]);
+        close();
+    }
+
     function loadSavedView(targetScreen) {
         if (!targetScreen)
             return;
@@ -410,14 +311,18 @@ Singleton {
     function resetDisplaySettings() {
         if (activeMonitorName.length === 0)
             return;
+        const wasCaptureAllowed = captureAllowed;
         panelWidthOverride = clampWidth(BarState.defaultQuickSettingsWidth);
         panelHeightOverride = clampHeight(BarState.defaultQuickSettingsHeight);
         textScaleOverride = 100;
         iconScaleOverride = 100;
         captureAllowedOverride = 0;
-        queueStateCommand(["reset-flyout", "quick-settings", activeMonitorName]);
-        acceptDraftAsSaved();
-        settingsMessage = "Reset " + activeMonitorName + " to Quick Settings defaults";
+        if (wasCaptureAllowed) {
+            savedView = Object.assign({}, savedView, { captureAllowed: false });
+            privacyRemapPending = true;
+            queueStateCommand(["set-capture", "quick-settings", "false"]);
+        }
+        settingsMessage = "Quick Settings defaults loaded for " + activeMonitorName;
     }
 
     function copyDisplaySettings(targets) {
@@ -454,10 +359,13 @@ Singleton {
     }
 
     function toggleCaptureAllowed() {
-        captureAllowedOverride = captureAllowed ? 0 : 1;
-        settingsMessage = captureAllowed
-            ? "Quick Settings may appear in captures after Save"
-            : "Quick Settings will be hidden from captures after Save";
+        const next = !captureAllowed;
+        captureAllowedOverride = next ? 1 : 0;
+        savedView = Object.assign({}, savedView, { captureAllowed: next });
+        privacyRemapPending = true;
+        queueStateCommand(["set-capture", "quick-settings", next ? "true" : "false"]);
+        settingsMessage = next
+            ? "Quick Settings is visible in captures" : "Quick Settings capture protection enabled";
     }
 
     function toggleSettings() {
@@ -480,30 +388,23 @@ Singleton {
         settingsMessage = "";
         schedulerEditorOpen = false;
         schedulerArgsDirty = false;
-        pendingWifiNetwork = null;
-        wifiPassword = "";
         loadSavedView(targetScreen);
         quickSettingsWindow.visible = true;
-        if (wifiDevice && Networking.wifiEnabled)
-            wifiDevice.scannerEnabled = true;
         refreshStatus();
     }
 
     function openFocused() { openForScreen(focusedScreen()); }
 
     function close() {
+        if (settingsDirty)
+            discardDraft();
         quickSettingsWindow.visible = false;
         FlyoutManager.release("quick-settings");
         settingsOpen = false;
         settingsPanel.resetCopySelection();
         settingsMessage = "";
         schedulerEditorOpen = false;
-        pendingWifiNetwork = null;
-        wifiPassword = "";
-        if (wifiDevice)
-            wifiDevice.scannerEnabled = false;
-        if (bluetoothAdapter && bluetoothAdapter.discovering)
-            bluetoothAdapter.discovering = false;
+        brightnessHoverPercent = -1;
     }
 
     function toggleForScreen(targetScreen) {
@@ -578,7 +479,18 @@ Singleton {
         }
     }
 
-    Process { id: privacyRuleUpdater }
+    Process {
+        id: privacyRuleUpdater
+        onExited: {
+            if (!root.privacyRemapPending)
+                return;
+            root.privacyRemapPending = false;
+            if (!quickSettingsWindow.visible)
+                return;
+            quickSettingsWindow.visible = false;
+            Qt.callLater(() => quickSettingsWindow.visible = true);
+        }
+    }
 
     Connections {
         target: FlyoutManager
@@ -603,36 +515,61 @@ Singleton {
         focusable: true
         aboveWindows: true
         exclusionMode: ExclusionMode.Ignore
-        anchors.top: true
-        anchors.bottom: true
-        anchors.left: true
-        anchors.right: true
-
-        MouseArea {
-            anchors.fill: parent
-            onClicked: root.close()
+        implicitWidth: root.livePanelWidth
+        implicitHeight: root.livePanelHeight
+        anchors.top: root.placement !== "bottom"
+        anchors.bottom: root.placement === "bottom"
+        anchors.left: root.placement !== "right"
+        anchors.right: root.placement === "right"
+        margins {
+            top: root.placement === "top" ? root.activeBarSize + 6
+                : (root.placement === "bottom" ? 0
+                    : Math.max(6, Math.round((root.targetScreenHeight - root.livePanelHeight) / 2)))
+            bottom: root.placement === "bottom" ? root.activeBarSize + 6 : 0
+            left: root.placement === "left" ? root.activeBarSize + 6
+                : (root.placement === "right" ? 0
+                    : Math.max(6, Math.round((root.targetScreenWidth - root.livePanelWidth) / 2)))
+            right: root.placement === "right" ? root.activeBarSize + 6 : 0
         }
 
         Rectangle {
             id: panel
-            width: root.livePanelWidth
-            height: root.livePanelHeight
-            x: root.placement === "left"
-                ? root.activeBarSize
-                : root.placement === "right"
-                    ? parent.width - width - root.activeBarSize
-                    : Math.round((parent.width - width) / 2)
-            y: root.placement === "top"
-                ? root.activeBarSize
-                : root.placement === "bottom"
-                    ? parent.height - height - root.activeBarSize
-                    : Math.round((parent.height - height) / 2)
+            anchors.fill: parent
             color: Theme.popupBackground
             radius: 0
+            focus: true
+            Keys.onEscapePressed: root.close()
 
             MouseArea {
                 anchors.fill: parent
+                acceptedButtons: Qt.LeftButton
                 onPressed: mouse => mouse.accepted = true
+            }
+
+            DragHandler {
+                id: panelResizeHandler
+                target: null
+                acceptedButtons: Qt.RightButton
+                acceptedModifiers: Qt.AltModifier
+
+                onActiveChanged: {
+                    if (active) {
+                        root.resizeStartWidth = root.livePanelWidth;
+                        root.resizeStartHeight = root.livePanelHeight;
+                    }
+                }
+
+                onActiveTranslationChanged: {
+                    if (!active)
+                        return;
+                    const horizontalDirection = root.placement === "right" ? -1 : 1;
+                    const verticalDirection = root.placement === "bottom" ? -1 : 1;
+                    root.panelWidthOverride = root.clampWidth(
+                        root.resizeStartWidth + activeTranslation.x * horizontalDirection);
+                    root.panelHeightOverride = root.clampHeight(
+                        root.resizeStartHeight + activeTranslation.y * verticalDirection);
+                    root.settingsMessage = root.livePanelWidth + " × " + root.livePanelHeight + " px";
+                }
             }
 
             ColumnLayout {
@@ -670,24 +607,23 @@ Singleton {
                             elide: Text.ElideRight
                         }
 
+                        Text {
+                            text: "SUPER+ALT+BACKSPACE"
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: root.scaledText(8)
+                        }
+
                         SettingsButton {
                             label: root.statusLoading ? "…" : "↻"
                             textSize: root.scaledText(11)
                             onClicked: root.refreshStatus()
                         }
 
-                        Text {
-                            visible: root.settingsDirty
-                            text: "● Unsaved"
-                            color: Theme.focus
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 9
-                        }
-
                         SettingsButton {
-                            label: " Save"
+                            label: ""
                             available: root.settingsDirty
-                            textSize: root.scaledText(9)
+                            textSize: root.scaledIcon(12)
                             onClicked: root.saveDisplaySettings()
                         }
 
@@ -752,314 +688,6 @@ Singleton {
                         y: 6
                         width: contentFlick.width - (contentScrollBar.visible ? 26 : 12)
                         spacing: 8
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: networkContent.implicitHeight + 16
-                            color: Theme.popupButton
-                            border.width: 1
-                            border.color: Theme.active
-
-                            ColumnLayout {
-                                id: networkContent
-                                anchors.fill: parent
-                                anchors.margins: 8
-                                spacing: 6
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: " Network"
-                                            + (root.wiredDevices().some(device => device.connected)
-                                                ? " · wired connected" : "")
-                                        color: Theme.foreground
-                                        font.family: Theme.fontFamily
-                                        font.pixelSize: root.scaledText(12)
-                                        font.bold: true
-                                        elide: Text.ElideRight
-                                    }
-                                    SettingsButton {
-                                        label: Networking.wifiEnabled ? "Wi-Fi On" : "Wi-Fi Off"
-                                        active: Networking.wifiEnabled
-                                        available: Networking.wifiHardwareEnabled
-                                        textSize: root.scaledText(9)
-                                        onClicked: {
-                                            Networking.wifiEnabled = !Networking.wifiEnabled;
-                                            if (root.wifiDevice && Networking.wifiEnabled)
-                                                root.wifiDevice.scannerEnabled = true;
-                                            root.actionMessage = Networking.wifiEnabled
-                                                ? "Wi-Fi enabled" : "Wi-Fi disabled";
-                                        }
-                                    }
-                                    SettingsButton {
-                                        label: root.wifiDevice && root.wifiDevice.scannerEnabled ? "Scanning…" : "Scan"
-                                        active: root.wifiDevice ? root.wifiDevice.scannerEnabled : false
-                                        available: root.wifiDevice !== null && Networking.wifiEnabled
-                                        textSize: root.scaledText(9)
-                                        onClicked: root.wifiDevice.scannerEnabled = !root.wifiDevice.scannerEnabled
-                                    }
-                                }
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    visible: !Networking.wifiHardwareEnabled || root.wifiDevice === null
-                                    text: !Networking.wifiHardwareEnabled
-                                        ? "Wi-Fi is blocked by a hardware switch"
-                                        : "No NetworkManager Wi-Fi device is available"
-                                    color: Theme.muted
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: root.scaledText(9)
-                                    wrapMode: Text.Wrap
-                                }
-
-                                Repeater {
-                                    model: ScriptModel { values: root.wifiNetworks() }
-
-                                    Rectangle {
-                                        id: wifiRow
-                                        required property var modelData
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 36
-                                        color: modelData.connected ? Theme.active : "transparent"
-                                        border.width: 0
-
-                                        Connections {
-                                            target: wifiRow.modelData
-                                            function onConnectionFailed(reason) {
-                                                root.actionMessage = "Could not connect to "
-                                                    + wifiRow.modelData.name + ": " + String(reason);
-                                            }
-                                        }
-
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 6
-                                            anchors.rightMargin: 4
-                                            spacing: 7
-                                            Text {
-                                                text: wifiRow.modelData.connected ? "●" : ""
-                                                color: wifiRow.modelData.connected ? Theme.focus : Theme.foreground
-                                                font.family: Theme.fontFamily
-                                                font.pixelSize: root.scaledIcon(11)
-                                            }
-                                            ColumnLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 0
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: wifiRow.modelData.name || "Hidden network"
-                                                    color: Theme.foreground
-                                                    font.family: Theme.fontFamily
-                                                    font.pixelSize: root.scaledText(10)
-                                                    font.bold: wifiRow.modelData.connected
-                                                    elide: Text.ElideRight
-                                                }
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: Math.round(Number(wifiRow.modelData.signalStrength || 0) * 100)
-                                                        + "% · " + root.wifiSecurityLabel(wifiRow.modelData)
-                                                        + (wifiRow.modelData.known ? " · saved" : "")
-                                                    color: Theme.muted
-                                                    font.family: Theme.fontFamily
-                                                    font.pixelSize: root.scaledText(8)
-                                                    elide: Text.ElideRight
-                                                }
-                                            }
-                                            SettingsButton {
-                                                label: wifiRow.modelData.stateChanging ? "Working…"
-                                                    : (wifiRow.modelData.connected ? "Disconnect" : "Connect")
-                                                available: !wifiRow.modelData.stateChanging
-                                                active: wifiRow.modelData.connected
-                                                textSize: root.scaledText(9)
-                                                onClicked: root.requestWifiConnection(wifiRow.modelData)
-                                            }
-                                        }
-                                    }
-                                }
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: visible ? 38 : 0
-                                    visible: root.pendingWifiNetwork !== null
-                                    color: Theme.active
-                                    border.width: 1
-                                    border.color: Theme.focus
-
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: 5
-                                        spacing: 6
-                                        Text {
-                                            text: "Password"
-                                            color: Theme.foreground
-                                            font.family: Theme.fontFamily
-                                            font.pixelSize: root.scaledText(9)
-                                        }
-                                        Rectangle {
-                                            Layout.fillWidth: true
-                                            Layout.fillHeight: true
-                                            color: Theme.popupBackground
-                                            border.width: 1
-                                            border.color: wifiPasswordInput.activeFocus ? Theme.focus : Theme.muted
-                                            TextInput {
-                                                id: wifiPasswordInput
-                                                anchors.fill: parent
-                                                anchors.leftMargin: 7
-                                                anchors.rightMargin: 7
-                                                text: root.wifiPassword
-                                                echoMode: TextInput.Password
-                                                color: Theme.foreground
-                                                selectionColor: Theme.focus
-                                                selectedTextColor: Theme.foreground
-                                                font.family: Theme.fontFamily
-                                                font.pixelSize: root.scaledText(9)
-                                                verticalAlignment: TextInput.AlignVCenter
-                                                clip: true
-                                                onTextEdited: root.wifiPassword = text
-                                                Keys.onReturnPressed: root.connectPendingWifi()
-                                                Keys.onEscapePressed: root.cancelWifiPassword()
-                                            }
-                                        }
-                                        SettingsButton {
-                                            label: "Cancel"
-                                            textSize: root.scaledText(9)
-                                            onClicked: root.cancelWifiPassword()
-                                        }
-                                        SettingsButton {
-                                            label: "Connect"
-                                            available: root.wifiPassword.length > 0
-                                            textSize: root.scaledText(9)
-                                            onClicked: root.connectPendingWifi()
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: bluetoothContent.implicitHeight + 16
-                            color: Theme.popupButton
-                            border.width: 1
-                            border.color: Theme.active
-
-                            ColumnLayout {
-                                id: bluetoothContent
-                                anchors.fill: parent
-                                anchors.margins: 8
-                                spacing: 6
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: " Bluetooth"
-                                            + (root.bluetoothAdapter
-                                                ? " · " + (root.bluetoothAdapter.name
-                                                    || root.bluetoothAdapter.adapterId) : "")
-                                        color: Theme.foreground
-                                        font.family: Theme.fontFamily
-                                        font.pixelSize: root.scaledText(12)
-                                        font.bold: true
-                                        elide: Text.ElideRight
-                                    }
-                                    SettingsButton {
-                                        label: root.bluetoothAdapter && root.bluetoothAdapter.enabled
-                                            ? "Bluetooth On" : "Bluetooth Off"
-                                        active: root.bluetoothAdapter ? root.bluetoothAdapter.enabled : false
-                                        available: root.bluetoothAdapter !== null
-                                        textSize: root.scaledText(9)
-                                        onClicked: {
-                                            root.bluetoothAdapter.enabled = !root.bluetoothAdapter.enabled;
-                                            root.actionMessage = root.bluetoothAdapter.enabled
-                                                ? "Bluetooth enabled" : "Bluetooth disabled";
-                                        }
-                                    }
-                                    SettingsButton {
-                                        label: root.bluetoothAdapter && root.bluetoothAdapter.discovering
-                                            ? "Scanning…" : "Scan"
-                                        active: root.bluetoothAdapter ? root.bluetoothAdapter.discovering : false
-                                        available: root.bluetoothAdapter !== null
-                                            && root.bluetoothAdapter.enabled
-                                        textSize: root.scaledText(9)
-                                        onClicked: root.bluetoothAdapter.discovering
-                                            = !root.bluetoothAdapter.discovering
-                                    }
-                                }
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    visible: root.bluetoothAdapter === null
-                                    text: "No BlueZ Bluetooth adapter is available"
-                                    color: Theme.muted
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: root.scaledText(9)
-                                }
-
-                                Repeater {
-                                    model: ScriptModel { values: root.bluetoothDevices() }
-
-                                    Rectangle {
-                                        id: bluetoothRow
-                                        required property var modelData
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 36
-                                        color: modelData.connected ? Theme.active : "transparent"
-                                        border.width: 0
-
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 6
-                                            anchors.rightMargin: 4
-                                            spacing: 7
-                                            Text {
-                                                text: bluetoothRow.modelData.connected ? "●" : ""
-                                                color: bluetoothRow.modelData.connected ? Theme.focus : Theme.foreground
-                                                font.family: Theme.fontFamily
-                                                font.pixelSize: root.scaledIcon(11)
-                                            }
-                                            ColumnLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 0
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: bluetoothRow.modelData.name
-                                                        || bluetoothRow.modelData.deviceName
-                                                        || bluetoothRow.modelData.address
-                                                    color: Theme.foreground
-                                                    font.family: Theme.fontFamily
-                                                    font.pixelSize: root.scaledText(10)
-                                                    font.bold: bluetoothRow.modelData.connected
-                                                    elide: Text.ElideRight
-                                                }
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: (bluetoothRow.modelData.connected ? "connected"
-                                                        : (bluetoothRow.modelData.pairing ? "pairing"
-                                                            : (bluetoothRow.modelData.paired ? "paired" : "available")))
-                                                        + (bluetoothRow.modelData.batteryAvailable
-                                                            ? " · " + Math.round(bluetoothRow.modelData.battery * 100) + "%"
-                                                            : "")
-                                                    color: Theme.muted
-                                                    font.family: Theme.fontFamily
-                                                    font.pixelSize: root.scaledText(8)
-                                                    elide: Text.ElideRight
-                                                }
-                                            }
-                                            SettingsButton {
-                                                label: bluetoothRow.modelData.connected ? "Disconnect"
-                                                    : (bluetoothRow.modelData.pairing ? "Cancel"
-                                                        : (bluetoothRow.modelData.paired ? "Connect" : "Pair"))
-                                                active: bluetoothRow.modelData.connected
-                                                textSize: root.scaledText(9)
-                                                onClicked: root.toggleBluetoothDevice(bluetoothRow.modelData)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
 
                         Rectangle {
                             Layout.fillWidth: true
@@ -1128,6 +756,7 @@ Singleton {
                                     }
 
                                     Rectangle {
+                                        id: brightnessTrack
                                         Layout.fillWidth: true
                                         Layout.preferredHeight: 24
                                         color: Theme.active
@@ -1140,15 +769,36 @@ Singleton {
                                             color: Theme.focus
                                         }
 
+                                        Rectangle {
+                                            visible: root.brightnessHoverPercent >= 0
+                                            width: 46
+                                            height: 21
+                                            x: Math.max(0, Math.min(parent.width - width,
+                                                parent.width * root.brightnessHoverPercent / 100 - width / 2))
+                                            y: -25
+                                            color: Theme.background
+                                            border.width: 1
+                                            border.color: Theme.focus
+                                            z: 4
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: root.brightnessHoverPercent + "%"
+                                                color: Theme.foreground
+                                                font.family: Theme.fontFamily
+                                                font.pixelSize: root.scaledText(9)
+                                            }
+                                        }
+
                                         MouseArea {
                                             anchors.fill: parent
                                             enabled: root.brightnessPercent >= 0
+                                            hoverEnabled: true
                                             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                            onPositionChanged: mouse => root.brightnessHoverPercent = Math.max(0,
+                                                Math.min(100, Math.round(mouse.x * 100 / width)))
+                                            onExited: root.brightnessHoverPercent = -1
                                             onPressed: mouse => root.setBrightnessPercent(mouse.x * 100 / width)
-                                            onWheel: wheel => {
-                                                root.adjustBrightness(wheel.angleDelta.y > 0 ? 5 : -5);
-                                                wheel.accepted = true;
-                                            }
                                         }
                                     }
 
@@ -1158,6 +808,15 @@ Singleton {
                                         textSize: root.scaledText(10)
                                         onClicked: root.adjustBrightness(5)
                                     }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "SUPER+ALT+- decrease 5%  ·  SUPER+ALT+= increase 5%  ·  scroll does not change this slider"
+                                    color: Theme.muted
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: root.scaledText(8)
+                                    wrapMode: Text.Wrap
                                 }
                             }
                         }
@@ -1262,6 +921,14 @@ Singleton {
                                             onClicked: root.queueAction(["night-light", "up"], "Making display cooler…")
                                         }
                                     }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "SUPER+ALT+CTRL+- warmer  ·  SUPER+ALT+CTRL+= cooler  ·  SUPER+ALT+CTRL+BACKSPACE toggle"
+                                        color: Theme.muted
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: root.scaledText(8)
+                                        wrapMode: Text.Wrap
+                                    }
                                 }
                             }
 
@@ -1362,26 +1029,81 @@ Singleton {
                             border.width: 1
                             border.color: Theme.active
 
-                            RowLayout {
+                            ColumnLayout {
                                 id: wallpaperContent
                                 anchors.fill: parent
                                 anchors.margins: 8
-                                spacing: 8
+                                spacing: 5
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "Wallpaper Picker"
+                                        color: Theme.foreground
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: root.scaledText(11)
+                                        font.bold: true
+                                    }
+                                    SettingsButton {
+                                        label: "Open awtwall"
+                                        textSize: root.scaledText(9)
+                                        onClicked: {
+                                            root.queueAction(["wallpaper"], "Opening wallpaper picker…");
+                                            root.close();
+                                        }
+                                    }
+                                }
+
                                 Text {
                                     Layout.fillWidth: true
-                                    text: "Wallpaper Picker"
-                                    color: Theme.foreground
+                                    text: "SUPER+W open  ·  SUPER+SHIFT+W random current  ·  SUPER+CTRL+W random all  ·  SUPER+ALT+W random all, different"
+                                    color: Theme.muted
                                     font.family: Theme.fontFamily
-                                    font.pixelSize: root.scaledText(11)
-                                    font.bold: true
+                                    font.pixelSize: root.scaledText(8)
+                                    wrapMode: Text.Wrap
                                 }
-                                SettingsButton {
-                                    label: "Open awtwall"
-                                    textSize: root.scaledText(9)
-                                    onClicked: {
-                                        root.queueAction(["wallpaper"], "Opening wallpaper picker…");
-                                        root.close();
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: smttyContent.implicitHeight + 16
+                            color: Theme.popupButton
+                            border.width: 1
+                            border.color: Theme.active
+
+                            ColumnLayout {
+                                id: smttyContent
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                spacing: 5
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "smtty · Steam session manager"
+                                        color: Theme.foreground
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: root.scaledText(11)
+                                        font.bold: true
                                     }
+                                    SettingsButton {
+                                        label: "Open smtty"
+                                        textSize: root.scaledText(9)
+                                        onClicked: root.openSmtty()
+                                    }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "SUPER+ALT+G open interactive  ·  SUPER+ALT+L launch last profile  ·  SUPER+ALT+O write Steam launch options  ·  SUPER+ALT+K end session and restore audio/cleanup"
+                                    color: Theme.muted
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: root.scaledText(8)
+                                    wrapMode: Text.Wrap
                                 }
                             }
                         }

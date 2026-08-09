@@ -20,6 +20,8 @@ Singleton {
     property int textScaleOverride: -1
     property int iconScaleOverride: -1
     property int captureAllowedOverride: -1
+    property int resizeStartWidth: 0
+    property int resizeStartHeight: 0
     property string settingsMessage: ""
     property var savedView: ({
         width: BarState.defaultClipboardWidth,
@@ -29,15 +31,20 @@ Singleton {
         captureAllowed: false
     })
     property var stateCommandQueue: []
+    property bool privacyRemapPending: false
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string backend: configHome + "/hypr/scripts/quickshell_clipboard.sh"
     readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
     readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
     readonly property int minimumPanelWidth: Math.min(480, maximumPanelWidth)
     readonly property int minimumPanelHeight: Math.min(360, maximumPanelHeight)
-    readonly property int maximumPanelWidth: Math.max(1, clipboardWindow.width
+    readonly property int targetScreenWidth: clipboardWindow.screen
+        ? clipboardWindow.screen.width : 1920
+    readonly property int targetScreenHeight: clipboardWindow.screen
+        ? clipboardWindow.screen.height : 1080
+    readonly property int maximumPanelWidth: Math.max(1, targetScreenWidth
         - ((placement === "left" || placement === "right") ? activeBarSize : 0) - 20)
-    readonly property int maximumPanelHeight: Math.max(1, clipboardWindow.height
+    readonly property int maximumPanelHeight: Math.max(1, targetScreenHeight
         - ((placement === "top" || placement === "bottom") ? activeBarSize : 0) - 20)
     readonly property int livePanelWidth: clampWidth(panelWidthOverride >= 0
         ? panelWidthOverride : BarState.clipboardViewFor(activeMonitorName).width)
@@ -143,6 +150,8 @@ Singleton {
     function openFocused() { openForScreen(focusedScreen()); }
 
     function close() {
+        if (settingsDirty)
+            discardDraft();
         clipboardWindow.visible = false;
         FlyoutManager.release("clipboard");
         search.text = "";
@@ -204,14 +213,18 @@ Singleton {
     function resetDisplaySettings() {
         if (activeMonitorName.length === 0)
             return;
+        const wasCaptureAllowed = captureAllowed;
         panelWidthOverride = clampWidth(BarState.defaultClipboardWidth);
         panelHeightOverride = clampHeight(BarState.defaultClipboardHeight);
         textScaleOverride = 100;
         iconScaleOverride = 100;
         captureAllowedOverride = 0;
-        queueStateCommand(["reset-flyout", "clipboard", activeMonitorName]);
-        acceptDraftAsSaved();
-        settingsMessage = "Reset " + activeMonitorName + " to Clipboard defaults";
+        if (wasCaptureAllowed) {
+            savedView = Object.assign({}, savedView, { captureAllowed: false });
+            privacyRemapPending = true;
+            queueStateCommand(["set-capture", "clipboard", "false"]);
+        }
+        settingsMessage = "Clipboard defaults loaded for " + activeMonitorName;
     }
 
     function copyDisplaySettings(targets) {
@@ -248,10 +261,13 @@ Singleton {
     }
 
     function toggleCaptureAllowed() {
-        captureAllowedOverride = captureAllowed ? 0 : 1;
-        settingsMessage = captureAllowed
-            ? "Clipboard may appear in captures after Save"
-            : "Clipboard will be hidden from captures after Save";
+        const next = !captureAllowed;
+        captureAllowedOverride = next ? 1 : 0;
+        savedView = Object.assign({}, savedView, { captureAllowed: next });
+        privacyRemapPending = true;
+        queueStateCommand(["set-capture", "clipboard", next ? "true" : "false"]);
+        settingsMessage = next
+            ? "Clipboard is visible in captures" : "Clipboard capture protection enabled";
     }
 
     function toggleSettings() {
@@ -342,7 +358,21 @@ Singleton {
         }
     }
 
-    Process { id: privacyRuleUpdater }
+    Process {
+        id: privacyRuleUpdater
+        onExited: {
+            if (!root.privacyRemapPending)
+                return;
+            root.privacyRemapPending = false;
+            if (!clipboardWindow.visible)
+                return;
+            clipboardWindow.visible = false;
+            Qt.callLater(() => {
+                clipboardWindow.visible = true;
+                search.forceActiveFocus();
+            });
+        }
+    }
 
     Connections {
         target: FlyoutManager
@@ -360,36 +390,58 @@ Singleton {
         focusable: true
         aboveWindows: true
         exclusionMode: ExclusionMode.Ignore
-        anchors.top: true
-        anchors.bottom: true
-        anchors.left: true
-        anchors.right: true
-
-        MouseArea {
-            anchors.fill: parent
-            onClicked: root.close()
+        implicitWidth: root.livePanelWidth
+        implicitHeight: root.livePanelHeight
+        anchors.top: root.placement !== "bottom"
+        anchors.bottom: root.placement === "bottom"
+        anchors.left: root.placement !== "right"
+        anchors.right: root.placement === "right"
+        margins {
+            top: root.placement === "top" ? root.activeBarSize + 6
+                : (root.placement === "bottom" ? 0
+                    : Math.max(6, Math.round((root.targetScreenHeight - root.livePanelHeight) / 2)))
+            bottom: root.placement === "bottom" ? root.activeBarSize + 6 : 0
+            left: root.placement === "left" ? root.activeBarSize + 6
+                : (root.placement === "right" ? 0
+                    : Math.max(6, Math.round((root.targetScreenWidth - root.livePanelWidth) / 2)))
+            right: root.placement === "right" ? root.activeBarSize + 6 : 0
         }
 
         Rectangle {
             id: panel
-            width: root.livePanelWidth
-            height: root.livePanelHeight
-            x: root.placement === "left"
-                ? root.activeBarSize
-                : root.placement === "right"
-                    ? parent.width - width - root.activeBarSize
-                    : Math.round((parent.width - width) / 2)
-            y: root.placement === "top"
-                ? root.activeBarSize
-                : root.placement === "bottom"
-                    ? parent.height - height - root.activeBarSize
-                    : Math.round((parent.height - height) / 2)
+            anchors.fill: parent
             color: Theme.popupBackground
             radius: 0
 
             MouseArea {
                 anchors.fill: parent
+                acceptedButtons: Qt.LeftButton
                 onPressed: mouse => mouse.accepted = true
+            }
+
+            DragHandler {
+                target: null
+                acceptedButtons: Qt.RightButton
+                acceptedModifiers: Qt.AltModifier
+
+                onActiveChanged: {
+                    if (active) {
+                        root.resizeStartWidth = root.livePanelWidth;
+                        root.resizeStartHeight = root.livePanelHeight;
+                    }
+                }
+
+                onActiveTranslationChanged: {
+                    if (!active)
+                        return;
+                    const horizontalDirection = root.placement === "right" ? -1 : 1;
+                    const verticalDirection = root.placement === "bottom" ? -1 : 1;
+                    root.panelWidthOverride = root.clampWidth(
+                        root.resizeStartWidth + activeTranslation.x * horizontalDirection);
+                    root.panelHeightOverride = root.clampHeight(
+                        root.resizeStartHeight + activeTranslation.y * verticalDirection);
+                    root.settingsMessage = root.livePanelWidth + " × " + root.livePanelHeight + " px";
+                }
             }
 
             ColumnLayout {
@@ -455,16 +507,8 @@ Singleton {
                             }
                         }
 
-                        Text {
-                            visible: root.settingsDirty
-                            text: "● Unsaved"
-                            color: Theme.focus
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 9
-                        }
-
                         Rectangle {
-                            Layout.preferredWidth: 62
+                            Layout.preferredWidth: 30
                             Layout.preferredHeight: 26
                             color: root.settingsDirty
                                 ? (saveMouse.containsMouse ? Theme.focus : Theme.subtleHover)
@@ -475,10 +519,10 @@ Singleton {
 
                             Text {
                                 anchors.centerIn: parent
-                                text: " Save"
+                                text: ""
                                 color: Theme.foreground
                                 font.family: Theme.fontFamily
-                                font.pixelSize: 10
+                                font.pixelSize: 13
                             }
 
                             MouseArea {

@@ -480,7 +480,8 @@ Item {
 
             Text {
                 Layout.fillWidth: true
-                text: root.message.length > 0 ? root.message : "Changes apply after Save"
+                visible: root.message.length > 0
+                text: root.message
                 color: Theme.muted
                 font.family: Theme.fontFamily
                 font.pixelSize: 9

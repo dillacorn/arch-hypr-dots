@@ -112,10 +112,6 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("~/.config/hypr/scripts/quickshell_ready_sound.sh &")
 
     hl.exec_cmd("hyprsunset &")
-    -- Keep tray applets as a live-validation fallback while the native QML
-    -- NetworkManager and BlueZ controls settle across hardware variants.
-    hl.exec_cmd("nm-applet &")
-    hl.exec_cmd("blueman-applet &")
     hl.exec_cmd("nwg-look -a &")
     hl.exec_cmd("hypridle -c ~/.config/hypr/hypridle.conf &")
     hl.exec_cmd("~/.config/hypr/scripts/hyprpm-auto-reload.sh &")
@@ -570,11 +566,11 @@ local hyprsunset_ctl = "~/.config/hypr/scripts/hyprsunset_ctl.sh"
 
 -- Terminal tools
 local maccel = "~/.config/hypr/scripts/launch_handler.sh maccel \"alacritty --class maccel -e maccel\""
-local smtty = "~/.config/hypr/scripts/launch_handler.sh smtty \"alacritty --class smtty -e smtty\""
+local smtty = "~/.config/hypr/scripts/launch_handler.sh smtty \"~/.config/hypr/scripts/default_terminal.sh --class smtty -- smtty\""
 local btop = "~/.config/hypr/scripts/launch_handler.sh btop \"alacritty --class btop -e btop\""
 
 -- Complex one-off
-local smtty_O = "sh -lc 'if hyprctl clients | grep -q \"class: smtty-O\"; then hyprctl dispatch closewindow class:smtty-O; else alacritty --class smtty-O -e sh -lc '\"'\"'smtty -O; printf \"\\n[smtty -O finished]\\nPress ENTER to close...\"; read -r _'\"'\"'; fi'"
+local smtty_O = "~/.config/hypr/scripts/launch_handler.sh smtty-O \"~/.config/hypr/scripts/default_terminal.sh --class smtty-O --hold -- smtty -O\""
 
 -- Submap references (Toggle on)  [write name to file on entry]
 local function _submap_on_cmd(name)
@@ -1257,13 +1253,6 @@ hl.window_rule({ match = { class = "^(wallpicker)$" }, float = true })
 hl.window_rule({ match = { class = "^(wallpicker)$" }, size = { "(monitor_w*0.85)", "(monitor_h*0.90)" } })
 hl.window_rule({ match = { class = "^(wallpicker)$" }, center = true })
 
-hl.window_rule({ match = { class = "^(nm-connection-editor)$" }, float = true })
-hl.window_rule({ match = { class = "^(nm-connection-editor)$" }, size = { "(monitor_w*0.45)", "(monitor_h*0.45)" } })
-hl.window_rule({ match = { class = "^(nm-connection-editor)$" }, center = true })
-
-hl.window_rule({ match = { class = "^(blueman-manager)$" }, float = true })
-hl.window_rule({ match = { class = "^(blueman-manager)$" }, size = { "(monitor_w*0.45)", "(monitor_h*0.45)" } })
-hl.window_rule({ match = { class = "^(blueman-manager)$" }, center = true })
 
 hl.window_rule({ match = { class = "^(net\\.davidotek\\.pupgui2)$" }, float = true })
 hl.window_rule({ match = { class = "^(net\\.davidotek\\.pupgui2)$" }, size = { "(monitor_w*0.45)", "(monitor_h*0.45)" } })

@@ -57,6 +57,8 @@ Singleton {
     property int centeredPlacementOverride: -1
     property int captureAllowedOverride: -1
     property bool settingWindowSize: false
+    property int resizeStartWidth: 0
+    property int resizeStartHeight: 0
     property var savedView: ({
         width: BarState.defaultLauncherWidth,
         height: BarState.defaultLauncherHeight,
@@ -69,6 +71,7 @@ Singleton {
     property int copySelectionRevision: 0
     property var stateCommandQueue: []
     property string settingsMessage: ""
+    property bool privacyRemapPending: false
 
     function focusedScreen() {
         const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
@@ -230,8 +233,9 @@ Singleton {
         captureAllowedOverride = savedView.captureAllowed ? 1 : 0;
         setWindowSize(savedView.width, savedView.height);
         requestedPlacement = savedPlacement;
-        positionTimer.restart();
-        settingsMessage = "Discarded unsaved changes";
+        if (launcherWindow.visible)
+            positionTimer.restart();
+        settingsMessage = "";
     }
 
     function saveDisplaySettings() {
@@ -269,10 +273,13 @@ Singleton {
     }
 
     function toggleCaptureAllowed() {
-        captureAllowedOverride = captureAllowed ? 0 : 1;
-        settingsMessage = captureAllowed
-            ? "Launcher may appear in captures after Save"
-            : "Launcher will be hidden from captures after Save";
+        const next = !captureAllowed;
+        captureAllowedOverride = next ? 1 : 0;
+        savedView = Object.assign({}, savedView, { captureAllowed: next });
+        privacyRemapPending = true;
+        queueStateCommand(["set-capture", "launcher", next ? "true" : "false"]);
+        settingsMessage = next
+            ? "Launcher is visible in captures" : "Launcher capture protection enabled";
     }
 
     function queueStateCommand(commandArgs) {
@@ -316,24 +323,20 @@ Singleton {
         if (monitor.length === 0)
             return;
 
+        const wasCaptureAllowed = captureAllowed;
         textScaleOverride = 100;
         iconScaleOverride = 100;
         centeredPlacementOverride = 0;
         captureAllowedOverride = 0;
-        queueStateCommand(["reset-monitor", monitor]);
+        if (wasCaptureAllowed) {
+            savedView = Object.assign({}, savedView, { captureAllowed: false });
+            privacyRemapPending = true;
+            queueStateCommand(["set-capture", "launcher", "false"]);
+        }
         setWindowSize(BarState.defaultLauncherWidth, BarState.defaultLauncherHeight);
         requestedPlacement = barPlacementForScreen(launcherWindow.screen);
-        savedView = ({
-            width: liveWidth,
-            height: liveHeight,
-            textScale: 100,
-            iconScale: 100,
-            centered: false,
-            captureAllowed: false
-        });
-        savedPlacement = requestedPlacement;
         positionTimer.restart();
-        settingsMessage = "Reset " + monitor + " to launcher defaults";
+        settingsMessage = "Launcher defaults loaded for " + monitor;
     }
 
     function copyTargetNames() {
@@ -458,6 +461,8 @@ Singleton {
     }
 
     function close() {
+        if (settingsDirty)
+            discardDraft();
         focusGrab.active = false;
         launcherWindow.visible = false;
         FlyoutManager.release("launcher");
@@ -574,7 +579,22 @@ Singleton {
         }
     }
 
-    Process { id: privacyRuleUpdater }
+    Process {
+        id: privacyRuleUpdater
+        onExited: {
+            if (!root.privacyRemapPending)
+                return;
+            root.privacyRemapPending = false;
+            if (!launcherWindow.visible)
+                return;
+            launcherWindow.visible = false;
+            Qt.callLater(() => {
+                launcherWindow.visible = true;
+                positionTimer.restart();
+                search.forceActiveFocus();
+            });
+        }
+    }
 
     Connections {
         target: FlyoutManager
@@ -726,8 +746,19 @@ Singleton {
                 onActiveChanged: {
                     if (active) {
                         positionTimer.stop();
-                        launcherWindow.startSystemResize(Qt.RightEdge | Qt.BottomEdge);
+                        root.resizeStartWidth = root.liveWidth;
+                        root.resizeStartHeight = root.liveHeight;
+                    } else {
+                        boundsGuardTimer.restart();
                     }
+                }
+                onActiveTranslationChanged: {
+                    if (!active)
+                        return;
+                    root.setWindowSize(
+                        root.resizeStartWidth + activeTranslation.x,
+                        root.resizeStartHeight + activeTranslation.y
+                    );
                 }
             }
 
@@ -823,16 +854,8 @@ Singleton {
                             font.pixelSize: 11
                         }
 
-                        Text {
-                            visible: root.settingsDirty
-                            text: "● Unsaved"
-                            color: Theme.urgent
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 10
-                        }
-
                         Rectangle {
-                            Layout.preferredWidth: saveText.implicitWidth + 16
+                            Layout.preferredWidth: 30
                             Layout.preferredHeight: 26
                             color: root.settingsDirty
                                 ? (saveMouse.containsMouse ? Theme.focus : Theme.subtleHover)
@@ -842,12 +865,11 @@ Singleton {
                             border.color: root.settingsDirty ? Theme.focus : Theme.muted
 
                             Text {
-                                id: saveText
                                 anchors.centerIn: parent
-                                text: " Save"
+                                text: ""
                                 color: Theme.foreground
                                 font.family: Theme.fontFamily
-                                font.pixelSize: 11
+                                font.pixelSize: 13
                             }
 
                             MouseArea {

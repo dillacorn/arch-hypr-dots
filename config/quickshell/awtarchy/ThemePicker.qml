@@ -81,25 +81,23 @@ Singleton {
 
     PanelWindow {
         id: pickerWindow
+        WlrLayershell.namespace: "awtarchy-theme-picker"
         visible: false
         color: "transparent"
         focusable: true
         aboveWindows: true
         exclusionMode: ExclusionMode.Ignore
+        implicitWidth: 420
+        implicitHeight: 372
         anchors.top: true
-        anchors.bottom: true
         anchors.left: true
-        anchors.right: true
-
-        MouseArea {
-            anchors.fill: parent
-            onClicked: root.close()
+        margins {
+            top: Math.max(6, Math.round(((screen ? screen.height : 1080) - implicitHeight) / 2))
+            left: Math.max(6, Math.round(((screen ? screen.width : 1920) - implicitWidth) / 2))
         }
 
         Rectangle {
-            anchors.centerIn: parent
-            width: 420
-            height: 372
+            anchors.fill: parent
             color: Theme.popupBackground
             border.width: 0
             radius: 0

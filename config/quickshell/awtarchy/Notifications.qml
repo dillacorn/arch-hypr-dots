@@ -23,15 +23,21 @@ Singleton {
     property int textScaleOverride: -1
     property int iconScaleOverride: -1
     property int captureAllowedOverride: -1
+    property int popupLimitOverride: -1
+    property int resizeStartWidth: 0
+    property int resizeStartHeight: 0
+    property real anchorAlongEdge: -1
     property string settingsMessage: ""
     property var savedView: ({
         width: BarState.defaultNotificationWidth,
         height: BarState.defaultNotificationHeight,
         textScale: 100,
         iconScale: 100,
-        captureAllowed: false
+        captureAllowed: false,
+        popupLimit: BarState.defaultNotificationPopupLimit
     })
     property var stateCommandQueue: []
+    property bool privacyRemapPending: false
 
     readonly property string cacheHome: Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
@@ -45,9 +51,13 @@ Singleton {
             return 0;
         return BarState.barSizeFor(target.name, placement === "left" || placement === "right");
     }
-    readonly property int maximumPanelWidth: Math.max(1, centerWindow.width
+    readonly property int targetScreenWidth: centerWindow.screen
+        ? centerWindow.screen.width : 1920
+    readonly property int targetScreenHeight: centerWindow.screen
+        ? centerWindow.screen.height : 1080
+    readonly property int maximumPanelWidth: Math.max(1, targetScreenWidth
         - ((placement === "left" || placement === "right") ? activeBarSize : 0) - 20)
-    readonly property int maximumPanelHeight: Math.max(1, centerWindow.height
+    readonly property int maximumPanelHeight: Math.max(1, targetScreenHeight
         - ((placement === "top" || placement === "bottom") ? activeBarSize : 0) - 20)
     readonly property int minimumPanelWidth: Math.min(360, maximumPanelWidth)
     readonly property int minimumPanelHeight: Math.min(360, maximumPanelHeight)
@@ -61,11 +71,14 @@ Singleton {
         ? iconScaleOverride : BarState.notificationViewFor(activeMonitorName).iconScale
     readonly property bool captureAllowed: captureAllowedOverride >= 0
         ? captureAllowedOverride === 1 : BarState.captureAllowedFor("notifications")
+    readonly property int effectivePopupLimit: Math.max(1, Math.min(20,
+        popupLimitOverride >= 0 ? popupLimitOverride : BarState.notificationPopupLimit()))
     readonly property bool settingsDirty: savedView.width !== livePanelWidth
         || savedView.height !== livePanelHeight
         || savedView.textScale !== effectiveTextScale
         || savedView.iconScale !== effectiveIconScale
         || savedView.captureAllowed !== captureAllowed
+        || savedView.popupLimit !== effectivePopupLimit
     readonly property int historyCount: historyNotifications().length
 
     function focusedScreen() {
@@ -94,6 +107,37 @@ Singleton {
 
     function clampHeight(value) {
         return Math.max(minimumPanelHeight, Math.min(maximumPanelHeight, Math.round(value)));
+    }
+
+    function anchoredPanelX() {
+        if (placement === "left")
+            return activeBarSize + 6;
+        if (placement === "right")
+            return targetScreenWidth - livePanelWidth - activeBarSize - 6;
+        if (placement === "center")
+            return Math.round((targetScreenWidth - livePanelWidth) / 2);
+        const edge = anchorAlongEdge >= 0 ? anchorAlongEdge : targetScreenWidth - 40;
+        return Math.max(6, Math.min(targetScreenWidth - livePanelWidth - 6,
+            Math.round(edge - livePanelWidth)));
+    }
+
+    function anchoredPanelY() {
+        if (placement === "top")
+            return activeBarSize + 6;
+        if (placement === "bottom")
+            return targetScreenHeight - livePanelHeight - activeBarSize - 6;
+        if (placement === "center")
+            return Math.round((targetScreenHeight - livePanelHeight) / 2);
+        const edge = anchorAlongEdge >= 0 ? anchorAlongEdge : targetScreenHeight - 40;
+        return Math.max(6, Math.min(targetScreenHeight - livePanelHeight - 6,
+            Math.round(edge - livePanelHeight)));
+    }
+
+    function anchorCoordinate(item) {
+        if (!item)
+            return -1;
+        const edgePoint = item.mapToItem(null, item.width, item.height);
+        return placement === "top" || placement === "bottom" ? edgePoint.x : edgePoint.y;
     }
 
     function synchronousKey(notification) {
@@ -150,8 +194,8 @@ Singleton {
 
     function enqueuePopup(notification) {
         const next = [notification, ...popupNotifications.filter(item => item !== notification)];
-        const overflow = next.slice(4);
-        popupNotifications = next.slice(0, 4);
+        const overflow = next.slice(effectivePopupLimit);
+        popupNotifications = next.slice(0, effectivePopupLimit);
         for (const item of overflow) {
             if (isTransientNotification(item))
                 item.expire();
@@ -248,12 +292,14 @@ Singleton {
         textScaleOverride = persisted.textScale;
         iconScaleOverride = persisted.iconScale;
         captureAllowedOverride = BarState.captureAllowedFor("notifications") ? 1 : 0;
+        popupLimitOverride = BarState.notificationPopupLimit();
         savedView = ({
             width: panelWidthOverride,
             height: panelHeightOverride,
             textScale: textScaleOverride,
             iconScale: iconScaleOverride,
-            captureAllowed: captureAllowed
+            captureAllowed: captureAllowed,
+            popupLimit: effectivePopupLimit
         });
     }
 
@@ -263,7 +309,8 @@ Singleton {
             height: livePanelHeight,
             textScale: effectiveTextScale,
             iconScale: effectiveIconScale,
-            captureAllowed: captureAllowed
+            captureAllowed: captureAllowed,
+            popupLimit: effectivePopupLimit
         });
     }
 
@@ -273,6 +320,7 @@ Singleton {
         textScaleOverride = savedView.textScale;
         iconScaleOverride = savedView.iconScale;
         captureAllowedOverride = savedView.captureAllowed ? 1 : 0;
+        popupLimitOverride = savedView.popupLimit;
     }
 
     function queueStateCommand(commandArgs) {
@@ -297,7 +345,8 @@ Singleton {
             "save-flyout", "notifications", activeMonitorName,
             String(livePanelWidth), String(livePanelHeight),
             String(effectiveTextScale), String(effectiveIconScale),
-            captureAllowed ? "true" : "false"
+            captureAllowed ? "true" : "false",
+            String(effectivePopupLimit)
         ]);
         acceptDraftAsSaved();
         settingsMessage = "Saved Notification settings for " + activeMonitorName;
@@ -306,14 +355,19 @@ Singleton {
     function resetDisplaySettings() {
         if (activeMonitorName.length === 0)
             return;
+        const wasCaptureAllowed = captureAllowed;
         panelWidthOverride = clampWidth(BarState.defaultNotificationWidth);
         panelHeightOverride = clampHeight(BarState.defaultNotificationHeight);
         textScaleOverride = 100;
         iconScaleOverride = 100;
         captureAllowedOverride = 0;
-        queueStateCommand(["reset-flyout", "notifications", activeMonitorName]);
-        acceptDraftAsSaved();
-        settingsMessage = "Reset " + activeMonitorName + " to Notification defaults";
+        if (wasCaptureAllowed) {
+            savedView = Object.assign({}, savedView, { captureAllowed: false });
+            privacyRemapPending = true;
+            queueStateCommand(["set-capture", "notifications", "false"]);
+        }
+        popupLimitOverride = BarState.defaultNotificationPopupLimit;
+        settingsMessage = "Notification defaults loaded for " + activeMonitorName;
     }
 
     function copyDisplaySettings(targets) {
@@ -350,10 +404,13 @@ Singleton {
     }
 
     function toggleCaptureAllowed() {
-        captureAllowedOverride = captureAllowed ? 0 : 1;
-        settingsMessage = captureAllowed
-            ? "Notifications may appear in captures after Save"
-            : "Notifications will be hidden from captures after Save";
+        const next = !captureAllowed;
+        captureAllowedOverride = next ? 1 : 0;
+        savedView = Object.assign({}, savedView, { captureAllowed: next });
+        privacyRemapPending = true;
+        queueStateCommand(["set-capture", "notifications", next ? "true" : "false"]);
+        settingsMessage = next
+            ? "Notifications are visible in captures" : "Notification capture protection enabled";
     }
 
     function toggleSettings() {
@@ -370,13 +427,14 @@ Singleton {
             .filter(name => name.length > 0 && name !== activeMonitorName);
     }
 
-    function openForScreen(targetScreen) {
+    function openForScreen(targetScreen, anchorItem) {
         if (!targetScreen)
             return;
         FlyoutManager.claim("notifications");
         hideAllPopups();
         centerWindow.screen = targetScreen;
         placement = placementForScreen(targetScreen);
+        anchorAlongEdge = anchorCoordinate(anchorItem);
         settingsOpen = false;
         settingsPanel.resetCopySelection();
         settingsMessage = "";
@@ -387,6 +445,8 @@ Singleton {
     function openFocused() { openForScreen(focusedScreen()); }
 
     function closeCenter() {
+        if (settingsDirty)
+            discardDraft();
         centerWindow.visible = false;
         FlyoutManager.release("notifications");
         settingsOpen = false;
@@ -401,6 +461,20 @@ Singleton {
             closeCenter();
         else
             openForScreen(targetScreen);
+    }
+
+    function toggleForItem(targetScreen, anchorItem) {
+        const currentName = centerWindow.screen ? centerWindow.screen.name : "";
+        const targetName = targetScreen ? targetScreen.name : "";
+        if (centerWindow.visible && currentName.length > 0 && currentName === targetName)
+            closeCenter();
+        else
+            openForScreen(targetScreen, anchorItem);
+    }
+
+    onEffectivePopupLimitChanged: {
+        if (popupNotifications.length > effectivePopupLimit)
+            popupNotifications = popupNotifications.slice(0, effectivePopupLimit);
     }
 
     FileView {
@@ -472,7 +546,18 @@ Singleton {
         }
     }
 
-    Process { id: privacyRuleUpdater }
+    Process {
+        id: privacyRuleUpdater
+        onExited: {
+            if (!root.privacyRemapPending)
+                return;
+            root.privacyRemapPending = false;
+            if (!centerWindow.visible)
+                return;
+            centerWindow.visible = false;
+            Qt.callLater(() => centerWindow.visible = true);
+        }
+    }
 
     Connections {
         target: FlyoutManager
@@ -495,6 +580,10 @@ Singleton {
 
         readonly property bool barVisibleHere: screen && BarState.enabledFor(screen.name)
         readonly property string barPositionHere: screen ? BarState.positionFor(screen.name) : "top"
+        readonly property int popupHeightLimit: Math.max(120,
+            (screen ? screen.height : 1080)
+                - (barVisibleHere ? BarState.barSizeFor(screen.name,
+                    barPositionHere === "left" || barPositionHere === "right") : 0) - 20)
 
         anchors.top: barPositionHere !== "bottom"
         anchors.bottom: barPositionHere === "bottom"
@@ -507,8 +596,8 @@ Singleton {
             right: barVisibleHere && barPositionHere === "right" ? 46 : 10
         }
 
-        implicitWidth: Math.max(300, Math.min(420, root.viewForScreen(screen).width))
-        implicitHeight: Math.min(560, popupColumn.implicitHeight)
+        implicitWidth: Math.max(320, Math.min(520, root.viewForScreen(screen).width))
+        implicitHeight: Math.min(popupHeightLimit, popupColumn.implicitHeight)
 
         Column {
             id: popupColumn
@@ -553,36 +642,58 @@ Singleton {
         focusable: true
         aboveWindows: true
         exclusionMode: ExclusionMode.Ignore
-        anchors.top: true
-        anchors.bottom: true
-        anchors.left: true
-        anchors.right: true
-
-        MouseArea {
-            anchors.fill: parent
-            onClicked: root.closeCenter()
+        implicitWidth: root.livePanelWidth
+        implicitHeight: root.livePanelHeight
+        anchors.top: root.placement !== "bottom"
+        anchors.bottom: root.placement === "bottom"
+        anchors.left: root.placement !== "right"
+        anchors.right: root.placement === "right"
+        margins {
+            top: root.placement === "top" ? root.activeBarSize + 6
+                : (root.placement === "bottom" ? 0 : root.anchoredPanelY())
+            bottom: root.placement === "bottom" ? root.activeBarSize + 6 : 0
+            left: root.placement === "left" ? root.activeBarSize + 6
+                : (root.placement === "right" ? 0 : root.anchoredPanelX())
+            right: root.placement === "right" ? root.activeBarSize + 6 : 0
         }
 
         Rectangle {
             id: panel
-            width: root.livePanelWidth
-            height: root.livePanelHeight
-            x: root.placement === "left"
-                ? root.activeBarSize
-                : root.placement === "right"
-                    ? parent.width - width - root.activeBarSize
-                    : Math.round((parent.width - width) / 2)
-            y: root.placement === "top"
-                ? root.activeBarSize
-                : root.placement === "bottom"
-                    ? parent.height - height - root.activeBarSize
-                    : Math.round((parent.height - height) / 2)
+            anchors.fill: parent
             color: Theme.popupBackground
             radius: 0
+            focus: true
+            Keys.onEscapePressed: root.closeCenter()
 
             MouseArea {
                 anchors.fill: parent
+                acceptedButtons: Qt.LeftButton
                 onPressed: mouse => mouse.accepted = true
+            }
+
+            DragHandler {
+                target: null
+                acceptedButtons: Qt.RightButton
+                acceptedModifiers: Qt.AltModifier
+
+                onActiveChanged: {
+                    if (active) {
+                        root.resizeStartWidth = root.livePanelWidth;
+                        root.resizeStartHeight = root.livePanelHeight;
+                    }
+                }
+
+                onActiveTranslationChanged: {
+                    if (!active)
+                        return;
+                    const horizontalDirection = root.placement === "right" ? -1 : 1;
+                    const verticalDirection = root.placement === "bottom" ? -1 : 1;
+                    root.panelWidthOverride = root.clampWidth(
+                        root.resizeStartWidth + activeTranslation.x * horizontalDirection);
+                    root.panelHeightOverride = root.clampHeight(
+                        root.resizeStartHeight + activeTranslation.y * verticalDirection);
+                    root.settingsMessage = root.livePanelWidth + " × " + root.livePanelHeight + " px";
+                }
             }
 
             ColumnLayout {
@@ -663,16 +774,8 @@ Singleton {
                             }
                         }
 
-                        Text {
-                            visible: root.settingsDirty
-                            text: "●"
-                            color: Theme.focus
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 10
-                        }
-
                         Rectangle {
-                            Layout.preferredWidth: 58
+                            Layout.preferredWidth: 30
                             Layout.preferredHeight: 26
                             color: root.settingsDirty
                                 ? (saveMouse.containsMouse ? Theme.focus : Theme.subtleHover)
@@ -683,10 +786,10 @@ Singleton {
 
                             Text {
                                 anchors.centerIn: parent
-                                text: " Save"
+                                text: ""
                                 color: Theme.foreground
                                 font.family: Theme.fontFamily
-                                font.pixelSize: 9
+                                font.pixelSize: 13
                             }
 
                             MouseArea {
@@ -758,6 +861,65 @@ Singleton {
                         onIconScaleAdjustmentRequested: delta => root.adjustIconScale(delta)
                         onCaptureToggleRequested: root.toggleCaptureAllowed()
                         onCopyRequested: monitorNames => root.copyDisplaySettings(monitorNames)
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: root.settingsOpen ? 38 : 0
+                    visible: root.settingsOpen
+                    color: Theme.popupButton
+                    border.width: 0
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 8
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Maximum simultaneous popups"
+                            color: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 10
+                        }
+
+                        Rectangle {
+                            Layout.preferredWidth: 54
+                            Layout.preferredHeight: 25
+                            color: Theme.active
+                            border.width: 1
+                            border.color: popupLimitInput.activeFocus ? Theme.focus : Theme.muted
+
+                            TextInput {
+                                id: popupLimitInput
+                                anchors.fill: parent
+                                text: String(root.effectivePopupLimit)
+                                color: Theme.foreground
+                                selectionColor: Theme.focus
+                                selectedTextColor: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 10
+                                horizontalAlignment: TextInput.AlignHCenter
+                                verticalAlignment: TextInput.AlignVCenter
+                                validator: IntValidator { bottom: 1; top: 20 }
+                                selectByMouse: true
+                                onTextEdited: {
+                                    const value = Number(text);
+                                    if (/^\d+$/.test(text) && value >= 1 && value <= 20)
+                                        root.popupLimitOverride = value;
+                                }
+                                onEditingFinished: text = String(root.effectivePopupLimit)
+                            }
+                        }
+
+                        Text {
+                            text: "1–20"
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 9
+                        }
                     }
                 }
 

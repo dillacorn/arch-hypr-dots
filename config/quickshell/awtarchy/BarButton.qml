@@ -16,6 +16,8 @@ Rectangle {
     property int fixedHeight: 0
     property int fontPixelSize: 0
     property bool hovered: false
+    property int wheelActivationDelay: 0
+    property bool wheelReady: wheelActivationDelay <= 0
 
     // Bar.qml supplies these explicitly. Window.window is not reliable for
     // children of every Quickshell proxy window, so keep it only as a fallback
@@ -202,6 +204,13 @@ Rectangle {
         onTriggered: root.hovered = false
     }
 
+    Timer {
+        id: wheelDwell
+        interval: Math.max(1, root.wheelActivationDelay)
+        repeat: false
+        onTriggered: root.wheelReady = true
+    }
+
     MouseArea {
         id: pointer
         anchors.fill: parent
@@ -212,8 +221,13 @@ Rectangle {
             if (containsMouse) {
                 hoverRelease.stop();
                 root.hovered = true;
+                root.wheelReady = root.wheelActivationDelay <= 0;
+                if (!root.wheelReady)
+                    wheelDwell.restart();
             } else {
                 hoverRelease.restart();
+                wheelDwell.stop();
+                root.wheelReady = root.wheelActivationDelay <= 0;
             }
         }
 
@@ -227,6 +241,10 @@ Rectangle {
         }
 
         onWheel: wheel => {
+            if (!root.wheelReady) {
+                wheel.accepted = true;
+                return;
+            }
             if (wheel.angleDelta.y > 0)
                 root.wheelUp();
             else if (wheel.angleDelta.y < 0)

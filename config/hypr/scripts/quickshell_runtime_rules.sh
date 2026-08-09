@@ -61,10 +61,19 @@ if awtarchy_quick_settings_privacy_rule == nil then
     })
 end
 
+if awtarchy_connectivity_privacy_rule == nil then
+    awtarchy_connectivity_privacy_rule = hl.layer_rule({
+        name = \"awtarchy-connectivity-capture-privacy\",
+        match = { namespace = \"^awtarchy-(network|bluetooth)$\" },
+        no_screen_share = true,
+    })
+end
+
 awtarchy_launcher_privacy_rule:set_enabled(${launcher_protected})
 awtarchy_clipboard_privacy_rule:set_enabled(${clipboard_protected})
 awtarchy_notifications_privacy_rule:set_enabled(${notifications_protected})
 awtarchy_quick_settings_privacy_rule:set_enabled(${quick_settings_protected})
+awtarchy_connectivity_privacy_rule:set_enabled(true)
 " >/dev/null; then
     printf '%s\n' 'quickshell_runtime_rules.sh: failed to register capture privacy rules' >&2
     exit 1

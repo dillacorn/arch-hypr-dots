@@ -33,7 +33,7 @@ declare -a PKG_GROUPS=(
   "Fonts:woff2-font-awesome otf-font-awesome ttf-dejavu ttf-liberation ttf-noto-nerd noto-fonts-emoji"
   "Themes:papirus-icon-theme materia-gtk-theme xcursor-comix kvantum-theme-materia"
   "Terminal Apps:nano micro fastfetch btop htop curl passt devtools wget git dos2unix brightnessctl ipcalc cmatrix asciiquarium figlet termdown espeak-ng cava man-db man-pages unzip xarchiver ncdu ddcutil scx-scheds scx-tools"
-  "Utilities:upower polkit-gnome gnome-keyring networkmanager network-manager-applet bluez bluez-utils blueman wiremix pcmanfm-qt gvfs gvfs-smb gvfs-mtp gvfs-afc speedcrunch imagemagick pipewire pipewire-pulse pipewire-alsa ufw jq earlyoom libsixel xdg-utils python usbutils awww"
+  "Utilities:upower polkit-gnome gnome-keyring networkmanager bluez bluez-utils wiremix pcmanfm-qt gvfs gvfs-smb gvfs-mtp gvfs-afc speedcrunch imagemagick pipewire pipewire-pulse pipewire-alsa ufw jq earlyoom libsixel xdg-utils python usbutils awww"
   "Multimedia:ffmpeg avahi mpv cheese exiv2 zathura zathura-pdf-mupdf mousai"
   "Development:base-devel archlinux-keyring bubblewrap gnupg coreutils clang ninja go rust virt-manager qemu qemu-hw-usb-host virt-viewer vde2 libguestfs dmidecode gamemode gamescope nftables swtpm"
   "Network Tools:firefox wireguard-tools wireplumber openssh iptables systemd-resolvconf bridge-utils qemu-guest-agent dnsmasq dhcpcd inetutils openbsd-netcat"
@@ -169,63 +169,6 @@ run_as_target() {
     runuser -u "${TARGET_USER}" -- "$@"
   else
     "$@"
-  fi
-}
-
-run_target_gsettings() {
-  local target_uid runtime_dir
-  target_uid="$(id -u "${TARGET_USER}" 2>/dev/null || true)"
-  runtime_dir="/run/user/${target_uid}"
-
-  local -a user_env=(
-    env
-    "HOME=${HOME_DIR}"
-    "USER=${TARGET_USER}"
-    "LOGNAME=${TARGET_USER}"
-  )
-
-  if [[ "$target_uid" =~ ^[0-9]+$ && -S "${runtime_dir}/bus" ]]; then
-    user_env+=(
-      "XDG_RUNTIME_DIR=${runtime_dir}"
-      "DBUS_SESSION_BUS_ADDRESS=unix:path=${runtime_dir}/bus"
-    )
-    run_as_target "${user_env[@]}" gsettings "$@"
-  elif have dbus-run-session; then
-    run_as_target "${user_env[@]}" dbus-run-session -- gsettings "$@"
-  else
-    run_as_target "${user_env[@]}" gsettings "$@"
-  fi
-}
-
-apply_awtarchy_gsettings_defaults() {
-  local schema="org.gnome.nm-applet"
-  local key="disable-connected-notifications"
-  local current=""
-
-  if ! have gsettings; then
-    warn "gsettings is unavailable; skipping Awtarchy desktop defaults."
-    return 0
-  fi
-
-  if ! run_target_gsettings list-schemas 2>/dev/null | grep -Fxq "$schema"; then
-    log "nm-applet settings schema is unavailable; skipping its notification default."
-    return 0
-  fi
-
-  current="$(run_target_gsettings get "$schema" "$key" 2>/dev/null || true)"
-  if [[ "$current" == "true" ]]; then
-    return 0
-  fi
-
-  log "Disabling routine NetworkManager connected notifications for ${TARGET_USER}..."
-  if ! run_target_gsettings set "$schema" "$key" true; then
-    warn "Could not set ${schema} ${key} for ${TARGET_USER}."
-    return 0
-  fi
-
-  current="$(run_target_gsettings get "$schema" "$key" 2>/dev/null || true)"
-  if [[ "$current" != "true" ]]; then
-    warn "NetworkManager connected-notification default did not persist for ${TARGET_USER}."
   fi
 }
 
@@ -2955,7 +2898,6 @@ run_install() {
   install_ly_stage
   copy_awtarchy_configs_stage
   install_awtarchy_command_stage
-  apply_awtarchy_gsettings_defaults
   repair_home_ownership_stage
 
   ok "Setup complete. Rebooting now."
@@ -5853,7 +5795,6 @@ main() {
   write_version_stamp "$tag"
   write_audit "$tag" "$active_theme"
   [[ "${EUID}" -eq 0 ]] && chown -R "${TARGET_USER}:${TARGET_USER}" "$STATE_DIR" 2>/dev/null || true
-  apply_awtarchy_gsettings_defaults
   command -v hyprctl >/dev/null 2>&1 && run_target hyprctl reload >/dev/null 2>&1 || true
   command -v makoctl >/dev/null 2>&1 && run_target makoctl reload >/dev/null 2>&1 || true
 

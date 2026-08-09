@@ -144,8 +144,13 @@ PanelWindow {
             const data = JSON.parse(line.trim());
             brightnessText = data.text || " ?";
             brightnessTooltip = data.tooltip || "Brightness";
-            const match = brightnessText.match(/(-?\d+)\s*$/);
-            brightnessValue = match ? Number(match[1]) : -1;
+            const percentage = Number(data.percentage);
+            if (Number.isFinite(percentage))
+                brightnessValue = Math.max(0, Math.min(100, Math.round(percentage)));
+            else {
+                const match = brightnessText.match(/(-?\d+)\s*%?\s*$/);
+                brightnessValue = match ? Number(match[1]) : -1;
+            }
         } catch (error) {
             if (line.trim().length > 0)
                 console.warn("Awtarchy DDC parse failed:", error);
@@ -638,6 +643,7 @@ PanelWindow {
             BarControl {
                 label: bar.brightnessText
                 tooltip: bar.brightnessTooltip
+                wheelActivationDelay: 400
                 onClicked: QuickSettings.toggleForScreen(bar.screen)
                 onRightClicked: QuickSettings.toggleForScreen(bar.screen)
                 onWheelUp: bar.ddcAction("up")
@@ -673,6 +679,26 @@ PanelWindow {
                 onWheelDown: bar.clockDate = !bar.clockDate
             }
 
+            BarControl {
+                visible: NetworkMenu.available
+                label: NetworkMenu.barLabel
+                foreground: NetworkMenu.barForeground
+                tooltip: NetworkMenu.barTooltip
+                hoverBackground: Theme.strongHover
+                onClicked: NetworkMenu.toggleForScreen(bar.screen)
+                onRightClicked: NetworkMenu.toggleForScreen(bar.screen)
+            }
+
+            BarControl {
+                visible: BluetoothMenu.available
+                label: BluetoothMenu.barLabel
+                foreground: BluetoothMenu.barForeground
+                tooltip: BluetoothMenu.barTooltip
+                hoverBackground: Theme.strongHover
+                onClicked: BluetoothMenu.toggleForScreen(bar.screen)
+                onRightClicked: BluetoothMenu.toggleForScreen(bar.screen)
+            }
+
             TrayStrip {}
 
             BarControl {
@@ -684,6 +710,7 @@ PanelWindow {
             }
 
             BarControl {
+                id: notificationButton
                 label: Notifications.mutePopups ? "" : ""
                 foreground: Notifications.mutePopups ? Theme.critical : Theme.foreground
                 hoverBackground: Theme.strongHover
@@ -692,7 +719,7 @@ PanelWindow {
                     : "Notification popups enabled")
                     + "\n" + Notifications.historyCount + " in history"
                     + "\nLeft: open history · Right: mute popups"
-                onClicked: Notifications.toggleForScreen(bar.screen)
+                onClicked: Notifications.toggleForItem(bar.screen, notificationButton)
                 onRightClicked: Notifications.togglePopupMute()
             }
 
@@ -822,8 +849,9 @@ PanelWindow {
 
             BarControl {
                 vertical: true; fixedWidth: bar.barSize
-                label: "\n" + (bar.brightnessValue >= 0 ? bar.brightnessValue : "?")
+                label: "\n" + (bar.brightnessValue >= 0 ? bar.brightnessValue + "%" : "?")
                 tooltip: bar.brightnessTooltip
+                wheelActivationDelay: 400
                 onClicked: QuickSettings.toggleForScreen(bar.screen)
                 onRightClicked: QuickSettings.toggleForScreen(bar.screen)
                 onWheelUp: bar.ddcAction("up")
@@ -863,6 +891,28 @@ PanelWindow {
                 onWheelDown: bar.clockDate = !bar.clockDate
             }
 
+            BarControl {
+                visible: NetworkMenu.available
+                vertical: true; fixedWidth: bar.barSize
+                label: NetworkMenu.verticalBarLabel
+                foreground: NetworkMenu.barForeground
+                tooltip: NetworkMenu.barTooltip
+                hoverBackground: Theme.strongHover
+                onClicked: NetworkMenu.toggleForScreen(bar.screen)
+                onRightClicked: NetworkMenu.toggleForScreen(bar.screen)
+            }
+
+            BarControl {
+                visible: BluetoothMenu.available
+                vertical: true; fixedWidth: bar.barSize
+                label: BluetoothMenu.verticalBarLabel
+                foreground: BluetoothMenu.barForeground
+                tooltip: BluetoothMenu.barTooltip
+                hoverBackground: Theme.strongHover
+                onClicked: BluetoothMenu.toggleForScreen(bar.screen)
+                onRightClicked: BluetoothMenu.toggleForScreen(bar.screen)
+            }
+
             TrayColumn {}
 
             BarControl {
@@ -872,6 +922,7 @@ PanelWindow {
                 onRightClicked: ClipboardMenu.toggleForScreen(bar.screen)
             }
             BarControl {
+                id: notificationButtonVertical
                 vertical: true; fixedWidth: bar.barSize
                 label: Notifications.mutePopups ? "" : ""
                 foreground: Notifications.mutePopups ? Theme.critical : Theme.foreground
@@ -881,7 +932,7 @@ PanelWindow {
                     : "Notification popups enabled")
                     + "\n" + Notifications.historyCount + " in history"
                     + "\nLeft: open history · Right: mute popups"
-                onClicked: Notifications.toggleForScreen(bar.screen)
+                onClicked: Notifications.toggleForItem(bar.screen, notificationButtonVertical)
                 onRightClicked: Notifications.togglePopupMute()
             }
             BarControl {

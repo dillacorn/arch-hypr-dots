@@ -62,6 +62,7 @@ dst = Path(sys.argv[2])
 text = src.read_text(encoding="utf-8")
 
 legacy = {"waybar-git", "fuzzel", "wlogout", "mako", "wofi"}
+legacy_connectivity = {"network-manager-applet", "blueman"}
 
 # Arch package group: Quickshell replaces the old shell UI packages.
 match = re.search(r'("Window Management:)([^"]+)(")', text)
@@ -79,6 +80,7 @@ utility_match = re.search(r'("Utilities:)([^"]+)(")', text)
 if not utility_match:
     raise SystemExit("ERROR: could not locate Utilities package group")
 utility_packages = utility_match.group(2).split()
+utility_packages = [pkg for pkg in utility_packages if pkg not in legacy_connectivity]
 if "upower" not in utility_packages:
     insert_at = utility_packages.index("qt6ct") + 1 if "qt6ct" in utility_packages else 0
     utility_packages.insert(insert_at, "upower")
@@ -156,9 +158,9 @@ text = re.sub(
 cleanup_function = r'''
 remove_legacy_shell_packages_stage() {
   local managed_file="/var/lib/awtarchy/managed-packages"
-  local marker="${HOME_DIR}/.local/state/awtarchy/quickshell-migration-complete"
+  local marker="${HOME_DIR}/.local/state/awtarchy/quickshell-connectivity-migration-complete"
   local pkg tmp cleanup_ok=1
-  local -a obsolete=(waybar-git fuzzel wlogout mako wofi)
+  local -a obsolete=(waybar-git fuzzel wlogout mako wofi network-manager-applet blueman)
 
   for pkg in "${obsolete[@]}"; do
     pacman -Q "$pkg" >/dev/null 2>&1 || continue
@@ -235,13 +237,13 @@ remove_legacy_shell_files_stage() {
 # may not have a complete baseline or managed-package ledger.
 update_cleanup_function = r'''
 remove_legacy_shell_update_artifacts() {
-  local marker="${STATE_DIR}/quickshell-migration-complete"
+  local marker="${STATE_DIR}/quickshell-connectivity-migration-complete"
   local scripts_dir="${HOME_DIR}/.config/hypr/scripts"
   local applications_dir="${HOME_DIR}/.local/share/applications"
   local managed_file="/var/lib/awtarchy/managed-packages"
   local pkg process tmp sudo_ok=0 package_cleanup_ok=0
-  local -a obsolete_packages=(waybar-git fuzzel wlogout mako wofi)
-  local -a obsolete_processes=(waybar fuzzel wlogout mako wofi)
+  local -a obsolete_packages=(waybar-git fuzzel wlogout mako wofi network-manager-applet blueman)
+  local -a obsolete_processes=(waybar fuzzel wlogout mako wofi nm-applet blueman-applet blueman-manager)
   local -a installed=()
 
   [[ -e "$marker" ]] && return 0
@@ -307,7 +309,7 @@ remove_legacy_shell_update_artifacts() {
 
   if [[ -f "$managed_file" ]]; then
     tmp="$(mktemp)"
-    grep -Ev '^(waybar-git|fuzzel|wlogout|mako|wofi)$' "$managed_file" >"$tmp" || true
+    grep -Ev '^(waybar-git|fuzzel|wlogout|mako|wofi|network-manager-applet|blueman)$' "$managed_file" >"$tmp" || true
     if [[ "${EUID}" -eq 0 ]]; then
       install -m 0644 "$tmp" "$managed_file"
     elif (( sudo_ok == 1 )); then
@@ -331,13 +333,11 @@ text = text.replace(run_install_marker, cleanup_function + legacy_file_cleanup_f
 
 install_sequence = '''  copy_awtarchy_configs_stage
   install_awtarchy_command_stage
-  apply_awtarchy_gsettings_defaults
 '''
 install_sequence_replacement = '''  copy_awtarchy_configs_stage
   remove_legacy_shell_files_stage
   install_awtarchy_command_stage
   remove_legacy_shell_packages_stage
-  apply_awtarchy_gsettings_defaults
 '''
 if install_sequence not in text:
     raise SystemExit("ERROR: could not locate install stage sequence")
@@ -382,12 +382,14 @@ text = re.sub(
 # Validate the effective install selections. Compatibility/migration code may
 # still recognize old paths, but no legacy shell program may be selected.
 window = re.search(r'"Window Management:([^"]+)"', text)
+utilities = re.search(r'"Utilities:([^"]+)"', text)
 aur = re.search(r'declare -a PACKAGES_AUR=\(\n(?P<body>.*?)\n\)', text, re.S)
 config_dirs = re.search(r'local -a config_dirs=\(([^)]*)\)', text)
-if not (window and aur and config_dirs):
+if not (window and utilities and aur and config_dirs):
     raise SystemExit("ERROR: transformed runtime validation anchors missing")
-for old in legacy:
-    if old in window.group(1).split() or old in aur.group("body").split() or old in config_dirs.group(1).split():
+for old in legacy | legacy_connectivity:
+    if (old in window.group(1).split() or old in utilities.group(1).split()
+            or old in aur.group("body").split() or old in config_dirs.group(1).split()):
         raise SystemExit(f"ERROR: legacy shell dependency still selected: {old}")
 if "quickshell" not in window.group(1).split() or "quickshell" not in config_dirs.group(1).split():
     raise SystemExit("ERROR: quickshell was not added to effective runtime")

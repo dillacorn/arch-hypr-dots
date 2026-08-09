@@ -207,9 +207,11 @@ query_status() {
 }
 
 print_status_for_monitor() {
-  local monitor="$1" cur max percent tooltip
+  local monitor="$1" cur max percent tooltip preview=false
 
-  if ! read -r cur max < <(read_preview_status "$monitor"); then
+  if read -r cur max < <(read_preview_status "$monitor"); then
+    preview=true
+  else
     if ! read -r cur max < <(read_cached_status "$monitor"); then
       if ! read -r cur max < <(query_status "$monitor"); then
         jq -cn \
@@ -224,20 +226,27 @@ print_status_for_monitor() {
     fi
   fi
 
-  percent=$((cur * 100 / max))
-  tooltip="Brightness ${monitor}: ${cur}/${max}
-Scroll to adjust this display
+  percent=$(((cur * 100 + max / 2) / max))
+  if [[ "$preview" == true ]]; then
+    tooltip="Brightness ${monitor}: ${percent}% target (pending)"
+  else
+    tooltip="Brightness ${monitor}: ${percent}%"
+  fi
+  tooltip+="
+Hover briefly, then scroll to adjust this display
 Left/right click to toggle Hypr Quick Settings"
 
   jq -cn \
-    --arg text " ${cur}" \
+    --arg text " ${percent}%" \
     --arg tooltip "$tooltip" \
     --argjson percentage "$percent" \
+    --argjson pending "$preview" \
     '{
       text:$text,
       tooltip:$tooltip,
-      class:["ddc-brightness"],
-      percentage:$percentage
+      class:(["ddc-brightness"] + (if $pending then ["pending"] else [] end)),
+      percentage:$percentage,
+      pending:$pending
     }'
 }
 

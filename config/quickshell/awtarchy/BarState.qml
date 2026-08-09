@@ -16,8 +16,9 @@ Singleton {
     readonly property int defaultAppIconSize: 18
     readonly property int defaultClipboardWidth: 880
     readonly property int defaultClipboardHeight: 760
-    readonly property int defaultNotificationWidth: 380
-    readonly property int defaultNotificationHeight: 620
+    readonly property int defaultNotificationWidth: 520
+    readonly property int defaultNotificationHeight: 760
+    readonly property int defaultNotificationPopupLimit: 4
     readonly property int defaultQuickSettingsWidth: 720
     readonly property int defaultQuickSettingsHeight: 640
     property int revision: 0
@@ -230,8 +231,9 @@ Singleton {
         const rawView = (d.launcher_sizes || ({}))[name];
         const view = rawView && typeof rawView === "object" && !Array.isArray(rawView)
             ? rawView : ({});
-        // Legacy locked and unlocked entries both remain valid saved views.
-        // This migrates existing per-display launcher geometry without loss.
+        // Only an explicit save, or the old locked flag, makes a launcher view
+        // persistent. Historical unlocked drafts must not survive a relaunch.
+        const saved = view.saved === true || view.locked === true;
         const rawWidth = Number(view.width);
         const rawHeight = Number(view.height);
         const validWidth = Number.isFinite(rawWidth) && rawWidth >= 1 && rawWidth <= 16384;
@@ -248,7 +250,20 @@ Singleton {
         const textScale = Number(rawTextScale === undefined ? 100 : rawTextScale);
         const iconScale = Number(rawIconScale === undefined ? 100 : rawIconScale);
 
+        if (!saved) {
+            return ({
+                saved: false,
+                locked: false,
+                width: defaultLauncherWidth,
+                height: defaultLauncherHeight,
+                centered: false,
+                textScale: 100,
+                iconScale: 100
+            });
+        }
+
         return ({
+            saved: true,
             locked: view.locked === true && validWidth && validHeight,
             width: validWidth ? Math.round(rawWidth) : defaultLauncherWidth,
             height: validHeight ? Math.round(rawHeight) : defaultLauncherHeight,
@@ -316,6 +331,13 @@ Singleton {
     function notificationViewFor(name) {
         return flyoutViewFor("notification_views", name,
             defaultNotificationWidth, defaultNotificationHeight);
+    }
+
+    function notificationPopupLimit() {
+        const value = Number(data().notification_popup_limit);
+        if (!Number.isFinite(value))
+            return defaultNotificationPopupLimit;
+        return Math.max(1, Math.min(20, Math.round(value)));
     }
 
     function quickSettingsViewFor(name) {
