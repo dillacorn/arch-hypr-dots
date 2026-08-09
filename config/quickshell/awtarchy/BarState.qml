@@ -14,6 +14,12 @@ Singleton {
     readonly property int defaultLauncherHeight: 582
     readonly property int defaultAppTextSize: 14
     readonly property int defaultAppIconSize: 18
+    readonly property int defaultClipboardWidth: 880
+    readonly property int defaultClipboardHeight: 760
+    readonly property int defaultNotificationWidth: 380
+    readonly property int defaultNotificationHeight: 620
+    readonly property int defaultQuickSettingsWidth: 720
+    readonly property int defaultQuickSettingsHeight: 640
     property int revision: 0
     property int idleRevision: 0
 
@@ -119,24 +125,52 @@ Singleton {
         const dependency = revision;
         const text = stateFile.text();
         if (!text || text.length === 0)
-            return ({ enabled: true, monitors: {}, launcher_sizes: {} });
+            return ({
+                enabled: true,
+                monitors: {},
+                launcher_sizes: {},
+                clipboard_views: {},
+                notification_views: {},
+                quick_settings_views: {},
+                capture_allowed: {}
+            });
 
         try {
             const parsed = JSON.parse(text);
             if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-                return ({ enabled: true, monitors: {}, launcher_sizes: {} });
+                return ({
+                    enabled: true,
+                    monitors: {},
+                    launcher_sizes: {},
+                    clipboard_views: {},
+                    notification_views: {},
+                    quick_settings_views: {},
+                    capture_allowed: {}
+                });
             if (!parsed.monitors || typeof parsed.monitors !== "object"
                 || Array.isArray(parsed.monitors))
                 parsed.monitors = {};
             if (!parsed.launcher_sizes || typeof parsed.launcher_sizes !== "object"
                 || Array.isArray(parsed.launcher_sizes))
                 parsed.launcher_sizes = {};
+            for (const key of ["clipboard_views", "notification_views", "quick_settings_views", "capture_allowed"]) {
+                if (!parsed[key] || typeof parsed[key] !== "object" || Array.isArray(parsed[key]))
+                    parsed[key] = {};
+            }
             if (parsed.enabled === undefined)
                 parsed.enabled = true;
             return parsed;
         } catch (error) {
             console.warn("Awtarchy Quickshell: invalid shell state:", error);
-            return ({ enabled: true, monitors: {}, launcher_sizes: {} });
+            return ({
+                enabled: true,
+                monitors: {},
+                launcher_sizes: {},
+                clipboard_views: {},
+                notification_views: {},
+                quick_settings_views: {},
+                capture_allowed: {}
+            });
         }
     }
 
@@ -248,6 +282,50 @@ Singleton {
 
     function launcherCenteredFor(name) {
         return launcherViewFor(name).centered;
+    }
+
+    function flyoutViewFor(collection, name, defaultWidth, defaultHeight) {
+        const d = data();
+        const views = d[collection] && typeof d[collection] === "object"
+            ? d[collection] : ({});
+        const raw = views[name];
+        const view = raw && typeof raw === "object" && !Array.isArray(raw)
+            ? raw : ({});
+        const width = Number(view.width);
+        const height = Number(view.height);
+        const textScale = Number(view.text_scale === undefined ? 100 : view.text_scale);
+        const iconScale = Number(view.icon_scale === undefined ? 100 : view.icon_scale);
+
+        return ({
+            width: Number.isFinite(width) && width >= 1 && width <= 16384
+                ? Math.round(width) : defaultWidth,
+            height: Number.isFinite(height) && height >= 1 && height <= 16384
+                ? Math.round(height) : defaultHeight,
+            textScale: Number.isFinite(textScale)
+                ? Math.max(50, Math.min(200, Math.round(textScale))) : 100,
+            iconScale: Number.isFinite(iconScale)
+                ? Math.max(50, Math.min(200, Math.round(iconScale))) : 100
+        });
+    }
+
+    function clipboardViewFor(name) {
+        return flyoutViewFor("clipboard_views", name,
+            defaultClipboardWidth, defaultClipboardHeight);
+    }
+
+    function notificationViewFor(name) {
+        return flyoutViewFor("notification_views", name,
+            defaultNotificationWidth, defaultNotificationHeight);
+    }
+
+    function quickSettingsViewFor(name) {
+        return flyoutViewFor("quick_settings_views", name,
+            defaultQuickSettingsWidth, defaultQuickSettingsHeight);
+    }
+
+    function captureAllowedFor(surface) {
+        const allowed = data().capture_allowed || ({});
+        return allowed[surface] === true;
     }
 
     function appTextSizeFor(name, globalOnly) {

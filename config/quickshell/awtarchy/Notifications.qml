@@ -7,6 +7,7 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Services.Notifications
+import Quickshell.Wayland
 import Quickshell.Widgets
 
 Singleton {
@@ -152,6 +153,7 @@ Singleton {
 
     PanelWindow {
         id: popupWindow
+        WlrLayershell.namespace: "awtarchy-notification-popup"
         visible: !root.dnd && server.trackedNotifications.values.length > 0
         color: "transparent"
         focusable: false

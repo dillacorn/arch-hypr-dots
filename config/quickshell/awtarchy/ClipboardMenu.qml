@@ -7,6 +7,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
+import Quickshell.Wayland
 
 Singleton {
     id: root
@@ -133,6 +134,7 @@ Singleton {
 
     PanelWindow {
         id: clipboardWindow
+        WlrLayershell.namespace: "awtarchy-clipboard"
         visible: false
         color: "transparent"
         focusable: true

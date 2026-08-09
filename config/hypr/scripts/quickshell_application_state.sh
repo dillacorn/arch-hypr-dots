@@ -172,7 +172,7 @@ set_centered() {
 }
 
 save_view() {
-    local monitor="$1" width="$2" height="$3" text_scale="$4" icon_scale="$5" value="$6" centered
+    local monitor="$1" width="$2" height="$3" text_scale="$4" icon_scale="$5" value="$6" capture_value="${7:-}" centered capture
     [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
     validate_int_range "$width" "$MIN_WIDTH" "$MAX_WIDTH" 'width'
     validate_int_range "$height" "$MIN_HEIGHT" "$MAX_HEIGHT" 'height'
@@ -188,6 +188,16 @@ save_view() {
             ;;
     esac
 
+    case "$capture_value" in
+        "") capture=null ;;
+        1|true|on) capture=true ;;
+        0|false|off) capture=false ;;
+        *)
+            printf 'capture allowed must be true or false\n' >&2
+            exit 2
+            ;;
+    esac
+
     new_tmp
     jq \
         --arg monitor "$monitor" \
@@ -195,7 +205,8 @@ save_view() {
         --argjson height "$height" \
         --argjson text_scale "$text_scale" \
         --argjson icon_scale "$icon_scale" \
-        --argjson centered "$centered" '
+        --argjson centered "$centered" \
+        --argjson capture "$capture" '
         .launcher_sizes = (if (.launcher_sizes | type) == "object" then .launcher_sizes else {} end)
         | .launcher_sizes[$monitor] = (((if (.launcher_sizes[$monitor] | type) == "object"
             then .launcher_sizes[$monitor] else {} end) + {
@@ -205,7 +216,123 @@ save_view() {
             icon_scale:$icon_scale,
             centered:$centered
         }) | del(.locked))
+        | if $capture == null then . else
+            .capture_allowed = (if (.capture_allowed | type) == "object" then .capture_allowed else {} end)
+            | .capture_allowed.launcher = $capture
+          end
         | del(.application_view)
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
+flyout_key() {
+    case "$1" in
+        clipboard) printf 'clipboard_views\n' ;;
+        notifications) printf 'notification_views\n' ;;
+        quick-settings) printf 'quick_settings_views\n' ;;
+        *) printf 'invalid flyout: %s\n' "$1" >&2; exit 2 ;;
+    esac
+}
+
+capture_key() {
+    case "$1" in
+        clipboard|notifications|launcher) printf '%s\n' "$1" ;;
+        quick-settings) printf 'quick_settings\n' ;;
+        *) printf 'invalid capture surface: %s\n' "$1" >&2; exit 2 ;;
+    esac
+}
+
+parse_bool() {
+    case "$1" in
+        1|true|on) printf 'true\n' ;;
+        0|false|off) printf 'false\n' ;;
+        *) printf '%s must be true or false\n' "$2" >&2; exit 2 ;;
+    esac
+}
+
+save_flyout() {
+    local flyout="$1" monitor="$2" width="$3" height="$4" text_scale="$5" icon_scale="$6" capture_value="$7"
+    local view_key surface_key capture
+    [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
+    view_key="$(flyout_key "$flyout")"
+    surface_key="$(capture_key "$flyout")"
+    capture="$(parse_bool "$capture_value" 'capture allowed')"
+    validate_int_range "$width" "$MIN_WIDTH" "$MAX_WIDTH" 'width'
+    validate_int_range "$height" "$MIN_HEIGHT" "$MAX_HEIGHT" 'height'
+    validate_int_range "$text_scale" "$MIN_TEXT_SCALE" "$MAX_TEXT_SCALE" 'text scale'
+    validate_int_range "$icon_scale" "$MIN_ICON_SCALE" "$MAX_ICON_SCALE" 'icon scale'
+
+    new_tmp
+    jq \
+        --arg view_key "$view_key" \
+        --arg surface_key "$surface_key" \
+        --arg monitor "$monitor" \
+        --argjson width "$width" \
+        --argjson height "$height" \
+        --argjson text_scale "$text_scale" \
+        --argjson icon_scale "$icon_scale" \
+        --argjson capture "$capture" '
+        .[$view_key] = (if (.[$view_key] | type) == "object" then .[$view_key] else {} end)
+        | .[$view_key][$monitor] = {
+            width:$width,
+            height:$height,
+            text_scale:$text_scale,
+            icon_scale:$icon_scale
+        }
+        | .capture_allowed = (if (.capture_allowed | type) == "object" then .capture_allowed else {} end)
+        | .capture_allowed[$surface_key] = $capture
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
+copy_flyout() {
+    local flyout="$1" width="$2" height="$3" text_scale="$4" icon_scale="$5"
+    shift 5
+    local -a targets=("$@")
+    local view_key targets_json
+    (( ${#targets[@]} > 0 )) || { printf 'at least one target monitor is required\n' >&2; exit 2; }
+    view_key="$(flyout_key "$flyout")"
+    validate_int_range "$width" "$MIN_WIDTH" "$MAX_WIDTH" 'width'
+    validate_int_range "$height" "$MIN_HEIGHT" "$MAX_HEIGHT" 'height'
+    validate_int_range "$text_scale" "$MIN_TEXT_SCALE" "$MAX_TEXT_SCALE" 'text scale'
+    validate_int_range "$icon_scale" "$MIN_ICON_SCALE" "$MAX_ICON_SCALE" 'icon scale'
+    targets_json="$(jq -cn --args '$ARGS.positional' -- "${targets[@]}")"
+
+    new_tmp
+    jq \
+        --arg view_key "$view_key" \
+        --argjson targets "$targets_json" \
+        --argjson width "$width" \
+        --argjson height "$height" \
+        --argjson text_scale "$text_scale" \
+        --argjson icon_scale "$icon_scale" '
+        .[$view_key] = (if (.[$view_key] | type) == "object" then .[$view_key] else {} end)
+        | .[$view_key] = reduce $targets[] as $monitor
+            (.[$view_key]; .[$monitor] = {
+                width:$width,
+                height:$height,
+                text_scale:$text_scale,
+                icon_scale:$icon_scale
+            })
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
+reset_flyout() {
+    local flyout="$1" monitor="$2" view_key surface_key
+    [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
+    view_key="$(flyout_key "$flyout")"
+    surface_key="$(capture_key "$flyout")"
+
+    new_tmp
+    jq \
+        --arg view_key "$view_key" \
+        --arg surface_key "$surface_key" \
+        --arg monitor "$monitor" '
+        .[$view_key] = (if (.[$view_key] | type) == "object" then .[$view_key] else {} end)
+        | del(.[$view_key][$monitor])
+        | .capture_allowed = (if (.capture_allowed | type) == "object" then .capture_allowed else {} end)
+        | .capture_allowed[$surface_key] = false
     ' "$STATE_FILE" >"$TMP_FILE"
     commit_tmp
 }
@@ -217,6 +344,8 @@ reset_monitor() {
     jq --arg monitor "$monitor" '
         .launcher_sizes = (if (.launcher_sizes | type) == "object" then .launcher_sizes else {} end)
         | del(.launcher_sizes[$monitor])
+        | .capture_allowed = (if (.capture_allowed | type) == "object" then .capture_allowed else {} end)
+        | .capture_allowed.launcher = false
         | del(.application_view)
     ' "$STATE_FILE" >"$TMP_FILE"
     commit_tmp
@@ -264,6 +393,8 @@ reset_all() {
     new_tmp
     jq '
         .launcher_sizes = {}
+        | .capture_allowed = (if (.capture_allowed | type) == "object" then .capture_allowed else {} end)
+        | .capture_allowed.launcher = false
         | del(.application_view)
     ' "$STATE_FILE" >"$TMP_FILE"
     commit_tmp
@@ -356,7 +487,19 @@ case "$cmd" in
         ;;
     save-view)
         [[ -n ${2:-} && -n ${3:-} && -n ${4:-} && -n ${5:-} && -n ${6:-} && -n ${7:-} ]] || exit 2
-        save_view "$2" "$3" "$4" "$5" "$6" "$7"
+        save_view "$2" "$3" "$4" "$5" "$6" "$7" "${8:-}"
+        ;;
+    save-flyout)
+        [[ -n ${2:-} && -n ${3:-} && -n ${4:-} && -n ${5:-} && -n ${6:-} && -n ${7:-} && -n ${8:-} ]] || exit 2
+        save_flyout "$2" "$3" "$4" "$5" "$6" "$7" "$8"
+        ;;
+    copy-flyout)
+        [[ -n ${2:-} && -n ${3:-} && -n ${4:-} && -n ${5:-} && -n ${6:-} && -n ${7:-} ]] || exit 2
+        copy_flyout "$2" "$3" "$4" "$5" "$6" "${@:7}"
+        ;;
+    reset-flyout)
+        [[ -n ${2:-} && -n ${3:-} ]] || exit 2
+        reset_flyout "$2" "$3"
         ;;
     copy-view)
         [[ -n ${2:-} && -n ${3:-} && -n ${4:-} && -n ${5:-} && -n ${6:-} ]] || exit 2
@@ -385,7 +528,7 @@ case "$cmd" in
         reset_defaults
         ;;
     *)
-        printf 'usage: %s {save-view <MON> <width> <height> <text_percent> <icon_percent> <centered>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
+        printf 'usage: %s {save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
         exit 2
         ;;
 esac

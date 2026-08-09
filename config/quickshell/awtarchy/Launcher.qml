@@ -15,6 +15,7 @@ Singleton {
     readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_launcher_position.sh"
     readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
+    readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
     readonly property string animationStatePath: runtimeDir + "/hypr-animations-enabled"
     readonly property int minimumLauncherWidth: 420
     readonly property int minimumLauncherHeight: 360
@@ -37,11 +38,14 @@ Singleton {
     readonly property int liveWidth: Math.round(launcherWindow.width)
     readonly property int liveHeight: Math.round(launcherWindow.height)
     readonly property bool centerOnScreen: launcherCenteredFor(activeMonitorName)
+    readonly property bool captureAllowed: captureAllowedOverride >= 0
+        ? captureAllowedOverride === 1 : BarState.captureAllowedFor("launcher")
     readonly property bool settingsDirty: savedView.width !== liveWidth
         || savedView.height !== liveHeight
         || savedView.textScale !== effectiveTextScale
         || savedView.iconScale !== effectiveIconScale
         || savedView.centered !== centerOnScreen
+        || savedView.captureAllowed !== captureAllowed
     property string targetMonitorName: ""
     property string requestedPlacement: "center"
     property string savedPlacement: "center"
@@ -51,13 +55,15 @@ Singleton {
     property int textScaleOverride: -1
     property int iconScaleOverride: -1
     property int centeredPlacementOverride: -1
+    property int captureAllowedOverride: -1
     property bool settingWindowSize: false
     property var savedView: ({
         width: BarState.defaultLauncherWidth,
         height: BarState.defaultLauncherHeight,
         textScale: 100,
         iconScale: 100,
-        centered: false
+        centered: false,
+        captureAllowed: false
     })
     property var copyTargets: ({})
     property int copySelectionRevision: 0
@@ -195,12 +201,14 @@ Singleton {
             height: Math.round(height),
             textScale: persisted.textScale,
             iconScale: persisted.iconScale,
-            centered: persisted.centered
+            centered: persisted.centered,
+            captureAllowed: BarState.captureAllowedFor("launcher")
         });
         savedPlacement = placement || "center";
         textScaleOverride = persisted.textScale;
         iconScaleOverride = persisted.iconScale;
         centeredPlacementOverride = persisted.centered ? 1 : 0;
+        captureAllowedOverride = savedView.captureAllowed ? 1 : 0;
     }
 
     function acceptDraftAsSaved() {
@@ -209,7 +217,8 @@ Singleton {
             height: liveHeight,
             textScale: effectiveTextScale,
             iconScale: effectiveIconScale,
-            centered: centerOnScreen
+            centered: centerOnScreen,
+            captureAllowed: captureAllowed
         });
         savedPlacement = requestedPlacement;
     }
@@ -218,6 +227,7 @@ Singleton {
         textScaleOverride = savedView.textScale;
         iconScaleOverride = savedView.iconScale;
         centeredPlacementOverride = savedView.centered ? 1 : 0;
+        captureAllowedOverride = savedView.captureAllowed ? 1 : 0;
         setWindowSize(savedView.width, savedView.height);
         requestedPlacement = savedPlacement;
         positionTimer.restart();
@@ -236,7 +246,8 @@ Singleton {
             String(liveHeight),
             String(effectiveTextScale),
             String(effectiveIconScale),
-            centerOnScreen ? "true" : "false"
+            centerOnScreen ? "true" : "false",
+            captureAllowed ? "true" : "false"
         ]);
         acceptDraftAsSaved();
         settingsMessage = "Saved launcher settings for " + monitor;
@@ -255,6 +266,13 @@ Singleton {
         settingsMessage = enabled
             ? "Launcher centered on " + monitor
             : "Launcher attached to the bar on " + monitor;
+    }
+
+    function toggleCaptureAllowed() {
+        captureAllowedOverride = captureAllowed ? 0 : 1;
+        settingsMessage = captureAllowed
+            ? "Launcher may appear in captures after Save"
+            : "Launcher will be hidden from captures after Save";
     }
 
     function queueStateCommand(commandArgs) {
@@ -301,6 +319,7 @@ Singleton {
         textScaleOverride = 100;
         iconScaleOverride = 100;
         centeredPlacementOverride = 0;
+        captureAllowedOverride = 0;
         queueStateCommand(["reset-monitor", monitor]);
         setWindowSize(BarState.defaultLauncherWidth, BarState.defaultLauncherHeight);
         requestedPlacement = barPlacementForScreen(launcherWindow.screen);
@@ -309,7 +328,8 @@ Singleton {
             height: liveHeight,
             textScale: 100,
             iconScale: 100,
-            centered: false
+            centered: false,
+            captureAllowed: false
         });
         savedPlacement = requestedPlacement;
         positionTimer.restart();
@@ -397,6 +417,7 @@ Singleton {
         textScaleOverride = -1;
         iconScaleOverride = -1;
         centeredPlacementOverride = -1;
+        captureAllowedOverride = -1;
         settingsMessage = "";
         clearCopyTargets();
     }
@@ -546,9 +567,12 @@ Singleton {
         id: sizeStateWriter
         onExited: {
             BarState.refresh();
+            privacyRuleUpdater.exec([root.runtimeRulesScript]);
             Qt.callLater(() => root.runNextStateCommand());
         }
     }
+
+    Process { id: privacyRuleUpdater }
 
     IpcHandler {
         target: "launcher"
@@ -861,7 +885,7 @@ Singleton {
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: root.settingsOpen
-                        ? (root.copySettingsOpen ? 108 : 139) : 0
+                        ? (root.copySettingsOpen ? 108 : 170) : 0
                     visible: root.settingsOpen
                     color: Theme.popupButton
                     border.width: 0
@@ -907,6 +931,50 @@ Singleton {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: root.resetDisplaySettings()
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 28
+                            spacing: 6
+                            visible: !root.copySettingsOpen
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: "Allow in screenshots and screen recordings"
+                                color: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 11
+                                elide: Text.ElideRight
+                            }
+
+                            Rectangle {
+                                Layout.preferredWidth: 64
+                                Layout.preferredHeight: 24
+                                color: root.captureAllowed ? Theme.focus
+                                    : (captureAllowedMouse.containsMouse ? Theme.subtleHover : "transparent")
+                                border.width: 1
+                                border.color: Theme.focus
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: root.captureAllowed ? "On" : "Off"
+                                    color: Theme.foreground
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: 11
+                                }
+
+                                MouseArea {
+                                    id: captureAllowedMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        root.toggleCaptureAllowed();
+                                        Qt.callLater(() => search.forceActiveFocus());
+                                    }
                                 }
                             }
                         }

@@ -5,6 +5,60 @@ set -euo pipefail
 
 command -v hyprctl >/dev/null 2>&1 || exit 127
 
+CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+STATE_FILE="${CACHE_HOME}/awtarchy/quickshell-state.json"
+
+# Privacy is fail-closed: absent, invalid, or unreadable state means that the
+# sensitive surface stays masked in screenshots and screen recordings.
+capture_allowed() {
+    local surface="$1"
+    command -v jq >/dev/null 2>&1 \
+        && [[ -s "$STATE_FILE" ]] \
+        && jq -e --arg surface "$surface" \
+            '((.capture_allowed? // {})[$surface] == true)' \
+            "$STATE_FILE" >/dev/null 2>&1
+}
+
+launcher_protected=true
+clipboard_protected=true
+notifications_protected=true
+capture_allowed launcher && launcher_protected=false
+capture_allowed clipboard && clipboard_protected=false
+capture_allowed notifications && notifications_protected=false
+
+if ! hyprctl eval "
+if awtarchy_launcher_privacy_rule == nil then
+    awtarchy_launcher_privacy_rule = hl.window_rule({
+        name = \"awtarchy-launcher-capture-privacy\",
+        match = { title = \"^Awtarchy Application Search$\" },
+        no_screen_share = true,
+    })
+end
+
+if awtarchy_clipboard_privacy_rule == nil then
+    awtarchy_clipboard_privacy_rule = hl.layer_rule({
+        name = \"awtarchy-clipboard-capture-privacy\",
+        match = { namespace = \"^awtarchy-clipboard$\" },
+        no_screen_share = true,
+    })
+end
+
+if awtarchy_notifications_privacy_rule == nil then
+    awtarchy_notifications_privacy_rule = hl.layer_rule({
+        name = \"awtarchy-notifications-capture-privacy\",
+        match = { namespace = \"^awtarchy-notification-(popup|center)$\" },
+        no_screen_share = true,
+    })
+end
+
+awtarchy_launcher_privacy_rule:set_enabled(${launcher_protected})
+awtarchy_clipboard_privacy_rule:set_enabled(${clipboard_protected})
+awtarchy_notifications_privacy_rule:set_enabled(${notifications_protected})
+" >/dev/null; then
+    printf '%s\n' 'quickshell_runtime_rules.sh: failed to register capture privacy rules' >&2
+    exit 1
+fi
+
 if ! hyprctl eval '
 if awtarchy_quickshell_launcher_rule == nil then
     awtarchy_quickshell_launcher_rule = hl.window_rule({
