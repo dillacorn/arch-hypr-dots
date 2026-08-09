@@ -196,10 +196,8 @@ Singleton {
         const rawView = (d.launcher_sizes || ({}))[name];
         const view = rawView && typeof rawView === "object" && !Array.isArray(rawView)
             ? rawView : ({});
-        // Copied dimensions remain a preferred size even when the destination
-        // is unlocked. This lets a one-time copy preserve each display's
-        // independent lock state. Explicitly unlocking a display removes its
-        // preferred dimensions in the state helper.
+        // Legacy locked and unlocked entries both remain valid saved views.
+        // This migrates existing per-display launcher geometry without loss.
         const rawWidth = Number(view.width);
         const rawHeight = Number(view.height);
         const validWidth = Number.isFinite(rawWidth) && rawWidth >= 1 && rawWidth <= 16384;
@@ -220,6 +218,7 @@ Singleton {
             locked: view.locked === true && validWidth && validHeight,
             width: validWidth ? Math.round(rawWidth) : defaultLauncherWidth,
             height: validHeight ? Math.round(rawHeight) : defaultLauncherHeight,
+            centered: view.centered === true,
             textScale: Number.isFinite(textScale)
                 ? Math.max(50, Math.min(200, Math.round(textScale))) : 100,
             iconScale: Number.isFinite(iconScale)
@@ -245,6 +244,10 @@ Singleton {
 
     function appIconScaleFor(name) {
         return launcherViewFor(name).iconScale;
+    }
+
+    function launcherCenteredFor(name) {
+        return launcherViewFor(name).centered;
     }
 
     function appTextSizeFor(name, globalOnly) {

@@ -171,6 +171,45 @@ set_centered() {
     commit_tmp
 }
 
+save_view() {
+    local monitor="$1" width="$2" height="$3" text_scale="$4" icon_scale="$5" value="$6" centered
+    [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
+    validate_int_range "$width" "$MIN_WIDTH" "$MAX_WIDTH" 'width'
+    validate_int_range "$height" "$MIN_HEIGHT" "$MAX_HEIGHT" 'height'
+    validate_int_range "$text_scale" "$MIN_TEXT_SCALE" "$MAX_TEXT_SCALE" 'text scale'
+    validate_int_range "$icon_scale" "$MIN_ICON_SCALE" "$MAX_ICON_SCALE" 'icon scale'
+
+    case "$value" in
+        1|true|on) centered=true ;;
+        0|false|off) centered=false ;;
+        *)
+            printf 'centered must be true or false\n' >&2
+            exit 2
+            ;;
+    esac
+
+    new_tmp
+    jq \
+        --arg monitor "$monitor" \
+        --argjson width "$width" \
+        --argjson height "$height" \
+        --argjson text_scale "$text_scale" \
+        --argjson icon_scale "$icon_scale" \
+        --argjson centered "$centered" '
+        .launcher_sizes = (if (.launcher_sizes | type) == "object" then .launcher_sizes else {} end)
+        | .launcher_sizes[$monitor] = (((if (.launcher_sizes[$monitor] | type) == "object"
+            then .launcher_sizes[$monitor] else {} end) + {
+            width:$width,
+            height:$height,
+            text_scale:$text_scale,
+            icon_scale:$icon_scale,
+            centered:$centered
+        }) | del(.locked))
+        | del(.application_view)
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
 reset_monitor() {
     local monitor="$1"
     [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
@@ -210,13 +249,12 @@ copy_view() {
         | .launcher_sizes = reduce $targets[] as $monitor
             (.launcher_sizes;
                 .[$monitor] as $current
-                | .[$monitor] = ((if ($current | type) == "object" then $current else {} end) + {
+                | .[$monitor] = (((if ($current | type) == "object" then $current else {} end) + {
                     width:$width,
                     height:$height,
                     text_scale:$text_scale,
-                    icon_scale:$icon_scale,
-                    locked:(($current.locked // false) == true)
-                }))
+                    icon_scale:$icon_scale
+                }) | del(.locked)))
         | del(.application_view)
     ' "$STATE_FILE" >"$TMP_FILE"
     commit_tmp
@@ -316,6 +354,10 @@ case "$cmd" in
         [[ -n ${2:-} && -n ${3:-} ]] || exit 2
         set_centered "$2" "$3"
         ;;
+    save-view)
+        [[ -n ${2:-} && -n ${3:-} && -n ${4:-} && -n ${5:-} && -n ${6:-} && -n ${7:-} ]] || exit 2
+        save_view "$2" "$3" "$4" "$5" "$6" "$7"
+        ;;
     copy-view)
         [[ -n ${2:-} && -n ${3:-} && -n ${4:-} && -n ${5:-} && -n ${6:-} ]] || exit 2
         copy_view "$2" "$3" "$4" "$5" "${@:6}"
@@ -343,7 +385,7 @@ case "$cmd" in
         reset_defaults
         ;;
     *)
-        printf 'usage: %s {lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
+        printf 'usage: %s {save-view <MON> <width> <height> <text_percent> <icon_percent> <centered>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
         exit 2
         ;;
 esac

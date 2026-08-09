@@ -36,20 +36,29 @@ Singleton {
         Math.round(BarState.defaultAppIconSize * effectiveIconScale / 100))
     readonly property int liveWidth: Math.round(launcherWindow.width)
     readonly property int liveHeight: Math.round(launcherWindow.height)
-    readonly property bool sizeLocked: sizeLockOverride >= 0
-        ? sizeLockOverride === 1
-        : activeMonitorName.length > 0 && BarState.applicationSizeLockedFor(activeMonitorName)
     readonly property bool centerOnScreen: launcherCenteredFor(activeMonitorName)
+    readonly property bool settingsDirty: savedView.width !== liveWidth
+        || savedView.height !== liveHeight
+        || savedView.textScale !== effectiveTextScale
+        || savedView.iconScale !== effectiveIconScale
+        || savedView.centered !== centerOnScreen
     property string targetMonitorName: ""
     property string requestedPlacement: "center"
+    property string savedPlacement: "center"
     property bool launcherPositioned: false
     property bool settingsOpen: false
     property bool copySettingsOpen: false
     property int textScaleOverride: -1
     property int iconScaleOverride: -1
-    property int sizeLockOverride: -1
     property int centeredPlacementOverride: -1
     property bool settingWindowSize: false
+    property var savedView: ({
+        width: BarState.defaultLauncherWidth,
+        height: BarState.defaultLauncherHeight,
+        textScale: 100,
+        iconScale: 100,
+        centered: false
+    })
     property var copyTargets: ({})
     property int copySelectionRevision: 0
     property var stateCommandQueue: []
@@ -67,11 +76,7 @@ Singleton {
         if (monitorName === activeMonitorName && centeredPlacementOverride >= 0)
             return centeredPlacementOverride === 1;
 
-        const state = BarState.data();
-        const launcherSizes = state && state.launcher_sizes;
-        const view = launcherSizes && launcherSizes[monitorName];
-        return !!(view && typeof view === "object" && !Array.isArray(view)
-            && view.centered === true);
+        return BarState.launcherCenteredFor(monitorName);
     }
 
     function barPlacementForScreen(targetScreen) {
@@ -169,31 +174,72 @@ Singleton {
     }
 
     function applySpawnSize() {
-        setWindowSize(
-            BarState.launcherWidthFor(targetMonitorName, false),
-            BarState.launcherHeightFor(targetMonitorName, false)
-        );
+        if (targetMonitorName === activeMonitorName && textScaleOverride >= 0) {
+            setWindowSize(savedView.width, savedView.height);
+            return;
+        }
+
+        const view = BarState.launcherViewFor(targetMonitorName);
+        setWindowSize(view.width, view.height);
     }
 
-    function toggleSizeLock() {
+    function loadSavedView(targetScreen, placement) {
+        const monitor = targetScreen ? targetScreen.name : targetMonitorName;
+        const persisted = BarState.launcherViewFor(monitor);
+        const width = Math.min(safeMaximumWidth(targetScreen),
+            Math.max(safeMinimumWidth(targetScreen), persisted.width));
+        const height = Math.min(safeMaximumHeight(targetScreen),
+            Math.max(safeMinimumHeight(targetScreen), persisted.height));
+        savedView = ({
+            width: Math.round(width),
+            height: Math.round(height),
+            textScale: persisted.textScale,
+            iconScale: persisted.iconScale,
+            centered: persisted.centered
+        });
+        savedPlacement = placement || "center";
+        textScaleOverride = persisted.textScale;
+        iconScaleOverride = persisted.iconScale;
+        centeredPlacementOverride = persisted.centered ? 1 : 0;
+    }
+
+    function acceptDraftAsSaved() {
+        savedView = ({
+            width: liveWidth,
+            height: liveHeight,
+            textScale: effectiveTextScale,
+            iconScale: effectiveIconScale,
+            centered: centerOnScreen
+        });
+        savedPlacement = requestedPlacement;
+    }
+
+    function discardDraft() {
+        textScaleOverride = savedView.textScale;
+        iconScaleOverride = savedView.iconScale;
+        centeredPlacementOverride = savedView.centered ? 1 : 0;
+        setWindowSize(savedView.width, savedView.height);
+        requestedPlacement = savedPlacement;
+        positionTimer.restart();
+        settingsMessage = "Discarded unsaved changes";
+    }
+
+    function saveDisplaySettings() {
         const monitor = activeMonitorName;
-        if (monitor.length === 0)
+        if (monitor.length === 0 || !settingsDirty)
             return;
 
-        if (sizeLocked) {
-            sizeLockOverride = 0;
-            queueStateCommand(["unlock-size", monitor]);
-            settingsMessage = "Dimensions unlocked for " + monitor;
-        } else {
-            sizeLockOverride = 1;
-            queueStateCommand([
-                "lock-size",
-                monitor,
-                String(liveWidth),
-                String(liveHeight)
-            ]);
-            settingsMessage = "Dimensions locked for " + monitor;
-        }
+        queueStateCommand([
+            "save-view",
+            monitor,
+            String(liveWidth),
+            String(liveHeight),
+            String(effectiveTextScale),
+            String(effectiveIconScale),
+            centerOnScreen ? "true" : "false"
+        ]);
+        acceptDraftAsSaved();
+        settingsMessage = "Saved launcher settings for " + monitor;
     }
 
     function toggleCenteredPlacement() {
@@ -204,7 +250,6 @@ Singleton {
 
         const enabled = !centerOnScreen;
         centeredPlacementOverride = enabled ? 1 : 0;
-        queueStateCommand(["set-centered", monitor, enabled ? "true" : "false"]);
         requestedPlacement = enabled ? "center" : barPlacementForScreen(targetScreen);
         positionTimer.restart();
         settingsMessage = enabled
@@ -235,12 +280,6 @@ Singleton {
         const nextScale = Math.max(minimumTextScale,
             Math.min(maximumTextScale, effectiveTextScale + delta));
         textScaleOverride = nextScale;
-        queueStateCommand([
-            "set-scales",
-            monitor,
-            String(nextScale),
-            String(effectiveIconScale)
-        ]);
         settingsMessage = "Text size " + nextScale + "%";
     }
 
@@ -251,12 +290,6 @@ Singleton {
         const nextScale = Math.max(minimumIconScale,
             Math.min(maximumIconScale, effectiveIconScale + delta));
         iconScaleOverride = nextScale;
-        queueStateCommand([
-            "set-scales",
-            monitor,
-            String(effectiveTextScale),
-            String(nextScale)
-        ]);
         settingsMessage = "Icon size " + nextScale + "%";
     }
 
@@ -267,11 +300,18 @@ Singleton {
 
         textScaleOverride = 100;
         iconScaleOverride = 100;
-        sizeLockOverride = 0;
         centeredPlacementOverride = 0;
         queueStateCommand(["reset-monitor", monitor]);
         setWindowSize(BarState.defaultLauncherWidth, BarState.defaultLauncherHeight);
         requestedPlacement = barPlacementForScreen(launcherWindow.screen);
+        savedView = ({
+            width: liveWidth,
+            height: liveHeight,
+            textScale: 100,
+            iconScale: 100,
+            centered: false
+        });
+        savedPlacement = requestedPlacement;
         positionTimer.restart();
         settingsMessage = "Reset " + monitor + " to launcher defaults";
     }
@@ -343,6 +383,8 @@ Singleton {
     }
 
     function toggleSettings() {
+        if (settingsOpen && settingsDirty)
+            discardDraft();
         settingsOpen = !settingsOpen;
         copySettingsOpen = false;
         clearCopyTargets();
@@ -354,7 +396,6 @@ Singleton {
         copySettingsOpen = false;
         textScaleOverride = -1;
         iconScaleOverride = -1;
-        sizeLockOverride = -1;
         centeredPlacementOverride = -1;
         settingsMessage = "";
         clearCopyTargets();
@@ -368,9 +409,10 @@ Singleton {
         resetLocalSettingsState();
         targetMonitorName = targetScreen.name;
         requestedPlacement = placement || "center";
+        loadSavedView(targetScreen, requestedPlacement);
         launcherPositioned = false;
         launcherWindow.screen = targetScreen;
-        applySpawnSize();
+        setWindowSize(savedView.width, savedView.height);
         search.text = "";
         launcherWindow.visible = true;
         resetSelection();
@@ -747,28 +789,41 @@ Singleton {
                             font.pixelSize: 11
                         }
 
+                        Text {
+                            visible: root.settingsDirty
+                            text: "● Unsaved"
+                            color: Theme.urgent
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 10
+                        }
+
                         Rectangle {
-                            Layout.preferredWidth: lockText.implicitWidth + 14
+                            Layout.preferredWidth: saveText.implicitWidth + 16
                             Layout.preferredHeight: 26
-                            color: root.sizeLocked ? Theme.focus : (lockMouse.containsMouse ? Theme.subtleHover : "transparent")
-                            border.width: 0
+                            color: root.settingsDirty
+                                ? (saveMouse.containsMouse ? Theme.focus : Theme.subtleHover)
+                                : "transparent"
+                            opacity: root.settingsDirty ? 1 : 0.45
+                            border.width: 1
+                            border.color: root.settingsDirty ? Theme.focus : Theme.muted
 
                             Text {
-                                id: lockText
+                                id: saveText
                                 anchors.centerIn: parent
-                                text: root.sizeLocked ? " Locked" : " Unlocked"
+                                text: " Save"
                                 color: Theme.foreground
                                 font.family: Theme.fontFamily
                                 font.pixelSize: 11
                             }
 
                             MouseArea {
-                                id: lockMouse
+                                id: saveMouse
                                 anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
+                                enabled: root.settingsDirty
+                                hoverEnabled: enabled
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                 onClicked: {
-                                    root.toggleSizeLock();
+                                    root.saveDisplaySettings();
                                     Qt.callLater(() => search.forceActiveFocus());
                                 }
                             }
@@ -1170,7 +1225,7 @@ Singleton {
                                 Layout.fillWidth: true
                                 text: root.settingsMessage.length > 0
                                     ? root.settingsMessage
-                                    : "One-time copy; lock and center mode stay independent"
+                                    : "One-time copy; center mode stays independent"
                                 color: Theme.muted
                                 font.family: Theme.fontFamily
                                 font.pixelSize: 9
