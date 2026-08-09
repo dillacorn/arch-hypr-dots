@@ -395,13 +395,19 @@ select_position() {
     fi
 }
 
-select_visibility() {
-    local current
-    local -a values=(true false)
-    local -a labels=('On' 'Off')
+toggle_visibility() {
+    local current next
     current="$(common_value getenabled)"
-    if option_menu "Bar visibility - $(target_label)" "$current" values labels; then
-        apply_each setenabled "$OPTION_VALUE" && MSG="visibility: $OPTION_VALUE" || MSG='visibility change failed'
+    case "$current" in
+        true) next=false ;;
+        false|mixed) next=true ;;
+        *) MSG='visibility unavailable'; return 0 ;;
+    esac
+
+    if apply_each setenabled "$next"; then
+        [[ $next == true ]] && MSG='visibility: on' || MSG='visibility: off'
+    else
+        MSG='visibility change failed'
     fi
 }
 
@@ -479,7 +485,7 @@ activate() {
     case "$SEL" in
         0) select_target ;;
         1) select_position ;;
-        2) select_visibility ;;
+        2) toggle_visibility ;;
         3) set_bar_size ;;
         4) set_icon_scale ;;
         5) reset_defaults ;;
