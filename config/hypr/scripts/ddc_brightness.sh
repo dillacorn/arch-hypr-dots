@@ -216,7 +216,7 @@ print_status_for_monitor() {
         jq -cn \
           --arg monitor "$monitor" \
           '{
-            text:" ?",
+            text:" ?",
             tooltip:("Brightness " + $monitor + ": DDC unavailable"),
             class:["error"]
           }'
@@ -231,7 +231,7 @@ Scroll to adjust this display
 Left/right click to toggle Hypr Quick Settings"
 
   jq -cn \
-    --arg text " ${cur}" \
+    --arg text " ${cur}" \
     --arg tooltip "$tooltip" \
     --argjson percentage "$percent" \
     '{
@@ -247,7 +247,7 @@ print_status() {
 
   monitor="$(resolve_monitor)" || {
     jq -cn \
-      '{text:" ?",tooltip:"No Hyprland monitor found",class:["error"]}'
+      '{text:" ?",tooltip:"No Hyprland monitor found",class:["error"]}'
     return 0
   }
 

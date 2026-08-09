@@ -26,7 +26,7 @@ PanelWindow {
     readonly property int smallIconSize: Math.max(8, Math.min(barSize - 6, Math.round(14 * iconScale)))
     readonly property int verticalItemSize: Math.max(28, smallIconSize + 8)
 
-    property string brightnessText: " ?"
+    property string brightnessText: " ?"
     property string brightnessTooltip: "Brightness: DDC unavailable"
     property int brightnessValue: -1
     property bool clockDate: false
@@ -142,7 +142,7 @@ PanelWindow {
     function parseBrightness(line) {
         try {
             const data = JSON.parse(line.trim());
-            brightnessText = data.text || " ?";
+            brightnessText = data.text || " ?";
             brightnessTooltip = data.tooltip || "Brightness";
             const match = brightnessText.match(/(-?\d+)\s*$/);
             brightnessValue = match ? Number(match[1]) : -1;
@@ -817,7 +817,7 @@ PanelWindow {
 
             BarControl {
                 vertical: true; fixedWidth: bar.barSize
-                label: "\n" + (bar.brightnessValue >= 0 ? bar.brightnessValue : "?")
+                label: "\n" + (bar.brightnessValue >= 0 ? bar.brightnessValue : "?")
                 tooltip: bar.brightnessTooltip
                 onClicked: bar.ddcAction("menu")
                 onRightClicked: bar.ddcAction("menu")
