@@ -252,6 +252,15 @@ PanelWindow {
         onTriggered: bar.wsDrawerOpen = false
     }
 
+    // Give every button the owning bar's live monitor settings. Relying on
+    // Window.window inside BarButton left font glyphs at the default size and
+    // their button boxes at 28px when the PanelWindow itself was resized.
+    component BarControl: BarButton {
+        monitorName: bar.monitorName
+        iconScale: bar.iconScale
+        barThickness: bar.barSize
+    }
+
     component WorkspaceStrip: Row {
         spacing: 0
 
@@ -261,7 +270,7 @@ PanelWindow {
                     workspace.id >= 1 && workspace.id <= 10 && workspace.monitor && workspace.monitor.name === bar.monitorName)
             }
 
-            delegate: BarButton {
+            delegate: BarControl {
                 required property var modelData
                 vertical: false
                 label: bar.workspaceIcon(modelData.id)
@@ -284,7 +293,7 @@ PanelWindow {
                     workspace.id >= 1 && workspace.id <= 10 && workspace.monitor && workspace.monitor.name === bar.monitorName)
             }
 
-            delegate: BarButton {
+            delegate: BarControl {
                 required property var modelData
                 vertical: true
                 fixedWidth: bar.barSize
@@ -512,7 +521,7 @@ PanelWindow {
             anchors.bottom: parent.bottom
             spacing: 0
 
-            BarButton {
+            BarControl {
                 label: ""
                 tooltip: "app-launcher"
                 hoverBackground: Theme.strongHover
@@ -530,7 +539,7 @@ PanelWindow {
                     onHoveredChanged: bar.setWorkspaceDrawerHovered(hovered)
                 }
 
-                BarButton {
+                BarControl {
                     id: wsHub
                     label: "🖱"
                     tooltip: "Toggle mouse submap"
@@ -561,7 +570,7 @@ PanelWindow {
                             NumberAnimation { duration: 120 }
                         }
 
-                        BarButton {
+                        BarControl {
                             id: arrowButton
                             anchors.left: parent.left
                             label: arrowSlot.modelData.label
@@ -574,13 +583,13 @@ PanelWindow {
 
             TaskStrip {}
 
-            BarButton {
+            BarControl {
                 visible: bar.scratchpadCount() > 0
                 label: " " + bar.scratchpadCount()
                 tooltip: "Scratchpad windows: " + bar.scratchpadCount()
             }
 
-            BarButton {
+            BarControl {
                 visible: submapFile.text().trim().length > 0
                 label: submapFile.text().trim()
                 tooltip: "Current submap: " + submapFile.text().trim() + " (click to reset)"
@@ -588,7 +597,7 @@ PanelWindow {
                 onRightClicked: Quickshell.execDetached([bar.mouseSubmapScript, "reset"])
             }
 
-            BarButton {
+            BarControl {
                 visible: bar.privacyLabel().length > 0
                 label: bar.privacyLabel()
                 tooltip: "Privacy: active capture stream"
@@ -613,7 +622,7 @@ PanelWindow {
             anchors.bottom: parent.bottom
             spacing: 0
 
-            BarButton {
+            BarControl {
                 label: SystemState.idleBroken ? "" : (SystemState.idleInhibited ? "" : "")
                 tooltip: SystemState.idleInhibited ? "Idle inhibitor: activated\nClick to deactivate" : "Idle inhibitor: deactivated\nClick to activate"
                 foreground: SystemState.idleBroken ? Theme.urgent : Theme.foreground
@@ -622,11 +631,11 @@ PanelWindow {
                 onRightClicked: SystemState.toggleIdle()
             }
 
-            BarButton { label: SystemState.cpuUsage + " "; tooltip: SystemState.cpuTooltip }
-            BarButton { label: SystemState.cpuTemp; tooltip: SystemState.temperatureTooltip }
-            BarButton { label: SystemState.memoryUsage + "  "; tooltip: "Memory usage: " + SystemState.memoryUsage + "%" }
+            BarControl { label: SystemState.cpuUsage + " "; tooltip: SystemState.cpuTooltip }
+            BarControl { label: SystemState.cpuTemp; tooltip: SystemState.temperatureTooltip }
+            BarControl { label: SystemState.memoryUsage + "  "; tooltip: "Memory usage: " + SystemState.memoryUsage + "%" }
 
-            BarButton {
+            BarControl {
                 label: bar.brightnessText
                 tooltip: bar.brightnessTooltip
                 onClicked: bar.ddcAction("menu")
@@ -635,7 +644,7 @@ PanelWindow {
                 onWheelDown: bar.ddcAction("down")
             }
 
-            BarButton {
+            BarControl {
                 visible: UPower.displayDevice.ready && UPower.displayDevice.isLaptopBattery
                 readonly property int pct: Math.round(UPower.displayDevice.percentage * 100)
                 label: (UPower.displayDevice.changeRate > 0 ? "" : bar.batteryIcon(pct)) + " " + pct
@@ -643,7 +652,7 @@ PanelWindow {
                 tooltip: "Battery: " + pct + "%"
             }
 
-            BarButton {
+            BarControl {
                 readonly property int vol: Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio ? Math.round(Pipewire.defaultAudioSink.audio.volume * 100) : 0
                 label: bar.audioIcon(vol) + " " + (Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio && Pipewire.defaultAudioSink.audio.muted ? "mute" : vol)
                 foreground: Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio && Pipewire.defaultAudioSink.audio.muted ? Theme.muted : Theme.foreground
@@ -654,7 +663,7 @@ PanelWindow {
                 onWheelDown: bar.adjustAudio(-0.05)
             }
 
-            BarButton {
+            BarControl {
                 label: bar.clockDate ? " " + Qt.formatDateTime(bar.now, "ddd M/d") : " " + Qt.formatDateTime(bar.now, "HH:mm")
                 tooltip: bar.clockTooltip()
                 horizontalPadding: 6
@@ -666,7 +675,7 @@ PanelWindow {
 
             TrayStrip {}
 
-            BarButton {
+            BarControl {
                 label: ""
                 tooltip: "Clipboard history"
                 hoverBackground: Theme.strongHover
@@ -674,7 +683,7 @@ PanelWindow {
                 onRightClicked: ClipboardMenu.openFocused()
             }
 
-            BarButton {
+            BarControl {
                 label: Notifications.dnd ? "" : ""
                 foreground: Notifications.dnd ? Theme.critical : Theme.foreground
                 hoverBackground: Theme.strongHover
@@ -682,7 +691,7 @@ PanelWindow {
                 onClicked: Notifications.toggleDnd()
             }
 
-            BarButton {
+            BarControl {
                 label: ""
                 tooltip: "power menu"
                 horizontalPadding: 10
@@ -705,7 +714,7 @@ PanelWindow {
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: 0
 
-            BarButton {
+            BarControl {
                 vertical: true; fixedWidth: bar.barSize; label: ""; tooltip: "app-launcher"
                 hoverBackground: Theme.strongHover
                 onClicked: Launcher.openForScreen(bar.screen)
@@ -722,7 +731,7 @@ PanelWindow {
                     onHoveredChanged: bar.setWorkspaceDrawerHovered(hovered)
                 }
 
-                BarButton {
+                BarControl {
                     vertical: true
                     fixedWidth: bar.barSize
                     label: "🖱"
@@ -754,7 +763,7 @@ PanelWindow {
                             NumberAnimation { duration: 120 }
                         }
 
-                        BarButton {
+                        BarControl {
                             anchors.top: parent.top
                             vertical: true
                             fixedWidth: bar.barSize
@@ -769,13 +778,13 @@ PanelWindow {
 
             TaskColumn {}
 
-            BarButton {
+            BarControl {
                 visible: bar.scratchpadCount() > 0
                 vertical: true; fixedWidth: bar.barSize
                 label: "\n" + bar.scratchpadCount()
             }
 
-            BarButton {
+            BarControl {
                 visible: submapFile.text().trim().length > 0
                 vertical: true; fixedWidth: bar.barSize
                 label: submapFile.text().trim()
@@ -789,7 +798,7 @@ PanelWindow {
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: 0
 
-            BarButton {
+            BarControl {
                 vertical: true; fixedWidth: bar.barSize
                 label: SystemState.idleBroken ? "" : (SystemState.idleInhibited ? "" : "")
                 foreground: SystemState.idleBroken ? Theme.urgent : Theme.foreground
@@ -797,16 +806,16 @@ PanelWindow {
                 onClicked: SystemState.toggleIdle()
             }
 
-            BarButton { vertical: true; fixedWidth: bar.barSize; label: "\n" + SystemState.cpuUsage; tooltip: SystemState.cpuTooltip }
-            BarButton {
+            BarControl { vertical: true; fixedWidth: bar.barSize; label: "\n" + SystemState.cpuUsage; tooltip: SystemState.cpuTooltip }
+            BarControl {
                 vertical: true; fixedWidth: bar.barSize
                 readonly property string temp: SystemState.cpuTemp
                 label: temp.length > 1 ? temp.slice(-1) + "\n" + temp.slice(0, -1) : temp
                 tooltip: SystemState.temperatureTooltip
             }
-            BarButton { vertical: true; fixedWidth: bar.barSize; label: "\n" + SystemState.memoryUsage; tooltip: "Memory usage: " + SystemState.memoryUsage + "%" }
+            BarControl { vertical: true; fixedWidth: bar.barSize; label: "\n" + SystemState.memoryUsage; tooltip: "Memory usage: " + SystemState.memoryUsage + "%" }
 
-            BarButton {
+            BarControl {
                 vertical: true; fixedWidth: bar.barSize
                 label: "\n" + (bar.brightnessValue >= 0 ? bar.brightnessValue : "?")
                 tooltip: bar.brightnessTooltip
@@ -816,7 +825,7 @@ PanelWindow {
                 onWheelDown: bar.ddcAction("down")
             }
 
-            BarButton {
+            BarControl {
                 visible: UPower.displayDevice.ready && UPower.displayDevice.isLaptopBattery
                 vertical: true; fixedWidth: bar.barSize
                 readonly property int pct: Math.round(UPower.displayDevice.percentage * 100)
@@ -825,7 +834,7 @@ PanelWindow {
                 tooltip: "Battery: " + pct + "%"
             }
 
-            BarButton {
+            BarControl {
                 vertical: true; fixedWidth: bar.barSize
                 readonly property int vol: Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio ? Math.round(Pipewire.defaultAudioSink.audio.volume * 100) : 0
                 label: bar.audioIcon(vol) + "\n" + (Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio && Pipewire.defaultAudioSink.audio.muted ? "mute" : vol)
@@ -837,7 +846,7 @@ PanelWindow {
                 onWheelDown: bar.adjustAudio(-0.05)
             }
 
-            BarButton {
+            BarControl {
                 vertical: true; fixedWidth: bar.barSize
                 label: bar.clockDate
                     ? "\n" + Qt.formatDateTime(bar.now, "ddd") + "\n" + Qt.formatDateTime(bar.now, "M/d")
@@ -851,13 +860,13 @@ PanelWindow {
 
             TrayColumn {}
 
-            BarButton {
+            BarControl {
                 vertical: true; fixedWidth: bar.barSize; label: ""; tooltip: "Clipboard history"
                 hoverBackground: Theme.strongHover
                 onClicked: ClipboardMenu.openFocused()
                 onRightClicked: ClipboardMenu.openFocused()
             }
-            BarButton {
+            BarControl {
                 vertical: true; fixedWidth: bar.barSize
                 label: Notifications.dnd ? "" : ""
                 foreground: Notifications.dnd ? Theme.critical : Theme.foreground
@@ -865,7 +874,7 @@ PanelWindow {
                 tooltip: Notifications.dnd ? "Notifications disabled\nLeft: enable notifications" : "Notifications enabled\nLeft: disable notifications"
                 onClicked: Notifications.toggleDnd()
             }
-            BarButton {
+            BarControl {
                 vertical: true; fixedWidth: bar.barSize; label: ""; tooltip: "power menu"
                 hoverBackground: Theme.strongHover
                 onClicked: PowerMenu.openForScreen(bar.screen)
