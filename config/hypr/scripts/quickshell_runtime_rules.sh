@@ -100,16 +100,42 @@ local function awtarchy_bar_under_pointer()
     return nil
 end
 
+local function movement_candidate(dx, dy)
+    if math.abs(dx) > math.abs(dy) then
+        return dx >= 0 and "right" or "left"
+    end
+    return dy >= 0 and "bottom" or "top"
+end
+
 local function drag_candidate(drag, cursor)
     local dx = cursor.x - drag.start_x
     local dy = cursor.y - drag.start_y
     if math.max(math.abs(dx), math.abs(dy)) < 32 then
         return "none"
     end
-    if math.abs(dx) > math.abs(dy) then
-        return dx >= 0 and "right" or "left"
+
+    if dy < 0 then
+        local vertical = math.abs(dy)
+        local horizontal = math.abs(dx)
+        local top = tonumber(drag.monitor_y)
+
+        -- A pointer that reaches the top snap zone is unambiguously aiming
+        -- upward even when the drag began close to that edge and accumulated
+        -- more sideways movement than vertical movement.
+        if top ~= nil and vertical >= 16 and math.abs(cursor.y - top) <= 64 then
+            return "top"
+        end
+
+        -- Give upward movement a wider cone and a little hysteresis once the
+        -- top preview is active. Left/right still win for clearly horizontal
+        -- movement, while small diagonal drift no longer steals the target.
+        local upward_bias = drag.candidate == "top" and 1.75 or 1.5
+        if vertical * upward_bias >= horizontal then
+            return "top"
+        end
     end
-    return dy >= 0 and "bottom" or "top"
+
+    return movement_candidate(dx, dy)
 end
 
 local function stop_bar_drag_timer()
@@ -139,6 +165,7 @@ local function begin_bar_drag(layer)
         monitor = monitor_name,
         start_x = cursor.x,
         start_y = cursor.y,
+        monitor_y = tonumber(monitor.y) or 0,
         candidate = "none",
     }
     exec_bar_control("beginBarDrag", monitor_name)
