@@ -4,8 +4,10 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Bluetooth
 import Quickshell.Hyprland
 import Quickshell.Io
+import Quickshell.Networking
 import Quickshell.Wayland
 
 Singleton {
@@ -23,17 +25,21 @@ Singleton {
     property bool schedulerEditorOpen: false
     property string schedulerArgsDraft: ""
     property bool schedulerArgsDirty: false
+    property var pendingWifiNetwork: null
+    property string wifiPassword: ""
     property bool settingsOpen: false
     property int panelWidthOverride: -1
     property int panelHeightOverride: -1
     property int textScaleOverride: -1
     property int iconScaleOverride: -1
+    property int captureAllowedOverride: -1
     property string settingsMessage: ""
     property var savedView: ({
         width: BarState.defaultQuickSettingsWidth,
         height: BarState.defaultQuickSettingsHeight,
         textScale: 100,
-        iconScale: 100
+        iconScale: 100,
+        captureAllowed: false
     })
     property var stateCommandQueue: []
 
@@ -61,15 +67,20 @@ Singleton {
         ? textScaleOverride : BarState.quickSettingsViewFor(activeMonitorName).textScale
     readonly property int effectiveIconScale: iconScaleOverride >= 0
         ? iconScaleOverride : BarState.quickSettingsViewFor(activeMonitorName).iconScale
+    readonly property bool captureAllowed: captureAllowedOverride >= 0
+        ? captureAllowedOverride === 1 : BarState.captureAllowedFor("quick_settings")
     readonly property bool settingsDirty: savedView.width !== livePanelWidth
         || savedView.height !== livePanelHeight
         || savedView.textScale !== effectiveTextScale
         || savedView.iconScale !== effectiveIconScale
+        || savedView.captureAllowed !== captureAllowed
     readonly property var brightnessStatus: statusData.brightness || ({})
     readonly property var barStatus: statusData.bar || ({})
     readonly property var nightLightStatus: statusData.night_light || ({})
     readonly property var vibranceStatus: statusData.vibrance || ({})
     readonly property var schedulerStatus: statusData.sched_ext || ({ schedulers: [] })
+    readonly property var wifiDevice: firstWifiDevice()
+    readonly property var bluetoothAdapter: Bluetooth.defaultAdapter
     readonly property int brightnessPercent: {
         const current = Number(brightnessStatus.current);
         const maximum = Number(brightnessStatus.max);
@@ -129,6 +140,113 @@ Singleton {
     function monitorNames() {
         const values = statusData.monitors || [];
         return values.map(monitor => String(monitor.name || "")).filter(name => name.length > 0);
+    }
+
+    function firstWifiDevice() {
+        const devices = Networking.devices ? Networking.devices.values : [];
+        for (const device of devices) {
+            if (device && device.type === DeviceType.Wifi)
+                return device;
+        }
+        return null;
+    }
+
+    function wiredDevices() {
+        const devices = Networking.devices ? Networking.devices.values : [];
+        return [...devices].filter(device => device && device.type === DeviceType.Wired);
+    }
+
+    function wifiNetworks() {
+        if (!wifiDevice || !wifiDevice.networks)
+            return [];
+        return [...wifiDevice.networks.values].sort((left, right) => {
+            if (Boolean(left.connected) !== Boolean(right.connected))
+                return left.connected ? -1 : 1;
+            if (Boolean(left.known) !== Boolean(right.known))
+                return left.known ? -1 : 1;
+            return Number(right.signalStrength || 0) - Number(left.signalStrength || 0);
+        });
+    }
+
+    function bluetoothDevices() {
+        if (!bluetoothAdapter || !bluetoothAdapter.devices)
+            return [];
+        return [...bluetoothAdapter.devices.values].sort((left, right) => {
+            if (Boolean(left.connected) !== Boolean(right.connected))
+                return left.connected ? -1 : 1;
+            if (Boolean(left.paired) !== Boolean(right.paired))
+                return left.paired ? -1 : 1;
+            return String(left.name || left.deviceName || "")
+                .localeCompare(String(right.name || right.deviceName || ""));
+        });
+    }
+
+    function wifiNeedsPassword(network) {
+        if (!network || network.known)
+            return false;
+        return network.security === WifiSecurityType.WpaPsk
+            || network.security === WifiSecurityType.Wpa2Psk
+            || network.security === WifiSecurityType.Sae;
+    }
+
+    function wifiSecurityLabel(network) {
+        if (!network)
+            return "";
+        if (network.security === WifiSecurityType.Open)
+            return "Open";
+        return WifiSecurityType.toString(network.security);
+    }
+
+    function requestWifiConnection(network) {
+        if (!network)
+            return;
+        if (network.connected) {
+            network.disconnect();
+            actionMessage = "Disconnecting from " + network.name + "…";
+            return;
+        }
+        if (!wifiNeedsPassword(network)) {
+            network.connect();
+            actionMessage = "Connecting to " + network.name + "…";
+            return;
+        }
+        pendingWifiNetwork = network;
+        wifiPassword = "";
+        actionMessage = "Enter the password for " + network.name;
+        Qt.callLater(() => wifiPasswordInput.forceActiveFocus());
+    }
+
+    function connectPendingWifi() {
+        if (!pendingWifiNetwork || wifiPassword.length === 0)
+            return;
+        const network = pendingWifiNetwork;
+        network.connectWithPsk(wifiPassword);
+        actionMessage = "Connecting to " + network.name + "…";
+        wifiPassword = "";
+        pendingWifiNetwork = null;
+    }
+
+    function cancelWifiPassword() {
+        wifiPassword = "";
+        pendingWifiNetwork = null;
+    }
+
+    function toggleBluetoothDevice(device) {
+        if (!device)
+            return;
+        if (device.connected) {
+            device.disconnect();
+            actionMessage = "Disconnecting " + (device.name || device.deviceName) + "…";
+        } else if (device.paired) {
+            device.connect();
+            actionMessage = "Connecting " + (device.name || device.deviceName) + "…";
+        } else if (device.pairing) {
+            device.cancelPair();
+            actionMessage = "Cancelling Bluetooth pairing…";
+        } else {
+            device.pair();
+            actionMessage = "Pairing " + (device.name || device.deviceName) + "…";
+        }
     }
 
     function otherMonitorNames() {
@@ -233,11 +351,13 @@ Singleton {
         panelHeightOverride = clampHeight(persisted.height);
         textScaleOverride = persisted.textScale;
         iconScaleOverride = persisted.iconScale;
+        captureAllowedOverride = BarState.captureAllowedFor("quick_settings") ? 1 : 0;
         savedView = ({
             width: panelWidthOverride,
             height: panelHeightOverride,
             textScale: textScaleOverride,
-            iconScale: iconScaleOverride
+            iconScale: iconScaleOverride,
+            captureAllowed: captureAllowed
         });
     }
 
@@ -246,7 +366,8 @@ Singleton {
             width: livePanelWidth,
             height: livePanelHeight,
             textScale: effectiveTextScale,
-            iconScale: effectiveIconScale
+            iconScale: effectiveIconScale,
+            captureAllowed: captureAllowed
         });
     }
 
@@ -255,6 +376,7 @@ Singleton {
         panelHeightOverride = savedView.height;
         textScaleOverride = savedView.textScale;
         iconScaleOverride = savedView.iconScale;
+        captureAllowedOverride = savedView.captureAllowed ? 1 : 0;
     }
 
     function queueStateCommand(commandArgs) {
@@ -278,7 +400,8 @@ Singleton {
         queueStateCommand([
             "save-flyout", "quick-settings", activeMonitorName,
             String(livePanelWidth), String(livePanelHeight),
-            String(effectiveTextScale), String(effectiveIconScale), "false"
+            String(effectiveTextScale), String(effectiveIconScale),
+            captureAllowed ? "true" : "false"
         ]);
         acceptDraftAsSaved();
         settingsMessage = "Saved Quick Settings for " + activeMonitorName;
@@ -291,6 +414,7 @@ Singleton {
         panelHeightOverride = clampHeight(BarState.defaultQuickSettingsHeight);
         textScaleOverride = 100;
         iconScaleOverride = 100;
+        captureAllowedOverride = 0;
         queueStateCommand(["reset-flyout", "quick-settings", activeMonitorName]);
         acceptDraftAsSaved();
         settingsMessage = "Reset " + activeMonitorName + " to Quick Settings defaults";
@@ -329,6 +453,13 @@ Singleton {
         settingsMessage = "Icon size " + iconScaleOverride + "%";
     }
 
+    function toggleCaptureAllowed() {
+        captureAllowedOverride = captureAllowed ? 0 : 1;
+        settingsMessage = captureAllowed
+            ? "Quick Settings may appear in captures after Save"
+            : "Quick Settings will be hidden from captures after Save";
+    }
+
     function toggleSettings() {
         if (settingsOpen && settingsDirty)
             discardDraft();
@@ -349,8 +480,12 @@ Singleton {
         settingsMessage = "";
         schedulerEditorOpen = false;
         schedulerArgsDirty = false;
+        pendingWifiNetwork = null;
+        wifiPassword = "";
         loadSavedView(targetScreen);
         quickSettingsWindow.visible = true;
+        if (wifiDevice && Networking.wifiEnabled)
+            wifiDevice.scannerEnabled = true;
         refreshStatus();
     }
 
@@ -363,6 +498,12 @@ Singleton {
         settingsPanel.resetCopySelection();
         settingsMessage = "";
         schedulerEditorOpen = false;
+        pendingWifiNetwork = null;
+        wifiPassword = "";
+        if (wifiDevice)
+            wifiDevice.scannerEnabled = false;
+        if (bluetoothAdapter && bluetoothAdapter.discovering)
+            bluetoothAdapter.discovering = false;
     }
 
     function toggleForScreen(targetScreen) {
@@ -432,9 +573,12 @@ Singleton {
         id: stateWriter
         onExited: {
             BarState.refresh();
+            privacyRuleUpdater.exec([root.configHome + "/hypr/scripts/quickshell_runtime_rules.sh"]);
             Qt.callLater(() => root.runNextStateCommand());
         }
     }
+
+    Process { id: privacyRuleUpdater }
 
     Connections {
         target: FlyoutManager
@@ -578,7 +722,7 @@ Singleton {
                         maximumHeight: root.maximumPanelHeight
                         textScale: root.effectiveTextScale
                         iconScale: root.effectiveIconScale
-                        showCaptureControl: false
+                        captureAllowed: root.captureAllowed
                         message: root.settingsMessage
                         otherMonitorNames: root.otherMonitorNames()
 
@@ -587,6 +731,7 @@ Singleton {
                         onHeightAdjustmentRequested: delta => root.adjustPanelHeight(delta)
                         onTextScaleAdjustmentRequested: delta => root.adjustTextScale(delta)
                         onIconScaleAdjustmentRequested: delta => root.adjustIconScale(delta)
+                        onCaptureToggleRequested: root.toggleCaptureAllowed()
                         onCopyRequested: monitorNames => root.copyDisplaySettings(monitorNames)
                     }
                 }
@@ -607,6 +752,314 @@ Singleton {
                         y: 6
                         width: contentFlick.width - (contentScrollBar.visible ? 26 : 12)
                         spacing: 8
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: networkContent.implicitHeight + 16
+                            color: Theme.popupButton
+                            border.width: 1
+                            border.color: Theme.active
+
+                            ColumnLayout {
+                                id: networkContent
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                spacing: 6
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: " Network"
+                                            + (root.wiredDevices().some(device => device.connected)
+                                                ? " · wired connected" : "")
+                                        color: Theme.foreground
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: root.scaledText(12)
+                                        font.bold: true
+                                        elide: Text.ElideRight
+                                    }
+                                    SettingsButton {
+                                        label: Networking.wifiEnabled ? "Wi-Fi On" : "Wi-Fi Off"
+                                        active: Networking.wifiEnabled
+                                        available: Networking.wifiHardwareEnabled
+                                        textSize: root.scaledText(9)
+                                        onClicked: {
+                                            Networking.wifiEnabled = !Networking.wifiEnabled;
+                                            if (root.wifiDevice && Networking.wifiEnabled)
+                                                root.wifiDevice.scannerEnabled = true;
+                                            root.actionMessage = Networking.wifiEnabled
+                                                ? "Wi-Fi enabled" : "Wi-Fi disabled";
+                                        }
+                                    }
+                                    SettingsButton {
+                                        label: root.wifiDevice && root.wifiDevice.scannerEnabled ? "Scanning…" : "Scan"
+                                        active: root.wifiDevice ? root.wifiDevice.scannerEnabled : false
+                                        available: root.wifiDevice !== null && Networking.wifiEnabled
+                                        textSize: root.scaledText(9)
+                                        onClicked: root.wifiDevice.scannerEnabled = !root.wifiDevice.scannerEnabled
+                                    }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    visible: !Networking.wifiHardwareEnabled || root.wifiDevice === null
+                                    text: !Networking.wifiHardwareEnabled
+                                        ? "Wi-Fi is blocked by a hardware switch"
+                                        : "No NetworkManager Wi-Fi device is available"
+                                    color: Theme.muted
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: root.scaledText(9)
+                                    wrapMode: Text.Wrap
+                                }
+
+                                Repeater {
+                                    model: ScriptModel { values: root.wifiNetworks() }
+
+                                    Rectangle {
+                                        id: wifiRow
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 36
+                                        color: modelData.connected ? Theme.active : "transparent"
+                                        border.width: 0
+
+                                        Connections {
+                                            target: wifiRow.modelData
+                                            function onConnectionFailed(reason) {
+                                                root.actionMessage = "Could not connect to "
+                                                    + wifiRow.modelData.name + ": " + String(reason);
+                                            }
+                                        }
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 6
+                                            anchors.rightMargin: 4
+                                            spacing: 7
+                                            Text {
+                                                text: wifiRow.modelData.connected ? "●" : ""
+                                                color: wifiRow.modelData.connected ? Theme.focus : Theme.foreground
+                                                font.family: Theme.fontFamily
+                                                font.pixelSize: root.scaledIcon(11)
+                                            }
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 0
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: wifiRow.modelData.name || "Hidden network"
+                                                    color: Theme.foreground
+                                                    font.family: Theme.fontFamily
+                                                    font.pixelSize: root.scaledText(10)
+                                                    font.bold: wifiRow.modelData.connected
+                                                    elide: Text.ElideRight
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: Math.round(Number(wifiRow.modelData.signalStrength || 0) * 100)
+                                                        + "% · " + root.wifiSecurityLabel(wifiRow.modelData)
+                                                        + (wifiRow.modelData.known ? " · saved" : "")
+                                                    color: Theme.muted
+                                                    font.family: Theme.fontFamily
+                                                    font.pixelSize: root.scaledText(8)
+                                                    elide: Text.ElideRight
+                                                }
+                                            }
+                                            SettingsButton {
+                                                label: wifiRow.modelData.stateChanging ? "Working…"
+                                                    : (wifiRow.modelData.connected ? "Disconnect" : "Connect")
+                                                available: !wifiRow.modelData.stateChanging
+                                                active: wifiRow.modelData.connected
+                                                textSize: root.scaledText(9)
+                                                onClicked: root.requestWifiConnection(wifiRow.modelData)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: visible ? 38 : 0
+                                    visible: root.pendingWifiNetwork !== null
+                                    color: Theme.active
+                                    border.width: 1
+                                    border.color: Theme.focus
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 5
+                                        spacing: 6
+                                        Text {
+                                            text: "Password"
+                                            color: Theme.foreground
+                                            font.family: Theme.fontFamily
+                                            font.pixelSize: root.scaledText(9)
+                                        }
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.fillHeight: true
+                                            color: Theme.popupBackground
+                                            border.width: 1
+                                            border.color: wifiPasswordInput.activeFocus ? Theme.focus : Theme.muted
+                                            TextInput {
+                                                id: wifiPasswordInput
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 7
+                                                anchors.rightMargin: 7
+                                                text: root.wifiPassword
+                                                echoMode: TextInput.Password
+                                                color: Theme.foreground
+                                                selectionColor: Theme.focus
+                                                selectedTextColor: Theme.foreground
+                                                font.family: Theme.fontFamily
+                                                font.pixelSize: root.scaledText(9)
+                                                verticalAlignment: TextInput.AlignVCenter
+                                                clip: true
+                                                onTextEdited: root.wifiPassword = text
+                                                Keys.onReturnPressed: root.connectPendingWifi()
+                                                Keys.onEscapePressed: root.cancelWifiPassword()
+                                            }
+                                        }
+                                        SettingsButton {
+                                            label: "Cancel"
+                                            textSize: root.scaledText(9)
+                                            onClicked: root.cancelWifiPassword()
+                                        }
+                                        SettingsButton {
+                                            label: "Connect"
+                                            available: root.wifiPassword.length > 0
+                                            textSize: root.scaledText(9)
+                                            onClicked: root.connectPendingWifi()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: bluetoothContent.implicitHeight + 16
+                            color: Theme.popupButton
+                            border.width: 1
+                            border.color: Theme.active
+
+                            ColumnLayout {
+                                id: bluetoothContent
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                spacing: 6
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: " Bluetooth"
+                                            + (root.bluetoothAdapter
+                                                ? " · " + (root.bluetoothAdapter.name
+                                                    || root.bluetoothAdapter.adapterId) : "")
+                                        color: Theme.foreground
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: root.scaledText(12)
+                                        font.bold: true
+                                        elide: Text.ElideRight
+                                    }
+                                    SettingsButton {
+                                        label: root.bluetoothAdapter && root.bluetoothAdapter.enabled
+                                            ? "Bluetooth On" : "Bluetooth Off"
+                                        active: root.bluetoothAdapter ? root.bluetoothAdapter.enabled : false
+                                        available: root.bluetoothAdapter !== null
+                                        textSize: root.scaledText(9)
+                                        onClicked: {
+                                            root.bluetoothAdapter.enabled = !root.bluetoothAdapter.enabled;
+                                            root.actionMessage = root.bluetoothAdapter.enabled
+                                                ? "Bluetooth enabled" : "Bluetooth disabled";
+                                        }
+                                    }
+                                    SettingsButton {
+                                        label: root.bluetoothAdapter && root.bluetoothAdapter.discovering
+                                            ? "Scanning…" : "Scan"
+                                        active: root.bluetoothAdapter ? root.bluetoothAdapter.discovering : false
+                                        available: root.bluetoothAdapter !== null
+                                            && root.bluetoothAdapter.enabled
+                                        textSize: root.scaledText(9)
+                                        onClicked: root.bluetoothAdapter.discovering
+                                            = !root.bluetoothAdapter.discovering
+                                    }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    visible: root.bluetoothAdapter === null
+                                    text: "No BlueZ Bluetooth adapter is available"
+                                    color: Theme.muted
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: root.scaledText(9)
+                                }
+
+                                Repeater {
+                                    model: ScriptModel { values: root.bluetoothDevices() }
+
+                                    Rectangle {
+                                        id: bluetoothRow
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 36
+                                        color: modelData.connected ? Theme.active : "transparent"
+                                        border.width: 0
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 6
+                                            anchors.rightMargin: 4
+                                            spacing: 7
+                                            Text {
+                                                text: bluetoothRow.modelData.connected ? "●" : ""
+                                                color: bluetoothRow.modelData.connected ? Theme.focus : Theme.foreground
+                                                font.family: Theme.fontFamily
+                                                font.pixelSize: root.scaledIcon(11)
+                                            }
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 0
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: bluetoothRow.modelData.name
+                                                        || bluetoothRow.modelData.deviceName
+                                                        || bluetoothRow.modelData.address
+                                                    color: Theme.foreground
+                                                    font.family: Theme.fontFamily
+                                                    font.pixelSize: root.scaledText(10)
+                                                    font.bold: bluetoothRow.modelData.connected
+                                                    elide: Text.ElideRight
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: (bluetoothRow.modelData.connected ? "connected"
+                                                        : (bluetoothRow.modelData.pairing ? "pairing"
+                                                            : (bluetoothRow.modelData.paired ? "paired" : "available")))
+                                                        + (bluetoothRow.modelData.batteryAvailable
+                                                            ? " · " + Math.round(bluetoothRow.modelData.battery * 100) + "%"
+                                                            : "")
+                                                    color: Theme.muted
+                                                    font.family: Theme.fontFamily
+                                                    font.pixelSize: root.scaledText(8)
+                                                    elide: Text.ElideRight
+                                                }
+                                            }
+                                            SettingsButton {
+                                                label: bluetoothRow.modelData.connected ? "Disconnect"
+                                                    : (bluetoothRow.modelData.pairing ? "Cancel"
+                                                        : (bluetoothRow.modelData.paired ? "Connect" : "Pair"))
+                                                active: bluetoothRow.modelData.connected
+                                                textSize: root.scaledText(9)
+                                                onClicked: root.toggleBluetoothDevice(bluetoothRow.modelData)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
                         Rectangle {
                             Layout.fillWidth: true

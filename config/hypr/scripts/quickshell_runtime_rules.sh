@@ -22,9 +22,11 @@ capture_allowed() {
 launcher_protected=true
 clipboard_protected=true
 notifications_protected=true
+quick_settings_protected=true
 capture_allowed launcher && launcher_protected=false
 capture_allowed clipboard && clipboard_protected=false
 capture_allowed notifications && notifications_protected=false
+capture_allowed quick_settings && quick_settings_protected=false
 
 if ! hyprctl eval "
 if awtarchy_launcher_privacy_rule == nil then
@@ -51,9 +53,18 @@ if awtarchy_notifications_privacy_rule == nil then
     })
 end
 
+if awtarchy_quick_settings_privacy_rule == nil then
+    awtarchy_quick_settings_privacy_rule = hl.layer_rule({
+        name = \"awtarchy-quick-settings-capture-privacy\",
+        match = { namespace = \"^awtarchy-quick-settings$\" },
+        no_screen_share = true,
+    })
+end
+
 awtarchy_launcher_privacy_rule:set_enabled(${launcher_protected})
 awtarchy_clipboard_privacy_rule:set_enabled(${clipboard_protected})
 awtarchy_notifications_privacy_rule:set_enabled(${notifications_protected})
+awtarchy_quick_settings_privacy_rule:set_enabled(${quick_settings_protected})
 " >/dev/null; then
     printf '%s\n' 'quickshell_runtime_rules.sh: failed to register capture privacy rules' >&2
     exit 1

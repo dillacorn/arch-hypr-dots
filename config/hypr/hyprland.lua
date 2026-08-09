@@ -112,6 +112,8 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("~/.config/hypr/scripts/quickshell_ready_sound.sh &")
 
     hl.exec_cmd("hyprsunset &")
+    -- Keep tray applets as a live-validation fallback while the native QML
+    -- NetworkManager and BlueZ controls settle across hardware variants.
     hl.exec_cmd("nm-applet &")
     hl.exec_cmd("blueman-applet &")
     hl.exec_cmd("nwg-look -a &")
