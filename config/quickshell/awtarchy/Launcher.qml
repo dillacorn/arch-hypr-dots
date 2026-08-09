@@ -39,6 +39,7 @@ Singleton {
     readonly property bool sizeLocked: sizeLockOverride >= 0
         ? sizeLockOverride === 1
         : activeMonitorName.length > 0 && BarState.applicationSizeLockedFor(activeMonitorName)
+    readonly property bool centerOnScreen: launcherCenteredFor(activeMonitorName)
     property string targetMonitorName: ""
     property string requestedPlacement: "center"
     property bool launcherPositioned: false
@@ -47,6 +48,7 @@ Singleton {
     property int textScaleOverride: -1
     property int iconScaleOverride: -1
     property int sizeLockOverride: -1
+    property int centeredPlacementOverride: -1
     property bool settingWindowSize: false
     property var copyTargets: ({})
     property int copySelectionRevision: 0
@@ -59,14 +61,34 @@ Singleton {
         return matches.length > 0 ? matches[0] : (Quickshell.screens.length > 0 ? Quickshell.screens[0] : null);
     }
 
-    function placementForScreen(targetScreen) {
+    function launcherCenteredFor(monitorName) {
+        if (!monitorName || monitorName.length === 0)
+            return false;
+        if (monitorName === activeMonitorName && centeredPlacementOverride >= 0)
+            return centeredPlacementOverride === 1;
+
+        const state = BarState.data();
+        const launcherSizes = state && state.launcher_sizes;
+        const view = launcherSizes && launcherSizes[monitorName];
+        return !!(view && typeof view === "object" && !Array.isArray(view)
+            && view.centered === true);
+    }
+
+    function barPlacementForScreen(targetScreen) {
         if (!targetScreen || !BarState.enabledFor(targetScreen.name))
             return "center";
         return BarState.positionFor(targetScreen.name);
     }
 
+    function placementForScreen(targetScreen) {
+        if (targetScreen && launcherCenteredFor(targetScreen.name))
+            return "center";
+        return barPlacementForScreen(targetScreen);
+    }
+
     function centeredPlacementForScreen(targetScreen) {
-        if (!targetScreen || !BarState.enabledFor(targetScreen.name))
+        if (!targetScreen || launcherCenteredFor(targetScreen.name)
+            || !BarState.enabledFor(targetScreen.name))
             return "center";
         return BarState.positionFor(targetScreen.name) + "-center";
     }
@@ -174,6 +196,22 @@ Singleton {
         }
     }
 
+    function toggleCenteredPlacement() {
+        const monitor = activeMonitorName;
+        const targetScreen = launcherWindow.screen;
+        if (monitor.length === 0 || !targetScreen)
+            return;
+
+        const enabled = !centerOnScreen;
+        centeredPlacementOverride = enabled ? 1 : 0;
+        queueStateCommand(["set-centered", monitor, enabled ? "true" : "false"]);
+        requestedPlacement = enabled ? "center" : barPlacementForScreen(targetScreen);
+        positionTimer.restart();
+        settingsMessage = enabled
+            ? "Launcher centered on " + monitor
+            : "Launcher attached to the bar on " + monitor;
+    }
+
     function queueStateCommand(commandArgs) {
         const nextQueue = stateCommandQueue.slice();
         nextQueue.push(commandArgs);
@@ -230,8 +268,10 @@ Singleton {
         textScaleOverride = 100;
         iconScaleOverride = 100;
         sizeLockOverride = 0;
+        centeredPlacementOverride = 0;
         queueStateCommand(["reset-monitor", monitor]);
         setWindowSize(BarState.defaultLauncherWidth, BarState.defaultLauncherHeight);
+        requestedPlacement = barPlacementForScreen(launcherWindow.screen);
         positionTimer.restart();
         settingsMessage = "Reset " + monitor + " to launcher defaults";
     }
@@ -315,6 +355,7 @@ Singleton {
         textScaleOverride = -1;
         iconScaleOverride = -1;
         sizeLockOverride = -1;
+        centeredPlacementOverride = -1;
         settingsMessage = "";
         clearCopyTargets();
     }
@@ -764,7 +805,8 @@ Singleton {
 
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: root.settingsOpen ? 108 : 0
+                    Layout.preferredHeight: root.settingsOpen
+                        ? (root.copySettingsOpen ? 108 : 139) : 0
                     visible: root.settingsOpen
                     color: Theme.popupButton
                     border.width: 0
@@ -810,6 +852,49 @@ Singleton {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: root.resetDisplaySettings()
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 28
+                            spacing: 6
+                            visible: !root.copySettingsOpen
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: "Open centered on this display"
+                                color: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 11
+                            }
+
+                            Rectangle {
+                                Layout.preferredWidth: 64
+                                Layout.preferredHeight: 24
+                                color: root.centerOnScreen ? Theme.focus
+                                    : (centerPlacementMouse.containsMouse ? Theme.subtleHover : "transparent")
+                                border.width: 1
+                                border.color: Theme.focus
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: root.centerOnScreen ? "On" : "Off"
+                                    color: Theme.foreground
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: 11
+                                }
+
+                                MouseArea {
+                                    id: centerPlacementMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        root.toggleCenteredPlacement();
+                                        Qt.callLater(() => search.forceActiveFocus());
+                                    }
                                 }
                             }
                         }
@@ -1085,7 +1170,7 @@ Singleton {
                                 Layout.fillWidth: true
                                 text: root.settingsMessage.length > 0
                                     ? root.settingsMessage
-                                    : "One-time copy; display locks stay independent"
+                                    : "One-time copy; lock and center mode stay independent"
                                 color: Theme.muted
                                 font.family: Theme.fontFamily
                                 font.pixelSize: 9
