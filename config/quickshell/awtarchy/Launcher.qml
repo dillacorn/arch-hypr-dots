@@ -426,6 +426,7 @@ Singleton {
         if (!targetScreen)
             return;
 
+        FlyoutManager.claim("launcher");
         focusGrab.active = false;
         resetLocalSettingsState();
         targetMonitorName = targetScreen.name;
@@ -459,6 +460,7 @@ Singleton {
     function close() {
         focusGrab.active = false;
         launcherWindow.visible = false;
+        FlyoutManager.release("launcher");
         launcherPositioned = false;
         search.text = "";
         resetLocalSettingsState();
@@ -573,6 +575,14 @@ Singleton {
     }
 
     Process { id: privacyRuleUpdater }
+
+    Connections {
+        target: FlyoutManager
+        function onCloseRequested(exceptSurface) {
+            if (exceptSurface !== "launcher" && launcherWindow.visible)
+                root.close();
+        }
+    }
 
     IpcHandler {
         target: "launcher"

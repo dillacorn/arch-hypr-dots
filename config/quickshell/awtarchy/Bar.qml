@@ -684,11 +684,16 @@ PanelWindow {
             }
 
             BarControl {
-                label: Notifications.dnd ? "" : ""
-                foreground: Notifications.dnd ? Theme.critical : Theme.foreground
+                label: Notifications.mutePopups ? "" : ""
+                foreground: Notifications.mutePopups ? Theme.critical : Theme.foreground
                 hoverBackground: Theme.strongHover
-                tooltip: Notifications.dnd ? "Notifications disabled\nLeft: enable notifications" : "Notifications enabled\nLeft: disable notifications"
-                onClicked: Notifications.toggleDnd()
+                tooltip: (Notifications.mutePopups
+                    ? "Notification popups muted; history is still collected"
+                    : "Notification popups enabled")
+                    + "\n" + Notifications.historyCount + " in history"
+                    + "\nLeft: open history · Right: mute popups"
+                onClicked: Notifications.toggleForScreen(bar.screen)
+                onRightClicked: Notifications.togglePopupMute()
             }
 
             BarControl {
@@ -868,11 +873,16 @@ PanelWindow {
             }
             BarControl {
                 vertical: true; fixedWidth: bar.barSize
-                label: Notifications.dnd ? "" : ""
-                foreground: Notifications.dnd ? Theme.critical : Theme.foreground
+                label: Notifications.mutePopups ? "" : ""
+                foreground: Notifications.mutePopups ? Theme.critical : Theme.foreground
                 hoverBackground: Theme.strongHover
-                tooltip: Notifications.dnd ? "Notifications disabled\nLeft: enable notifications" : "Notifications enabled\nLeft: disable notifications"
-                onClicked: Notifications.toggleDnd()
+                tooltip: (Notifications.mutePopups
+                    ? "Notification popups muted; history is still collected"
+                    : "Notification popups enabled")
+                    + "\n" + Notifications.historyCount + " in history"
+                    + "\nLeft: open history · Right: mute popups"
+                onClicked: Notifications.toggleForScreen(bar.screen)
+                onRightClicked: Notifications.togglePopupMute()
             }
             BarControl {
                 vertical: true; fixedWidth: bar.barSize; label: ""; tooltip: "power menu"

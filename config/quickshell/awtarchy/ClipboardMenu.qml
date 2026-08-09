@@ -124,6 +124,7 @@ Singleton {
         if (!target)
             return;
 
+        FlyoutManager.claim("clipboard");
         clipboardWindow.screen = target;
         placement = placementForScreen(target);
         settingsOpen = false;
@@ -143,6 +144,7 @@ Singleton {
 
     function close() {
         clipboardWindow.visible = false;
+        FlyoutManager.release("clipboard");
         search.text = "";
         settingsOpen = false;
         settingsPanel.resetCopySelection();
@@ -341,6 +343,14 @@ Singleton {
     }
 
     Process { id: privacyRuleUpdater }
+
+    Connections {
+        target: FlyoutManager
+        function onCloseRequested(exceptSurface) {
+            if (exceptSurface !== "clipboard" && clipboardWindow.visible)
+                root.close();
+        }
+    }
 
     PanelWindow {
         id: clipboardWindow
