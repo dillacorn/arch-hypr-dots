@@ -12,9 +12,24 @@ Quickshell now owns:
 - CPU, CPU temperature, memory, debounced DDC brightness, battery, PipeWire volume, clock/date, and system tray.
 - Application launcher.
 - Clipboard history with image thumbnails.
-- Notification daemon, notification popups, dismiss, and DND state.
+- Notification daemon, notification popups, bounded notification history, actions, dismiss, and popup mute.
 - Power/session menu.
 - Theme picker.
+
+## Revised shell interactions
+
+- The DDC brightness segment now uses a cogwheel. Scrolling it still adjusts brightness; primary- or secondary-click opens native QML Quick Settings on that display.
+- Launcher, Clipboard, Notifications, and Quick Settings have per-display draft sizing and scale controls with an explicit **Save** action. Closing settings discards unsaved changes; reset immediately restores protected defaults.
+- Clipboard retains its draggable list scrollbar and adds saved text/image scaling plus copy-to-display settings.
+- Primary-clicking the notification bell opens history. Secondary-clicking it mutes or unmutes popups without dismissing stored notifications.
+- Quick Settings directly controls DDC brightness, bar placement/visibility, Night Light, vibrance, Hyprland submaps, wallpaper selection, `sched-ext`, NetworkManager Wi-Fi, wired status, and BlueZ Bluetooth devices.
+- Only one major flyout is kept open at a time.
+
+### Capture privacy
+
+Screen sharing and recording are never stopped by the shell. Instead, Hyprland `no_screen_share` rules mask only the selected sensitive Quickshell surfaces with black rectangles in captured output.
+
+Launcher, Clipboard, Notifications (both popups and history), and Quick Settings are protected by default. Each surface exposes an **Allow in screenshots and screen recordings** setting; turning it on and saving disables the mask for that surface. Missing or invalid state fails closed and leaves the surface protected.
 
 ## Package conversion
 
@@ -86,6 +101,12 @@ Expected IPC result:
 ok
 ```
 
+Quick Settings can also be opened without the bar:
+
+```bash
+~/.config/hypr/scripts/quickshell_quick_settings_toggle.sh
+```
+
 Check that Awtarchy no longer owns the old packages:
 
 ```bash
@@ -109,6 +130,10 @@ The conversion branch has passed repository-side checks for:
 - Hyprland autostart: Quickshell direct start and no Mako start.
 - Quickshell bar helper paths: no dependency on `~/.config/waybar/scripts`.
 - Converted themes: no legacy shell-program theme tokens.
+- Quickshell QML delimiter/ID structure for the revised components.
+- Atomic per-display Launcher, Clipboard, Notifications, and Quick Settings state persistence.
+- Fail-closed capture-rule generation, including independent enable/disable state for every protected surface.
+- Quick Settings status/action backend fallbacks and persisted `sched-ext` profiles.
 - `git diff --check`.
 
-Actual rendering/input behavior still needs testing inside a real Arch + Hyprland + Quickshell session.
+Actual rendering/input behavior still needs testing inside a real Arch + Hyprland + Quickshell session. In particular, verify DDC hardware routing, Wi-Fi password entry, Bluetooth pairing, popup placement, and that protected surfaces become black rectangles while the rest of an active screen recording continues normally. `nm-applet` and `blueman-applet` remain enabled as live-validation fallbacks for now.
