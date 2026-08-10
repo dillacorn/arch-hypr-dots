@@ -182,6 +182,8 @@ local function awtarchy_flyout_under_pointer()
         ["awtarchy-clipboard"] = "clipboard",
         ["awtarchy-notification-center"] = "notifications",
         ["awtarchy-quick-settings"] = "quicksettings",
+        ["awtarchy-network"] = "network",
+        ["awtarchy-bluetooth"] = "bluetooth",
     }
 
     for _, layer in ipairs(hl.get_layers()) do
@@ -330,7 +332,7 @@ local function begin_flyout_resize(target)
             drag.last_dy = dy
             exec_control("previewFlyoutResize", drag.target, dx, dy)
         end
-    end, { timeout = 32, type = "repeat" })
+    end, { timeout = 16, type = "repeat" })
 
     return true
 end
