@@ -76,38 +76,31 @@ Singleton {
             Math.round(Number(network && network.signalStrength || 0) * 100)));
     }
 
+    // The bar only needs the active transport. A live Ethernet connection
+    // suppresses Wi-Fi entirely; inactive states are expressed by the muted
+    // foreground instead of textual "off"/"x" decorations.
     function buildBarLabel() {
-        const parts = [];
+        if (wiredConnected)
+            return "󰈀";
+        if (wifiConnected)
+            return " " + wifiSignalPercent(connectedWifiNetworks[0]) + "%";
         if (wiredPresent)
-            parts.push(wiredConnected ? "󰈀" : "󰈀 ×");
-        if (wifiPresent) {
-            if (!Networking.wifiHardwareEnabled)
-                parts.push(" blocked");
-            else if (!Networking.wifiEnabled)
-                parts.push(" off");
-            else if (wifiConnected)
-                parts.push(" " + wifiSignalPercent(connectedWifiNetworks[0]) + "%");
-            else
-                parts.push(" ×");
-        }
-        return parts.join("  ");
+            return "󰈀";
+        if (wifiPresent)
+            return "";
+        return "";
     }
 
     function buildVerticalBarLabel() {
-        const parts = [];
+        if (wiredConnected)
+            return "󰈀";
+        if (wifiConnected)
+            return "\n" + wifiSignalPercent(connectedWifiNetworks[0]) + "%";
         if (wiredPresent)
-            parts.push(wiredConnected ? "󰈀" : "󰈀×");
-        if (wifiPresent) {
-            if (!Networking.wifiHardwareEnabled)
-                parts.push("!");
-            else if (!Networking.wifiEnabled)
-                parts.push("off");
-            else if (wifiConnected)
-                parts.push("" + wifiSignalPercent(connectedWifiNetworks[0]) + "%");
-            else
-                parts.push("×");
-        }
-        return parts.join("\n");
+            return "󰈀";
+        if (wifiPresent)
+            return "";
+        return "";
     }
 
     function wiredConnectionName(device) {
@@ -316,15 +309,15 @@ Singleton {
         anchors.left: root.placement === "left" || root.placement === "center"
         anchors.right: root.placement !== "left" && root.placement !== "center"
         margins {
-            top: root.placement === "top" ? root.activeBarSize + 6
+            top: root.placement === "top" ? root.activeBarSize
                 : (root.placement === "center"
                     ? Math.max(6, Math.round((root.targetScreenHeight - root.panelHeight) / 2)) : 0)
-            bottom: root.placement === "bottom" ? root.activeBarSize + 6
+            bottom: root.placement === "bottom" ? root.activeBarSize
                 : ((root.placement === "left" || root.placement === "right") ? 8 : 0)
-            left: root.placement === "left" ? root.activeBarSize + 6
+            left: root.placement === "left" ? root.activeBarSize
                 : (root.placement === "center"
                     ? Math.max(6, Math.round((root.targetScreenWidth - root.panelWidth) / 2)) : 0)
-            right: root.placement === "right" ? root.activeBarSize + 6
+            right: root.placement === "right" ? root.activeBarSize
                 : ((root.placement === "top" || root.placement === "bottom") ? 8 : 0)
         }
 
