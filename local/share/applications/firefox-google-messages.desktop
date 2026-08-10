@@ -6,7 +6,7 @@ Version=1.0
 Type=Application
 Name=Text Messages (Firefox)
 Comment=Google Messages in a dedicated Firefox profile, auto-created if missing
-Exec=/bin/sh -c 'PROFILE="$HOME/.mozilla/firefox/messages-profile"; [ -d "$PROFILE" ] || /usr/bin/firefox -CreateProfile "messages $PROFILE"; exec env MOZ_ENABLE_WAYLAND=1 MOZ_USE_XINPUT2=1 /usr/bin/firefox --class=messages --name=Messages --profile "$PROFILE" --new-window https://messages.google.com/web'
+Exec=/bin/sh -c 'PROFILE="$HOME/.mozilla/firefox/messages-profile"; [ -d "$PROFILE" ] || /usr/bin/firefox --no-remote -CreateProfile "messages $PROFILE"; exec env MOZ_ENABLE_WAYLAND=1 MOZ_USE_XINPUT2=1 /usr/bin/firefox --no-remote --class=messages --name=Messages --profile "$PROFILE" --new-window https://messages.google.com/web'
 Icon=firefox
 Terminal=false
 Categories=Network;InstantMessaging;
