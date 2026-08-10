@@ -37,52 +37,54 @@ if awtarchy_launcher_privacy_rule == nil then
     })
 end
 
-if awtarchy_clipboard_privacy_rule == nil then
-    awtarchy_clipboard_privacy_rule = hl.window_rule({
-        name = \"awtarchy-clipboard-capture-privacy\",
+-- Use new Lua globals for converted floating surfaces so an existing Hyprland
+-- session cannot keep the previous layer-rule objects alive under the same name.
+if awtarchy_clipboard_window_privacy_rule_v2 == nil then
+    awtarchy_clipboard_window_privacy_rule_v2 = hl.window_rule({
+        name = \"awtarchy-clipboard-window-capture-privacy-v2\",
         match = { title = \"^Awtarchy Clipboard History$\" },
         no_screen_share = true,
     })
 end
 
-if awtarchy_notifications_popup_privacy_rule == nil then
-    awtarchy_notifications_popup_privacy_rule = hl.layer_rule({
-        name = \"awtarchy-notification-popup-capture-privacy\",
+if awtarchy_notifications_popup_privacy_rule_v2 == nil then
+    awtarchy_notifications_popup_privacy_rule_v2 = hl.layer_rule({
+        name = \"awtarchy-notification-popup-capture-privacy-v2\",
         match = { namespace = \"^awtarchy-notification-popup$\" },
         no_screen_share = true,
     })
 end
 
-if awtarchy_notifications_center_privacy_rule == nil then
-    awtarchy_notifications_center_privacy_rule = hl.window_rule({
-        name = \"awtarchy-notification-center-capture-privacy\",
+if awtarchy_notifications_center_window_privacy_rule_v2 == nil then
+    awtarchy_notifications_center_window_privacy_rule_v2 = hl.window_rule({
+        name = \"awtarchy-notification-center-window-capture-privacy-v2\",
         match = { title = \"^Awtarchy Notification Center$\" },
         no_screen_share = true,
     })
 end
 
-if awtarchy_quick_settings_privacy_rule == nil then
-    awtarchy_quick_settings_privacy_rule = hl.window_rule({
-        name = \"awtarchy-quick-settings-capture-privacy\",
+if awtarchy_quick_settings_window_privacy_rule_v2 == nil then
+    awtarchy_quick_settings_window_privacy_rule_v2 = hl.window_rule({
+        name = \"awtarchy-quick-settings-window-capture-privacy-v2\",
         match = { title = \"^Awtarchy Quick Settings$\" },
         no_screen_share = true,
     })
 end
 
-if awtarchy_connectivity_privacy_rule == nil then
-    awtarchy_connectivity_privacy_rule = hl.window_rule({
-        name = \"awtarchy-connectivity-capture-privacy\",
+if awtarchy_connectivity_window_privacy_rule_v2 == nil then
+    awtarchy_connectivity_window_privacy_rule_v2 = hl.window_rule({
+        name = \"awtarchy-connectivity-window-capture-privacy-v2\",
         match = { title = \"^Awtarchy (Network|Bluetooth)$\" },
         no_screen_share = true,
     })
 end
 
 awtarchy_launcher_privacy_rule:set_enabled(${launcher_protected})
-awtarchy_clipboard_privacy_rule:set_enabled(${clipboard_protected})
-awtarchy_notifications_popup_privacy_rule:set_enabled(${notifications_protected})
-awtarchy_notifications_center_privacy_rule:set_enabled(${notifications_protected})
-awtarchy_quick_settings_privacy_rule:set_enabled(${quick_settings_protected})
-awtarchy_connectivity_privacy_rule:set_enabled(true)
+awtarchy_clipboard_window_privacy_rule_v2:set_enabled(${clipboard_protected})
+awtarchy_notifications_popup_privacy_rule_v2:set_enabled(${notifications_protected})
+awtarchy_notifications_center_window_privacy_rule_v2:set_enabled(${notifications_protected})
+awtarchy_quick_settings_window_privacy_rule_v2:set_enabled(${quick_settings_protected})
+awtarchy_connectivity_window_privacy_rule_v2:set_enabled(true)
 " >/dev/null; then
     printf '%s\n' 'quickshell_runtime_rules.sh: failed to register capture privacy rules' >&2
     exit 1
