@@ -424,6 +424,14 @@ resolve_target() {
   }
 }
 
+ensure_vpn_directory() {
+  local vpn_dir="${TARGET_HOME}/vpn"
+  install -d -m 0700 "$vpn_dir"
+  if [[ ${EUID} -eq 0 ]]; then
+    chown "$TARGET_USER:$TARGET_USER" "$vpn_dir"
+  fi
+}
+
 state_value() {
   local key="$1" file="$2"
   [[ -r $file ]] || return 1
@@ -767,6 +775,7 @@ prepare_runtime_source
 resolve_target
 
 if (( DRY_RUN_REQUESTED == 0 )); then
+  ensure_vpn_directory
   install_system_launcher
 fi
 
