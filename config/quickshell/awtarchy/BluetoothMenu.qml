@@ -14,6 +14,19 @@ Singleton {
 
     property string placement: "center"
     property string actionMessage: ""
+    property bool settingsOpen: false
+    property int panelWidthOverride: -1
+    property int panelHeightOverride: -1
+    property int textScaleOverride: -1
+    property int iconScaleOverride: -1
+    property string settingsMessage: ""
+    property var savedView: ({
+        width: BarState.defaultBluetoothWidth,
+        height: BarState.defaultBluetoothHeight,
+        textScale: 100,
+        iconScale: 100
+    })
+    property var stateCommandQueue: []
 
     readonly property var adapters: Bluetooth.adapters
         ? [...Bluetooth.adapters.values].filter(item => item !== null) : []
@@ -31,6 +44,9 @@ Singleton {
         ? "\n" + connectedDevices.length : ""
     readonly property string barTooltip: buildBarTooltip()
     readonly property color barForeground: adapterEnabled ? Theme.foreground : Theme.muted
+    readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
+    readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
+    readonly property string activeMonitorName: bluetoothWindow.screen ? bluetoothWindow.screen.name : ""
     readonly property int activeBarSize: {
         const target = bluetoothWindow.screen;
         if (!target || placement === "center")
@@ -39,12 +55,24 @@ Singleton {
     }
     readonly property int targetScreenWidth: bluetoothWindow.screen ? bluetoothWindow.screen.width : 1920
     readonly property int targetScreenHeight: bluetoothWindow.screen ? bluetoothWindow.screen.height : 1080
-    readonly property int availablePanelWidth: Math.max(1, targetScreenWidth
-        - ((placement === "left" || placement === "right") ? activeBarSize : 0) - 16)
-    readonly property int availablePanelHeight: Math.max(1, targetScreenHeight
-        - ((placement === "top" || placement === "bottom") ? activeBarSize : 0) - 16)
-    readonly property int panelWidth: Math.min(500, availablePanelWidth)
-    readonly property int panelHeight: Math.min(600, availablePanelHeight)
+    readonly property int maximumPanelWidth: Math.max(1, targetScreenWidth
+        - ((placement === "left" || placement === "right") ? activeBarSize : 0) - 20)
+    readonly property int maximumPanelHeight: Math.max(1, targetScreenHeight
+        - ((placement === "top" || placement === "bottom") ? activeBarSize : 0) - 20)
+    readonly property int minimumPanelWidth: Math.min(360, maximumPanelWidth)
+    readonly property int minimumPanelHeight: Math.min(360, maximumPanelHeight)
+    readonly property int livePanelWidth: clampWidth(panelWidthOverride >= 0
+        ? panelWidthOverride : BarState.bluetoothViewFor(activeMonitorName).width)
+    readonly property int livePanelHeight: clampHeight(panelHeightOverride >= 0
+        ? panelHeightOverride : BarState.bluetoothViewFor(activeMonitorName).height)
+    readonly property int effectiveTextScale: textScaleOverride >= 0
+        ? textScaleOverride : BarState.bluetoothViewFor(activeMonitorName).textScale
+    readonly property int effectiveIconScale: iconScaleOverride >= 0
+        ? iconScaleOverride : BarState.bluetoothViewFor(activeMonitorName).iconScale
+    readonly property bool settingsDirty: savedView.width !== livePanelWidth
+        || savedView.height !== livePanelHeight
+        || savedView.textScale !== effectiveTextScale
+        || savedView.iconScale !== effectiveIconScale
 
     function devices() {
         const current = adapter;
@@ -182,6 +210,146 @@ Singleton {
         return BarState.positionFor(targetScreen.name);
     }
 
+    function clampWidth(value) {
+        return Math.max(minimumPanelWidth, Math.min(maximumPanelWidth, Math.round(value)));
+    }
+
+    function clampHeight(value) {
+        return Math.max(minimumPanelHeight, Math.min(maximumPanelHeight, Math.round(value)));
+    }
+
+    function scaledText(baseSize) {
+        return Math.max(7, Math.round(baseSize * effectiveTextScale / 100));
+    }
+
+    function scaledIcon(baseSize) {
+        return Math.max(8, Math.round(baseSize * effectiveIconScale / 100));
+    }
+
+    function otherMonitorNames() {
+        return Quickshell.screens
+            .map(target => target ? target.name : "")
+            .filter(name => name.length > 0 && name !== activeMonitorName);
+    }
+
+    function loadSavedView(targetScreen) {
+        if (!targetScreen)
+            return;
+        BarState.refresh();
+        const persisted = BarState.bluetoothViewFor(targetScreen.name);
+        panelWidthOverride = clampWidth(persisted.width);
+        panelHeightOverride = clampHeight(persisted.height);
+        textScaleOverride = persisted.textScale;
+        iconScaleOverride = persisted.iconScale;
+        savedView = ({
+            width: panelWidthOverride,
+            height: panelHeightOverride,
+            textScale: textScaleOverride,
+            iconScale: iconScaleOverride
+        });
+    }
+
+    function acceptDraftAsSaved() {
+        savedView = ({
+            width: livePanelWidth,
+            height: livePanelHeight,
+            textScale: effectiveTextScale,
+            iconScale: effectiveIconScale
+        });
+    }
+
+    function discardDraft() {
+        panelWidthOverride = savedView.width;
+        panelHeightOverride = savedView.height;
+        textScaleOverride = savedView.textScale;
+        iconScaleOverride = savedView.iconScale;
+    }
+
+    function queueStateCommand(commandArgs) {
+        const nextQueue = stateCommandQueue.slice();
+        nextQueue.push(commandArgs);
+        stateCommandQueue = nextQueue;
+        runNextStateCommand();
+    }
+
+    function runNextStateCommand() {
+        if (stateWriter.running || stateCommandQueue.length === 0)
+            return;
+        const nextCommand = stateCommandQueue[0];
+        stateCommandQueue = stateCommandQueue.slice(1);
+        stateWriter.exec([stateScript, ...nextCommand]);
+    }
+
+    function saveDisplaySettings() {
+        if (activeMonitorName.length === 0 || !settingsDirty)
+            return;
+        queueStateCommand([
+            "save-flyout", "bluetooth", activeMonitorName,
+            String(livePanelWidth), String(livePanelHeight),
+            String(effectiveTextScale), String(effectiveIconScale), "false"
+        ]);
+        acceptDraftAsSaved();
+        settingsMessage = "Saved Bluetooth settings for " + activeMonitorName;
+    }
+
+    function resetDisplaySettings() {
+        if (activeMonitorName.length === 0)
+            return;
+        panelWidthOverride = clampWidth(BarState.defaultBluetoothWidth);
+        panelHeightOverride = clampHeight(BarState.defaultBluetoothHeight);
+        textScaleOverride = 100;
+        iconScaleOverride = 100;
+        savedView = ({
+            width: panelWidthOverride,
+            height: panelHeightOverride,
+            textScale: 100,
+            iconScale: 100
+        });
+        queueStateCommand(["reset-flyout", "bluetooth", activeMonitorName]);
+        settingsMessage = "Bluetooth defaults restored for " + activeMonitorName;
+    }
+
+    function copyDisplaySettings(targets) {
+        if (!targets || targets.length === 0)
+            return;
+        queueStateCommand([
+            "copy-flyout", "bluetooth",
+            String(livePanelWidth), String(livePanelHeight),
+            String(effectiveTextScale), String(effectiveIconScale),
+            ...targets
+        ]);
+        settingsMessage = "Copied Bluetooth settings to " + targets.length
+            + (targets.length === 1 ? " display" : " displays");
+    }
+
+    function adjustPanelWidth(delta) {
+        panelWidthOverride = clampWidth(livePanelWidth + delta);
+        settingsMessage = "Width " + panelWidthOverride + " px";
+    }
+
+    function adjustPanelHeight(delta) {
+        panelHeightOverride = clampHeight(livePanelHeight + delta);
+        settingsMessage = "Height " + panelHeightOverride + " px";
+    }
+
+    function adjustTextScale(delta) {
+        textScaleOverride = Math.max(50, Math.min(200, effectiveTextScale + delta));
+        settingsMessage = "Text size " + textScaleOverride + "%";
+    }
+
+    function adjustIconScale(delta) {
+        iconScaleOverride = Math.max(50, Math.min(200, effectiveIconScale + delta));
+        settingsMessage = "Icon size " + iconScaleOverride + "%";
+    }
+
+    function toggleSettings() {
+        if (settingsOpen && settingsDirty)
+            discardDraft();
+        settingsOpen = !settingsOpen;
+        settingsPanel.resetCopySelection();
+        settingsMessage = "";
+    }
+
     function openForScreen(targetScreen) {
         if (!targetScreen || !available)
             return;
@@ -189,6 +357,10 @@ Singleton {
         bluetoothWindow.screen = targetScreen;
         placement = placementForScreen(targetScreen);
         actionMessage = adapterBlocked ? "Bluetooth is blocked by rfkill" : "";
+        settingsOpen = false;
+        settingsMessage = "";
+        settingsPanel.resetCopySelection();
+        loadSavedView(targetScreen);
         bluetoothWindow.visible = true;
         const current = adapter;
         if (current && current.enabled)
@@ -196,11 +368,16 @@ Singleton {
     }
 
     function close() {
+        if (settingsDirty)
+            discardDraft();
         bluetoothWindow.visible = false;
         const current = adapter;
         if (current && current.discovering)
             current.discovering = false;
         actionMessage = "";
+        settingsOpen = false;
+        settingsMessage = "";
+        settingsPanel.resetCopySelection();
         FlyoutManager.release("bluetooth");
     }
 
@@ -231,6 +408,14 @@ Singleton {
         onExited: rfkillRetry.restart()
     }
 
+    Process {
+        id: stateWriter
+        onExited: {
+            BarState.refresh();
+            Qt.callLater(() => root.runNextStateCommand());
+        }
+    }
+
     Timer {
         id: rfkillRetry
         interval: 300
@@ -254,8 +439,8 @@ Singleton {
         focusable: true
         aboveWindows: true
         exclusionMode: ExclusionMode.Ignore
-        implicitWidth: root.panelWidth
-        implicitHeight: root.panelHeight
+        implicitWidth: root.livePanelWidth
+        implicitHeight: root.livePanelHeight
         anchors.top: root.placement === "top" || root.placement === "center"
         anchors.bottom: root.placement !== "top" && root.placement !== "center"
         anchors.left: root.placement === "left" || root.placement === "center"
@@ -263,12 +448,12 @@ Singleton {
         margins {
             top: root.placement === "top" ? root.activeBarSize
                 : (root.placement === "center"
-                    ? Math.max(6, Math.round((root.targetScreenHeight - root.panelHeight) / 2)) : 0)
+                    ? Math.max(6, Math.round((root.targetScreenHeight - root.livePanelHeight) / 2)) : 0)
             bottom: root.placement === "bottom" ? root.activeBarSize
                 : ((root.placement === "left" || root.placement === "right") ? 8 : 0)
             left: root.placement === "left" ? root.activeBarSize
                 : (root.placement === "center"
-                    ? Math.max(6, Math.round((root.targetScreenWidth - root.panelWidth) / 2)) : 0)
+                    ? Math.max(6, Math.round((root.targetScreenWidth - root.livePanelWidth) / 2)) : 0)
             right: root.placement === "right" ? root.activeBarSize
                 : ((root.placement === "top" || root.placement === "bottom") ? 8 : 0)
         }
@@ -292,7 +477,7 @@ Singleton {
 
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 38
+                    Layout.preferredHeight: Math.max(38, root.scaledText(13) + 18)
                     color: Theme.active
                     border.width: 0
 
@@ -306,7 +491,7 @@ Singleton {
                             text: ""
                             color: Theme.foreground
                             font.family: Theme.fontFamily
-                            font.pixelSize: 14
+                            font.pixelSize: root.scaledIcon(14)
                         }
                         Text {
                             Layout.fillWidth: true
@@ -314,15 +499,66 @@ Singleton {
                                 ? "Bluetooth · " + root.actionMessage : "Bluetooth"
                             color: Theme.foreground
                             font.family: Theme.fontFamily
-                            font.pixelSize: 13
+                            font.pixelSize: root.scaledText(13)
                             font.weight: Font.Medium
                             elide: Text.ElideRight
                         }
                         SettingsButton {
+                            label: ""
+                            available: root.settingsDirty
+                            textSize: root.scaledIcon(12)
+                            horizontalPadding: 10
+                            onClicked: root.saveDisplaySettings()
+                        }
+                        SettingsButton {
+                            label: ""
+                            active: root.settingsOpen
+                            textSize: root.scaledIcon(12)
+                            horizontalPadding: 10
+                            onClicked: root.toggleSettings()
+                        }
+                        SettingsButton {
                             label: "×"
-                            textSize: 14
+                            textSize: root.scaledIcon(14)
+                            horizontalPadding: 10
                             onClicked: root.close()
                         }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: root.settingsOpen ? settingsPanel.implicitHeight + 12 : 0
+                    visible: root.settingsOpen
+                    color: Theme.popupButton
+                    border.width: 0
+                    clip: true
+
+                    FlyoutSettings {
+                        id: settingsPanel
+                        anchors.fill: parent
+                        anchors.margins: 6
+                        surfaceLabel: "Bluetooth"
+                        monitorName: root.activeMonitorName
+                        panelWidth: root.livePanelWidth
+                        panelHeight: root.livePanelHeight
+                        minimumWidth: root.minimumPanelWidth
+                        maximumWidth: root.maximumPanelWidth
+                        minimumHeight: root.minimumPanelHeight
+                        maximumHeight: root.maximumPanelHeight
+                        textScale: root.effectiveTextScale
+                        iconScale: root.effectiveIconScale
+                        captureAllowed: false
+                        showCaptureControl: false
+                        message: root.settingsMessage
+                        otherMonitorNames: root.otherMonitorNames()
+
+                        onResetRequested: root.resetDisplaySettings()
+                        onWidthAdjustmentRequested: delta => root.adjustPanelWidth(delta)
+                        onHeightAdjustmentRequested: delta => root.adjustPanelHeight(delta)
+                        onTextScaleAdjustmentRequested: delta => root.adjustTextScale(delta)
+                        onIconScaleAdjustmentRequested: delta => root.adjustIconScale(delta)
+                        onCopyRequested: monitorNames => root.copyDisplaySettings(monitorNames)
                     }
                 }
 
@@ -364,7 +600,7 @@ Singleton {
                                             : "Bluetooth adapter"
                                         color: Theme.foreground
                                         font.family: Theme.fontFamily
-                                        font.pixelSize: 12
+                                        font.pixelSize: root.scaledText(12)
                                         font.bold: true
                                         elide: Text.ElideRight
                                     }
@@ -372,14 +608,14 @@ Singleton {
                                         label: root.adapterEnabled ? "On" : "Off"
                                         active: root.adapterEnabled
                                         available: root.adapter !== null
-                                        textSize: 9
+                                        textSize: root.scaledText(9)
                                         onClicked: root.toggleAdapter()
                                     }
                                     SettingsButton {
                                         label: root.adapterDiscovering ? "Scanning…" : "Scan"
                                         active: root.adapterDiscovering
                                         available: root.adapterEnabled
-                                        textSize: 9
+                                        textSize: root.scaledText(9)
                                         onClicked: root.toggleDiscovery()
                                     }
                                 }
@@ -392,7 +628,7 @@ Singleton {
                                         : "Bluetooth is disabled"
                                     color: Theme.muted
                                     font.family: Theme.fontFamily
-                                    font.pixelSize: 9
+                                    font.pixelSize: root.scaledText(9)
                                 }
                             }
                         }
@@ -404,7 +640,7 @@ Singleton {
                                 ? "Scanning for Bluetooth devices…" : "No Bluetooth devices found"
                             color: Theme.muted
                             font.family: Theme.fontFamily
-                            font.pixelSize: 9
+                            font.pixelSize: root.scaledText(9)
                         }
 
                         Repeater {
@@ -416,7 +652,8 @@ Singleton {
                                 id: deviceRow
                                 required property var modelData
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 48
+                                Layout.preferredHeight: Math.max(48,
+                                    root.scaledText(10) + root.scaledText(8) + 20)
                                 color: modelData.connected ? Theme.active : Theme.popupButton
                                 border.width: 1
                                 border.color: modelData.connected ? Theme.focus : Theme.active
@@ -431,7 +668,7 @@ Singleton {
                                         text: deviceRow.modelData.connected ? "●" : ""
                                         color: deviceRow.modelData.connected ? Theme.focus : Theme.foreground
                                         font.family: Theme.fontFamily
-                                        font.pixelSize: 11
+                                        font.pixelSize: root.scaledIcon(11)
                                     }
                                     ColumnLayout {
                                         Layout.fillWidth: true
@@ -441,7 +678,7 @@ Singleton {
                                             text: root.deviceName(deviceRow.modelData)
                                             color: Theme.foreground
                                             font.family: Theme.fontFamily
-                                            font.pixelSize: 10
+                                            font.pixelSize: root.scaledText(10)
                                             font.bold: deviceRow.modelData.connected
                                             elide: Text.ElideRight
                                         }
@@ -453,14 +690,14 @@ Singleton {
                                                 + root.batteryText(deviceRow.modelData)
                                             color: Theme.muted
                                             font.family: Theme.fontFamily
-                                            font.pixelSize: 8
+                                            font.pixelSize: root.scaledText(8)
                                             elide: Text.ElideRight
                                         }
                                     }
                                     SettingsButton {
                                         visible: deviceRow.modelData.paired && !deviceRow.modelData.connected
                                         label: "Forget"
-                                        textSize: 8
+                                        textSize: root.scaledText(8)
                                         onClicked: root.forgetDevice(deviceRow.modelData)
                                     }
                                     SettingsButton {
@@ -468,7 +705,7 @@ Singleton {
                                             : (deviceRow.modelData.pairing ? "Cancel"
                                                 : (deviceRow.modelData.paired ? "Connect" : "Pair"))
                                         active: deviceRow.modelData.connected
-                                        textSize: 9
+                                        textSize: root.scaledText(9)
                                         onClicked: root.toggleDevice(deviceRow.modelData)
                                     }
                                 }
