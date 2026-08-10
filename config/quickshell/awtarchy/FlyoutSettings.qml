@@ -2,6 +2,8 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
+import Quickshell
+import Quickshell.Io
 
 Item {
     id: root
@@ -23,6 +25,26 @@ Item {
     property bool copyOpen: false
     property var copyTargets: ({})
     property int copySelectionRevision: 0
+    property int managedCaptureOverride: -1
+    property string managedMessage: ""
+
+    readonly property bool managedConnectivityCapture: surfaceLabel === "Network"
+        || surfaceLabel === "Bluetooth"
+    readonly property string managedCaptureKey: surfaceLabel === "Network" ? "network"
+        : (surfaceLabel === "Bluetooth" ? "bluetooth" : "")
+    readonly property bool effectiveCaptureAllowed: managedConnectivityCapture
+        ? (managedCaptureOverride >= 0
+            ? managedCaptureOverride === 1
+            : BarState.captureAllowedFor(managedCaptureKey))
+        : captureAllowed
+    readonly property bool effectiveShowCaptureControl: showCaptureControl
+        || managedConnectivityCapture
+    readonly property string effectiveMessage: managedMessage.length > 0 ? managedMessage : message
+    readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
+        || (Quickshell.env("HOME") + "/.config")
+    readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
+    readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
+    readonly property int normalHeight: effectiveShowCaptureControl ? 170 : 139
 
     signal resetRequested()
     signal widthAdjustmentRequested(int delta)
@@ -32,7 +54,8 @@ Item {
     signal captureToggleRequested()
     signal copyRequested(var monitorNames)
 
-    implicitHeight: copyOpen ? 104 : (showCaptureControl ? 170 : 139)
+    implicitHeight: copyOpen ? 104
+        : normalHeight + (surfaceLabel === "Network" ? vpnSection.implicitHeight + 6 : 0)
 
     function targetSelected(name) {
         const dependency = copySelectionRevision;
@@ -73,6 +96,38 @@ Item {
         copySelectionRevision++;
         copyOpen = false;
     }
+
+    function toggleCaptureControl() {
+        if (!managedConnectivityCapture) {
+            captureToggleRequested();
+            return;
+        }
+
+        if (captureWriter.running)
+            return;
+
+        const next = !effectiveCaptureAllowed;
+        managedCaptureOverride = next ? 1 : 0;
+        managedMessage = next
+            ? surfaceLabel + " is visible in captures"
+            : surfaceLabel + " capture protection enabled";
+        captureWriter.exec([
+            stateScript,
+            "set-capture",
+            managedCaptureKey,
+            next ? "true" : "false"
+        ]);
+    }
+
+    Process {
+        id: captureWriter
+        onExited: {
+            BarState.refresh();
+            privacyUpdater.exec([root.runtimeRulesScript]);
+        }
+    }
+
+    Process { id: privacyUpdater }
 
     ColumnLayout {
         anchors.fill: parent
@@ -138,15 +193,7 @@ Item {
                 color: widthMinusMouse.containsMouse ? Theme.focus : Theme.subtleHover
                 opacity: root.panelWidth > root.minimumWidth ? 1 : 0.4
                 border.width: 0
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "−"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 13
-                }
-
+                Text { anchors.centerIn: parent; text: "−"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
                 MouseArea {
                     id: widthMinusMouse
                     anchors.fill: parent
@@ -172,15 +219,7 @@ Item {
                 color: widthPlusMouse.containsMouse ? Theme.focus : Theme.subtleHover
                 opacity: root.panelWidth < root.maximumWidth ? 1 : 0.4
                 border.width: 0
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "+"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 13
-                }
-
+                Text { anchors.centerIn: parent; text: "+"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
                 MouseArea {
                     id: widthPlusMouse
                     anchors.fill: parent
@@ -206,15 +245,7 @@ Item {
                 color: heightMinusMouse.containsMouse ? Theme.focus : Theme.subtleHover
                 opacity: root.panelHeight > root.minimumHeight ? 1 : 0.4
                 border.width: 0
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "−"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 13
-                }
-
+                Text { anchors.centerIn: parent; text: "−"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
                 MouseArea {
                     id: heightMinusMouse
                     anchors.fill: parent
@@ -240,15 +271,7 @@ Item {
                 color: heightPlusMouse.containsMouse ? Theme.focus : Theme.subtleHover
                 opacity: root.panelHeight < root.maximumHeight ? 1 : 0.4
                 border.width: 0
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "+"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 13
-                }
-
+                Text { anchors.centerIn: parent; text: "+"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
                 MouseArea {
                     id: heightPlusMouse
                     anchors.fill: parent
@@ -268,12 +291,7 @@ Item {
             spacing: 5
             visible: !root.copyOpen
 
-            Text {
-                text: "Icons"
-                color: Theme.foreground
-                font.family: Theme.fontFamily
-                font.pixelSize: 11
-            }
+            Text { text: "Icons"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 11 }
 
             Rectangle {
                 Layout.preferredWidth: 26
@@ -281,15 +299,7 @@ Item {
                 color: iconMinusMouse.containsMouse ? Theme.focus : Theme.subtleHover
                 opacity: root.iconScale > 50 ? 1 : 0.4
                 border.width: 0
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "−"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 13
-                }
-
+                Text { anchors.centerIn: parent; text: "−"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
                 MouseArea {
                     id: iconMinusMouse
                     anchors.fill: parent
@@ -315,15 +325,7 @@ Item {
                 color: iconPlusMouse.containsMouse ? Theme.focus : Theme.subtleHover
                 opacity: root.iconScale < 200 ? 1 : 0.4
                 border.width: 0
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "+"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 13
-                }
-
+                Text { anchors.centerIn: parent; text: "+"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
                 MouseArea {
                     id: iconPlusMouse
                     anchors.fill: parent
@@ -336,12 +338,7 @@ Item {
 
             Item { Layout.preferredWidth: 8 }
 
-            Text {
-                text: "Text"
-                color: Theme.foreground
-                font.family: Theme.fontFamily
-                font.pixelSize: 11
-            }
+            Text { text: "Text"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 11 }
 
             Rectangle {
                 Layout.preferredWidth: 26
@@ -349,15 +346,7 @@ Item {
                 color: textMinusMouse.containsMouse ? Theme.focus : Theme.subtleHover
                 opacity: root.textScale > 50 ? 1 : 0.4
                 border.width: 0
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "−"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 13
-                }
-
+                Text { anchors.centerIn: parent; text: "−"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
                 MouseArea {
                     id: textMinusMouse
                     anchors.fill: parent
@@ -383,15 +372,7 @@ Item {
                 color: textPlusMouse.containsMouse ? Theme.focus : Theme.subtleHover
                 opacity: root.textScale < 200 ? 1 : 0.4
                 border.width: 0
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "+"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 13
-                }
-
+                Text { anchors.centerIn: parent; text: "+"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
                 MouseArea {
                     id: textPlusMouse
                     anchors.fill: parent
@@ -409,7 +390,7 @@ Item {
             Layout.fillWidth: true
             Layout.preferredHeight: 28
             spacing: 6
-            visible: !root.copyOpen && root.showCaptureControl
+            visible: !root.copyOpen && root.effectiveShowCaptureControl
 
             Text {
                 Layout.fillWidth: true
@@ -423,14 +404,14 @@ Item {
             Rectangle {
                 Layout.preferredWidth: 64
                 Layout.preferredHeight: 24
-                color: root.captureAllowed ? Theme.focus
+                color: root.effectiveCaptureAllowed ? Theme.focus
                     : (captureMouse.containsMouse ? Theme.subtleHover : "transparent")
                 border.width: 1
                 border.color: Theme.focus
 
                 Text {
                     anchors.centerIn: parent
-                    text: root.captureAllowed ? "On" : "Off"
+                    text: root.effectiveCaptureAllowed ? "On" : "Off"
                     color: Theme.foreground
                     font.family: Theme.fontFamily
                     font.pixelSize: 11
@@ -441,9 +422,18 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: root.captureToggleRequested()
+                    onClicked: root.toggleCaptureControl()
                 }
             }
+        }
+
+        NetworkVpnSection {
+            id: vpnSection
+            Layout.fillWidth: true
+            visible: !root.copyOpen && root.surfaceLabel === "Network"
+            active: visible
+            textScale: root.textScale
+            iconScale: root.iconScale
         }
 
         RowLayout {
@@ -481,8 +471,8 @@ Item {
 
             Text {
                 Layout.fillWidth: true
-                visible: root.message.length > 0
-                text: root.message
+                visible: root.effectiveMessage.length > 0
+                text: root.effectiveMessage
                 color: Theme.muted
                 font.family: Theme.fontFamily
                 font.pixelSize: 9
