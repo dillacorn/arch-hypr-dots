@@ -14,7 +14,6 @@ ShellRoot {
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
-    readonly property string flyoutGuardScript: configHome + "/hypr/scripts/quickshell_flyout_guard.sh"
     property bool barDragActive: false
     property string barDragMonitor: ""
     property string barDragCandidate: ""
@@ -99,11 +98,6 @@ ShellRoot {
         id: runtimeRules
         running: true
         command: [root.runtimeRulesScript]
-        onExited: flyoutGuard.exec([root.flyoutGuardScript])
-    }
-
-    Process {
-        id: flyoutGuard
     }
 
     Process {
@@ -204,5 +198,6 @@ ShellRoot {
         function cancelBarDrag(): void { root.cancelBarDrag(); }
         function flyoutWidth(surface: string): int { return root.flyoutWidth(surface); }
         function flyoutHeight(surface: string): int { return root.flyoutHeight(surface); }
+        function recentBarMonitor(): string { return FlyoutManager.recentBarMonitor(); }
     }
 }
