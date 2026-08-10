@@ -6,6 +6,7 @@ export LC_ALL=C.UTF-8
 
 VPN_DIR="${AWTARCHY_VPN_DIR:-${HOME}/vpn}"
 EDITOR_TITLE="Awtarchy VPN Config Editor"
+EDITOR_CLASS="awtarchy-vpn-editor"
 
 mkdir -p -- "$VPN_DIR"
 chmod 0700 "$VPN_DIR" 2>/dev/null || true
@@ -78,7 +79,7 @@ edit_profile() {
     local conf="$1"
     command -v alacritty >/dev/null 2>&1 || fail "Alacritty is required for the protected VPN editor."
     command -v micro >/dev/null 2>&1 || fail "micro is required for the protected VPN editor."
-    exec alacritty --title "$EDITOR_TITLE" -e micro "$conf"
+    exec alacritty --class "${EDITOR_CLASS},${EDITOR_CLASS}" --title "$EDITOR_TITLE" -e micro "$conf"
 }
 
 public_ip() {
