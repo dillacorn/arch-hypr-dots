@@ -137,6 +137,10 @@ if awtarchy_quickshell_flyout_rule_v2 == nil then
         decorate = false,
         no_shadow = true,
         no_anim = true,
+        -- A floating Wayland toplevel can be initially mapped at the compositor
+        -- default location. Keep it completely invisible until the bar-aware
+        -- position helper has moved, resized, and explicitly revealed it.
+        opacity = "0 override 0 override 0 override",
     })
 end
 awtarchy_quickshell_flyout_rule_v2:set_enabled(true)
@@ -216,12 +220,21 @@ local function awtarchy_bar_under_pointer()
     return nil
 end
 
--- A normal Wayland floating window is initially placed by the compositor. The
--- post-map positioning helper can therefore be one frame too late and can also
--- observe the compositor-selected monitor instead of the bar that was clicked.
--- When a supported flyout is opened directly under an Awtarchy bar, inject a
--- temporary static rule during window.open_early so its first configured frame
--- is already on that bar monitor and at that bar edge.
+-- Retire the earlier window.open_early relocation experiment. It could not
+-- reliably control the first visible frame on every multi-monitor layout.
+-- Existing callbacks in a long-running Hyprland Lua session remain registered,
+-- but this gate keeps them inert. Any temporary rules from that experiment are
+-- disabled immediately as well.
+awtarchy_flyout_spawn_hooks_v1_enabled = false
+if awtarchy_flyout_spawn_rules_v1 ~= nil then
+    for title, rule in pairs(awtarchy_flyout_spawn_rules_v1) do
+        if rule ~= nil then
+            pcall(function() rule:set_enabled(false) end)
+        end
+        awtarchy_flyout_spawn_rules_v1[title] = nil
+    end
+end
+
 local awtarchy_flyout_spawn_layouts = {
     ["Awtarchy Clipboard History"] = "centered",
     ["Awtarchy Notification Center"] = "notification",
@@ -308,7 +321,6 @@ local function awtarchy_disable_spawn_rule(title)
     end
 end
 
-awtarchy_flyout_spawn_hooks_v1_enabled = true
 if awtarchy_flyout_spawn_hooks_v1_registered ~= true then
     awtarchy_flyout_spawn_hooks_v1_registered = true
     awtarchy_flyout_spawn_rules_v1 = awtarchy_flyout_spawn_rules_v1 or {}
@@ -351,8 +363,6 @@ if awtarchy_flyout_spawn_hooks_v1_registered ~= true then
             no_anim = true,
         })
 
-        -- Rule creation queues a prop refresh. Force it now because this hook
-        -- intentionally runs before the current window receives static rules.
         hl.exec_scheduled_prop_refresh_immediately()
     end)
 
