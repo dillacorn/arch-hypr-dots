@@ -20,8 +20,8 @@ Singleton {
     readonly property int defaultNotificationWidth: 520
     readonly property int defaultNotificationHeight: 760
     readonly property int defaultNotificationPopupLimit: 4
-    readonly property int defaultQuickSettingsWidth: 720
-    readonly property int defaultQuickSettingsHeight: 640
+    readonly property int defaultQuickSettingsWidth: 860
+    readonly property int defaultQuickSettingsHeight: 850
     readonly property int defaultNetworkWidth: 520
     readonly property int defaultNetworkHeight: 600
     readonly property int defaultBluetoothWidth: 500
