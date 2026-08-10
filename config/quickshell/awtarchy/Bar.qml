@@ -257,6 +257,9 @@ PanelWindow {
         onTriggered: bar.wsDrawerOpen = false
     }
 
+    // Give every button the owning bar's live monitor settings. Relying on
+    // Window.window inside BarButton left font glyphs at the default size and
+    // their button boxes at 28px when the PanelWindow itself was resized.
     component BarControl: BarButton {
         monitorName: bar.monitorName
         iconScale: bar.iconScale
