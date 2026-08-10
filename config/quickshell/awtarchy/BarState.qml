@@ -2,6 +2,7 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
+import Quickshell.Hyprland
 import Quickshell.Io
 
 Singleton {
@@ -11,21 +12,44 @@ Singleton {
     readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
     readonly property string idleStatePath: runtimeDir + "/awtarchy-quickshell-idle-hidden"
     readonly property int explicitSaveVersion: 2
-    readonly property int defaultLauncherWidth: 420
-    readonly property int defaultLauncherHeight: 582
+
+    // Default window dimensions are reference values designed around a
+    // 1920x1080 logical desktop at scale 1.0. Unsaved defaults are scaled from
+    // the target monitor's logical size while explicit per-monitor saves remain
+    // exact logical-pixel dimensions.
+    readonly property int referenceScreenWidth: 1920
+    readonly property int referenceScreenHeight: 1080
+    readonly property int referenceLauncherWidth: 420
+    readonly property int referenceLauncherHeight: 582
+    readonly property int referenceClipboardWidth: 880
+    readonly property int referenceClipboardHeight: 760
+    readonly property int referenceNotificationWidth: 520
+    readonly property int referenceNotificationHeight: 760
+    readonly property int referenceQuickSettingsWidth: 860
+    readonly property int referenceQuickSettingsHeight: 850
+    readonly property int referenceNetworkWidth: 520
+    readonly property int referenceNetworkHeight: 600
+    readonly property int referenceBluetoothWidth: 500
+    readonly property int referenceBluetoothHeight: 600
+
+    // Compatibility properties used by the existing Reset buttons. Clicking a
+    // Reset control focuses that flyout, so these resolve against its monitor.
+    readonly property int defaultLauncherWidth: launcherDefaultSizeFor(focusedMonitorName()).width
+    readonly property int defaultLauncherHeight: launcherDefaultSizeFor(focusedMonitorName()).height
+    readonly property int defaultClipboardWidth: clipboardDefaultSizeFor(focusedMonitorName()).width
+    readonly property int defaultClipboardHeight: clipboardDefaultSizeFor(focusedMonitorName()).height
+    readonly property int defaultNotificationWidth: notificationDefaultSizeFor(focusedMonitorName()).width
+    readonly property int defaultNotificationHeight: notificationDefaultSizeFor(focusedMonitorName()).height
+    readonly property int defaultQuickSettingsWidth: quickSettingsDefaultSizeFor(focusedMonitorName()).width
+    readonly property int defaultQuickSettingsHeight: quickSettingsDefaultSizeFor(focusedMonitorName()).height
+    readonly property int defaultNetworkWidth: networkDefaultSizeFor(focusedMonitorName()).width
+    readonly property int defaultNetworkHeight: networkDefaultSizeFor(focusedMonitorName()).height
+    readonly property int defaultBluetoothWidth: bluetoothDefaultSizeFor(focusedMonitorName()).width
+    readonly property int defaultBluetoothHeight: bluetoothDefaultSizeFor(focusedMonitorName()).height
+
     readonly property int defaultAppTextSize: 14
     readonly property int defaultAppIconSize: 18
-    readonly property int defaultClipboardWidth: 880
-    readonly property int defaultClipboardHeight: 760
-    readonly property int defaultNotificationWidth: 520
-    readonly property int defaultNotificationHeight: 760
     readonly property int defaultNotificationPopupLimit: 4
-    readonly property int defaultQuickSettingsWidth: 860
-    readonly property int defaultQuickSettingsHeight: 850
-    readonly property int defaultNetworkWidth: 520
-    readonly property int defaultNetworkHeight: 600
-    readonly property int defaultBluetoothWidth: 500
-    readonly property int defaultBluetoothHeight: 600
     property int revision: 0
     property int idleRevision: 0
 
@@ -35,6 +59,65 @@ Singleton {
     property var liveEnabled: ({})
     property var liveBarSizes: ({})
     property var liveIconScales: ({})
+
+    function focusedMonitorName() {
+        const monitor = Hyprland.focusedMonitor;
+        return monitor && monitor.name ? String(monitor.name) : "";
+    }
+
+    function screenFor(name) {
+        if (!name || name.length === 0)
+            return null;
+        const screens = Quickshell.screens || [];
+        for (let i = 0; i < screens.length; ++i) {
+            const screen = screens[i];
+            if (screen && screen.name === name)
+                return screen;
+        }
+        return null;
+    }
+
+    function adaptiveDefaultSizeFor(name, referenceWidth, referenceHeight) {
+        const screen = screenFor(name);
+        const rawWidth = screen ? Number(screen.width) : referenceScreenWidth;
+        const rawHeight = screen ? Number(screen.height) : referenceScreenHeight;
+        const logicalWidth = Number.isFinite(rawWidth) && rawWidth > 0
+            ? rawWidth : referenceScreenWidth;
+        const logicalHeight = Number.isFinite(rawHeight) && rawHeight > 0
+            ? rawHeight : referenceScreenHeight;
+        const widthScale = logicalWidth / referenceScreenWidth;
+        const heightScale = logicalHeight / referenceScreenHeight;
+        const factor = Math.min(widthScale, heightScale);
+
+        return ({
+            width: Math.max(1, Math.round(referenceWidth * factor)),
+            height: Math.max(1, Math.round(referenceHeight * factor))
+        });
+    }
+
+    function launcherDefaultSizeFor(name) {
+        return adaptiveDefaultSizeFor(name, referenceLauncherWidth, referenceLauncherHeight);
+    }
+
+    function clipboardDefaultSizeFor(name) {
+        return adaptiveDefaultSizeFor(name, referenceClipboardWidth, referenceClipboardHeight);
+    }
+
+    function notificationDefaultSizeFor(name) {
+        return adaptiveDefaultSizeFor(name, referenceNotificationWidth, referenceNotificationHeight);
+    }
+
+    function quickSettingsDefaultSizeFor(name) {
+        return adaptiveDefaultSizeFor(name, referenceQuickSettingsWidth, referenceQuickSettingsHeight);
+    }
+
+    function networkDefaultSizeFor(name) {
+        return adaptiveDefaultSizeFor(name, referenceNetworkWidth, referenceNetworkHeight);
+    }
+
+    function bluetoothDefaultSizeFor(name) {
+        return adaptiveDefaultSizeFor(name, referenceBluetoothWidth, referenceBluetoothHeight);
+    }
 
     function refresh() {
         stateFile.reload();
@@ -230,6 +313,7 @@ Singleton {
 
     function launcherViewFor(name) {
         const d = data();
+        const defaults = launcherDefaultSizeFor(name);
         const rawView = (d.launcher_sizes || ({}))[name];
         const view = rawView && typeof rawView === "object" && !Array.isArray(rawView)
             ? rawView : ({});
@@ -259,8 +343,8 @@ Singleton {
             return ({
                 saved: false,
                 locked: false,
-                width: defaultLauncherWidth,
-                height: defaultLauncherHeight,
+                width: defaults.width,
+                height: defaults.height,
                 centered: false,
                 textScale: 100,
                 iconScale: 100
@@ -270,8 +354,8 @@ Singleton {
         return ({
             saved: true,
             locked: view.locked === true && validWidth && validHeight,
-            width: validWidth ? Math.round(rawWidth) : defaultLauncherWidth,
-            height: validHeight ? Math.round(rawHeight) : defaultLauncherHeight,
+            width: validWidth ? Math.round(rawWidth) : defaults.width,
+            height: validHeight ? Math.round(rawHeight) : defaults.height,
             centered: view.centered === true,
             textScale: Number.isFinite(textScale)
                 ? Math.max(50, Math.min(200, Math.round(textScale))) : 100,
@@ -304,8 +388,9 @@ Singleton {
         return launcherViewFor(name).centered;
     }
 
-    function flyoutViewFor(collection, name, defaultWidth, defaultHeight) {
+    function flyoutViewFor(collection, name, referenceWidth, referenceHeight) {
         const d = data();
+        const defaults = adaptiveDefaultSizeFor(name, referenceWidth, referenceHeight);
         const views = d[collection] && typeof d[collection] === "object"
             ? d[collection] : ({});
         const raw = views[name];
@@ -317,8 +402,8 @@ Singleton {
         if (!explicitlySaved) {
             return ({
                 saved: false,
-                width: defaultWidth,
-                height: defaultHeight,
+                width: defaults.width,
+                height: defaults.height,
                 textScale: 100,
                 iconScale: 100
             });
@@ -332,9 +417,9 @@ Singleton {
         return ({
             saved: true,
             width: Number.isFinite(width) && width >= 1 && width <= 16384
-                ? Math.round(width) : defaultWidth,
+                ? Math.round(width) : defaults.width,
             height: Number.isFinite(height) && height >= 1 && height <= 16384
-                ? Math.round(height) : defaultHeight,
+                ? Math.round(height) : defaults.height,
             textScale: Number.isFinite(textScale)
                 ? Math.max(50, Math.min(200, Math.round(textScale))) : 100,
             iconScale: Number.isFinite(iconScale)
@@ -344,12 +429,12 @@ Singleton {
 
     function clipboardViewFor(name) {
         return flyoutViewFor("clipboard_views", name,
-            defaultClipboardWidth, defaultClipboardHeight);
+            referenceClipboardWidth, referenceClipboardHeight);
     }
 
     function notificationViewFor(name) {
         return flyoutViewFor("notification_views", name,
-            defaultNotificationWidth, defaultNotificationHeight);
+            referenceNotificationWidth, referenceNotificationHeight);
     }
 
     function notificationPopupLimit() {
@@ -364,17 +449,17 @@ Singleton {
 
     function quickSettingsViewFor(name) {
         return flyoutViewFor("quick_settings_views", name,
-            defaultQuickSettingsWidth, defaultQuickSettingsHeight);
+            referenceQuickSettingsWidth, referenceQuickSettingsHeight);
     }
 
     function networkViewFor(name) {
         return flyoutViewFor("network_views", name,
-            defaultNetworkWidth, defaultNetworkHeight);
+            referenceNetworkWidth, referenceNetworkHeight);
     }
 
     function bluetoothViewFor(name) {
         return flyoutViewFor("bluetooth_views", name,
-            defaultBluetoothWidth, defaultBluetoothHeight);
+            referenceBluetoothWidth, referenceBluetoothHeight);
     }
 
     function captureAllowedFor(surface) {
