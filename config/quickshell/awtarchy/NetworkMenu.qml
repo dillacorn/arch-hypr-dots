@@ -418,8 +418,6 @@ Singleton {
     }
 
     function toggleSettings() {
-        if (settingsOpen && settingsDirty)
-            discardDraft();
         settingsOpen = !settingsOpen;
         settingsPanel.resetCopySelection();
         settingsMessage = "";
