@@ -406,8 +406,6 @@ Singleton {
     }
 
     function toggleSettings() {
-        if (settingsOpen && settingsDirty)
-            discardDraft();
         settingsOpen = !settingsOpen;
         copySettingsOpen = false;
         clearCopyTargets();
