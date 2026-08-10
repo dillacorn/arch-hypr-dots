@@ -20,13 +20,17 @@ Singleton {
     readonly property var adapter: Bluetooth.defaultAdapter
         || (adapters.length > 0 ? adapters[0] : null)
     readonly property bool available: adapters.length > 0 && adapter !== null
+    readonly property int adapterState: adapter ? adapter.state : BluetoothAdapterState.Disabled
+    readonly property bool adapterEnabled: adapter !== null && adapter.enabled
+    readonly property bool adapterDiscovering: adapter !== null && adapter.discovering
+    readonly property bool adapterBlocked: adapter !== null
+        && adapter.state === BluetoothAdapterState.Blocked
     readonly property var connectedDevices: devices().filter(device => device.connected)
     readonly property string barLabel: buildBarLabel()
     readonly property string verticalBarLabel: connectedDevices.length > 0
-        ? "\n" + connectedDevices.length : (adapter && adapter.enabled ? "\n×" : "\noff")
+        ? "\n" + connectedDevices.length : ""
     readonly property string barTooltip: buildBarTooltip()
-    readonly property color barForeground: adapter && adapter.enabled
-        ? Theme.foreground : Theme.muted
+    readonly property color barForeground: adapterEnabled ? Theme.foreground : Theme.muted
     readonly property int activeBarSize: {
         const target = bluetoothWindow.screen;
         if (!target || placement === "center")
@@ -43,9 +47,10 @@ Singleton {
     readonly property int panelHeight: Math.min(600, availablePanelHeight)
 
     function devices() {
-        if (!adapter || !adapter.devices)
+        const current = adapter;
+        if (!current || !current.devices)
             return [];
-        return [...adapter.devices.values]
+        return [...current.devices.values]
             .filter(device => device !== null)
             .sort((left, right) => {
                 if (Boolean(left.connected) !== Boolean(right.connected))
@@ -73,19 +78,19 @@ Singleton {
     }
 
     function buildBarLabel() {
-        if (!adapter || !adapter.enabled)
-            return " off";
-        if (connectedDevices.length === 0)
-            return " ×";
         if (connectedDevices.length === 1)
             return " " + shortDeviceName(connectedDevices[0]);
-        return " " + connectedDevices.length;
+        if (connectedDevices.length > 1)
+            return " " + connectedDevices.length;
+        return "";
     }
 
     function buildBarTooltip() {
         if (!adapter)
             return "Bluetooth adapter unavailable";
-        if (!adapter.enabled)
+        if (adapterBlocked)
+            return "Bluetooth blocked by rfkill\nClick: Bluetooth devices";
+        if (!adapterEnabled)
             return "Bluetooth disabled\nClick: Bluetooth devices";
         if (connectedDevices.length === 0)
             return "Bluetooth enabled · no device connected\nClick: Bluetooth devices";
@@ -96,19 +101,46 @@ Singleton {
     }
 
     function toggleAdapter() {
-        if (!adapter)
+        const current = adapter;
+        if (!current) {
+            actionMessage = "Bluetooth adapter unavailable";
             return;
-        adapter.enabled = !adapter.enabled;
-        if (!adapter.enabled && adapter.discovering)
-            adapter.discovering = false;
-        actionMessage = adapter.enabled ? "Bluetooth enabled" : "Bluetooth disabled";
+        }
+
+        if (!current.enabled && current.state === BluetoothAdapterState.Blocked) {
+            actionMessage = "Unblocking Bluetooth…";
+            rfkillUnblock.exec(["rfkill", "unblock", "bluetooth"]);
+            return;
+        }
+
+        const nextEnabled = !current.enabled;
+        if (!nextEnabled && current.discovering)
+            current.discovering = false;
+        current.enabled = nextEnabled;
+        actionMessage = nextEnabled ? "Bluetooth enabled" : "Bluetooth disabled";
+    }
+
+    function retryEnableAfterRfkill() {
+        const current = adapter;
+        if (!current) {
+            actionMessage = "Bluetooth adapter unavailable";
+            return;
+        }
+        if (current.state === BluetoothAdapterState.Blocked) {
+            actionMessage = "Bluetooth is still blocked by rfkill";
+            return;
+        }
+        current.enabled = true;
+        actionMessage = "Bluetooth enabled";
     }
 
     function toggleDiscovery() {
-        if (!adapter || !adapter.enabled)
+        const current = adapter;
+        if (!current || !current.enabled)
             return;
-        adapter.discovering = !adapter.discovering;
-        actionMessage = adapter.discovering ? "Scanning for devices…" : "Scan stopped";
+        const nextDiscovering = !current.discovering;
+        current.discovering = nextDiscovering;
+        actionMessage = nextDiscovering ? "Scanning for devices…" : "Scan stopped";
     }
 
     function toggleDevice(device) {
@@ -156,16 +188,18 @@ Singleton {
         FlyoutManager.claim("bluetooth");
         bluetoothWindow.screen = targetScreen;
         placement = placementForScreen(targetScreen);
-        actionMessage = "";
+        actionMessage = adapterBlocked ? "Bluetooth is blocked by rfkill" : "";
         bluetoothWindow.visible = true;
-        if (adapter.enabled)
-            adapter.discovering = true;
+        const current = adapter;
+        if (current && current.enabled)
+            current.discovering = true;
     }
 
     function close() {
         bluetoothWindow.visible = false;
-        if (adapter && adapter.discovering)
-            adapter.discovering = false;
+        const current = adapter;
+        if (current && current.discovering)
+            current.discovering = false;
         actionMessage = "";
         FlyoutManager.release("bluetooth");
     }
@@ -192,6 +226,18 @@ Singleton {
         }
     }
 
+    Process {
+        id: rfkillUnblock
+        onExited: rfkillRetry.restart()
+    }
+
+    Timer {
+        id: rfkillRetry
+        interval: 300
+        repeat: false
+        onTriggered: root.retryEnableAfterRfkill()
+    }
+
     IpcHandler {
         target: "bluetooth"
         function available(): bool { return root.available; }
@@ -215,15 +261,15 @@ Singleton {
         anchors.left: root.placement === "left" || root.placement === "center"
         anchors.right: root.placement !== "left" && root.placement !== "center"
         margins {
-            top: root.placement === "top" ? root.activeBarSize + 6
+            top: root.placement === "top" ? root.activeBarSize
                 : (root.placement === "center"
                     ? Math.max(6, Math.round((root.targetScreenHeight - root.panelHeight) / 2)) : 0)
-            bottom: root.placement === "bottom" ? root.activeBarSize + 6
+            bottom: root.placement === "bottom" ? root.activeBarSize
                 : ((root.placement === "left" || root.placement === "right") ? 8 : 0)
-            left: root.placement === "left" ? root.activeBarSize + 6
+            left: root.placement === "left" ? root.activeBarSize
                 : (root.placement === "center"
                     ? Math.max(6, Math.round((root.targetScreenWidth - root.panelWidth) / 2)) : 0)
-            right: root.placement === "right" ? root.activeBarSize + 6
+            right: root.placement === "right" ? root.activeBarSize
                 : ((root.placement === "top" || root.placement === "bottom") ? 8 : 0)
         }
 
@@ -323,16 +369,16 @@ Singleton {
                                         elide: Text.ElideRight
                                     }
                                     SettingsButton {
-                                        label: root.adapter && root.adapter.enabled ? "On" : "Off"
-                                        active: root.adapter ? root.adapter.enabled : false
+                                        label: root.adapterEnabled ? "On" : "Off"
+                                        active: root.adapterEnabled
                                         available: root.adapter !== null
                                         textSize: 9
                                         onClicked: root.toggleAdapter()
                                     }
                                     SettingsButton {
-                                        label: root.adapter && root.adapter.discovering ? "Scanning…" : "Scan"
-                                        active: root.adapter ? root.adapter.discovering : false
-                                        available: root.adapter !== null && root.adapter.enabled
+                                        label: root.adapterDiscovering ? "Scanning…" : "Scan"
+                                        active: root.adapterDiscovering
+                                        available: root.adapterEnabled
                                         textSize: 9
                                         onClicked: root.toggleDiscovery()
                                     }
@@ -340,8 +386,10 @@ Singleton {
 
                                 Text {
                                     Layout.fillWidth: true
-                                    visible: root.adapter && !root.adapter.enabled
-                                    text: "Bluetooth is disabled"
+                                    visible: root.adapter !== null && !root.adapterEnabled
+                                    text: root.adapterBlocked
+                                        ? "Bluetooth is blocked by rfkill"
+                                        : "Bluetooth is disabled"
                                     color: Theme.muted
                                     font.family: Theme.fontFamily
                                     font.pixelSize: 9
@@ -351,8 +399,8 @@ Singleton {
 
                         Text {
                             Layout.fillWidth: true
-                            visible: root.adapter && root.adapter.enabled && root.devices().length === 0
-                            text: root.adapter.discovering
+                            visible: root.adapterEnabled && root.devices().length === 0
+                            text: root.adapterDiscovering
                                 ? "Scanning for Bluetooth devices…" : "No Bluetooth devices found"
                             color: Theme.muted
                             font.family: Theme.fontFamily
@@ -361,7 +409,7 @@ Singleton {
 
                         Repeater {
                             model: ScriptModel {
-                                values: root.adapter && root.adapter.enabled ? root.devices() : []
+                                values: root.adapterEnabled ? root.devices() : []
                             }
 
                             Rectangle {
