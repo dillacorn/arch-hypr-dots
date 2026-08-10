@@ -22,6 +22,7 @@ Rectangle {
     property string publicIpv6: ""
     property string publicIpError: ""
     property bool publicIpLoading: false
+    property bool publicIpChecked: false
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
         || (Quickshell.env("HOME") + "/.config")
@@ -81,6 +82,7 @@ Rectangle {
         publicIpv4 = "";
         publicIpv6 = "";
         publicIpError = "";
+        publicIpChecked = false;
         publicIpLoading = true;
         publicIpProcess.running = true;
     }
@@ -155,7 +157,7 @@ Rectangle {
             root.actionMessage = "";
             root.refreshProfiles();
             root.refreshLocalInfo();
-            if (root.publicIpv4.length > 0 || root.publicIpv6.length > 0)
+            if (root.publicIpChecked)
                 root.checkPublicIps();
         }
     }
@@ -195,6 +197,7 @@ Rectangle {
         }
         onExited: {
             root.publicIpLoading = false;
+            root.publicIpChecked = true;
             if (root.publicIpv4.length === 0 && root.publicIpv6.length === 0
                 && root.publicIpError.length === 0)
                 root.publicIpError = "Public IP unavailable";
@@ -429,7 +432,7 @@ Rectangle {
                         text: root.publicIpLoading ? "Public IPv4: Checking…"
                             : "Public IPv4: " + (root.publicIpv4.length > 0
                                 ? root.publicIpv4
-                                : (root.publicIpError.length > 0 ? root.publicIpError : "Not checked"))
+                                : (root.publicIpChecked ? "Unavailable" : "Not checked"))
                         color: root.publicIpv4.length > 0 ? Theme.foreground : Theme.muted
                         font.family: Theme.fontFamily
                         font.pixelSize: root.scaledText(8)
@@ -441,17 +444,26 @@ Rectangle {
                         text: root.publicIpLoading ? "Public IPv6: Checking…"
                             : "Public IPv6: " + (root.publicIpv6.length > 0
                                 ? root.publicIpv6
-                                : (root.publicIpError.length > 0 ? "Unavailable" : "Not checked"))
+                                : (root.publicIpChecked ? "Unavailable" : "Not checked"))
                         color: root.publicIpv6.length > 0 ? Theme.foreground : Theme.muted
                         font.family: Theme.fontFamily
                         font.pixelSize: root.scaledText(8)
                         elide: Text.ElideMiddle
                     }
+
+                    Text {
+                        Layout.fillWidth: true
+                        visible: root.publicIpError.length > 0
+                        text: root.publicIpError
+                        color: Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: root.scaledText(7)
+                        elide: Text.ElideRight
+                    }
                 }
 
                 SettingsButton {
-                    label: (root.publicIpv4.length > 0 || root.publicIpv6.length > 0)
-                        ? "Refresh IPs" : "Check IPs"
+                    label: root.publicIpChecked ? "Refresh IPs" : "Check IPs"
                     available: !root.publicIpLoading
                     textSize: root.scaledText(8)
                     onClicked: root.checkPublicIps()
