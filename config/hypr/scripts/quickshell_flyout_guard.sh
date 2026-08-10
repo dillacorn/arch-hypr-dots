@@ -6,9 +6,6 @@ set -euo pipefail
 command -v hyprctl >/dev/null 2>&1 || exit 127
 
 hyprctl eval '
--- The earlier window.open_early experiment did not reliably control the first
--- frame on all monitor layouts. Leave its callbacks registered but inert so an
--- existing Hyprland Lua session does not need to be restarted.
 awtarchy_flyout_spawn_hooks_v1_enabled = false
 
 if awtarchy_flyout_spawn_rules_v1 ~= nil then
