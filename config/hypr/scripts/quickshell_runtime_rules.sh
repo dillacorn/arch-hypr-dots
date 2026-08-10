@@ -308,13 +308,14 @@ local function awtarchy_disable_spawn_rule(title)
     end
 end
 
+awtarchy_flyout_spawn_hooks_v1_enabled = true
 if awtarchy_flyout_spawn_hooks_v1_registered ~= true then
     awtarchy_flyout_spawn_hooks_v1_registered = true
     awtarchy_flyout_spawn_rules_v1 = awtarchy_flyout_spawn_rules_v1 or {}
     awtarchy_flyout_spawn_rule_counter_v1 = awtarchy_flyout_spawn_rule_counter_v1 or 0
 
     hl.on("window.open_early", function(window)
-        if window == nil then
+        if awtarchy_flyout_spawn_hooks_v1_enabled ~= true or window == nil then
             return
         end
 
@@ -356,7 +357,7 @@ if awtarchy_flyout_spawn_hooks_v1_registered ~= true then
     end)
 
     hl.on("window.open", function(window)
-        if window == nil then
+        if awtarchy_flyout_spawn_hooks_v1_enabled ~= true or window == nil then
             return
         end
         local title = tostring(window.title or "")
