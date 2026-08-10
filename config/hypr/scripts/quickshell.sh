@@ -3,7 +3,7 @@
 # One Quickshell process owns bars, launcher, clipboard, notifications and power menu.
 
 set -euo pipefail
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 
 CONFIG_NAME="${QUICKSHELL_CONFIG_NAME:-awtarchy}"
 CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
