@@ -238,8 +238,8 @@ if (( resize_on_spawn )); then
     resize_lua="hl.dispatch(hl.dsp.window.resize({ x = ${win_w}, y = ${win_h}, relative = false, window = \"${selector_lua}\" }))"
 fi
 
-# Apply launcher-only compositor properties before positioning it. This keeps
-# the floating window visually seamless with the borderless Quickshell bar.
+# The v2 runtime rule maps the launcher fully transparent. Perform every move
+# and resize first, then reveal only this exact window address.
 hyprctl eval "
     hl.dispatch(hl.dsp.window.set_prop({ prop = \"no_anim\", value = \"1\", window = \"${selector_lua}\" }))
     hl.dispatch(hl.dsp.window.set_prop({ prop = \"border_size\", value = \"0\", window = \"${selector_lua}\" }))
@@ -249,4 +249,10 @@ hyprctl eval "
     hl.dispatch(hl.dsp.window.move({ monitor = \"${monitor_lua}\", follow = false, window = \"${selector_lua}\" }))
     ${resize_lua}
     hl.dispatch(hl.dsp.window.move({ x = ${x}, y = ${y}, relative = false, window = \"${selector_lua}\" }))
+    hl.dispatch(hl.dsp.window.set_prop({ prop = \"opacity\", value = \"1\", window = \"${selector_lua}\" }))
+    hl.dispatch(hl.dsp.window.set_prop({ prop = \"opacity_override\", value = \"1\", window = \"${selector_lua}\" }))
+    hl.dispatch(hl.dsp.window.set_prop({ prop = \"opacity_inactive\", value = \"1\", window = \"${selector_lua}\" }))
+    hl.dispatch(hl.dsp.window.set_prop({ prop = \"opacity_inactive_override\", value = \"1\", window = \"${selector_lua}\" }))
+    hl.dispatch(hl.dsp.window.set_prop({ prop = \"opacity_fullscreen\", value = \"1\", window = \"${selector_lua}\" }))
+    hl.dispatch(hl.dsp.window.set_prop({ prop = \"opacity_fullscreen_override\", value = \"1\", window = \"${selector_lua}\" }))
 " >/dev/null
