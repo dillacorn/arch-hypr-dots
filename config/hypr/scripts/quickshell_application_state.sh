@@ -16,6 +16,7 @@ MIN_TEXT_SCALE=50
 MAX_TEXT_SCALE=200
 MIN_ICON_SCALE=50
 MAX_ICON_SCALE=200
+SAVE_VERSION=2
 TMP_FILE=""
 
 need() {
@@ -207,7 +208,8 @@ save_view() {
         --argjson text_scale "$text_scale" \
         --argjson icon_scale "$icon_scale" \
         --argjson centered "$centered" \
-        --argjson capture "$capture" '
+        --argjson capture "$capture" \
+        --argjson save_version "$SAVE_VERSION" '
         .launcher_sizes = (if (.launcher_sizes | type) == "object" then .launcher_sizes else {} end)
         | .launcher_sizes[$monitor] = (((if (.launcher_sizes[$monitor] | type) == "object"
             then .launcher_sizes[$monitor] else {} end) + {
@@ -216,7 +218,8 @@ save_view() {
             text_scale:$text_scale,
             icon_scale:$icon_scale,
             centered:$centered,
-            saved:true
+            saved:true,
+            save_version:$save_version
         }) | del(.locked))
         | if $capture == null then . else
             .capture_allowed = (if (.capture_allowed | type) == "object" then .capture_allowed else {} end)
@@ -295,17 +298,23 @@ save_flyout() {
         --argjson text_scale "$text_scale" \
         --argjson icon_scale "$icon_scale" \
         --argjson capture "$capture" \
-        --argjson popup_limit "$popup_limit_json" '
+        --argjson popup_limit "$popup_limit_json" \
+        --argjson save_version "$SAVE_VERSION" '
         .[$view_key] = (if (.[$view_key] | type) == "object" then .[$view_key] else {} end)
         | .[$view_key][$monitor] = {
             width:$width,
             height:$height,
             text_scale:$text_scale,
-            icon_scale:$icon_scale
+            icon_scale:$icon_scale,
+            saved:true,
+            save_version:$save_version
         }
         | .capture_allowed = (if (.capture_allowed | type) == "object" then .capture_allowed else {} end)
         | .capture_allowed[$surface_key] = $capture
-        | if $popup_limit == null then . else .notification_popup_limit = $popup_limit end
+        | if $popup_limit == null then . else
+            .notification_popup_limit = $popup_limit
+            | .notification_popup_limit_save_version = $save_version
+          end
     ' "$STATE_FILE" >"$TMP_FILE"
     commit_tmp
 }
@@ -330,14 +339,17 @@ copy_flyout() {
         --argjson width "$width" \
         --argjson height "$height" \
         --argjson text_scale "$text_scale" \
-        --argjson icon_scale "$icon_scale" '
+        --argjson icon_scale "$icon_scale" \
+        --argjson save_version "$SAVE_VERSION" '
         .[$view_key] = (if (.[$view_key] | type) == "object" then .[$view_key] else {} end)
         | .[$view_key] = reduce $targets[] as $monitor
             (.[$view_key]; .[$monitor] = {
                 width:$width,
                 height:$height,
                 text_scale:$text_scale,
-                icon_scale:$icon_scale
+                icon_scale:$icon_scale,
+                saved:true,
+                save_version:$save_version
             })
     ' "$STATE_FILE" >"$TMP_FILE"
     commit_tmp
@@ -358,7 +370,9 @@ reset_flyout() {
         | del(.[$view_key][$monitor])
         | .capture_allowed = (if (.capture_allowed | type) == "object" then .capture_allowed else {} end)
         | .capture_allowed[$surface_key] = false
-        | if $view_key == "notification_views" then del(.notification_popup_limit) else . end
+        | if $view_key == "notification_views" then
+            del(.notification_popup_limit, .notification_popup_limit_save_version)
+          else . end
     ' "$STATE_FILE" >"$TMP_FILE"
     commit_tmp
 }
@@ -399,7 +413,8 @@ copy_view() {
         --argjson width "$width" \
         --argjson height "$height" \
         --argjson text_scale "$text_scale" \
-        --argjson icon_scale "$icon_scale" '
+        --argjson icon_scale "$icon_scale" \
+        --argjson save_version "$SAVE_VERSION" '
         .launcher_sizes = (if (.launcher_sizes | type) == "object" then .launcher_sizes else {} end)
         | .launcher_sizes = reduce $targets[] as $monitor
             (.launcher_sizes;
@@ -409,7 +424,8 @@ copy_view() {
                     height:$height,
                     text_scale:$text_scale,
                     icon_scale:$icon_scale,
-                    saved:true
+                    saved:true,
+                    save_version:$save_version
                 }) | del(.locked)))
         | del(.application_view)
     ' "$STATE_FILE" >"$TMP_FILE"
