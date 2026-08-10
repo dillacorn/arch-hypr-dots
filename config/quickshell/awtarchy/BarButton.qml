@@ -232,6 +232,11 @@ Rectangle {
         }
 
         onClicked: mouse => {
+            // Record the bar that received the click before emitting its action.
+            // Floating flyouts use this short-lived value instead of trusting the
+            // compositor-selected screen of a window that has already mapped.
+            FlyoutManager.armBar(root.monitorName);
+
             if (mouse.button === Qt.RightButton)
                 root.rightClicked();
             else if (mouse.button === Qt.MiddleButton)
