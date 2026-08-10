@@ -41,6 +41,15 @@ init_target() {
   CONFIG_VERSION_FILE="${STATE_HOME}/awtarchy/config-version"
 }
 
+ensure_vpn_directory() {
+  local vpn_dir="${TARGET_HOME}/vpn"
+  mkdir -p -- "$vpn_dir"
+  chmod 0700 "$vpn_dir"
+  if [[ ${EUID} -eq 0 ]]; then
+    chown "$TARGET_USER:$TARGET_USER" "$vpn_dir"
+  fi
+}
+
 state_value() {
   local key="$1" file="$2"
   [[ -r $file ]] || return 1
@@ -404,6 +413,7 @@ EOF
 
 main() {
   init_target
+  ensure_vpn_directory
 
   case "${1:-}" in
     version)
