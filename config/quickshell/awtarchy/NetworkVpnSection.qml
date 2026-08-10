@@ -21,6 +21,10 @@ Rectangle {
         || (Quickshell.env("HOME") + "/.config")
     readonly property string homeDir: Quickshell.env("HOME") || "~"
     readonly property string helper: configHome + "/hypr/scripts/quickshell_wireguard.sh"
+    readonly property int profileRowHeight: Math.max(40,
+        scaledText(10) + scaledText(8) + 16)
+    readonly property int profileListHeight: profiles.length === 0 ? 0
+        : Math.min(176, profiles.length * profileRowHeight)
 
     implicitHeight: content.implicitHeight + 16
     color: Theme.popupButton
@@ -95,7 +99,6 @@ Rectangle {
 
     Process {
         id: actionProcess
-        stdout: StdioCollector { }
         stderr: StdioCollector {
             onStreamFinished: {
                 const message = text.trim();
@@ -103,9 +106,7 @@ Rectangle {
                     root.actionMessage = message.split("\n")[0];
             }
         }
-        onExited: {
-            actionRefresh.restart();
-        }
+        onExited: actionRefresh.restart()
     }
 
     Timer {
@@ -199,67 +200,82 @@ Rectangle {
             font.pixelSize: root.scaledText(9)
         }
 
-        Repeater {
-            model: ScriptModel { values: root.profiles }
+        Flickable {
+            Layout.fillWidth: true
+            Layout.preferredHeight: root.profileListHeight
+            visible: root.profiles.length > 0
+            contentWidth: width
+            contentHeight: profileColumn.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
 
-            Rectangle {
-                id: profileRow
-                required property var modelData
-                Layout.fillWidth: true
-                Layout.preferredHeight: Math.max(40,
-                    root.scaledText(10) + root.scaledText(8) + 16)
-                color: modelData.active ? Theme.active : "transparent"
-                border.width: 0
+            ColumnLayout {
+                id: profileColumn
+                width: parent.width
+                spacing: 0
 
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 6
-                    anchors.rightMargin: 4
-                    spacing: 7
+                Repeater {
+                    model: ScriptModel { values: root.profiles }
 
-                    Text {
-                        text: profileRow.modelData.active ? "●" : "○"
-                        color: profileRow.modelData.active ? Theme.focus : Theme.muted
-                        font.family: Theme.fontFamily
-                        font.pixelSize: root.scaledIcon(10)
-                    }
-
-                    ColumnLayout {
+                    Rectangle {
+                        id: profileRow
+                        required property var modelData
                         Layout.fillWidth: true
-                        spacing: 0
+                        Layout.preferredHeight: root.profileRowHeight
+                        color: modelData.active ? Theme.active : "transparent"
+                        border.width: 0
 
-                        Text {
-                            Layout.fillWidth: true
-                            text: profileRow.modelData.name
-                            color: Theme.foreground
-                            font.family: Theme.fontFamily
-                            font.pixelSize: root.scaledText(10)
-                            font.bold: profileRow.modelData.active
-                            elide: Text.ElideRight
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 6
+                            anchors.rightMargin: 4
+                            spacing: 7
+
+                            Text {
+                                text: profileRow.modelData.active ? "●" : "○"
+                                color: profileRow.modelData.active ? Theme.focus : Theme.muted
+                                font.family: Theme.fontFamily
+                                font.pixelSize: root.scaledIcon(10)
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 0
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: profileRow.modelData.name
+                                    color: Theme.foreground
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: root.scaledText(10)
+                                    font.bold: profileRow.modelData.active
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: profileRow.modelData.active ? "wg-quick active" : "wg-quick inactive"
+                                    color: Theme.muted
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: root.scaledText(8)
+                                }
+                            }
+
+                            SettingsButton {
+                                label: "Edit"
+                                available: !actionProcess.running
+                                textSize: root.scaledText(8)
+                                onClicked: root.editProfile(profileRow.modelData)
+                            }
+
+                            SettingsButton {
+                                label: profileRow.modelData.active ? "Disconnect" : "Connect"
+                                active: profileRow.modelData.active
+                                available: !actionProcess.running
+                                textSize: root.scaledText(8)
+                                onClicked: root.toggleProfile(profileRow.modelData)
+                            }
                         }
-
-                        Text {
-                            Layout.fillWidth: true
-                            text: profileRow.modelData.active ? "wg-quick active" : "wg-quick inactive"
-                            color: Theme.muted
-                            font.family: Theme.fontFamily
-                            font.pixelSize: root.scaledText(8)
-                        }
-                    }
-
-                    SettingsButton {
-                        label: "Edit"
-                        available: !actionProcess.running
-                        textSize: root.scaledText(8)
-                        onClicked: root.editProfile(profileRow.modelData)
-                    }
-
-                    SettingsButton {
-                        label: profileRow.modelData.active ? "Disconnect" : "Connect"
-                        active: profileRow.modelData.active
-                        available: !actionProcess.running
-                        textSize: root.scaledText(8)
-                        onClicked: root.toggleProfile(profileRow.modelData)
                     }
                 }
             }
