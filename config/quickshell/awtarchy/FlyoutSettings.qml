@@ -95,12 +95,13 @@ Item {
             }
 
             Rectangle {
-                Layout.preferredWidth: 112
+                Layout.preferredWidth: Math.max(112, resetLabel.implicitWidth + 20)
                 Layout.preferredHeight: 24
                 color: resetMouse.containsMouse ? Theme.focus : Theme.subtleHover
                 border.width: 0
 
                 Text {
+                    id: resetLabel
                     anchors.centerIn: parent
                     text: "Reset " + root.surfaceLabel
                     color: Theme.foreground
