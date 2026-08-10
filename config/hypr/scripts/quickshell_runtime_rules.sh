@@ -39,18 +39,18 @@ end
 
 -- Retire privacy rule objects from the old layer-shell implementation. They
 -- may still exist in a long-running Hyprland Lua state after updating the shell.
-for _, old_rule in ipairs({
-    awtarchy_clipboard_privacy_rule,
-    awtarchy_notifications_privacy_rule,
-    awtarchy_notifications_popup_privacy_rule,
-    awtarchy_notifications_center_privacy_rule,
-    awtarchy_quick_settings_privacy_rule,
-    awtarchy_connectivity_privacy_rule,
-}) do
-    if old_rule ~= nil then
-        pcall(function() old_rule:set_enabled(false) end)
+local function disable_superseded_rule(rule)
+    if rule ~= nil then
+        pcall(function() rule:set_enabled(false) end)
     end
 end
+
+disable_superseded_rule(awtarchy_clipboard_privacy_rule)
+disable_superseded_rule(awtarchy_notifications_privacy_rule)
+disable_superseded_rule(awtarchy_notifications_popup_privacy_rule)
+disable_superseded_rule(awtarchy_notifications_center_privacy_rule)
+disable_superseded_rule(awtarchy_quick_settings_privacy_rule)
+disable_superseded_rule(awtarchy_connectivity_privacy_rule)
 
 -- Use new Lua globals for converted floating surfaces so an existing Hyprland
 -- session cannot keep the previous layer-rule objects alive under the same name.
