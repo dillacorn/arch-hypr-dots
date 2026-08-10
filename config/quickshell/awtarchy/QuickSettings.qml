@@ -317,12 +317,16 @@ Singleton {
         textScaleOverride = 100;
         iconScaleOverride = 100;
         captureAllowedOverride = 0;
-        if (wasCaptureAllowed) {
-            savedView = Object.assign({}, savedView, { captureAllowed: false });
-            privacyRemapPending = true;
-            queueStateCommand(["set-capture", "quick-settings", "false"]);
-        }
-        settingsMessage = "Quick Settings defaults loaded for " + activeMonitorName;
+        savedView = ({
+            width: panelWidthOverride,
+            height: panelHeightOverride,
+            textScale: 100,
+            iconScale: 100,
+            captureAllowed: false
+        });
+        privacyRemapPending = wasCaptureAllowed;
+        queueStateCommand(["reset-flyout", "quick-settings", activeMonitorName]);
+        settingsMessage = "Quick Settings defaults restored for " + activeMonitorName;
     }
 
     function copyDisplaySettings(targets) {
@@ -396,8 +400,7 @@ Singleton {
     function openFocused() { openForScreen(focusedScreen()); }
 
     function close() {
-        if (settingsDirty)
-            discardDraft();
+        discardDraft();
         quickSettingsWindow.visible = false;
         FlyoutManager.release("quick-settings");
         settingsOpen = false;
@@ -522,14 +525,14 @@ Singleton {
         anchors.left: root.placement !== "right"
         anchors.right: root.placement === "right"
         margins {
-            top: root.placement === "top" ? root.activeBarSize + 6
+            top: root.placement === "top" ? root.activeBarSize
                 : (root.placement === "bottom" ? 0
                     : Math.max(6, Math.round((root.targetScreenHeight - root.livePanelHeight) / 2)))
-            bottom: root.placement === "bottom" ? root.activeBarSize + 6 : 0
-            left: root.placement === "left" ? root.activeBarSize + 6
+            bottom: root.placement === "bottom" ? root.activeBarSize : 0
+            left: root.placement === "left" ? root.activeBarSize
                 : (root.placement === "right" ? 0
                     : Math.max(6, Math.round((root.targetScreenWidth - root.livePanelWidth) / 2)))
-            right: root.placement === "right" ? root.activeBarSize + 6 : 0
+            right: root.placement === "right" ? root.activeBarSize : 0
         }
 
         Rectangle {
