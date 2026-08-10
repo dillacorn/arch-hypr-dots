@@ -7,7 +7,6 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
-import Quickshell.Wayland
 
 Singleton {
     id: root
@@ -20,8 +19,6 @@ Singleton {
     property int textScaleOverride: -1
     property int iconScaleOverride: -1
     property int captureAllowedOverride: -1
-    property int resizeStartWidth: 0
-    property int resizeStartHeight: 0
     property string settingsMessage: ""
     property var savedView: ({
         width: BarState.defaultClipboardWidth,
@@ -32,24 +29,28 @@ Singleton {
     })
     property var stateCommandQueue: []
     property bool privacyRemapPending: false
+
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string backend: configHome + "/hypr/scripts/quickshell_clipboard.sh"
     readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
     readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
+    readonly property string positionScript: configHome + "/hypr/scripts/quickshell_flyout_position.sh"
     readonly property int minimumPanelWidth: Math.min(480, maximumPanelWidth)
     readonly property int minimumPanelHeight: Math.min(360, maximumPanelHeight)
     readonly property int targetScreenWidth: clipboardWindow.screen
         ? clipboardWindow.screen.width : 1920
     readonly property int targetScreenHeight: clipboardWindow.screen
         ? clipboardWindow.screen.height : 1080
-    readonly property int maximumPanelWidth: Math.max(1, targetScreenWidth
-        - ((placement === "left" || placement === "right") ? activeBarSize : 0) - 20)
-    readonly property int maximumPanelHeight: Math.max(1, targetScreenHeight
-        - ((placement === "top" || placement === "bottom") ? activeBarSize : 0) - 20)
-    readonly property int livePanelWidth: clampWidth(panelWidthOverride >= 0
+    readonly property int maximumPanelWidth: Math.max(1, targetScreenWidth - 20)
+    readonly property int maximumPanelHeight: Math.max(1, targetScreenHeight - 20)
+    readonly property int configuredPanelWidth: clampWidth(panelWidthOverride >= 0
         ? panelWidthOverride : BarState.clipboardViewFor(activeMonitorName).width)
-    readonly property int livePanelHeight: clampHeight(panelHeightOverride >= 0
+    readonly property int configuredPanelHeight: clampHeight(panelHeightOverride >= 0
         ? panelHeightOverride : BarState.clipboardViewFor(activeMonitorName).height)
+    readonly property int livePanelWidth: clipboardWindow.visible && clipboardWindow.width > 0
+        ? clampWidth(Math.round(clipboardWindow.width)) : configuredPanelWidth
+    readonly property int livePanelHeight: clipboardWindow.visible && clipboardWindow.height > 0
+        ? clampHeight(Math.round(clipboardWindow.height)) : configuredPanelHeight
     readonly property int effectiveTextScale: textScaleOverride >= 0
         ? textScaleOverride : BarState.clipboardViewFor(activeMonitorName).textScale
     readonly property int effectiveIconScale: iconScaleOverride >= 0
@@ -62,12 +63,6 @@ Singleton {
         || savedView.textScale !== effectiveTextScale
         || savedView.iconScale !== effectiveIconScale
         || savedView.captureAllowed !== captureAllowed
-    readonly property int activeBarSize: {
-        const target = clipboardWindow.screen;
-        if (!target || placement === "center")
-            return 0;
-        return BarState.barSizeFor(target.name, placement === "left" || placement === "right");
-    }
 
     function focusedScreen() {
         const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
@@ -87,6 +82,25 @@ Singleton {
 
     function clampHeight(value) {
         return Math.max(minimumPanelHeight, Math.min(maximumPanelHeight, Math.round(value)));
+    }
+
+    function applyWindowSize(width, height) {
+        panelWidthOverride = clampWidth(width);
+        panelHeightOverride = clampHeight(height);
+        if (clipboardWindow.visible && activeMonitorName.length > 0) {
+            Quickshell.execDetached([
+                positionScript, "clipboard", activeMonitorName, placement, "resize",
+                String(panelWidthOverride), String(panelHeightOverride)
+            ]);
+        }
+    }
+
+    function positionWindow() {
+        if (!clipboardWindow.visible || activeMonitorName.length === 0)
+            return;
+        Quickshell.execDetached([
+            positionScript, "clipboard", activeMonitorName, placement, "spawn"
+        ]);
     }
 
     function loadSavedView(targetScreen) {
@@ -120,11 +134,12 @@ Singleton {
     }
 
     function discardDraft() {
-        panelWidthOverride = savedView.width;
-        panelHeightOverride = savedView.height;
+        const width = savedView.width;
+        const height = savedView.height;
         textScaleOverride = savedView.textScale;
         iconScaleOverride = savedView.iconScale;
         captureAllowedOverride = savedView.captureAllowed ? 1 : 0;
+        applyWindowSize(width, height);
     }
 
     function openForScreen(target) {
@@ -142,6 +157,7 @@ Singleton {
         clipboardWindow.visible = true;
         listProcess.running = true;
         Qt.callLater(() => {
+            root.positionWindow();
             clipboardList.positionViewAtBeginning();
             search.forceActiveFocus();
         });
@@ -206,6 +222,8 @@ Singleton {
             String(effectiveTextScale), String(effectiveIconScale),
             captureAllowed ? "true" : "false"
         ]);
+        panelWidthOverride = livePanelWidth;
+        panelHeightOverride = livePanelHeight;
         acceptDraftAsSaved();
         settingsMessage = "Saved Clipboard settings for " + activeMonitorName;
     }
@@ -214,17 +232,20 @@ Singleton {
         if (activeMonitorName.length === 0)
             return;
         const wasCaptureAllowed = captureAllowed;
-        panelWidthOverride = clampWidth(BarState.defaultClipboardWidth);
-        panelHeightOverride = clampHeight(BarState.defaultClipboardHeight);
         textScaleOverride = 100;
         iconScaleOverride = 100;
         captureAllowedOverride = 0;
-        if (wasCaptureAllowed) {
-            savedView = Object.assign({}, savedView, { captureAllowed: false });
-            privacyRemapPending = true;
-            queueStateCommand(["set-capture", "clipboard", "false"]);
-        }
-        settingsMessage = "Clipboard defaults loaded for " + activeMonitorName;
+        applyWindowSize(BarState.defaultClipboardWidth, BarState.defaultClipboardHeight);
+        savedView = ({
+            width: panelWidthOverride,
+            height: panelHeightOverride,
+            textScale: 100,
+            iconScale: 100,
+            captureAllowed: false
+        });
+        privacyRemapPending = wasCaptureAllowed;
+        queueStateCommand(["reset-flyout", "clipboard", activeMonitorName]);
+        settingsMessage = "Clipboard defaults restored for " + activeMonitorName;
     }
 
     function copyDisplaySettings(targets) {
@@ -241,12 +262,12 @@ Singleton {
     }
 
     function adjustPanelWidth(delta) {
-        panelWidthOverride = clampWidth(livePanelWidth + delta);
+        applyWindowSize(livePanelWidth + delta, livePanelHeight);
         settingsMessage = "Width " + panelWidthOverride + " px";
     }
 
     function adjustPanelHeight(delta) {
-        panelHeightOverride = clampHeight(livePanelHeight + delta);
+        applyWindowSize(livePanelWidth, livePanelHeight + delta);
         settingsMessage = "Height " + panelHeightOverride + " px";
     }
 
@@ -369,6 +390,7 @@ Singleton {
             clipboardWindow.visible = false;
             Qt.callLater(() => {
                 clipboardWindow.visible = true;
+                root.positionWindow();
                 search.forceActiveFocus();
             });
         }
@@ -382,29 +404,25 @@ Singleton {
         }
     }
 
-    PanelWindow {
+    FloatingWindow {
         id: clipboardWindow
-        WlrLayershell.namespace: "awtarchy-clipboard"
         visible: false
+        title: "Awtarchy Clipboard History"
         color: "transparent"
-        focusable: true
-        aboveWindows: true
-        exclusionMode: ExclusionMode.Ignore
-        implicitWidth: root.livePanelWidth
-        implicitHeight: root.livePanelHeight
-        anchors.top: root.placement !== "bottom"
-        anchors.bottom: root.placement === "bottom"
-        anchors.left: root.placement !== "right"
-        anchors.right: root.placement === "right"
-        margins {
-            top: root.placement === "top" ? root.activeBarSize
-                : (root.placement === "bottom" ? 0
-                    : Math.max(6, Math.round((root.targetScreenHeight - root.livePanelHeight) / 2)))
-            bottom: root.placement === "bottom" ? root.activeBarSize : 0
-            left: root.placement === "left" ? root.activeBarSize
-                : (root.placement === "right" ? 0
-                    : Math.max(6, Math.round((root.targetScreenWidth - root.livePanelWidth) / 2)))
-            right: root.placement === "right" ? root.activeBarSize : 0
+        surfaceFormat.opaque: false
+        implicitWidth: root.configuredPanelWidth
+        implicitHeight: root.configuredPanelHeight
+        minimumSize: Qt.size(root.minimumPanelWidth, root.minimumPanelHeight)
+        maximumSize: Qt.size(root.maximumPanelWidth, root.maximumPanelHeight)
+
+        onClosed: root.close()
+        onVisibleChanged: {
+            if (visible) {
+                Qt.callLater(() => {
+                    root.positionWindow();
+                    search.forceActiveFocus();
+                });
+            }
         }
 
         Rectangle {
@@ -417,31 +435,6 @@ Singleton {
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton
                 onPressed: mouse => mouse.accepted = true
-            }
-
-            DragHandler {
-                target: null
-                acceptedButtons: Qt.RightButton
-                acceptedModifiers: Qt.AltModifier
-
-                onActiveChanged: {
-                    if (active) {
-                        root.resizeStartWidth = root.livePanelWidth;
-                        root.resizeStartHeight = root.livePanelHeight;
-                    }
-                }
-
-                onActiveTranslationChanged: {
-                    if (!active)
-                        return;
-                    const horizontalDirection = root.placement === "right" ? -1 : 1;
-                    const verticalDirection = root.placement === "bottom" ? -1 : 1;
-                    root.panelWidthOverride = root.clampWidth(
-                        root.resizeStartWidth + activeTranslation.x * horizontalDirection);
-                    root.panelHeightOverride = root.clampHeight(
-                        root.resizeStartHeight + activeTranslation.y * verticalDirection);
-                    root.settingsMessage = root.livePanelWidth + " × " + root.livePanelHeight + " px";
-                }
             }
 
             ColumnLayout {
@@ -673,11 +666,6 @@ Singleton {
                     }
                 }
             }
-        }
-
-        onVisibleChanged: {
-            if (visible)
-                Qt.callLater(() => search.forceActiveFocus());
         }
     }
 }
