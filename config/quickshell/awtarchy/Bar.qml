@@ -257,9 +257,6 @@ PanelWindow {
         onTriggered: bar.wsDrawerOpen = false
     }
 
-    // Give every button the owning bar's live monitor settings. Relying on
-    // Window.window inside BarButton left font glyphs at the default size and
-    // their button boxes at 28px when the PanelWindow itself was resized.
     component BarControl: BarButton {
         monitorName: bar.monitorName
         iconScale: bar.iconScale
@@ -714,11 +711,9 @@ PanelWindow {
                 label: Notifications.mutePopups ? "" : ""
                 foreground: Notifications.mutePopups ? Theme.critical : Theme.foreground
                 hoverBackground: Theme.strongHover
-                tooltip: (Notifications.mutePopups
-                    ? "Notification popups muted; history is still collected"
-                    : "Notification popups enabled")
-                    + "\n" + Notifications.historyCount + " in history"
-                    + "\nLeft: open history · Right: mute popups"
+                tooltip: Notifications.mutePopups
+                    ? "Notifications muted\nLeft: open · Right: unmute"
+                    : "Notifications enabled\nLeft: open · Right: mute"
                 onClicked: Notifications.toggleForItem(bar.screen, notificationButton)
                 onRightClicked: Notifications.togglePopupMute()
             }
@@ -927,11 +922,9 @@ PanelWindow {
                 label: Notifications.mutePopups ? "" : ""
                 foreground: Notifications.mutePopups ? Theme.critical : Theme.foreground
                 hoverBackground: Theme.strongHover
-                tooltip: (Notifications.mutePopups
-                    ? "Notification popups muted; history is still collected"
-                    : "Notification popups enabled")
-                    + "\n" + Notifications.historyCount + " in history"
-                    + "\nLeft: open history · Right: mute popups"
+                tooltip: Notifications.mutePopups
+                    ? "Notifications muted\nLeft: open · Right: unmute"
+                    : "Notifications enabled\nLeft: open · Right: mute"
                 onClicked: Notifications.toggleForItem(bar.screen, notificationButtonVertical)
                 onRightClicked: Notifications.togglePopupMute()
             }
