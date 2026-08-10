@@ -577,7 +577,7 @@ Singleton {
                             onClicked: root.saveDisplaySettings()
                         }
                         SettingsButton {
-                            label: ""
+                            label: "󰒃"
                             active: root.vpnOpen
                             textSize: root.scaledIcon(12)
                             horizontalPadding: 10
