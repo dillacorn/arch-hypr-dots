@@ -120,16 +120,19 @@ if awtarchy_quickshell_launcher_rule == nil then
     })
 end
 
--- Retire the first floating-flyout rule from the conversion. It deliberately
--- disabled focus-follows-mouse, which made Escape require a click after the
--- pointer had moved through another application window.
+-- Retire both earlier floating-flyout rule objects. v1 blocked hover focus;
+-- v2 had the correct hover behavior but exposed the compositor's initial map
+-- position before the post-map placement helper could move the window.
 if awtarchy_quickshell_flyout_rule ~= nil then
     pcall(function() awtarchy_quickshell_flyout_rule:set_enabled(false) end)
 end
+if awtarchy_quickshell_flyout_rule_v2 ~= nil then
+    pcall(function() awtarchy_quickshell_flyout_rule_v2:set_enabled(false) end)
+end
 
-if awtarchy_quickshell_flyout_rule_v2 == nil then
-    awtarchy_quickshell_flyout_rule_v2 = hl.window_rule({
-        name = "awtarchy-quickshell-floating-flyouts-v2",
+if awtarchy_quickshell_flyout_rule_v3 == nil then
+    awtarchy_quickshell_flyout_rule_v3 = hl.window_rule({
+        name = "awtarchy-quickshell-floating-flyouts-v3",
         match = { title = "^Awtarchy (Clipboard History|Notification Center|Quick Settings|Network|Bluetooth)$" },
         float = true,
         border_size = 0,
@@ -143,7 +146,7 @@ if awtarchy_quickshell_flyout_rule_v2 == nil then
         opacity = "0 override 0 override 0 override",
     })
 end
-awtarchy_quickshell_flyout_rule_v2:set_enabled(true)
+awtarchy_quickshell_flyout_rule_v3:set_enabled(true)
 
 -- Current Hyprland releases can synthesize an immediate button release while
 -- passing a mouse bind to another layer surface. Track only bar drags in
