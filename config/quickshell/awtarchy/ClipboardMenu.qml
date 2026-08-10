@@ -14,6 +14,11 @@ Singleton {
     property var entries: []
     property string placement: "center"
     property bool settingsOpen: false
+    property bool detailOpen: false
+    property var detailEntry: null
+    property string detailText: ""
+    property bool detailLoading: false
+    property string detailError: ""
     property int panelWidthOverride: -1
     property int panelHeightOverride: -1
     property int textScaleOverride: -1
@@ -152,6 +157,7 @@ Singleton {
         settingsOpen = false;
         settingsPanel.resetCopySelection();
         settingsMessage = "";
+        closeDetail();
         loadSavedView(target);
         search.text = "";
         clipboardWindow.visible = true;
@@ -174,6 +180,7 @@ Singleton {
         settingsOpen = false;
         settingsPanel.resetCopySelection();
         settingsMessage = "";
+        closeDetail();
     }
 
     function toggleFocused() {
@@ -292,8 +299,6 @@ Singleton {
     }
 
     function toggleSettings() {
-        if (settingsOpen && settingsDirty)
-            discardDraft();
         settingsOpen = !settingsOpen;
         settingsPanel.resetCopySelection();
         settingsMessage = "";
@@ -304,6 +309,30 @@ Singleton {
             return;
         selectProcess.exec([backend, "select", String(entry.index)]);
         close();
+    }
+
+    function openDetail(entry) {
+        if (!entry || entry.binary)
+            return;
+        detailEntry = entry;
+        detailText = "";
+        detailError = "";
+        detailLoading = true;
+        detailOpen = true;
+        settingsOpen = false;
+        settingsPanel.resetCopySelection();
+        settingsMessage = "";
+        detailProcess.exec([backend, "decode", String(entry.index)]);
+    }
+
+    function closeDetail() {
+        detailOpen = false;
+        detailEntry = null;
+        detailText = "";
+        detailError = "";
+        detailLoading = false;
+        if (clipboardWindow.visible)
+            Qt.callLater(() => search.forceActiveFocus());
     }
 
     function fuzzyScore(haystack, query) {
@@ -368,6 +397,31 @@ Singleton {
         }
     }
 
+    Process {
+        id: detailProcess
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.detailText = text;
+                root.detailLoading = false;
+                if (root.detailOpen)
+                    Qt.callLater(() => detailTextArea.forceActiveFocus());
+            }
+        }
+        stderr: StdioCollector {
+            onStreamFinished: {
+                const errorText = text.trim();
+                if (errorText.length > 0)
+                    root.detailError = errorText.split("\n")[0];
+            }
+        }
+        onExited: {
+            if (root.detailLoading)
+                root.detailLoading = false;
+            if (root.detailOpen && root.detailText.length === 0 && root.detailError.length === 0)
+                root.detailError = "Clipboard text is empty or unavailable";
+        }
+    }
+
     Process { id: selectProcess }
 
     Process {
@@ -391,7 +445,10 @@ Singleton {
             Qt.callLater(() => {
                 clipboardWindow.visible = true;
                 root.positionWindow();
-                search.forceActiveFocus();
+                if (root.detailOpen)
+                    detailTextArea.forceActiveFocus();
+                else
+                    search.forceActiveFocus();
             });
         }
     }
@@ -420,7 +477,10 @@ Singleton {
             if (visible) {
                 Qt.callLater(() => {
                     root.positionWindow();
-                    search.forceActiveFocus();
+                    if (root.detailOpen)
+                        detailTextArea.forceActiveFocus();
+                    else
+                        search.forceActiveFocus();
                 });
             }
         }
@@ -465,6 +525,8 @@ Singleton {
                             id: search
                             Layout.fillWidth: true
                             Layout.fillHeight: true
+                            visible: !root.detailOpen
+                            enabled: visible
                             color: Theme.foreground
                             selectionColor: Theme.focus
                             selectedTextColor: Theme.foreground
@@ -498,6 +560,11 @@ Singleton {
                                 clipboardList.currentIndex = 0;
                                 Qt.callLater(() => clipboardList.positionViewAtBeginning());
                             }
+                        }
+
+                        Item {
+                            Layout.fillWidth: true
+                            visible: root.detailOpen
                         }
 
                         Rectangle {
@@ -594,6 +661,7 @@ Singleton {
                     id: clipboardList
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    visible: !root.detailOpen
                     model: ScriptModel { values: root.filteredEntries() }
                     clip: true
                     currentIndex: count > 0 ? 0 : -1
@@ -609,12 +677,15 @@ Singleton {
                         height: modelData.thumb && modelData.thumb.length > 0
                             ? thumbnailSize + 20
                             : Math.max(40, Math.round(44 * root.effectiveTextScale / 100))
-                        color: ListView.isCurrentItem ? Theme.focus : (rowMouse.containsMouse ? Theme.subtleHover : "transparent")
+                        color: ListView.isCurrentItem ? Theme.focus
+                            : ((rowMouse.containsMouse || viewMouse.containsMouse)
+                                ? Theme.subtleHover : "transparent")
 
                         RowLayout {
                             anchors.fill: parent
                             anchors.leftMargin: 10
-                            anchors.rightMargin: clipboardScrollBar.visible ? 20 : 10
+                            anchors.rightMargin: (clipboardScrollBar.visible ? 20 : 10)
+                                + (viewButton.visible ? 36 : 0)
                             spacing: 12
 
                             Image {
@@ -654,6 +725,41 @@ Singleton {
                                 wheel.accepted = true;
                             }
                         }
+
+                        Rectangle {
+                            id: viewButton
+                            visible: !row.modelData.binary
+                                && (rowMouse.containsMouse || viewMouse.containsMouse)
+                            width: 28
+                            height: 28
+                            anchors.right: parent.right
+                            anchors.rightMargin: clipboardScrollBar.visible ? 18 : 7
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: viewMouse.containsMouse ? Theme.focus : Theme.active
+                            border.width: 1
+                            border.color: Theme.focus
+                            z: 20
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: ""
+                                color: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Math.max(9,
+                                    Math.round(12 * root.effectiveIconScale / 100))
+                            }
+
+                            MouseArea {
+                                id: viewMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: mouse => {
+                                    root.openDetail(row.modelData);
+                                    mouse.accepted = true;
+                                }
+                            }
+                        }
                     }
 
                     ListScrollBar {
@@ -663,6 +769,147 @@ Singleton {
                         anchors.right: parent.right
                         flickable: clipboardList
                         z: 10
+                    }
+                }
+
+                Item {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    visible: root.detailOpen
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 0
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 36
+                            color: Theme.popupButton
+                            border.width: 0
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
+                                spacing: 6
+
+                                SettingsButton {
+                                    label: "← Back"
+                                    textSize: Math.max(9,
+                                        Math.round(10 * root.effectiveTextScale / 100))
+                                    onClicked: root.closeDetail()
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: root.detailLoading
+                                        ? "Loading full clipboard text…" : "Full clipboard text"
+                                    color: Theme.foreground
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Math.max(9,
+                                        Math.round(11 * root.effectiveTextScale / 100))
+                                    font.weight: Font.Medium
+                                    elide: Text.ElideRight
+                                }
+
+                                SettingsButton {
+                                    label: "Select All"
+                                    available: !root.detailLoading && root.detailText.length > 0
+                                    textSize: Math.max(9,
+                                        Math.round(10 * root.effectiveTextScale / 100))
+                                    onClicked: detailTextArea.selectAll()
+                                }
+
+                                SettingsButton {
+                                    label: "Copy Selected"
+                                    available: !root.detailLoading
+                                        && detailTextArea.selectionStart !== detailTextArea.selectionEnd
+                                    textSize: Math.max(9,
+                                        Math.round(10 * root.effectiveTextScale / 100))
+                                    onClicked: detailTextArea.copy()
+                                }
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 10
+                            Layout.rightMargin: 10
+                            Layout.topMargin: 6
+                            Layout.bottomMargin: 6
+                            text: "Select text with the mouse · Ctrl+C or Copy Selected"
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Math.max(8,
+                                Math.round(9 * root.effectiveTextScale / 100))
+                            elide: Text.ElideRight
+                        }
+
+                        Flickable {
+                            id: detailFlick
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            contentWidth: width
+                            contentHeight: Math.max(height, detailTextArea.height + 20)
+                            clip: true
+                            boundsBehavior: Flickable.StopAtBounds
+
+                            TextEdit {
+                                id: detailTextArea
+                                x: 10
+                                y: 10
+                                width: Math.max(1, detailFlick.width
+                                    - (detailScrollBar.visible ? 34 : 20))
+                                height: Math.max(detailFlick.height - 20, contentHeight)
+                                text: root.detailText
+                                readOnly: true
+                                selectByMouse: true
+                                persistentSelection: true
+                                textFormat: TextEdit.PlainText
+                                wrapMode: TextEdit.Wrap
+                                color: Theme.foreground
+                                selectionColor: Theme.focus
+                                selectedTextColor: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Math.max(9,
+                                    Math.round(13 * root.effectiveTextScale / 100))
+
+                                Keys.onPressed: event => {
+                                    if ((event.modifiers & Qt.ControlModifier)
+                                        && event.key === Qt.Key_C) {
+                                        copy();
+                                        event.accepted = true;
+                                    } else if (event.key === Qt.Key_Escape) {
+                                        root.closeDetail();
+                                        event.accepted = true;
+                                    }
+                                }
+                            }
+
+                            Text {
+                                anchors.centerIn: parent
+                                visible: root.detailLoading
+                                    || root.detailError.length > 0
+                                    || (!root.detailLoading && root.detailText.length === 0)
+                                text: root.detailLoading ? "Loading…"
+                                    : (root.detailError.length > 0
+                                        ? root.detailError : "Clipboard text is empty")
+                                color: Theme.muted
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Math.max(9,
+                                    Math.round(11 * root.effectiveTextScale / 100))
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+
+                            ListScrollBar {
+                                id: detailScrollBar
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                anchors.right: parent.right
+                                flickable: detailFlick
+                                z: 10
+                            }
+                        }
                     }
                 }
             }
