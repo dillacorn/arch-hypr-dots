@@ -100,6 +100,20 @@ list_items() {
     rm -f -- "$tmp_json"
 }
 
+decode_item() {
+    local index="${1:-}"
+    local raw
+
+    [[ "$index" =~ ^[0-9]+$ ]] || exit 2
+    [[ -r "$RAW_FILE" ]] || exit 1
+
+    raw="$(sed -n "$((index + 1))p" "$RAW_FILE")"
+    [[ -n "$raw" ]] || exit 1
+    is_binary_row "$raw" && exit 3
+
+    cliphist decode <<<"$raw"
+}
+
 select_item() {
     local index="${1:-}"
     local raw
@@ -115,9 +129,10 @@ select_item() {
 
 case "${1:-list}" in
     list) list_items ;;
+    decode) decode_item "${2:-}" ;;
     select) select_item "${2:-}" ;;
     *)
-        printf 'usage: %s [list|select INDEX]\n' "$0" >&2
+        printf 'usage: %s [list|decode INDEX|select INDEX]\n' "$0" >&2
         exit 2
         ;;
 esac
