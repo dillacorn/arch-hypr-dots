@@ -39,8 +39,15 @@ case "$app" in
         window_name='SteamChat'
         url='https://steamcommunity.com/chat'
         ;;
+    public-ip)
+        profile_name='awtarchy-public-ip'
+        profile_dir='awtarchy-public-ip-profile'
+        wm_class='awtarchy-public-ip'
+        window_name='AwtarchyPublicIP'
+        url='https://wtfismyip.com/'
+        ;;
     *)
-        printf 'Usage: %s {google-messages|telegram|fluxer|steam-chat}\n' "${0##*/}" >&2
+        printf 'Usage: %s {google-messages|telegram|fluxer|steam-chat|public-ip}\n' "${0##*/}" >&2
         exit 2
         ;;
 esac
