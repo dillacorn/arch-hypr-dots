@@ -490,6 +490,8 @@ Singleton {
             anchors.fill: parent
             color: Theme.popupBackground
             radius: 0
+            focus: true
+            Keys.onEscapePressed: root.close()
 
             MouseArea {
                 anchors.fill: parent
@@ -616,6 +618,29 @@ Singleton {
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: root.toggleSettings()
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.preferredWidth: 28
+                            Layout.preferredHeight: 26
+                            color: closeMouse.containsMouse ? Theme.focus : "transparent"
+                            border.width: 0
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "×"
+                                color: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 15
+                            }
+
+                            MouseArea {
+                                id: closeMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.close()
                             }
                         }
                     }
