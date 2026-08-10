@@ -73,6 +73,16 @@ ShellRoot {
         return null;
     }
 
+    function flyoutWidth(surface) {
+        const flyout = flyoutByName(surface);
+        return flyout ? flyout.livePanelWidth : -1;
+    }
+
+    function flyoutHeight(surface) {
+        const flyout = flyoutByName(surface);
+        return flyout ? flyout.livePanelHeight : -1;
+    }
+
     function beginFlyoutResize(surface) {
         const flyout = flyoutByName(surface);
         if (!flyout)
@@ -220,6 +230,8 @@ ShellRoot {
         function previewBarDrag(monitor: string, candidate: string): void { root.previewBarDrag(monitor, candidate); }
         function finishBarDrag(monitor: string, candidate: string): void { root.finishBarDrag(monitor, candidate); }
         function cancelBarDrag(): void { root.cancelBarDrag(); }
+        function flyoutWidth(surface: string): int { return root.flyoutWidth(surface); }
+        function flyoutHeight(surface: string): int { return root.flyoutHeight(surface); }
         function beginFlyoutResize(surface: string): void { root.beginFlyoutResize(surface); }
         function previewFlyoutResize(surface: string, dx: int, dy: int): void { root.previewFlyoutResize(surface, dx, dy); }
         function finishFlyoutResize(surface: string, dx: int, dy: int): void { root.finishFlyoutResize(surface, dx, dy); }
