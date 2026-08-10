@@ -10,6 +10,7 @@ Singleton {
     readonly property string statePath: (Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")) + "/awtarchy/quickshell-state.json"
     readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
     readonly property string idleStatePath: runtimeDir + "/awtarchy-quickshell-idle-hidden"
+    readonly property int explicitSaveVersion: 2
     readonly property int defaultLauncherWidth: 420
     readonly property int defaultLauncherHeight: 582
     readonly property int defaultAppTextSize: 14
@@ -231,9 +232,12 @@ Singleton {
         const rawView = (d.launcher_sizes || ({}))[name];
         const view = rawView && typeof rawView === "object" && !Array.isArray(rawView)
             ? rawView : ({});
-        // Only an explicit save, or the old locked flag, makes a launcher view
-        // persistent. Historical unlocked drafts must not survive a relaunch.
-        const saved = view.saved === true || view.locked === true;
+        // Only a save written by the current explicit-save implementation, or
+        // the old intentional locked flag, may survive reopening the launcher.
+        // Historical auto-written drafts are deliberately ignored.
+        const saved = (view.saved === true
+                && Number(view.save_version || 0) >= explicitSaveVersion)
+            || view.locked === true;
         const rawWidth = Number(view.width);
         const rawHeight = Number(view.height);
         const validWidth = Number.isFinite(rawWidth) && rawWidth >= 1 && rawWidth <= 16384;
@@ -306,12 +310,26 @@ Singleton {
         const raw = views[name];
         const view = raw && typeof raw === "object" && !Array.isArray(raw)
             ? raw : ({});
+        const explicitlySaved = view.saved === true
+            && Number(view.save_version || 0) >= explicitSaveVersion;
+
+        if (!explicitlySaved) {
+            return ({
+                saved: false,
+                width: defaultWidth,
+                height: defaultHeight,
+                textScale: 100,
+                iconScale: 100
+            });
+        }
+
         const width = Number(view.width);
         const height = Number(view.height);
         const textScale = Number(view.text_scale === undefined ? 100 : view.text_scale);
         const iconScale = Number(view.icon_scale === undefined ? 100 : view.icon_scale);
 
         return ({
+            saved: true,
             width: Number.isFinite(width) && width >= 1 && width <= 16384
                 ? Math.round(width) : defaultWidth,
             height: Number.isFinite(height) && height >= 1 && height <= 16384
@@ -334,7 +352,10 @@ Singleton {
     }
 
     function notificationPopupLimit() {
-        const value = Number(data().notification_popup_limit);
+        const d = data();
+        if (Number(d.notification_popup_limit_save_version || 0) < explicitSaveVersion)
+            return defaultNotificationPopupLimit;
+        const value = Number(d.notification_popup_limit);
         if (!Number.isFinite(value))
             return defaultNotificationPopupLimit;
         return Math.max(1, Math.min(20, Math.round(value)));
