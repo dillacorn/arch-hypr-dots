@@ -12,6 +12,8 @@ requested_w="${5:-}"
 requested_h="${6:-}"
 anchor="${7:--1}"
 state_file="${XDG_CACHE_HOME:-$HOME/.cache}/awtarchy/quickshell-state.json"
+reference_screen_w=1920
+reference_screen_h=1080
 
 [[ -n "$surface" && -n "$monitor" ]] || {
     printf 'quickshell_flyout_position.sh: surface and monitor are required\n' >&2
@@ -253,6 +255,26 @@ read -r mon_x mon_y mon_w mon_h < <(
     ' <<<"$mon"
 )
 
+# Scale unsaved defaults from the 1920x1080 @ 1.0 reference canvas using the
+# monitor's logical dimensions. Hyprland's scale has already been removed above,
+# so compositor/UI scaling is not applied twice.
+read -r adaptive_default_w adaptive_default_h < <(
+    awk \
+        -v monitor_w="$mon_w" \
+        -v monitor_h="$mon_h" \
+        -v reference_screen_w="$reference_screen_w" \
+        -v reference_screen_h="$reference_screen_h" \
+        -v reference_w="$default_w" \
+        -v reference_h="$default_h" '
+        BEGIN {
+            width_scale = monitor_w / reference_screen_w
+            height_scale = monitor_h / reference_screen_h
+            factor = width_scale < height_scale ? width_scale : height_scale
+            printf "%d\t%d\n", int(reference_w * factor + 0.5), int(reference_h * factor + 0.5)
+        }
+    '
+)
+
 horizontal_bar=28
 vertical_bar=36
 if [[ -s "$state_file" ]] && jq -e '.' "$state_file" >/dev/null 2>&1; then
@@ -280,15 +302,15 @@ clamp_dimension() {
 resize_on_apply=0
 case "$action" in
     spawn)
-        desired_w="$default_w"
-        desired_h="$default_h"
+        desired_w="$adaptive_default_w"
+        desired_h="$adaptive_default_h"
         if [[ -s "$state_file" ]] && jq -e '.' "$state_file" >/dev/null 2>&1; then
             read -r desired_w desired_h < <(
                 jq -r \
                     --arg key "$state_key" \
                     --arg monitor "$monitor" \
-                    --argjson default_w "$default_w" \
-                    --argjson default_h "$default_h" '
+                    --argjson default_w "$adaptive_default_w" \
+                    --argjson default_h "$adaptive_default_h" '
                     def number_or_zero: try tonumber catch 0;
                     ((.[$key] // {})[$monitor] // {}) as $view
                     | (($view.width // 0) | number_or_zero) as $width
