@@ -17,6 +17,9 @@ ShellRoot {
     property bool barDragActive: false
     property string barDragMonitor: ""
     property string barDragCandidate: ""
+    property string flyoutResizeSurface: ""
+    property int flyoutResizeStartWidth: 0
+    property int flyoutResizeStartHeight: 0
 
     function validBarEdge(edge) {
         return ["top", "bottom", "left", "right"].indexOf(edge) >= 0;
@@ -58,6 +61,51 @@ ShellRoot {
                 candidate
             ]);
         }
+    }
+
+    function flyoutByName(surface) {
+        if (surface === "clipboard")
+            return ClipboardMenu;
+        if (surface === "notifications")
+            return Notifications;
+        if (surface === "quicksettings")
+            return QuickSettings;
+        return null;
+    }
+
+    function beginFlyoutResize(surface) {
+        const flyout = flyoutByName(surface);
+        if (!flyout)
+            return;
+        flyoutResizeSurface = surface;
+        flyoutResizeStartWidth = flyout.livePanelWidth;
+        flyoutResizeStartHeight = flyout.livePanelHeight;
+    }
+
+    function previewFlyoutResize(surface, dx, dy) {
+        if (flyoutResizeSurface !== surface)
+            return;
+        const flyout = flyoutByName(surface);
+        if (!flyout)
+            return;
+        const horizontalDirection = flyout.placement === "right" ? -1 : 1;
+        const verticalDirection = flyout.placement === "bottom" ? -1 : 1;
+        flyout.panelWidthOverride = flyout.clampWidth(
+            flyoutResizeStartWidth + Number(dx) * horizontalDirection);
+        flyout.panelHeightOverride = flyout.clampHeight(
+            flyoutResizeStartHeight + Number(dy) * verticalDirection);
+        flyout.settingsMessage = flyout.livePanelWidth + " × " + flyout.livePanelHeight + " px";
+    }
+
+    function finishFlyoutResize(surface, dx, dy) {
+        previewFlyoutResize(surface, dx, dy);
+        cancelFlyoutResize();
+    }
+
+    function cancelFlyoutResize() {
+        flyoutResizeSurface = "";
+        flyoutResizeStartWidth = 0;
+        flyoutResizeStartHeight = 0;
     }
 
     // Force singleton construction before the control IPC endpoint reports ready.
@@ -172,5 +220,9 @@ ShellRoot {
         function previewBarDrag(monitor: string, candidate: string): void { root.previewBarDrag(monitor, candidate); }
         function finishBarDrag(monitor: string, candidate: string): void { root.finishBarDrag(monitor, candidate); }
         function cancelBarDrag(): void { root.cancelBarDrag(); }
+        function beginFlyoutResize(surface: string): void { root.beginFlyoutResize(surface); }
+        function previewFlyoutResize(surface: string, dx: int, dy: int): void { root.previewFlyoutResize(surface, dx, dy); }
+        function finishFlyoutResize(surface: string, dx: int, dy: int): void { root.finishFlyoutResize(surface, dx, dy); }
+        function cancelFlyoutResize(): void { root.cancelFlyoutResize(); }
     }
 }
