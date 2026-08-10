@@ -180,108 +180,39 @@ Item {
             spacing: 5
             visible: !root.copyOpen
 
-            Text {
-                text: "Width"
-                color: Theme.foreground
-                font.family: Theme.fontFamily
-                font.pixelSize: 11
-            }
-
+            Text { text: "Width"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 11 }
             Rectangle {
-                Layout.preferredWidth: 26
-                Layout.preferredHeight: 24
+                Layout.preferredWidth: 26; Layout.preferredHeight: 24
                 color: widthMinusMouse.containsMouse ? Theme.focus : Theme.subtleHover
-                opacity: root.panelWidth > root.minimumWidth ? 1 : 0.4
-                border.width: 0
+                opacity: root.panelWidth > root.minimumWidth ? 1 : 0.4; border.width: 0
                 Text { anchors.centerIn: parent; text: "−"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
-                MouseArea {
-                    id: widthMinusMouse
-                    anchors.fill: parent
-                    enabled: root.panelWidth > root.minimumWidth
-                    hoverEnabled: enabled
-                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: root.widthAdjustmentRequested(-40)
-                }
+                MouseArea { id: widthMinusMouse; anchors.fill: parent; enabled: root.panelWidth > root.minimumWidth; hoverEnabled: enabled; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: root.widthAdjustmentRequested(-40) }
             }
-
-            Text {
-                Layout.preferredWidth: 44
-                horizontalAlignment: Text.AlignHCenter
-                text: root.panelWidth
-                color: Theme.foreground
-                font.family: Theme.fontFamily
-                font.pixelSize: 10
-            }
-
+            Text { Layout.preferredWidth: 44; horizontalAlignment: Text.AlignHCenter; text: root.panelWidth; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 10 }
             Rectangle {
-                Layout.preferredWidth: 26
-                Layout.preferredHeight: 24
+                Layout.preferredWidth: 26; Layout.preferredHeight: 24
                 color: widthPlusMouse.containsMouse ? Theme.focus : Theme.subtleHover
-                opacity: root.panelWidth < root.maximumWidth ? 1 : 0.4
-                border.width: 0
+                opacity: root.panelWidth < root.maximumWidth ? 1 : 0.4; border.width: 0
                 Text { anchors.centerIn: parent; text: "+"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
-                MouseArea {
-                    id: widthPlusMouse
-                    anchors.fill: parent
-                    enabled: root.panelWidth < root.maximumWidth
-                    hoverEnabled: enabled
-                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: root.widthAdjustmentRequested(40)
-                }
+                MouseArea { id: widthPlusMouse; anchors.fill: parent; enabled: root.panelWidth < root.maximumWidth; hoverEnabled: enabled; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: root.widthAdjustmentRequested(40) }
             }
-
             Item { Layout.preferredWidth: 8 }
-
-            Text {
-                text: "Height"
-                color: Theme.foreground
-                font.family: Theme.fontFamily
-                font.pixelSize: 11
-            }
-
+            Text { text: "Height"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 11 }
             Rectangle {
-                Layout.preferredWidth: 26
-                Layout.preferredHeight: 24
+                Layout.preferredWidth: 26; Layout.preferredHeight: 24
                 color: heightMinusMouse.containsMouse ? Theme.focus : Theme.subtleHover
-                opacity: root.panelHeight > root.minimumHeight ? 1 : 0.4
-                border.width: 0
+                opacity: root.panelHeight > root.minimumHeight ? 1 : 0.4; border.width: 0
                 Text { anchors.centerIn: parent; text: "−"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
-                MouseArea {
-                    id: heightMinusMouse
-                    anchors.fill: parent
-                    enabled: root.panelHeight > root.minimumHeight
-                    hoverEnabled: enabled
-                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: root.heightAdjustmentRequested(-40)
-                }
+                MouseArea { id: heightMinusMouse; anchors.fill: parent; enabled: root.panelHeight > root.minimumHeight; hoverEnabled: enabled; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: root.heightAdjustmentRequested(-40) }
             }
-
-            Text {
-                Layout.preferredWidth: 44
-                horizontalAlignment: Text.AlignHCenter
-                text: root.panelHeight
-                color: Theme.foreground
-                font.family: Theme.fontFamily
-                font.pixelSize: 10
-            }
-
+            Text { Layout.preferredWidth: 44; horizontalAlignment: Text.AlignHCenter; text: root.panelHeight; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 10 }
             Rectangle {
-                Layout.preferredWidth: 26
-                Layout.preferredHeight: 24
+                Layout.preferredWidth: 26; Layout.preferredHeight: 24
                 color: heightPlusMouse.containsMouse ? Theme.focus : Theme.subtleHover
-                opacity: root.panelHeight < root.maximumHeight ? 1 : 0.4
-                border.width: 0
+                opacity: root.panelHeight < root.maximumHeight ? 1 : 0.4; border.width: 0
                 Text { anchors.centerIn: parent; text: "+"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
-                MouseArea {
-                    id: heightPlusMouse
-                    anchors.fill: parent
-                    enabled: root.panelHeight < root.maximumHeight
-                    hoverEnabled: enabled
-                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: root.heightAdjustmentRequested(40)
-                }
+                MouseArea { id: heightPlusMouse; anchors.fill: parent; enabled: root.panelHeight < root.maximumHeight; hoverEnabled: enabled; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: root.heightAdjustmentRequested(40) }
             }
-
             Item { Layout.fillWidth: true }
         }
 
@@ -292,97 +223,38 @@ Item {
             visible: !root.copyOpen
 
             Text { text: "Icons"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 11 }
-
             Rectangle {
-                Layout.preferredWidth: 26
-                Layout.preferredHeight: 24
+                Layout.preferredWidth: 26; Layout.preferredHeight: 24
                 color: iconMinusMouse.containsMouse ? Theme.focus : Theme.subtleHover
-                opacity: root.iconScale > 50 ? 1 : 0.4
-                border.width: 0
+                opacity: root.iconScale > 50 ? 1 : 0.4; border.width: 0
                 Text { anchors.centerIn: parent; text: "−"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
-                MouseArea {
-                    id: iconMinusMouse
-                    anchors.fill: parent
-                    enabled: root.iconScale > 50
-                    hoverEnabled: enabled
-                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: root.iconScaleAdjustmentRequested(-10)
-                }
+                MouseArea { id: iconMinusMouse; anchors.fill: parent; enabled: root.iconScale > 50; hoverEnabled: enabled; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: root.iconScaleAdjustmentRequested(-10) }
             }
-
-            Text {
-                Layout.preferredWidth: 42
-                horizontalAlignment: Text.AlignHCenter
-                text: root.iconScale + "%"
-                color: Theme.foreground
-                font.family: Theme.fontFamily
-                font.pixelSize: 10
-            }
-
+            Text { Layout.preferredWidth: 42; horizontalAlignment: Text.AlignHCenter; text: root.iconScale + "%"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 10 }
             Rectangle {
-                Layout.preferredWidth: 26
-                Layout.preferredHeight: 24
+                Layout.preferredWidth: 26; Layout.preferredHeight: 24
                 color: iconPlusMouse.containsMouse ? Theme.focus : Theme.subtleHover
-                opacity: root.iconScale < 200 ? 1 : 0.4
-                border.width: 0
+                opacity: root.iconScale < 200 ? 1 : 0.4; border.width: 0
                 Text { anchors.centerIn: parent; text: "+"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
-                MouseArea {
-                    id: iconPlusMouse
-                    anchors.fill: parent
-                    enabled: root.iconScale < 200
-                    hoverEnabled: enabled
-                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: root.iconScaleAdjustmentRequested(10)
-                }
+                MouseArea { id: iconPlusMouse; anchors.fill: parent; enabled: root.iconScale < 200; hoverEnabled: enabled; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: root.iconScaleAdjustmentRequested(10) }
             }
-
             Item { Layout.preferredWidth: 8 }
-
             Text { text: "Text"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 11 }
-
             Rectangle {
-                Layout.preferredWidth: 26
-                Layout.preferredHeight: 24
+                Layout.preferredWidth: 26; Layout.preferredHeight: 24
                 color: textMinusMouse.containsMouse ? Theme.focus : Theme.subtleHover
-                opacity: root.textScale > 50 ? 1 : 0.4
-                border.width: 0
+                opacity: root.textScale > 50 ? 1 : 0.4; border.width: 0
                 Text { anchors.centerIn: parent; text: "−"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
-                MouseArea {
-                    id: textMinusMouse
-                    anchors.fill: parent
-                    enabled: root.textScale > 50
-                    hoverEnabled: enabled
-                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: root.textScaleAdjustmentRequested(-10)
-                }
+                MouseArea { id: textMinusMouse; anchors.fill: parent; enabled: root.textScale > 50; hoverEnabled: enabled; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: root.textScaleAdjustmentRequested(-10) }
             }
-
-            Text {
-                Layout.preferredWidth: 42
-                horizontalAlignment: Text.AlignHCenter
-                text: root.textScale + "%"
-                color: Theme.foreground
-                font.family: Theme.fontFamily
-                font.pixelSize: 10
-            }
-
+            Text { Layout.preferredWidth: 42; horizontalAlignment: Text.AlignHCenter; text: root.textScale + "%"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 10 }
             Rectangle {
-                Layout.preferredWidth: 26
-                Layout.preferredHeight: 24
+                Layout.preferredWidth: 26; Layout.preferredHeight: 24
                 color: textPlusMouse.containsMouse ? Theme.focus : Theme.subtleHover
-                opacity: root.textScale < 200 ? 1 : 0.4
-                border.width: 0
+                opacity: root.textScale < 200 ? 1 : 0.4; border.width: 0
                 Text { anchors.centerIn: parent; text: "+"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 13 }
-                MouseArea {
-                    id: textPlusMouse
-                    anchors.fill: parent
-                    enabled: root.textScale < 200
-                    hoverEnabled: enabled
-                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: root.textScaleAdjustmentRequested(10)
-                }
+                MouseArea { id: textPlusMouse; anchors.fill: parent; enabled: root.textScale < 200; hoverEnabled: enabled; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: root.textScaleAdjustmentRequested(10) }
             }
-
             Item { Layout.fillWidth: true }
         }
 
@@ -391,39 +263,13 @@ Item {
             Layout.preferredHeight: 28
             spacing: 6
             visible: !root.copyOpen && root.effectiveShowCaptureControl
-
-            Text {
-                Layout.fillWidth: true
-                text: "Allow in screenshots and screen recordings"
-                color: Theme.foreground
-                font.family: Theme.fontFamily
-                font.pixelSize: 11
-                elide: Text.ElideRight
-            }
-
+            Text { Layout.fillWidth: true; text: "Allow in screenshots and screen recordings"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 11; elide: Text.ElideRight }
             Rectangle {
-                Layout.preferredWidth: 64
-                Layout.preferredHeight: 24
-                color: root.effectiveCaptureAllowed ? Theme.focus
-                    : (captureMouse.containsMouse ? Theme.subtleHover : "transparent")
-                border.width: 1
-                border.color: Theme.focus
-
-                Text {
-                    anchors.centerIn: parent
-                    text: root.effectiveCaptureAllowed ? "On" : "Off"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 11
-                }
-
-                MouseArea {
-                    id: captureMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.toggleCaptureControl()
-                }
+                Layout.preferredWidth: 64; Layout.preferredHeight: 24
+                color: root.effectiveCaptureAllowed ? Theme.focus : (captureMouse.containsMouse ? Theme.subtleHover : "transparent")
+                border.width: 1; border.color: Theme.focus
+                Text { anchors.centerIn: parent; text: root.effectiveCaptureAllowed ? "On" : "Off"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 11 }
+                MouseArea { id: captureMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleCaptureControl() }
             }
         }
 
@@ -441,219 +287,70 @@ Item {
             Layout.preferredHeight: 28
             spacing: 6
             visible: !root.copyOpen
-
             Rectangle {
-                Layout.preferredWidth: 142
-                Layout.preferredHeight: 24
-                color: copyOpenMouse.containsMouse ? Theme.focus : Theme.subtleHover
-                border.width: 0
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "Copy to Displays…"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 11
-                }
-
+                Layout.preferredWidth: 142; Layout.preferredHeight: 24
+                color: copyOpenMouse.containsMouse ? Theme.focus : Theme.subtleHover; border.width: 0
+                Text { anchors.centerIn: parent; text: "Copy to Displays…"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 11 }
                 MouseArea {
-                    id: copyOpenMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        root.copyTargets = ({});
-                        root.copySelectionRevision++;
-                        root.copyOpen = true;
-                    }
+                    id: copyOpenMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                    onClicked: { root.copyTargets = ({}); root.copySelectionRevision++; root.copyOpen = true; }
                 }
             }
-
-            Text {
-                Layout.fillWidth: true
-                visible: root.effectiveMessage.length > 0
-                text: root.effectiveMessage
-                color: Theme.muted
-                font.family: Theme.fontFamily
-                font.pixelSize: 9
-                elide: Text.ElideRight
-            }
+            Text { Layout.fillWidth: true; visible: root.effectiveMessage.length > 0; text: root.effectiveMessage; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: 9; elide: Text.ElideRight }
         }
 
         RowLayout {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 28
-            spacing: 6
-            visible: root.copyOpen
-
+            Layout.fillWidth: true; Layout.preferredHeight: 28; spacing: 6; visible: root.copyOpen
             Rectangle {
-                Layout.preferredWidth: 62
-                Layout.preferredHeight: 24
-                color: copyBackMouse.containsMouse ? Theme.focus : Theme.subtleHover
-                border.width: 0
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "Back"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 11
-                }
-
-                MouseArea {
-                    id: copyBackMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.resetCopySelection()
-                }
+                Layout.preferredWidth: 62; Layout.preferredHeight: 24
+                color: copyBackMouse.containsMouse ? Theme.focus : Theme.subtleHover; border.width: 0
+                Text { anchors.centerIn: parent; text: "Back"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 11 }
+                MouseArea { id: copyBackMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.resetCopySelection() }
             }
-
-            Text {
-                Layout.fillWidth: true
-                text: "Copy current draft to displays"
-                color: Theme.foreground
-                font.family: Theme.fontFamily
-                font.pixelSize: 10
-                horizontalAlignment: Text.AlignRight
-            }
+            Text { Layout.fillWidth: true; text: "Copy current draft to displays"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 10; horizontalAlignment: Text.AlignRight }
         }
 
         Flickable {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 28
-            visible: root.copyOpen
-            clip: true
-            contentWidth: Math.max(width, copyTargetRow.width)
-            contentHeight: height
-            flickableDirection: Flickable.HorizontalFlick
-            boundsBehavior: Flickable.StopAtBounds
-
+            Layout.fillWidth: true; Layout.preferredHeight: 28; visible: root.copyOpen; clip: true
+            contentWidth: Math.max(width, copyTargetRow.width); contentHeight: height
+            flickableDirection: Flickable.HorizontalFlick; boundsBehavior: Flickable.StopAtBounds
             Row {
-                id: copyTargetRow
-                height: parent.height
-                width: childrenRect.width
-                spacing: 4
-
+                id: copyTargetRow; height: parent.height; width: childrenRect.width; spacing: 4
                 Rectangle {
-                    visible: root.otherMonitorNames.length > 0
-                    width: visible ? 96 : 0
-                    height: 24
-                    color: root.allTargetsSelected() ? Theme.focus
-                        : (allTargetsMouse.containsMouse ? Theme.subtleHover : "transparent")
-                    border.width: 1
-                    border.color: Theme.focus
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: (root.allTargetsSelected() ? "✓ " : "") + "All displays"
-                        color: Theme.foreground
-                        font.family: Theme.fontFamily
-                        font.pixelSize: 10
-                    }
-
-                    MouseArea {
-                        id: allTargetsMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.toggleAllTargets()
-                    }
+                    visible: root.otherMonitorNames.length > 0; width: visible ? 96 : 0; height: 24
+                    color: root.allTargetsSelected() ? Theme.focus : (allTargetsMouse.containsMouse ? Theme.subtleHover : "transparent")
+                    border.width: 1; border.color: Theme.focus
+                    Text { anchors.centerIn: parent; text: (root.allTargetsSelected() ? "✓ " : "") + "All displays"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 10 }
+                    MouseArea { id: allTargetsMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleAllTargets() }
                 }
-
                 Repeater {
                     model: root.otherMonitorNames
-
                     Rectangle {
                         id: targetButton
                         required property var modelData
                         readonly property string targetName: String(modelData)
-                        width: Math.max(72, Math.min(140, targetLabel.implicitWidth + 24))
-                        height: 24
-                        color: root.targetSelected(targetName) ? Theme.focus
-                            : (targetMouse.containsMouse ? Theme.subtleHover : "transparent")
-                        border.width: 1
-                        border.color: Theme.focus
-
-                        Text {
-                            id: targetLabel
-                            anchors.centerIn: parent
-                            width: parent.width - 12
-                            text: (root.targetSelected(targetButton.targetName) ? "✓ " : "")
-                                + targetButton.targetName
-                            color: Theme.foreground
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 10
-                            horizontalAlignment: Text.AlignHCenter
-                            elide: Text.ElideRight
-                        }
-
-                        MouseArea {
-                            id: targetMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.setTargetSelected(targetButton.targetName,
-                                !root.targetSelected(targetButton.targetName))
-                        }
+                        width: Math.max(72, Math.min(140, targetLabel.implicitWidth + 24)); height: 24
+                        color: root.targetSelected(targetName) ? Theme.focus : (targetMouse.containsMouse ? Theme.subtleHover : "transparent")
+                        border.width: 1; border.color: Theme.focus
+                        Text { id: targetLabel; anchors.centerIn: parent; width: parent.width - 12; text: (root.targetSelected(targetButton.targetName) ? "✓ " : "") + targetButton.targetName; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 10; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight }
+                        MouseArea { id: targetMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.setTargetSelected(targetButton.targetName, !root.targetSelected(targetButton.targetName)) }
                     }
                 }
             }
-
-            Text {
-                anchors.centerIn: parent
-                visible: root.otherMonitorNames.length === 0
-                text: "No other displays connected"
-                color: Theme.muted
-                font.family: Theme.fontFamily
-                font.pixelSize: 10
-            }
+            Text { anchors.centerIn: parent; visible: root.otherMonitorNames.length === 0; text: "No other displays connected"; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: 10 }
         }
 
         RowLayout {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 28
-            spacing: 6
-            visible: root.copyOpen
-
-            Text {
-                Layout.fillWidth: true
-                text: root.selectedTargetNames().length + " selected"
-                color: Theme.muted
-                font.family: Theme.fontFamily
-                font.pixelSize: 10
-                horizontalAlignment: Text.AlignRight
-            }
-
+            Layout.fillWidth: true; Layout.preferredHeight: 28; spacing: 6; visible: root.copyOpen
+            Text { Layout.fillWidth: true; text: root.selectedTargetNames().length + " selected"; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: 10; horizontalAlignment: Text.AlignRight }
             Rectangle {
-                Layout.preferredWidth: 70
-                Layout.preferredHeight: 24
-                color: root.selectedTargetNames().length > 0
-                    ? (copyApplyMouse.containsMouse ? Theme.focus : Theme.subtleHover)
-                    : "transparent"
-                opacity: root.selectedTargetNames().length > 0 ? 1 : 0.4
-                border.width: 1
-                border.color: Theme.focus
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "Apply"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 11
-                }
-
+                Layout.preferredWidth: 70; Layout.preferredHeight: 24
+                color: root.selectedTargetNames().length > 0 ? (copyApplyMouse.containsMouse ? Theme.focus : Theme.subtleHover) : "transparent"
+                opacity: root.selectedTargetNames().length > 0 ? 1 : 0.4; border.width: 1; border.color: Theme.focus
+                Text { anchors.centerIn: parent; text: "Apply"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: 11 }
                 MouseArea {
-                    id: copyApplyMouse
-                    anchors.fill: parent
-                    enabled: root.selectedTargetNames().length > 0
-                    hoverEnabled: enabled
-                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: {
-                        const targets = root.selectedTargetNames();
-                        root.copyRequested(targets);
-                        root.resetCopySelection();
-                    }
+                    id: copyApplyMouse; anchors.fill: parent; enabled: root.selectedTargetNames().length > 0; hoverEnabled: enabled; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: { const targets = root.selectedTargetNames(); root.copyRequested(targets); root.resetCopySelection(); }
                 }
             }
         }
