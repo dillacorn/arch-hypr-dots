@@ -74,13 +74,25 @@ is_running() {
 }
 
 start_shell() {
+    local stable_pings=0
+
     ensure_state
     is_running && return 0
     nohup qs -c "$CONFIG_NAME" >>"$LOG_FILE" 2>&1 &
     disown 2>/dev/null || true
 
+    # A configuration can expose control IPC briefly and still fail during
+    # construction of another singleton. Require a short stable-ready window
+    # before reporting startup success.
     for _ in {1..100}; do
-        is_running && return 0
+        if is_running; then
+            ((stable_pings += 1))
+            if (( stable_pings >= 5 )); then
+                return 0
+            fi
+        else
+            stable_pings=0
+        fi
         sleep 0.05
     done
 
