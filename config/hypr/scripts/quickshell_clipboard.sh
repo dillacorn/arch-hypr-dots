@@ -10,6 +10,7 @@ RUNTIME_DIR="${RUNTIME_BASE}/awtarchy-quickshell"
 RAW_FILE="${RUNTIME_DIR}/clipboard.raw"
 THUMB_DIR="${RUNTIME_DIR}/clipboard-thumbs"
 LIST_LIMIT="${LIST_LIMIT:-60}"
+PREVIEW_WIDTH="${PREVIEW_WIDTH:-1000}"
 THUMB_LIMIT="${THUMB_LIMIT:-30}"
 THUMB_SIZE="${THUMB_SIZE:-512}"
 DECODE_TIMEOUT="${DECODE_TIMEOUT:-0.70s}"
@@ -68,7 +69,8 @@ make_thumb() {
 list_items() {
     local raw label thumb made=0 index=0 tmp_json
 
-    cliphist list 2>/dev/null | head -n "$LIST_LIMIT" >"$RAW_FILE" || true
+    CLIPHIST_PREVIEW_WIDTH="$PREVIEW_WIDTH" cliphist list 2>/dev/null \
+        | head -n "$LIST_LIMIT" >"$RAW_FILE" || true
     [[ -s "$RAW_FILE" ]] || { printf '[]\n'; return 0; }
 
     tmp_json="${RUNTIME_DIR}/clipboard.jsonl"
