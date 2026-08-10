@@ -13,7 +13,12 @@ Rectangle {
     property int iconScale: 100
     property var profiles: []
     property string actionMessage: ""
-    property string publicIp: ""
+    property string interfaceName: ""
+    property string connectionType: ""
+    property string localIpv4: ""
+    property string gateway: ""
+    property string publicIpv4: ""
+    property string publicIpv6: ""
     property string publicIpError: ""
     property bool publicIpLoading: false
 
@@ -21,6 +26,7 @@ Rectangle {
         || (Quickshell.env("HOME") + "/.config")
     readonly property string homeDir: Quickshell.env("HOME") || "~"
     readonly property string helper: configHome + "/hypr/scripts/quickshell_wireguard.sh"
+    readonly property bool browserLinkAllowed: BarState.captureAllowedFor("network")
     readonly property int profileRowHeight: Math.max(40,
         scaledText(10) + scaledText(8) + 16)
     readonly property int profileListHeight: profiles.length === 0 ? 0
@@ -44,6 +50,11 @@ Rectangle {
             listProcess.running = true;
     }
 
+    function refreshLocalInfo() {
+        if (!localInfoProcess.running)
+            localInfoProcess.running = true;
+    }
+
     function toggleProfile(profile) {
         if (!profile || actionProcess.running)
             return;
@@ -61,18 +72,21 @@ Rectangle {
         Quickshell.execDetached([helper, "open-dir"]);
     }
 
-    function checkPublicIp() {
+    function checkPublicIps() {
         if (publicIpProcess.running)
             return;
-        publicIp = "";
+        publicIpv4 = "";
+        publicIpv6 = "";
         publicIpError = "";
         publicIpLoading = true;
         publicIpProcess.running = true;
     }
 
     onActiveChanged: {
-        if (active)
+        if (active) {
             refreshProfiles();
+            refreshLocalInfo();
+        }
     }
 
     Process {
@@ -98,6 +112,27 @@ Rectangle {
     }
 
     Process {
+        id: localInfoProcess
+        command: [root.helper, "local-info"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    const info = JSON.parse(text.trim() || "{}");
+                    root.interfaceName = String(info.interface || "");
+                    root.connectionType = String(info.connectionType || "");
+                    root.localIpv4 = String(info.localIpv4 || "");
+                    root.gateway = String(info.gateway || "");
+                } catch (error) {
+                    root.interfaceName = "";
+                    root.connectionType = "";
+                    root.localIpv4 = "";
+                    root.gateway = "";
+                }
+            }
+        }
+    }
+
+    Process {
         id: actionProcess
         stderr: StdioCollector {
             onStreamFinished: {
@@ -116,6 +151,9 @@ Rectangle {
         onTriggered: {
             root.actionMessage = "";
             root.refreshProfiles();
+            root.refreshLocalInfo();
+            if (root.publicIpv4.length > 0 || root.publicIpv6.length > 0)
+                root.checkPublicIps();
         }
     }
 
@@ -123,17 +161,26 @@ Rectangle {
         interval: 3000
         repeat: true
         running: root.active
-        onTriggered: root.refreshProfiles()
+        onTriggered: {
+            root.refreshProfiles();
+            root.refreshLocalInfo();
+        }
     }
 
     Process {
         id: publicIpProcess
-        command: [root.helper, "public-ip"]
+        command: [root.helper, "public-ips"]
         stdout: StdioCollector {
             onStreamFinished: {
-                const value = text.trim();
-                if (value.length > 0)
-                    root.publicIp = value;
+                try {
+                    const info = JSON.parse(text.trim() || "{}");
+                    root.publicIpv4 = String(info.ipv4 || "");
+                    root.publicIpv6 = String(info.ipv6 || "");
+                } catch (error) {
+                    root.publicIpv4 = "";
+                    root.publicIpv6 = "";
+                    root.publicIpError = "Could not parse public IP response";
+                }
             }
         }
         stderr: StdioCollector {
@@ -145,7 +192,8 @@ Rectangle {
         }
         onExited: {
             root.publicIpLoading = false;
-            if (root.publicIp.length === 0 && root.publicIpError.length === 0)
+            if (root.publicIpv4.length === 0 && root.publicIpv6.length === 0
+                && root.publicIpError.length === 0)
                 root.publicIpError = "Public IP unavailable";
         }
     }
@@ -162,7 +210,7 @@ Rectangle {
 
             Text {
                 Layout.fillWidth: true
-                text: "󰖂 WireGuard VPN"
+                text: " WireGuard VPN"
                 color: Theme.foreground
                 font.family: Theme.fontFamily
                 font.pixelSize: root.scaledText(12)
@@ -178,7 +226,10 @@ Rectangle {
             SettingsButton {
                 label: "Refresh"
                 textSize: root.scaledText(8)
-                onClicked: root.refreshProfiles()
+                onClicked: {
+                    root.refreshProfiles();
+                    root.refreshLocalInfo();
+                }
             }
         }
 
@@ -293,6 +344,60 @@ Rectangle {
 
         Rectangle {
             Layout.fillWidth: true
+            Layout.preferredHeight: localInfoContent.implicitHeight + 12
+            color: "transparent"
+            border.width: 1
+            border.color: Theme.active
+
+            ColumnLayout {
+                id: localInfoContent
+                anchors.fill: parent
+                anchors.margins: 6
+                spacing: 2
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Local network"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: root.scaledText(9)
+                    font.bold: true
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Connection: " + (root.interfaceName.length > 0
+                        ? ((root.connectionType.length > 0 ? root.connectionType + " · " : "")
+                            + root.interfaceName)
+                        : "Unavailable")
+                    color: root.interfaceName.length > 0 ? Theme.foreground : Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: root.scaledText(8)
+                    elide: Text.ElideMiddle
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Local IPv4: " + (root.localIpv4.length > 0 ? root.localIpv4 : "Unavailable")
+                    color: root.localIpv4.length > 0 ? Theme.foreground : Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: root.scaledText(8)
+                    elide: Text.ElideMiddle
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Router gateway: " + (root.gateway.length > 0 ? root.gateway : "Unavailable")
+                    color: root.gateway.length > 0 ? Theme.foreground : Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: root.scaledText(8)
+                    elide: Text.ElideMiddle
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
             Layout.preferredHeight: publicIpContent.implicitHeight + 12
             color: "transparent"
             border.width: 1
@@ -306,7 +411,7 @@ Rectangle {
 
                 ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: 0
+                    spacing: 1
 
                     Text {
                         text: "Public IP"
@@ -318,29 +423,54 @@ Rectangle {
 
                     Text {
                         Layout.fillWidth: true
-                        text: root.publicIpLoading ? "Checking…"
-                            : (root.publicIp.length > 0 ? root.publicIp
+                        text: root.publicIpLoading ? "Public IPv4: Checking…"
+                            : "Public IPv4: " + (root.publicIpv4.length > 0
+                                ? root.publicIpv4
                                 : (root.publicIpError.length > 0 ? root.publicIpError : "Not checked"))
-                        color: root.publicIp.length > 0 ? Theme.foreground : Theme.muted
+                        color: root.publicIpv4.length > 0 ? Theme.foreground : Theme.muted
                         font.family: Theme.fontFamily
                         font.pixelSize: root.scaledText(8)
-                        elide: Text.ElideRight
+                        elide: Text.ElideMiddle
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.publicIpLoading ? "Public IPv6: Checking…"
+                            : "Public IPv6: " + (root.publicIpv6.length > 0
+                                ? root.publicIpv6
+                                : (root.publicIpError.length > 0 ? "Unavailable" : "Not checked"))
+                        color: root.publicIpv6.length > 0 ? Theme.foreground : Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: root.scaledText(8)
+                        elide: Text.ElideMiddle
                     }
                 }
 
                 SettingsButton {
-                    label: root.publicIp.length > 0 ? "Refresh IP" : "Check IP"
+                    label: (root.publicIpv4.length > 0 || root.publicIpv6.length > 0)
+                        ? "Refresh IPs" : "Check IPs"
                     available: !root.publicIpLoading
                     textSize: root.scaledText(8)
-                    onClicked: root.checkPublicIp()
+                    onClicked: root.checkPublicIps()
                 }
 
                 SettingsButton {
                     label: "WTFIsMyIP"
+                    available: root.browserLinkAllowed
                     textSize: root.scaledText(8)
                     onClicked: Quickshell.execDetached([root.helper, "open-ip-site"])
                 }
             }
+        }
+
+        Text {
+            Layout.fillWidth: true
+            visible: !root.browserLinkAllowed
+            text: "WTFIsMyIP opens in your normal Firefox session. Enable Network capture visibility in the cog first so the browser tab cannot be exposed by mistake."
+            color: Theme.muted
+            font.family: Theme.fontFamily
+            font.pixelSize: root.scaledText(7)
+            wrapMode: Text.WordWrap
         }
     }
 }
