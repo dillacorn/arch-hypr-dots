@@ -7,6 +7,7 @@ export LC_ALL=C.UTF-8
 VPN_DIR="${AWTARCHY_VPN_DIR:-${HOME}/vpn}"
 EDITOR_TITLE="Awtarchy VPN Config Editor"
 EDITOR_CLASS="awtarchy-vpn-editor"
+FIREFOX_HELPER="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/awtarchy_firefox_webapp.sh"
 
 mkdir -p -- "$VPN_DIR"
 chmod 0700 "$VPN_DIR" 2>/dev/null || true
@@ -98,6 +99,12 @@ except ValueError:
 ' || fail "Could not determine the public IP address from wtfismyip.com."
 }
 
+open_ip_site() {
+    [[ -x "$FIREFOX_HELPER" ]] \
+        || fail "Protected Firefox launcher is unavailable: $FIREFOX_HELPER"
+    exec "$FIREFOX_HELPER" public-ip
+}
+
 case "${1:-}" in
     list)
         list_profiles
@@ -123,8 +130,7 @@ case "${1:-}" in
         public_ip
         ;;
     open-ip-site)
-        command -v xdg-open >/dev/null 2>&1 || fail "xdg-open is required"
-        exec xdg-open https://wtfismyip.com/
+        open_ip_site
         ;;
     *)
         printf 'Usage: %s {list|up PROFILE|down PROFILE|edit PROFILE|open-dir|public-ip|open-ip-site}\n' "$0" >&2
