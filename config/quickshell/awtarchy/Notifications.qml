@@ -24,8 +24,6 @@ Singleton {
     property int iconScaleOverride: -1
     property int captureAllowedOverride: -1
     property int popupLimitOverride: -1
-    property int resizeStartWidth: 0
-    property int resizeStartHeight: 0
     property real anchorAlongEdge: -1
     property string settingsMessage: ""
     property var savedView: ({
@@ -44,6 +42,7 @@ Singleton {
     readonly property string mutePath: cacheHome + "/awtarchy/quickshell-dnd"
     readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
     readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
+    readonly property string positionScript: configHome + "/hypr/scripts/quickshell_flyout_position.sh"
     readonly property string activeMonitorName: centerWindow.screen ? centerWindow.screen.name : ""
     readonly property int activeBarSize: {
         const target = centerWindow.screen;
@@ -55,16 +54,18 @@ Singleton {
         ? centerWindow.screen.width : 1920
     readonly property int targetScreenHeight: centerWindow.screen
         ? centerWindow.screen.height : 1080
-    readonly property int maximumPanelWidth: Math.max(1, targetScreenWidth
-        - ((placement === "left" || placement === "right") ? activeBarSize : 0) - 20)
-    readonly property int maximumPanelHeight: Math.max(1, targetScreenHeight
-        - ((placement === "top" || placement === "bottom") ? activeBarSize : 0) - 20)
+    readonly property int maximumPanelWidth: Math.max(1, targetScreenWidth - 20)
+    readonly property int maximumPanelHeight: Math.max(1, targetScreenHeight - 20)
     readonly property int minimumPanelWidth: Math.min(360, maximumPanelWidth)
     readonly property int minimumPanelHeight: Math.min(360, maximumPanelHeight)
-    readonly property int livePanelWidth: clampWidth(panelWidthOverride >= 0
+    readonly property int configuredPanelWidth: clampWidth(panelWidthOverride >= 0
         ? panelWidthOverride : BarState.notificationViewFor(activeMonitorName).width)
-    readonly property int livePanelHeight: clampHeight(panelHeightOverride >= 0
+    readonly property int configuredPanelHeight: clampHeight(panelHeightOverride >= 0
         ? panelHeightOverride : BarState.notificationViewFor(activeMonitorName).height)
+    readonly property int livePanelWidth: centerWindow.visible && centerWindow.width > 0
+        ? clampWidth(Math.round(centerWindow.width)) : configuredPanelWidth
+    readonly property int livePanelHeight: centerWindow.visible && centerWindow.height > 0
+        ? clampHeight(Math.round(centerWindow.height)) : configuredPanelHeight
     readonly property int effectiveTextScale: textScaleOverride >= 0
         ? textScaleOverride : BarState.notificationViewFor(activeMonitorName).textScale
     readonly property int effectiveIconScale: iconScaleOverride >= 0
@@ -107,6 +108,26 @@ Singleton {
 
     function clampHeight(value) {
         return Math.max(minimumPanelHeight, Math.min(maximumPanelHeight, Math.round(value)));
+    }
+
+    function applyWindowSize(width, height) {
+        panelWidthOverride = clampWidth(width);
+        panelHeightOverride = clampHeight(height);
+        if (centerWindow.visible && activeMonitorName.length > 0) {
+            Quickshell.execDetached([
+                positionScript, "notifications", activeMonitorName, placement, "resize",
+                String(panelWidthOverride), String(panelHeightOverride), String(anchorAlongEdge)
+            ]);
+        }
+    }
+
+    function positionCenter() {
+        if (!centerWindow.visible || activeMonitorName.length === 0)
+            return;
+        Quickshell.execDetached([
+            positionScript, "notifications", activeMonitorName, placement, "spawn",
+            "", "", String(anchorAlongEdge)
+        ]);
     }
 
     function anchoredPanelX() {
@@ -315,12 +336,13 @@ Singleton {
     }
 
     function discardDraft() {
-        panelWidthOverride = savedView.width;
-        panelHeightOverride = savedView.height;
+        const width = savedView.width;
+        const height = savedView.height;
         textScaleOverride = savedView.textScale;
         iconScaleOverride = savedView.iconScale;
         captureAllowedOverride = savedView.captureAllowed ? 1 : 0;
         popupLimitOverride = savedView.popupLimit;
+        applyWindowSize(width, height);
     }
 
     function queueStateCommand(commandArgs) {
@@ -348,6 +370,8 @@ Singleton {
             captureAllowed ? "true" : "false",
             String(effectivePopupLimit)
         ]);
+        panelWidthOverride = livePanelWidth;
+        panelHeightOverride = livePanelHeight;
         acceptDraftAsSaved();
         settingsMessage = "Saved Notification settings for " + activeMonitorName;
     }
@@ -356,18 +380,22 @@ Singleton {
         if (activeMonitorName.length === 0)
             return;
         const wasCaptureAllowed = captureAllowed;
-        panelWidthOverride = clampWidth(BarState.defaultNotificationWidth);
-        panelHeightOverride = clampHeight(BarState.defaultNotificationHeight);
         textScaleOverride = 100;
         iconScaleOverride = 100;
         captureAllowedOverride = 0;
-        if (wasCaptureAllowed) {
-            savedView = Object.assign({}, savedView, { captureAllowed: false });
-            privacyRemapPending = true;
-            queueStateCommand(["set-capture", "notifications", "false"]);
-        }
         popupLimitOverride = BarState.defaultNotificationPopupLimit;
-        settingsMessage = "Notification defaults loaded for " + activeMonitorName;
+        applyWindowSize(BarState.defaultNotificationWidth, BarState.defaultNotificationHeight);
+        savedView = ({
+            width: panelWidthOverride,
+            height: panelHeightOverride,
+            textScale: 100,
+            iconScale: 100,
+            captureAllowed: false,
+            popupLimit: BarState.defaultNotificationPopupLimit
+        });
+        privacyRemapPending = wasCaptureAllowed;
+        queueStateCommand(["reset-flyout", "notifications", activeMonitorName]);
+        settingsMessage = "Notification defaults restored for " + activeMonitorName;
     }
 
     function copyDisplaySettings(targets) {
@@ -384,12 +412,12 @@ Singleton {
     }
 
     function adjustPanelWidth(delta) {
-        panelWidthOverride = clampWidth(livePanelWidth + delta);
+        applyWindowSize(livePanelWidth + delta, livePanelHeight);
         settingsMessage = "Width " + panelWidthOverride + " px";
     }
 
     function adjustPanelHeight(delta) {
-        panelHeightOverride = clampHeight(livePanelHeight + delta);
+        applyWindowSize(livePanelWidth, livePanelHeight + delta);
         settingsMessage = "Height " + panelHeightOverride + " px";
     }
 
@@ -440,6 +468,7 @@ Singleton {
         settingsMessage = "";
         loadSavedView(targetScreen);
         centerWindow.visible = true;
+        Qt.callLater(() => root.positionCenter());
     }
 
     function openFocused() { openForScreen(focusedScreen()); }
@@ -555,7 +584,10 @@ Singleton {
             if (!centerWindow.visible)
                 return;
             centerWindow.visible = false;
-            Qt.callLater(() => centerWindow.visible = true);
+            Qt.callLater(() => {
+                centerWindow.visible = true;
+                root.positionCenter();
+            });
         }
     }
 
@@ -634,27 +666,21 @@ Singleton {
         }
     }
 
-    PanelWindow {
+    FloatingWindow {
         id: centerWindow
-        WlrLayershell.namespace: "awtarchy-notification-center"
         visible: false
+        title: "Awtarchy Notification Center"
         color: "transparent"
-        focusable: true
-        aboveWindows: true
-        exclusionMode: ExclusionMode.Ignore
-        implicitWidth: root.livePanelWidth
-        implicitHeight: root.livePanelHeight
-        anchors.top: root.placement !== "bottom"
-        anchors.bottom: root.placement === "bottom"
-        anchors.left: root.placement !== "right"
-        anchors.right: root.placement === "right"
-        margins {
-            top: root.placement === "top" ? root.activeBarSize
-                : (root.placement === "bottom" ? 0 : root.anchoredPanelY())
-            bottom: root.placement === "bottom" ? root.activeBarSize : 0
-            left: root.placement === "left" ? root.activeBarSize
-                : (root.placement === "right" ? 0 : root.anchoredPanelX())
-            right: root.placement === "right" ? root.activeBarSize : 0
+        surfaceFormat.opaque: false
+        implicitWidth: root.configuredPanelWidth
+        implicitHeight: root.configuredPanelHeight
+        minimumSize: Qt.size(root.minimumPanelWidth, root.minimumPanelHeight)
+        maximumSize: Qt.size(root.maximumPanelWidth, root.maximumPanelHeight)
+
+        onClosed: root.closeCenter()
+        onVisibleChanged: {
+            if (visible)
+                Qt.callLater(() => root.positionCenter());
         }
 
         Rectangle {
@@ -669,31 +695,6 @@ Singleton {
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton
                 onPressed: mouse => mouse.accepted = true
-            }
-
-            DragHandler {
-                target: null
-                acceptedButtons: Qt.RightButton
-                acceptedModifiers: Qt.AltModifier
-
-                onActiveChanged: {
-                    if (active) {
-                        root.resizeStartWidth = root.livePanelWidth;
-                        root.resizeStartHeight = root.livePanelHeight;
-                    }
-                }
-
-                onActiveTranslationChanged: {
-                    if (!active)
-                        return;
-                    const horizontalDirection = root.placement === "right" ? -1 : 1;
-                    const verticalDirection = root.placement === "bottom" ? -1 : 1;
-                    root.panelWidthOverride = root.clampWidth(
-                        root.resizeStartWidth + activeTranslation.x * horizontalDirection);
-                    root.panelHeightOverride = root.clampHeight(
-                        root.resizeStartHeight + activeTranslation.y * verticalDirection);
-                    root.settingsMessage = root.livePanelWidth + " × " + root.livePanelHeight + " px";
-                }
             }
 
             ColumnLayout {
