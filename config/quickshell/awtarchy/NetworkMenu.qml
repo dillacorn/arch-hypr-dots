@@ -16,6 +16,7 @@ Singleton {
     property string wifiPassword: ""
     property string actionMessage: ""
     property bool settingsOpen: false
+    property bool vpnOpen: false
     property int panelWidthOverride: -1
     property int panelHeightOverride: -1
     property int textScaleOverride: -1
@@ -419,8 +420,20 @@ Singleton {
 
     function toggleSettings() {
         settingsOpen = !settingsOpen;
+        if (settingsOpen)
+            vpnOpen = false;
         settingsPanel.resetCopySelection();
         settingsMessage = "";
+    }
+
+    function toggleVpn() {
+        vpnOpen = !vpnOpen;
+        if (vpnOpen) {
+            settingsOpen = false;
+            settingsPanel.resetCopySelection();
+            settingsMessage = "";
+            cancelWifiPassword();
+        }
     }
 
     function openForScreen(targetScreen) {
@@ -431,6 +444,7 @@ Singleton {
         placement = placementForScreen(targetScreen);
         actionMessage = "";
         settingsOpen = false;
+        vpnOpen = false;
         settingsMessage = "";
         settingsPanel.resetCopySelection();
         cancelWifiPassword();
@@ -449,6 +463,7 @@ Singleton {
         cancelWifiPassword();
         actionMessage = "";
         settingsOpen = false;
+        vpnOpen = false;
         settingsMessage = "";
         settingsPanel.resetCopySelection();
         FlyoutManager.release("network");
@@ -562,6 +577,13 @@ Singleton {
                             onClicked: root.saveDisplaySettings()
                         }
                         SettingsButton {
+                            label: ""
+                            active: root.vpnOpen
+                            textSize: root.scaledIcon(12)
+                            horizontalPadding: 10
+                            onClicked: root.toggleVpn()
+                        }
+                        SettingsButton {
                             label: ""
                             active: root.settingsOpen
                             textSize: root.scaledIcon(12)
@@ -613,10 +635,23 @@ Singleton {
                     }
                 }
 
+                NetworkVpnSection {
+                    id: vpnSection
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.margins: 6
+                    visible: root.vpnOpen
+                    standalone: true
+                    active: visible && networkWindow.visible
+                    textScale: root.effectiveTextScale
+                    iconScale: root.effectiveIconScale
+                }
+
                 Flickable {
                     id: networkFlick
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    visible: !root.vpnOpen
                     contentWidth: width
                     contentHeight: networkColumn.implicitHeight + 12
                     clip: true
