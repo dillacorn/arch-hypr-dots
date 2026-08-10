@@ -216,6 +216,156 @@ local function awtarchy_bar_under_pointer()
     return nil
 end
 
+-- A normal Wayland floating window is initially placed by the compositor. The
+-- post-map positioning helper can therefore be one frame too late and can also
+-- observe the compositor-selected monitor instead of the bar that was clicked.
+-- When a supported flyout is opened directly under an Awtarchy bar, inject a
+-- temporary static rule during window.open_early so its first configured frame
+-- is already on that bar monitor and at that bar edge.
+local awtarchy_flyout_spawn_layouts = {
+    ["Awtarchy Clipboard History"] = "centered",
+    ["Awtarchy Notification Center"] = "notification",
+    ["Awtarchy Quick Settings"] = "centered",
+    ["Awtarchy Network"] = "corner",
+    ["Awtarchy Bluetooth"] = "corner",
+}
+
+local function awtarchy_bar_placement(layer)
+    if layer == nil or layer.monitor == nil then
+        return nil, nil
+    end
+
+    local lx = tonumber(layer.x)
+    local ly = tonumber(layer.y)
+    local lw = tonumber(layer.w)
+    local lh = tonumber(layer.h)
+    if lx == nil or ly == nil or lw == nil or lh == nil or lw <= 0 or lh <= 0 then
+        return nil, nil
+    end
+
+    local mx = tonumber(layer.monitor.x) or 0
+    local my = tonumber(layer.monitor.y) or 0
+    if lw > lh * 4 then
+        local at_top = math.abs(ly) <= 2 or math.abs(ly - my) <= 2
+        return at_top and "top" or "bottom", math.max(1, math.floor(lh + 0.5))
+    end
+
+    if lh > lw * 4 then
+        local at_left = math.abs(lx) <= 2 or math.abs(lx - mx) <= 2
+        return at_left and "left" or "right", math.max(1, math.floor(lw + 0.5))
+    end
+
+    return nil, nil
+end
+
+local function awtarchy_flyout_spawn_move(layout, placement, bar_size)
+    local bar = tostring(math.max(1, tonumber(bar_size) or 1))
+    local half_bar = tostring(math.max(4, math.floor((tonumber(bar_size) or 8) / 2 + 0.5)))
+
+    if layout == "centered" then
+        if placement == "top" then
+            return { "((monitor_w-window_w)/2)", bar }
+        elseif placement == "bottom" then
+            return { "((monitor_w-window_w)/2)", "(monitor_h-window_h-" .. bar .. ")" }
+        elseif placement == "left" then
+            return { bar, "((monitor_h-window_h)/2)" }
+        elseif placement == "right" then
+            return { "(monitor_w-window_w-" .. bar .. ")", "((monitor_h-window_h)/2)" }
+        end
+    elseif layout == "corner" then
+        if placement == "top" then
+            return { "(monitor_w-window_w-8)", bar }
+        elseif placement == "bottom" then
+            return { "(monitor_w-window_w-8)", "(monitor_h-window_h-" .. bar .. ")" }
+        elseif placement == "left" then
+            return { bar, "(monitor_h-window_h-8)" }
+        elseif placement == "right" then
+            return { "(monitor_w-window_w-" .. bar .. ")", "(monitor_h-window_h-8)" }
+        end
+    elseif layout == "notification" then
+        if placement == "top" then
+            return { "(cursor_x-window_w+" .. half_bar .. ")", bar }
+        elseif placement == "bottom" then
+            return { "(cursor_x-window_w+" .. half_bar .. ")", "(monitor_h-window_h-" .. bar .. ")" }
+        elseif placement == "left" then
+            return { bar, "(cursor_y-window_h+" .. half_bar .. ")" }
+        elseif placement == "right" then
+            return { "(monitor_w-window_w-" .. bar .. ")", "(cursor_y-window_h+" .. half_bar .. ")" }
+        end
+    end
+
+    return nil
+end
+
+local function awtarchy_disable_spawn_rule(title)
+    if awtarchy_flyout_spawn_rules_v1 == nil then
+        return
+    end
+    local rule = awtarchy_flyout_spawn_rules_v1[title]
+    if rule ~= nil then
+        pcall(function() rule:set_enabled(false) end)
+        awtarchy_flyout_spawn_rules_v1[title] = nil
+    end
+end
+
+if awtarchy_flyout_spawn_hooks_v1_registered ~= true then
+    awtarchy_flyout_spawn_hooks_v1_registered = true
+    awtarchy_flyout_spawn_rules_v1 = awtarchy_flyout_spawn_rules_v1 or {}
+    awtarchy_flyout_spawn_rule_counter_v1 = awtarchy_flyout_spawn_rule_counter_v1 or 0
+
+    hl.on("window.open_early", function(window)
+        if window == nil then
+            return
+        end
+
+        local title = tostring(window.title or "")
+        local layout = awtarchy_flyout_spawn_layouts[title]
+        if layout == nil then
+            return
+        end
+
+        local layer = awtarchy_bar_under_pointer()
+        if layer == nil or layer.monitor == nil then
+            return
+        end
+
+        local monitor_name = tostring(layer.monitor.name or "")
+        local placement, bar_size = awtarchy_bar_placement(layer)
+        local move = awtarchy_flyout_spawn_move(layout, placement, bar_size)
+        if monitor_name == "" or move == nil then
+            return
+        end
+
+        awtarchy_disable_spawn_rule(title)
+        awtarchy_flyout_spawn_rule_counter_v1 = awtarchy_flyout_spawn_rule_counter_v1 + 1
+        local rule_name = "awtarchy-flyout-spawn-v1-"
+            .. tostring(awtarchy_flyout_spawn_rule_counter_v1)
+
+        awtarchy_flyout_spawn_rules_v1[title] = hl.window_rule({
+            name = rule_name,
+            match = { title = title },
+            float = true,
+            monitor = monitor_name,
+            move = move,
+            no_anim = true,
+        })
+
+        -- Rule creation queues a prop refresh. Force it now because this hook
+        -- intentionally runs before the current window receives static rules.
+        hl.exec_scheduled_prop_refresh_immediately()
+    end)
+
+    hl.on("window.open", function(window)
+        if window == nil then
+            return
+        end
+        local title = tostring(window.title or "")
+        if awtarchy_flyout_spawn_layouts[title] ~= nil then
+            awtarchy_disable_spawn_rule(title)
+        end
+    end)
+end
+
 local function movement_candidate(dx, dy)
     if math.abs(dx) > math.abs(dy) then
         return dx >= 0 and "right" or "left"
