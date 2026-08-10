@@ -6,7 +6,6 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
-import Quickshell.Wayland
 
 Singleton {
     id: root
@@ -24,8 +23,6 @@ Singleton {
     property string schedulerArgsDraft: ""
     property bool schedulerArgsDirty: false
     property int brightnessHoverPercent: -1
-    property int resizeStartWidth: 0
-    property int resizeStartHeight: 0
     property bool settingsOpen: false
     property int panelWidthOverride: -1
     property int panelHeightOverride: -1
@@ -47,27 +44,24 @@ Singleton {
     readonly property string backend: configHome + "/hypr/scripts/hypr_quicksettings.sh"
     readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
     readonly property string terminalLauncher: configHome + "/hypr/scripts/default_terminal.sh"
+    readonly property string positionScript: configHome + "/hypr/scripts/quickshell_flyout_position.sh"
     readonly property string activeMonitorName: quickSettingsWindow.screen ? quickSettingsWindow.screen.name : ""
-    readonly property int activeBarSize: {
-        const target = quickSettingsWindow.screen;
-        if (!target || placement === "center")
-            return 0;
-        return BarState.barSizeFor(target.name, placement === "left" || placement === "right");
-    }
     readonly property int targetScreenWidth: quickSettingsWindow.screen
         ? quickSettingsWindow.screen.width : 1920
     readonly property int targetScreenHeight: quickSettingsWindow.screen
         ? quickSettingsWindow.screen.height : 1080
-    readonly property int maximumPanelWidth: Math.max(1, targetScreenWidth
-        - ((placement === "left" || placement === "right") ? activeBarSize : 0) - 20)
-    readonly property int maximumPanelHeight: Math.max(1, targetScreenHeight
-        - ((placement === "top" || placement === "bottom") ? activeBarSize : 0) - 20)
+    readonly property int maximumPanelWidth: Math.max(1, targetScreenWidth - 20)
+    readonly property int maximumPanelHeight: Math.max(1, targetScreenHeight - 20)
     readonly property int minimumPanelWidth: Math.min(520, maximumPanelWidth)
     readonly property int minimumPanelHeight: Math.min(460, maximumPanelHeight)
-    readonly property int livePanelWidth: clampWidth(panelWidthOverride >= 0
+    readonly property int configuredPanelWidth: clampWidth(panelWidthOverride >= 0
         ? panelWidthOverride : BarState.quickSettingsViewFor(activeMonitorName).width)
-    readonly property int livePanelHeight: clampHeight(panelHeightOverride >= 0
+    readonly property int configuredPanelHeight: clampHeight(panelHeightOverride >= 0
         ? panelHeightOverride : BarState.quickSettingsViewFor(activeMonitorName).height)
+    readonly property int livePanelWidth: quickSettingsWindow.visible && quickSettingsWindow.width > 0
+        ? clampWidth(Math.round(quickSettingsWindow.width)) : configuredPanelWidth
+    readonly property int livePanelHeight: quickSettingsWindow.visible && quickSettingsWindow.height > 0
+        ? clampHeight(Math.round(quickSettingsWindow.height)) : configuredPanelHeight
     readonly property int effectiveTextScale: textScaleOverride >= 0
         ? textScaleOverride : BarState.quickSettingsViewFor(activeMonitorName).textScale
     readonly property int effectiveIconScale: iconScaleOverride >= 0
@@ -130,6 +124,25 @@ Singleton {
 
     function clampHeight(value) {
         return Math.max(minimumPanelHeight, Math.min(maximumPanelHeight, Math.round(value)));
+    }
+
+    function applyWindowSize(width, height) {
+        panelWidthOverride = clampWidth(width);
+        panelHeightOverride = clampHeight(height);
+        if (quickSettingsWindow.visible && activeMonitorName.length > 0) {
+            Quickshell.execDetached([
+                positionScript, "quick-settings", activeMonitorName, placement, "resize",
+                String(panelWidthOverride), String(panelHeightOverride)
+            ]);
+        }
+    }
+
+    function positionWindow() {
+        if (!quickSettingsWindow.visible || activeMonitorName.length === 0)
+            return;
+        Quickshell.execDetached([
+            positionScript, "quick-settings", activeMonitorName, placement, "spawn"
+        ]);
     }
 
     function scaledText(baseSize) {
@@ -273,11 +286,12 @@ Singleton {
     }
 
     function discardDraft() {
-        panelWidthOverride = savedView.width;
-        panelHeightOverride = savedView.height;
+        const width = savedView.width;
+        const height = savedView.height;
         textScaleOverride = savedView.textScale;
         iconScaleOverride = savedView.iconScale;
         captureAllowedOverride = savedView.captureAllowed ? 1 : 0;
+        applyWindowSize(width, height);
     }
 
     function queueStateCommand(commandArgs) {
@@ -304,6 +318,8 @@ Singleton {
             String(effectiveTextScale), String(effectiveIconScale),
             captureAllowed ? "true" : "false"
         ]);
+        panelWidthOverride = livePanelWidth;
+        panelHeightOverride = livePanelHeight;
         acceptDraftAsSaved();
         settingsMessage = "Saved Quick Settings for " + activeMonitorName;
     }
@@ -312,11 +328,10 @@ Singleton {
         if (activeMonitorName.length === 0)
             return;
         const wasCaptureAllowed = captureAllowed;
-        panelWidthOverride = clampWidth(BarState.defaultQuickSettingsWidth);
-        panelHeightOverride = clampHeight(BarState.defaultQuickSettingsHeight);
         textScaleOverride = 100;
         iconScaleOverride = 100;
         captureAllowedOverride = 0;
+        applyWindowSize(BarState.defaultQuickSettingsWidth, BarState.defaultQuickSettingsHeight);
         savedView = ({
             width: panelWidthOverride,
             height: panelHeightOverride,
@@ -343,12 +358,12 @@ Singleton {
     }
 
     function adjustPanelWidth(delta) {
-        panelWidthOverride = clampWidth(livePanelWidth + delta);
+        applyWindowSize(livePanelWidth + delta, livePanelHeight);
         settingsMessage = "Width " + panelWidthOverride + " px";
     }
 
     function adjustPanelHeight(delta) {
-        panelHeightOverride = clampHeight(livePanelHeight + delta);
+        applyWindowSize(livePanelWidth, livePanelHeight + delta);
         settingsMessage = "Height " + panelHeightOverride + " px";
     }
 
@@ -394,13 +409,15 @@ Singleton {
         schedulerArgsDirty = false;
         loadSavedView(targetScreen);
         quickSettingsWindow.visible = true;
+        Qt.callLater(() => root.positionWindow());
         refreshStatus();
     }
 
     function openFocused() { openForScreen(focusedScreen()); }
 
     function close() {
-        discardDraft();
+        if (settingsDirty)
+            discardDraft();
         quickSettingsWindow.visible = false;
         FlyoutManager.release("quick-settings");
         settingsOpen = false;
@@ -491,7 +508,10 @@ Singleton {
             if (!quickSettingsWindow.visible)
                 return;
             quickSettingsWindow.visible = false;
-            Qt.callLater(() => quickSettingsWindow.visible = true);
+            Qt.callLater(() => {
+                quickSettingsWindow.visible = true;
+                root.positionWindow();
+            });
         }
     }
 
@@ -510,29 +530,21 @@ Singleton {
         onTriggered: root.refreshStatus()
     }
 
-    PanelWindow {
+    FloatingWindow {
         id: quickSettingsWindow
-        WlrLayershell.namespace: "awtarchy-quick-settings"
         visible: false
+        title: "Awtarchy Quick Settings"
         color: "transparent"
-        focusable: true
-        aboveWindows: true
-        exclusionMode: ExclusionMode.Ignore
-        implicitWidth: root.livePanelWidth
-        implicitHeight: root.livePanelHeight
-        anchors.top: root.placement !== "bottom"
-        anchors.bottom: root.placement === "bottom"
-        anchors.left: root.placement !== "right"
-        anchors.right: root.placement === "right"
-        margins {
-            top: root.placement === "top" ? root.activeBarSize
-                : (root.placement === "bottom" ? 0
-                    : Math.max(6, Math.round((root.targetScreenHeight - root.livePanelHeight) / 2)))
-            bottom: root.placement === "bottom" ? root.activeBarSize : 0
-            left: root.placement === "left" ? root.activeBarSize
-                : (root.placement === "right" ? 0
-                    : Math.max(6, Math.round((root.targetScreenWidth - root.livePanelWidth) / 2)))
-            right: root.placement === "right" ? root.activeBarSize : 0
+        surfaceFormat.opaque: false
+        implicitWidth: root.configuredPanelWidth
+        implicitHeight: root.configuredPanelHeight
+        minimumSize: Qt.size(root.minimumPanelWidth, root.minimumPanelHeight)
+        maximumSize: Qt.size(root.maximumPanelWidth, root.maximumPanelHeight)
+
+        onClosed: root.close()
+        onVisibleChanged: {
+            if (visible)
+                Qt.callLater(() => root.positionWindow());
         }
 
         Rectangle {
@@ -547,32 +559,6 @@ Singleton {
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton
                 onPressed: mouse => mouse.accepted = true
-            }
-
-            DragHandler {
-                id: panelResizeHandler
-                target: null
-                acceptedButtons: Qt.RightButton
-                acceptedModifiers: Qt.AltModifier
-
-                onActiveChanged: {
-                    if (active) {
-                        root.resizeStartWidth = root.livePanelWidth;
-                        root.resizeStartHeight = root.livePanelHeight;
-                    }
-                }
-
-                onActiveTranslationChanged: {
-                    if (!active)
-                        return;
-                    const horizontalDirection = root.placement === "right" ? -1 : 1;
-                    const verticalDirection = root.placement === "bottom" ? -1 : 1;
-                    root.panelWidthOverride = root.clampWidth(
-                        root.resizeStartWidth + activeTranslation.x * horizontalDirection);
-                    root.panelHeightOverride = root.clampHeight(
-                        root.resizeStartHeight + activeTranslation.y * verticalDirection);
-                    root.settingsMessage = root.livePanelWidth + " × " + root.livePanelHeight + " px";
-                }
             }
 
             ColumnLayout {
