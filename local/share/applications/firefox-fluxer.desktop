@@ -6,7 +6,7 @@ Version=1.0
 Type=Application
 Name=Fluxer Web (Firefox)
 Comment=Fluxer in a dedicated Firefox profile, auto-created if missing
-Exec=/bin/sh -lc 'PROFILE="$HOME/.mozilla/firefox/fluxer-profile"; if [ ! -d "$PROFILE" ]; then /usr/bin/firefox --no-remote -CreateProfile "fluxer-profile $PROFILE"; fi; MOZ_ENABLE_WAYLAND=1 MOZ_USE_XINPUT2=1 exec /usr/bin/firefox --no-remote --class=fluxer --name=Fluxer --profile "$PROFILE" --new-window https://web.fluxer.app'
+Exec=/bin/bash -lc 'exec "$HOME/.config/hypr/scripts/awtarchy_firefox_webapp.sh" fluxer'
 Icon=firefox
 Terminal=false
 Categories=Network;InstantMessaging;
