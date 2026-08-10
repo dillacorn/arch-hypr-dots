@@ -18,6 +18,10 @@ monitor="${1:-}"
 placement="${2:-center}"
 title="Awtarchy Application Search"
 state_file="${XDG_CACHE_HOME:-$HOME/.cache}/awtarchy/quickshell-state.json"
+reference_screen_w=1920
+reference_screen_h=1080
+reference_w=420
+reference_h=582
 
 [[ -n "$monitor" ]] || {
     printf 'quickshell_launcher_position.sh: monitor is required\n' >&2
@@ -90,6 +94,26 @@ read -r mon_x mon_y mon_w mon_h < <(
     ' <<<"$mon"
 )
 
+# Scale the unsaved launcher default from the 1920x1080 @ 1.0 reference
+# canvas. mon_w/mon_h are logical dimensions, so monitor scale is not applied
+# twice. Explicit per-monitor saves remain exact logical-pixel dimensions.
+read -r adaptive_default_w adaptive_default_h < <(
+    awk \
+        -v monitor_w="$mon_w" \
+        -v monitor_h="$mon_h" \
+        -v reference_screen_w="$reference_screen_w" \
+        -v reference_screen_h="$reference_screen_h" \
+        -v reference_w="$reference_w" \
+        -v reference_h="$reference_h" '
+        BEGIN {
+            width_scale = monitor_w / reference_screen_w
+            height_scale = monitor_h / reference_screen_h
+            factor = width_scale < height_scale ? width_scale : height_scale
+            printf "%d\t%d\n", int(reference_w * factor + 0.5), int(reference_h * factor + 0.5)
+        }
+    '
+)
+
 horizontal_bar=28
 vertical_bar=36
 if [[ -s "$state_file" ]] && jq -e '.' "$state_file" >/dev/null 2>&1; then
@@ -106,12 +130,15 @@ fi
 # and must preserve the current compositor-controlled size.
 resize_on_spawn=0
 if [[ "$placement" != "clamp" ]]; then
-    desired_w=420
-    desired_h=582
+    desired_w="$adaptive_default_w"
+    desired_h="$adaptive_default_h"
 
     if [[ -s "$state_file" ]] && jq -e '.' "$state_file" >/dev/null 2>&1; then
         read -r desired_w desired_h < <(
-            jq -r --arg monitor "$monitor" '
+            jq -r \
+                --arg monitor "$monitor" \
+                --argjson default_w "$adaptive_default_w" \
+                --argjson default_h "$adaptive_default_h" '
                 def number_or_zero: try tonumber catch 0;
                 (.launcher_sizes[$monitor] // {}) as $view
                 | (($view.width // 0) | number_or_zero) as $width
@@ -122,7 +149,7 @@ if [[ "$placement" != "clamp" ]]; then
                 | if $saved and $width >= 1 and $width <= 16384
                     and $height >= 1 and $height <= 16384
                   then [($width | round), ($height | round)]
-                  else [420, 582]
+                  else [$default_w, $default_h]
                   end
                 | @tsv
             ' "$state_file"
