@@ -672,9 +672,12 @@ Singleton {
                         required property var modelData
                         required property int index
                         width: ListView.view.width
+                        readonly property string thumbnailPath: modelData && modelData.thumb
+                            ? String(modelData.thumb) : ""
+                        readonly property bool hasThumbnail: thumbnailPath.length > 0
                         readonly property int thumbnailSize: Math.max(48,
                             Math.min(160, Math.round(96 * root.effectiveIconScale / 100)))
-                        height: modelData.thumb && modelData.thumb.length > 0
+                        height: hasThumbnail
                             ? thumbnailSize + 20
                             : Math.max(40, Math.round(44 * root.effectiveTextScale / 100))
                         color: ListView.isCurrentItem ? Theme.focus
@@ -689,10 +692,10 @@ Singleton {
                             spacing: 12
 
                             Image {
-                                visible: row.modelData.thumb && row.modelData.thumb.length > 0
-                                Layout.preferredWidth: visible ? row.thumbnailSize : 0
-                                Layout.preferredHeight: visible ? row.thumbnailSize : 0
-                                source: visible ? "file://" + row.modelData.thumb : ""
+                                visible: row.hasThumbnail
+                                Layout.preferredWidth: row.hasThumbnail ? row.thumbnailSize : 0
+                                Layout.preferredHeight: row.hasThumbnail ? row.thumbnailSize : 0
+                                source: row.hasThumbnail ? "file://" + row.thumbnailPath : ""
                                 fillMode: Image.PreserveAspectFit
                                 asynchronous: true
                                 cache: true
@@ -700,7 +703,7 @@ Singleton {
 
                             Text {
                                 Layout.fillWidth: true
-                                text: row.modelData.label
+                                text: row.modelData ? String(row.modelData.label || "") : ""
                                 color: Theme.foreground
                                 font.family: Theme.fontFamily
                                 font.pixelSize: Math.max(8, Math.round(14 * root.effectiveTextScale / 100))
@@ -728,7 +731,8 @@ Singleton {
 
                         Rectangle {
                             id: viewButton
-                            visible: !row.modelData.binary
+                            visible: Boolean(row.modelData)
+                                && row.modelData.binary === false
                                 && (rowMouse.containsMouse || viewMouse.containsMouse)
                             width: 28
                             height: 28
