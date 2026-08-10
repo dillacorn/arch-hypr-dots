@@ -6,7 +6,7 @@ Version=1.0
 Type=Application
 Name=Telegram Web (Firefox)
 Comment=Telegram Web in a dedicated Firefox profile, auto-created if missing
-Exec=/bin/sh -c 'PROFILE="$HOME/.mozilla/firefox/telegram-profile"; [ -d "$PROFILE" ] || /usr/bin/firefox --no-remote -CreateProfile "telegram $PROFILE"; exec env MOZ_ENABLE_WAYLAND=1 MOZ_USE_XINPUT2=1 /usr/bin/firefox --no-remote --class=telegram --name=Telegram --profile "$PROFILE" --new-window https://web.telegram.org/a/'
+Exec=/bin/bash -lc 'exec "$HOME/.config/hypr/scripts/awtarchy_firefox_webapp.sh" telegram'
 Icon=firefox
 Terminal=false
 Categories=Network;InstantMessaging;
