@@ -707,8 +707,8 @@ Singleton {
 
                     RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: root.placement === "right" ? 40 : 8
-                        anchors.rightMargin: root.placement !== "right" && root.placement !== "top" ? 40 : 8
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 40
                         spacing: 6
 
                         Text {
@@ -929,7 +929,7 @@ Singleton {
                     Layout.leftMargin: 6
                     Layout.rightMargin: 6
                     Layout.topMargin: 6
-                    Layout.bottomMargin: root.placement === "top" ? 36 : 6
+                    Layout.bottomMargin: 6
                     model: ScriptModel { values: root.historyNotifications() }
                     spacing: 6
                     clip: true
@@ -976,8 +976,8 @@ Singleton {
                 id: closeButton
                 width: 28
                 height: 28
-                x: root.placement === "right" ? 6 : panel.width - width - 6
-                y: root.placement === "top" ? panel.height - height - 6 : 5
+                x: panel.width - width - 6
+                y: 5
                 color: closeMouse.containsMouse ? Theme.focus : Theme.active
                 border.width: 0
                 z: 20
