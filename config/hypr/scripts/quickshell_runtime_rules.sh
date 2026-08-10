@@ -23,10 +23,14 @@ launcher_protected=true
 clipboard_protected=true
 notifications_protected=true
 quick_settings_protected=true
+network_protected=true
+bluetooth_protected=true
 capture_allowed launcher && launcher_protected=false
 capture_allowed clipboard && clipboard_protected=false
 capture_allowed notifications && notifications_protected=false
 capture_allowed quick_settings && quick_settings_protected=false
+capture_allowed network && network_protected=false
+capture_allowed bluetooth && bluetooth_protected=false
 
 if ! hyprctl eval "
 if awtarchy_launcher_privacy_rule == nil then
@@ -51,6 +55,7 @@ disable_superseded_rule(awtarchy_notifications_popup_privacy_rule)
 disable_superseded_rule(awtarchy_notifications_center_privacy_rule)
 disable_superseded_rule(awtarchy_quick_settings_privacy_rule)
 disable_superseded_rule(awtarchy_connectivity_privacy_rule)
+disable_superseded_rule(awtarchy_connectivity_window_privacy_rule_v2)
 
 -- Use new Lua globals for converted floating surfaces so an existing Hyprland
 -- session cannot keep the previous layer-rule objects alive under the same name.
@@ -86,10 +91,26 @@ if awtarchy_quick_settings_window_privacy_rule_v2 == nil then
     })
 end
 
-if awtarchy_connectivity_window_privacy_rule_v2 == nil then
-    awtarchy_connectivity_window_privacy_rule_v2 = hl.window_rule({
-        name = \"awtarchy-connectivity-window-capture-privacy-v2\",
-        match = { title = \"^Awtarchy (Network|Bluetooth)$\" },
+if awtarchy_network_window_privacy_rule_v3 == nil then
+    awtarchy_network_window_privacy_rule_v3 = hl.window_rule({
+        name = \"awtarchy-network-window-capture-privacy-v3\",
+        match = { title = \"^Awtarchy Network$\" },
+        no_screen_share = true,
+    })
+end
+
+if awtarchy_bluetooth_window_privacy_rule_v3 == nil then
+    awtarchy_bluetooth_window_privacy_rule_v3 = hl.window_rule({
+        name = \"awtarchy-bluetooth-window-capture-privacy-v3\",
+        match = { title = \"^Awtarchy Bluetooth$\" },
+        no_screen_share = true,
+    })
+end
+
+if awtarchy_vpn_editor_privacy_rule_v1 == nil then
+    awtarchy_vpn_editor_privacy_rule_v1 = hl.window_rule({
+        name = \"awtarchy-vpn-editor-capture-privacy-v1\",
+        match = { title = \"^Awtarchy VPN Config Editor$\" },
         no_screen_share = true,
     })
 end
@@ -99,16 +120,24 @@ awtarchy_clipboard_window_privacy_rule_v2:set_enabled(${clipboard_protected})
 awtarchy_notifications_popup_privacy_rule_v2:set_enabled(${notifications_protected})
 awtarchy_notifications_center_window_privacy_rule_v2:set_enabled(${notifications_protected})
 awtarchy_quick_settings_window_privacy_rule_v2:set_enabled(${quick_settings_protected})
-awtarchy_connectivity_window_privacy_rule_v2:set_enabled(true)
+awtarchy_network_window_privacy_rule_v3:set_enabled(${network_protected})
+awtarchy_bluetooth_window_privacy_rule_v3:set_enabled(${bluetooth_protected})
+awtarchy_vpn_editor_privacy_rule_v1:set_enabled(${network_protected})
 " >/dev/null; then
     printf '%s\n' 'quickshell_runtime_rules.sh: failed to register capture privacy rules' >&2
     exit 1
 fi
 
 if ! hyprctl eval '
-if awtarchy_quickshell_launcher_rule == nil then
-    awtarchy_quickshell_launcher_rule = hl.window_rule({
-        name = "awtarchy-quickshell-launcher-runtime",
+-- The old launcher runtime rule allowed the compositor initial mapping frame to
+-- become visible. Retire it and use the same invisible-until-positioned model
+-- already proven by the other floating Quickshell flyouts.
+if awtarchy_quickshell_launcher_rule ~= nil then
+    pcall(function() awtarchy_quickshell_launcher_rule:set_enabled(false) end)
+end
+if awtarchy_quickshell_launcher_rule_v2 == nil then
+    awtarchy_quickshell_launcher_rule_v2 = hl.window_rule({
+        name = "awtarchy-quickshell-launcher-runtime-v2",
         match = { title = "Awtarchy Application Search" },
         float = true,
         border_size = 0,
@@ -117,8 +146,10 @@ if awtarchy_quickshell_launcher_rule == nil then
         no_shadow = true,
         no_follow_mouse = true,
         no_anim = true,
+        opacity = "0 override 0 override 0 override",
     })
 end
+awtarchy_quickshell_launcher_rule_v2:set_enabled(true)
 
 -- Retire both earlier floating-flyout rule objects. v1 blocked hover focus;
 -- v2 had the correct hover behavior but exposed the compositor initial map
