@@ -711,6 +711,7 @@ Singleton {
         onClosed: root.close()
 
         Rectangle {
+            id: launcherPanel
             anchors.fill: parent
             color: Theme.popupBackground
             border.width: 0
@@ -773,7 +774,7 @@ Singleton {
                     RowLayout {
                         anchors.fill: parent
                         anchors.leftMargin: 8
-                        anchors.rightMargin: 6
+                        anchors.rightMargin: 40
                         spacing: 6
 
                         Text {
@@ -1490,6 +1491,33 @@ Singleton {
                         flickable: appList
                         z: 10
                     }
+                }
+            }
+
+            Rectangle {
+                id: launcherCloseButton
+                width: 28
+                height: 28
+                x: launcherPanel.width - width - 6
+                y: 4
+                color: launcherCloseMouse.containsMouse ? Theme.focus : Theme.active
+                border.width: 0
+                z: 20
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "×"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 15
+                }
+
+                MouseArea {
+                    id: launcherCloseMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.close()
                 }
             }
         }
