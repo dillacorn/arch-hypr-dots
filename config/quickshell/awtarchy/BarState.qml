@@ -22,6 +22,10 @@ Singleton {
     readonly property int defaultNotificationPopupLimit: 4
     readonly property int defaultQuickSettingsWidth: 720
     readonly property int defaultQuickSettingsHeight: 640
+    readonly property int defaultNetworkWidth: 520
+    readonly property int defaultNetworkHeight: 600
+    readonly property int defaultBluetoothWidth: 500
+    readonly property int defaultBluetoothHeight: 600
     property int revision: 0
     property int idleRevision: 0
 
@@ -123,39 +127,44 @@ Singleton {
         function setIdleHidden(hidden: bool): void { root.setIdleHidden(hidden); }
     }
 
+    function emptyData() {
+        return ({
+            enabled: true,
+            monitors: {},
+            launcher_sizes: {},
+            clipboard_views: {},
+            notification_views: {},
+            quick_settings_views: {},
+            network_views: {},
+            bluetooth_views: {},
+            capture_allowed: {}
+        });
+    }
+
     function data() {
         const dependency = revision;
         const text = stateFile.text();
         if (!text || text.length === 0)
-            return ({
-                enabled: true,
-                monitors: {},
-                launcher_sizes: {},
-                clipboard_views: {},
-                notification_views: {},
-                quick_settings_views: {},
-                capture_allowed: {}
-            });
+            return emptyData();
 
         try {
             const parsed = JSON.parse(text);
             if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-                return ({
-                    enabled: true,
-                    monitors: {},
-                    launcher_sizes: {},
-                    clipboard_views: {},
-                    notification_views: {},
-                    quick_settings_views: {},
-                    capture_allowed: {}
-                });
+                return emptyData();
             if (!parsed.monitors || typeof parsed.monitors !== "object"
                 || Array.isArray(parsed.monitors))
                 parsed.monitors = {};
             if (!parsed.launcher_sizes || typeof parsed.launcher_sizes !== "object"
                 || Array.isArray(parsed.launcher_sizes))
                 parsed.launcher_sizes = {};
-            for (const key of ["clipboard_views", "notification_views", "quick_settings_views", "capture_allowed"]) {
+            for (const key of [
+                "clipboard_views",
+                "notification_views",
+                "quick_settings_views",
+                "network_views",
+                "bluetooth_views",
+                "capture_allowed"
+            ]) {
                 if (!parsed[key] || typeof parsed[key] !== "object" || Array.isArray(parsed[key]))
                     parsed[key] = {};
             }
@@ -164,15 +173,7 @@ Singleton {
             return parsed;
         } catch (error) {
             console.warn("Awtarchy Quickshell: invalid shell state:", error);
-            return ({
-                enabled: true,
-                monitors: {},
-                launcher_sizes: {},
-                clipboard_views: {},
-                notification_views: {},
-                quick_settings_views: {},
-                capture_allowed: {}
-            });
+            return emptyData();
         }
     }
 
@@ -364,6 +365,16 @@ Singleton {
     function quickSettingsViewFor(name) {
         return flyoutViewFor("quick_settings_views", name,
             defaultQuickSettingsWidth, defaultQuickSettingsHeight);
+    }
+
+    function networkViewFor(name) {
+        return flyoutViewFor("network_views", name,
+            defaultNetworkWidth, defaultNetworkHeight);
+    }
+
+    function bluetoothViewFor(name) {
+        return flyoutViewFor("bluetooth_views", name,
+            defaultBluetoothWidth, defaultBluetoothHeight);
     }
 
     function captureAllowedFor(surface) {
