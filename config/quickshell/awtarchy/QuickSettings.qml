@@ -571,8 +571,8 @@ Singleton {
 
                     RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: root.placement === "right" ? 40 : 8
-                        anchors.rightMargin: root.placement !== "right" && root.placement !== "top" ? 40 : 8
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 40
                         spacing: 6
 
                         Text {
@@ -663,7 +663,7 @@ Singleton {
                     id: contentFlick
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    Layout.bottomMargin: root.placement === "top" ? 34 : 0
+                    Layout.bottomMargin: 0
                     contentWidth: width
                     contentHeight: settingsColumn.implicitHeight + 12
                     clip: true
@@ -1304,8 +1304,8 @@ Singleton {
             Rectangle {
                 width: 28
                 height: 28
-                x: root.placement === "right" ? 6 : panel.width - width - 6
-                y: root.placement === "top" ? panel.height - height - 6 : 5
+                x: panel.width - width - 6
+                y: 5
                 color: closeMouse.containsMouse ? Theme.focus : Theme.active
                 border.width: 0
                 z: 20
