@@ -12,7 +12,7 @@
 #       keep the current placement but move every edge back inside the monitor
 
 set -euo pipefail
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 
 monitor="${1:-}"
 placement="${2:-center}"
@@ -100,6 +100,53 @@ if [[ -s "$state_file" ]] && jq -e '.' "$state_file" >/dev/null 2>&1; then
     fi
 fi
 
+# Quickshell intentionally does not apply FloatingWindow geometry changes while
+# the backing window is visible. On a normal launcher spawn, enforce the saved
+# size through Hyprland after mapping. The clamp path is used during a live drag
+# and must preserve the current compositor-controlled size.
+resize_on_spawn=0
+if [[ "$placement" != "clamp" ]]; then
+    desired_w=420
+    desired_h=582
+
+    if [[ -s "$state_file" ]] && jq -e '.' "$state_file" >/dev/null 2>&1; then
+        read -r desired_w desired_h < <(
+            jq -r --arg monitor "$monitor" '
+                def number_or_zero: try tonumber catch 0;
+                (.launcher_sizes[$monitor] // {}) as $view
+                | (($view.width // 0) | number_or_zero) as $width
+                | (($view.height // 0) | number_or_zero) as $height
+                | (($view.save_version // 0) | number_or_zero) as $save_version
+                | (($view.locked == true)
+                    or ($view.saved == true and $save_version >= 2)) as $saved
+                | if $saved and $width >= 1 and $width <= 16384
+                    and $height >= 1 and $height <= 16384
+                  then [($width | round), ($height | round)]
+                  else [420, 582]
+                  end
+                | @tsv
+            ' "$state_file"
+        )
+    fi
+
+    min_w=420
+    min_h=360
+    max_w=$((mon_w - 32))
+    max_h=$((mon_h - 32))
+    (( max_w < 1 )) && max_w=1
+    (( max_h < 1 )) && max_h=1
+    (( min_w > max_w )) && min_w="$max_w"
+    (( min_h > max_h )) && min_h="$max_h"
+    (( desired_w < min_w )) && desired_w="$min_w"
+    (( desired_w > max_w )) && desired_w="$max_w"
+    (( desired_h < min_h )) && desired_h="$min_h"
+    (( desired_h > max_h )) && desired_h="$max_h"
+
+    win_w="$desired_w"
+    win_h="$desired_h"
+    resize_on_spawn=1
+fi
+
 case "$placement" in
     top)
         x="$mon_x"
@@ -159,6 +206,10 @@ monitor_lua="${monitor//\\/\\\\}"
 monitor_lua="${monitor_lua//\"/\\\"}"
 selector_lua="${selector//\\/\\\\}"
 selector_lua="${selector_lua//\"/\\\"}"
+resize_lua=""
+if (( resize_on_spawn )); then
+    resize_lua="hl.dispatch(hl.dsp.window.resize({ x = ${win_w}, y = ${win_h}, relative = false, window = \"${selector_lua}\" }))"
+fi
 
 # Apply launcher-only compositor properties before positioning it. This keeps
 # the floating window visually seamless with the borderless Quickshell bar.
@@ -169,5 +220,6 @@ hyprctl eval "
     hl.dispatch(hl.dsp.window.set_prop({ prop = \"decorate\", value = \"0\", window = \"${selector_lua}\" }))
     hl.dispatch(hl.dsp.window.float({ action = \"enable\", window = \"${selector_lua}\" }))
     hl.dispatch(hl.dsp.window.move({ monitor = \"${monitor_lua}\", follow = false, window = \"${selector_lua}\" }))
+    ${resize_lua}
     hl.dispatch(hl.dsp.window.move({ x = ${x}, y = ${y}, relative = false, window = \"${selector_lua}\" }))
 " >/dev/null
