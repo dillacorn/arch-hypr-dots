@@ -111,6 +111,14 @@ if awtarchy_vpn_editor_privacy_rule_v1 == nil then
     })
 end
 
+if awtarchy_public_ip_privacy_rule_v1 == nil then
+    awtarchy_public_ip_privacy_rule_v1 = hl.window_rule({
+        name = \"awtarchy-public-ip-capture-privacy-v1\",
+        match = { class = \"^awtarchy-public-ip$\" },
+        no_screen_share = true,
+    })
+end
+
 awtarchy_launcher_privacy_rule:set_enabled(${launcher_protected})
 awtarchy_clipboard_window_privacy_rule_v2:set_enabled(${clipboard_protected})
 awtarchy_notifications_popup_privacy_rule_v2:set_enabled(${notifications_protected})
@@ -119,6 +127,7 @@ awtarchy_quick_settings_window_privacy_rule_v2:set_enabled(${quick_settings_prot
 awtarchy_network_window_privacy_rule_v3:set_enabled(${network_protected})
 awtarchy_bluetooth_window_privacy_rule_v3:set_enabled(${bluetooth_protected})
 awtarchy_vpn_editor_privacy_rule_v1:set_enabled(${network_protected})
+awtarchy_public_ip_privacy_rule_v1:set_enabled(${network_protected})
 hl.exec_scheduled_prop_refresh_immediately()
 " >/dev/null; then
     printf '%s\n' 'quickshell_runtime_rules.sh: failed to register capture privacy rules' >&2
