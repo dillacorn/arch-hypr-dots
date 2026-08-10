@@ -95,8 +95,8 @@ if awtarchy_quickshell_launcher_rule == nil then
 end
 
 -- Current Hyprland releases can synthesize an immediate button release while
--- passing a mouse bind to another surface. Track bar drags in compositor Lua
--- instead, then send only drag state changes to Quickshell IPC.
+-- passing a mouse bind to another surface. Track bar and flyout drags in
+-- compositor Lua, then send only the resulting state changes to Quickshell IPC.
 local function shell_quote(value)
     local quote = string.char(39)
     local slash = string.char(92)
@@ -104,13 +104,10 @@ local function shell_quote(value)
     return quote .. escaped .. quote
 end
 
-local function exec_bar_control(method, arg1, arg2)
+local function exec_control(method, ...)
     local command = { "qs", "-c", "awtarchy", "ipc", "call", "control", method }
-    if arg1 ~= nil then
-        table.insert(command, shell_quote(arg1))
-    end
-    if arg2 ~= nil then
-        table.insert(command, shell_quote(arg2))
+    for _, value in ipairs({ ... }) do
+        table.insert(command, shell_quote(value))
     end
     return hl.dispatch(hl.dsp.exec_cmd(table.concat(command, " ") .. " >/dev/null 2>&1"))
 end
@@ -174,6 +171,34 @@ local function awtarchy_bar_under_pointer()
     return nil
 end
 
+local function awtarchy_flyout_under_pointer()
+    local cursor = hl.get_cursor_pos()
+    if cursor == nil then
+        return nil
+    end
+
+    local cursor_monitor = hl.get_monitor_at_cursor()
+    local targets = {
+        ["awtarchy-clipboard"] = "clipboard",
+        ["awtarchy-notification-center"] = "notifications",
+        ["awtarchy-quick-settings"] = "quicksettings",
+    }
+
+    for _, layer in ipairs(hl.get_layers()) do
+        local monitor = layer.monitor
+        local target = targets[layer.namespace]
+        local same_monitor = monitor ~= nil and cursor_monitor ~= nil
+            and monitor.name == cursor_monitor.name
+
+        if target ~= nil and layer.mapped ~= false and same_monitor
+            and cursor_in_layer(cursor, layer) then
+            return target
+        end
+    end
+
+    return nil
+end
+
 local function movement_candidate(dx, dy)
     if math.abs(dx) > math.abs(dy) then
         return dx >= 0 and "right" or "left"
@@ -226,6 +251,20 @@ local function stop_bar_drag_timer()
     end
 end
 
+local function stop_flyout_resize_timer()
+    if awtarchy_flyout_resize_timer ~= nil then
+        local stopped = pcall(function()
+            awtarchy_flyout_resize_timer:set_enabled(false)
+        end)
+        if not stopped then
+            pcall(function()
+                awtarchy_flyout_resize_timer:cancel()
+            end)
+        end
+        awtarchy_flyout_resize_timer = nil
+    end
+end
+
 local function begin_bar_drag(layer)
     local cursor = hl.get_cursor_pos()
     local monitor = layer.monitor
@@ -242,7 +281,7 @@ local function begin_bar_drag(layer)
         monitor_y = tonumber(monitor.y) or 0,
         candidate = "none",
     }
-    exec_bar_control("beginBarDrag", monitor_name)
+    exec_control("beginBarDrag", monitor_name)
 
     awtarchy_bar_drag_timer = hl.timer(function()
         local drag = awtarchy_bar_drag
@@ -254,18 +293,57 @@ local function begin_bar_drag(layer)
         local candidate = drag_candidate(drag, current)
         if candidate ~= drag.candidate then
             drag.candidate = candidate
-            exec_bar_control("previewBarDrag", drag.monitor, candidate)
+            exec_control("previewBarDrag", drag.monitor, candidate)
         end
     end, { timeout = 16, type = "repeat" })
 
     return true
 end
 
+local function begin_flyout_resize(target)
+    local cursor = hl.get_cursor_pos()
+    if cursor == nil or target == nil then
+        return false
+    end
+
+    stop_flyout_resize_timer()
+    awtarchy_flyout_resize = {
+        target = target,
+        start_x = cursor.x,
+        start_y = cursor.y,
+        last_dx = 0,
+        last_dy = 0,
+    }
+    exec_control("beginFlyoutResize", target)
+
+    awtarchy_flyout_resize_timer = hl.timer(function()
+        local drag = awtarchy_flyout_resize
+        local current = hl.get_cursor_pos()
+        if drag == nil or current == nil then
+            return
+        end
+
+        local dx = math.floor(current.x - drag.start_x)
+        local dy = math.floor(current.y - drag.start_y)
+        if dx ~= drag.last_dx or dy ~= drag.last_dy then
+            drag.last_dx = dx
+            drag.last_dy = dy
+            exec_control("previewFlyoutResize", drag.target, dx, dy)
+        end
+    end, { timeout = 32, type = "repeat" })
+
+    return true
+end
+
 local drag_window = hl.dsp.window.drag()
+local resize_window = hl.dsp.window.resize()
 
 stop_bar_drag_timer()
+stop_flyout_resize_timer()
 awtarchy_bar_drag = nil
-exec_bar_control("cancelBarDrag")
+awtarchy_flyout_resize = nil
+exec_control("cancelBarDrag")
+exec_control("cancelFlyoutResize")
 
 hl.unbind("ALT + mouse:272")
 hl.unbind("ALT + mouse:273")
@@ -287,10 +365,31 @@ hl.bind("ALT + mouse:272", function()
     local candidate = cursor ~= nil and drag_candidate(drag, cursor) or "none"
     stop_bar_drag_timer()
     awtarchy_bar_drag = nil
-    exec_bar_control("finishBarDrag", drag.monitor, candidate)
+    exec_control("finishBarDrag", drag.monitor, candidate)
     return { ok = true }
 end, { mouse = true, release = true, auto_consuming = true })
-hl.bind("ALT + mouse:273", hl.dsp.window.resize(), { mouse = true })
+hl.bind("ALT + mouse:273", function()
+    local target = awtarchy_flyout_under_pointer()
+    if target ~= nil and begin_flyout_resize(target) then
+        return { ok = true }
+    end
+
+    return hl.dispatch(resize_window)
+end, { mouse = true })
+hl.bind("ALT + mouse:273", function()
+    local drag = awtarchy_flyout_resize
+    if drag == nil then
+        return { ok = false }
+    end
+
+    local cursor = hl.get_cursor_pos()
+    local dx = cursor ~= nil and math.floor(cursor.x - drag.start_x) or drag.last_dx
+    local dy = cursor ~= nil and math.floor(cursor.y - drag.start_y) or drag.last_dy
+    stop_flyout_resize_timer()
+    awtarchy_flyout_resize = nil
+    exec_control("finishFlyoutResize", drag.target, dx, dy)
+    return { ok = true }
+end, { mouse = true, release = true, auto_consuming = true })
 ' >/dev/null; then
     printf '%s\n' 'quickshell_runtime_rules.sh: failed to register runtime rules' >&2
     exit 1
