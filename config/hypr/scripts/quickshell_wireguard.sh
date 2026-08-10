@@ -7,7 +7,9 @@ export LC_ALL=C.UTF-8
 VPN_DIR="${AWTARCHY_VPN_DIR:-${HOME}/vpn}"
 EDITOR_TITLE="Awtarchy VPN Config Editor"
 EDITOR_CLASS="awtarchy-vpn-editor"
-FIREFOX_HELPER="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/awtarchy_firefox_webapp.sh"
+FIREFOX="/usr/bin/firefox"
+WTFISMYIP_URL="https://wtfismyip.com/"
+WTFISMYIP_TEXT_URL="https://wtfismyip.com/text"
 
 mkdir -p -- "$VPN_DIR"
 chmod 0700 "$VPN_DIR" 2>/dev/null || true
@@ -83,26 +85,79 @@ edit_profile() {
     exec alacritty --class "${EDITOR_CLASS},${EDITOR_CLASS}" --title "$EDITOR_TITLE" -e micro "$conf"
 }
 
-public_ip() {
-    command -v curl >/dev/null 2>&1 || fail "curl is required"
-    command -v python3 >/dev/null 2>&1 || fail "python3 is required"
+local_info() {
+    command -v ip >/dev/null 2>&1 || fail "ip is required"
+    command -v jq >/dev/null 2>&1 || fail "jq is required"
 
-    curl -fsS --connect-timeout 4 --max-time 8 https://wtfismyip.com/text |
+    local route interface gateway local_ipv4 connection_type
+    route="$(
+        ip -j -4 route show default table main 2>/dev/null |
+            jq -c '[.[] | select((.dev // "") != "lo")][0] // {}'
+    )"
+
+    interface="$(jq -r '.dev // empty' <<<"$route")"
+    gateway="$(jq -r '.gateway // empty' <<<"$route")"
+    local_ipv4=""
+    connection_type=""
+
+    if [[ -n "$interface" ]]; then
+        local_ipv4="$(
+            ip -j -4 addr show dev "$interface" scope global 2>/dev/null |
+                jq -r '[.[].addr_info[]? | select(.family == "inet") | .local][0] // empty'
+        )"
+
+        if [[ -d "/sys/class/net/${interface}/wireless" ]]; then
+            connection_type="Wi-Fi"
+        else
+            connection_type="Ethernet"
+        fi
+    fi
+
+    jq -cn \
+        --arg interface "$interface" \
+        --arg connectionType "$connection_type" \
+        --arg localIpv4 "$local_ipv4" \
+        --arg gateway "$gateway" \
+        '{interface:$interface,connectionType:$connectionType,localIpv4:$localIpv4,gateway:$gateway}'
+}
+
+validated_public_ip() {
+    local family="$1"
+    command -v curl >/dev/null 2>&1 || return 0
+    command -v python3 >/dev/null 2>&1 || return 0
+
+    curl "-${family}" -fsS --connect-timeout 4 --max-time 8 "$WTFISMYIP_TEXT_URL" 2>/dev/null |
         python3 -c '
 import ipaddress
 import sys
+family = int(sys.argv[1])
 value = sys.stdin.read().strip()
 try:
-    print(ipaddress.ip_address(value))
+    address = ipaddress.ip_address(value)
 except ValueError:
     raise SystemExit(1)
-' || fail "Could not determine the public IP address from wtfismyip.com."
+if address.version != family:
+    raise SystemExit(1)
+print(address)
+' "$family" 2>/dev/null || true
+}
+
+public_ips() {
+    command -v jq >/dev/null 2>&1 || fail "jq is required"
+
+    local ipv4 ipv6
+    ipv4="$(validated_public_ip 4)"
+    ipv6="$(validated_public_ip 6)"
+
+    jq -cn \
+        --arg ipv4 "$ipv4" \
+        --arg ipv6 "$ipv6" \
+        '{ipv4:$ipv4,ipv6:$ipv6}'
 }
 
 open_ip_site() {
-    [[ -x "$FIREFOX_HELPER" ]] \
-        || fail "Protected Firefox launcher is unavailable: $FIREFOX_HELPER"
-    exec "$FIREFOX_HELPER" public-ip
+    [[ -x "$FIREFOX" ]] || fail "Firefox is unavailable: $FIREFOX"
+    exec "$FIREFOX" --new-tab "$WTFISMYIP_URL"
 }
 
 case "${1:-}" in
@@ -126,14 +181,17 @@ case "${1:-}" in
         command -v xdg-open >/dev/null 2>&1 || fail "xdg-open is required"
         exec xdg-open "$VPN_DIR"
         ;;
-    public-ip)
-        public_ip
+    local-info)
+        local_info
+        ;;
+    public-ips)
+        public_ips
         ;;
     open-ip-site)
         open_ip_site
         ;;
     *)
-        printf 'Usage: %s {list|up PROFILE|down PROFILE|edit PROFILE|open-dir|public-ip|open-ip-site}\n' "$0" >&2
+        printf 'Usage: %s {list|up PROFILE|down PROFILE|edit PROFILE|open-dir|local-info|public-ips|open-ip-site}\n' "$0" >&2
         exit 2
         ;;
 esac
