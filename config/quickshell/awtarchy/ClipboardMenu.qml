@@ -397,14 +397,14 @@ Singleton {
         anchors.left: root.placement !== "right"
         anchors.right: root.placement === "right"
         margins {
-            top: root.placement === "top" ? root.activeBarSize + 6
+            top: root.placement === "top" ? root.activeBarSize
                 : (root.placement === "bottom" ? 0
                     : Math.max(6, Math.round((root.targetScreenHeight - root.livePanelHeight) / 2)))
-            bottom: root.placement === "bottom" ? root.activeBarSize + 6 : 0
-            left: root.placement === "left" ? root.activeBarSize + 6
+            bottom: root.placement === "bottom" ? root.activeBarSize : 0
+            left: root.placement === "left" ? root.activeBarSize
                 : (root.placement === "right" ? 0
                     : Math.max(6, Math.round((root.targetScreenWidth - root.livePanelWidth) / 2)))
-            right: root.placement === "right" ? root.activeBarSize + 6 : 0
+            right: root.placement === "right" ? root.activeBarSize : 0
         }
 
         Rectangle {
