@@ -41,8 +41,6 @@ if awtarchy_launcher_privacy_rule == nil then
     })
 end
 
--- Retire privacy rule objects from the old layer-shell implementation. They
--- may still exist in a long-running Hyprland Lua state after updating the shell.
 local function disable_superseded_rule(rule)
     if rule ~= nil then
         pcall(function() rule:set_enabled(false) end)
@@ -57,8 +55,6 @@ disable_superseded_rule(awtarchy_quick_settings_privacy_rule)
 disable_superseded_rule(awtarchy_connectivity_privacy_rule)
 disable_superseded_rule(awtarchy_connectivity_window_privacy_rule_v2)
 
--- Use new Lua globals for converted floating surfaces so an existing Hyprland
--- session cannot keep the previous layer-rule objects alive under the same name.
 if awtarchy_clipboard_window_privacy_rule_v2 == nil then
     awtarchy_clipboard_window_privacy_rule_v2 = hl.window_rule({
         name = \"awtarchy-clipboard-window-capture-privacy-v2\",
@@ -110,7 +106,7 @@ end
 if awtarchy_vpn_editor_privacy_rule_v1 == nil then
     awtarchy_vpn_editor_privacy_rule_v1 = hl.window_rule({
         name = \"awtarchy-vpn-editor-capture-privacy-v1\",
-        match = { title = \"^Awtarchy VPN Config Editor$\" },
+        match = { class = \"^awtarchy-vpn-editor$\" },
         no_screen_share = true,
     })
 end
@@ -123,15 +119,13 @@ awtarchy_quick_settings_window_privacy_rule_v2:set_enabled(${quick_settings_prot
 awtarchy_network_window_privacy_rule_v3:set_enabled(${network_protected})
 awtarchy_bluetooth_window_privacy_rule_v3:set_enabled(${bluetooth_protected})
 awtarchy_vpn_editor_privacy_rule_v1:set_enabled(${network_protected})
+hl.exec_scheduled_prop_refresh_immediately()
 " >/dev/null; then
     printf '%s\n' 'quickshell_runtime_rules.sh: failed to register capture privacy rules' >&2
     exit 1
 fi
 
 if ! hyprctl eval '
--- The old launcher runtime rule allowed the compositor initial mapping frame to
--- become visible. Retire it and use the same invisible-until-positioned model
--- already proven by the other floating Quickshell flyouts.
 if awtarchy_quickshell_launcher_rule ~= nil then
     pcall(function() awtarchy_quickshell_launcher_rule:set_enabled(false) end)
 end
@@ -151,9 +145,6 @@ if awtarchy_quickshell_launcher_rule_v2 == nil then
 end
 awtarchy_quickshell_launcher_rule_v2:set_enabled(true)
 
--- Retire both earlier floating-flyout rule objects. v1 blocked hover focus;
--- v2 had the correct hover behavior but exposed the compositor initial map
--- position before the post-map placement helper could move the window.
 if awtarchy_quickshell_flyout_rule ~= nil then
     pcall(function() awtarchy_quickshell_flyout_rule:set_enabled(false) end)
 end
@@ -171,18 +162,11 @@ if awtarchy_quickshell_flyout_rule_v3 == nil then
         decorate = false,
         no_shadow = true,
         no_anim = true,
-        -- A floating Wayland toplevel can be initially mapped at the compositor
-        -- default location. Keep it completely invisible until the bar-aware
-        -- position helper has moved, resized, and explicitly revealed it.
         opacity = "0 override 0 override 0 override",
     })
 end
 awtarchy_quickshell_flyout_rule_v3:set_enabled(true)
 
--- Current Hyprland releases can synthesize an immediate button release while
--- passing a mouse bind to another layer surface. Track only bar drags in
--- compositor Lua. Floating Quickshell flyouts use normal compositor-native
--- window move/resize handling, exactly like the application launcher.
 local function shell_quote(value)
     local quote = string.char(39)
     local slash = string.char(92)
@@ -254,11 +238,6 @@ local function awtarchy_bar_under_pointer()
     return nil
 end
 
--- Retire the earlier window.open_early relocation experiment. It could not
--- reliably control the first visible frame on every multi-monitor layout.
--- Existing callbacks in a long-running Hyprland Lua session remain registered,
--- but this gate keeps them inert. Any temporary rules from that experiment are
--- disabled immediately as well.
 awtarchy_flyout_spawn_hooks_v1_enabled = false
 if awtarchy_flyout_spawn_rules_v1 ~= nil then
     for title, rule in pairs(awtarchy_flyout_spawn_rules_v1) do
