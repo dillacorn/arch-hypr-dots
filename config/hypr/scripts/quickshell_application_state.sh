@@ -235,13 +235,15 @@ flyout_key() {
         clipboard) printf 'clipboard_views\n' ;;
         notifications) printf 'notification_views\n' ;;
         quick-settings) printf 'quick_settings_views\n' ;;
+        network) printf 'network_views\n' ;;
+        bluetooth) printf 'bluetooth_views\n' ;;
         *) printf 'invalid flyout: %s\n' "$1" >&2; exit 2 ;;
     esac
 }
 
 capture_key() {
     case "$1" in
-        clipboard|notifications|launcher) printf '%s\n' "$1" ;;
+        clipboard|notifications|launcher|network|bluetooth) printf '%s\n' "$1" ;;
         quick-settings) printf 'quick_settings\n' ;;
         *) printf 'invalid capture surface: %s\n' "$1" >&2; exit 2 ;;
     esac
