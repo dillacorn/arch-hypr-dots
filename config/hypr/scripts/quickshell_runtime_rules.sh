@@ -38,40 +38,49 @@ if awtarchy_launcher_privacy_rule == nil then
 end
 
 if awtarchy_clipboard_privacy_rule == nil then
-    awtarchy_clipboard_privacy_rule = hl.layer_rule({
+    awtarchy_clipboard_privacy_rule = hl.window_rule({
         name = \"awtarchy-clipboard-capture-privacy\",
-        match = { namespace = \"^awtarchy-clipboard$\" },
+        match = { title = \"^Awtarchy Clipboard History$\" },
         no_screen_share = true,
     })
 end
 
-if awtarchy_notifications_privacy_rule == nil then
-    awtarchy_notifications_privacy_rule = hl.layer_rule({
-        name = \"awtarchy-notifications-capture-privacy\",
-        match = { namespace = \"^awtarchy-notification-(popup|center)$\" },
+if awtarchy_notifications_popup_privacy_rule == nil then
+    awtarchy_notifications_popup_privacy_rule = hl.layer_rule({
+        name = \"awtarchy-notification-popup-capture-privacy\",
+        match = { namespace = \"^awtarchy-notification-popup$\" },
+        no_screen_share = true,
+    })
+end
+
+if awtarchy_notifications_center_privacy_rule == nil then
+    awtarchy_notifications_center_privacy_rule = hl.window_rule({
+        name = \"awtarchy-notification-center-capture-privacy\",
+        match = { title = \"^Awtarchy Notification Center$\" },
         no_screen_share = true,
     })
 end
 
 if awtarchy_quick_settings_privacy_rule == nil then
-    awtarchy_quick_settings_privacy_rule = hl.layer_rule({
+    awtarchy_quick_settings_privacy_rule = hl.window_rule({
         name = \"awtarchy-quick-settings-capture-privacy\",
-        match = { namespace = \"^awtarchy-quick-settings$\" },
+        match = { title = \"^Awtarchy Quick Settings$\" },
         no_screen_share = true,
     })
 end
 
 if awtarchy_connectivity_privacy_rule == nil then
-    awtarchy_connectivity_privacy_rule = hl.layer_rule({
+    awtarchy_connectivity_privacy_rule = hl.window_rule({
         name = \"awtarchy-connectivity-capture-privacy\",
-        match = { namespace = \"^awtarchy-(network|bluetooth)$\" },
+        match = { title = \"^Awtarchy (Network|Bluetooth)$\" },
         no_screen_share = true,
     })
 end
 
 awtarchy_launcher_privacy_rule:set_enabled(${launcher_protected})
 awtarchy_clipboard_privacy_rule:set_enabled(${clipboard_protected})
-awtarchy_notifications_privacy_rule:set_enabled(${notifications_protected})
+awtarchy_notifications_popup_privacy_rule:set_enabled(${notifications_protected})
+awtarchy_notifications_center_privacy_rule:set_enabled(${notifications_protected})
 awtarchy_quick_settings_privacy_rule:set_enabled(${quick_settings_protected})
 awtarchy_connectivity_privacy_rule:set_enabled(true)
 " >/dev/null; then
@@ -94,9 +103,24 @@ if awtarchy_quickshell_launcher_rule == nil then
     })
 end
 
+if awtarchy_quickshell_flyout_rule == nil then
+    awtarchy_quickshell_flyout_rule = hl.window_rule({
+        name = "awtarchy-quickshell-floating-flyouts",
+        match = { title = "^Awtarchy (Clipboard History|Notification Center|Quick Settings|Network|Bluetooth)$" },
+        float = true,
+        border_size = 0,
+        rounding = 0,
+        decorate = false,
+        no_shadow = true,
+        no_follow_mouse = true,
+        no_anim = true,
+    })
+end
+
 -- Current Hyprland releases can synthesize an immediate button release while
--- passing a mouse bind to another surface. Track bar and flyout drags in
--- compositor Lua, then send only the resulting state changes to Quickshell IPC.
+-- passing a mouse bind to another layer surface. Track only bar drags in
+-- compositor Lua. Floating Quickshell flyouts use normal compositor-native
+-- window move/resize handling, exactly like the application launcher.
 local function shell_quote(value)
     local quote = string.char(39)
     local slash = string.char(92)
@@ -126,9 +150,6 @@ local function cursor_in_layer(cursor, layer)
             and cursor.y >= y and cursor.y < y + lh
     end
 
-    -- Layer coordinates have changed representation across compositor code
-    -- paths. Accept compositor-global coordinates and monitor-local ones, but
-    -- only after matching the monitor under the cursor.
     if inside(lx, ly) then
         return true
     end
@@ -171,36 +192,6 @@ local function awtarchy_bar_under_pointer()
     return nil
 end
 
-local function awtarchy_flyout_under_pointer()
-    local cursor = hl.get_cursor_pos()
-    if cursor == nil then
-        return nil
-    end
-
-    local cursor_monitor = hl.get_monitor_at_cursor()
-    local targets = {
-        ["awtarchy-clipboard"] = "clipboard",
-        ["awtarchy-notification-center"] = "notifications",
-        ["awtarchy-quick-settings"] = "quicksettings",
-        ["awtarchy-network"] = "network",
-        ["awtarchy-bluetooth"] = "bluetooth",
-    }
-
-    for _, layer in ipairs(hl.get_layers()) do
-        local monitor = layer.monitor
-        local target = targets[layer.namespace]
-        local same_monitor = monitor ~= nil and cursor_monitor ~= nil
-            and monitor.name == cursor_monitor.name
-
-        if target ~= nil and layer.mapped ~= false and same_monitor
-            and cursor_in_layer(cursor, layer) then
-            return target
-        end
-    end
-
-    return nil
-end
-
 local function movement_candidate(dx, dy)
     if math.abs(dx) > math.abs(dy) then
         return dx >= 0 and "right" or "left"
@@ -220,16 +211,10 @@ local function drag_candidate(drag, cursor)
         local horizontal = math.abs(dx)
         local top = tonumber(drag.monitor_y)
 
-        -- A pointer that reaches the top snap zone is unambiguously aiming
-        -- upward even when the drag began close to that edge and accumulated
-        -- more sideways movement than vertical movement.
         if top ~= nil and vertical >= 16 and math.abs(cursor.y - top) <= 64 then
             return "top"
         end
 
-        -- Give upward movement a wider cone and a little hysteresis once the
-        -- top preview is active. Left/right still win for clearly horizontal
-        -- movement, while small diagonal drift no longer steals the target.
         local upward_bias = drag.candidate == "top" and 1.75 or 1.5
         if vertical * upward_bias >= horizontal then
             return "top"
@@ -250,20 +235,6 @@ local function stop_bar_drag_timer()
             end)
         end
         awtarchy_bar_drag_timer = nil
-    end
-end
-
-local function stop_flyout_resize_timer()
-    if awtarchy_flyout_resize_timer ~= nil then
-        local stopped = pcall(function()
-            awtarchy_flyout_resize_timer:set_enabled(false)
-        end)
-        if not stopped then
-            pcall(function()
-                awtarchy_flyout_resize_timer:cancel()
-            end)
-        end
-        awtarchy_flyout_resize_timer = nil
     end
 end
 
@@ -302,50 +273,12 @@ local function begin_bar_drag(layer)
     return true
 end
 
-local function begin_flyout_resize(target)
-    local cursor = hl.get_cursor_pos()
-    if cursor == nil or target == nil then
-        return false
-    end
-
-    stop_flyout_resize_timer()
-    awtarchy_flyout_resize = {
-        target = target,
-        start_x = cursor.x,
-        start_y = cursor.y,
-        last_dx = 0,
-        last_dy = 0,
-    }
-    exec_control("beginFlyoutResize", target)
-
-    awtarchy_flyout_resize_timer = hl.timer(function()
-        local drag = awtarchy_flyout_resize
-        local current = hl.get_cursor_pos()
-        if drag == nil or current == nil then
-            return
-        end
-
-        local dx = math.floor(current.x - drag.start_x)
-        local dy = math.floor(current.y - drag.start_y)
-        if dx ~= drag.last_dx or dy ~= drag.last_dy then
-            drag.last_dx = dx
-            drag.last_dy = dy
-            exec_control("previewFlyoutResize", drag.target, dx, dy)
-        end
-    end, { timeout = 16, type = "repeat" })
-
-    return true
-end
-
 local drag_window = hl.dsp.window.drag()
 local resize_window = hl.dsp.window.resize()
 
 stop_bar_drag_timer()
-stop_flyout_resize_timer()
 awtarchy_bar_drag = nil
-awtarchy_flyout_resize = nil
 exec_control("cancelBarDrag")
-exec_control("cancelFlyoutResize")
 
 hl.unbind("ALT + mouse:272")
 hl.unbind("ALT + mouse:273")
@@ -371,27 +304,8 @@ hl.bind("ALT + mouse:272", function()
     return { ok = true }
 end, { mouse = true, release = true, auto_consuming = true })
 hl.bind("ALT + mouse:273", function()
-    local target = awtarchy_flyout_under_pointer()
-    if target ~= nil and begin_flyout_resize(target) then
-        return { ok = true }
-    end
-
     return hl.dispatch(resize_window)
 end, { mouse = true })
-hl.bind("ALT + mouse:273", function()
-    local drag = awtarchy_flyout_resize
-    if drag == nil then
-        return { ok = false }
-    end
-
-    local cursor = hl.get_cursor_pos()
-    local dx = cursor ~= nil and math.floor(cursor.x - drag.start_x) or drag.last_dx
-    local dy = cursor ~= nil and math.floor(cursor.y - drag.start_y) or drag.last_dy
-    stop_flyout_resize_timer()
-    awtarchy_flyout_resize = nil
-    exec_control("finishFlyoutResize", drag.target, dx, dy)
-    return { ok = true }
-end, { mouse = true, release = true, auto_consuming = true })
 ' >/dev/null; then
     printf '%s\n' 'quickshell_runtime_rules.sh: failed to register runtime rules' >&2
     exit 1
