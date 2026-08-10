@@ -11,7 +11,7 @@ Comment[da]=Applikation til at håndtere og spille spil på Steam
 Comment[nl]=Applicatie voor het beheer en het spelen van games op Steam
 Comment[fi]=Steamin pelien hallintaan ja pelaamiseen tarkoitettu sovellus
 Comment[fr]=Application de gestion et d'utilisation des jeux sur Steam
-Comment[de]=Anwendung zum Verwalten und Spielen von Spielen auf Steam
+Comment[de]=Anwendung zum Verwalten und Spielen von Spielen mit Steam
 Comment[el]=Εφαρμογή διαχείρισης παιχνιδιών στο Steam
 Comment[hu]=Alkalmazás a Steames játékok futtatásához és kezeléséhez
 Comment[it]=Applicazione per la gestione e l'esecuzione di giochi su Steam
@@ -30,7 +30,7 @@ Comment[th]=โปรแกรมสำหรับจัดการและ�
 Comment[tr]=Steam üzerinden oyun oynama ve düzenleme uygulaması
 Comment[uk]=Програма для керування іграми та запуску ігор у Steam
 Comment[vi]=Ứng dụng để quản lý và chơi trò chơi trên Steam
-Exec=/bin/sh -c 'command -v steam >/dev/null 2>&1 || { hyprctl notify 3 5000 "rgb(ff5555)" "Steam is not installed."; exit 1; }; pgrep -x steam >/dev/null && exit 0; /usr/bin/steam --disable-gpu "$@" & ALLOW_WAIT=1 "$HOME/.config/hypr/scripts/splitratio_steam.sh" &' _ %U
+Exec=/bin/sh -c 'command -v steam >/dev/null 2>&1 || { hyprctl notify 3 5000 "rgb(ff5555)" "Steam is not installed."; exit 1; }; /usr/bin/steam --disable-gpu "$@" & ALLOW_WAIT=1 "$HOME/.config/hypr/scripts/splitratio_steam.sh" &' _ %U
 Icon=steam
 Terminal=false
 Type=Application
