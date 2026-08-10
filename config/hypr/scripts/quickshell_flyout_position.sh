@@ -91,121 +91,66 @@ esac
 command -v hyprctl >/dev/null 2>&1 || exit 127
 command -v jq >/dev/null 2>&1 || exit 127
 
-# The QML caller already knows which bar was clicked, but a newly mapped
-# FloatingWindow can have its screen reassigned by the compositor before the
-# queued positioning call runs. For spawn only, capture the pointer immediately
-# and trust the monitor under it when the pointer is still inside that monitor's
-# Awtarchy bar strip. This preserves keyboard/IPC opens, which fall back to the
-# monitor supplied by QML when the pointer is not over a bar.
-resolve_clicked_bar_target() {
+# BarButton records its owning monitor immediately before emitting the click
+# action. Prefer that short-lived value for a new spawn instead of trusting
+# FloatingWindow.screen after the compositor has already mapped the window.
+# Keyboard/IPC opens have no recent bar click and therefore keep the QML target.
+resolve_recent_bar_target() {
     [[ "$action" == "spawn" ]] || return 0
+    command -v qs >/dev/null 2>&1 || return 0
 
-    local cursor_json monitors_json cursor_x cursor_y candidate candidate_name
-    local candidate_x candidate_y candidate_w candidate_h candidate_position
-    local candidate_bar_size candidate_enabled inside_bar
-
-    cursor_json="$(hyprctl cursorpos -j 2>/dev/null || true)"
-    monitors_json="$(hyprctl monitors -j 2>/dev/null || true)"
-    [[ -n "$cursor_json" && -n "$monitors_json" ]] || return 0
-
-    read -r cursor_x cursor_y < <(
-        jq -r '[.x // empty, .y // empty] | @tsv' <<<"$cursor_json" 2>/dev/null || true
-    )
-    [[ "$cursor_x" =~ ^-?[0-9]+([.][0-9]+)?$ && "$cursor_y" =~ ^-?[0-9]+([.][0-9]+)?$ ]] || return 0
+    local candidate candidate_json enabled position
 
     candidate="$(
-        jq -c --argjson cx "$cursor_x" --argjson cy "$cursor_y" '
-            def rotated: (((.transform // 0) % 2) == 1);
-            def logical_width:
-                if rotated then (.height / (.scale // 1))
-                else (.width / (.scale // 1)) end;
-            def logical_height:
-                if rotated then (.width / (.scale // 1))
-                else (.height / (.scale // 1)) end;
-            .[]
-            | (.x // 0) as $x
-            | (.y // 0) as $y
-            | (logical_width | floor) as $w
-            | (logical_height | floor) as $h
-            | select($cx >= $x and $cx < ($x + $w)
-                and $cy >= $y and $cy < ($y + $h))
-            | { name: .name, x: $x, y: $y, w: $w, h: $h }
-        ' <<<"$monitors_json" 2>/dev/null | head -n1
+        qs -c awtarchy ipc call control recentBarMonitor 2>/dev/null \
+            | tail -n1 \
+            | tr -d '\r' \
+            || true
     )"
+
+    # qs currently prints string results directly, but tolerate quoted output.
+    candidate="${candidate#\"}"
+    candidate="${candidate%\"}"
     [[ -n "$candidate" ]] || return 0
 
-    read -r candidate_name candidate_x candidate_y candidate_w candidate_h < <(
-        jq -r '[.name, .x, .y, .w, .h] | @tsv' <<<"$candidate"
-    )
-    [[ -n "$candidate_name" ]] || return 0
+    candidate_json="$(
+        hyprctl monitors -j 2>/dev/null \
+            | jq -c --arg monitor "$candidate" '.[] | select(.name == $monitor)' \
+            | head -n1
+    )"
+    [[ -n "$candidate_json" ]] || return 0
 
-    candidate_position="$placement"
-    candidate_enabled=true
-    candidate_bar_size=0
+    monitor="$candidate"
+    enabled=true
+    position=top
 
     if [[ -s "$state_file" ]] && jq -e '.' "$state_file" >/dev/null 2>&1; then
-        candidate_position="$(
-            jq -r --arg monitor "$candidate_name" \
-                '((.monitors // {})[$monitor].position // "top")' \
-                "$state_file" 2>/dev/null || printf 'top'
-        )"
-        candidate_enabled="$(
-            jq -r --arg monitor "$candidate_name" '
+        enabled="$(
+            jq -r --arg monitor "$monitor" '
                 if (.enabled // true) == false then "false"
                 elif (((.monitors // {})[$monitor].enabled // true) == false) then "false"
                 else "true" end
             ' "$state_file" 2>/dev/null || printf 'true'
         )"
-        candidate_bar_size="$(
-            jq -r --arg monitor "$candidate_name" \
-                '((.monitors // {})[$monitor].bar_size // 0)' \
-                "$state_file" 2>/dev/null || printf '0'
+        position="$(
+            jq -r --arg monitor "$monitor" \
+                '((.monitors // {})[$monitor].position // "top")' \
+                "$state_file" 2>/dev/null || printf 'top'
         )"
     fi
 
-    [[ "$candidate_enabled" == "true" ]] || return 0
-    case "$candidate_position" in
-        top|bottom|left|right) ;;
-        *) return 0 ;;
-    esac
-
-    if ! [[ "$candidate_bar_size" =~ ^[0-9]+$ ]] \
-        || (( candidate_bar_size < 20 || candidate_bar_size > 80 )); then
-        case "$candidate_position" in
-            left|right) candidate_bar_size=36 ;;
-            *) candidate_bar_size=28 ;;
-        esac
+    if [[ "$enabled" != "true" ]]; then
+        placement=center
+        return 0
     fi
 
-    inside_bar="$(
-        jq -nr \
-            --arg position "$candidate_position" \
-            --argjson cx "$cursor_x" \
-            --argjson cy "$cursor_y" \
-            --argjson x "$candidate_x" \
-            --argjson y "$candidate_y" \
-            --argjson w "$candidate_w" \
-            --argjson h "$candidate_h" \
-            --argjson bar "$candidate_bar_size" '
-            if $position == "top" then
-                ($cy >= $y and $cy < ($y + $bar))
-            elif $position == "bottom" then
-                ($cy >= ($y + $h - $bar) and $cy < ($y + $h))
-            elif $position == "left" then
-                ($cx >= $x and $cx < ($x + $bar))
-            elif $position == "right" then
-                ($cx >= ($x + $w - $bar) and $cx < ($x + $w))
-            else false end
-        '
-    )"
-
-    [[ "$inside_bar" == "true" ]] || return 0
-
-    monitor="$candidate_name"
-    placement="$candidate_position"
+    case "$position" in
+        top|bottom|left|right) placement="$position" ;;
+        *) placement=center ;;
+    esac
 }
 
-resolve_clicked_bar_target
+resolve_recent_bar_target
 
 client=""
 for _ in {1..60}; do
