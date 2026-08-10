@@ -675,14 +675,18 @@ Singleton {
                         readonly property string thumbnailPath: modelData && modelData.thumb
                             ? String(modelData.thumb) : ""
                         readonly property bool hasThumbnail: thumbnailPath.length > 0
+                        readonly property string previewLabel: modelData
+                            ? String(modelData.label || "").replace(/[\r\n]+/g, " ") : ""
                         readonly property int thumbnailSize: Math.max(48,
                             Math.min(160, Math.round(96 * root.effectiveIconScale / 100)))
+                        readonly property color previewBackground: ListView.isCurrentItem
+                            ? Theme.focus
+                            : ((rowMouse.containsMouse || viewMouse.containsMouse)
+                                ? Theme.subtleHover : Theme.popupBackground)
                         height: hasThumbnail
                             ? thumbnailSize + 20
                             : Math.max(40, Math.round(44 * root.effectiveTextScale / 100))
-                        color: ListView.isCurrentItem ? Theme.focus
-                            : ((rowMouse.containsMouse || viewMouse.containsMouse)
-                                ? Theme.subtleHover : "transparent")
+                        color: previewBackground
 
                         RowLayout {
                             anchors.fill: parent
@@ -702,14 +706,43 @@ Singleton {
                             }
 
                             Text {
+                                id: previewText
                                 Layout.fillWidth: true
-                                text: row.modelData ? String(row.modelData.label || "") : ""
+                                Layout.alignment: Qt.AlignVCenter
+                                text: row.previewLabel
                                 color: Theme.foreground
                                 font.family: Theme.fontFamily
                                 font.pixelSize: Math.max(8, Math.round(14 * root.effectiveTextScale / 100))
-                                elide: Text.ElideRight
-                                maximumLineCount: 3
-                                wrapMode: Text.WrapAnywhere
+                                wrapMode: Text.NoWrap
+                                elide: Text.ElideNone
+                                clip: true
+                            }
+                        }
+
+                        Rectangle {
+                            id: previewFade
+                            visible: Boolean(row.modelData)
+                                && row.modelData.binary === false
+                                && previewText.contentWidth > previewText.width + 1
+                            anchors.top: parent.top
+                            anchors.bottom: parent.bottom
+                            anchors.right: parent.right
+                            anchors.rightMargin: (clipboardScrollBar.visible ? 20 : 10)
+                                + (viewButton.visible ? 36 : 0)
+                            width: Math.min(56, Math.max(32, row.width * 0.08))
+                            z: 8
+                            gradient: Gradient {
+                                orientation: Gradient.Horizontal
+                                GradientStop {
+                                    position: 0.0
+                                    color: Qt.rgba(row.previewBackground.r,
+                                        row.previewBackground.g,
+                                        row.previewBackground.b, 0)
+                                }
+                                GradientStop {
+                                    position: 1.0
+                                    color: row.previewBackground
+                                }
                             }
                         }
 
