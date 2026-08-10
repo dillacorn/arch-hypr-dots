@@ -7,7 +7,6 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Networking
-import Quickshell.Wayland
 
 Singleton {
     id: root
@@ -47,25 +46,22 @@ Singleton {
         ? Theme.foreground : Theme.muted
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
+    readonly property string positionScript: configHome + "/hypr/scripts/quickshell_flyout_position.sh"
     readonly property string activeMonitorName: networkWindow.screen ? networkWindow.screen.name : ""
-    readonly property int activeBarSize: {
-        const target = networkWindow.screen;
-        if (!target || placement === "center")
-            return 0;
-        return BarState.barSizeFor(target.name, placement === "left" || placement === "right");
-    }
     readonly property int targetScreenWidth: networkWindow.screen ? networkWindow.screen.width : 1920
     readonly property int targetScreenHeight: networkWindow.screen ? networkWindow.screen.height : 1080
-    readonly property int maximumPanelWidth: Math.max(1, targetScreenWidth
-        - ((placement === "left" || placement === "right") ? activeBarSize : 0) - 20)
-    readonly property int maximumPanelHeight: Math.max(1, targetScreenHeight
-        - ((placement === "top" || placement === "bottom") ? activeBarSize : 0) - 20)
+    readonly property int maximumPanelWidth: Math.max(1, targetScreenWidth - 20)
+    readonly property int maximumPanelHeight: Math.max(1, targetScreenHeight - 20)
     readonly property int minimumPanelWidth: Math.min(360, maximumPanelWidth)
     readonly property int minimumPanelHeight: Math.min(360, maximumPanelHeight)
-    readonly property int livePanelWidth: clampWidth(panelWidthOverride >= 0
+    readonly property int configuredPanelWidth: clampWidth(panelWidthOverride >= 0
         ? panelWidthOverride : BarState.networkViewFor(activeMonitorName).width)
-    readonly property int livePanelHeight: clampHeight(panelHeightOverride >= 0
+    readonly property int configuredPanelHeight: clampHeight(panelHeightOverride >= 0
         ? panelHeightOverride : BarState.networkViewFor(activeMonitorName).height)
+    readonly property int livePanelWidth: networkWindow.visible && networkWindow.width > 0
+        ? clampWidth(Math.round(networkWindow.width)) : configuredPanelWidth
+    readonly property int livePanelHeight: networkWindow.visible && networkWindow.height > 0
+        ? clampHeight(Math.round(networkWindow.height)) : configuredPanelHeight
     readonly property int effectiveTextScale: textScaleOverride >= 0
         ? textScaleOverride : BarState.networkViewFor(activeMonitorName).textScale
     readonly property int effectiveIconScale: iconScaleOverride >= 0
@@ -276,6 +272,25 @@ Singleton {
         return Math.max(minimumPanelHeight, Math.min(maximumPanelHeight, Math.round(value)));
     }
 
+    function applyWindowSize(width, height) {
+        panelWidthOverride = clampWidth(width);
+        panelHeightOverride = clampHeight(height);
+        if (networkWindow.visible && activeMonitorName.length > 0) {
+            Quickshell.execDetached([
+                positionScript, "network", activeMonitorName, placement, "resize",
+                String(panelWidthOverride), String(panelHeightOverride)
+            ]);
+        }
+    }
+
+    function positionWindow() {
+        if (!networkWindow.visible || activeMonitorName.length === 0)
+            return;
+        Quickshell.execDetached([
+            positionScript, "network", activeMonitorName, placement, "spawn"
+        ]);
+    }
+
     function scaledText(baseSize) {
         return Math.max(7, Math.round(baseSize * effectiveTextScale / 100));
     }
@@ -317,10 +332,11 @@ Singleton {
     }
 
     function discardDraft() {
-        panelWidthOverride = savedView.width;
-        panelHeightOverride = savedView.height;
+        const width = savedView.width;
+        const height = savedView.height;
         textScaleOverride = savedView.textScale;
         iconScaleOverride = savedView.iconScale;
+        applyWindowSize(width, height);
     }
 
     function queueStateCommand(commandArgs) {
@@ -346,6 +362,8 @@ Singleton {
             String(livePanelWidth), String(livePanelHeight),
             String(effectiveTextScale), String(effectiveIconScale), "false"
         ]);
+        panelWidthOverride = livePanelWidth;
+        panelHeightOverride = livePanelHeight;
         acceptDraftAsSaved();
         settingsMessage = "Saved Network settings for " + activeMonitorName;
     }
@@ -353,10 +371,9 @@ Singleton {
     function resetDisplaySettings() {
         if (activeMonitorName.length === 0)
             return;
-        panelWidthOverride = clampWidth(BarState.defaultNetworkWidth);
-        panelHeightOverride = clampHeight(BarState.defaultNetworkHeight);
         textScaleOverride = 100;
         iconScaleOverride = 100;
+        applyWindowSize(BarState.defaultNetworkWidth, BarState.defaultNetworkHeight);
         savedView = ({
             width: panelWidthOverride,
             height: panelHeightOverride,
@@ -381,12 +398,12 @@ Singleton {
     }
 
     function adjustPanelWidth(delta) {
-        panelWidthOverride = clampWidth(livePanelWidth + delta);
+        applyWindowSize(livePanelWidth + delta, livePanelHeight);
         settingsMessage = "Width " + panelWidthOverride + " px";
     }
 
     function adjustPanelHeight(delta) {
-        panelHeightOverride = clampHeight(livePanelHeight + delta);
+        applyWindowSize(livePanelWidth, livePanelHeight + delta);
         settingsMessage = "Height " + panelHeightOverride + " px";
     }
 
@@ -421,6 +438,7 @@ Singleton {
         cancelWifiPassword();
         loadSavedView(targetScreen);
         networkWindow.visible = true;
+        Qt.callLater(() => root.positionWindow());
         if (wifiPresent && Networking.wifiEnabled)
             setWifiScanning(true);
     }
@@ -476,31 +494,21 @@ Singleton {
         function close(): void { root.close(); }
     }
 
-    PanelWindow {
+    FloatingWindow {
         id: networkWindow
-        WlrLayershell.namespace: "awtarchy-network"
         visible: false
+        title: "Awtarchy Network"
         color: "transparent"
-        focusable: true
-        aboveWindows: true
-        exclusionMode: ExclusionMode.Ignore
-        implicitWidth: root.livePanelWidth
-        implicitHeight: root.livePanelHeight
-        anchors.top: root.placement === "top" || root.placement === "center"
-        anchors.bottom: root.placement !== "top" && root.placement !== "center"
-        anchors.left: root.placement === "left" || root.placement === "center"
-        anchors.right: root.placement !== "left" && root.placement !== "center"
-        margins {
-            top: root.placement === "top" ? root.activeBarSize
-                : (root.placement === "center"
-                    ? Math.max(6, Math.round((root.targetScreenHeight - root.livePanelHeight) / 2)) : 0)
-            bottom: root.placement === "bottom" ? root.activeBarSize
-                : ((root.placement === "left" || root.placement === "right") ? 8 : 0)
-            left: root.placement === "left" ? root.activeBarSize
-                : (root.placement === "center"
-                    ? Math.max(6, Math.round((root.targetScreenWidth - root.livePanelWidth) / 2)) : 0)
-            right: root.placement === "right" ? root.activeBarSize
-                : ((root.placement === "top" || root.placement === "bottom") ? 8 : 0)
+        surfaceFormat.opaque: false
+        implicitWidth: root.configuredPanelWidth
+        implicitHeight: root.configuredPanelHeight
+        minimumSize: Qt.size(root.minimumPanelWidth, root.minimumPanelHeight)
+        maximumSize: Qt.size(root.maximumPanelWidth, root.maximumPanelHeight)
+
+        onClosed: root.close()
+        onVisibleChanged: {
+            if (visible)
+                Qt.callLater(() => root.positionWindow());
         }
 
         Rectangle {
