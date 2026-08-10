@@ -9,6 +9,7 @@ Rectangle {
     id: root
 
     property bool active: false
+    property bool standalone: false
     property int textScale: 100
     property int iconScale: 100
     property var profiles: []
@@ -32,9 +33,11 @@ Rectangle {
     readonly property int profileListHeight: profiles.length === 0 ? 0
         : Math.min(176, profiles.length * profileRowHeight)
 
-    implicitHeight: content.implicitHeight + 16
+    implicitHeight: standalone ? content.implicitHeight + 16 : 0
+    opacity: standalone ? 1 : 0
+    enabled: standalone
     color: Theme.popupButton
-    border.width: 1
+    border.width: standalone ? 1 : 0
     border.color: Theme.active
 
     function scaledText(baseSize) {
@@ -46,12 +49,12 @@ Rectangle {
     }
 
     function refreshProfiles() {
-        if (!listProcess.running)
+        if (standalone && !listProcess.running)
             listProcess.running = true;
     }
 
     function refreshLocalInfo() {
-        if (!localInfoProcess.running)
+        if (standalone && !localInfoProcess.running)
             localInfoProcess.running = true;
     }
 
@@ -73,7 +76,7 @@ Rectangle {
     }
 
     function checkPublicIps() {
-        if (publicIpProcess.running)
+        if (!standalone || publicIpProcess.running)
             return;
         publicIpv4 = "";
         publicIpv6 = "";
@@ -83,7 +86,7 @@ Rectangle {
     }
 
     onActiveChanged: {
-        if (active) {
+        if (standalone && active) {
             refreshProfiles();
             refreshLocalInfo();
         }
@@ -160,7 +163,7 @@ Rectangle {
     Timer {
         interval: 3000
         repeat: true
-        running: root.active
+        running: root.standalone && root.active
         onTriggered: {
             root.refreshProfiles();
             root.refreshLocalInfo();
