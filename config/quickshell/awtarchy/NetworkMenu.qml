@@ -16,6 +16,19 @@ Singleton {
     property var pendingWifiNetwork: null
     property string wifiPassword: ""
     property string actionMessage: ""
+    property bool settingsOpen: false
+    property int panelWidthOverride: -1
+    property int panelHeightOverride: -1
+    property int textScaleOverride: -1
+    property int iconScaleOverride: -1
+    property string settingsMessage: ""
+    property var savedView: ({
+        width: BarState.defaultNetworkWidth,
+        height: BarState.defaultNetworkHeight,
+        textScale: 100,
+        iconScale: 100
+    })
+    property var stateCommandQueue: []
 
     readonly property var wifiDevices: devicesOfType(DeviceType.Wifi)
     readonly property var wiredDevices: devicesOfType(DeviceType.Wired)
@@ -32,6 +45,9 @@ Singleton {
     readonly property string barTooltip: buildBarTooltip()
     readonly property color barForeground: wifiConnected || wiredConnected
         ? Theme.foreground : Theme.muted
+    readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
+    readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
+    readonly property string activeMonitorName: networkWindow.screen ? networkWindow.screen.name : ""
     readonly property int activeBarSize: {
         const target = networkWindow.screen;
         if (!target || placement === "center")
@@ -40,12 +56,24 @@ Singleton {
     }
     readonly property int targetScreenWidth: networkWindow.screen ? networkWindow.screen.width : 1920
     readonly property int targetScreenHeight: networkWindow.screen ? networkWindow.screen.height : 1080
-    readonly property int availablePanelWidth: Math.max(1, targetScreenWidth
-        - ((placement === "left" || placement === "right") ? activeBarSize : 0) - 16)
-    readonly property int availablePanelHeight: Math.max(1, targetScreenHeight
-        - ((placement === "top" || placement === "bottom") ? activeBarSize : 0) - 16)
-    readonly property int panelWidth: Math.min(520, availablePanelWidth)
-    readonly property int panelHeight: Math.min(600, availablePanelHeight)
+    readonly property int maximumPanelWidth: Math.max(1, targetScreenWidth
+        - ((placement === "left" || placement === "right") ? activeBarSize : 0) - 20)
+    readonly property int maximumPanelHeight: Math.max(1, targetScreenHeight
+        - ((placement === "top" || placement === "bottom") ? activeBarSize : 0) - 20)
+    readonly property int minimumPanelWidth: Math.min(360, maximumPanelWidth)
+    readonly property int minimumPanelHeight: Math.min(360, maximumPanelHeight)
+    readonly property int livePanelWidth: clampWidth(panelWidthOverride >= 0
+        ? panelWidthOverride : BarState.networkViewFor(activeMonitorName).width)
+    readonly property int livePanelHeight: clampHeight(panelHeightOverride >= 0
+        ? panelHeightOverride : BarState.networkViewFor(activeMonitorName).height)
+    readonly property int effectiveTextScale: textScaleOverride >= 0
+        ? textScaleOverride : BarState.networkViewFor(activeMonitorName).textScale
+    readonly property int effectiveIconScale: iconScaleOverride >= 0
+        ? iconScaleOverride : BarState.networkViewFor(activeMonitorName).iconScale
+    readonly property bool settingsDirty: savedView.width !== livePanelWidth
+        || savedView.height !== livePanelHeight
+        || savedView.textScale !== effectiveTextScale
+        || savedView.iconScale !== effectiveIconScale
 
     function devicesOfType(type) {
         const devices = Networking.devices ? Networking.devices.values : [];
@@ -76,9 +104,6 @@ Singleton {
             Math.round(Number(network && network.signalStrength || 0) * 100)));
     }
 
-    // The bar only needs the active transport. A live Ethernet connection
-    // suppresses Wi-Fi entirely; inactive states are expressed by the muted
-    // foreground instead of textual "off"/"x" decorations.
     function buildBarLabel() {
         if (wiredConnected)
             return "󰈀";
@@ -243,6 +268,146 @@ Singleton {
         return BarState.positionFor(targetScreen.name);
     }
 
+    function clampWidth(value) {
+        return Math.max(minimumPanelWidth, Math.min(maximumPanelWidth, Math.round(value)));
+    }
+
+    function clampHeight(value) {
+        return Math.max(minimumPanelHeight, Math.min(maximumPanelHeight, Math.round(value)));
+    }
+
+    function scaledText(baseSize) {
+        return Math.max(7, Math.round(baseSize * effectiveTextScale / 100));
+    }
+
+    function scaledIcon(baseSize) {
+        return Math.max(8, Math.round(baseSize * effectiveIconScale / 100));
+    }
+
+    function otherMonitorNames() {
+        return Quickshell.screens
+            .map(target => target ? target.name : "")
+            .filter(name => name.length > 0 && name !== activeMonitorName);
+    }
+
+    function loadSavedView(targetScreen) {
+        if (!targetScreen)
+            return;
+        BarState.refresh();
+        const persisted = BarState.networkViewFor(targetScreen.name);
+        panelWidthOverride = clampWidth(persisted.width);
+        panelHeightOverride = clampHeight(persisted.height);
+        textScaleOverride = persisted.textScale;
+        iconScaleOverride = persisted.iconScale;
+        savedView = ({
+            width: panelWidthOverride,
+            height: panelHeightOverride,
+            textScale: textScaleOverride,
+            iconScale: iconScaleOverride
+        });
+    }
+
+    function acceptDraftAsSaved() {
+        savedView = ({
+            width: livePanelWidth,
+            height: livePanelHeight,
+            textScale: effectiveTextScale,
+            iconScale: effectiveIconScale
+        });
+    }
+
+    function discardDraft() {
+        panelWidthOverride = savedView.width;
+        panelHeightOverride = savedView.height;
+        textScaleOverride = savedView.textScale;
+        iconScaleOverride = savedView.iconScale;
+    }
+
+    function queueStateCommand(commandArgs) {
+        const nextQueue = stateCommandQueue.slice();
+        nextQueue.push(commandArgs);
+        stateCommandQueue = nextQueue;
+        runNextStateCommand();
+    }
+
+    function runNextStateCommand() {
+        if (stateWriter.running || stateCommandQueue.length === 0)
+            return;
+        const nextCommand = stateCommandQueue[0];
+        stateCommandQueue = stateCommandQueue.slice(1);
+        stateWriter.exec([stateScript, ...nextCommand]);
+    }
+
+    function saveDisplaySettings() {
+        if (activeMonitorName.length === 0 || !settingsDirty)
+            return;
+        queueStateCommand([
+            "save-flyout", "network", activeMonitorName,
+            String(livePanelWidth), String(livePanelHeight),
+            String(effectiveTextScale), String(effectiveIconScale), "false"
+        ]);
+        acceptDraftAsSaved();
+        settingsMessage = "Saved Network settings for " + activeMonitorName;
+    }
+
+    function resetDisplaySettings() {
+        if (activeMonitorName.length === 0)
+            return;
+        panelWidthOverride = clampWidth(BarState.defaultNetworkWidth);
+        panelHeightOverride = clampHeight(BarState.defaultNetworkHeight);
+        textScaleOverride = 100;
+        iconScaleOverride = 100;
+        savedView = ({
+            width: panelWidthOverride,
+            height: panelHeightOverride,
+            textScale: 100,
+            iconScale: 100
+        });
+        queueStateCommand(["reset-flyout", "network", activeMonitorName]);
+        settingsMessage = "Network defaults restored for " + activeMonitorName;
+    }
+
+    function copyDisplaySettings(targets) {
+        if (!targets || targets.length === 0)
+            return;
+        queueStateCommand([
+            "copy-flyout", "network",
+            String(livePanelWidth), String(livePanelHeight),
+            String(effectiveTextScale), String(effectiveIconScale),
+            ...targets
+        ]);
+        settingsMessage = "Copied Network settings to " + targets.length
+            + (targets.length === 1 ? " display" : " displays");
+    }
+
+    function adjustPanelWidth(delta) {
+        panelWidthOverride = clampWidth(livePanelWidth + delta);
+        settingsMessage = "Width " + panelWidthOverride + " px";
+    }
+
+    function adjustPanelHeight(delta) {
+        panelHeightOverride = clampHeight(livePanelHeight + delta);
+        settingsMessage = "Height " + panelHeightOverride + " px";
+    }
+
+    function adjustTextScale(delta) {
+        textScaleOverride = Math.max(50, Math.min(200, effectiveTextScale + delta));
+        settingsMessage = "Text size " + textScaleOverride + "%";
+    }
+
+    function adjustIconScale(delta) {
+        iconScaleOverride = Math.max(50, Math.min(200, effectiveIconScale + delta));
+        settingsMessage = "Icon size " + iconScaleOverride + "%";
+    }
+
+    function toggleSettings() {
+        if (settingsOpen && settingsDirty)
+            discardDraft();
+        settingsOpen = !settingsOpen;
+        settingsPanel.resetCopySelection();
+        settingsMessage = "";
+    }
+
     function openForScreen(targetScreen) {
         if (!targetScreen || !available)
             return;
@@ -250,17 +415,26 @@ Singleton {
         networkWindow.screen = targetScreen;
         placement = placementForScreen(targetScreen);
         actionMessage = "";
+        settingsOpen = false;
+        settingsMessage = "";
+        settingsPanel.resetCopySelection();
         cancelWifiPassword();
+        loadSavedView(targetScreen);
         networkWindow.visible = true;
         if (wifiPresent && Networking.wifiEnabled)
             setWifiScanning(true);
     }
 
     function close() {
+        if (settingsDirty)
+            discardDraft();
         networkWindow.visible = false;
         setWifiScanning(false);
         cancelWifiPassword();
         actionMessage = "";
+        settingsOpen = false;
+        settingsMessage = "";
+        settingsPanel.resetCopySelection();
         FlyoutManager.release("network");
     }
 
@@ -286,6 +460,14 @@ Singleton {
         }
     }
 
+    Process {
+        id: stateWriter
+        onExited: {
+            BarState.refresh();
+            Qt.callLater(() => root.runNextStateCommand());
+        }
+    }
+
     IpcHandler {
         target: "network"
         function available(): bool { return root.available; }
@@ -302,8 +484,8 @@ Singleton {
         focusable: true
         aboveWindows: true
         exclusionMode: ExclusionMode.Ignore
-        implicitWidth: root.panelWidth
-        implicitHeight: root.panelHeight
+        implicitWidth: root.livePanelWidth
+        implicitHeight: root.livePanelHeight
         anchors.top: root.placement === "top" || root.placement === "center"
         anchors.bottom: root.placement !== "top" && root.placement !== "center"
         anchors.left: root.placement === "left" || root.placement === "center"
@@ -311,12 +493,12 @@ Singleton {
         margins {
             top: root.placement === "top" ? root.activeBarSize
                 : (root.placement === "center"
-                    ? Math.max(6, Math.round((root.targetScreenHeight - root.panelHeight) / 2)) : 0)
+                    ? Math.max(6, Math.round((root.targetScreenHeight - root.livePanelHeight) / 2)) : 0)
             bottom: root.placement === "bottom" ? root.activeBarSize
                 : ((root.placement === "left" || root.placement === "right") ? 8 : 0)
             left: root.placement === "left" ? root.activeBarSize
                 : (root.placement === "center"
-                    ? Math.max(6, Math.round((root.targetScreenWidth - root.panelWidth) / 2)) : 0)
+                    ? Math.max(6, Math.round((root.targetScreenWidth - root.livePanelWidth) / 2)) : 0)
             right: root.placement === "right" ? root.activeBarSize
                 : ((root.placement === "top" || root.placement === "bottom") ? 8 : 0)
         }
@@ -340,7 +522,7 @@ Singleton {
 
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 38
+                    Layout.preferredHeight: Math.max(38, root.scaledText(13) + 18)
                     color: Theme.active
                     border.width: 0
 
@@ -354,7 +536,7 @@ Singleton {
                             text: ""
                             color: Theme.foreground
                             font.family: Theme.fontFamily
-                            font.pixelSize: 14
+                            font.pixelSize: root.scaledIcon(14)
                         }
                         Text {
                             Layout.fillWidth: true
@@ -362,15 +544,66 @@ Singleton {
                                 ? "Network · " + root.actionMessage : "Network"
                             color: Theme.foreground
                             font.family: Theme.fontFamily
-                            font.pixelSize: 13
+                            font.pixelSize: root.scaledText(13)
                             font.weight: Font.Medium
                             elide: Text.ElideRight
                         }
                         SettingsButton {
+                            label: ""
+                            available: root.settingsDirty
+                            textSize: root.scaledIcon(12)
+                            horizontalPadding: 10
+                            onClicked: root.saveDisplaySettings()
+                        }
+                        SettingsButton {
+                            label: ""
+                            active: root.settingsOpen
+                            textSize: root.scaledIcon(12)
+                            horizontalPadding: 10
+                            onClicked: root.toggleSettings()
+                        }
+                        SettingsButton {
                             label: "×"
-                            textSize: 14
+                            textSize: root.scaledIcon(14)
+                            horizontalPadding: 10
                             onClicked: root.close()
                         }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: root.settingsOpen ? settingsPanel.implicitHeight + 12 : 0
+                    visible: root.settingsOpen
+                    color: Theme.popupButton
+                    border.width: 0
+                    clip: true
+
+                    FlyoutSettings {
+                        id: settingsPanel
+                        anchors.fill: parent
+                        anchors.margins: 6
+                        surfaceLabel: "Network"
+                        monitorName: root.activeMonitorName
+                        panelWidth: root.livePanelWidth
+                        panelHeight: root.livePanelHeight
+                        minimumWidth: root.minimumPanelWidth
+                        maximumWidth: root.maximumPanelWidth
+                        minimumHeight: root.minimumPanelHeight
+                        maximumHeight: root.maximumPanelHeight
+                        textScale: root.effectiveTextScale
+                        iconScale: root.effectiveIconScale
+                        captureAllowed: false
+                        showCaptureControl: false
+                        message: root.settingsMessage
+                        otherMonitorNames: root.otherMonitorNames()
+
+                        onResetRequested: root.resetDisplaySettings()
+                        onWidthAdjustmentRequested: delta => root.adjustPanelWidth(delta)
+                        onHeightAdjustmentRequested: delta => root.adjustPanelHeight(delta)
+                        onTextScaleAdjustmentRequested: delta => root.adjustTextScale(delta)
+                        onIconScaleAdjustmentRequested: delta => root.adjustIconScale(delta)
+                        onCopyRequested: monitorNames => root.copyDisplaySettings(monitorNames)
                     }
                 }
 
@@ -408,7 +641,7 @@ Singleton {
                                     text: "󰈀 Ethernet"
                                     color: Theme.foreground
                                     font.family: Theme.fontFamily
-                                    font.pixelSize: 12
+                                    font.pixelSize: root.scaledText(12)
                                     font.bold: true
                                 }
 
@@ -419,7 +652,8 @@ Singleton {
                                         id: wiredRow
                                         required property var modelData
                                         Layout.fillWidth: true
-                                        Layout.preferredHeight: 38
+                                        Layout.preferredHeight: Math.max(38,
+                                            root.scaledText(10) + root.scaledText(8) + 16)
                                         color: modelData.connected ? Theme.active : "transparent"
                                         border.width: 0
 
@@ -432,7 +666,7 @@ Singleton {
                                                 text: wiredRow.modelData.connected ? "●" : "○"
                                                 color: wiredRow.modelData.connected ? Theme.focus : Theme.muted
                                                 font.family: Theme.fontFamily
-                                                font.pixelSize: 10
+                                                font.pixelSize: root.scaledIcon(10)
                                             }
                                             ColumnLayout {
                                                 Layout.fillWidth: true
@@ -442,7 +676,7 @@ Singleton {
                                                     text: root.wiredConnectionName(wiredRow.modelData)
                                                     color: Theme.foreground
                                                     font.family: Theme.fontFamily
-                                                    font.pixelSize: 10
+                                                    font.pixelSize: root.scaledText(10)
                                                     font.bold: wiredRow.modelData.connected
                                                     elide: Text.ElideRight
                                                 }
@@ -455,7 +689,7 @@ Singleton {
                                                         : (wiredRow.modelData.hasLink ? "Cable connected" : "Cable unplugged")
                                                     color: Theme.muted
                                                     font.family: Theme.fontFamily
-                                                    font.pixelSize: 8
+                                                    font.pixelSize: root.scaledText(8)
                                                     elide: Text.ElideRight
                                                 }
                                             }
@@ -466,7 +700,7 @@ Singleton {
                                                     : (wiredNetwork && wiredNetwork.connected ? "Disconnect" : "Connect")
                                                 available: Boolean(wiredNetwork) && !wiredNetwork.stateChanging
                                                 active: wiredNetwork ? wiredNetwork.connected : false
-                                                textSize: 9
+                                                textSize: root.scaledText(9)
                                                 onClicked: root.toggleWiredConnection(wiredRow.modelData)
                                             }
                                         }
@@ -496,14 +730,14 @@ Singleton {
                                         text: " Wi-Fi"
                                         color: Theme.foreground
                                         font.family: Theme.fontFamily
-                                        font.pixelSize: 12
+                                        font.pixelSize: root.scaledText(12)
                                         font.bold: true
                                     }
                                     SettingsButton {
                                         label: Networking.wifiEnabled ? "On" : "Off"
                                         active: Networking.wifiEnabled
                                         available: Networking.wifiHardwareEnabled
-                                        textSize: 9
+                                        textSize: root.scaledText(9)
                                         onClicked: root.toggleWifi()
                                     }
                                     SettingsButton {
@@ -511,7 +745,7 @@ Singleton {
                                         active: root.wifiScanning()
                                         available: Networking.wifiEnabled
                                             && Networking.wifiHardwareEnabled
-                                        textSize: 9
+                                        textSize: root.scaledText(9)
                                         onClicked: root.toggleWifiScanning()
                                     }
                                 }
@@ -524,7 +758,7 @@ Singleton {
                                         : "Wi-Fi is disabled"
                                     color: Theme.muted
                                     font.family: Theme.fontFamily
-                                    font.pixelSize: 9
+                                    font.pixelSize: root.scaledText(9)
                                 }
 
                                 Text {
@@ -534,7 +768,7 @@ Singleton {
                                         ? "Scanning for networks…" : "No Wi-Fi networks found"
                                     color: Theme.muted
                                     font.family: Theme.fontFamily
-                                    font.pixelSize: 9
+                                    font.pixelSize: root.scaledText(9)
                                 }
 
                                 Repeater {
@@ -546,7 +780,8 @@ Singleton {
                                         id: wifiRow
                                         required property var modelData
                                         Layout.fillWidth: true
-                                        Layout.preferredHeight: 40
+                                        Layout.preferredHeight: Math.max(40,
+                                            root.scaledText(10) + root.scaledText(8) + 16)
                                         color: modelData.connected ? Theme.active : "transparent"
                                         border.width: 0
 
@@ -568,7 +803,7 @@ Singleton {
                                                 text: wifiRow.modelData.connected ? "●" : ""
                                                 color: wifiRow.modelData.connected ? Theme.focus : Theme.foreground
                                                 font.family: Theme.fontFamily
-                                                font.pixelSize: 11
+                                                font.pixelSize: root.scaledIcon(11)
                                             }
                                             ColumnLayout {
                                                 Layout.fillWidth: true
@@ -578,7 +813,7 @@ Singleton {
                                                     text: wifiRow.modelData.name || "Hidden network"
                                                     color: Theme.foreground
                                                     font.family: Theme.fontFamily
-                                                    font.pixelSize: 10
+                                                    font.pixelSize: root.scaledText(10)
                                                     font.bold: wifiRow.modelData.connected
                                                     elide: Text.ElideRight
                                                 }
@@ -589,7 +824,7 @@ Singleton {
                                                         + (wifiRow.modelData.known ? " · saved" : "")
                                                     color: Theme.muted
                                                     font.family: Theme.fontFamily
-                                                    font.pixelSize: 8
+                                                    font.pixelSize: root.scaledText(8)
                                                     elide: Text.ElideRight
                                                 }
                                             }
@@ -598,7 +833,7 @@ Singleton {
                                                     : (wifiRow.modelData.connected ? "Disconnect" : "Connect")
                                                 available: !wifiRow.modelData.stateChanging
                                                 active: wifiRow.modelData.connected
-                                                textSize: 9
+                                                textSize: root.scaledText(9)
                                                 onClicked: root.requestWifiConnection(wifiRow.modelData)
                                             }
                                         }
@@ -607,7 +842,7 @@ Singleton {
 
                                 Rectangle {
                                     Layout.fillWidth: true
-                                    Layout.preferredHeight: visible ? 40 : 0
+                                    Layout.preferredHeight: visible ? Math.max(40, root.scaledText(9) + 20) : 0
                                     visible: root.pendingWifiNetwork !== null
                                     color: Theme.active
                                     border.width: 1
@@ -621,7 +856,7 @@ Singleton {
                                             text: "Password"
                                             color: Theme.foreground
                                             font.family: Theme.fontFamily
-                                            font.pixelSize: 9
+                                            font.pixelSize: root.scaledText(9)
                                         }
                                         Rectangle {
                                             Layout.fillWidth: true
@@ -641,7 +876,7 @@ Singleton {
                                                 selectionColor: Theme.focus
                                                 selectedTextColor: Theme.foreground
                                                 font.family: Theme.fontFamily
-                                                font.pixelSize: 9
+                                                font.pixelSize: root.scaledText(9)
                                                 verticalAlignment: TextInput.AlignVCenter
                                                 clip: true
                                                 onTextEdited: root.wifiPassword = text
@@ -651,13 +886,13 @@ Singleton {
                                         }
                                         SettingsButton {
                                             label: "Cancel"
-                                            textSize: 9
+                                            textSize: root.scaledText(9)
                                             onClicked: root.cancelWifiPassword()
                                         }
                                         SettingsButton {
                                             label: "Connect"
                                             available: root.wifiPassword.length > 0
-                                            textSize: 9
+                                            textSize: root.scaledText(9)
                                             onClicked: root.connectPendingWifi()
                                         }
                                     }
