@@ -111,9 +111,9 @@ Singleton {
 
     function anchoredPanelX() {
         if (placement === "left")
-            return activeBarSize + 6;
+            return activeBarSize;
         if (placement === "right")
-            return targetScreenWidth - livePanelWidth - activeBarSize - 6;
+            return targetScreenWidth - livePanelWidth - activeBarSize;
         if (placement === "center")
             return Math.round((targetScreenWidth - livePanelWidth) / 2);
         const edge = anchorAlongEdge >= 0 ? anchorAlongEdge : targetScreenWidth - 40;
@@ -123,9 +123,9 @@ Singleton {
 
     function anchoredPanelY() {
         if (placement === "top")
-            return activeBarSize + 6;
+            return activeBarSize;
         if (placement === "bottom")
-            return targetScreenHeight - livePanelHeight - activeBarSize - 6;
+            return targetScreenHeight - livePanelHeight - activeBarSize;
         if (placement === "center")
             return Math.round((targetScreenHeight - livePanelHeight) / 2);
         const edge = anchorAlongEdge >= 0 ? anchorAlongEdge : targetScreenHeight - 40;
@@ -649,12 +649,12 @@ Singleton {
         anchors.left: root.placement !== "right"
         anchors.right: root.placement === "right"
         margins {
-            top: root.placement === "top" ? root.activeBarSize + 6
+            top: root.placement === "top" ? root.activeBarSize
                 : (root.placement === "bottom" ? 0 : root.anchoredPanelY())
-            bottom: root.placement === "bottom" ? root.activeBarSize + 6 : 0
-            left: root.placement === "left" ? root.activeBarSize + 6
+            bottom: root.placement === "bottom" ? root.activeBarSize : 0
+            left: root.placement === "left" ? root.activeBarSize
                 : (root.placement === "right" ? 0 : root.anchoredPanelX())
-            right: root.placement === "right" ? root.activeBarSize + 6 : 0
+            right: root.placement === "right" ? root.activeBarSize : 0
         }
 
         Rectangle {
