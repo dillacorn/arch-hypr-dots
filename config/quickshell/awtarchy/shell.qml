@@ -70,6 +70,10 @@ ShellRoot {
             return Notifications;
         if (surface === "quicksettings")
             return QuickSettings;
+        if (surface === "network")
+            return NetworkMenu;
+        if (surface === "bluetooth")
+            return BluetoothMenu;
         return null;
     }
 
