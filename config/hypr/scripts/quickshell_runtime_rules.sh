@@ -121,7 +121,7 @@ if awtarchy_quickshell_launcher_rule == nil then
 end
 
 -- Retire both earlier floating-flyout rule objects. v1 blocked hover focus;
--- v2 had the correct hover behavior but exposed the compositor's initial map
+-- v2 had the correct hover behavior but exposed the compositor initial map
 -- position before the post-map placement helper could move the window.
 if awtarchy_quickshell_flyout_rule ~= nil then
     pcall(function() awtarchy_quickshell_flyout_rule:set_enabled(false) end)
