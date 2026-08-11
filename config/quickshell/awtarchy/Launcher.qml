@@ -150,8 +150,6 @@ Singleton {
         settingWindowSize = true;
         launcherWindow.implicitWidth = desiredWidth;
         launcherWindow.implicitHeight = desiredHeight;
-        launcherWindow.width = desiredWidth;
-        launcherWindow.height = desiredHeight;
         Qt.callLater(() => settingWindowSize = false);
     }
 
