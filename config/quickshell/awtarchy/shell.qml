@@ -157,7 +157,7 @@ ShellRoot {
         command: [root.runtimeRulesScript]
         onExited: {
             if (!barDragRuntime.running)
-                barDragRuntime.exec([root.barDragRuntimeScript]);
+                barDragRuntime.exec(["bash", root.barDragRuntimeScript]);
         }
     }
 
@@ -200,7 +200,7 @@ ShellRoot {
         onTriggered: {
             root.clearBarDragState();
             if (!barDragRuntime.running)
-                barDragRuntime.exec([root.barDragRuntimeScript]);
+                barDragRuntime.exec(["bash", root.barDragRuntimeScript]);
         }
     }
 
