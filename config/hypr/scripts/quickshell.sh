@@ -15,10 +15,13 @@ LOG_FILE="${STATE_DIR}/quickshell.log"
 DEFAULT_HORIZONTAL_SIZE=28
 DEFAULT_VERTICAL_SIZE=36
 DEFAULT_ICON_SCALE=100
+DEFAULT_TEXT_SCALE=100
 MIN_BAR_SIZE=20
 MAX_BAR_SIZE=80
 MIN_ICON_SCALE=50
 MAX_ICON_SCALE=200
+MIN_TEXT_SCALE=50
+MAX_TEXT_SCALE=200
 
 need() {
     command -v "$1" >/dev/null 2>&1 || {
@@ -58,6 +61,7 @@ ensure_state() {
                     enabled:true,
                     bar_size:0,
                     icon_scale:100,
+                    text_scale:100,
                     last_horizontal:"top",
                     last_vertical:"right"
                 } * (.[$m] // {})))
@@ -158,6 +162,11 @@ getscale() {
     jq -r --arg monitor "$1" '(.monitors[$monitor].icon_scale // 100) | tonumber' "$STATE_FILE"
 }
 
+gettextscale() {
+    ensure_state
+    jq -r --arg monitor "$1" '(.monitors[$monitor].text_scale // 100) | tonumber' "$STATE_FILE"
+}
+
 set_monitor_enabled() {
     local monitor="$1" enabled="$2" tmp
     case "$enabled" in
@@ -209,6 +218,19 @@ setscale() {
     mv -f "$tmp" "$STATE_FILE"
 }
 
+settextscale() {
+    local monitor="$1" scale="$2" tmp
+    [[ "$scale" =~ ^[0-9]+$ ]] || { printf 'quickshell.sh: text scale must be an integer\n' >&2; exit 2; }
+    if (( scale < MIN_TEXT_SCALE || scale > MAX_TEXT_SCALE )); then
+        printf 'quickshell.sh: text scale must be %d-%d\n' "$MIN_TEXT_SCALE" "$MAX_TEXT_SCALE" >&2
+        exit 2
+    fi
+    ensure_state
+    tmp="${STATE_FILE}.tmp.$$"
+    jq --arg monitor "$monitor" --argjson scale "$scale" '.monitors[$monitor].text_scale = $scale' "$STATE_FILE" >"$tmp"
+    mv -f "$tmp" "$STATE_FILE"
+}
+
 reset_mon() {
     local monitor="$1" tmp
     ensure_state
@@ -219,6 +241,7 @@ reset_mon() {
             enabled:true,
             bar_size:0,
             icon_scale:100,
+            text_scale:100,
             last_horizontal:"top",
             last_vertical:"right"
         }
@@ -316,10 +339,12 @@ focused monitor:
   getenabled-focused
   getsize-focused
   getscale-focused
+  gettextscale-focused
   setenabled-focused <true|false>
   setpos-focused <top|bottom|left|right>
   setsize-focused <0|20-80>
   setscale-focused <50-200>
+  settextscale-focused <50-200>
   reset-focused
   flip-focused
   rotate-focused
@@ -330,14 +355,16 @@ per monitor:
   getenabled <MON>
   getsize <MON>
   getscale <MON>
+  gettextscale <MON>
   setenabled <MON> <true|false>
   setpos <MON> <top|bottom|left|right>
   setsize <MON> <0|20-80>
   setscale <MON> <50-200>
+  settextscale <MON> <50-200>
   reset-mon <MON>
 
 bar_size 0 means Awtarchy defaults: 28px horizontal, 36px vertical.
-icon_scale is a percentage; 100 preserves the tuned default icon sizes.
+icon_scale and text_scale are percentages; 100 preserves the tuned defaults.
 USAGE
 }
 
@@ -363,6 +390,8 @@ case "$cmd" in
     getsize-focused) monitor="$(focused_monitor)"; getsize "$monitor" ;;
     getscale) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getscale "$2" ;;
     getscale-focused) monitor="$(focused_monitor)"; getscale "$monitor" ;;
+    gettextscale) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; gettextscale "$2" ;;
+    gettextscale-focused) monitor="$(focused_monitor)"; gettextscale "$monitor" ;;
     setenabled) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_enabled "$2" "$3" ;;
     setenabled-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; set_monitor_enabled "$monitor" "$2" ;;
     setpos) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; setpos "$2" "$3" ;;
@@ -371,6 +400,8 @@ case "$cmd" in
     setsize-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; setsize "$monitor" "$2" ;;
     setscale) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; setscale "$2" "$3" ;;
     setscale-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; setscale "$monitor" "$2" ;;
+    settextscale) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; settextscale "$2" "$3" ;;
+    settextscale-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; settextscale "$monitor" "$2" ;;
     reset-mon) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; reset_mon "$2" ;;
     reset-focused) monitor="$(focused_monitor)"; reset_mon "$monitor" ;;
     flip-focused) monitor="$(focused_monitor)"; flip_mon "$monitor" ;;
