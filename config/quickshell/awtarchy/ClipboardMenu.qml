@@ -34,12 +34,14 @@ Singleton {
     })
     property var stateCommandQueue: []
     property bool privacyRemapPending: false
+    property bool openPreparing: false
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string backend: configHome + "/hypr/scripts/quickshell_clipboard.sh"
     readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
     readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_flyout_position.sh"
+    readonly property string prepareScript: configHome + "/hypr/scripts/quickshell_flyout_prepare.sh"
     readonly property int minimumPanelWidth: Math.min(480, maximumPanelWidth)
     readonly property int minimumPanelHeight: Math.min(360, maximumPanelHeight)
     readonly property int targetScreenWidth: clipboardWindow.screen
@@ -108,6 +110,33 @@ Singleton {
         ]);
     }
 
+    function prepareWindowOpen(targetScreen) {
+        if (!targetScreen)
+            return;
+        const vertical = placement === "left" || placement === "right";
+        const barSize = placement === "center"
+            ? 0 : BarState.barSizeFor(targetScreen.name, vertical);
+        openPreparing = true;
+        prepareProcess.exec([
+            "bash", prepareScript, "clipboard", targetScreen.name, placement,
+            String(configuredPanelWidth), String(configuredPanelHeight),
+            String(barSize), "-1",
+            String(Math.round(targetScreen.width)), String(Math.round(targetScreen.height))
+        ]);
+    }
+
+    function finishPreparedOpen() {
+        if (!openPreparing)
+            return;
+        openPreparing = false;
+        clipboardWindow.visible = true;
+        listProcess.running = true;
+        Qt.callLater(() => {
+            clipboardList.positionViewAtBeginning();
+            search.forceActiveFocus();
+        });
+    }
+
     function loadSavedView(targetScreen) {
         if (!targetScreen)
             return;
@@ -160,18 +189,15 @@ Singleton {
         closeDetail();
         loadSavedView(target);
         search.text = "";
-        clipboardWindow.visible = true;
-        listProcess.running = true;
-        Qt.callLater(() => {
-            root.positionWindow();
-            clipboardList.positionViewAtBeginning();
-            search.forceActiveFocus();
-        });
+        prepareWindowOpen(target);
     }
 
     function openFocused() { openForScreen(focusedScreen()); }
 
     function close() {
+        openPreparing = false;
+        if (prepareProcess.running)
+            prepareProcess.running = false;
         if (settingsDirty)
             discardDraft();
         clipboardWindow.visible = false;
@@ -184,7 +210,7 @@ Singleton {
     }
 
     function toggleFocused() {
-        if (clipboardWindow.visible)
+        if (clipboardWindow.visible || openPreparing)
             close();
         else
             openFocused();
@@ -193,7 +219,8 @@ Singleton {
     function toggleForScreen(target) {
         const currentName = clipboardWindow.screen ? clipboardWindow.screen.name : "";
         const targetName = target ? target.name : "";
-        if (clipboardWindow.visible && currentName.length > 0 && currentName === targetName)
+        if ((clipboardWindow.visible || openPreparing)
+            && currentName.length > 0 && currentName === targetName)
             close();
         else
             openForScreen(target);
@@ -381,6 +408,11 @@ Singleton {
     }
 
     Process {
+        id: prepareProcess
+        onExited: root.finishPreparedOpen()
+    }
+
+    Process {
         id: listProcess
         command: [root.backend, "list"]
         stdout: StdioCollector {
@@ -456,7 +488,8 @@ Singleton {
     Connections {
         target: FlyoutManager
         function onCloseRequested(exceptSurface) {
-            if (exceptSurface !== "clipboard" && clipboardWindow.visible)
+            if (exceptSurface !== "clipboard"
+                && (clipboardWindow.visible || root.openPreparing))
                 root.close();
         }
     }
