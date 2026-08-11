@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Prepare an Awtarchy Quickshell floating flyout before QML maps it.
 #
-# The regular post-map positioning helper remains as a fallback. This helper
+# The regular post-map positioning helpers remain as fallbacks. This helper
 # installs a later static Hyprland rule first so the initial mapped frame already
 # has the target monitor, size, position, and visible opacity.
 
@@ -18,7 +18,7 @@ screen_width="${8:-}"
 screen_height="${9:-}"
 
 usage() {
-    printf 'usage: %s <surface> <monitor> <center|top|bottom|left|right> <width> <height> <bar-size> <anchor> <screen-width> <screen-height>\n' "$0" >&2
+    printf 'usage: %s <surface> <monitor> <placement> <width> <height> <bar-size> <anchor> <screen-width> <screen-height>\n' "$0" >&2
     exit 2
 }
 
@@ -34,11 +34,15 @@ done
 (( width > 0 && height > 0 && screen_width > 0 && screen_height > 0 )) || usage
 
 case "$placement" in
-    center|top|bottom|left|right) ;;
+    center|top|bottom|left|right|top-center|bottom-center|left-center|right-center) ;;
     *) usage ;;
 esac
 
 case "$surface" in
+    launcher)
+        title='Awtarchy Application Search'
+        layout='launcher'
+        ;;
     clipboard)
         title='Awtarchy Clipboard History'
         layout='centered'
@@ -72,6 +76,38 @@ y="$center_y"
 
 if [[ "$placement" != "center" ]]; then
     case "$layout:$placement" in
+        launcher:top)
+            x=0
+            y="$bar_size"
+            ;;
+        launcher:bottom)
+            x=0
+            y=$(( screen_height - height - bar_size ))
+            ;;
+        launcher:left)
+            x="$bar_size"
+            y=0
+            ;;
+        launcher:right)
+            x=$(( screen_width - width - bar_size ))
+            y=0
+            ;;
+        launcher:top-center)
+            x="$center_x"
+            y="$bar_size"
+            ;;
+        launcher:bottom-center)
+            x="$center_x"
+            y=$(( screen_height - height - bar_size ))
+            ;;
+        launcher:left-center)
+            x="$bar_size"
+            y="$center_y"
+            ;;
+        launcher:right-center)
+            x=$(( screen_width - width - bar_size ))
+            y="$center_y"
+            ;;
         centered:top)
             x="$center_x"
             y="$bar_size"
