@@ -29,6 +29,7 @@ Singleton {
         iconScale: 100
     })
     property var stateCommandQueue: []
+    property bool openPreparing: false
 
     readonly property var wifiDevices: devicesOfType(DeviceType.Wifi)
     readonly property var wiredDevices: devicesOfType(DeviceType.Wired)
@@ -48,6 +49,7 @@ Singleton {
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_flyout_position.sh"
+    readonly property string prepareScript: configHome + "/hypr/scripts/quickshell_flyout_prepare.sh"
     readonly property string activeMonitorName: networkWindow.screen ? networkWindow.screen.name : ""
     readonly property int targetScreenWidth: networkWindow.screen ? networkWindow.screen.width : 1920
     readonly property int targetScreenHeight: networkWindow.screen ? networkWindow.screen.height : 1080
@@ -292,6 +294,30 @@ Singleton {
         ]);
     }
 
+    function prepareWindowOpen(targetScreen) {
+        if (!targetScreen)
+            return;
+        const vertical = placement === "left" || placement === "right";
+        const barSize = placement === "center"
+            ? 0 : BarState.barSizeFor(targetScreen.name, vertical);
+        openPreparing = true;
+        prepareProcess.exec([
+            "bash", prepareScript, "network", targetScreen.name, placement,
+            String(configuredPanelWidth), String(configuredPanelHeight),
+            String(barSize), "-1",
+            String(Math.round(targetScreen.width)), String(Math.round(targetScreen.height))
+        ]);
+    }
+
+    function finishPreparedOpen() {
+        if (!openPreparing)
+            return;
+        openPreparing = false;
+        networkWindow.visible = true;
+        if (wifiPresent && Networking.wifiEnabled)
+            setWifiScanning(true);
+    }
+
     function scaledText(baseSize) {
         return Math.max(7, Math.round(baseSize * effectiveTextScale / 100));
     }
@@ -449,13 +475,13 @@ Singleton {
         settingsPanel.resetCopySelection();
         cancelWifiPassword();
         loadSavedView(targetScreen);
-        networkWindow.visible = true;
-        Qt.callLater(() => root.positionWindow());
-        if (wifiPresent && Networking.wifiEnabled)
-            setWifiScanning(true);
+        prepareWindowOpen(targetScreen);
     }
 
     function close() {
+        openPreparing = false;
+        if (prepareProcess.running)
+            prepareProcess.running = false;
         if (settingsDirty)
             discardDraft();
         networkWindow.visible = false;
@@ -472,23 +498,29 @@ Singleton {
     function toggleForScreen(targetScreen) {
         const currentName = networkWindow.screen ? networkWindow.screen.name : "";
         const targetName = targetScreen ? targetScreen.name : "";
-        if (networkWindow.visible && currentName === targetName)
+        if ((networkWindow.visible || openPreparing) && currentName === targetName)
             close();
         else
             openForScreen(targetScreen);
     }
 
     onAvailableChanged: {
-        if (!available && networkWindow.visible)
+        if (!available && (networkWindow.visible || openPreparing))
             close();
     }
 
     Connections {
         target: FlyoutManager
         function onCloseRequested(exceptSurface) {
-            if (exceptSurface !== "network" && networkWindow.visible)
+            if (exceptSurface !== "network"
+                && (networkWindow.visible || root.openPreparing))
                 root.close();
         }
+    }
+
+    Process {
+        id: prepareProcess
+        onExited: root.finishPreparedOpen()
     }
 
     Process {
