@@ -14,6 +14,7 @@ Singleton {
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_launcher_position.sh"
+    readonly property string prepareScript: configHome + "/hypr/scripts/quickshell_flyout_prepare.sh"
     readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
     readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
     readonly property string animationStatePath: runtimeDir + "/hypr-animations-enabled"
@@ -50,6 +51,7 @@ Singleton {
     property string requestedPlacement: "center"
     property string savedPlacement: "center"
     property bool launcherPositioned: false
+    property bool openPreparing: false
     property bool settingsOpen: false
     property bool copySettingsOpen: false
     property int textScaleOverride: -1
@@ -421,6 +423,31 @@ Singleton {
         clearCopyTargets();
     }
 
+    function prepareLauncherOpen(targetScreen) {
+        if (!targetScreen)
+            return;
+        const edgePlacement = requestedPlacement.replace("-center", "");
+        const vertical = edgePlacement === "left" || edgePlacement === "right";
+        const barSize = requestedPlacement === "center"
+            ? 0 : BarState.barSizeFor(targetScreen.name, vertical);
+        openPreparing = true;
+        prepareProcess.exec([
+            "bash", prepareScript, "launcher", targetScreen.name, requestedPlacement,
+            String(savedView.width), String(savedView.height),
+            String(barSize), "-1",
+            String(Math.round(targetScreen.width)), String(Math.round(targetScreen.height))
+        ]);
+    }
+
+    function finishPreparedOpen() {
+        if (!openPreparing)
+            return;
+        openPreparing = false;
+        launcherPositioned = true;
+        launcherWindow.visible = true;
+        resetSelection();
+    }
+
     function showOnScreen(targetScreen, placement) {
         if (!targetScreen)
             return;
@@ -435,12 +462,11 @@ Singleton {
         launcherWindow.screen = targetScreen;
         setWindowSize(savedView.width, savedView.height);
         search.text = "";
-        launcherWindow.visible = true;
-        resetSelection();
+        prepareLauncherOpen(targetScreen);
     }
 
     function openForScreen(targetScreen) {
-        if (launcherWindow.visible) {
+        if (launcherWindow.visible || openPreparing) {
             close();
             return;
         }
@@ -453,10 +479,15 @@ Singleton {
             search.forceActiveFocus();
             return;
         }
+        if (openPreparing)
+            return;
         showOnScreen(target, centeredPlacementForScreen(target));
     }
 
     function close() {
+        openPreparing = false;
+        if (prepareProcess.running)
+            prepareProcess.running = false;
         if (settingsDirty)
             discardDraft();
         focusGrab.active = false;
@@ -468,7 +499,7 @@ Singleton {
     }
 
     function toggleFocused() {
-        if (launcherWindow.visible) {
+        if (launcherWindow.visible || openPreparing) {
             close();
             return;
         }
@@ -595,7 +626,8 @@ Singleton {
     Connections {
         target: FlyoutManager
         function onCloseRequested(exceptSurface) {
-            if (exceptSurface !== "launcher" && launcherWindow.visible)
+            if (exceptSurface !== "launcher"
+                && (launcherWindow.visible || root.openPreparing))
                 root.close();
         }
     }
@@ -643,6 +675,11 @@ Singleton {
         target: Quickshell
         ignoreUnknownSignals: true
         function onScreensChanged() { screenClampTimer.restart(); }
+    }
+
+    Process {
+        id: prepareProcess
+        onExited: root.finishPreparedOpen()
     }
 
     Process {
@@ -699,7 +736,6 @@ Singleton {
 
         onVisibleChanged: {
             if (visible) {
-                root.launcherPositioned = false;
                 positionTimer.restart();
             } else {
                 focusGrab.active = false;
