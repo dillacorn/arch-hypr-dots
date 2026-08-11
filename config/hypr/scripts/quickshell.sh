@@ -23,6 +23,18 @@ MAX_ICON_SCALE=200
 MIN_TEXT_SCALE=50
 MAX_TEXT_SCALE=200
 
+remove_legacy_quicksettings_desktop() {
+    local desktop="${XDG_DATA_HOME:-$HOME/.local/share}/applications/hypr_quicksettings.desktop"
+
+    [[ -f "$desktop" ]] || return 0
+    if grep -Fqx 'Name=Awtarchy Quick Settings' "$desktop" \
+        && grep -Fqx 'StartupWMClass=hypr_quicksettings' "$desktop" \
+        && grep -Fq 'hypr_quicksettings.sh' "$desktop" \
+        && grep -Fq -- '--ui' "$desktop"; then
+        rm -f -- "$desktop"
+    fi
+}
+
 need() {
     command -v "$1" >/dev/null 2>&1 || {
         printf 'quickshell.sh: missing: %s\n' "$1" >&2
@@ -34,6 +46,7 @@ need qs
 need hyprctl
 need jq
 
+remove_legacy_quicksettings_desktop
 mkdir -p "$STATE_DIR"
 [[ -e "$STATE_DIR/quickshell-dnd" ]] || printf '0\n' >"$STATE_DIR/quickshell-dnd"
 
