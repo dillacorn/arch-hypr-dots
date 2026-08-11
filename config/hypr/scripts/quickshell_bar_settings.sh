@@ -19,6 +19,8 @@ MIN_BAR_SIZE=20
 MAX_BAR_SIZE=80
 MIN_ICON_SCALE=50
 MAX_ICON_SCALE=200
+MIN_TEXT_SCALE=50
+MAX_TEXT_SCALE=200
 KEY_SEQUENCE_TIMEOUT=0.15
 
 [[ ${1:-} == --embedded ]] && EMBEDDED=1
@@ -186,6 +188,10 @@ common_value() {
                 [[ $value =~ ^[0-9]+$ ]] || { failed=1; continue; }
                 (( value >= MIN_ICON_SCALE && value <= MAX_ICON_SCALE )) || { failed=1; continue; }
                 ;;
+            gettextscale)
+                [[ $value =~ ^[0-9]+$ ]] || { failed=1; continue; }
+                (( value >= MIN_TEXT_SCALE && value <= MAX_TEXT_SCALE )) || { failed=1; continue; }
+                ;;
             *) failed=1; continue ;;
         esac
 
@@ -226,6 +232,15 @@ format_size() {
 format_scale() {
     local value
     value="$(common_value getscale)"
+    case "$value" in
+        mixed|unavailable) printf '%s' "$value" ;;
+        *) printf '%s%%' "$value" ;;
+    esac
+}
+
+format_text_scale() {
+    local value
+    value="$(common_value gettextscale)"
     case "$value" in
         mixed|unavailable) printf '%s' "$value" ;;
         *) printf '%s%%' "$value" ;;
@@ -427,6 +442,12 @@ set_icon_scale() {
     fi
 }
 
+set_text_scale() {
+    if prompt_number 'Uniform text size' "$MIN_TEXT_SCALE" "$MAX_TEXT_SCALE" '%'; then
+        apply_each settextscale "$NUMBER_VALUE" && MSG="text size: ${NUMBER_VALUE}%" || MSG='text size change failed'
+    fi
+}
+
 reset_defaults() {
     confirm_reset || { MSG='reset cancelled'; return 0; }
     if [[ $TARGET == all ]]; then
@@ -453,6 +474,7 @@ draw_main() {
         "Visibility     $(format_visibility)"
         "Thickness      $(format_size)"
         "Icon size      $(format_scale)"
+        "Text size      $(format_text_scale)"
         "$([[ $TARGET == all ]] && printf 'Reset all displays' || printf 'Reset selected target')"
         "Back to Quick Settings"
     )
@@ -488,14 +510,15 @@ activate() {
         2) toggle_visibility ;;
         3) set_bar_size ;;
         4) set_icon_scale ;;
-        5) reset_defaults ;;
-        6) return 1 ;;
+        5) set_text_scale ;;
+        6) reset_defaults ;;
+        7) return 1 ;;
     esac
     return 0
 }
 
 main_loop() {
-    local key clicked count=7
+    local key clicked count=8
     mouse_enable
     while true; do
         draw_main
