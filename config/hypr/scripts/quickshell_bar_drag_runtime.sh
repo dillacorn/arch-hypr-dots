@@ -56,17 +56,6 @@ local function finish_guarded_drag()
     return true
 end
 
-local function cancel_guarded_drag()
-    if awtarchy_bar_drag == nil then
-        return false
-    end
-
-    stop_drag_timer()
-    awtarchy_bar_drag = nil
-    exec_control("cancelBarDrag")
-    return true
-end
-
 -- Clear any stale visual state left behind by a previously missed release.
 stop_drag_timer()
 awtarchy_bar_drag = nil
@@ -76,7 +65,8 @@ if awtarchy_bar_drag_release_guard_v1_registered ~= true then
     awtarchy_bar_drag_release_guard_v1_registered = true
 
     -- Catch left-button release even if ALT was released before the mouse.
-    -- auto_consuming passes ordinary clicks through when no bar drag is active.
+    -- transparent prevents the more-specific ALT release bind from shadowing
+    -- this fail-safe; auto_consuming passes normal clicks through when idle.
     hl.bind("mouse:272", function()
         if finish_guarded_drag() then
             return { ok = true }
@@ -86,22 +76,9 @@ if awtarchy_bar_drag_release_guard_v1_registered ~= true then
         mouse = true,
         release = true,
         ignore_mods = true,
+        transparent = true,
         auto_consuming = true,
     })
-
-    -- Releasing either Alt key before the mouse cancels cleanly instead of
-    -- leaving the preview armed indefinitely.
-    for _, key in ipairs({ "Alt_L", "Alt_R" }) do
-        hl.bind(key, function()
-            if cancel_guarded_drag() then
-                return { ok = true }
-            end
-            return { ok = false }
-        end, {
-            release = true,
-            auto_consuming = true,
-        })
-    end
 end
 ' >/dev/null; then
     printf '%s\n' 'quickshell_bar_drag_runtime.sh: failed to register drag release guard' >&2
