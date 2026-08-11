@@ -824,10 +824,11 @@ hl.bind("ALT + mouse:273", hl.dsp.window.resize(), { mouse = true })
 hl.bind("SUPER + mouse:272", hl.dsp.window.drag(), { mouse = true })
 hl.bind("SUPER + mouse:273", hl.dsp.window.resize(), { mouse = true })
 
--- Digital vibrance quick adjust (SUPER+ALT+[] & SUPER+ALT+\)
+-- Digital vibrance quick adjust (SUPER+ALT+[] & SUPER+ALT+\; SUPER+ALT+CTRL+V toggle)
 hl.bind("SUPER + ALT + bracketright", hl.dsp.exec_cmd(vibrance_shader .. " up"), {})
 hl.bind("SUPER + ALT + bracketleft", hl.dsp.exec_cmd(vibrance_shader .. " down"), {})
 hl.bind("SUPER + ALT + backslash", hl.dsp.exec_cmd(vibrance_shader .. " toggle"), {})
+hl.bind("SUPER + ALT + CTRL + V", hl.dsp.exec_cmd(vibrance_shader .. " toggle"), {})
 
 -- Workspace mixing script (SUPER+ALT+CTRL numbers)
 for _, bind in ipairs(workspace_keys) do
@@ -1030,10 +1031,11 @@ hl.define_submap("noalt", function()
     hl.bind("SUPER + mouse:272", hl.dsp.window.drag(), { mouse = true })
     hl.bind("SUPER + mouse:273", hl.dsp.window.resize(), { mouse = true })
 
-    -- Digital vibrance quick adjust (SUPER+ALT+[] & SUPER+ALT+\)
+    -- Digital vibrance quick adjust (SUPER+ALT+[] & SUPER+ALT+\; SUPER+ALT+CTRL+V toggle)
     hl.bind("SUPER + ALT + bracketright", hl.dsp.exec_cmd(vibrance_shader .. " up"), {})
     hl.bind("SUPER + ALT + bracketleft", hl.dsp.exec_cmd(vibrance_shader .. " down"), {})
     hl.bind("SUPER + ALT + backslash", hl.dsp.exec_cmd(vibrance_shader .. " toggle"), {})
+    hl.bind("SUPER + ALT + CTRL + V", hl.dsp.exec_cmd(vibrance_shader .. " toggle"), {})
 
     -- Workspace mixing script (SUPER+ALT+CTRL numbers)
     for _, bind in ipairs(workspace_keys) do
