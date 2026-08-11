@@ -39,12 +39,14 @@ Singleton {
     })
     property var stateCommandQueue: []
     property bool privacyRemapPending: false
+    property bool openPreparing: false
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string backend: configHome + "/hypr/scripts/hypr_quicksettings.sh"
     readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
     readonly property string terminalLauncher: configHome + "/hypr/scripts/default_terminal.sh"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_flyout_position.sh"
+    readonly property string prepareScript: configHome + "/hypr/scripts/quickshell_flyout_prepare.sh"
     readonly property string activeMonitorName: quickSettingsWindow.screen ? quickSettingsWindow.screen.name : ""
     readonly property int targetScreenWidth: quickSettingsWindow.screen
         ? quickSettingsWindow.screen.width : 1920
@@ -143,6 +145,29 @@ Singleton {
         Quickshell.execDetached([
             positionScript, "quick-settings", activeMonitorName, placement, "spawn"
         ]);
+    }
+
+    function prepareWindowOpen(targetScreen) {
+        if (!targetScreen)
+            return;
+        const vertical = placement === "left" || placement === "right";
+        const barSize = placement === "center"
+            ? 0 : BarState.barSizeFor(targetScreen.name, vertical);
+        openPreparing = true;
+        prepareProcess.exec([
+            "bash", prepareScript, "quick-settings", targetScreen.name, placement,
+            String(configuredPanelWidth), String(configuredPanelHeight),
+            String(barSize), "-1",
+            String(Math.round(targetScreen.width)), String(Math.round(targetScreen.height))
+        ]);
+    }
+
+    function finishPreparedOpen() {
+        if (!openPreparing)
+            return;
+        openPreparing = false;
+        quickSettingsWindow.visible = true;
+        refreshStatus();
     }
 
     function scaledText(baseSize) {
@@ -414,14 +439,15 @@ Singleton {
         schedulerEditorOpen = false;
         schedulerArgsDirty = false;
         loadSavedView(targetScreen);
-        quickSettingsWindow.visible = true;
-        Qt.callLater(() => root.positionWindow());
-        refreshStatus();
+        prepareWindowOpen(targetScreen);
     }
 
     function openFocused() { openForScreen(focusedScreen()); }
 
     function close() {
+        openPreparing = false;
+        if (prepareProcess.running)
+            prepareProcess.running = false;
         if (settingsDirty)
             discardDraft();
         quickSettingsWindow.visible = false;
@@ -436,7 +462,8 @@ Singleton {
     function toggleForScreen(targetScreen) {
         const currentName = quickSettingsWindow.screen ? quickSettingsWindow.screen.name : "";
         const targetName = targetScreen ? targetScreen.name : "";
-        if (quickSettingsWindow.visible && currentName.length > 0 && currentName === targetName)
+        if ((quickSettingsWindow.visible || openPreparing)
+            && currentName.length > 0 && currentName === targetName)
             close();
         else
             openForScreen(targetScreen);
@@ -448,6 +475,11 @@ Singleton {
         function open(): void { root.openFocused(); }
         function close(): void { root.close(); }
         function refresh(): void { root.refreshStatus(); }
+    }
+
+    Process {
+        id: prepareProcess
+        onExited: root.finishPreparedOpen()
     }
 
     Process {
@@ -524,7 +556,8 @@ Singleton {
     Connections {
         target: FlyoutManager
         function onCloseRequested(exceptSurface) {
-            if (exceptSurface !== "quick-settings" && quickSettingsWindow.visible)
+            if (exceptSurface !== "quick-settings"
+                && (quickSettingsWindow.visible || root.openPreparing))
                 root.close();
         }
     }
