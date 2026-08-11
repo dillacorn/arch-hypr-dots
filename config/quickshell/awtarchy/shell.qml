@@ -14,9 +14,12 @@ ShellRoot {
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
+    readonly property string barDragRuntimeScript: configHome + "/hypr/scripts/quickshell_bar_drag_runtime.sh"
     property bool barDragActive: false
+    property bool barDropPending: false
     property string barDragMonitor: ""
     property string barDragCandidate: ""
+    property string barDropTarget: ""
 
     function validBarEdge(edge) {
         return ["top", "bottom", "left", "right"].indexOf(edge) >= 0;
@@ -25,9 +28,13 @@ ShellRoot {
     function beginBarDrag(monitor) {
         if (!monitor || monitor.length === 0)
             return;
+        barDropSettle.stop();
+        barDragWatchdog.restart();
         barDragActive = true;
+        barDropPending = false;
         barDragMonitor = monitor;
         barDragCandidate = BarState.positionFor(monitor);
+        barDropTarget = "";
     }
 
     function previewBarDrag(monitor, candidate) {
@@ -38,26 +45,43 @@ ShellRoot {
             : BarState.positionFor(monitor);
     }
 
-    function cancelBarDrag() {
+    function clearBarDragState() {
+        barDragWatchdog.stop();
+        barDropSettle.stop();
         barDragActive = false;
+        barDropPending = false;
         barDragMonitor = "";
         barDragCandidate = "";
+        barDropTarget = "";
+    }
+
+    function cancelBarDrag() {
+        clearBarDragState();
     }
 
     function finishBarDrag(monitor, candidate) {
         const active = barDragActive && barDragMonitor === monitor;
         const current = BarState.positionFor(monitor);
         const shouldMove = active && validBarEdge(candidate) && candidate !== current;
-        cancelBarDrag();
+        barDragWatchdog.stop();
 
-        if (shouldMove) {
-            barMoveWriter.exec([
-                configHome + "/hypr/scripts/quickshell.sh",
-                "setpos",
-                monitor,
-                candidate
-            ]);
+        if (!shouldMove) {
+            clearBarDragState();
+            return;
         }
+
+        // Keep the real bar slightly detached while the persisted edge changes,
+        // then settle it back against the new edge after state refresh.
+        barDragActive = false;
+        barDropPending = true;
+        barDragCandidate = candidate;
+        barDropTarget = candidate;
+        barMoveWriter.exec([
+            configHome + "/hypr/scripts/quickshell.sh",
+            "setpos",
+            monitor,
+            candidate
+        ]);
     }
 
     function flyoutByName(surface) {
@@ -84,6 +108,14 @@ ShellRoot {
             return;
         }
 
+        // Notifications exposes closeCenter(), unlike the other floating
+        // flyouts. Handle it explicitly so workspace changes cannot leave its
+        // QML visible state stale on the previous workspace.
+        if (surface === "notifications") {
+            Notifications.closeCenter();
+            return;
+        }
+
         const flyout = flyoutByName(surface);
         if (flyout && flyout.close)
             flyout.close();
@@ -97,6 +129,16 @@ ShellRoot {
     function flyoutHeight(surface) {
         const flyout = flyoutByName(surface);
         return flyout ? flyout.livePanelHeight : -1;
+    }
+
+    function barDragState() {
+        return JSON.stringify({
+            active: barDragActive,
+            dropPending: barDropPending,
+            monitor: barDragMonitor,
+            candidate: barDragCandidate,
+            target: barDropTarget
+        });
     }
 
     // Force singleton construction before the control IPC endpoint reports ready.
@@ -113,6 +155,14 @@ ShellRoot {
         id: runtimeRules
         running: true
         command: [root.runtimeRulesScript]
+        onExited: {
+            if (!barDragRuntime.running)
+                barDragRuntime.exec([root.barDragRuntimeScript]);
+        }
+    }
+
+    Process {
+        id: barDragRuntime
     }
 
     Process {
@@ -120,6 +170,8 @@ ShellRoot {
         onExited: {
             BarState.refresh();
             dragRefreshFollowup.restart();
+            if (root.barDropPending)
+                barDropSettle.restart();
         }
     }
 
@@ -127,7 +179,29 @@ ShellRoot {
         id: dragRefreshFollowup
         interval: 120
         repeat: false
-        onTriggered: BarState.refresh()
+        onTriggered: {
+            BarState.refresh();
+            if (root.barDropPending)
+                barDropSettle.restart();
+        }
+    }
+
+    Timer {
+        id: barDropSettle
+        interval: 160
+        repeat: false
+        onTriggered: root.clearBarDragState()
+    }
+
+    Timer {
+        id: barDragWatchdog
+        interval: 15000
+        repeat: false
+        onTriggered: {
+            root.clearBarDragState();
+            if (!barDragRuntime.running)
+                barDragRuntime.exec([root.barDragRuntimeScript]);
+        }
     }
 
     Connections {
@@ -154,14 +228,35 @@ ShellRoot {
         model: Quickshell.screens
 
         Bar {
+            id: barInstance
+            readonly property bool dragVisualActive: root.barDragMonitor === monitorName
+                && (root.barDragActive || root.barDropPending)
+            property real dragFloatGap: dragVisualActive ? 5 : 0
+
             implicitWidth: vertical ? BarState.barSizeFor(monitorName, true) : 0
             implicitHeight: vertical ? 0 : BarState.barSizeFor(monitorName, false)
             exclusiveZone: BarState.barSizeFor(monitorName, vertical)
+
+            // PanelWindow margins apply only to anchored edges. Setting all four
+            // detaches a horizontal bar from top/left/right or a vertical bar
+            // from top/bottom/left/right by the same subtle amount.
+            margins.top: Math.round(dragFloatGap)
+            margins.bottom: Math.round(dragFloatGap)
+            margins.left: Math.round(dragFloatGap)
+            margins.right: Math.round(dragFloatGap)
+
+            Behavior on dragFloatGap {
+                NumberAnimation {
+                    duration: 110
+                    easing.type: Easing.OutCubic
+                }
+            }
         }
     }
 
     // A non-interactive full-edge ghost shows exactly where the bar will land.
-    // The real bar stays in place until ALT + left-click is released.
+    // It also remains visible at the current edge while dragging toward that
+    // same edge, making an intentional no-op drop obvious.
     Variants {
         model: Quickshell.screens
 
@@ -177,8 +272,7 @@ ShellRoot {
 
             visible: root.barDragActive
                 && root.barDragMonitor === monitorName
-                && candidate.length > 0
-                && candidate !== BarState.positionFor(monitorName)
+                && root.validBarEdge(candidate)
             color: "transparent"
             focusable: false
             aboveWindows: true
@@ -223,6 +317,7 @@ ShellRoot {
         function previewBarDrag(monitor: string, candidate: string): void { root.previewBarDrag(monitor, candidate); }
         function finishBarDrag(monitor: string, candidate: string): void { root.finishBarDrag(monitor, candidate); }
         function cancelBarDrag(): void { root.cancelBarDrag(); }
+        function barDragState(): string { return root.barDragState(); }
         function flyoutWidth(surface: string): int { return root.flyoutWidth(surface); }
         function flyoutHeight(surface: string): int { return root.flyoutHeight(surface); }
         function recentBarMonitor(): string { return FlyoutManager.recentBarMonitor(); }
