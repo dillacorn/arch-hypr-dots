@@ -15,6 +15,8 @@ Rectangle {
     property int bodyLineLimit: 5
     property real swipeOffset: 0
     property bool swipeDismissing: false
+    readonly property var notificationActions: notification && notification.actions
+        ? notification.actions : []
 
     signal activated()
     signal dismissRequested()
@@ -133,9 +135,11 @@ Rectangle {
                 Layout.preferredWidth: visible ? scaledSize : 0
                 Layout.preferredHeight: visible ? scaledSize : 0
                 implicitSize: scaledSize
-                source: root.notification.image
-                    || (root.notification.appIcon
-                        ? Quickshell.iconPath(root.notification.appIcon, true) : "")
+                source: root.notification
+                    ? (root.notification.image
+                        || (root.notification.appIcon
+                            ? Quickshell.iconPath(root.notification.appIcon, true) : ""))
+                    : ""
             }
 
             ColumnLayout {
@@ -144,7 +148,8 @@ Rectangle {
 
                 Text {
                     Layout.fillWidth: true
-                    text: root.notification.summary || "Notification"
+                    text: root.notification
+                        ? (root.notification.summary || "Notification") : "Notification"
                     color: Theme.foreground
                     font.family: Theme.fontFamily
                     font.pixelSize: Math.max(9, Math.round(13 * root.textScale / 100))
@@ -155,7 +160,7 @@ Rectangle {
                 Text {
                     Layout.fillWidth: true
                     visible: text.length > 0
-                    text: root.notification.body || ""
+                    text: root.notification ? (root.notification.body || "") : ""
                     textFormat: Text.PlainText
                     color: Theme.foreground
                     font.family: Theme.fontFamily
@@ -168,7 +173,7 @@ Rectangle {
                 Text {
                     Layout.fillWidth: true
                     visible: text.length > 0
-                    text: root.notification.appName || ""
+                    text: root.notification ? (root.notification.appName || "") : ""
                     color: Theme.muted
                     font.family: Theme.fontFamily
                     font.pixelSize: Math.max(7, Math.round(9 * root.textScale / 100))
@@ -180,11 +185,11 @@ Rectangle {
         Flow {
             Layout.fillWidth: true
             Layout.preferredHeight: visible ? childrenRect.height : 0
-            visible: root.notification.actions.length > 0
+            visible: root.notificationActions.length > 0
             spacing: 5
 
             Repeater {
-                model: root.notification.actions
+                model: root.notificationActions
 
                 delegate: Rectangle {
                     id: actionButton
