@@ -13,6 +13,8 @@ Rectangle {
     property int iconScale: 100
     property bool showDismiss: true
     property int bodyLineLimit: 5
+    property real swipeOffset: 0
+    property bool swipeDismissing: false
 
     signal activated()
     signal dismissRequested()
@@ -24,10 +26,86 @@ Rectangle {
     border.width: 1
     border.color: Theme.active
     radius: 0
+    opacity: Math.max(0.45, 1 - Math.min(0.55,
+        Math.abs(swipeOffset) / Math.max(1, width)))
+
+    transform: Translate {
+        x: root.swipeOffset
+    }
+
+    function finishSwipe() {
+        if (swipeDismissing)
+            return;
+
+        const threshold = Math.max(72, width * 0.28);
+        if (Math.abs(swipeOffset) >= threshold) {
+            swipeDismissing = true;
+            swipeReset.stop();
+            swipeDismiss.stop();
+            swipeDismiss.from = swipeOffset;
+            swipeDismiss.to = swipeOffset < 0 ? -Math.max(1, width) : Math.max(1, width);
+            swipeDismiss.start();
+            return;
+        }
+
+        swipeDismiss.stop();
+        swipeReset.stop();
+        swipeReset.from = swipeOffset;
+        swipeReset.to = 0;
+        swipeReset.start();
+    }
 
     Connections {
         target: root.notification
-        function onClosed() { root.notificationClosed(); }
+        function onClosed() {
+            swipeReset.stop();
+            swipeDismiss.stop();
+            root.swipeOffset = 0;
+            root.swipeDismissing = false;
+            root.notificationClosed();
+        }
+    }
+
+    NumberAnimation {
+        id: swipeReset
+        target: root
+        property: "swipeOffset"
+        duration: 120
+        easing.type: Easing.OutCubic
+    }
+
+    NumberAnimation {
+        id: swipeDismiss
+        target: root
+        property: "swipeOffset"
+        duration: 120
+        easing.type: Easing.OutCubic
+        onFinished: root.dismissRequested()
+    }
+
+    DragHandler {
+        id: swipeHandler
+        target: null
+        acceptedButtons: Qt.LeftButton
+        dragThreshold: 8
+        xAxis.enabled: true
+        yAxis.enabled: false
+
+        onActiveChanged: {
+            if (active) {
+                swipeReset.stop();
+                swipeDismiss.stop();
+                root.swipeDismissing = false;
+                root.swipeOffset = 0;
+            } else {
+                root.finishSwipe();
+            }
+        }
+
+        xAxis.onActiveValueChanged: delta => {
+            if (active && !root.swipeDismissing)
+                root.swipeOffset += delta;
+        }
     }
 
     MouseArea {
