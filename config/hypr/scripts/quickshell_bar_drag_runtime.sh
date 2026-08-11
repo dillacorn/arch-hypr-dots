@@ -60,6 +60,7 @@ end
 stop_drag_timer()
 awtarchy_bar_drag = nil
 exec_control("cancelBarDrag")
+awtarchy_bar_drag_release_guard_v1_enabled = true
 
 if awtarchy_bar_drag_release_guard_v1_registered ~= true then
     awtarchy_bar_drag_release_guard_v1_registered = true
@@ -68,6 +69,9 @@ if awtarchy_bar_drag_release_guard_v1_registered ~= true then
     -- transparent prevents the more-specific ALT release bind from shadowing
     -- this fail-safe; auto_consuming passes normal clicks through when idle.
     hl.bind("mouse:272", function()
+        if awtarchy_bar_drag_release_guard_v1_enabled ~= true then
+            return { ok = false }
+        end
         if finish_guarded_drag() then
             return { ok = true }
         end
