@@ -33,16 +33,18 @@ ShellRoot {
         barDragActive = true;
         barDropPending = false;
         barDragMonitor = monitor;
-        barDragCandidate = BarState.positionFor(monitor);
+        // Do not draw a drop shadow at the bar's existing edge. A shadow only
+        // appears once the drag actually selects a different destination.
+        barDragCandidate = "";
         barDropTarget = "";
     }
 
     function previewBarDrag(monitor, candidate) {
         if (!barDragActive || barDragMonitor !== monitor)
             return;
-        barDragCandidate = validBarEdge(candidate)
-            ? candidate
-            : BarState.positionFor(monitor);
+        const current = BarState.positionFor(monitor);
+        barDragCandidate = validBarEdge(candidate) && candidate !== current
+            ? candidate : "";
     }
 
     function clearBarDragState() {
@@ -254,9 +256,9 @@ ShellRoot {
         }
     }
 
-    // A non-interactive full-edge ghost shows exactly where the bar will land.
-    // It also remains visible at the current edge while dragging toward that
-    // same edge, making an intentional no-op drop obvious.
+    // A non-interactive full-edge ghost shows only a different destination.
+    // Returning the pointer toward the bar's existing edge hides the ghost so
+    // a no-op drop is represented by the floating bar itself, not a fake move.
     Variants {
         model: Quickshell.screens
 
