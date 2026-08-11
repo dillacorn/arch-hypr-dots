@@ -65,7 +65,7 @@ ShellRoot {
             return ClipboardMenu;
         if (surface === "notifications")
             return Notifications;
-        if (surface === "quicksettings")
+        if (surface === "quicksettings" || surface === "quick-settings")
             return QuickSettings;
         if (surface === "network")
             return NetworkMenu;
