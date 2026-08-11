@@ -59,6 +59,7 @@ Item {
     implicitHeight: copyOpen ? 104
         : (effectiveShowCaptureControl ? 170 : 139)
             + (surfaceLabel === "Network" ? vpnSection.implicitHeight + 6 : 0)
+            + (surfaceLabel === "Quick Settings" ? barSection.implicitHeight + 6 : 0)
 
     function targetSelected(name) {
         const dependency = copySelectionRevision;
@@ -510,6 +511,15 @@ Item {
             active: visible
             textScale: root.textScale
             iconScale: root.iconScale
+        }
+
+        BarSettingsSection {
+            id: barSection
+            Layout.fillWidth: true
+            visible: !root.copyOpen && root.surfaceLabel === "Quick Settings"
+            active: visible
+            monitorName: root.monitorName
+            monitorNames: [root.monitorName].concat(root.otherMonitorNames || [])
         }
 
         RowLayout {
