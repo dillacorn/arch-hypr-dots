@@ -25,6 +25,13 @@ Rectangle {
     readonly property var containingWindow: Window.window
     property string monitorName: containingWindow && containingWindow.screen ? containingWindow.screen.name : ""
     property real iconScale: BarState.iconScaleFor(monitorName)
+    property real textScale: {
+        const state = BarState.monitorState(monitorName) || ({});
+        const percent = Number(state.text_scale === undefined ? 100 : state.text_scale);
+        if (!Number.isFinite(percent))
+            return 1.0;
+        return Math.max(50, Math.min(200, percent)) / 100.0;
+    }
     property int barThickness: BarState.barSizeFor(monitorName, vertical)
 
     // The legacy Waybar clipboard codepoint renders as an unrelated glyph in
@@ -68,15 +75,21 @@ Rectangle {
         return Math.max(8, Math.min(maxForBar, scaled));
     }
 
+    function scaledTextSize(baseSize) {
+        const scaled = Math.round(baseSize * textScale);
+        const maxForBar = Math.max(8, barThickness - 2);
+        return Math.max(8, Math.min(maxForBar, scaled));
+    }
+
     function partFontPixelSize(part) {
         if (fontPixelSize > 0)
             return scaledIconSize(fontPixelSize);
 
-        if (part.indexOf("🖱") >= 0 || part.indexOf("°") >= 0 || /^[↑↓←→]$/.test(part))
+        if (part.indexOf("🖱") >= 0 || /^[↑↓←→]$/.test(part))
             return scaledIconSize(14);
 
-        // Workspace numbers remain normal text while the approved workspace
-        // glyph size scales with the rest of the bar icons.
+        // Workspace numbers remain independently text-scaled while the
+        // workspace glyph follows the bar icon scale.
         if (workspaceLabel && (isBmpIconPart(part) || isSupplementaryIconPart(part)))
             return scaledIconSize(20);
 
@@ -105,7 +118,7 @@ Rectangle {
         if (isBmpIconPart(part) || isSupplementaryIconPart(part))
             return scaledIconSize(18);
 
-        return Theme.fontPixelSize;
+        return scaledTextSize(Theme.fontPixelSize);
     }
 
     implicitWidth: vertical
