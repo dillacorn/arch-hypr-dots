@@ -256,6 +256,14 @@ Singleton {
         close();
     }
 
+    function openAwtarchyTips() {
+        Quickshell.execDetached([
+            terminalLauncher, "--class", "awtarchy-tips-tui", "--", "bash",
+            configHome + "/hypr/scripts/awtarchy-tips-tui.sh", "--tui"
+        ]);
+        close();
+    }
+
     function loadSavedView(targetScreen) {
         if (!targetScreen)
             return;
@@ -961,6 +969,14 @@ Singleton {
                                             onClicked: root.queueAction(["vibrance", "up"], "Increasing vibrance…")
                                         }
                                     }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "SUPER+ALT+CTRL+V toggle"
+                                        color: Theme.muted
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: root.scaledText(8)
+                                        wrapMode: Text.Wrap
+                                    }
                                 }
                             }
                         }
@@ -1046,6 +1062,48 @@ Singleton {
                                 Text {
                                     Layout.fillWidth: true
                                     text: "SUPER+W open  ·  SUPER+SHIFT+W random current  ·  SUPER+CTRL+W random all  ·  SUPER+ALT+W random all, different"
+                                    color: Theme.muted
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: root.scaledText(8)
+                                    wrapMode: Text.Wrap
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: awtarchyContent.implicitHeight + 16
+                            color: Theme.popupButton
+                            border.width: 1
+                            border.color: Theme.active
+
+                            ColumnLayout {
+                                id: awtarchyContent
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                spacing: 5
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "Awtarchy"
+                                        color: Theme.foreground
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: root.scaledText(11)
+                                        font.bold: true
+                                    }
+                                    SettingsButton {
+                                        label: "Awtarchy Tips"
+                                        textSize: root.scaledText(9)
+                                        onClicked: root.openAwtarchyTips()
+                                    }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "Built-in manual for keybinds, Quickshell, display, gaming, packages, maintenance, networking, troubleshooting, and Extra Notes."
                                     color: Theme.muted
                                     font.family: Theme.fontFamily
                                     font.pixelSize: root.scaledText(8)
