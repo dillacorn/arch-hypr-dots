@@ -74,6 +74,21 @@ ShellRoot {
         return null;
     }
 
+    function closeActiveFloatingSurface() {
+        const surface = String(FlyoutManager.activeSurface || "");
+        if (surface.length === 0)
+            return;
+
+        if (surface === "launcher") {
+            Launcher.close();
+            return;
+        }
+
+        const flyout = flyoutByName(surface);
+        if (flyout && flyout.close)
+            flyout.close();
+    }
+
     function flyoutWidth(surface) {
         const flyout = flyoutByName(surface);
         return flyout ? flyout.livePanelWidth : -1;
@@ -118,8 +133,20 @@ ShellRoot {
     Connections {
         target: Hyprland
         function onRawEvent(event) {
-            if (event && event.name === "configreloaded")
+            if (!event)
+                return;
+
+            if (event.name === "configreloaded") {
                 runtimeRules.exec([root.runtimeRulesScript]);
+                return;
+            }
+
+            // FloatingWindow visibility is QML state, not Hyprland workspace
+            // visibility. Close the active surface when the focused workspace
+            // changes so a window left on the previous workspace can never
+            // consume the next toggle as a stale close operation.
+            if (event.name === "workspace" || event.name === "workspacev2")
+                root.closeActiveFloatingSurface();
         }
     }
 
