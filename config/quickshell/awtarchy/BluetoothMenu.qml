@@ -26,6 +26,7 @@ Singleton {
         iconScale: 100
     })
     property var stateCommandQueue: []
+    property bool openPreparing: false
 
     readonly property var adapters: Bluetooth.adapters
         ? [...Bluetooth.adapters.values].filter(item => item !== null) : []
@@ -46,6 +47,7 @@ Singleton {
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_flyout_position.sh"
+    readonly property string prepareScript: configHome + "/hypr/scripts/quickshell_flyout_prepare.sh"
     readonly property string activeMonitorName: bluetoothWindow.screen ? bluetoothWindow.screen.name : ""
     readonly property int targetScreenWidth: bluetoothWindow.screen ? bluetoothWindow.screen.width : 1920
     readonly property int targetScreenHeight: bluetoothWindow.screen ? bluetoothWindow.screen.height : 1080
@@ -233,6 +235,31 @@ Singleton {
         ]);
     }
 
+    function prepareWindowOpen(targetScreen) {
+        if (!targetScreen)
+            return;
+        const vertical = placement === "left" || placement === "right";
+        const barSize = placement === "center"
+            ? 0 : BarState.barSizeFor(targetScreen.name, vertical);
+        openPreparing = true;
+        prepareProcess.exec([
+            "bash", prepareScript, "bluetooth", targetScreen.name, placement,
+            String(configuredPanelWidth), String(configuredPanelHeight),
+            String(barSize), "-1",
+            String(Math.round(targetScreen.width)), String(Math.round(targetScreen.height))
+        ]);
+    }
+
+    function finishPreparedOpen() {
+        if (!openPreparing)
+            return;
+        openPreparing = false;
+        bluetoothWindow.visible = true;
+        const current = adapter;
+        if (current && current.enabled)
+            current.discovering = true;
+    }
+
     function scaledText(baseSize) {
         return Math.max(7, Math.round(baseSize * effectiveTextScale / 100));
     }
@@ -376,14 +403,13 @@ Singleton {
         settingsMessage = "";
         settingsPanel.resetCopySelection();
         loadSavedView(targetScreen);
-        bluetoothWindow.visible = true;
-        Qt.callLater(() => root.positionWindow());
-        const current = adapter;
-        if (current && current.enabled)
-            current.discovering = true;
+        prepareWindowOpen(targetScreen);
     }
 
     function close() {
+        openPreparing = false;
+        if (prepareProcess.running)
+            prepareProcess.running = false;
         if (settingsDirty)
             discardDraft();
         bluetoothWindow.visible = false;
@@ -400,23 +426,29 @@ Singleton {
     function toggleForScreen(targetScreen) {
         const currentName = bluetoothWindow.screen ? bluetoothWindow.screen.name : "";
         const targetName = targetScreen ? targetScreen.name : "";
-        if (bluetoothWindow.visible && currentName === targetName)
+        if ((bluetoothWindow.visible || openPreparing) && currentName === targetName)
             close();
         else
             openForScreen(targetScreen);
     }
 
     onAvailableChanged: {
-        if (!available && bluetoothWindow.visible)
+        if (!available && (bluetoothWindow.visible || openPreparing))
             close();
     }
 
     Connections {
         target: FlyoutManager
         function onCloseRequested(exceptSurface) {
-            if (exceptSurface !== "bluetooth" && bluetoothWindow.visible)
+            if (exceptSurface !== "bluetooth"
+                && (bluetoothWindow.visible || root.openPreparing))
                 root.close();
         }
+    }
+
+    Process {
+        id: prepareProcess
+        onExited: root.finishPreparedOpen()
     }
 
     Process {
