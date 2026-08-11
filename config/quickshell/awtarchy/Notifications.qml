@@ -36,6 +36,7 @@ Singleton {
     })
     property var stateCommandQueue: []
     property bool privacyRemapPending: false
+    property bool openPreparing: false
 
     readonly property string cacheHome: Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
@@ -43,6 +44,7 @@ Singleton {
     readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
     readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_flyout_position.sh"
+    readonly property string prepareScript: configHome + "/hypr/scripts/quickshell_flyout_prepare.sh"
     readonly property string activeMonitorName: centerWindow.screen ? centerWindow.screen.name : ""
     readonly property int activeBarSize: {
         const target = centerWindow.screen;
@@ -128,6 +130,25 @@ Singleton {
             positionScript, "notifications", activeMonitorName, placement, "spawn",
             "", "", String(anchorAlongEdge)
         ]);
+    }
+
+    function prepareCenterOpen(targetScreen) {
+        if (!targetScreen)
+            return;
+        openPreparing = true;
+        prepareProcess.exec([
+            "bash", prepareScript, "notifications", targetScreen.name, placement,
+            String(configuredPanelWidth), String(configuredPanelHeight),
+            String(activeBarSize), String(Math.round(anchorAlongEdge)),
+            String(Math.round(targetScreen.width)), String(Math.round(targetScreen.height))
+        ]);
+    }
+
+    function finishPreparedCenterOpen() {
+        if (!openPreparing)
+            return;
+        openPreparing = false;
+        centerWindow.visible = true;
     }
 
     function anchoredPanelX() {
@@ -465,13 +486,15 @@ Singleton {
         settingsPanel.resetCopySelection();
         settingsMessage = "";
         loadSavedView(targetScreen);
-        centerWindow.visible = true;
-        Qt.callLater(() => root.positionCenter());
+        prepareCenterOpen(targetScreen);
     }
 
     function openFocused() { openForScreen(focusedScreen()); }
 
     function closeCenter() {
+        openPreparing = false;
+        if (prepareProcess.running)
+            prepareProcess.running = false;
         if (settingsDirty)
             discardDraft();
         centerWindow.visible = false;
@@ -484,7 +507,8 @@ Singleton {
     function toggleForScreen(targetScreen) {
         const currentName = centerWindow.screen ? centerWindow.screen.name : "";
         const targetName = targetScreen ? targetScreen.name : "";
-        if (centerWindow.visible && currentName.length > 0 && currentName === targetName)
+        if ((centerWindow.visible || openPreparing)
+            && currentName.length > 0 && currentName === targetName)
             closeCenter();
         else
             openForScreen(targetScreen);
@@ -493,7 +517,8 @@ Singleton {
     function toggleForItem(targetScreen, anchorItem) {
         const currentName = centerWindow.screen ? centerWindow.screen.name : "";
         const targetName = targetScreen ? targetScreen.name : "";
-        if (centerWindow.visible && currentName.length > 0 && currentName === targetName)
+        if ((centerWindow.visible || openPreparing)
+            && currentName.length > 0 && currentName === targetName)
             closeCenter();
         else
             openForScreen(targetScreen, anchorItem);
@@ -546,7 +571,8 @@ Singleton {
             root.replaceSynchronous(notification);
             const transientNotification = root.isTransientNotification(notification);
             if (transientNotification
-                && (notification.lastGeneration || root.mutePopups || centerWindow.visible))
+                && (notification.lastGeneration || root.mutePopups
+                    || centerWindow.visible || root.openPreparing))
                 return;
 
             notification.tracked = true;
@@ -556,12 +582,18 @@ Singleton {
             if (target)
                 popupWindow.screen = target;
 
-            if (!notification.lastGeneration && !root.mutePopups && !centerWindow.visible)
+            if (!notification.lastGeneration && !root.mutePopups
+                && !centerWindow.visible && !root.openPreparing)
                 root.enqueuePopup(notification);
 
             if (!transientNotification)
                 Qt.callLater(() => root.trimHistory());
         }
+    }
+
+    Process {
+        id: prepareProcess
+        onExited: root.finishPreparedCenterOpen()
     }
 
     Process {
@@ -592,7 +624,8 @@ Singleton {
     Connections {
         target: FlyoutManager
         function onCloseRequested(exceptSurface) {
-            if (exceptSurface !== "notifications" && centerWindow.visible)
+            if (exceptSurface !== "notifications"
+                && (centerWindow.visible || root.openPreparing))
                 root.closeCenter();
         }
     }
@@ -602,6 +635,7 @@ Singleton {
         WlrLayershell.namespace: "awtarchy-notification-popup"
         visible: !root.mutePopups
             && !centerWindow.visible
+            && !root.openPreparing
             && root.popupNotifications.length > 0
         color: "transparent"
         focusable: false
