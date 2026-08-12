@@ -14,6 +14,43 @@ QtObject {
     readonly property int recentBarMonitorLifetimeMs: 1500
     signal closeRequested(string exceptSurface)
 
+    // Keep the previous flyout mapped until the newly requested different
+    // surface actually appears in Hyprland. This avoids an empty focus gap
+    // where Hyprland would restore a normal window and warp the cursor.
+    property Connections hyprEventConnection: Connections {
+        target: Hyprland
+
+        function onRawEvent(event) {
+            if (!event || event.name !== "openwindow")
+                return;
+
+            const fields = event.parse(4);
+            if (!fields || fields.length < 4)
+                return;
+
+            const expectedTitle = root.titleForSurface(root.activeSurface);
+            const openedTitle = String(fields[3] || "");
+            if (expectedTitle.length > 0 && openedTitle === expectedTitle)
+                root.closeRequested(root.activeSurface);
+        }
+    }
+
+    function titleForSurface(surface) {
+        if (surface === "launcher")
+            return "Awtarchy Application Search";
+        if (surface === "clipboard")
+            return "Awtarchy Clipboard History";
+        if (surface === "notifications")
+            return "Awtarchy Notification Center";
+        if (surface === "quick-settings")
+            return "Awtarchy Quick Settings";
+        if (surface === "network")
+            return "Awtarchy Network";
+        if (surface === "bluetooth")
+            return "Awtarchy Bluetooth";
+        return "";
+    }
+
     function focusedMonitorName() {
         return Hyprland.focusedMonitor && Hyprland.focusedMonitor.name
             ? String(Hyprland.focusedMonitor.name) : "";
@@ -58,20 +95,12 @@ QtObject {
             targetMonitor = consumeTargetMonitor();
         }
 
-        // Do not hide the current surface during a bar handoff. Closing a
-        // focused flyout before its replacement maps makes Hyprland restore a
-        // normal window in between, which can warp the cursor to that window.
-        // The newly requested surface becomes authoritative immediately, but
-        // competing flyouts remain mapped until opened() confirms the target
-        // flyout exists. Then they are closed with no empty focus gap.
+        // Same-surface monitor handoffs stay mapped and retarget in place.
+        // Different surfaces stay overlapped only until the requested new
+        // Hyprland window emits openwindow, at which point the connection above
+        // closes every competing surface except the newly active one.
         activeSurface = surface;
         activeMonitorName = targetMonitor;
-    }
-
-    function opened(surface) {
-        if (activeSurface !== surface)
-            return;
-        closeRequested(surface);
     }
 
     function release(surface) {
