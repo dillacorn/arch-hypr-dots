@@ -30,6 +30,7 @@ jobs:
           bash -n config/hypr/scripts/restore_brightness.sh
           bash -n tests/test-awtarchy-command.sh
           bash -n tests/test-awtarchy-command-shim.sh
+          bash -n tests/test-bar-wheel-input.sh
           bash -n tests/test-ddc-brightness-watcher.sh
           bash -n tests/test-hybrid-brightness.sh
           bash -n tests/test-desktop-candidate-validation.sh
@@ -47,6 +48,7 @@ jobs:
             config/hypr/scripts/restore_brightness.sh \
             tests/test-awtarchy-command.sh \
             tests/test-awtarchy-command-shim.sh \
+            tests/test-bar-wheel-input.sh \
             tests/test-ddc-brightness-watcher.sh \
             tests/test-hybrid-brightness.sh \
             tests/test-desktop-candidate-validation.sh \
@@ -56,6 +58,7 @@ jobs:
         run: |
           bash tests/test-awtarchy-command.sh
           bash tests/test-awtarchy-command-shim.sh
+          bash tests/test-bar-wheel-input.sh
           bash tests/test-ddc-brightness-watcher.sh
           bash tests/test-hybrid-brightness.sh
           bash tests/test-desktop-candidate-validation.sh

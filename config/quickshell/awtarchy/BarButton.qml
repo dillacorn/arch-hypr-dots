@@ -18,6 +18,13 @@ Rectangle {
     property bool hovered: false
     property int wheelActivationDelay: 0
     property bool wheelReady: wheelActivationDelay <= 0
+    // Mouse wheels normally report 120-unit angle steps. Precision touchpads
+    // report many smaller pixel deltas, so collect those before emitting one
+    // bounded bar action instead of treating every gesture event as a step.
+    property real wheelAngleRemainder: 0
+    property real wheelPixelRemainder: 0
+    readonly property real wheelAngleStep: 120
+    readonly property real wheelPixelStep: 24
 
     // Bar.qml supplies these explicitly. Window.window is not reliable for
     // children of every Quickshell proxy window, so keep it only as a fallback
@@ -56,6 +63,61 @@ Rectangle {
     signal middleClicked()
     signal wheelUp()
     signal wheelDown()
+
+    function resetWheelAccumulator() {
+        wheelAngleRemainder = 0;
+        wheelPixelRemainder = 0;
+        wheelReset.stop();
+    }
+
+    function dispatchWheelStep(direction) {
+        if (direction > 0)
+            wheelUp();
+        else if (direction < 0)
+            wheelDown();
+    }
+
+    function handleWheel(wheel) {
+        if (!wheelReady) {
+            resetWheelAccumulator();
+            wheel.accepted = true;
+            return;
+        }
+
+        const pixelDelta = Number(wheel.pixelDelta.y);
+        if (Number.isFinite(pixelDelta) && pixelDelta !== 0) {
+            wheelAngleRemainder = 0;
+            wheelPixelRemainder += pixelDelta;
+            wheelReset.restart();
+
+            if (Math.abs(wheelPixelRemainder) >= wheelPixelStep) {
+                const direction = wheelPixelRemainder > 0 ? 1 : -1;
+                dispatchWheelStep(direction);
+                wheelPixelRemainder -= direction * wheelPixelStep;
+            }
+
+            wheel.accepted = true;
+            return;
+        }
+
+        const angleDelta = Number(wheel.angleDelta.y);
+        if (Number.isFinite(angleDelta) && angleDelta !== 0) {
+            wheelPixelRemainder = 0;
+            wheelAngleRemainder += angleDelta;
+            wheelReset.restart();
+
+            if (Math.abs(wheelAngleRemainder) >= wheelAngleStep) {
+                const direction = wheelAngleRemainder > 0 ? 1 : -1;
+                dispatchWheelStep(direction);
+                wheelAngleRemainder -= direction * wheelAngleStep;
+            }
+
+            wheel.accepted = true;
+            return;
+        }
+
+        wheel.accepted = false;
+    }
 
     function isBmpIconPart(part) {
         return /^[\uF000-\uF8FF]$/u.test(part);
@@ -224,13 +286,22 @@ Rectangle {
         onTriggered: root.wheelReady = true
     }
 
+    Timer {
+        id: wheelReset
+        interval: 250
+        repeat: false
+        onTriggered: root.resetWheelAccumulator()
+    }
+
     MouseArea {
         id: pointer
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
         hoverEnabled: true
+        scrollGestureEnabled: true
 
         onContainsMouseChanged: {
+            root.resetWheelAccumulator();
             if (containsMouse) {
                 hoverRelease.stop();
                 root.hovered = true;
@@ -258,16 +329,7 @@ Rectangle {
                 root.clicked();
         }
 
-        onWheel: wheel => {
-            if (!root.wheelReady) {
-                wheel.accepted = true;
-                return;
-            }
-            if (wheel.angleDelta.y > 0)
-                root.wheelUp();
-            else if (wheel.angleDelta.y < 0)
-                root.wheelDown();
-        }
+        onWheel: wheel => root.handleWheel(wheel)
     }
 
     BarTooltip {
