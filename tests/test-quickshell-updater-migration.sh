@@ -524,6 +524,11 @@ update_env=(
   "AWTARCHY_TEST_HYPRIDLE_PID=${TMP}/hypridle.pid"
   "AWTARCHY_TEST_HYPRIDLE_ARGS=${TMP}/hypridle.args"
   "AWTARCHY_TEST_HYPRIDLE_FD_LEAK_FILE=${TMP}/hypridle-fd-leak"
+  "HYPRIDLE_BIN=${fakebin}/hypridle"
+  "HYPRIDLE_PGREP_BIN=${fakebin}/pgrep"
+  "HYPRIDLE_PKILL_BIN=${fakebin}/pkill"
+  "HYPRIDLE_SLEEP_BIN=${fakebin}/sleep"
+  "HYPRIDLE_RESTART_LOG=${TMP}/hypridle.log"
   "HYPRIDLE_STOP_ATTEMPTS=3"
   "HYPRIDLE_START_ATTEMPTS=20"
   "HYPRIDLE_START_STABLE_CHECKS=3"
@@ -561,7 +566,12 @@ assert_retired_paths_absent "$home"
 assert_file "$home/.local/state/awtarchy/quickshell-connectivity-migration-complete"
 assert_file "${TMP}/qs.state"
 assert_absent "${TMP}/qs-fd-leak"
-assert_file "${TMP}/hypridle.pid"
+if [[ ! -s ${TMP}/hypridle.pid ]]; then
+  printf '%s\n' 'Hypridle updater diagnostics:' >&2
+  grep -F 'Hypridle' "${TMP}/update.out" >&2 || true
+  [[ ! -r ${TMP}/hypridle.log ]] || tail -n 20 "${TMP}/hypridle.log" >&2
+  fail "missing replacement Hypridle PID: ${TMP}/hypridle.pid"
+fi
 assert_absent "${TMP}/hypridle-fd-leak"
 grep -Fxq -- "-c ${home}/.config/hypr/hypridle.conf" "${TMP}/hypridle.args" \
   || fail "updater did not restart Hypridle with the managed config"
