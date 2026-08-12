@@ -181,12 +181,7 @@ rule_name="awtarchy-flyout-prepared-${surface//[^A-Za-z0-9_-]/-}-$$"
 # ASCII/numeric values. The newly created rule is intentionally left enabled;
 # the next open replaces it before mapping. This also keeps privacy-remap
 # hide/show cycles at the same geometry without introducing another first frame.
-#
-# These flyout-specific focus rules suppress compositor focus/activation warps
-# without disabling Hyprland cursor warps globally. no_focus is intentionally
-# not used: the launcher and interactive flyouts must still be able to receive
-# keyboard input through normal interaction and HyprlandFocusGrab.
-lua="awtarchy_prepared_flyout_rules_v1 = awtarchy_prepared_flyout_rules_v1 or {}; local old = awtarchy_prepared_flyout_rules_v1['$surface']; if old ~= nil then pcall(function() old:set_enabled(false) end) end; awtarchy_prepared_flyout_rules_v1['$surface'] = hl.window_rule({ name = '$rule_name', match = { title = '$title' }, float = true, monitor = '$monitor', size = { '$width', '$height' }, move = { '$x', '$y' }, no_initial_focus = true, no_follow_mouse = true, focus_on_activate = false, suppress_event = 'activate activatefocus', no_anim = true, opacity = '1 override 1 override 1 override' }); hl.exec_scheduled_prop_refresh_immediately()"
+lua="awtarchy_prepared_flyout_rules_v1 = awtarchy_prepared_flyout_rules_v1 or {}; local old = awtarchy_prepared_flyout_rules_v1['$surface']; if old ~= nil then pcall(function() old:set_enabled(false) end) end; awtarchy_prepared_flyout_rules_v1['$surface'] = hl.window_rule({ name = '$rule_name', match = { title = '$title' }, float = true, monitor = '$monitor', size = { '$width', '$height' }, move = { '$x', '$y' }, no_anim = true, opacity = '1 override 1 override 1 override' }); hl.exec_scheduled_prop_refresh_immediately()"
 
 hyprctl eval "$lua" >/dev/null
 
