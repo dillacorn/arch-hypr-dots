@@ -86,10 +86,11 @@ Rectangle {
 
         const rawPixelDelta = Number(wheel.pixelDelta.y);
         if (Number.isFinite(rawPixelDelta) && rawPixelDelta !== 0) {
-            // Awtarchy enables natural touchpad scrolling by default. Normalize
-            // its inverted pixel direction so bar controls still follow the
-            // conventional wheel-up-increases, wheel-down-decreases behavior.
-            const pixelDelta = wheel.inverted ? -rawPixelDelta : rawPixelDelta;
+            // Qt/Wayland does not reliably expose Hyprland's natural-scroll
+            // state through WheelEvent.inverted. Pixel deltas are the smooth
+            // touchpad path here, so reverse them directly to match the mouse
+            // wheel-up-increases, wheel-down-decreases control direction.
+            const pixelDelta = -rawPixelDelta;
             wheelAngleRemainder = 0;
             wheelPixelRemainder += pixelDelta;
             wheelReset.restart();

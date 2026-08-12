@@ -18,8 +18,8 @@ require_source 'scrollGestureEnabled: true' \
   'BarButton does not explicitly accept trackpad scroll gestures'
 require_source 'const rawPixelDelta = Number(wheel.pixelDelta.y);' \
   'BarButton does not read smooth pixel deltas'
-require_source 'const pixelDelta = wheel.inverted ? -rawPixelDelta : rawPixelDelta;' \
-  'BarButton does not normalize natural trackpad scrolling'
+require_source 'const pixelDelta = -rawPixelDelta;' \
+  'BarButton does not reverse the smooth trackpad direction'
 require_source 'const angleDelta = Number(wheel.angleDelta.y);' \
   'BarButton does not retain discrete mouse-wheel deltas'
 require_source 'wheelPixelRemainder += pixelDelta;' \
@@ -35,6 +35,10 @@ require_source 'wheel.accepted = false;' \
 
 if grep -Fq 'if (wheel.angleDelta.y > 0)' "$BAR_BUTTON"; then
   fail 'legacy angle-only wheel handling is still present'
+fi
+
+if grep -Fq 'wheel.inverted' "$BAR_BUTTON"; then
+  fail 'trackpad direction still depends on the unreliable WheelEvent.inverted flag'
 fi
 
 printf '%s\n' 'Bar wheel input regression test passed.'
