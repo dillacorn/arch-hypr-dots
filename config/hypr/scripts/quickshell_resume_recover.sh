@@ -123,6 +123,8 @@ set_expected_bar_count() {
     local state_json
 
     state_json="$(load_state_json)"
+    # $state is a jq variable, not a shell variable.
+    # shellcheck disable=SC2016
     EXPECTED_BAR_COUNT="$("$JQ_BIN" -r --argjson state "$state_json" '
         def true_when_missing:
             if . == null then true else . end;
