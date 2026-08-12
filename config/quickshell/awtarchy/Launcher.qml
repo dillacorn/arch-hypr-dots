@@ -452,7 +452,7 @@ Singleton {
         if (!targetScreen)
             return;
 
-        FlyoutManager.claim("launcher");
+        FlyoutManager.claim("launcher", targetScreen.name);
         focusGrab.active = false;
         resetLocalSettingsState();
         targetMonitorName = targetScreen.name;
@@ -699,7 +699,7 @@ Singleton {
 
     HyprlandFocusGrab {
         id: focusGrab
-        windows: [launcherWindow]
+        windows: [launcherWindow].concat(FlyoutManager.barWindows || [])
         onCleared: {
             if (launcherWindow.visible)
                 root.close();
