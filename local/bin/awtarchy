@@ -72,14 +72,31 @@ installed_config_tag() {
 }
 
 curl_args() {
+  local mode="${1:-api}"
   CURL_ARGS=(
-    -fsSL
+    -fL
+    --show-error
     --connect-timeout 5
-    --max-time 10
     --retry 1
     -H "Accept: application/vnd.github+json"
     -H "User-Agent: awtarchy-command"
   )
+  case "$mode" in
+    api)
+      CURL_ARGS+=(--silent --max-time 10)
+      ;;
+    download)
+      CURL_ARGS+=(
+        --max-time 300
+        --retry 2
+        --retry-delay 1
+        --speed-limit 1024
+        --speed-time 30
+        --progress-bar
+      )
+      ;;
+    *) die "Unknown curl mode: ${mode}" ;;
+  esac
   if [[ -n ${GITHUB_TOKEN:-} ]]; then
     CURL_ARGS+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
   fi
@@ -88,7 +105,7 @@ curl_args() {
 latest_release_tag() {
   have curl || return 1
   have python3 || return 1
-  curl_args
+  curl_args api
   local json=""
   json="$(curl "${CURL_ARGS[@]}" "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest")" || return 1
   python3 - "$json" <<'PY'
@@ -183,9 +200,9 @@ self_update() {
   tmp="$(mktemp -d)"
   archive="${tmp}/awtarchy.tar.gz"
 
-  curl_args
-  log "Downloading Awtarchy ${tag}..."
-  if ! curl "${CURL_ARGS[@]}" -L -o "$archive" \
+  curl_args download
+  log "Downloading Awtarchy ${tag} (stalled transfers abort after 30 seconds)..."
+  if ! curl "${CURL_ARGS[@]}" -o "$archive" \
     "https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/tags/${encoded}.tar.gz"; then
     rm -rf -- "$tmp"
     die "Failed to download release ${tag}."

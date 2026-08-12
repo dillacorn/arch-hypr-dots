@@ -68,15 +68,30 @@ installed_config_source() {
 }
 
 curl_args() {
+  local mode="${1:-api}"
   CURL_ARGS=(
-    -fsSL
+    -fL
+    --show-error
     --connect-timeout 10
-    --max-time 300
     --retry 2
     --retry-delay 1
     -H "Accept: application/vnd.github+json"
     -H "User-Agent: awtarchy-quickshell"
   )
+  case "$mode" in
+    api)
+      CURL_ARGS+=(--silent --max-time 30)
+      ;;
+    download)
+      CURL_ARGS+=(
+        --max-time 300
+        --speed-limit 1024
+        --speed-time 30
+        --progress-bar
+      )
+      ;;
+    *) die "Unknown curl mode: ${mode}" ;;
+  esac
   if [[ -n ${GITHUB_TOKEN:-} ]]; then
     CURL_ARGS+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
   fi
@@ -85,7 +100,7 @@ curl_args() {
 testing_branch_head() {
   have curl || return 1
   have python3 || return 1
-  curl_args
+  curl_args api
 
   local json=""
   json="$(curl "${CURL_ARGS[@]}" \
@@ -150,9 +165,9 @@ refresh_testing_command() {
 
   tmp="$(mktemp -d)"
   archive="${tmp}/awtarchy.tar.gz"
-  curl_args
-  log "Downloading ${TEST_BRANCH} at ${commit}..."
-  if ! curl "${CURL_ARGS[@]}" -L -o "$archive" \
+  curl_args download
+  log "Downloading ${TEST_BRANCH} at ${commit} (stalled transfers abort after 30 seconds)..."
+  if ! curl "${CURL_ARGS[@]}" -o "$archive" \
     "https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/${commit}.tar.gz";
   then
     rm -rf -- "$tmp"

@@ -130,6 +130,9 @@ cat >"${fakebin}/curl" <<'EOF'
 set -euo pipefail
 out=""
 url=""
+progress=0
+speed_limit=""
+speed_time=""
 while (( $# )); do
   case "$1" in
     -o)
@@ -137,6 +140,18 @@ while (( $# )); do
       shift 2
       ;;
     -H|--connect-timeout|--max-time|--retry|--retry-delay)
+      shift 2
+      ;;
+    --progress-bar)
+      progress=1
+      shift
+      ;;
+    --speed-limit)
+      speed_limit="$2"
+      shift 2
+      ;;
+    --speed-time)
+      speed_time="$2"
       shift 2
       ;;
     -*)
@@ -159,12 +174,18 @@ if [[ $url == 'https://api.github.com/repos/dillacorn/awtarchy/commits/quickshel
 fi
 if [[ $url == 'https://github.com/dillacorn/awtarchy/archive/refs/tags/v2.0.0-1.tar.gz' ]]; then
   [[ -n $out ]] || exit 43
+  (( progress == 1 )) || exit 44
+  [[ $speed_limit == 1024 ]] || exit 45
+  [[ $speed_time == 30 ]] || exit 46
   cp -- "${AWTARCHY_TEST_PREVIOUS_ARCHIVE:?}" "$out"
   exit 0
 fi
 expected="https://github.com/dillacorn/awtarchy/archive/${AWTARCHY_TEST_COMMIT:?}.tar.gz"
 [[ $url == "$expected" ]] || exit 42
 [[ -n $out ]] || exit 43
+(( progress == 1 )) || exit 44
+[[ $speed_limit == 1024 ]] || exit 45
+[[ $speed_time == 30 ]] || exit 46
 cp -- "${AWTARCHY_TEST_ARCHIVE:?}" "$out"
 EOF
 

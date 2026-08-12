@@ -4247,7 +4247,8 @@ EOF
 
 curl_headers() {
   CURL_ARGS=(
-    -fsSL
+    -fL
+    --show-error
     --retry 3
     --retry-delay 1
     -H "User-Agent: awtarchy-update"
@@ -4260,7 +4261,11 @@ curl_headers() {
 fetch_latest_release_tag() {
   local api="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest"
   local json
-  json="$(curl "${CURL_ARGS[@]}" -H "Accept: application/vnd.github+json" "$api")" \
+  json="$(curl "${CURL_ARGS[@]}" \
+    --silent \
+    --connect-timeout 10 \
+    --max-time 30 \
+    -H "Accept: application/vnd.github+json" "$api")" \
     || die "Failed to query GitHub latest release API"
   python3 - "$json" <<'PY'
 import json, sys
@@ -4285,10 +4290,13 @@ download_release_tarball() {
   tag_enc="$(urlencode_path_segment "$tag")"
 
   curl "${CURL_ARGS[@]}" \
+    --progress-bar \
     --connect-timeout 10 \
     --max-time "$max_time" \
     --retry 1 \
-    -L -o "$out" \
+    --speed-limit 1024 \
+    --speed-time 30 \
+    -o "$out" \
     "https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/tags/${tag_enc}.tar.gz"
 }
 
@@ -4297,10 +4305,13 @@ download_testing_commit_tarball() {
   [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || return 2
 
   curl "${CURL_ARGS[@]}" \
+    --progress-bar \
     --connect-timeout 10 \
     --max-time "$max_time" \
     --retry 1 \
-    -L -o "$out" \
+    --speed-limit 1024 \
+    --speed-time 30 \
+    -o "$out" \
     "https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/${commit}.tar.gz"
 }
 tar_topdir() {
@@ -5793,6 +5804,7 @@ main() {
   fi
 
   local tgz="${TMPD}/awtarchy.tgz" top repo_dir target_home plan_file active_theme="" fuzzel_anchor=""
+  log "Downloading source archive for ${source_label} (stalled transfers abort after 30 seconds)..."
   if [[ -n "$source_revision" ]]; then
     download_testing_commit_tarball "$source_revision" "$tgz" \
       || die "Failed to download testing commit ${source_revision}"

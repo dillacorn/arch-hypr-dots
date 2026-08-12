@@ -63,6 +63,9 @@ cat >"${fakebin}/curl" <<'EOF'
 set -euo pipefail
 out=""
 url=""
+progress=0
+speed_limit=""
+speed_time=""
 while (( $# )); do
   case "$1" in
     -o)
@@ -70,6 +73,18 @@ while (( $# )); do
       shift 2
       ;;
     -H|--connect-timeout|--max-time|--retry|--retry-delay)
+      shift 2
+      ;;
+    --progress-bar)
+      progress=1
+      shift
+      ;;
+    --speed-limit)
+      speed_limit="$2"
+      shift 2
+      ;;
+    --speed-time)
+      speed_time="$2"
       shift 2
       ;;
     -*)
@@ -86,6 +101,9 @@ if [[ $url == *'/releases/latest' ]]; then
   exit 0
 fi
 [[ -n $out ]] || exit 2
+(( progress == 1 )) || exit 3
+[[ $speed_limit == 1024 ]] || exit 4
+[[ $speed_time == 30 ]] || exit 5
 cp -- "$AWTARCHY_TEST_ARCHIVE" "$out"
 EOF
 chmod 0755 "${fakebin}/curl"
