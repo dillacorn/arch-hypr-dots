@@ -24,15 +24,6 @@ QtObject {
         if (monitor.length === 0)
             return;
 
-        // Launcher.openForScreen() toggles itself closed before it reaches
-        // claim(). Pre-close only that focus-grab surface during a cross-monitor
-        // bar click so the following launcher click can reopen it on the target.
-        if (activeSurface === "launcher"
-            && activeMonitorName.length > 0
-            && activeMonitorName !== monitor) {
-            closeRequested("");
-        }
-
         recentBarMonitorName = monitor;
         recentBarMonitorTimestamp = Date.now();
     }
@@ -61,26 +52,17 @@ QtObject {
 
         if (explicitMonitor.length > 0) {
             targetMonitor = explicitMonitor;
-            // Do not let a bar click cached for this request leak into the next
-            // flyout open. Callers that already know their ShellScreen should
-            // always be authoritative.
             recentBarMonitorName = "";
             recentBarMonitorTimestamp = 0;
         } else {
             targetMonitor = consumeTargetMonitor();
         }
 
-        // A single FloatingWindow instance cannot be retargeted safely while
-        // mapped. Legacy callers still rely on this guard. Surfaces converted
-        // to a backingWindowVisible handoff call claim only after their old
-        // native window has actually disappeared, making this branch harmless.
-        if (activeSurface === surface
-            && activeMonitorName.length > 0
-            && targetMonitor.length > 0
-            && activeMonitorName !== targetMonitor) {
-            closeRequested("");
-        }
-
+        // Do not close a mapped flyout merely because the same surface is being
+        // requested on another monitor. Closing it makes Hyprland restore focus
+        // to a normal window before the replacement mapping completes, which can
+        // trigger a compositor cursor warp. The surface retargets in-place and
+        // its existing pre/post positioning helpers place it on target instead.
         closeRequested(surface);
         activeSurface = surface;
         activeMonitorName = targetMonitor;
