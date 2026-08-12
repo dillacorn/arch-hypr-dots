@@ -427,6 +427,11 @@ rollback_quickshell_update() {
   fi
   rollback_changes
   reload_quickshell_update_hyprland || true
+  if [[ -f "$manager" ]] \
+    && ! run_target bash "$manager" start 9>&-;
+  then
+    warn "User files were restored, but the restored Quickshell could not be restarted automatically."
+  fi
 }
 
 remove_quickshell_update_legacy_packages() {

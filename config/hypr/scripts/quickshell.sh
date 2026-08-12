@@ -90,6 +90,17 @@ is_running() {
     ipc control ping >/dev/null 2>&1
 }
 
+wait_for_shell_stop() {
+    for _ in {1..100}; do
+        if ! is_running; then
+            return 0
+        fi
+        sleep 0.05
+    done
+
+    return 1
+}
+
 start_shell() {
     local stable_pings=0
 
@@ -124,11 +135,15 @@ stop_shell() {
 
     ipc control quit >/dev/null 2>&1 || true
 
-    for _ in {1..100}; do
-        if ! is_running; then
-            return 0
-        fi
-        sleep 0.05
+    wait_for_shell_stop && return 0
+
+    # Qt can remove the visible shell before its process and IPC endpoint have
+    # finished shutting down. Fall back to Quickshell's instance-aware kill
+    # command, repeating it in case an older duplicate instance is exposed.
+    printf 'quickshell.sh: Graceful stop timed out; forcing the Awtarchy instance to stop\n' >&2
+    for _ in {1..3}; do
+        qs -c "$CONFIG_NAME" kill >/dev/null 2>&1 || true
+        wait_for_shell_stop && return 0
     done
 
     printf 'quickshell.sh: Quickshell did not stop cleanly\n' >&2

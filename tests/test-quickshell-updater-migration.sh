@@ -260,6 +260,13 @@ if [[ $* == *'ipc call control ping'* ]]; then
   exit 0
 fi
 if [[ $* == *'ipc call control quit'* ]]; then
+  if [[ ${AWTARCHY_TEST_QS_STALL_QUIT:-0} != 1 ]]; then
+    rm -f -- "$state"
+  fi
+  exit 0
+fi
+if [[ $* == *' kill' ]]; then
+  printf '%s\n' "$*" >>"${AWTARCHY_TEST_QS_KILL_LOG:?}"
   rm -f -- "$state"
   exit 0
 fi
@@ -399,9 +406,47 @@ grep -Fq 'start_quickshell_update_shell' "$installed_runtime" \
   || fail "testing runtime did not receive live shell validation"
 grep -Fq 'restart 9>&-' "$installed_runtime" \
   || fail "testing runtime does not close the updater lock for Quickshell"
+grep -Fq ' start 9>&-' "$installed_runtime" \
+  || fail "testing runtime does not restart a restored Quickshell after rollback"
 
 failure_home="${TMP}/failure-home"
 cp -a -- "$home" "$failure_home"
+
+# Model a user who already has a working Quickshell manager. The preserved
+# manager rejects the newly applied shell, then accepts the restored tree. This
+# verifies that rollback does not leave the previously working shell stopped.
+cat >"$failure_home/.config/hypr/scripts/quickshell.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+state="${AWTARCHY_TEST_ROLLBACK_QS_STATE:?}"
+log="${AWTARCHY_TEST_ROLLBACK_QS_LOG:?}"
+action="${1:-}"
+printf '%s\n' "$action" >>"$log"
+
+case "$action" in
+  start)
+    [[ ! -e "$HOME/.config/quickshell/awtarchy/shell.qml" ]] || exit 1
+    : >"$state"
+    ;;
+  stop)
+    rm -f -- "$state"
+    ;;
+  restart)
+    "$0" stop
+    "$0" start
+    ;;
+  status)
+    [[ -e $state ]] && printf '%s\n' running || printf '%s\n' stopped
+    ;;
+  *)
+    exit 2
+    ;;
+esac
+EOF
+chmod 0755 "$failure_home/.config/hypr/scripts/quickshell.sh"
+: >"${TMP}/rollback-qs.state"
+: >"${TMP}/rollback-qs.log"
 
 package_state="${TMP}/packages"
 write_old_package_state "$package_state"
@@ -410,7 +455,9 @@ cp -- "$package_state" "$managed_packages"
 : >"${TMP}/pacman.log"
 : >"${TMP}/hyprctl.log"
 : >"${TMP}/pkill.log"
+: >"${TMP}/qs-kill.log"
 mkdir -p "${TMP}/runtime"
+: >"${TMP}/qs.state"
 
 update_env=(
   "HOME=$home"
@@ -435,6 +482,8 @@ update_env=(
   "AWTARCHY_TEST_QS_STATE=${TMP}/qs.state"
   "AWTARCHY_TEST_QS_FAIL_FILE=${TMP}/qs.fail"
   "AWTARCHY_TEST_QS_FD_LEAK_FILE=${TMP}/qs-fd-leak"
+  "AWTARCHY_TEST_QS_STALL_QUIT=1"
+  "AWTARCHY_TEST_QS_KILL_LOG=${TMP}/qs-kill.log"
 )
 
 hypr_hash_before="$(sha256sum "$home/.config/hypr/hyprland.lua" | awk '{print $1}')"
@@ -468,6 +517,8 @@ assert_retired_paths_absent "$home"
 assert_file "$home/.local/state/awtarchy/quickshell-connectivity-migration-complete"
 assert_file "${TMP}/qs.state"
 assert_absent "${TMP}/qs-fd-leak"
+grep -Fxq -- '-c awtarchy kill' "${TMP}/qs-kill.log" \
+  || fail "Quickshell manager did not force a stalled instance to stop"
 grep -Fxq "tag=quickshell-conversion-testing@${TEST_COMMIT}" \
   "$home/.local/state/awtarchy/config-version" \
   || fail "config version did not record the exact testing commit"
@@ -516,6 +567,8 @@ failure_env=(
   "AWTARCHY_TEST_QS_STATE=${TMP}/failure-qs.state"
   "AWTARCHY_TEST_QS_FAIL_FILE=${TMP}/failure-qs.fail"
   "AWTARCHY_TEST_QS_FD_LEAK_FILE=${TMP}/failure-qs-fd-leak"
+  "AWTARCHY_TEST_ROLLBACK_QS_STATE=${TMP}/rollback-qs.state"
+  "AWTARCHY_TEST_ROLLBACK_QS_LOG=${TMP}/rollback-qs.log"
 )
 
 set +e
@@ -539,6 +592,9 @@ assert_file "$failure_home/.local/share/applications/hypr_quicksettings.desktop.
 assert_file "$failure_home/.cache/wofi-drun"
 assert_file "$failure_home/.cache/wofi-drun.backup"
 assert_absent "$failure_home/.config/quickshell/awtarchy/shell.qml"
+assert_file "${TMP}/rollback-qs.state"
+[[ $(tail -n1 "${TMP}/rollback-qs.log") == start ]] \
+  || fail "rollback did not restart the restored Quickshell manager"
 for pkg in waybar waybar-git fuzzel wlogout mako wofi network-manager-applet blueman; do
   assert_package "$failure_packages" "$pkg"
 done
