@@ -27,7 +27,9 @@ jobs:
           bash -n config/hypr/scripts/ddc_brightness.sh
           bash -n config/hypr/scripts/dim_display.sh
           bash -n config/hypr/scripts/hypr-ddc-brightness.sh
+          bash -n config/hypr/scripts/hypridle_action.sh
           bash -n config/hypr/scripts/restore_brightness.sh
+          bash -n config/hypr/scripts/quickshell_resume_recover.sh
           bash -n tests/test-awtarchy-command.sh
           bash -n tests/test-awtarchy-command-shim.sh
           bash -n tests/test-bar-wheel-input.sh
@@ -36,6 +38,7 @@ jobs:
           bash -n tests/test-desktop-candidate-validation.sh
           bash -n tests/test-lua-validation.sh
           bash -n tests/test-quickshell-updater-migration.sh
+          bash -n tests/test-quickshell-resume-recovery.sh
       - name: ShellCheck command code
         run: |
           shellcheck \
@@ -46,6 +49,7 @@ jobs:
             config/hypr/scripts/dim_display.sh \
             config/hypr/scripts/hypr-ddc-brightness.sh \
             config/hypr/scripts/restore_brightness.sh \
+            config/hypr/scripts/quickshell_resume_recover.sh \
             tests/test-awtarchy-command.sh \
             tests/test-awtarchy-command-shim.sh \
             tests/test-bar-wheel-input.sh \
@@ -53,7 +57,8 @@ jobs:
             tests/test-hybrid-brightness.sh \
             tests/test-desktop-candidate-validation.sh \
             tests/test-lua-validation.sh \
-            tests/test-quickshell-updater-migration.sh
+            tests/test-quickshell-updater-migration.sh \
+            tests/test-quickshell-resume-recovery.sh
       - name: Command and updater integration tests
         run: |
           bash tests/test-awtarchy-command.sh
@@ -64,3 +69,4 @@ jobs:
           bash tests/test-desktop-candidate-validation.sh
           bash tests/test-lua-validation.sh
           bash tests/test-quickshell-updater-migration.sh
+          bash tests/test-quickshell-resume-recovery.sh

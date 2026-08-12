@@ -9,6 +9,7 @@ CACHE="${XDG_CACHE_HOME:-$HOME/.cache}"
 
 INHIBITOR_SH="${INHIBITOR_SH:-${CONF}/hypr/scripts/idle_inhibitor_global.sh}"
 SCRIPTS_DIR="${CONF}/hypr/scripts"
+QUICKSHELL_RESUME_SCRIPT="${QUICKSHELL_RESUME_SCRIPT:-${SCRIPTS_DIR}/quickshell_resume_recover.sh}"
 LOG_FILE="${HYPRIDLE_ACTION_LOG:-${CACHE}/hypridle/actions.log}"
 
 HYPRCTL_BIN="${HYPRCTL_BIN:-hyprctl}"
@@ -1342,7 +1343,14 @@ case "$action" in
         cancel_suspend_watch
         "$INHIBITOR_SH" off >/dev/null 2>&1 || true
         log "sleep transition: inhibitor reset after sleep"
-        exec "$HYPRCTL_BIN" dispatch 'hl.dsp.dpms({ action = "enable" })'
+        if ! "$HYPRCTL_BIN" dispatch 'hl.dsp.dpms({ action = "enable" })'; then
+            log "sleep transition: failed to enable displays after sleep"
+        fi
+        if "$QUICKSHELL_RESUME_SCRIPT"; then
+            log "sleep transition: Quickshell resume recovery completed"
+        else
+            log "sleep transition: Quickshell resume recovery failed"
+        fi
         ;;
 
     teams-inhibit-active)
