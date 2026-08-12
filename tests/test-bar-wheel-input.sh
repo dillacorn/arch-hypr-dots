@@ -16,8 +16,10 @@ require_source() {
 
 require_source 'scrollGestureEnabled: true' \
   'BarButton does not explicitly accept trackpad scroll gestures'
-require_source 'const pixelDelta = Number(wheel.pixelDelta.y);' \
+require_source 'const rawPixelDelta = Number(wheel.pixelDelta.y);' \
   'BarButton does not read smooth pixel deltas'
+require_source 'const pixelDelta = wheel.inverted ? -rawPixelDelta : rawPixelDelta;' \
+  'BarButton does not normalize natural trackpad scrolling'
 require_source 'const angleDelta = Number(wheel.angleDelta.y);' \
   'BarButton does not retain discrete mouse-wheel deltas'
 require_source 'wheelPixelRemainder += pixelDelta;' \

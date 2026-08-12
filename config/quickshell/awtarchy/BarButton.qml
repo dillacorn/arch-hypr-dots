@@ -84,8 +84,12 @@ Rectangle {
             return;
         }
 
-        const pixelDelta = Number(wheel.pixelDelta.y);
-        if (Number.isFinite(pixelDelta) && pixelDelta !== 0) {
+        const rawPixelDelta = Number(wheel.pixelDelta.y);
+        if (Number.isFinite(rawPixelDelta) && rawPixelDelta !== 0) {
+            // Awtarchy enables natural touchpad scrolling by default. Normalize
+            // its inverted pixel direction so bar controls still follow the
+            // conventional wheel-up-increases, wheel-down-decreases behavior.
+            const pixelDelta = wheel.inverted ? -rawPixelDelta : rawPixelDelta;
             wheelAngleRemainder = 0;
             wheelPixelRemainder += pixelDelta;
             wheelReset.restart();
