@@ -227,6 +227,7 @@ ShellRoot {
     }
 
     Variants {
+        id: barVariants
         model: Quickshell.screens
 
         Bar {
@@ -254,6 +255,15 @@ ShellRoot {
                 }
             }
         }
+    }
+
+    // Expose the actual per-monitor bar QsWindow instances to popup focus grabs.
+    // A bar click should remain an actionable shell click, while application
+    // windows stay outside the whitelist and continue to dismiss the launcher.
+    Binding {
+        target: FlyoutManager
+        property: "barWindows"
+        value: barVariants.instances
     }
 
     // A non-interactive full-edge ghost shows only a different destination.
