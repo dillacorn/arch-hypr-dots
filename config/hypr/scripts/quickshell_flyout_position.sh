@@ -12,6 +12,7 @@ requested_w="${5:-}"
 requested_h="${6:-}"
 anchor="${7:--1}"
 state_file="${XDG_CACHE_HOME:-$HOME/.cache}/awtarchy/quickshell-state.json"
+prepared_dir="${XDG_RUNTIME_DIR:-/tmp}/awtarchy-quickshell/flyout-targets"
 reference_screen_w=1920
 reference_screen_h=1080
 
@@ -91,10 +92,6 @@ esac
 command -v hyprctl >/dev/null 2>&1 || exit 127
 command -v jq >/dev/null 2>&1 || exit 127
 
-# BarButton records its owning monitor immediately before emitting the click
-# action. Prefer that short-lived value for a new spawn instead of trusting
-# FloatingWindow.screen after the compositor has already mapped the window.
-# Keyboard/IPC opens have no recent bar click and therefore keep the QML target.
 resolve_recent_bar_target() {
     [[ "$action" == "spawn" ]] || return 0
     command -v qs >/dev/null 2>&1 || return 0
@@ -108,7 +105,6 @@ resolve_recent_bar_target() {
             || true
     )"
 
-    # qs currently prints string results directly, but tolerate quoted output.
     candidate="${candidate#\"}"
     candidate="${candidate%\"}"
     [[ -n "$candidate" ]] || return 0
@@ -150,7 +146,34 @@ resolve_recent_bar_target() {
     esac
 }
 
+resolve_prepared_target() {
+    [[ "$action" == "spawn" ]] || return 0
+
+    local prepared_file="$prepared_dir/$surface"
+    local prepared_monitor prepared_placement prepared_json
+    [[ -r "$prepared_file" ]] || return 0
+
+    IFS=$'\t' read -r prepared_monitor prepared_placement < "$prepared_file" || return 0
+
+    [[ "$prepared_monitor" =~ ^[A-Za-z0-9._:-]+$ ]] || return 0
+    case "$prepared_placement" in
+        center|top|bottom|left|right) ;;
+        *) return 0 ;;
+    esac
+
+    prepared_json="$(
+        hyprctl monitors -j 2>/dev/null \
+            | jq -c --arg monitor "$prepared_monitor" '.[] | select(.name == $monitor)' \
+            | head -n1
+    )"
+    [[ -n "$prepared_json" ]] || return 0
+
+    monitor="$prepared_monitor"
+    placement="$prepared_placement"
+}
+
 resolve_recent_bar_target
+resolve_prepared_target
 
 client=""
 for _ in {1..60}; do
@@ -200,9 +223,6 @@ read -r mon_x mon_y mon_w mon_h < <(
     ' <<<"$mon"
 )
 
-# Scale unsaved defaults from the 1920x1080 @ 1.0 reference canvas using the
-# monitor's logical dimensions. Hyprland's scale has already been removed above,
-# so compositor/UI scaling is not applied twice.
 read -r adaptive_default_w adaptive_default_h < <(
     awk \
         -v monitor_w="$mon_w" \
