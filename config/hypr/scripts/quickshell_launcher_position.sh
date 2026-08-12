@@ -18,6 +18,7 @@ monitor="${1:-}"
 placement="${2:-center}"
 title="Awtarchy Application Search"
 state_file="${XDG_CACHE_HOME:-$HOME/.cache}/awtarchy/quickshell-state.json"
+prepared_file="${XDG_RUNTIME_DIR:-/tmp}/awtarchy-quickshell/flyout-targets/launcher"
 reference_screen_w=1920
 reference_screen_h=1080
 reference_w=420
@@ -38,6 +39,32 @@ esac
 
 command -v hyprctl >/dev/null 2>&1 || exit 127
 command -v jq >/dev/null 2>&1 || exit 127
+
+resolve_prepared_target() {
+    [[ "$placement" != "clamp" ]] || return 0
+    [[ -r "$prepared_file" ]] || return 0
+
+    local prepared_monitor prepared_placement prepared_json
+    IFS=$'\t' read -r prepared_monitor prepared_placement < "$prepared_file" || return 0
+
+    [[ "$prepared_monitor" =~ ^[A-Za-z0-9._:-]+$ ]] || return 0
+    case "$prepared_placement" in
+        center|top|bottom|left|right|top-center|bottom-center|left-center|right-center) ;;
+        *) return 0 ;;
+    esac
+
+    prepared_json="$(
+        hyprctl monitors -j 2>/dev/null \
+            | jq -c --arg monitor "$prepared_monitor" '.[] | select(.name == $monitor)' \
+            | head -n1
+    )"
+    [[ -n "$prepared_json" ]] || return 0
+
+    monitor="$prepared_monitor"
+    placement="$prepared_placement"
+}
+
+resolve_prepared_target
 
 client=""
 for _ in {1..60}; do
@@ -94,9 +121,6 @@ read -r mon_x mon_y mon_w mon_h < <(
     ' <<<"$mon"
 )
 
-# Scale the unsaved launcher default from the 1920x1080 @ 1.0 reference
-# canvas. mon_w/mon_h are logical dimensions, so monitor scale is not applied
-# twice. Explicit per-monitor saves remain exact logical-pixel dimensions.
 read -r adaptive_default_w adaptive_default_h < <(
     awk \
         -v monitor_w="$mon_w" \
@@ -124,10 +148,6 @@ if [[ -s "$state_file" ]] && jq -e '.' "$state_file" >/dev/null 2>&1; then
     fi
 fi
 
-# Quickshell intentionally does not apply FloatingWindow geometry changes while
-# the backing window is visible. On a normal launcher spawn, enforce the saved
-# size through Hyprland after mapping. The clamp path is used during a live drag
-# and must preserve the current compositor-controlled size.
 resize_on_spawn=0
 if [[ "$placement" != "clamp" ]]; then
     desired_w="$adaptive_default_w"
@@ -238,8 +258,6 @@ if (( resize_on_spawn )); then
     resize_lua="hl.dispatch(hl.dsp.window.resize({ x = ${win_w}, y = ${win_h}, relative = false, window = \"${selector_lua}\" }))"
 fi
 
-# The v2 runtime rule maps the launcher fully transparent. Perform every move
-# and resize first, then reveal only this exact window address.
 hyprctl eval "
     hl.dispatch(hl.dsp.window.set_prop({ prop = \"no_anim\", value = \"1\", window = \"${selector_lua}\" }))
     hl.dispatch(hl.dsp.window.set_prop({ prop = \"border_size\", value = \"0\", window = \"${selector_lua}\" }))
