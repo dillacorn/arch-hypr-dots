@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Per-output DDC brightness module for the Awtarchy Quickshell bar.
-# Uses cached state and Linux inotify so no background DDC polling is required.
+# Per-output brightness module for the Awtarchy Quickshell bar.
+# Internal panels use brightnessctl; external monitors use DDC/CI.
+# Cached state and Linux inotify avoid background hardware polling.
 
 set -euo pipefail
 export LC_ALL=C
@@ -130,7 +131,7 @@ read_cached_status() {
 
 read_preview_status() {
   local monitor="$1"
-  local cur max timestamp state_cur state_max state_timestamp current age
+  local cur max timestamp _state_cur _state_max state_timestamp current age
 
   read -r cur max timestamp < <(read_status_record "$(preview_file "$monitor")") || return 1
 
@@ -138,7 +139,7 @@ read_preview_status() {
   age=$((current - timestamp))
   (( age >= 0 && age <= PREVIEW_MAX_AGE_MS )) || return 1
 
-  if read -r state_cur state_max state_timestamp < <(read_status_record "$(state_file "$monitor")"); then
+  if read -r _state_cur _state_max state_timestamp < <(read_status_record "$(state_file "$monitor")"); then
     (( timestamp >= state_timestamp )) || return 1
   fi
 
@@ -218,7 +219,7 @@ print_status_for_monitor() {
           --arg monitor "$monitor" \
           '{
             text:"",
-            tooltip:("Brightness " + $monitor + ": DDC unavailable"),
+            tooltip:("Brightness " + $monitor + ": unavailable"),
             class:["error"]
           }'
         return 0

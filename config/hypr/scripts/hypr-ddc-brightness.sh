@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # ~/.config/hypr/scripts/hypr-ddc-brightness.sh
-# DDC/CI brightness for a focused or explicitly selected Hyprland monitor.
+# Brightness for a focused or explicitly selected Hyprland monitor.
+# Internal LVDS/eDP panels use the kernel backlight through brightnessctl.
+# External monitors retain the existing DDC/CI backend.
 #
 # Usage:
 #   hypr-ddc-brightness.sh [--monitor CONNECTOR] up [step]
@@ -157,13 +159,13 @@ esac
 
 need_cmd hyprctl
 need_cmd jq
-need_cmd ddcutil
 need_cmd timeout
 
 uid="$(id -u)"
 rundir="${XDG_RUNTIME_DIR:-/tmp}/hypr-ddc-brightness-${uid}"
 cachedir="${XDG_CACHE_HOME:-$HOME/.cache}/hypr-ddc-brightness"
 config_map="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/ddcutil-bus-map.conf"
+backlight_sysfs_dir="${HYPR_BACKLIGHT_SYSFS_DIR:-/sys/class/backlight}"
 mkdir -p "$rundir" "$cachedir"
 
 state_path_for_conn() { printf '%s/state_%s.tsv\n' "$cachedir" "$1"; }
@@ -275,7 +277,11 @@ bus_from_detect_by_identity() {
   local cache_tsv="$cachedir/busmap.tsv" epoch tmp
   epoch="$(date +%s)"
   tmp="${cache_tsv}.tmp.$$"
-  { [[ -f "$cache_tsv" ]] && awk -v c="$conn" '$1!=c' "$cache_tsv" || true; } >"$tmp"
+  if [[ -f "$cache_tsv" ]]; then
+    awk -v c="$conn" '$1!=c' "$cache_tsv" >"$tmp"
+  else
+    : >"$tmp"
+  fi
   printf '%s\t%s\t%s\n' "$conn" "$best_bus" "$epoch" >>"$tmp"
   mv -f "$tmp" "$cache_tsv"
 
@@ -293,6 +299,72 @@ get_bus_for_conn() {
   [[ -n "${bus:-}" ]] && { echo "$bus"; return 0; }
 
   bus_from_detect_by_identity "$conn" "$hypr_make" "$hypr_model" "$hypr_serial" "$hypr_desc"
+}
+
+is_internal_connector() {
+  case "$1" in
+    eDP-*|LVDS-*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+backlight_device_for_conn() {
+  local conn="$1" path resolved device
+  local -a devices=()
+
+  if [[ -n "${HYPR_BACKLIGHT_DEVICE:-}" ]]; then
+    path="${backlight_sysfs_dir}/${HYPR_BACKLIGHT_DEVICE}"
+    [[ -e "$path" || -L "$path" ]] || return 1
+    printf '%s\n' "$HYPR_BACKLIGHT_DEVICE"
+    return 0
+  fi
+
+  shopt -s nullglob
+  for path in "${backlight_sysfs_dir}"/*; do
+    [[ -e "$path" || -L "$path" ]] || continue
+    device="${path##*/}"
+    devices+=("$device")
+    resolved="$(readlink -f -- "$path" 2>/dev/null || true)"
+    case "$resolved" in
+      */card*-"$conn"/*)
+        printf '%s\n' "$device"
+        return 0
+        ;;
+    esac
+  done
+
+  # Some firmware/platform backlight paths do not include their DRM connector.
+  # A single internal-panel backlight is unambiguous and safe to use.
+  if is_internal_connector "$conn" && (( ${#devices[@]} == 1 )); then
+    printf '%s\n' "${devices[0]}"
+    return 0
+  fi
+
+  return 1
+}
+
+controller_for_conn() {
+  local conn="$1" hypr_make="$2" hypr_model="$3" hypr_serial="$4" hypr_desc="$5"
+  local controller=""
+
+  if is_internal_connector "$conn"; then
+    command -v brightnessctl >/dev/null 2>&1 || {
+      echo "hypr-ddc-brightness: missing command: brightnessctl" >&2
+      return 1
+    }
+    controller="$(backlight_device_for_conn "$conn" || true)"
+    [[ -n "$controller" ]] || return 1
+    printf 'backlight\t%s\n' "$controller"
+    return 0
+  fi
+
+  command -v ddcutil >/dev/null 2>&1 || {
+    echo "hypr-ddc-brightness: missing command: ddcutil" >&2
+    return 1
+  }
+  controller="$(get_bus_for_conn "$conn" "$hypr_make" "$hypr_model" "$hypr_serial" "$hypr_desc" || true)"
+  [[ -n "$controller" ]] || return 1
+  printf 'ddc\t%s\n' "$controller"
 }
 
 build_ddc_base_cmd() {
@@ -382,20 +454,70 @@ ddc_set_abs_fast() {
   timeout 5 "${ddc[@]}" setvcp 0x10 "$target" >/dev/null 2>&1
 }
 
+backlight_get_curmax() {
+  local device="$1" info found_device class raw _percentage raw_max logical
+
+  info="$(brightnessctl -c backlight -d "$device" --machine-readable info 2>/dev/null || true)"
+  IFS=',' read -r found_device class raw _percentage raw_max <<<"$info"
+
+  [[ "$found_device" == "$device" ]] || return 1
+  [[ "$class" == "backlight" ]] || return 1
+  [[ "$raw" =~ ^[0-9]+$ ]] || return 1
+  [[ "$raw_max" =~ ^[1-9][0-9]*$ ]] || return 1
+
+  logical=$(( (raw * 100 + raw_max / 2) / raw_max ))
+  (( logical < 0 )) && logical=0
+  (( logical > 100 )) && logical=100
+  printf '%s 100\n' "$logical"
+}
+
+backlight_set_abs_fast() {
+  local device="$1" target="$2"
+
+  (( target < 0 )) && target=0
+  (( target > 100 )) && target=100
+  brightnessctl -q -c backlight -d "$device" set "${target}%" >/dev/null 2>&1
+}
+
+brightness_get_curmax() {
+  local backend="$1" controller="$2"
+  case "$backend" in
+    backlight) backlight_get_curmax "$controller" ;;
+    ddc) ddc_get_curmax "$controller" ;;
+    *) return 1 ;;
+  esac
+}
+
+brightness_set_abs_fast() {
+  local backend="$1" controller="$2" target="$3"
+  case "$backend" in
+    backlight) backlight_set_abs_fast "$controller" "$target" ;;
+    ddc) ddc_set_abs_fast "$controller" "$target" ;;
+    *) return 1 ;;
+  esac
+}
+
 if [[ "$MODE" == "client" && "$cmd" == "status" ]]; then
   focused_line="$(must_focused_info)"
   IFS=$'\t' read -r conn make model serial desc <<<"$focused_line"
 
-  bus="$(get_bus_for_conn "$conn" "$make" "$model" "$serial" "$desc" || true)"
-  [[ -n "${bus:-}" ]] || { echo "hypr-ddc-brightness: no bus for $conn" >&2; exit 1; }
+  controller="$(controller_for_conn "$conn" "$make" "$model" "$serial" "$desc" || true)"
+  IFS=$'\t' read -r backend controller_id <<<"$controller"
+  [[ -n "${backend:-}" && -n "${controller_id:-}" ]] \
+    || { echo "hypr-ddc-brightness: no brightness controller for $conn" >&2; exit 1; }
 
-  if ! read -r cur max < <(ddc_get_curmax "$bus"); then
-    echo "hypr-ddc-brightness: getvcp failed" >&2
+  if ! read -r cur max < <(brightness_get_curmax "$backend" "$controller_id"); then
+    echo "hypr-ddc-brightness: brightness read failed" >&2
     exit 1
   fi
 
   write_state "$conn" "$cur" "$max"
-  printf 'conn=%s\ncur=%s\nmax=%s\nbus=%s\n' "$conn" "$cur" "$max" "$bus"
+  printf 'conn=%s\ncur=%s\nmax=%s\nbackend=%s\n' "$conn" "$cur" "$max" "$backend"
+  if [[ "$backend" == "backlight" ]]; then
+    printf 'device=%s\n' "$controller_id"
+  else
+    printf 'bus=%s\n' "$controller_id"
+  fi
   exit 0
 fi
 
@@ -403,16 +525,18 @@ if [[ "$MODE" == "client" && "$cmd" == "set" ]]; then
   focused_line="$(must_focused_info)"
   IFS=$'\t' read -r conn make model serial desc <<<"$focused_line"
 
-  bus="$(get_bus_for_conn "$conn" "$make" "$model" "$serial" "$desc" || true)"
-  [[ -n "${bus:-}" ]] || { echo "hypr-ddc-brightness: no bus for $conn" >&2; exit 1; }
+  controller="$(controller_for_conn "$conn" "$make" "$model" "$serial" "$desc" || true)"
+  IFS=$'\t' read -r backend controller_id <<<"$controller"
+  [[ -n "${backend:-}" && -n "${controller_id:-}" ]] \
+    || { echo "hypr-ddc-brightness: no brightness controller for $conn" >&2; exit 1; }
 
   max=""
   if st="$(read_state "$conn" 2>/dev/null || true)"; then
     read -r _cur max _ts <<<"$st"
   fi
   if [[ -z "${max:-}" || ! "$max" =~ ^[0-9]+$ || "$max" -le 0 ]]; then
-    if ! read -r _cur max < <(ddc_get_curmax "$bus"); then
-      echo "hypr-ddc-brightness: getvcp failed" >&2
+    if ! read -r _cur max < <(brightness_get_curmax "$backend" "$controller_id"); then
+      echo "hypr-ddc-brightness: brightness read failed" >&2
       exit 1
     fi
   fi
@@ -421,8 +545,8 @@ if [[ "$MODE" == "client" && "$cmd" == "set" ]]; then
   (( target < 0 )) && target=0
   (( target > max )) && target="$max"
 
-  if ! ddc_set_abs_fast "$bus" "$target"; then
-    echo "hypr-ddc-brightness: setvcp failed" >&2
+  if ! brightness_set_abs_fast "$backend" "$controller_id" "$target"; then
+    echo "hypr-ddc-brightness: brightness write failed" >&2
     exit 1
   fi
 
@@ -518,9 +642,10 @@ while :; do
     IFS=$'\t' read -r _conn hypr_make hypr_model hypr_serial hypr_desc <<<"$monitor_info"
   fi
 
-  bus="$(get_bus_for_conn "$conn" "$hypr_make" "$hypr_model" "$hypr_serial" "$hypr_desc" || true)"
-  if [[ -z "${bus:-}" ]]; then
-    notify "$NOTIFY_MS" "Brightness $conn" "no DDC bus" "hypr-ddc-$conn"
+  controller="$(controller_for_conn "$conn" "$hypr_make" "$hypr_model" "$hypr_serial" "$hypr_desc" || true)"
+  IFS=$'\t' read -r backend controller_id <<<"$controller"
+  if [[ -z "${backend:-}" || -z "${controller_id:-}" ]]; then
+    notify "$NOTIFY_MS" "Brightness $conn" "controller unavailable" "hypr-ddc-$conn"
     continue
   fi
 
@@ -537,8 +662,8 @@ while :; do
   fi
 
   if (( need_sync == 1 )); then
-    if ! read -r cur max < <(ddc_get_curmax "$bus"); then
-      notify "$NOTIFY_MS" "Brightness $conn" "getvcp failed" "hypr-ddc-$conn"
+    if ! read -r cur max < <(brightness_get_curmax "$backend" "$controller_id"); then
+      notify "$NOTIFY_MS" "Brightness $conn" "read failed" "hypr-ddc-$conn"
       continue
     fi
     write_state "$conn" "$cur" "$max"
@@ -548,8 +673,8 @@ while :; do
   (( target < 0 )) && target=0
   (( target > max )) && target="$max"
 
-  if ! ddc_set_abs_fast "$bus" "$target"; then
-    notify "$NOTIFY_MS" "Brightness $conn" "setvcp failed" "hypr-ddc-$conn"
+  if ! brightness_set_abs_fast "$backend" "$controller_id" "$target"; then
+    notify "$NOTIFY_MS" "Brightness $conn" "write failed" "hypr-ddc-$conn"
     continue
   fi
 

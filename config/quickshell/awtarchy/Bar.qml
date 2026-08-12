@@ -27,7 +27,7 @@ PanelWindow {
     readonly property int verticalItemSize: Math.max(28, smallIconSize + 8)
 
     property string brightnessText: ""
-    property string brightnessTooltip: "Brightness: DDC unavailable"
+    property string brightnessTooltip: "Brightness unavailable"
     property int brightnessValue: -1
     property bool clockDate: false
     property date now: new Date()
@@ -153,7 +153,7 @@ PanelWindow {
             }
         } catch (error) {
             if (line.trim().length > 0)
-                console.warn("Awtarchy DDC parse failed:", error);
+                console.warn("Awtarchy brightness parse failed:", error);
         }
     }
 

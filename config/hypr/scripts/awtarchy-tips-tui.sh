@@ -481,7 +481,7 @@ TEXT
 Quick Settings opens with SUPER+ALT+BACKSPACE or directly from the bar.
 
 It includes:
-  - DDC brightness
+  - Internal and external display brightness
   - Bar visibility and edge placement
   - Night Light
   - Digital vibrance
@@ -534,15 +534,20 @@ TEXT
             ;;
         display-ddc)
             cat <<'TEXT'
-External-display brightness uses ddcutil through Awtarchy's hypr-ddc-brightness.sh helper.
+Brightness uses Awtarchy's hypr-ddc-brightness.sh helper. Internal LVDS/eDP panels use
+brightnessctl, while external monitors use ddcutil.
 
-Quick Settings targets displays by Hyprland connector identity. The helper caches DDC bus mappings and debounces repeated changes so rapid scroll/input does not have to block on every physical DDC transaction.
+Quick Settings targets displays by Hyprland connector identity. The helper debounces repeated
+changes, and its external-monitor path caches DDC bus mappings so rapid input does not have to
+block on every physical DDC transaction.
 
 Useful checks:
+  brightnessctl -c backlight --list
   ddcutil detect
   hyprctl monitors
 
-If one monitor fails, verify its DDC/CI setting in the monitor OSD before changing Awtarchy configuration.
+If an external monitor fails, verify its DDC/CI setting in the monitor OSD before changing
+Awtarchy configuration.
 TEXT
             ;;
         display-night)
@@ -754,7 +759,9 @@ DDC troubleshooting
   ddcutil detect
   hyprctl monitors
 
-Confirm the monitor exposes DDC/CI, then compare the detected DDC bus with the Hyprland connector Awtarchy is targeting. Laptop internal panels normally use brightnessctl rather than external-monitor DDC.
+External monitors must expose DDC/CI; compare their detected DDC bus with the Hyprland
+connector Awtarchy is targeting. Laptop LVDS/eDP panels use the kernel backlight through
+brightnessctl and do not require DDC/CI.
 TEXT
             ;;
         troubleshoot-update)

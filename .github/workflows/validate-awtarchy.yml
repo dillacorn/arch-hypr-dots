@@ -23,9 +23,15 @@ jobs:
           bash -n local/bin/awtarchy
           bash -n local/bin/awtarchy-quickshell
           bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n config/hypr/scripts/awtarchy-tips-tui.sh
+          bash -n config/hypr/scripts/ddc_brightness.sh
+          bash -n config/hypr/scripts/dim_display.sh
+          bash -n config/hypr/scripts/hypr-ddc-brightness.sh
+          bash -n config/hypr/scripts/restore_brightness.sh
           bash -n tests/test-awtarchy-command.sh
           bash -n tests/test-awtarchy-command-shim.sh
           bash -n tests/test-ddc-brightness-watcher.sh
+          bash -n tests/test-hybrid-brightness.sh
           bash -n tests/test-desktop-candidate-validation.sh
           bash -n tests/test-lua-validation.sh
           bash -n tests/test-quickshell-updater-migration.sh
@@ -35,9 +41,14 @@ jobs:
             awtarchy-install.sh \
             local/bin/awtarchy \
             local/bin/awtarchy-quickshell \
+            config/hypr/scripts/ddc_brightness.sh \
+            config/hypr/scripts/dim_display.sh \
+            config/hypr/scripts/hypr-ddc-brightness.sh \
+            config/hypr/scripts/restore_brightness.sh \
             tests/test-awtarchy-command.sh \
             tests/test-awtarchy-command-shim.sh \
             tests/test-ddc-brightness-watcher.sh \
+            tests/test-hybrid-brightness.sh \
             tests/test-desktop-candidate-validation.sh \
             tests/test-lua-validation.sh \
             tests/test-quickshell-updater-migration.sh
@@ -46,6 +57,7 @@ jobs:
           bash tests/test-awtarchy-command.sh
           bash tests/test-awtarchy-command-shim.sh
           bash tests/test-ddc-brightness-watcher.sh
+          bash tests/test-hybrid-brightness.sh
           bash tests/test-desktop-candidate-validation.sh
           bash tests/test-lua-validation.sh
           bash tests/test-quickshell-updater-migration.sh

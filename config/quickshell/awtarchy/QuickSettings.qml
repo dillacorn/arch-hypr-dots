@@ -753,7 +753,7 @@ Singleton {
                                         text: root.brightnessPercent >= 0
                                             ? root.brightnessPercent + "%  (" + root.brightnessStatus.current
                                                 + "/" + root.brightnessStatus.max + ")"
-                                            : "DDC unavailable"
+                                            : "Unavailable"
                                         color: root.brightnessPercent >= 0 ? Theme.foreground : Theme.muted
                                         font.family: Theme.fontFamily
                                         font.pixelSize: root.scaledText(10)
