@@ -4185,7 +4185,14 @@ restart_hypridle_after_update() {
   fi
 
   log "Restarting Hypridle to load updated idle callbacks..."
-  if ! run_target bash "$helper" 9>&-; then
+  if ! run_target env \
+    "HOME=${HOME_DIR}" \
+    "USER=${TARGET_USER}" \
+    "LOGNAME=${TARGET_USER}" \
+    "HYPRIDLE_CONFIG=${HOME_DIR}/.config/hypr/hypridle.conf" \
+    "HYPRIDLE_RESTORE_SCRIPT=${HOME_DIR}/.config/hypr/scripts/quickshell_bar_restore.sh" \
+    bash "$helper" 9>&-
+  then
     warn "Hypridle could not be restarted automatically. Run ${helper} after the update."
   fi
 }
