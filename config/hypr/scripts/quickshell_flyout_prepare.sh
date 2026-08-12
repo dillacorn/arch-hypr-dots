@@ -16,6 +16,7 @@ bar_size="${6:-0}"
 anchor="${7:--1}"
 screen_width="${8:-}"
 screen_height="${9:-}"
+prepared_dir="${XDG_RUNTIME_DIR:-/tmp}/awtarchy-quickshell/flyout-targets"
 
 usage() {
     printf 'usage: %s <surface> <monitor> <placement> <width> <height> <bar-size> <anchor> <screen-width> <screen-height>\n' "$0" >&2
@@ -183,3 +184,13 @@ rule_name="awtarchy-flyout-prepared-${surface//[^A-Za-z0-9_-]/-}-$$"
 lua="awtarchy_prepared_flyout_rules_v1 = awtarchy_prepared_flyout_rules_v1 or {}; local old = awtarchy_prepared_flyout_rules_v1['$surface']; if old ~= nil then pcall(function() old:set_enabled(false) end) end; awtarchy_prepared_flyout_rules_v1['$surface'] = hl.window_rule({ name = '$rule_name', match = { title = '$title' }, float = true, monitor = '$monitor', size = { '$width', '$height' }, move = { '$x', '$y' }, no_anim = true, opacity = '1 override 1 override 1 override' }); hl.exec_scheduled_prop_refresh_immediately()"
 
 hyprctl eval "$lua" >/dev/null
+
+# Record the same authoritative target used by the successful pre-map rule.
+# Legacy post-map helpers read this per-surface value so stale QML screen state
+# cannot move a correctly mapped flyout back to its previous monitor.
+umask 077
+mkdir -p "$prepared_dir"
+prepared_file="$prepared_dir/$surface"
+tmp_file="$prepared_file.$$"
+printf '%s\t%s\n' "$monitor" "$placement" > "$tmp_file"
+mv -f -- "$tmp_file" "$prepared_file"
