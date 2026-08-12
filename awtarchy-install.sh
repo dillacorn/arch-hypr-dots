@@ -45,7 +45,11 @@ EOF_USAGE
 }
 
 cleanup() {
-  [[ -n ${RUNTIME_TEMP:-} ]] && rm -f -- "$RUNTIME_TEMP" 2>/dev/null || true
+  # Invoked indirectly by the EXIT trap below.
+  # shellcheck disable=SC2317
+  if [[ -n ${RUNTIME_TEMP:-} ]]; then
+    rm -f -- "$RUNTIME_TEMP" 2>/dev/null || true
+  fi
 }
 trap cleanup EXIT
 

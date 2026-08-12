@@ -296,6 +296,8 @@ installed_runtime="$home/.local/share/awtarchy-quickshell/awtarchy-runtime.sh"
 managed_packages="${TMP}/managed-packages"
 assert_file "$installed_launcher"
 assert_file "$installed_runtime"
+cmp -s "$installed_launcher" "$QUICKSHELL_LAUNCHER" \
+  || fail "installer did not install the branch testing launcher"
 assert_file "${TMP}/system-bin/awtarchy-quickshell"
 assert_absent "${TMP}/system-bin/awtarchy"
 [[ $stable_launcher_hash == "$(sha256sum "$home/.local/bin/awtarchy" | awk '{print $1}')" ]] \

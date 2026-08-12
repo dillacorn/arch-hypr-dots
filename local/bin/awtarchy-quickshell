@@ -137,15 +137,13 @@ PY
 }
 
 refresh_testing_command() {
-  local commit="${1:-}" tmp="" archive="" top="" repo_dir="" installer=""
+  local commit="" tmp="" archive="" top="" repo_dir="" installer=""
   have curl || die "curl is required to refresh the testing command."
   have tar || die "tar is required to refresh the testing command."
   have python3 || die "python3 is required to refresh the testing command."
 
-  if [[ -z $commit ]]; then
-    commit="$(testing_branch_head)" \
-      || die "Could not resolve the current ${TEST_BRANCH} head."
-  fi
+  commit="$(testing_branch_head)" \
+    || die "Could not resolve the current ${TEST_BRANCH} head."
   [[ $commit =~ ^[0-9a-fA-F]{40}$ ]] \
     || die "Testing branch returned an invalid commit SHA."
   commit="${commit,,}"
@@ -185,13 +183,13 @@ refresh_testing_command() {
     rm -rf -- "$tmp"
     die "Testing archive does not contain the Awtarchy runtime."
   }
-  bash -n "$installer" \
-    && bash -n "${repo_dir}/local/bin/awtarchy-quickshell" \
-    && bash -n "${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh" \
-    || {
-      rm -rf -- "$tmp"
-      die "Downloaded testing command failed Bash syntax validation."
-    }
+  if ! bash -n "$installer" \
+    || ! bash -n "${repo_dir}/local/bin/awtarchy-quickshell" \
+    || ! bash -n "${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh";
+  then
+    rm -rf -- "$tmp"
+    die "Downloaded testing command failed Bash syntax validation."
+  fi
 
   if ! env \
     AWTARCHY_INSTALL_BRANCH="$TEST_BRANCH" \
