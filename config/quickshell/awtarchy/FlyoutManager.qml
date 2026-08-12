@@ -22,6 +22,16 @@ QtObject {
         const monitor = String(monitorName || "");
         if (monitor.length === 0)
             return;
+
+        // Launcher.openForScreen() toggles itself closed before it reaches
+        // claim(). Pre-close only that focus-grab surface during a cross-monitor
+        // bar click so the following launcher click can reopen it on the target.
+        if (activeSurface === "launcher"
+            && activeMonitorName.length > 0
+            && activeMonitorName !== monitor) {
+            closeRequested("");
+        }
+
         recentBarMonitorName = monitor;
         recentBarMonitorTimestamp = Date.now();
     }
