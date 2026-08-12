@@ -1,0 +1,455 @@
+#!/usr/bin/env bash
+# github.com/dillacorn/awtarchy/tree/quickshell-conversion-testing
+# Temporary branch-only maintenance command for the Quickshell migration.
+
+set -Eeuo pipefail
+IFS=$'\n\t'
+umask 022
+
+REPO_OWNER="dillacorn"
+REPO_NAME="awtarchy"
+TEST_BRANCH="quickshell-conversion-testing"
+TARGET_USER=""
+TARGET_HOME=""
+DATA_HOME=""
+STATE_HOME=""
+INSTALL_DIR=""
+RUNTIME=""
+COMMAND_VERSION_FILE=""
+CONFIG_VERSION_FILE=""
+TESTING_COMMIT=""
+
+log()  { printf '%s\n' "$*"; }
+die()  { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+init_target() {
+  if [[ ${EUID} -eq 0 && -n ${SUDO_USER:-} && ${SUDO_USER} != root ]]; then
+    TARGET_USER="$SUDO_USER"
+    TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6 || true)"
+  else
+    TARGET_USER="${USER:-$(id -un)}"
+    TARGET_HOME="${HOME:-}"
+  fi
+
+  [[ -n $TARGET_USER ]] || die "Could not determine target user."
+  [[ -n $TARGET_HOME && -d $TARGET_HOME ]] \
+    || die "Could not determine home directory for ${TARGET_USER}."
+
+  DATA_HOME="${TARGET_HOME}/.local/share"
+  STATE_HOME="${TARGET_HOME}/.local/state"
+  INSTALL_DIR="${DATA_HOME}/awtarchy-quickshell"
+  RUNTIME="${INSTALL_DIR}/awtarchy-runtime.sh"
+  COMMAND_VERSION_FILE="${STATE_HOME}/awtarchy-quickshell/command-version"
+  CONFIG_VERSION_FILE="${STATE_HOME}/awtarchy/config-version"
+}
+
+state_value() {
+  local key="$1" file="$2"
+  [[ -r $file ]] || return 1
+  sed -n "s/^${key}=//p" "$file" | head -n1
+}
+
+installed_testing_commit() {
+  local revision=""
+  revision="$(state_value revision "$COMMAND_VERSION_FILE" 2>/dev/null || true)"
+  [[ $revision =~ ^[0-9a-fA-F]{40}$ ]] \
+    && printf '%s\n' "${revision,,}" \
+    || printf '%s\n' unknown
+}
+
+installed_config_source() {
+  local tag=""
+  tag="$(state_value tag "$CONFIG_VERSION_FILE" 2>/dev/null || true)"
+  if [[ -z $tag ]]; then
+    tag="$(state_value tag "${STATE_HOME}/awtarchy/baseline/metadata" 2>/dev/null || true)"
+  fi
+  [[ -n $tag ]] && printf '%s\n' "$tag" || printf '%s\n' unknown
+}
+
+curl_args() {
+  CURL_ARGS=(
+    -fsSL
+    --connect-timeout 10
+    --max-time 300
+    --retry 2
+    --retry-delay 1
+    -H "Accept: application/vnd.github+json"
+    -H "User-Agent: awtarchy-quickshell"
+  )
+  if [[ -n ${GITHUB_TOKEN:-} ]]; then
+    CURL_ARGS+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+  fi
+}
+
+testing_branch_head() {
+  have curl || return 1
+  have python3 || return 1
+  curl_args
+
+  local json=""
+  json="$(curl "${CURL_ARGS[@]}" \
+    "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/commits/${TEST_BRANCH}")" \
+    || return 1
+
+  python3 - "$json" <<'PY'
+import json
+import re
+import sys
+
+try:
+    payload = json.loads(sys.argv[1])
+except (IndexError, json.JSONDecodeError):
+    raise SystemExit(1)
+
+revision = str(payload.get("sha") or "").strip().lower()
+if not re.fullmatch(r"[0-9a-f]{40}", revision):
+    raise SystemExit(1)
+print(revision)
+PY
+}
+
+archive_topdir() {
+  python3 - "$1" <<'PY'
+import sys
+import tarfile
+from pathlib import PurePosixPath
+
+with tarfile.open(sys.argv[1], "r:gz") as archive:
+    members = archive.getmembers()
+    if not members:
+        raise SystemExit(1)
+    top = ""
+    for member in members:
+        path = PurePosixPath(member.name)
+        if path.is_absolute() or ".." in path.parts:
+            raise SystemExit("unsafe archive path")
+        if not (member.isfile() or member.isdir()):
+            raise SystemExit("unsupported archive entry")
+        if path.parts and not top:
+            top = path.parts[0]
+        elif path.parts and path.parts[0] != top:
+            raise SystemExit("archive has multiple top-level paths")
+    if not top:
+        raise SystemExit(1)
+    print(top)
+PY
+}
+
+refresh_testing_command() {
+  local commit="${1:-}" tmp="" archive="" top="" repo_dir="" installer=""
+  have curl || die "curl is required to refresh the testing command."
+  have tar || die "tar is required to refresh the testing command."
+  have python3 || die "python3 is required to refresh the testing command."
+
+  if [[ -z $commit ]]; then
+    commit="$(testing_branch_head)" \
+      || die "Could not resolve the current ${TEST_BRANCH} head."
+  fi
+  [[ $commit =~ ^[0-9a-fA-F]{40}$ ]] \
+    || die "Testing branch returned an invalid commit SHA."
+  commit="${commit,,}"
+
+  tmp="$(mktemp -d)"
+  archive="${tmp}/awtarchy.tar.gz"
+  curl_args
+  log "Downloading ${TEST_BRANCH} at ${commit}..."
+  if ! curl "${CURL_ARGS[@]}" -L -o "$archive" \
+    "https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/${commit}.tar.gz";
+  then
+    rm -rf -- "$tmp"
+    die "Failed to download testing commit ${commit}."
+  fi
+
+  top="$(archive_topdir "$archive")" || {
+    rm -rf -- "$tmp"
+    die "Testing archive validation failed."
+  }
+  [[ $top == "${REPO_NAME}-${commit}" ]] || {
+    rm -rf -- "$tmp"
+    die "Testing archive does not match commit ${commit}."
+  }
+
+  tar -xzf "$archive" -C "$tmp"
+  repo_dir="${tmp}/${top}"
+  installer="${repo_dir}/awtarchy-install.sh"
+  [[ -f $installer ]] || {
+    rm -rf -- "$tmp"
+    die "Testing archive does not contain awtarchy-install.sh."
+  }
+  [[ -f ${repo_dir}/local/bin/awtarchy-quickshell ]] || {
+    rm -rf -- "$tmp"
+    die "Testing archive does not contain awtarchy-quickshell."
+  }
+  [[ -f ${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh ]] || {
+    rm -rf -- "$tmp"
+    die "Testing archive does not contain the Awtarchy runtime."
+  }
+  bash -n "$installer" \
+    && bash -n "${repo_dir}/local/bin/awtarchy-quickshell" \
+    && bash -n "${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh" \
+    || {
+      rm -rf -- "$tmp"
+      die "Downloaded testing command failed Bash syntax validation."
+    }
+
+  if ! env \
+    AWTARCHY_INSTALL_BRANCH="$TEST_BRANCH" \
+    AWTARCHY_TESTING_COMMIT="$commit" \
+    AWTARCHY_SKIP_SYSTEM_SHIM=1 \
+    AWTARCHY_QUIET_TEST_COMMAND_INSTALL=1 \
+    bash "$installer" --quickshell-command;
+  then
+    rm -rf -- "$tmp"
+    die "Could not install testing command ${commit}."
+  fi
+
+  rm -rf -- "$tmp"
+  [[ -x ${TARGET_HOME}/.local/bin/awtarchy-quickshell ]] \
+    || die "Testing launcher was not installed."
+  [[ -x $RUNTIME ]] || die "Testing runtime was not installed."
+  [[ $(installed_testing_commit) == "$commit" ]] \
+    || die "Installed testing command revision does not match ${commit}."
+
+  TESTING_COMMIT="$commit"
+  log "awtarchy-quickshell refreshed to ${commit}."
+}
+
+require_runtime() {
+  [[ -f $RUNTIME ]] \
+    || die "Testing runtime is missing: ${RUNTIME}. Reinstall awtarchy-quickshell from the testing branch."
+}
+
+reject_source_overrides() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --tag|--tag=*|--testing-commit|--testing-commit=*)
+        die "${arg%%=*} is managed automatically by awtarchy-quickshell."
+        ;;
+    esac
+  done
+}
+
+reject_action_overrides() {
+  local action="$1" arg
+  shift
+  reject_source_overrides "$@"
+  [[ $action == update-reset-backup ]] && return 0
+
+  for arg in "$@"; do
+    case "$arg" in
+      --mode|--mode=*|--review-only)
+        die "${arg%%=*} is selected by the ${action} command."
+        ;;
+    esac
+  done
+}
+
+run_testing_update() {
+  local action="$1"
+  shift
+  reject_action_overrides "$action" "$@"
+  refresh_testing_command
+  require_runtime
+
+  case "$action" in
+    update)
+      bash "$RUNTIME" update-reset-backup \
+        --mode preserve --testing-commit "$TESTING_COMMIT" "$@"
+      ;;
+    reset)
+      bash "$RUNTIME" update-reset-backup \
+        --mode clean --testing-commit "$TESTING_COMMIT" "$@"
+      ;;
+    review)
+      bash "$RUNTIME" update-reset-backup \
+        --mode preserve --review-only --testing-commit "$TESTING_COMMIT" "$@"
+      ;;
+    update-reset-backup)
+      bash "$RUNTIME" update-reset-backup \
+        --testing-commit "$TESTING_COMMIT" "$@"
+      ;;
+    *) die "Unsupported testing action: ${action}" ;;
+  esac
+}
+
+print_version_status() {
+  local installed remote="" status="Remote branch unavailable"
+  installed="$(installed_testing_commit)"
+  if remote="$(testing_branch_head 2>/dev/null)"; then
+    if [[ $installed == "$remote" ]]; then
+      status="Up to date"
+    elif [[ $installed == unknown ]]; then
+      status="Testing command is not installed correctly"
+    else
+      status="Testing command update available"
+    fi
+  fi
+
+  printf 'Testing branch:     %s\n' "$TEST_BRANCH"
+  printf 'Testing command:    %s\n' "$installed"
+  printf 'Remote branch head: %s\n' "${remote:-unavailable}"
+  printf 'Config source:      %s\n' "$(installed_config_source)"
+  printf 'Command status:     %s\n' "$status"
+}
+
+clear_screen() {
+  if have clear; then
+    clear >/dev/tty 2>/dev/null || clear
+  else
+    printf '\033[H\033[2J' >/dev/tty 2>/dev/null || printf '\033[H\033[2J'
+  fi
+}
+
+read_key() {
+  local key="" rest=""
+  IFS= read -rsn1 key </dev/tty || return 1
+  if [[ $key == $'\033' ]]; then
+    IFS= read -rsn2 -t 0.05 rest </dev/tty || true
+    key+="$rest"
+  fi
+  printf '%s' "$key"
+}
+
+single_select_menu() {
+  local title="$1" default_index="$2"
+  shift 2
+  local -a items=("$@")
+  local index="$default_index" key="" i
+
+  while true; do
+    clear_screen
+    printf '%s\n\n' "$title" >/dev/tty
+    for i in "${!items[@]}"; do
+      if (( i == index )); then
+        printf '  > %s\n' "${items[i]}" >/dev/tty
+      else
+        printf '    %s\n' "${items[i]}" >/dev/tty
+      fi
+    done
+    printf '\nUp/Down = move, Enter = select, q = quit\n' >/dev/tty
+    key="$(read_key || true)"
+    case "$key" in
+      $'\033[A')
+        if (( index > 0 )); then
+          ((index--)) || true
+        fi
+        ;;
+      $'\033[B')
+        if (( index + 1 < ${#items[@]} )); then
+          ((index++)) || true
+        fi
+        ;;
+      $'\n'|$'\r'|"") printf '%s\n' "$index"; return 0 ;;
+      q|Q) return 1 ;;
+    esac
+  done
+}
+
+pause_menu() {
+  printf '\nPress any key to continue...' >/dev/tty
+  read_key >/dev/null || true
+}
+
+maintenance_menu() {
+  [[ -t 0 && -t 1 && -r /dev/tty && -w /dev/tty ]] \
+    || die "The awtarchy-quickshell menu requires an interactive terminal."
+
+  local choice rc
+  while true; do
+    choice="$(single_select_menu "Awtarchy Quickshell Testing" 0 \
+      "Review migration without applying" \
+      "Update configs and preserve personal modifications" \
+      "Reset managed configs to testing defaults" \
+      "Refresh testing command from branch" \
+      "Clean Awtarchy backup files" \
+      "Version information" \
+      "Exit")" || exit 0
+
+    case "$choice" in
+      0) run_testing_update review || rc=$? ;;
+      1) run_testing_update update || rc=$? ;;
+      2) run_testing_update reset || rc=$? ;;
+      3) refresh_testing_command || rc=$? ;;
+      4)
+        require_runtime
+        bash "$RUNTIME" clean-backups || rc=$?
+        ;;
+      5)
+        clear_screen
+        print_version_status >/dev/tty
+        ;;
+      *) exit 0 ;;
+    esac
+    pause_menu
+    [[ -z ${rc:-} ]] || return "$rc"
+    unset rc
+  done
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  awtarchy-quickshell
+  awtarchy-quickshell review
+  awtarchy-quickshell update [update options]
+  awtarchy-quickshell reset [update options]
+  awtarchy-quickshell update-reset-backup [update options]
+  awtarchy-quickshell clean-backups [options]
+  awtarchy-quickshell version
+  awtarchy-quickshell check-update
+  awtarchy-quickshell self-update
+
+This temporary command always resolves quickshell-conversion-testing, pins one
+exact commit for the operation, and never replaces the stable `awtarchy` command.
+EOF
+}
+
+main() {
+  init_target
+
+  case "${1:-}" in
+    version)
+      print_version_status
+      ;;
+    check-update)
+      print_version_status
+      local installed remote=""
+      installed="$(installed_testing_commit)"
+      remote="$(testing_branch_head 2>/dev/null || true)"
+      if [[ -n $remote && $installed != "$remote" ]]; then
+        return 10
+      fi
+      ;;
+    self-update)
+      shift
+      (( $# == 0 )) || die "self-update does not accept options."
+      refresh_testing_command
+      ;;
+    update|reset|review|update-reset-backup)
+      local action="$1"
+      shift
+      run_testing_update "$action" "$@"
+      ;;
+    clean-backups|update-backup-cleaner|backup-cleaner)
+      shift
+      require_runtime
+      exec bash "$RUNTIME" clean-backups "$@"
+      ;;
+    install|dry-run|dryrun|test)
+      die "Install this command from quickshell-conversion-testing with awtarchy-install.sh."
+      ;;
+    help|-h|--help)
+      usage
+      ;;
+    "")
+      maintenance_menu
+      ;;
+    *)
+      die "Unknown command: $1"
+      ;;
+  esac
+}
+
+main "$@"

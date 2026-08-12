@@ -11,10 +11,12 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 RUNTIME_TEMPLATE="${SCRIPT_DIR}/local/share/awtarchy/awtarchy-runtime.sh"
 RUNTIME_SOURCE="$RUNTIME_TEMPLATE"
 LAUNCHER_SOURCE="${SCRIPT_DIR}/local/bin/awtarchy"
+QUICKSHELL_LAUNCHER_SOURCE="${SCRIPT_DIR}/local/bin/awtarchy-quickshell"
 SYSTEM_BIN_DIR="${AWTARCHY_SYSTEM_BIN_DIR:-/usr/local/bin}"
 TARGET_USER=""
 TARGET_HOME=""
 REINSTALL=0
+QUICKSHELL_COMMAND_ONLY=0
 DRY_RUN_REQUESTED=0
 ARGS=()
 RUNTIME_TEMP=""
@@ -24,6 +26,7 @@ usage() {
 Usage:
   sudo ./awtarchy-install.sh
   sudo ./awtarchy-install.sh --no-reboot
+  sudo ./awtarchy-install.sh --quickshell-command
   ./awtarchy-install.sh --dry-run
   sudo ./awtarchy-install.sh --reinstall
   ./awtarchy-install.sh --help
@@ -35,6 +38,8 @@ Existing legacy installations are migrated to the new command without rerunning
 package installation or replacing managed configs.
 
 Options:
+  --quickshell-command
+                 Install only the temporary awtarchy-quickshell testing command
   --reinstall    Run the complete installer even when Awtarchy is already installed
 EOF_USAGE
 }
@@ -45,6 +50,11 @@ cleanup() {
 trap cleanup EXIT
 
 prepare_runtime_source() {
+  if [[ "${AWTARCHY_TEST_RUNTIME_PASSTHROUGH:-0}" == "1" ]]; then
+    RUNTIME_SOURCE="$RUNTIME_TEMPLATE"
+    return 0
+  fi
+
   command -v python3 >/dev/null 2>&1 || {
     printf 'ERROR: python3 is required to prepare the Quickshell conversion runtime.\n' >&2
     exit 1
@@ -157,7 +167,7 @@ text = re.sub(
 # removes them even when they are absent from /var/lib/awtarchy/managed-packages.
 cleanup_function = r'''
 remove_legacy_shell_packages_stage() {
-  local managed_file="/var/lib/awtarchy/managed-packages"
+  local managed_file="${AWTARCHY_MANAGED_PACKAGES_FILE:-/var/lib/awtarchy/managed-packages}"
   local marker="${HOME_DIR}/.local/state/awtarchy/quickshell-connectivity-migration-complete"
   local pkg tmp cleanup_ok=1
   local -a obsolete=(waybar-git fuzzel wlogout mako wofi network-manager-applet blueman)
@@ -232,88 +242,183 @@ remove_legacy_shell_files_stage() {
 
 '''
 
-# The normal updater must perform the same one-time migration. This is explicit
+# The testing updater must perform the same one-time migration. This is explicit
 # instead of relying only on old baseline reconstruction because legacy systems
 # may not have a complete baseline or managed-package ledger.
 update_cleanup_function = r'''
-remove_legacy_shell_update_artifacts() {
+run_quickshell_update_pacman() {
+  if [[ "${EUID}" -eq 0 ]]; then
+    pacman "$@"
+    return
+  fi
+
+  command -v sudo >/dev/null 2>&1 \
+    || die "sudo is required to install the Quickshell migration packages"
+  sudo -v || die "sudo authentication failed; no managed configs were changed"
+  sudo pacman "$@"
+}
+
+record_quickshell_update_packages() {
+  local managed_file="${AWTARCHY_MANAGED_PACKAGES_FILE:-/var/lib/awtarchy/managed-packages}"
+  local tmp pkg
+  local -a packages=("$@")
+  (( ${#packages[@]} )) || return 0
+
+  tmp="$(mktemp)"
+  [[ -r "$managed_file" ]] && cat "$managed_file" >"$tmp" || : >"$tmp"
+  for pkg in "${packages[@]}"; do
+    printf '%s\n' "$pkg" >>"$tmp"
+  done
+  LC_ALL=C sort -u -o "$tmp" "$tmp"
+
+  if [[ "${EUID}" -eq 0 ]]; then
+    install -d -m 0755 "$(dirname "$managed_file")"
+    install -m 0644 "$tmp" "$managed_file"
+  else
+    sudo install -d -m 0755 "$(dirname "$managed_file")"
+    sudo install -m 0644 "$tmp" "$managed_file"
+  fi
+  rm -f -- "$tmp"
+}
+
+ensure_quickshell_update_prerequisites() {
+  command -v pacman >/dev/null 2>&1 \
+    || die "pacman is required for the Quickshell migration"
+
+  local pkg
+  local -a required=(quickshell upower) missing=()
+  for pkg in "${required[@]}"; do
+    pacman -Q "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
+  done
+  (( ${#missing[@]} )) || return 0
+
+  log "Installing required Quickshell migration packages: ${missing[*]}"
+  run_quickshell_update_pacman -S --needed --noconfirm "${missing[@]}" \
+    || die "Could not install the Quickshell migration packages; no managed configs were changed"
+
+  for pkg in "${missing[@]}"; do
+    pacman -Q "$pkg" >/dev/null 2>&1 \
+      || die "Required package is still missing after installation: ${pkg}"
+  done
+  record_quickshell_update_packages "${missing[@]}"
+}
+
+quickshell_update_legacy_paths() {
+  printf '%s\n' \
+    .config/waybar \
+    .config/fuzzel \
+    .config/mako \
+    .config/wlogout \
+    .config/wofi \
+    .cache/waybar \
+    .config/hypr/scripts/cliphist-fuzzel.sh \
+    .config/hypr/scripts/cliphist-wofi.sh \
+    .config/hypr/scripts/fuzzel_toggle.sh \
+    .config/hypr/scripts/mako_dismiss.sh \
+    .config/hypr/scripts/waybar.sh \
+    .config/hypr/scripts/waybar_flip.sh \
+    .config/hypr/scripts/waybar_ready_sound.sh \
+    .config/hypr/scripts/waybar_restore_resume.sh \
+    .config/hypr/scripts/waybar_rotate.sh \
+    .config/hypr/scripts/waybar_toggle.sh \
+    .config/hypr/scripts/waybar_toggle_idle.sh \
+    .config/hypr/scripts/wlogout_toggle.sh \
+    .local/share/applications/waybar_flip.desktop \
+    .local/share/applications/waybar_rotate.desktop \
+    .local/share/applications/waybar_toggle.desktop
+}
+
+prepare_quickshell_update_legacy_backups() {
+  local rel dest
+  while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    dest="${HOME_DIR}/${rel}"
+    [[ -e "$dest" || -L "$dest" ]] || continue
+    snapshot_for_rollback "$rel" "$dest"
+    ROLLBACK_PATHS+=("$rel")
+    make_persistent_backup "$dest"
+  done < <(quickshell_update_legacy_paths)
+}
+
+remove_quickshell_update_legacy_files() {
+  local rel dest
+  while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    dest="${HOME_DIR}/${rel}"
+    [[ -e "$dest" || -L "$dest" ]] || continue
+    if ! rm -rf -- "$dest"; then
+      FAILED+=("$rel")
+      return 1
+    fi
+    CHANGED+=("$rel")
+    REMOVED+=("$rel")
+  done < <(quickshell_update_legacy_paths)
+}
+
+reload_quickshell_update_hyprland() {
+  command -v hyprctl >/dev/null 2>&1 || return 0
+  [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || return 0
+  run_target hyprctl reload >/dev/null 2>&1
+}
+
+start_quickshell_update_shell() {
+  command -v hyprctl >/dev/null 2>&1 || return 0
+  [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || return 0
+
+  local manager="${HOME_DIR}/.config/hypr/scripts/quickshell.sh"
+  local status=""
+  [[ -f "$manager" ]] || return 1
+  run_target bash "$manager" restart || return 1
+  status="$(run_target bash "$manager" status 2>/dev/null || true)"
+  [[ "$status" == "running" ]]
+}
+
+rollback_quickshell_update() {
+  local manager="${HOME_DIR}/.config/hypr/scripts/quickshell.sh"
+  if [[ -f "$manager" ]]; then
+    run_target bash "$manager" stop >/dev/null 2>&1 || true
+  fi
+  rollback_changes
+  reload_quickshell_update_hyprland || true
+}
+
+remove_quickshell_update_legacy_packages() {
   local marker="${STATE_DIR}/quickshell-connectivity-migration-complete"
-  local scripts_dir="${HOME_DIR}/.config/hypr/scripts"
-  local applications_dir="${HOME_DIR}/.local/share/applications"
-  local managed_file="/var/lib/awtarchy/managed-packages"
-  local pkg process tmp sudo_ok=0 package_cleanup_ok=0
+  local managed_file="${AWTARCHY_MANAGED_PACKAGES_FILE:-/var/lib/awtarchy/managed-packages}"
+  local pkg process tmp
   local -a obsolete_packages=(waybar-git fuzzel wlogout mako wofi network-manager-applet blueman)
   local -a obsolete_processes=(waybar fuzzel wlogout mako wofi nm-applet blueman-applet blueman-manager)
   local -a installed=()
 
   [[ -e "$marker" ]] && return 0
 
-  # Stop only the target user's retired shell processes. Quickshell stays alive.
-  for process in "${obsolete_processes[@]}"; do
-    run_target pkill -x "$process" >/dev/null 2>&1 || true
-  done
-
-  rm -rf -- \
-    "${HOME_DIR}/.config/waybar" \
-    "${HOME_DIR}/.config/fuzzel" \
-    "${HOME_DIR}/.config/mako" \
-    "${HOME_DIR}/.config/wlogout" \
-    "${HOME_DIR}/.config/wofi" \
-    "${HOME_DIR}/.cache/waybar"
-
-  rm -f -- \
-    "${scripts_dir}/cliphist-fuzzel.sh" \
-    "${scripts_dir}/cliphist-wofi.sh" \
-    "${scripts_dir}/fuzzel_toggle.sh" \
-    "${scripts_dir}/mako_dismiss.sh" \
-    "${scripts_dir}/waybar.sh" \
-    "${scripts_dir}/waybar_flip.sh" \
-    "${scripts_dir}/waybar_ready_sound.sh" \
-    "${scripts_dir}/waybar_restore_resume.sh" \
-    "${scripts_dir}/waybar_rotate.sh" \
-    "${scripts_dir}/waybar_toggle.sh" \
-    "${scripts_dir}/waybar_toggle_idle.sh" \
-    "${scripts_dir}/wlogout_toggle.sh" \
-    "${applications_dir}/waybar_flip.desktop" \
-    "${applications_dir}/waybar_rotate.desktop" \
-    "${applications_dir}/waybar_toggle.desktop"
-
   for pkg in "${obsolete_packages[@]}"; do
     pacman -Q "$pkg" >/dev/null 2>&1 && installed+=("$pkg")
   done
 
-  if (( ${#installed[@]} == 0 )); then
-    : >"$marker"
-    [[ "${EUID}" -eq 0 ]] && chown "${TARGET_USER}:${TARGET_USER}" "$marker" 2>/dev/null || true
-    return 0
-  fi
+  for process in "${obsolete_processes[@]}"; do
+    run_target pkill -x "$process" >/dev/null 2>&1 || true
+  done
 
-  log "Removing retired Awtarchy shell packages: ${installed[*]}"
-  if [[ "${EUID}" -eq 0 ]]; then
-    if pacman -Rns --noconfirm "${installed[@]}"; then
-      package_cleanup_ok=1
+  if (( ${#installed[@]} )); then
+    log "Removing retired Awtarchy shell packages: ${installed[*]}"
+    if ! run_quickshell_update_pacman -Rns --noconfirm "${installed[@]}"; then
+      warn "Could not remove all retired shell packages; the migration will retry later."
+      return 0
     fi
-  elif command -v sudo >/dev/null 2>&1; then
-    if sudo -v && sudo pacman -Rns --noconfirm "${installed[@]}"; then
-      sudo_ok=1
-      package_cleanup_ok=1
-    fi
-  else
-    warn "sudo is unavailable; could not remove retired shell packages: ${installed[*]}"
-  fi
-
-  if (( package_cleanup_ok == 0 )); then
-    warn "Could not remove all retired shell packages; the config migration will continue and retry later."
-    return 0
   fi
 
   if [[ -f "$managed_file" ]]; then
     tmp="$(mktemp)"
     grep -Ev '^(waybar-git|fuzzel|wlogout|mako|wofi|network-manager-applet|blueman)$' "$managed_file" >"$tmp" || true
     if [[ "${EUID}" -eq 0 ]]; then
-      install -m 0644 "$tmp" "$managed_file"
-    elif (( sudo_ok == 1 )); then
-      sudo install -m 0644 "$tmp" "$managed_file"
+      install -m 0644 "$tmp" "$managed_file" \
+        || warn "Retired packages were removed but the Awtarchy package ledger could not be updated."
+    elif command -v sudo >/dev/null 2>&1 \
+      && sudo -v \
+      && sudo install -m 0644 "$tmp" "$managed_file";
+    then
+      :
     else
       warn "Retired packages were removed but the Awtarchy package ledger could not be updated."
     fi
@@ -357,17 +462,50 @@ update_apply_marker = '''  apply_plan "$plan_file" || die "Update failed and use
 
   hardware_reconcile
 '''
-update_apply_replacement = '''  apply_plan "$plan_file" || die "Update failed and user files were rolled back."
+update_apply_replacement = '''  ensure_quickshell_update_prerequisites
+  prepare_quickshell_update_legacy_backups
+
+  apply_plan "$plan_file" || die "Update failed and user files were rolled back."
   if [[ "$UPDATE_MODE" == "preserve" && -n "$fuzzel_anchor" ]]; then
     restore_fuzzel_anchor "$fuzzel_anchor"
   fi
 
-  remove_legacy_shell_update_artifacts
   hardware_reconcile
 '''
 if update_apply_marker not in text:
     raise SystemExit("ERROR: could not locate updater apply sequence")
 text = text.replace(update_apply_marker, update_apply_replacement, 1)
+
+update_validate_marker = '''  if ! validate_live; then
+    rollback_changes
+    die "Live validation failed. User files were rolled back."
+  fi
+'''
+update_validate_replacement = '''  if ! reload_quickshell_update_hyprland; then
+    rollback_quickshell_update
+    die "Hyprland reload failed. User files were rolled back."
+  fi
+
+  if ! validate_live; then
+    rollback_quickshell_update
+    die "Live validation failed. User files were rolled back."
+  fi
+
+  if ! start_quickshell_update_shell; then
+    rollback_quickshell_update
+    die "Quickshell did not start successfully. User files were rolled back."
+  fi
+
+  if ! remove_quickshell_update_legacy_files; then
+    rollback_quickshell_update
+    die "Legacy shell cleanup failed. User files were rolled back."
+  fi
+
+  remove_quickshell_update_legacy_packages
+'''
+if update_validate_marker not in text:
+    raise SystemExit("ERROR: could not locate updater live validation sequence")
+text = text.replace(update_validate_marker, update_validate_replacement, 1)
 
 # The old Waybar script chmod block is obsolete because those helpers were moved
 # under config/hypr/scripts.
@@ -424,6 +562,22 @@ resolve_target() {
   }
 }
 
+source_git() {
+  local -a command=(git -C "$SCRIPT_DIR" "$@")
+
+  if [[ ${EUID} -eq 0 && -n ${TARGET_USER:-} && $TARGET_USER != root ]]; then
+    if command -v runuser >/dev/null 2>&1; then
+      runuser -u "$TARGET_USER" -- "${command[@]}"
+    elif command -v sudo >/dev/null 2>&1; then
+      sudo -u "$TARGET_USER" -H -- "${command[@]}"
+    else
+      return 1
+    fi
+  else
+    "${command[@]}"
+  fi
+}
+
 ensure_vpn_directory() {
   local vpn_dir="${TARGET_HOME}/vpn"
   install -d -m 0700 "$vpn_dir"
@@ -460,25 +614,24 @@ legacy_install_exists() {
   return 1
 }
 
-source_release_tag() {
-  local source_name="${SCRIPT_DIR##*/}" tag="" branch=""
-
-  if [[ ${AWTARCHY_INSTALL_BRANCH:-} == quickshell-conversion-testing ]]; then
-    printf '%s\n' unreleased
-    return 0
-  fi
-
+is_quickshell_testing_source() {
+  local source_name="${SCRIPT_DIR##*/}" branch=""
+  [[ ${AWTARCHY_INSTALL_BRANCH:-} == quickshell-conversion-testing ]] && return 0
+  [[ ${AWTARCHY_TESTING_COMMIT:-} =~ ^[0-9a-fA-F]{40}$ ]] && return 0
   if command -v git >/dev/null 2>&1 \
-    && git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1;
+    && source_git rev-parse --is-inside-work-tree >/dev/null 2>&1;
   then
-    branch="$(git -C "$SCRIPT_DIR" branch --show-current 2>/dev/null || true)"
-    if [[ $branch == quickshell-conversion-testing ]]; then
-      printf '%s\n' unreleased
-      return 0
-    fi
+    branch="$(source_git branch --show-current 2>/dev/null || true)"
+    [[ $branch == quickshell-conversion-testing ]] && return 0
   fi
+  [[ $source_name == awtarchy-quickshell-conversion-testing ]] && return 0
+  return 1
+}
 
-  if [[ $source_name == awtarchy-quickshell-conversion-testing ]]; then
+source_release_tag() {
+  local source_name="${SCRIPT_DIR##*/}" tag=""
+
+  if is_quickshell_testing_source; then
     printf '%s\n' unreleased
     return 0
   fi
@@ -497,9 +650,9 @@ source_release_tag() {
   fi
 
   if command -v git >/dev/null 2>&1 \
-    && git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1;
+    && source_git rev-parse --is-inside-work-tree >/dev/null 2>&1;
   then
-    tag="$(git -C "$SCRIPT_DIR" tag --points-at HEAD 2>/dev/null \
+    tag="$(source_git tag --points-at HEAD 2>/dev/null \
       | grep -E '^v[0-9]+([.][0-9]+)*([._+-].*)?$' \
       | head -n1 || true)"
     [[ -n $tag ]] && {
@@ -512,10 +665,15 @@ source_release_tag() {
 }
 
 source_revision() {
+  if [[ ${AWTARCHY_TESTING_COMMIT:-} =~ ^[0-9a-fA-F]{40}$ ]]; then
+    printf '%s\n' "${AWTARCHY_TESTING_COMMIT,,}"
+    return 0
+  fi
+
   if command -v git >/dev/null 2>&1 \
-    && git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1;
+    && source_git rev-parse --is-inside-work-tree >/dev/null 2>&1;
   then
-    git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || true
+    source_git rev-parse HEAD 2>/dev/null || true
     return 0
   fi
 
@@ -595,6 +753,126 @@ EOF_SHIM
   mv -Tf -- "$temporary" "$destination"
 }
 
+install_system_quickshell_launcher() {
+  [[ ${AWTARCHY_SKIP_SYSTEM_SHIM:-0} == 1 ]] && return 0
+
+  local destination="${SYSTEM_BIN_DIR}/awtarchy-quickshell"
+  local marker='# Awtarchy Quickshell testing user-local command shim'
+  local temporary=""
+
+  if [[ ${EUID} -ne 0 && -z ${AWTARCHY_SYSTEM_BIN_DIR:-} ]]; then
+    printf 'WARNING: Could not install the awtarchy-quickshell system shim without sudo.\n' >&2
+    printf 'Ensure %s is included in PATH.\n' "${TARGET_HOME}/.local/bin" >&2
+    return 0
+  fi
+
+  if [[ -e $destination || -L $destination ]]; then
+    if ! grep -Fq "$marker" "$destination" 2>/dev/null; then
+      printf 'WARNING: Refusing to replace an existing unrelated command: %s\n' \
+        "$destination" >&2
+      printf 'Ensure %s is included in PATH.\n' "${TARGET_HOME}/.local/bin" >&2
+      return 0
+    fi
+  fi
+
+  install -d -m 0755 "$SYSTEM_BIN_DIR"
+  temporary="$(mktemp "${SYSTEM_BIN_DIR}/.awtarchy-quickshell.tmp.XXXXXX")"
+  cat >"$temporary" <<'EOF_SHIM'
+#!/usr/bin/env bash
+# Awtarchy Quickshell testing user-local command shim
+
+set -Eeuo pipefail
+
+target="${HOME}/.local/bin/awtarchy-quickshell"
+
+if [[ -x $target && $target != "${BASH_SOURCE[0]}" ]]; then
+  exec "$target" "$@"
+fi
+
+printf 'ERROR: awtarchy-quickshell is not installed for %s: %s\n' \
+  "${USER:-current user}" "$target" >&2
+exit 127
+EOF_SHIM
+  chmod 0755 "$temporary"
+  if [[ ${EUID} -eq 0 ]]; then
+    chown root:root "$temporary"
+  fi
+  mv -Tf -- "$temporary" "$destination"
+}
+
+repair_quickshell_command_ownership() {
+  [[ ${EUID} -eq 0 ]] || return 0
+
+  local path
+  for path in \
+    "${TARGET_HOME}/.local/bin" \
+    "${TARGET_HOME}/.local/bin/awtarchy-quickshell" \
+    "${TARGET_HOME}/.local/share/awtarchy-quickshell" \
+    "${TARGET_HOME}/.local/share/awtarchy-quickshell/awtarchy-runtime.sh" \
+    "${TARGET_HOME}/.local/state/awtarchy-quickshell" \
+    "${TARGET_HOME}/.local/state/awtarchy-quickshell/command-version"
+  do
+    [[ -e $path || -L $path ]] || continue
+    chown -h "${TARGET_USER}:${TARGET_USER}" "$path"
+  done
+}
+
+install_quickshell_testing_command() {
+  local bin_dir="${TARGET_HOME}/.local/bin"
+  local data_dir="${TARGET_HOME}/.local/share/awtarchy-quickshell"
+  local state_dir="${TARGET_HOME}/.local/state/awtarchy-quickshell"
+  local command_version="${state_dir}/command-version"
+  local revision
+
+  is_quickshell_testing_source || {
+    printf 'ERROR: awtarchy-quickshell can only be installed from quickshell-conversion-testing.\n' >&2
+    exit 1
+  }
+  [[ -f $QUICKSHELL_LAUNCHER_SOURCE ]] || {
+    printf 'ERROR: Missing testing command: %s\n' "$QUICKSHELL_LAUNCHER_SOURCE" >&2
+    exit 1
+  }
+  bash -n "$RUNTIME_SOURCE" || {
+    printf 'ERROR: Quickshell testing runtime failed Bash syntax validation.\n' >&2
+    exit 1
+  }
+  bash -n "$QUICKSHELL_LAUNCHER_SOURCE" || {
+    printf 'ERROR: awtarchy-quickshell failed Bash syntax validation.\n' >&2
+    exit 1
+  }
+
+  revision="$(source_revision)"
+  [[ $revision =~ ^[0-9a-fA-F]{40}$ ]] || {
+    printf 'ERROR: Could not resolve the exact quickshell-conversion-testing commit.\n' >&2
+    exit 1
+  }
+  revision="${revision,,}"
+
+  install -d -m 0755 "$bin_dir" "$data_dir" "$state_dir"
+  install -m 0755 "$QUICKSHELL_LAUNCHER_SOURCE" \
+    "${bin_dir}/awtarchy-quickshell"
+  install -m 0755 "$RUNTIME_SOURCE" "${data_dir}/awtarchy-runtime.sh"
+  write_version_file "$command_version" quickshell-conversion-testing \
+    "$revision" installed_at
+  repair_quickshell_command_ownership
+
+  if [[ ${AWTARCHY_QUIET_TEST_COMMAND_INSTALL:-0} == 1 ]]; then
+    return 0
+  fi
+
+  cat <<EOF_MESSAGE
+Installed the temporary Quickshell testing command at commit:
+
+  ${revision}
+
+The stable awtarchy launcher, runtime, and command-version state were not changed.
+
+  awtarchy-quickshell review
+  awtarchy-quickshell update
+  awtarchy-quickshell version
+EOF_MESSAGE
+}
+
 repair_target_ownership() {
   [[ ${EUID} -eq 0 ]] || return 0
 
@@ -654,6 +932,11 @@ refresh_existing_command() {
 }
 
 show_existing_install_message() {
+  local testing_commit
+  testing_commit="$(source_revision)"
+  [[ "$testing_commit" =~ ^[0-9a-fA-F]{40}$ ]] \
+    || testing_commit="<full quickshell-conversion-testing commit SHA>"
+
   cat <<EOF_MESSAGE
 Awtarchy is already installed for ${TARGET_USER}.
 
@@ -662,10 +945,12 @@ unreleased Quickshell branch, the runtime is intentionally not replaced by the
 latest stable GitHub release. No packages or managed configs were changed.
 
   awtarchy                 Open the maintenance menu
-  awtarchy self-update     Explicitly leave the testing runtime for a release
-  awtarchy update          Update configs and preserve personal changes
-  awtarchy reset           Reset managed configs to release defaults
+  awtarchy review --testing-commit ${testing_commit}
+  awtarchy update --testing-commit ${testing_commit}
   awtarchy version         Show installed and latest releases
+
+Do not run awtarchy self-update during branch testing. That explicitly returns
+the installed command/runtime to the latest stable release.
 
 To intentionally run the complete Quickshell conversion installer:
 
@@ -755,6 +1040,10 @@ while (( $# )); do
       REINSTALL=1
       shift
       ;;
+    --quickshell-command)
+      QUICKSHELL_COMMAND_ONLY=1
+      shift
+      ;;
     --dry-run|--test)
       DRY_RUN_REQUESTED=1
       ARGS+=("$1")
@@ -773,6 +1062,24 @@ done
 
 prepare_runtime_source
 resolve_target
+
+if (( REINSTALL == 0 && QUICKSHELL_COMMAND_ONLY == 0 )) \
+  && is_quickshell_testing_source \
+  && { installed_command_exists || legacy_install_exists; };
+then
+  QUICKSHELL_COMMAND_ONLY=1
+fi
+
+if (( QUICKSHELL_COMMAND_ONLY == 1 )); then
+  if (( DRY_RUN_REQUESTED == 1 )); then
+    printf 'awtarchy-quickshell would be installed for %s. No files were changed because --dry-run was used.\n' \
+      "$TARGET_USER"
+  else
+    install_system_quickshell_launcher
+    install_quickshell_testing_command
+  fi
+  exit 0
+fi
 
 if (( DRY_RUN_REQUESTED == 0 )); then
   ensure_vpn_directory

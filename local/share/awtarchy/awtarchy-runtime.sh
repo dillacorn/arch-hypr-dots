@@ -4130,6 +4130,7 @@ UPDATE_MODE=""
 REVIEW_ONLY=0
 ASSUME_YES=0
 TAG_OVERRIDE=""
+TESTING_COMMIT=""
 BACKUPS=()
 CHANGED=()
 PRESERVED=()
@@ -4200,6 +4201,13 @@ parse_args() {
         [[ -n "$TAG_OVERRIDE" ]] || die "--tag requires a release tag"
         shift 2
         ;;
+      --testing-commit)
+        TESTING_COMMIT="${2:-}"
+        [[ "$TESTING_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]] \
+          || die "--testing-commit requires a full 40-character commit SHA"
+        TESTING_COMMIT="${TESTING_COMMIT,,}"
+        shift 2
+        ;;
       --mode)
         UPDATE_MODE="${2:-}"
         [[ "$UPDATE_MODE" == "preserve" || "$UPDATE_MODE" == "clean" ]] || die "--mode must be preserve or clean"
@@ -4220,6 +4228,7 @@ Usage:
 
 Options:
   --tag <tag>              Update from an exact GitHub release tag
+  --testing-commit <sha>   Test configs from an exact GitHub commit
   --mode preserve|clean    Select update mode without the menu
   --review-only            Download, classify, and review without changing files
   --yes                    Accept conservative hardware cleanup prompts
@@ -4231,6 +4240,9 @@ EOF
         ;;
     esac
   done
+
+  [[ -z "$TAG_OVERRIDE" || -z "$TESTING_COMMIT" ]] \
+    || die "--tag and --testing-commit cannot be used together"
 }
 
 curl_headers() {
@@ -4278,6 +4290,18 @@ download_release_tarball() {
     --retry 1 \
     -L -o "$out" \
     "https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/tags/${tag_enc}.tar.gz"
+}
+
+download_testing_commit_tarball() {
+  local commit="$1" out="$2" max_time="${3:-300}"
+  [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || return 2
+
+  curl "${CURL_ARGS[@]}" \
+    --connect-timeout 10 \
+    --max-time "$max_time" \
+    --retry 1 \
+    -L -o "$out" \
+    "https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/${commit}.tar.gz"
 }
 tar_topdir() {
   python3 - "$1" <<'PY'
@@ -4955,15 +4979,31 @@ write_hardware_state() {
 
 bootstrap_previous_baseline() {
   local active_theme="$1"
-  local version_file="${HOME_DIR}/.cache/awtarchy/version"
-  local old_tag="" old_updated_at=""
+  local version_file="" old_tag="" old_updated_at=""
   local old_tgz old_top old_repo old_home old_manifest
   local source_repo="" local_ref="" history_ref="" archive_ready=0 recovered_locally=0
 
   [[ -d "$BASELINE_HOME" && -r "$MANIFEST_FILE" ]] && return 0
 
-  old_tag="$(sed -n 's/^tag=//p' "$version_file" 2>/dev/null | head -n1 || true)"
-  old_updated_at="$(sed -n 's/^updated_at=//p' "$version_file" 2>/dev/null | head -n1 || true)"
+  for version_file in \
+    "${STATE_DIR}/config-version" \
+    "${STATE_DIR}/baseline/metadata" \
+    "${HOME_DIR}/.cache/awtarchy/version"
+  do
+    old_tag="$(sed -n 's/^tag=//p' "$version_file" 2>/dev/null | head -n1 || true)"
+    [[ -n "$old_tag" ]] || continue
+    case "$old_tag" in
+      unknown|unreleased|quickshell-conversion-testing@*)
+        old_tag=""
+        continue
+        ;;
+    esac
+    old_updated_at="$(
+      sed -n -E 's/^(updated_at|installed_at|migrated_at|generated_at)=//p' \
+        "$version_file" 2>/dev/null | head -n1 || true
+    )"
+    break
+  done
 
   [[ -n "$old_tag" ]] || {
     warn "No previous release tag is available; legacy differences will be preserved conservatively."
@@ -5668,6 +5708,8 @@ commit_baseline() {
 }
 
 refresh_cursor_assets() {
+  [[ "${AWTARCHY_TEST_SKIP_CURSOR_REFRESH:-0}" == "1" ]] && return 0
+
   mkdir -p -- "${HOME_DIR}/.local/share/icons/ComixCursors-White"
   if [[ -d /usr/share/icons/ComixCursors-White ]]; then
     cp -a --no-preserve=ownership /usr/share/icons/ComixCursors-White/. \
@@ -5735,14 +5777,33 @@ main() {
   curl_headers
 
   TMPD="$(mktemp -d)"
-  local tag="$TAG_OVERRIDE"
-  [[ -n "$tag" ]] || tag="$(fetch_latest_release_tag)"
+  local tag="$TAG_OVERRIDE" source_label="" source_revision=""
+  if [[ -n "$TESTING_COMMIT" ]]; then
+    source_revision="$TESTING_COMMIT"
+    source_label="quickshell-conversion-testing@${TESTING_COMMIT}"
+  else
+    [[ -n "$tag" ]] || tag="$(fetch_latest_release_tag)"
+    source_label="$tag"
+  fi
   log "Target user: ${TARGET_USER}"
-  log "Release tag: ${tag}"
+  if [[ -n "$source_revision" ]]; then
+    log "Testing commit: ${source_revision}"
+  else
+    log "Release tag: ${tag}"
+  fi
 
   local tgz="${TMPD}/awtarchy.tgz" top repo_dir target_home plan_file active_theme="" fuzzel_anchor=""
-  download_release_tarball "$tag" "$tgz" || die "Failed to download release tarball for ${tag}"
-  top="$(tar_topdir "$tgz")" || die "Could not read the release archive for ${tag}"
+  if [[ -n "$source_revision" ]]; then
+    download_testing_commit_tarball "$source_revision" "$tgz" \
+      || die "Failed to download testing commit ${source_revision}"
+  else
+    download_release_tarball "$tag" "$tgz" \
+      || die "Failed to download release tarball for ${tag}"
+  fi
+  top="$(tar_topdir "$tgz")" || die "Could not read the source archive for ${source_label}"
+  if [[ -n "$source_revision" && "$top" != "${REPO_NAME}-${source_revision}" ]]; then
+    die "Testing archive does not match the requested commit ${source_revision}"
+  fi
   tar -xzf "$tgz" -C "$TMPD"
   repo_dir="${TMPD}/${top}"
   [[ -d "$repo_dir" ]] || die "Extracted repo directory is missing"
@@ -5789,11 +5850,11 @@ main() {
     die "Live validation failed. User files were rolled back."
   fi
 
-  commit_baseline "$target_home" "$tag" "$active_theme"
+  commit_baseline "$target_home" "$source_label" "$active_theme"
   write_hardware_state
   [[ -n "$active_theme" ]] && printf '%s\n' "$active_theme" >"$ACTIVE_THEME_FILE"
-  write_version_stamp "$tag"
-  write_audit "$tag" "$active_theme"
+  write_version_stamp "$source_label"
+  write_audit "$source_label" "$active_theme"
   [[ "${EUID}" -eq 0 ]] && chown -R "${TARGET_USER}:${TARGET_USER}" "$STATE_DIR" 2>/dev/null || true
   command -v hyprctl >/dev/null 2>&1 && run_target hyprctl reload >/dev/null 2>&1 || true
   command -v makoctl >/dev/null 2>&1 && run_target makoctl reload >/dev/null 2>&1 || true

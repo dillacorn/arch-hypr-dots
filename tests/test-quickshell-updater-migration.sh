@@ -1,0 +1,465 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+INSTALLER="${ROOT}/awtarchy-install.sh"
+STABLE_LAUNCHER="${ROOT}/local/bin/awtarchy"
+QUICKSHELL_LAUNCHER="${ROOT}/local/bin/awtarchy-quickshell"
+RUNTIME="${ROOT}/local/share/awtarchy/awtarchy-runtime.sh"
+TEST_COMMIT="1111111111111111111111111111111111111111"
+TMP="$(mktemp -d)"
+
+cleanup() {
+  rm -rf -- "$TMP"
+}
+trap cleanup EXIT
+
+fail() {
+  printf 'FAIL: %s\n' "$*" >&2
+  exit 1
+}
+
+assert_file() {
+  [[ -f $1 ]] || fail "missing file: $1"
+}
+
+assert_absent() {
+  [[ ! -e $1 && ! -L $1 ]] || fail "path should be absent: $1"
+}
+
+assert_package() {
+  grep -Fxq "$2" "$1" || fail "missing package $2 in $1"
+}
+
+assert_no_package() {
+  ! grep -Fxq "$2" "$1" || fail "retired package still present: $2"
+}
+
+TARGET_USER="$(id -un)"
+
+fakebin="${TMP}/fakebin"
+mkdir -p "$fakebin"
+
+cat >"${fakebin}/getent" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${1:-} == passwd ]]; then
+  printf '%s:x:1000:1000:Updater test:%s:/bin/bash\n' \
+    "${AWTARCHY_TEST_TARGET_USER:?}" "${AWTARCHY_TEST_TARGET_HOME:?}"
+  exit 0
+fi
+exec /usr/bin/getent "$@"
+EOF
+
+cat >"${fakebin}/awk" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $* == *'/etc/passwd'* ]]; then
+  printf '%s\n' "${AWTARCHY_TEST_TARGET_USER:?}"
+  exit 0
+fi
+exec /usr/bin/awk "$@"
+EOF
+
+cat >"${fakebin}/runuser" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+while (( $# )); do
+  if [[ $1 == -- ]]; then
+    shift
+    exec "$@"
+  fi
+  shift
+done
+exit 2
+EOF
+
+cat >"${fakebin}/sudo" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${1:-} == -v ]]; then
+  exit 0
+fi
+exec "$@"
+EOF
+
+cat >"${fakebin}/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+out=""
+url=""
+while (( $# )); do
+  case "$1" in
+    -o)
+      out="$2"
+      shift 2
+      ;;
+    -H|--connect-timeout|--max-time|--retry|--retry-delay)
+      shift 2
+      ;;
+    -*)
+      shift
+      ;;
+    *)
+      url="$1"
+      shift
+      ;;
+  esac
+done
+printf '%s\n' "$url" >>"${AWTARCHY_TEST_CURL_LOG:?}"
+if [[ $url == *'/releases/latest' ]]; then
+  printf '%s\n' '{"tag_name":"v2.0.0-1"}'
+  exit 0
+fi
+if [[ $url == 'https://api.github.com/repos/dillacorn/awtarchy/commits/quickshell-conversion-testing' ]]; then
+  printf '{"sha":"%s"}\n' "${AWTARCHY_TEST_COMMIT:?}"
+  exit 0
+fi
+if [[ $url == 'https://github.com/dillacorn/awtarchy/archive/refs/tags/v2.0.0-1.tar.gz' ]]; then
+  [[ -n $out ]] || exit 43
+  cp -- "${AWTARCHY_TEST_PREVIOUS_ARCHIVE:?}" "$out"
+  exit 0
+fi
+expected="https://github.com/dillacorn/awtarchy/archive/${AWTARCHY_TEST_COMMIT:?}.tar.gz"
+[[ $url == "$expected" ]] || exit 42
+[[ -n $out ]] || exit 43
+cp -- "${AWTARCHY_TEST_ARCHIVE:?}" "$out"
+EOF
+
+cat >"${fakebin}/pacman" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+state="${AWTARCHY_TEST_PACKAGE_STATE:?}"
+log="${AWTARCHY_TEST_PACMAN_LOG:?}"
+printf '%s\n' "$*" >>"$log"
+action="${1:-}"
+shift || true
+case "$action" in
+  -Q|-Qq)
+    pkg="${1:-}"
+    [[ -n $pkg ]] || exit 1
+    grep -Fxq "$pkg" "$state"
+    ;;
+  -S)
+    for pkg in "$@"; do
+      [[ $pkg == -* ]] && continue
+      grep -Fxq "$pkg" "$state" || printf '%s\n' "$pkg" >>"$state"
+    done
+    LC_ALL=C sort -u -o "$state" "$state"
+    ;;
+  -Rns)
+    for pkg in "$@"; do
+      [[ $pkg == -* ]] && continue
+      tmp="${state}.tmp"
+      grep -Fxv "$pkg" "$state" >"$tmp" || true
+      mv -f "$tmp" "$state"
+    done
+    ;;
+  *)
+    exit 44
+    ;;
+esac
+EOF
+
+cat >"${fakebin}/hyprctl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"${AWTARCHY_TEST_HYPRCTL_LOG:?}"
+case "${1:-}" in
+  monitors)
+    printf '%s\n' '[{"name":"eDP-1","focused":true,"disabled":false}]'
+    ;;
+  activeworkspace)
+    printf '%s\n' '{"monitor":"eDP-1"}'
+    ;;
+  configerrors)
+    printf '%s\n' 'No config errors'
+    ;;
+  reload)
+    exit 0
+    ;;
+  *)
+    printf '%s\n' '{}'
+    ;;
+esac
+EOF
+
+cat >"${fakebin}/qs" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+state="${AWTARCHY_TEST_QS_STATE:?}"
+if [[ $* == *'ipc call control ping'* ]]; then
+  [[ -f $state ]] || exit 1
+  printf '%s\n' ok
+  exit 0
+fi
+if [[ $* == *'ipc call control quit'* ]]; then
+  rm -f -- "$state"
+  exit 0
+fi
+[[ ! -e ${AWTARCHY_TEST_QS_FAIL_FILE:?} ]] || exit 1
+: >"$state"
+EOF
+
+cat >"${fakebin}/pkill" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"${AWTARCHY_TEST_PKILL_LOG:?}"
+EOF
+
+cat >"${fakebin}/sleep" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+
+chmod 0755 "${fakebin}/"*
+
+archive_parent="${TMP}/archive"
+archive_root="${archive_parent}/awtarchy-${TEST_COMMIT}"
+mkdir -p "$archive_root"
+tar --exclude=.git -C "$ROOT" -cf - . | tar -C "$archive_root" -xf -
+tar -czf "${TMP}/testing-commit.tar.gz" -C "$archive_parent" "$(basename "$archive_root")"
+
+previous_parent="${TMP}/previous-archive"
+previous_root="${previous_parent}/awtarchy-2.0.0-1"
+mkdir -p \
+  "$previous_root/config/hypr/scripts" \
+  "$previous_root/config/waybar" \
+  "$previous_root/config/fuzzel" \
+  "$previous_root/config/mako"
+printf '%s\n' '# previous bashrc' >"$previous_root/bashrc"
+printf '%s\n' '# previous bash profile' >"$previous_root/bash_profile"
+printf '%s\n' '! previous Xresources' >"$previous_root/Xresources"
+printf '%s\n' 'return { old = true }' >"$previous_root/config/hypr/hyprland.lua"
+printf '%s\n' '# old waybar helper' >"$previous_root/config/hypr/scripts/waybar.sh"
+printf '%s\n' 'stock waybar' >"$previous_root/config/waybar/config"
+printf '%s\n' '[main]' 'anchor=top' >"$previous_root/config/fuzzel/fuzzel.ini"
+printf '%s\n' 'font=monospace 10' >"$previous_root/config/mako/config"
+tar -czf "${TMP}/previous-release.tar.gz" -C "$previous_parent" "$(basename "$previous_root")"
+
+seed_old_home() {
+  local home="$1"
+  mkdir -p \
+    "$home/.config/hypr/scripts" \
+    "$home/.config/waybar" \
+    "$home/.config/fuzzel" \
+    "$home/.config/mako" \
+    "$home/.cache/waybar" \
+    "$home/.local/bin" \
+    "$home/.local/share/awtarchy" \
+    "$home/.local/state/awtarchy"
+
+  printf '%s\n' 'return { old = true }' >"$home/.config/hypr/hyprland.lua"
+  printf '%s\n' '# old waybar helper' >"$home/.config/hypr/scripts/waybar.sh"
+  printf '%s\n' 'custom laptop waybar' >"$home/.config/waybar/config"
+  printf '%s\n' '[main]' 'anchor=top' >"$home/.config/fuzzel/fuzzel.ini"
+  printf '%s\n' 'font=monospace 10' >"$home/.config/mako/config"
+  printf '%s\n' '{"enabled":true,"monitors":{}}' >"$home/.cache/waybar/state.json"
+  chmod 0755 "$home/.config/hypr/scripts/waybar.sh"
+  printf '%s\n' 'tag=v2.0.0-1' 'installed_at=2026-08-01T00:00:00-04:00' \
+    >"$home/.local/state/awtarchy/config-version"
+
+  install -m 0755 "$STABLE_LAUNCHER" "$home/.local/bin/awtarchy"
+  install -m 0755 "$RUNTIME" "$home/.local/share/awtarchy/awtarchy-runtime.sh"
+}
+
+write_old_package_state() {
+  printf '%s\n' \
+    waybar-git fuzzel wlogout mako wofi network-manager-applet blueman \
+    networkmanager bluez bluez-utils jq \
+    >"$1"
+}
+
+home="${TMP}/home"
+seed_old_home "$home"
+stable_launcher_hash="$(sha256sum "$home/.local/bin/awtarchy" | awk '{print $1}')"
+stable_runtime_hash="$(sha256sum "$home/.local/share/awtarchy/awtarchy-runtime.sh" | awk '{print $1}')"
+
+common_env=(
+  "HOME=$home"
+  "USER=$TARGET_USER"
+  "SUDO_USER=$TARGET_USER"
+  "PATH=${fakebin}:$PATH"
+  "AWTARCHY_INSTALL_BRANCH=quickshell-conversion-testing"
+  "AWTARCHY_TESTING_COMMIT=$TEST_COMMIT"
+  "AWTARCHY_SYSTEM_BIN_DIR=${TMP}/system-bin"
+  "AWTARCHY_TEST_TARGET_USER=$TARGET_USER"
+  "AWTARCHY_TEST_TARGET_HOME=$home"
+)
+mkdir -p "${TMP}/system-bin"
+env "${common_env[@]}" bash "$INSTALLER" --quickshell-command \
+  >"${TMP}/installer.out"
+
+installed_launcher="$home/.local/bin/awtarchy-quickshell"
+installed_runtime="$home/.local/share/awtarchy-quickshell/awtarchy-runtime.sh"
+managed_packages="${TMP}/managed-packages"
+assert_file "$installed_launcher"
+assert_file "$installed_runtime"
+assert_file "${TMP}/system-bin/awtarchy-quickshell"
+assert_absent "${TMP}/system-bin/awtarchy"
+[[ $stable_launcher_hash == "$(sha256sum "$home/.local/bin/awtarchy" | awk '{print $1}')" ]] \
+  || fail "testing command installation changed the stable launcher"
+[[ $stable_runtime_hash == "$(sha256sum "$home/.local/share/awtarchy/awtarchy-runtime.sh" | awk '{print $1}')" ]] \
+  || fail "testing command installation changed the stable runtime"
+grep -Fxq "revision=${TEST_COMMIT}" \
+  "$home/.local/state/awtarchy-quickshell/command-version" \
+  || fail "testing command did not record its exact commit"
+bash -n "$installed_runtime"
+bash -n "$installed_launcher"
+grep -Fq -- '--testing-commit' "$installed_runtime" \
+  || fail "testing runtime did not retain pinned-commit support"
+grep -Fq 'ensure_quickshell_update_prerequisites' "$installed_runtime" \
+  || fail "testing runtime did not receive updater migration prerequisites"
+grep -Fq 'start_quickshell_update_shell' "$installed_runtime" \
+  || fail "testing runtime did not receive live shell validation"
+
+failure_home="${TMP}/failure-home"
+cp -a -- "$home" "$failure_home"
+
+package_state="${TMP}/packages"
+write_old_package_state "$package_state"
+cp -- "$package_state" "$managed_packages"
+: >"${TMP}/curl.log"
+: >"${TMP}/pacman.log"
+: >"${TMP}/hyprctl.log"
+: >"${TMP}/pkill.log"
+mkdir -p "${TMP}/runtime"
+
+update_env=(
+  "HOME=$home"
+  "USER=$TARGET_USER"
+  "SUDO_USER=$TARGET_USER"
+  "PATH=${fakebin}:$PATH"
+  "XDG_RUNTIME_DIR=${TMP}/runtime"
+  "HYPRLAND_INSTANCE_SIGNATURE=awtarchy-test"
+  "AWTARCHY_SKIP_UPDATE_CHECK=1"
+  "AWTARCHY_TEST_SKIP_CURSOR_REFRESH=1"
+  "AWTARCHY_TEST_TARGET_USER=$TARGET_USER"
+  "AWTARCHY_TEST_TARGET_HOME=$home"
+  "AWTARCHY_TEST_ARCHIVE=${TMP}/testing-commit.tar.gz"
+  "AWTARCHY_TEST_PREVIOUS_ARCHIVE=${TMP}/previous-release.tar.gz"
+  "AWTARCHY_TEST_COMMIT=$TEST_COMMIT"
+  "AWTARCHY_TEST_CURL_LOG=${TMP}/curl.log"
+  "AWTARCHY_TEST_PACKAGE_STATE=$package_state"
+  "AWTARCHY_MANAGED_PACKAGES_FILE=$managed_packages"
+  "AWTARCHY_TEST_PACMAN_LOG=${TMP}/pacman.log"
+  "AWTARCHY_TEST_HYPRCTL_LOG=${TMP}/hyprctl.log"
+  "AWTARCHY_TEST_PKILL_LOG=${TMP}/pkill.log"
+  "AWTARCHY_TEST_QS_STATE=${TMP}/qs.state"
+  "AWTARCHY_TEST_QS_FAIL_FILE=${TMP}/qs.fail"
+)
+
+hypr_hash_before="$(sha256sum "$home/.config/hypr/hyprland.lua" | awk '{print $1}')"
+packages_hash_before="$(sha256sum "$package_state" | awk '{print $1}')"
+env "${update_env[@]}" "$installed_launcher" review \
+  >"${TMP}/review.out" 2>&1
+[[ $hypr_hash_before == "$(sha256sum "$home/.config/hypr/hyprland.lua" | awk '{print $1}')" ]] \
+  || fail "review-only changed the live Hyprland config"
+[[ $packages_hash_before == "$(sha256sum "$package_state" | awk '{print $1}')" ]] \
+  || fail "review-only changed packages"
+grep -Fq 'Review-only mode complete. No files were changed.' "${TMP}/review.out" \
+  || fail "review-only did not report its non-mutating result"
+grep -Fq 'Reconstructing previous generated baseline from release: v2.0.0-1' \
+  "${TMP}/review.out" \
+  || fail "updater did not reconstruct the previous baseline from config-version"
+
+env "${update_env[@]}" "$installed_launcher" update \
+  >"${TMP}/update.out" 2>&1
+
+assert_package "$package_state" quickshell
+assert_package "$package_state" upower
+for pkg in waybar-git fuzzel wlogout mako wofi network-manager-applet blueman; do
+  assert_no_package "$package_state" "$pkg"
+done
+assert_package "$managed_packages" quickshell
+assert_package "$managed_packages" upower
+assert_no_package "$managed_packages" waybar-git
+
+assert_file "$home/.config/quickshell/awtarchy/shell.qml"
+assert_absent "$home/.config/waybar"
+assert_absent "$home/.config/fuzzel"
+assert_absent "$home/.config/mako"
+assert_absent "$home/.config/hypr/scripts/waybar.sh"
+assert_file "$home/.config/waybar.backup/config"
+grep -Fxq 'custom laptop waybar' "$home/.config/waybar.backup/config" \
+  || fail "custom Waybar config was not retained in the migration backup"
+assert_file "$home/.config/hypr/scripts/waybar.sh.backup"
+assert_file "$home/.local/state/awtarchy/quickshell-connectivity-migration-complete"
+assert_file "${TMP}/qs.state"
+grep -Fxq "tag=quickshell-conversion-testing@${TEST_COMMIT}" \
+  "$home/.local/state/awtarchy/config-version" \
+  || fail "config version did not record the exact testing commit"
+grep -Fxq "https://github.com/dillacorn/awtarchy/archive/${TEST_COMMIT}.tar.gz" \
+  "${TMP}/curl.log" \
+  || fail "updater did not download the exact pinned commit"
+grep -Fxq 'https://api.github.com/repos/dillacorn/awtarchy/commits/quickshell-conversion-testing' \
+  "${TMP}/curl.log" \
+  || fail "testing command did not resolve the configured branch head"
+[[ $stable_launcher_hash == "$(sha256sum "$home/.local/bin/awtarchy" | awk '{print $1}')" ]] \
+  || fail "successful migration changed the stable launcher"
+[[ $stable_runtime_hash == "$(sha256sum "$home/.local/share/awtarchy/awtarchy-runtime.sh" | awk '{print $1}')" ]] \
+  || fail "successful migration changed the stable runtime"
+
+failure_packages="${TMP}/failure-packages"
+failure_managed="${TMP}/failure-managed-packages"
+write_old_package_state "$failure_packages"
+cp -- "$failure_packages" "$failure_managed"
+: >"${TMP}/failure-curl.log"
+: >"${TMP}/failure-pacman.log"
+: >"${TMP}/failure-hyprctl.log"
+: >"${TMP}/failure-pkill.log"
+: >"${TMP}/failure-qs.fail"
+mkdir -p "${TMP}/failure-runtime"
+
+failure_env=(
+  "HOME=$failure_home"
+  "USER=$TARGET_USER"
+  "SUDO_USER=$TARGET_USER"
+  "PATH=${fakebin}:$PATH"
+  "XDG_RUNTIME_DIR=${TMP}/failure-runtime"
+  "HYPRLAND_INSTANCE_SIGNATURE=awtarchy-test"
+  "AWTARCHY_SKIP_UPDATE_CHECK=1"
+  "AWTARCHY_TEST_SKIP_CURSOR_REFRESH=1"
+  "AWTARCHY_TEST_TARGET_USER=$TARGET_USER"
+  "AWTARCHY_TEST_TARGET_HOME=$failure_home"
+  "AWTARCHY_TEST_ARCHIVE=${TMP}/testing-commit.tar.gz"
+  "AWTARCHY_TEST_PREVIOUS_ARCHIVE=${TMP}/previous-release.tar.gz"
+  "AWTARCHY_TEST_COMMIT=$TEST_COMMIT"
+  "AWTARCHY_TEST_CURL_LOG=${TMP}/failure-curl.log"
+  "AWTARCHY_TEST_PACKAGE_STATE=$failure_packages"
+  "AWTARCHY_MANAGED_PACKAGES_FILE=$failure_managed"
+  "AWTARCHY_TEST_PACMAN_LOG=${TMP}/failure-pacman.log"
+  "AWTARCHY_TEST_HYPRCTL_LOG=${TMP}/failure-hyprctl.log"
+  "AWTARCHY_TEST_PKILL_LOG=${TMP}/failure-pkill.log"
+  "AWTARCHY_TEST_QS_STATE=${TMP}/failure-qs.state"
+  "AWTARCHY_TEST_QS_FAIL_FILE=${TMP}/failure-qs.fail"
+)
+
+set +e
+env "${failure_env[@]}" "$failure_home/.local/bin/awtarchy-quickshell" update \
+  >"${TMP}/failure-update.out" 2>&1
+failure_rc=$?
+set -e
+(( failure_rc != 0 )) || fail "forced Quickshell startup failure unexpectedly succeeded"
+grep -Fq 'Quickshell did not start successfully. User files were rolled back.' \
+  "${TMP}/failure-update.out" \
+  || fail "startup failure did not report automatic rollback"
+grep -Fxq 'return { old = true }' "$failure_home/.config/hypr/hyprland.lua" \
+  || fail "rollback did not restore the old Hyprland config"
+grep -Fxq 'custom laptop waybar' "$failure_home/.config/waybar/config" \
+  || fail "rollback did not restore the custom Waybar config"
+assert_absent "$failure_home/.config/quickshell/awtarchy/shell.qml"
+for pkg in waybar-git fuzzel wlogout mako wofi network-manager-applet blueman; do
+  assert_package "$failure_packages" "$pkg"
+done
+assert_package "$failure_packages" quickshell
+assert_package "$failure_packages" upower
+grep -Fxq 'tag=v2.0.0-1' "$failure_home/.local/state/awtarchy/config-version" \
+  || fail "failed migration incorrectly advanced the config version"
+[[ $stable_launcher_hash == "$(sha256sum "$failure_home/.local/bin/awtarchy" | awk '{print $1}')" ]] \
+  || fail "failed migration changed the stable launcher"
+[[ $stable_runtime_hash == "$(sha256sum "$failure_home/.local/share/awtarchy/awtarchy-runtime.sh" | awk '{print $1}')" ]] \
+  || fail "failed migration changed the stable runtime"
+
+printf 'Quickshell updater migration tests passed.\n'

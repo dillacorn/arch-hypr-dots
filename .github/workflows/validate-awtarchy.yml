@@ -2,7 +2,7 @@ name: Validate Awtarchy
 
 on:
   push:
-    branches: [main]
+    branches: [main, quickshell-conversion-testing]
   pull_request:
   workflow_dispatch:
 
@@ -21,23 +21,28 @@ jobs:
           test ! -e awtarchy.sh
           bash -n awtarchy-install.sh
           bash -n local/bin/awtarchy
+          bash -n local/bin/awtarchy-quickshell
           bash -n local/share/awtarchy/awtarchy-runtime.sh
           bash -n tests/test-awtarchy-command.sh
           bash -n tests/test-awtarchy-command-shim.sh
           bash -n tests/test-desktop-candidate-validation.sh
           bash -n tests/test-lua-validation.sh
+          bash -n tests/test-quickshell-updater-migration.sh
       - name: ShellCheck command code
         run: |
           shellcheck \
             awtarchy-install.sh \
             local/bin/awtarchy \
+            local/bin/awtarchy-quickshell \
             tests/test-awtarchy-command.sh \
             tests/test-awtarchy-command-shim.sh \
             tests/test-desktop-candidate-validation.sh \
-            tests/test-lua-validation.sh
+            tests/test-lua-validation.sh \
+            tests/test-quickshell-updater-migration.sh
       - name: Command and updater integration tests
         run: |
           bash tests/test-awtarchy-command.sh
           bash tests/test-awtarchy-command-shim.sh
           bash tests/test-desktop-candidate-validation.sh
           bash tests/test-lua-validation.sh
+          bash tests/test-quickshell-updater-migration.sh

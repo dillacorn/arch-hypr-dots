@@ -70,26 +70,37 @@ Awtarchy theme files are now data-only palettes. They contain native `QS_*` shel
 
 It also preserves the existing Awtarchy theme behavior for Hyprland borders, Micro, Alacritty, and SpeedCrunch.
 
-## Testing branch installer behavior
+## Testing branch updater behavior
 
-The testing installer deliberately keeps the unreleased branch runtime instead of immediately replacing it with the latest stable GitHub release. An explicit later `awtarchy self-update` will return the command/runtime to the published release channel.
+`awtarchy-quickshell` is temporary branch-only tooling. It is not part of `main` and must be removed before the conversion is merged. The normal `awtarchy` launcher, runtime, and command-version state remain on the stable release channel while this command is installed.
 
-For an existing Awtarchy machine, use the full reinstall path so package/config conversion actually runs:
+For an existing Awtarchy machine, install the isolated testing command and use it to review and apply the migration:
 
 ```bash
 cd ~/awtarchy
 git fetch origin
 git switch quickshell-conversion-testing
-git pull --ff-only
-sudo ./awtarchy-install.sh --reinstall --no-reboot
+git pull --ff-only origin quickshell-conversion-testing
+
+test "$(git rev-parse HEAD)" = "$(git rev-parse origin/quickshell-conversion-testing)"
+
+sudo ./awtarchy-install.sh --quickshell-command
+
+awtarchy-quickshell version
+awtarchy-quickshell review
+awtarchy-quickshell update
 ```
 
-Then start or restart the Hyprland session. Quickshell is started directly by `hyprland.lua`.
+The installer command only creates `awtarchy-quickshell` and its separate testing runtime/state. It does not replace the normal `awtarchy` command or change packages and managed configs. Each review or update resolves the current `quickshell-conversion-testing` head, refreshes the testing command from that exact commit, and pins the entire operation to the same commit.
+
+Review mode does not change managed configs or packages. The update installs `quickshell` and `upower`, backs up retired UI configs, applies preserve-mode config merging, verifies that Quickshell starts, and only then removes the retired shell packages.
+
+For a fresh installation or an intentional clean full reinstall, use `sudo ./awtarchy-install.sh --reinstall --no-reboot` instead.
 
 Verify the shell:
 
 ```bash
-pacman -Q quickshell
+pacman -Q quickshell upower
 ~/.config/hypr/scripts/quickshell.sh status
 qs -c awtarchy ipc call control ping
 ~/.config/hypr/scripts/quickshell.sh dump-state
@@ -110,8 +121,9 @@ Quick Settings can also be opened without the bar:
 Check that Awtarchy no longer owns the old packages:
 
 ```bash
-pacman -Q waybar-git fuzzel wofi wlogout mako 2>/dev/null || true
-grep -E '^(waybar-git|fuzzel|wofi|wlogout|mako)$' /var/lib/awtarchy/managed-packages 2>/dev/null || true
+pacman -Q waybar-git fuzzel wofi wlogout mako network-manager-applet blueman 2>/dev/null || true
+grep -E '^(waybar-git|fuzzel|wofi|wlogout|mako|network-manager-applet|blueman)$' \
+  /var/lib/awtarchy/managed-packages 2>/dev/null || true
 ```
 
 Watch the Quickshell log:
@@ -136,4 +148,4 @@ The conversion branch has passed repository-side checks for:
 - Quick Settings status/action backend fallbacks and persisted `sched-ext` profiles.
 - `git diff --check`.
 
-Actual rendering/input behavior still needs testing inside a real Arch + Hyprland + Quickshell session. In particular, verify DDC hardware routing, Wi-Fi password entry, Bluetooth pairing, popup placement, and that protected surfaces become black rectangles while the rest of an active screen recording continues normally. `nm-applet` and `blueman-applet` remain enabled as live-validation fallbacks for now.
+Actual rendering/input behavior still needs testing inside a real Arch + Hyprland + Quickshell session. In particular, verify DDC hardware routing, Wi-Fi password entry, Bluetooth pairing, popup placement, and that protected surfaces become black rectangles while the rest of an active screen recording continues normally. The migration retires `nm-applet` and `blueman-applet` only after the replacement Quickshell session starts successfully.

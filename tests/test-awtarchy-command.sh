@@ -54,6 +54,7 @@ release_root="${TMP}/awtarchy-v9.9.9"
 mkdir -p "$release_root"
 tar --exclude='.git' -C "$ROOT" -cf - . | tar -C "$release_root" -xf -
 tar -czf "${TMP}/release.tar.gz" -C "$TMP" "$(basename "$release_root")"
+STABLE_INSTALLER="${release_root}/awtarchy-install.sh"
 
 fakebin="${TMP}/fakebin"
 mkdir -p "$fakebin"
@@ -134,11 +135,11 @@ existing_output="$(
   HOME="$home" USER="$(id -un)" PATH="${fakebin}:$PATH" \
     AWTARCHY_SYSTEM_BIN_DIR="${TMP}/existing-system-bin" \
     AWTARCHY_TEST_ARCHIVE="${TMP}/release.tar.gz" \
-    bash "$INSTALLER_SOURCE"
+    bash "$STABLE_INSTALLER"
 )"
 grep -Fq 'Awtarchy is already installed' <<<"$existing_output" \
   || fail "installer did not detect the existing command"
-grep -Fq "verified against GitHub's latest release" <<<"$existing_output" \
+grep -Fq "Verifying the Awtarchy command against GitHub's latest release" <<<"$existing_output" \
   || fail "installer did not report latest-release verification"
 cmp -s "$home/.local/bin/awtarchy" "$release_root/local/bin/awtarchy" \
   || fail "installer did not replace the stale command launcher"
@@ -159,7 +160,7 @@ legacy_output="$(
   HOME="$legacy_home" USER="$(id -un)" PATH="${fakebin}:$PATH" \
     AWTARCHY_SYSTEM_BIN_DIR="${TMP}/legacy-system-bin" \
     AWTARCHY_TEST_ARCHIVE="${TMP}/release.tar.gz" \
-    AWTARCHY_INSTALL_TAG=v9.9.9 bash "$INSTALLER_SOURCE"
+    AWTARCHY_INSTALL_TAG=v9.9.9 bash "$STABLE_INSTALLER"
 )"
 assert_executable "$legacy_home/.local/bin/awtarchy"
 assert_executable "$legacy_home/.local/share/awtarchy/awtarchy-runtime.sh"
@@ -177,7 +178,7 @@ mkdir -p "$legacy_dry_home/.cache/awtarchy"
 printf 'tag=v0.8.0\n' >"$legacy_dry_home/.cache/awtarchy/version"
 legacy_dry_output="$(
   HOME="$legacy_dry_home" USER="$(id -un)" \
-    bash "$INSTALLER_SOURCE" --dry-run
+    bash "$STABLE_INSTALLER" --dry-run
 )"
 [[ ! -e "$legacy_dry_home/.local/bin/awtarchy" ]] \
   || fail "legacy dry-run installed the maintenance command"
