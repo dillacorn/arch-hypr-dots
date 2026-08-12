@@ -263,7 +263,12 @@ ShellRoot {
     Binding {
         target: FlyoutManager
         property: "barWindows"
-        value: barVariants.instances
+        value: {
+            const windows = [];
+            for (let i = 0; i < barVariants.instances.length; ++i)
+                windows.push(barVariants.instances[i]);
+            return windows;
+        }
     }
 
     // A non-interactive full-edge ghost shows only a different destination.
