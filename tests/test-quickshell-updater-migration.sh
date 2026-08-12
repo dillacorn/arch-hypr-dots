@@ -11,6 +11,9 @@ TEST_COMMIT="1111111111111111111111111111111111111111"
 TMP="$(mktemp -d)"
 
 cleanup() {
+  if [[ -s ${TMP}/hypridle.pid ]]; then
+    kill "$(<"${TMP}/hypridle.pid")" >/dev/null 2>&1 || true
+  fi
   rm -rf -- "$TMP"
 }
 trap cleanup EXIT
@@ -278,11 +281,42 @@ cat >"${fakebin}/pkill" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"${AWTARCHY_TEST_PKILL_LOG:?}"
+if [[ $* == *hypridle* && -n ${AWTARCHY_TEST_HYPRIDLE_STATE:-} ]]; then
+  rm -f -- "$AWTARCHY_TEST_HYPRIDLE_STATE"
+fi
+EOF
+
+cat >"${fakebin}/pgrep" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+state="${AWTARCHY_TEST_HYPRIDLE_STATE:?}"
+[[ -s $state ]] || exit 1
+value="$(<"$state")"
+if [[ $value =~ ^[0-9]+$ ]]; then
+  kill -0 "$value" 2>/dev/null
+else
+  [[ $value == stale ]]
+fi
+EOF
+
+cat >"${fakebin}/hypridle" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >"${AWTARCHY_TEST_HYPRIDLE_ARGS:?}"
+if [[ -e /proc/$$/fd/8 || -e /proc/$$/fd/9 ]]; then
+  : >"${AWTARCHY_TEST_HYPRIDLE_FD_LEAK_FILE:?}"
+fi
+printf '%s\n' "$$" >"${AWTARCHY_TEST_HYPRIDLE_PID:?}"
+printf '%s\n' "$$" >"${AWTARCHY_TEST_HYPRIDLE_STATE:?}"
+trap 'rm -f -- "${AWTARCHY_TEST_HYPRIDLE_STATE:?}"' EXIT
+while :; do
+  /bin/sleep 0.1
+done
 EOF
 
 cat >"${fakebin}/sleep" <<'EOF'
 #!/usr/bin/env bash
-exit 0
+/bin/sleep 0.001
 EOF
 
 chmod 0755 "${fakebin}/"*
@@ -458,6 +492,8 @@ cp -- "$package_state" "$managed_packages"
 : >"${TMP}/qs-kill.log"
 mkdir -p "${TMP}/runtime"
 : >"${TMP}/qs.state"
+printf '%s\n' stale >"${TMP}/hypridle.state"
+printf '%s\n' 1 >"${TMP}/runtime/awtarchy-quickshell-idle-hidden"
 
 update_env=(
   "HOME=$home"
@@ -484,6 +520,14 @@ update_env=(
   "AWTARCHY_TEST_QS_FD_LEAK_FILE=${TMP}/qs-fd-leak"
   "AWTARCHY_TEST_QS_STALL_QUIT=1"
   "AWTARCHY_TEST_QS_KILL_LOG=${TMP}/qs-kill.log"
+  "AWTARCHY_TEST_HYPRIDLE_STATE=${TMP}/hypridle.state"
+  "AWTARCHY_TEST_HYPRIDLE_PID=${TMP}/hypridle.pid"
+  "AWTARCHY_TEST_HYPRIDLE_ARGS=${TMP}/hypridle.args"
+  "AWTARCHY_TEST_HYPRIDLE_FD_LEAK_FILE=${TMP}/hypridle-fd-leak"
+  "HYPRIDLE_STOP_ATTEMPTS=3"
+  "HYPRIDLE_START_ATTEMPTS=20"
+  "HYPRIDLE_START_STABLE_CHECKS=3"
+  "HYPRIDLE_WAIT_INTERVAL=0.01"
 )
 
 hypr_hash_before="$(sha256sum "$home/.config/hypr/hyprland.lua" | awk '{print $1}')"
@@ -517,6 +561,14 @@ assert_retired_paths_absent "$home"
 assert_file "$home/.local/state/awtarchy/quickshell-connectivity-migration-complete"
 assert_file "${TMP}/qs.state"
 assert_absent "${TMP}/qs-fd-leak"
+assert_file "${TMP}/hypridle.pid"
+assert_absent "${TMP}/hypridle-fd-leak"
+grep -Fxq -- "-c ${home}/.config/hypr/hypridle.conf" "${TMP}/hypridle.args" \
+  || fail "updater did not restart Hypridle with the managed config"
+[[ $(<"${TMP}/runtime/awtarchy-quickshell-idle-hidden") == 0 ]] \
+  || fail "Hypridle restart did not restore the idle-hidden bar state"
+grep -Fq 'Restarting Hypridle to load updated idle callbacks...' "${TMP}/update.out" \
+  || fail "updater did not report the Hypridle callback refresh"
 grep -Fxq -- '-c awtarchy kill' "${TMP}/qs-kill.log" \
   || fail "Quickshell manager did not force a stalled instance to stop"
 grep -Fxq "tag=quickshell-conversion-testing@${TEST_COMMIT}" \

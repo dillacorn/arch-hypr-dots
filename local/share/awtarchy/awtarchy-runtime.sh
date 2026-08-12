@@ -4168,6 +4168,28 @@ run_target() {
   fi
 }
 
+restart_hypridle_after_update() {
+  local helper="${HOME_DIR}/.config/hypr/scripts/hypridle_restart.sh"
+  local target_uid=""
+
+  [[ -f "$helper" ]] || return 0
+
+  # A direct desktop update has the Hyprland signature. When an update was
+  # launched through sudo and that variable was filtered, an existing
+  # per-user Hypridle process is enough evidence that it should be refreshed.
+  if [[ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
+    command -v pgrep >/dev/null 2>&1 || return 0
+    target_uid="$(id -u "$TARGET_USER" 2>/dev/null || true)"
+    [[ "$target_uid" =~ ^[0-9]+$ ]] || return 0
+    run_target pgrep -u "$target_uid" -x hypridle >/dev/null 2>&1 || return 0
+  fi
+
+  log "Restarting Hypridle to load updated idle callbacks..."
+  if ! run_target bash "$helper" 9>&-; then
+    warn "Hypridle could not be restarted automatically. Run ${helper} after the update."
+  fi
+}
+
 init_target_user() {
   if [[ "${EUID}" -eq 0 && -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
     TARGET_USER="${SUDO_USER}"
@@ -5869,6 +5891,7 @@ main() {
   write_audit "$source_label" "$active_theme"
   [[ "${EUID}" -eq 0 ]] && chown -R "${TARGET_USER}:${TARGET_USER}" "$STATE_DIR" 2>/dev/null || true
   command -v hyprctl >/dev/null 2>&1 && run_target hyprctl reload >/dev/null 2>&1 || true
+  restart_hypridle_after_update
   command -v makoctl >/dev/null 2>&1 && run_target makoctl reload >/dev/null 2>&1 || true
 
   if (( ${#BACKUPS[@]} )); then
