@@ -233,17 +233,9 @@ Singleton {
     function buildCpuTooltip() {
         const names = Object.keys(coreUsage).sort((a, b) => Number(a.slice(3)) - Number(b.slice(3)));
         let lines = ["CPU usage: " + cpuUsage + "%"];
-        let row = [];
 
-        for (let i = 0; i < names.length; ++i) {
-            row.push(names[i].toUpperCase() + ": " + coreUsage[names[i]] + "%");
-            if (row.length === 4) {
-                lines.push(row.join("   "));
-                row = [];
-            }
-        }
-        if (row.length > 0)
-            lines.push(row.join("   "));
+        for (let i = 0; i < names.length; ++i)
+            lines.push(names[i].toUpperCase() + ": " + coreUsage[names[i]] + "%");
 
         return lines.join("\n");
     }

@@ -848,7 +848,9 @@ Singleton {
                             Layout.preferredHeight: 26
                             color: root.settingsOpen ? Theme.focus
                                 : (settingsMouse.containsMouse ? Theme.subtleHover : "transparent")
-                            border.width: 0
+                            border.width: 1
+                            border.color: root.settingsOpen ? Theme.focus : Theme.muted
+                            radius: 0
 
                             Text {
                                 anchors.centerIn: parent
@@ -1021,7 +1023,9 @@ Singleton {
                 x: panel.width - width - 6
                 y: 5
                 color: closeMouse.containsMouse ? Theme.focus : Theme.active
-                border.width: 0
+                border.width: 1
+                border.color: closeMouse.containsMouse ? Theme.focus : Theme.muted
+                radius: 0
                 z: 20
 
                 Text {

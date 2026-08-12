@@ -75,7 +75,7 @@ src = Path(sys.argv[1])
 dst = Path(sys.argv[2])
 text = src.read_text(encoding="utf-8")
 
-legacy = {"waybar-git", "fuzzel", "wlogout", "mako", "wofi"}
+legacy = {"waybar", "waybar-git", "fuzzel", "wlogout", "mako", "wofi"}
 legacy_connectivity = {"network-manager-applet", "blueman"}
 
 # Arch package group: Quickshell replaces the old shell UI packages.
@@ -174,7 +174,7 @@ remove_legacy_shell_packages_stage() {
   local managed_file="${AWTARCHY_MANAGED_PACKAGES_FILE:-/var/lib/awtarchy/managed-packages}"
   local marker="${HOME_DIR}/.local/state/awtarchy/quickshell-connectivity-migration-complete"
   local pkg tmp cleanup_ok=1
-  local -a obsolete=(waybar-git fuzzel wlogout mako wofi network-manager-applet blueman)
+  local -a obsolete=(waybar waybar-git fuzzel wlogout mako wofi network-manager-applet blueman)
 
   for pkg in "${obsolete[@]}"; do
     pacman -Q "$pkg" >/dev/null 2>&1 || continue
@@ -208,18 +208,37 @@ remove_legacy_shell_packages_stage() {
 
 '''
 legacy_file_cleanup_function = r'''
+remove_legacy_shell_path_stage() {
+  local dest="$1" candidate
+
+  for candidate in "$dest" "${dest}.backup" "${dest}.backup."*; do
+    [[ -e "$candidate" || -L "$candidate" ]] || continue
+    rm -rf -- "$candidate"
+  done
+}
+
 remove_legacy_shell_files_stage() {
   local scripts_dir="${HOME_DIR}/.config/hypr/scripts"
   local applications_dir="${HOME_DIR}/.local/share/applications"
   local obsolete
 
-  rm -rf -- \
+  for obsolete in \
     "${HOME_DIR}/.config/waybar" \
     "${HOME_DIR}/.config/fuzzel" \
     "${HOME_DIR}/.config/mako" \
     "${HOME_DIR}/.config/wlogout" \
     "${HOME_DIR}/.config/wofi" \
-    "${HOME_DIR}/.cache/waybar"
+    "${HOME_DIR}/.cache/waybar" \
+    "${HOME_DIR}/.cache/fuzzel" \
+    "${HOME_DIR}/.cache/wofi"
+  do
+    remove_legacy_shell_path_stage "$obsolete"
+  done
+
+  for obsolete in "${HOME_DIR}/.cache/wofi-"*; do
+    [[ -e "$obsolete" || -L "$obsolete" ]] || continue
+    remove_legacy_shell_path_stage "$obsolete"
+  done
 
   for obsolete in \
     cliphist-fuzzel.sh \
@@ -235,13 +254,17 @@ remove_legacy_shell_files_stage() {
     waybar_toggle_idle.sh \
     wlogout_toggle.sh
   do
-    rm -f -- "${scripts_dir}/${obsolete}"
+    remove_legacy_shell_path_stage "${scripts_dir}/${obsolete}"
   done
 
-  rm -f -- \
-    "${applications_dir}/waybar_flip.desktop" \
-    "${applications_dir}/waybar_rotate.desktop" \
-    "${applications_dir}/waybar_toggle.desktop"
+  for obsolete in \
+    hypr_quicksettings.desktop \
+    waybar_flip.desktop \
+    waybar_rotate.desktop \
+    waybar_toggle.desktop
+  do
+    remove_legacy_shell_path_stage "${applications_dir}/${obsolete}"
+  done
 }
 
 '''
@@ -315,6 +338,8 @@ quickshell_update_legacy_paths() {
     .config/wlogout \
     .config/wofi \
     .cache/waybar \
+    .cache/fuzzel \
+    .cache/wofi \
     .config/hypr/scripts/cliphist-fuzzel.sh \
     .config/hypr/scripts/cliphist-wofi.sh \
     .config/hypr/scripts/fuzzel_toggle.sh \
@@ -327,21 +352,38 @@ quickshell_update_legacy_paths() {
     .config/hypr/scripts/waybar_toggle.sh \
     .config/hypr/scripts/waybar_toggle_idle.sh \
     .config/hypr/scripts/wlogout_toggle.sh \
+    .local/share/applications/hypr_quicksettings.desktop \
     .local/share/applications/waybar_flip.desktop \
     .local/share/applications/waybar_rotate.desktop \
     .local/share/applications/waybar_toggle.desktop
 }
 
-prepare_quickshell_update_legacy_backups() {
+quickshell_update_existing_legacy_paths() {
+  local rel dest candidate
+
+  while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    dest="${HOME_DIR}/${rel}"
+    for candidate in "$dest" "${dest}.backup" "${dest}.backup."*; do
+      [[ -e "$candidate" || -L "$candidate" ]] || continue
+      printf '%s\n' "${candidate#"${HOME_DIR}/"}"
+    done
+  done < <(quickshell_update_legacy_paths)
+
+  for candidate in "${HOME_DIR}/.cache/wofi-"*; do
+    [[ -e "$candidate" || -L "$candidate" ]] || continue
+    printf '%s\n' "${candidate#"${HOME_DIR}/"}"
+  done
+}
+
+snapshot_quickshell_update_legacy_paths() {
   local rel dest
   while IFS= read -r rel; do
     [[ -n "$rel" ]] || continue
     dest="${HOME_DIR}/${rel}"
-    [[ -e "$dest" || -L "$dest" ]] || continue
     snapshot_for_rollback "$rel" "$dest"
     ROLLBACK_PATHS+=("$rel")
-    make_persistent_backup "$dest"
-  done < <(quickshell_update_legacy_paths)
+  done < <(quickshell_update_existing_legacy_paths)
 }
 
 remove_quickshell_update_legacy_files() {
@@ -349,14 +391,13 @@ remove_quickshell_update_legacy_files() {
   while IFS= read -r rel; do
     [[ -n "$rel" ]] || continue
     dest="${HOME_DIR}/${rel}"
-    [[ -e "$dest" || -L "$dest" ]] || continue
     if ! rm -rf -- "$dest"; then
       FAILED+=("$rel")
       return 1
     fi
     CHANGED+=("$rel")
     REMOVED+=("$rel")
-  done < <(quickshell_update_legacy_paths)
+  done < <(quickshell_update_existing_legacy_paths)
 }
 
 reload_quickshell_update_hyprland() {
@@ -390,7 +431,7 @@ remove_quickshell_update_legacy_packages() {
   local marker="${STATE_DIR}/quickshell-connectivity-migration-complete"
   local managed_file="${AWTARCHY_MANAGED_PACKAGES_FILE:-/var/lib/awtarchy/managed-packages}"
   local pkg process tmp
-  local -a obsolete_packages=(waybar-git fuzzel wlogout mako wofi network-manager-applet blueman)
+  local -a obsolete_packages=(waybar waybar-git fuzzel wlogout mako wofi network-manager-applet blueman)
   local -a obsolete_processes=(waybar fuzzel wlogout mako wofi nm-applet blueman-applet blueman-manager)
   local -a installed=()
 
@@ -414,7 +455,7 @@ remove_quickshell_update_legacy_packages() {
 
   if [[ -f "$managed_file" ]]; then
     tmp="$(mktemp)"
-    grep -Ev '^(waybar-git|fuzzel|wlogout|mako|wofi|network-manager-applet|blueman)$' "$managed_file" >"$tmp" || true
+    grep -Ev '^(waybar|waybar-git|fuzzel|wlogout|mako|wofi|network-manager-applet|blueman)$' "$managed_file" >"$tmp" || true
     if [[ "${EUID}" -eq 0 ]]; then
       install -m 0644 "$tmp" "$managed_file" \
         || warn "Retired packages were removed but the Awtarchy package ledger could not be updated."
@@ -467,7 +508,7 @@ update_apply_marker = '''  apply_plan "$plan_file" || die "Update failed and use
   hardware_reconcile
 '''
 update_apply_replacement = '''  ensure_quickshell_update_prerequisites
-  prepare_quickshell_update_legacy_backups
+  snapshot_quickshell_update_legacy_paths
 
   apply_plan "$plan_file" || die "Update failed and user files were rolled back."
   if [[ "$UPDATE_MODE" == "preserve" && -n "$fuzzel_anchor" ]]; then

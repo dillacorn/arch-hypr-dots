@@ -106,11 +106,24 @@ Singleton {
             Math.round(Number(network && network.signalStrength || 0) * 100)));
     }
 
+    function wifiSignalIcon(network) {
+        const percent = wifiSignalPercent(network);
+        if (percent >= 75)
+            return "󰤨";
+        if (percent >= 50)
+            return "󰤥";
+        if (percent >= 25)
+            return "󰤢";
+        if (percent > 0)
+            return "󰤟";
+        return "󰤯";
+    }
+
     function buildBarLabel() {
         if (wiredConnected)
             return "󰈀";
         if (wifiConnected)
-            return " " + wifiSignalPercent(connectedWifiNetworks[0]) + "%";
+            return wifiSignalIcon(connectedWifiNetworks[0]);
         if (wiredPresent)
             return "󰈀";
         if (wifiPresent)
@@ -122,7 +135,7 @@ Singleton {
         if (wiredConnected)
             return "󰈀";
         if (wifiConnected)
-            return "\n" + wifiSignalPercent(connectedWifiNetworks[0]) + "%";
+            return wifiSignalIcon(connectedWifiNetworks[0]);
         if (wiredPresent)
             return "󰈀";
         if (wifiPresent)

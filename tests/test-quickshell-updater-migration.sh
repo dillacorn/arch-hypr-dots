@@ -38,6 +38,47 @@ assert_no_package() {
 
 TARGET_USER="$(id -un)"
 
+RETIRED_DIRS=(
+  .config/waybar
+  .config/fuzzel
+  .config/mako
+  .config/wlogout
+  .config/wofi
+  .cache/waybar
+  .cache/fuzzel
+  .cache/wofi
+)
+RETIRED_FILES=(
+  .config/hypr/scripts/cliphist-fuzzel.sh
+  .config/hypr/scripts/cliphist-wofi.sh
+  .config/hypr/scripts/fuzzel_toggle.sh
+  .config/hypr/scripts/mako_dismiss.sh
+  .config/hypr/scripts/waybar.sh
+  .config/hypr/scripts/waybar_flip.sh
+  .config/hypr/scripts/waybar_ready_sound.sh
+  .config/hypr/scripts/waybar_restore_resume.sh
+  .config/hypr/scripts/waybar_rotate.sh
+  .config/hypr/scripts/waybar_toggle.sh
+  .config/hypr/scripts/waybar_toggle_idle.sh
+  .config/hypr/scripts/wlogout_toggle.sh
+  .local/share/applications/hypr_quicksettings.desktop
+  .local/share/applications/waybar_flip.desktop
+  .local/share/applications/waybar_rotate.desktop
+  .local/share/applications/waybar_toggle.desktop
+)
+
+assert_retired_paths_absent() {
+  local home="$1" rel
+  for rel in "${RETIRED_DIRS[@]}" "${RETIRED_FILES[@]}"; do
+    assert_absent "${home}/${rel}"
+    assert_absent "${home}/${rel}.backup"
+  done
+  assert_absent "${home}/.config/fuzzel.backup.20260812-000000"
+  assert_absent "${home}/.local/share/applications/hypr_quicksettings.desktop.backup.20260812-000000"
+  assert_absent "${home}/.cache/wofi-drun"
+  assert_absent "${home}/.cache/wofi-drun.backup"
+}
+
 fakebin="${TMP}/fakebin"
 mkdir -p "$fakebin"
 
@@ -239,16 +280,22 @@ printf '%s\n' 'font=monospace 10' >"$previous_root/config/mako/config"
 tar -czf "${TMP}/previous-release.tar.gz" -C "$previous_parent" "$(basename "$previous_root")"
 
 seed_old_home() {
-  local home="$1"
+  local home="$1" rel
   mkdir -p \
     "$home/.config/hypr/scripts" \
-    "$home/.config/waybar" \
-    "$home/.config/fuzzel" \
-    "$home/.config/mako" \
-    "$home/.cache/waybar" \
+    "$home/.local/share/applications" \
     "$home/.local/bin" \
     "$home/.local/share/awtarchy" \
     "$home/.local/state/awtarchy"
+
+  for rel in "${RETIRED_DIRS[@]}"; do
+    mkdir -p "${home}/${rel}"
+    printf '%s\n' 'retired Awtarchy directory' >"${home}/${rel}/retired-test-file"
+  done
+  for rel in "${RETIRED_FILES[@]}"; do
+    mkdir -p "$(dirname "${home}/${rel}")"
+    printf '%s\n' 'retired Awtarchy file' >"${home}/${rel}"
+  done
 
   printf '%s\n' 'return { old = true }' >"$home/.config/hypr/hyprland.lua"
   printf '%s\n' '# old waybar helper' >"$home/.config/hypr/scripts/waybar.sh"
@@ -257,6 +304,17 @@ seed_old_home() {
   printf '%s\n' 'font=monospace 10' >"$home/.config/mako/config"
   printf '%s\n' '{"enabled":true,"monitors":{}}' >"$home/.cache/waybar/state.json"
   chmod 0755 "$home/.config/hypr/scripts/waybar.sh"
+
+  for rel in "${RETIRED_DIRS[@]}" "${RETIRED_FILES[@]}"; do
+    cp -a -- "${home}/${rel}" "${home}/${rel}.backup"
+  done
+  cp -a -- "$home/.config/fuzzel" \
+    "$home/.config/fuzzel.backup.20260812-000000"
+  cp -a -- "$home/.local/share/applications/hypr_quicksettings.desktop" \
+    "$home/.local/share/applications/hypr_quicksettings.desktop.backup.20260812-000000"
+  printf '%s\n' 'retired Wofi launch cache' >"$home/.cache/wofi-drun"
+  cp -a -- "$home/.cache/wofi-drun" "$home/.cache/wofi-drun.backup"
+
   printf '%s\n' 'tag=v2.0.0-1' 'installed_at=2026-08-01T00:00:00-04:00' \
     >"$home/.local/state/awtarchy/config-version"
 
@@ -266,7 +324,7 @@ seed_old_home() {
 
 write_old_package_state() {
   printf '%s\n' \
-    waybar-git fuzzel wlogout mako wofi network-manager-applet blueman \
+    waybar waybar-git fuzzel wlogout mako wofi network-manager-applet blueman \
     networkmanager bluez bluez-utils jq \
     >"$1"
 }
@@ -371,7 +429,7 @@ env "${update_env[@]}" "$installed_launcher" update \
 
 assert_package "$package_state" quickshell
 assert_package "$package_state" upower
-for pkg in waybar-git fuzzel wlogout mako wofi network-manager-applet blueman; do
+for pkg in waybar waybar-git fuzzel wlogout mako wofi network-manager-applet blueman; do
   assert_no_package "$package_state" "$pkg"
 done
 assert_package "$managed_packages" quickshell
@@ -379,14 +437,7 @@ assert_package "$managed_packages" upower
 assert_no_package "$managed_packages" waybar-git
 
 assert_file "$home/.config/quickshell/awtarchy/shell.qml"
-assert_absent "$home/.config/waybar"
-assert_absent "$home/.config/fuzzel"
-assert_absent "$home/.config/mako"
-assert_absent "$home/.config/hypr/scripts/waybar.sh"
-assert_file "$home/.config/waybar.backup/config"
-grep -Fxq 'custom laptop waybar' "$home/.config/waybar.backup/config" \
-  || fail "custom Waybar config was not retained in the migration backup"
-assert_file "$home/.config/hypr/scripts/waybar.sh.backup"
+assert_retired_paths_absent "$home"
 assert_file "$home/.local/state/awtarchy/quickshell-connectivity-migration-complete"
 assert_file "${TMP}/qs.state"
 grep -Fxq "tag=quickshell-conversion-testing@${TEST_COMMIT}" \
@@ -451,8 +502,14 @@ grep -Fxq 'return { old = true }' "$failure_home/.config/hypr/hyprland.lua" \
   || fail "rollback did not restore the old Hyprland config"
 grep -Fxq 'custom laptop waybar' "$failure_home/.config/waybar/config" \
   || fail "rollback did not restore the custom Waybar config"
+assert_file "$failure_home/.config/waybar.backup/config"
+assert_file "$failure_home/.config/fuzzel.backup.20260812-000000/fuzzel.ini"
+assert_file "$failure_home/.local/share/applications/hypr_quicksettings.desktop.backup"
+assert_file "$failure_home/.local/share/applications/hypr_quicksettings.desktop.backup.20260812-000000"
+assert_file "$failure_home/.cache/wofi-drun"
+assert_file "$failure_home/.cache/wofi-drun.backup"
 assert_absent "$failure_home/.config/quickshell/awtarchy/shell.qml"
-for pkg in waybar-git fuzzel wlogout mako wofi network-manager-applet blueman; do
+for pkg in waybar waybar-git fuzzel wlogout mako wofi network-manager-applet blueman; do
   assert_package "$failure_packages" "$pkg"
 done
 assert_package "$failure_packages" quickshell

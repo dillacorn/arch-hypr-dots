@@ -26,7 +26,7 @@ PanelWindow {
     readonly property int smallIconSize: Math.max(8, Math.min(barSize - 6, Math.round(14 * iconScale)))
     readonly property int verticalItemSize: Math.max(28, smallIconSize + 8)
 
-    property string brightnessText: " ?"
+    property string brightnessText: ""
     property string brightnessTooltip: "Brightness: DDC unavailable"
     property int brightnessValue: -1
     property bool clockDate: false
@@ -142,7 +142,7 @@ PanelWindow {
     function parseBrightness(line) {
         try {
             const data = JSON.parse(line.trim());
-            brightnessText = data.text || " ?";
+            brightnessText = data.text || "";
             brightnessTooltip = data.tooltip || "Brightness";
             const percentage = Number(data.percentage);
             if (Number.isFinite(percentage))
@@ -519,6 +519,12 @@ PanelWindow {
         anchors.rightMargin: 6
         visible: !bar.vertical
 
+        readonly property real titleMargin: 8
+        readonly property real titlePreferredWidth: Math.min(width * 0.30, 520)
+        readonly property real titleLeftBound: leftModules.x + leftModules.width + titleMargin
+        readonly property real titleRightBound: rightModules.x - titleMargin
+        readonly property real titleAvailableWidth: Math.max(0, titleRightBound - titleLeftBound)
+
         Row {
             id: leftModules
             anchors.left: parent.left
@@ -610,8 +616,16 @@ PanelWindow {
         }
 
         Text {
-            anchors.centerIn: parent
-            width: Math.min(parent.width * 0.30, 520)
+            anchors.verticalCenter: parent.verticalCenter
+            width: Math.min(horizontalLayout.titlePreferredWidth,
+                horizontalLayout.titleAvailableWidth)
+            x: {
+                const centeredX = (horizontalLayout.width - width) / 2;
+                const maximumX = horizontalLayout.titleRightBound - width;
+                return Math.max(horizontalLayout.titleLeftBound,
+                    Math.min(centeredX, maximumX));
+            }
+            visible: width > 0
             text: Hyprland.activeToplevel ? Hyprland.activeToplevel.title : ""
             color: Theme.foreground
             font.family: Theme.fontFamily
@@ -622,6 +636,7 @@ PanelWindow {
         }
 
         Row {
+            id: rightModules
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.bottom: parent.bottom
@@ -653,9 +668,11 @@ PanelWindow {
             BarControl {
                 visible: UPower.displayDevice.ready && UPower.displayDevice.isLaptopBattery
                 readonly property int pct: Math.round(UPower.displayDevice.percentage * 100)
-                label: (UPower.displayDevice.changeRate > 0 ? "" : bar.batteryIcon(pct)) + " " + pct
-                foreground: pct <= 15 && UPower.displayDevice.changeRate <= 0 ? Theme.critical : (UPower.displayDevice.changeRate > 0 ? Theme.charging : Theme.foreground)
-                tooltip: "Battery: " + pct + "%"
+                readonly property bool pluggedIn: !UPower.onBattery
+                label: bar.batteryIcon(pct) + (pluggedIn ? "  " : " ") + pct
+                foreground: pct <= 15 && !pluggedIn ? Theme.critical : Theme.foreground
+                tooltip: "Battery: " + pct + "%\nPower: "
+                    + (pluggedIn ? "plugged in" : "battery")
             }
 
             BarControl {
@@ -847,7 +864,8 @@ PanelWindow {
 
             BarControl {
                 vertical: true; fixedWidth: bar.barSize
-                label: "\n" + (bar.brightnessValue >= 0 ? bar.brightnessValue + "%" : "?")
+                label: bar.brightnessValue >= 0
+                    ? "\n" + bar.brightnessValue + "%" : ""
                 tooltip: bar.brightnessTooltip
                 wheelActivationDelay: 400
                 onClicked: QuickSettings.toggleForScreen(bar.screen)
@@ -860,9 +878,11 @@ PanelWindow {
                 visible: UPower.displayDevice.ready && UPower.displayDevice.isLaptopBattery
                 vertical: true; fixedWidth: bar.barSize
                 readonly property int pct: Math.round(UPower.displayDevice.percentage * 100)
-                label: (UPower.displayDevice.changeRate > 0 ? "" : bar.batteryIcon(pct)) + "\n" + pct
-                foreground: pct <= 15 && UPower.displayDevice.changeRate <= 0 ? Theme.critical : (UPower.displayDevice.changeRate > 0 ? Theme.charging : Theme.foreground)
-                tooltip: "Battery: " + pct + "%"
+                readonly property bool pluggedIn: !UPower.onBattery
+                label: bar.batteryIcon(pct) + (pluggedIn ? "\n" : "") + "\n" + pct
+                foreground: pct <= 15 && !pluggedIn ? Theme.critical : Theme.foreground
+                tooltip: "Battery: " + pct + "%\nPower: "
+                    + (pluggedIn ? "plugged in" : "battery")
             }
 
             BarControl {

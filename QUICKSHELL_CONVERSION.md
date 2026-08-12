@@ -1,6 +1,6 @@
 # Quickshell conversion testing
 
-This branch replaces Awtarchy's Waybar, Fuzzel, Wofi, Mako, and wlogout runtime stack with one Quickshell shell.
+This branch replaces Awtarchy's Waybar, Fuzzel, Wofi, Mako, wlogout, nm-applet, and Blueman UI runtime with one Quickshell shell.
 
 ## Replaced components
 
@@ -38,12 +38,17 @@ The Awtarchy installer now installs the official Arch `quickshell` package.
 These packages are no longer selected by Awtarchy:
 
 - `waybar-git`
+- `waybar`
 - `fuzzel`
 - `wofi`
 - `wlogout`
 - `mako`
+- `network-manager-applet`
+- `blueman`
 
-During a full reinstall/conversion, an obsolete package is removed automatically only when it is recorded in `/var/lib/awtarchy/managed-packages`. If one of these packages was installed independently by the user, Awtarchy leaves it installed.
+During conversion, the normal `awtarchy` runtime and the temporary `awtarchy-quickshell` runtime remove these retired packages after the Quickshell replacement is installed. The package ledger is updated at the same time.
+
+NetworkManager connection profiles and BlueZ pairing state are retained because the Quickshell network and Bluetooth panels use those same system services and existing connections.
 
 ## Config conversion
 
@@ -53,6 +58,8 @@ Fresh/reinstall config copying now includes:
 - `~/.config/quickshell`
 
 The repository no longer ships the old `config/waybar`, `config/fuzzel`, `config/wofi`, `config/mako`, or `config/wlogout` trees.
+
+Conversion permanently removes the retired config trees, Fuzzel/Wofi/Waybar caches, Waybar/Fuzzel/Wofi/Mako/wlogout helper scripts, old Waybar and Hypr Quick Settings desktop launchers, and any `.backup` files previously created specifically for those retired paths. Awtarchy does not create persistent backups for abandoned components. The updater still uses temporary rollback snapshots until Hyprland and Quickshell validation succeeds, and still backs up personalized files that remain managed by Awtarchy.
 
 Awtarchy helper scripts previously stored below `config/waybar/scripts` were moved to `config/hypr/scripts` because they are Awtarchy/Hyprland helpers, not Waybar components.
 
@@ -93,7 +100,7 @@ awtarchy-quickshell update
 
 The installer command only creates `awtarchy-quickshell` and its separate testing runtime/state. It does not replace the normal `awtarchy` command or change packages and managed configs. Each review or update resolves the current `quickshell-conversion-testing` head, refreshes the testing command from that exact commit, and pins the entire operation to the same commit.
 
-Review mode does not change managed configs or packages. The update installs `quickshell` and `upower`, backs up retired UI configs, applies preserve-mode config merging, verifies that Quickshell starts, and only then removes the retired shell packages.
+Review mode does not change managed configs or packages. The update installs `quickshell` and `upower`, takes temporary rollback snapshots, applies preserve-mode config merging, verifies that Quickshell starts, and only then permanently removes the retired shell packages and files.
 
 For a fresh installation or an intentional clean full reinstall, use `sudo ./awtarchy-install.sh --reinstall --no-reboot` instead.
 
@@ -121,8 +128,8 @@ Quick Settings can also be opened without the bar:
 Check that Awtarchy no longer owns the old packages:
 
 ```bash
-pacman -Q waybar-git fuzzel wofi wlogout mako network-manager-applet blueman 2>/dev/null || true
-grep -E '^(waybar-git|fuzzel|wofi|wlogout|mako|network-manager-applet|blueman)$' \
+pacman -Q waybar waybar-git fuzzel wofi wlogout mako network-manager-applet blueman 2>/dev/null || true
+grep -E '^(waybar|waybar-git|fuzzel|wofi|wlogout|mako|network-manager-applet|blueman)$' \
   /var/lib/awtarchy/managed-packages 2>/dev/null || true
 ```
 
@@ -139,6 +146,7 @@ The conversion branch has passed repository-side checks for:
 - `bash -n` on the installer/runtime and Hypr shell scripts.
 - Runtime package/default selection: Quickshell present and the legacy shell UI packages absent.
 - Runtime config-copy selection: Quickshell present and the legacy shell UI config directories absent.
+- Successful migration permanently removes retired files and their old migration backups while failed startup restores the pre-migration state.
 - Hyprland autostart: Quickshell direct start and no Mako start.
 - Quickshell bar helper paths: no dependency on `~/.config/waybar/scripts`.
 - Converted themes: no legacy shell-program theme tokens.

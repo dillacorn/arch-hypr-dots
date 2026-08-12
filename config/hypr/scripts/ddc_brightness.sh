@@ -217,7 +217,7 @@ print_status_for_monitor() {
         jq -cn \
           --arg monitor "$monitor" \
           '{
-            text:" ?",
+            text:"",
             tooltip:("Brightness " + $monitor + ": DDC unavailable"),
             class:["error"]
           }'
@@ -255,7 +255,7 @@ print_status() {
 
   monitor="$(resolve_monitor)" || {
     jq -cn \
-      '{text:" ?",tooltip:"No Hyprland monitor found",class:["error"]}'
+      '{text:"",tooltip:"No Hyprland monitor found",class:["error"]}'
     return 0
   }
 
