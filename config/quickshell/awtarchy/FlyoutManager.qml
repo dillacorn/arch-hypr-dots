@@ -54,17 +54,25 @@ QtObject {
         return barMonitor.length > 0 ? barMonitor : focusedMonitorName();
     }
 
-    function claim(surface) {
-        const targetMonitor = consumeTargetMonitor();
+    function claim(surface, monitorName) {
+        const explicitMonitor = String(monitorName || "");
+        let targetMonitor = "";
+
+        if (explicitMonitor.length > 0) {
+            targetMonitor = explicitMonitor;
+            // Do not let a bar click cached for this request leak into the next
+            // flyout open. Callers that already know their ShellScreen should
+            // always be authoritative.
+            recentBarMonitorName = "";
+            recentBarMonitorTimestamp = 0;
+        } else {
+            targetMonitor = consumeTargetMonitor();
+        }
 
         // A single FloatingWindow instance cannot be retargeted safely while
-        // mapped. Changing its QsWindow.screen across monitors causes Qt to
-        // tear down/recreate the native toplevel; Hyprland can focus that
-        // transient replacement on the old monitor and warp the cursor there.
-        // Every floating menu calls claim() before assigning its target screen,
-        // so close a same-surface cross-monitor instance here while it is still
-        // on the old screen. The caller then retargets the hidden window and
-        // maps it through the prepared-position path.
+        // mapped. Legacy callers still rely on this guard. Surfaces converted
+        // to a backingWindowVisible handoff call claim only after their old
+        // native window has actually disappeared, making this branch harmless.
         if (activeSurface === surface
             && activeMonitorName.length > 0
             && targetMonitor.length > 0
