@@ -153,6 +153,17 @@ ShellRoot {
     readonly property bool powerReady: PowerMenu !== null
     readonly property bool themesReady: ThemePicker !== null
 
+    // Escape always closes the active Awtarchy flyout regardless of which child
+    // control currently owns focus. Existing per-window handlers remain valid,
+    // but this provides a consistent application-level fallback.
+    Shortcut {
+        sequence: "Escape"
+        context: Qt.ApplicationShortcut
+        enabled: String(FlyoutManager.activeSurface || "").length > 0
+        autoRepeat: false
+        onActivated: root.closeActiveFloatingSurface()
+    }
+
     Process {
         id: runtimeRules
         running: true
