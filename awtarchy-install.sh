@@ -413,15 +413,17 @@ start_quickshell_update_shell() {
   local manager="${HOME_DIR}/.config/hypr/scripts/quickshell.sh"
   local status=""
   [[ -f "$manager" ]] || return 1
-  run_target bash "$manager" restart || return 1
-  status="$(run_target bash "$manager" status 2>/dev/null || true)"
+  # Descriptor 9 owns the updater lock. Keep it in this runtime, but do not
+  # let the long-lived Quickshell process or its children inherit it.
+  run_target bash "$manager" restart 9>&- || return 1
+  status="$(run_target bash "$manager" status 9>&- 2>/dev/null || true)"
   [[ "$status" == "running" ]]
 }
 
 rollback_quickshell_update() {
   local manager="${HOME_DIR}/.config/hypr/scripts/quickshell.sh"
   if [[ -f "$manager" ]]; then
-    run_target bash "$manager" stop >/dev/null 2>&1 || true
+    run_target bash "$manager" stop 9>&- >/dev/null 2>&1 || true
   fi
   rollback_changes
   reload_quickshell_update_hyprland || true

@@ -251,6 +251,9 @@ cat >"${fakebin}/qs" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 state="${AWTARCHY_TEST_QS_STATE:?}"
+if [[ -e /proc/$$/fd/9 ]]; then
+  : >"${AWTARCHY_TEST_QS_FD_LEAK_FILE:?}"
+fi
 if [[ $* == *'ipc call control ping'* ]]; then
   [[ -f $state ]] || exit 1
   printf '%s\n' ok
@@ -394,6 +397,8 @@ grep -Fq 'ensure_quickshell_update_prerequisites' "$installed_runtime" \
   || fail "testing runtime did not receive updater migration prerequisites"
 grep -Fq 'start_quickshell_update_shell' "$installed_runtime" \
   || fail "testing runtime did not receive live shell validation"
+grep -Fq 'restart 9>&-' "$installed_runtime" \
+  || fail "testing runtime does not close the updater lock for Quickshell"
 
 failure_home="${TMP}/failure-home"
 cp -a -- "$home" "$failure_home"
@@ -429,6 +434,7 @@ update_env=(
   "AWTARCHY_TEST_PKILL_LOG=${TMP}/pkill.log"
   "AWTARCHY_TEST_QS_STATE=${TMP}/qs.state"
   "AWTARCHY_TEST_QS_FAIL_FILE=${TMP}/qs.fail"
+  "AWTARCHY_TEST_QS_FD_LEAK_FILE=${TMP}/qs-fd-leak"
 )
 
 hypr_hash_before="$(sha256sum "$home/.config/hypr/hyprland.lua" | awk '{print $1}')"
@@ -461,6 +467,7 @@ assert_file "$home/.config/quickshell/awtarchy/shell.qml"
 assert_retired_paths_absent "$home"
 assert_file "$home/.local/state/awtarchy/quickshell-connectivity-migration-complete"
 assert_file "${TMP}/qs.state"
+assert_absent "${TMP}/qs-fd-leak"
 grep -Fxq "tag=quickshell-conversion-testing@${TEST_COMMIT}" \
   "$home/.local/state/awtarchy/config-version" \
   || fail "config version did not record the exact testing commit"
@@ -508,6 +515,7 @@ failure_env=(
   "AWTARCHY_TEST_PKILL_LOG=${TMP}/failure-pkill.log"
   "AWTARCHY_TEST_QS_STATE=${TMP}/failure-qs.state"
   "AWTARCHY_TEST_QS_FAIL_FILE=${TMP}/failure-qs.fail"
+  "AWTARCHY_TEST_QS_FD_LEAK_FILE=${TMP}/failure-qs-fd-leak"
 )
 
 set +e
@@ -516,6 +524,7 @@ env "${failure_env[@]}" "$failure_home/.local/bin/awtarchy-quickshell" update \
 failure_rc=$?
 set -e
 (( failure_rc != 0 )) || fail "forced Quickshell startup failure unexpectedly succeeded"
+assert_absent "${TMP}/failure-qs-fd-leak"
 grep -Fq 'Quickshell did not start successfully. User files were rolled back.' \
   "${TMP}/failure-update.out" \
   || fail "startup failure did not report automatic rollback"
