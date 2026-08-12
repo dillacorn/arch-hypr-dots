@@ -10,6 +10,7 @@ QtObject {
     property string activeMonitorName: ""
     property string recentBarMonitorName: ""
     property real recentBarMonitorTimestamp: 0
+    property var barWindows: []
     readonly property int recentBarMonitorLifetimeMs: 1500
     signal closeRequested(string exceptSurface)
 
