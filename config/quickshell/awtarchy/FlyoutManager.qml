@@ -58,14 +58,20 @@ QtObject {
             targetMonitor = consumeTargetMonitor();
         }
 
-        // Do not close a mapped flyout merely because the same surface is being
-        // requested on another monitor. Closing it makes Hyprland restore focus
-        // to a normal window before the replacement mapping completes, which can
-        // trigger a compositor cursor warp. The surface retargets in-place and
-        // its existing pre/post positioning helpers place it on target instead.
-        closeRequested(surface);
+        // Do not hide the current surface during a bar handoff. Closing a
+        // focused flyout before its replacement maps makes Hyprland restore a
+        // normal window in between, which can warp the cursor to that window.
+        // The newly requested surface becomes authoritative immediately, but
+        // competing flyouts remain mapped until opened() confirms the target
+        // flyout exists. Then they are closed with no empty focus gap.
         activeSurface = surface;
         activeMonitorName = targetMonitor;
+    }
+
+    function opened(surface) {
+        if (activeSurface !== surface)
+            return;
+        closeRequested(surface);
     }
 
     function release(surface) {
