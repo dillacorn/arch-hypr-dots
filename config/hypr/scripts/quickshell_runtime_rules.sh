@@ -431,6 +431,141 @@ local function drag_candidate(drag, cursor)
     return movement_candidate(dx, dy)
 end
 
+local awtarchy_flyout_ipc_targets = {
+    ["Awtarchy Application Search"] = "launcher",
+    ["Awtarchy Clipboard History"] = "clipboard",
+    ["Awtarchy Notification Center"] = "notifications",
+    ["Awtarchy Quick Settings"] = "quicksettings",
+    ["Awtarchy Network"] = "network",
+    ["Awtarchy Bluetooth"] = "bluetooth",
+}
+
+local function visible_awtarchy_flyouts()
+    local result = {}
+
+    for _, window in ipairs(hl.get_windows()) do
+        local target = awtarchy_flyout_ipc_targets[tostring(window.title or "")]
+        if target ~= nil and window.mapped == true and window.visible == true then
+            table.insert(result, {
+                window = window,
+                target = target,
+            })
+        end
+    end
+
+    return result
+end
+
+local function cursor_inside_window(cursor, window)
+    if cursor == nil or window == nil then
+        return false
+    end
+
+    local at = window.at
+    local size = window.size
+    if at == nil or size == nil then
+        return false
+    end
+
+    local x = tonumber(at.x)
+    local y = tonumber(at.y)
+    local width = tonumber(size.x)
+    local height = tonumber(size.y)
+
+    if x == nil or y == nil or width == nil or height == nil then
+        return false
+    end
+
+    return cursor.x >= x and cursor.x < x + width
+        and cursor.y >= y and cursor.y < y + height
+end
+
+local function close_visible_awtarchy_flyouts(flyouts)
+    local closed = {}
+
+    for _, entry in ipairs(flyouts) do
+        if not closed[entry.target] then
+            closed[entry.target] = true
+
+            local command = "qs -c awtarchy ipc call "
+                .. shell_quote(entry.target)
+                .. " close >/dev/null 2>&1"
+
+            hl.dispatch(hl.dsp.exec_cmd(command))
+        end
+    end
+end
+
+if awtarchy_flyout_outside_click_bind_v1 ~= nil then
+    pcall(function() awtarchy_flyout_outside_click_bind_v1:remove() end)
+    awtarchy_flyout_outside_click_bind_v1 = nil
+end
+
+if awtarchy_flyout_escape_bind_v1 ~= nil then
+    pcall(function() awtarchy_flyout_escape_bind_v1:remove() end)
+    awtarchy_flyout_escape_bind_v1 = nil
+end
+
+-- Retire the failed cursor-restoration experiments if this production runtime
+-- replaces a live test version. Flyout handoffs now prevent the remap that
+-- triggered the Hyprland monitor-focus warp instead of moving the cursor back.
+local function stop_awtarchy_flyout_timer(timer)
+    if timer == nil then
+        return
+    end
+
+    pcall(function() timer:set_enabled(false) end)
+    pcall(function() timer:cancel() end)
+end
+
+stop_awtarchy_flyout_timer(awtarchy_flyout_cursor_restore_timer_v1)
+stop_awtarchy_flyout_timer(awtarchy_flyout_warp_filter_timer_v2)
+stop_awtarchy_flyout_timer(awtarchy_flyout_warp_guard_timer_v3)
+awtarchy_flyout_cursor_restore_timer_v1 = nil
+awtarchy_flyout_cursor_restore_state_v1 = nil
+awtarchy_flyout_warp_filter_timer_v2 = nil
+awtarchy_flyout_warp_filter_state_v2 = nil
+awtarchy_flyout_warp_guard_timer_v3 = nil
+awtarchy_flyout_warp_guard_state_v3 = nil
+awtarchy_flyout_warp_guard_tracker_v3 = nil
+awtarchy_arm_flyout_warp_guard_v3 = nil
+
+-- Dismiss on an actual outside left click, not merely because follow_mouse
+-- changed focus while the pointer crossed another window. non_consuming keeps
+-- the same physical click available to the application or bar underneath.
+awtarchy_flyout_outside_click_bind_v1 = hl.bind("mouse:272", function()
+    if awtarchy_bar_under_pointer() ~= nil then
+        return { ok = false }
+    end
+
+    local flyouts = visible_awtarchy_flyouts()
+    if #flyouts == 0 then
+        return { ok = false }
+    end
+
+    local cursor = hl.get_cursor_pos()
+    for _, entry in ipairs(flyouts) do
+        if cursor_inside_window(cursor, entry.window) then
+            return { ok = false }
+        end
+    end
+
+    close_visible_awtarchy_flyouts(flyouts)
+    return { ok = true }
+end, { non_consuming = true })
+
+-- Keep Escape compositor-level so every flyout closes even when follow_mouse
+-- has moved keyboard focus to a normal application.
+awtarchy_flyout_escape_bind_v1 = hl.bind("Escape", function()
+    local flyouts = visible_awtarchy_flyouts()
+    if #flyouts == 0 then
+        return { ok = false }
+    end
+
+    close_visible_awtarchy_flyouts(flyouts)
+    return { ok = true }
+end, { auto_consuming = true })
+
 local function stop_bar_drag_timer()
     if awtarchy_bar_drag_timer ~= nil then
         local stopped = pcall(function()

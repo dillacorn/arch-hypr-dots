@@ -37,6 +37,7 @@ Singleton {
     property var stateCommandQueue: []
     property bool privacyRemapPending: false
     property bool openPreparing: false
+    property var centerScreen: null
 
     readonly property string cacheHome: Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
@@ -45,17 +46,17 @@ Singleton {
     readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_flyout_position.sh"
     readonly property string prepareScript: configHome + "/hypr/scripts/quickshell_flyout_prepare.sh"
-    readonly property string activeMonitorName: centerWindow.screen ? centerWindow.screen.name : ""
+    readonly property var activeScreen: centerScreen || centerWindow.screen
+    readonly property string activeMonitorName: activeScreen && activeScreen.name
+        ? String(activeScreen.name) : ""
     readonly property int activeBarSize: {
-        const target = centerWindow.screen;
+        const target = activeScreen;
         if (!target || placement === "center")
             return 0;
         return BarState.barSizeFor(target.name, placement === "left" || placement === "right");
     }
-    readonly property int targetScreenWidth: centerWindow.screen
-        ? centerWindow.screen.width : 1920
-    readonly property int targetScreenHeight: centerWindow.screen
-        ? centerWindow.screen.height : 1080
+    readonly property int targetScreenWidth: activeScreen ? activeScreen.width : 1920
+    readonly property int targetScreenHeight: activeScreen ? activeScreen.height : 1080
     readonly property int maximumPanelWidth: Math.max(1, targetScreenWidth - 20)
     readonly property int maximumPanelHeight: Math.max(1, targetScreenHeight - 20)
     readonly property int minimumPanelWidth: Math.min(360, maximumPanelWidth)
@@ -147,8 +148,13 @@ Singleton {
     function finishPreparedCenterOpen() {
         if (!openPreparing)
             return;
+
+        const wasVisible = centerWindow.visible;
+
         openPreparing = false;
         centerWindow.visible = true;
+        if (wasVisible)
+            Qt.callLater(() => root.positionCenter());
     }
 
     function anchoredPanelX() {
@@ -477,9 +483,11 @@ Singleton {
     function openForScreen(targetScreen, anchorItem) {
         if (!targetScreen)
             return;
-        FlyoutManager.claim("notifications");
+        FlyoutManager.claim("notifications", targetScreen.name);
         hideAllPopups();
-        centerWindow.screen = targetScreen;
+        centerScreen = targetScreen;
+        if (!centerWindow.visible)
+            centerWindow.screen = targetScreen;
         placement = placementForScreen(targetScreen);
         anchorAlongEdge = anchorCoordinate(anchorItem);
         settingsOpen = false;
@@ -505,7 +513,7 @@ Singleton {
     }
 
     function toggleForScreen(targetScreen) {
-        const currentName = centerWindow.screen ? centerWindow.screen.name : "";
+        const currentName = activeMonitorName;
         const targetName = targetScreen ? targetScreen.name : "";
         if ((centerWindow.visible || openPreparing)
             && currentName.length > 0 && currentName === targetName)
@@ -515,7 +523,7 @@ Singleton {
     }
 
     function toggleForItem(targetScreen, anchorItem) {
-        const currentName = centerWindow.screen ? centerWindow.screen.name : "";
+        const currentName = activeMonitorName;
         const targetName = targetScreen ? targetScreen.name : "";
         if ((centerWindow.visible || openPreparing)
             && currentName.length > 0 && currentName === targetName)

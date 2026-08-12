@@ -40,6 +40,7 @@ Singleton {
     property var stateCommandQueue: []
     property bool privacyRemapPending: false
     property bool openPreparing: false
+    property var flyoutScreen: null
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string backend: configHome + "/hypr/scripts/hypr_quicksettings.sh"
@@ -47,11 +48,11 @@ Singleton {
     readonly property string terminalLauncher: configHome + "/hypr/scripts/default_terminal.sh"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_flyout_position.sh"
     readonly property string prepareScript: configHome + "/hypr/scripts/quickshell_flyout_prepare.sh"
-    readonly property string activeMonitorName: quickSettingsWindow.screen ? quickSettingsWindow.screen.name : ""
-    readonly property int targetScreenWidth: quickSettingsWindow.screen
-        ? quickSettingsWindow.screen.width : 1920
-    readonly property int targetScreenHeight: quickSettingsWindow.screen
-        ? quickSettingsWindow.screen.height : 1080
+    readonly property var activeScreen: flyoutScreen || quickSettingsWindow.screen
+    readonly property string activeMonitorName: activeScreen && activeScreen.name
+        ? String(activeScreen.name) : ""
+    readonly property int targetScreenWidth: activeScreen ? activeScreen.width : 1920
+    readonly property int targetScreenHeight: activeScreen ? activeScreen.height : 1080
     readonly property int maximumPanelWidth: Math.max(1, targetScreenWidth - 20)
     readonly property int maximumPanelHeight: Math.max(1, targetScreenHeight - 20)
     readonly property int minimumPanelWidth: Math.min(520, maximumPanelWidth)
@@ -165,8 +166,13 @@ Singleton {
     function finishPreparedOpen() {
         if (!openPreparing)
             return;
+
+        const wasVisible = quickSettingsWindow.visible;
+
         openPreparing = false;
         quickSettingsWindow.visible = true;
+        if (wasVisible)
+            Qt.callLater(() => root.positionWindow());
         refreshStatus();
     }
 
@@ -429,8 +435,10 @@ Singleton {
     function openForScreen(targetScreen) {
         if (!targetScreen)
             return;
-        FlyoutManager.claim("quick-settings");
-        quickSettingsWindow.screen = targetScreen;
+        FlyoutManager.claim("quick-settings", targetScreen.name);
+        flyoutScreen = targetScreen;
+        if (!quickSettingsWindow.visible)
+            quickSettingsWindow.screen = targetScreen;
         placement = placementForScreen(targetScreen);
         brightnessTarget = targetScreen.name;
         settingsOpen = false;
@@ -460,7 +468,7 @@ Singleton {
     }
 
     function toggleForScreen(targetScreen) {
-        const currentName = quickSettingsWindow.screen ? quickSettingsWindow.screen.name : "";
+        const currentName = activeMonitorName;
         const targetName = targetScreen ? targetScreen.name : "";
         if ((quickSettingsWindow.visible || openPreparing)
             && currentName.length > 0 && currentName === targetName)

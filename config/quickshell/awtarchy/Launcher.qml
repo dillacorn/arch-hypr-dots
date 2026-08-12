@@ -26,8 +26,11 @@ Singleton {
     readonly property int minimumIconScale: 50
     readonly property int maximumIconScale: 200
     readonly property int applicationColumnMinimumWidth: 300
-    readonly property string activeMonitorName: launcherWindow.screen && launcherWindow.screen.name
-        ? launcherWindow.screen.name : targetMonitorName
+    property var launcherScreen: null
+    readonly property var activeScreen: launcherScreen || launcherWindow.screen
+    readonly property string activeMonitorName: targetMonitorName.length > 0
+        ? targetMonitorName
+        : (activeScreen && activeScreen.name ? String(activeScreen.name) : "")
     readonly property int effectiveTextScale: textScaleOverride >= 0
         ? textScaleOverride : BarState.appTextScaleFor(activeMonitorName)
     readonly property int effectiveIconScale: iconScaleOverride >= 0
@@ -143,7 +146,7 @@ Singleton {
     }
 
     function setWindowSize(width, height) {
-        const targetScreen = launcherWindow.screen;
+        const targetScreen = activeScreen;
         const desiredWidth = Math.min(safeMaximumWidth(targetScreen),
             Math.max(safeMinimumWidth(targetScreen), Math.round(width)));
         const desiredHeight = Math.min(safeMaximumHeight(targetScreen),
@@ -156,15 +159,17 @@ Singleton {
     }
 
     function clampWindowToScreen() {
-        const currentScreen = launcherWindow.screen;
+        const currentScreen = activeScreen;
         if (!currentScreen || currentScreen.width <= 0 || currentScreen.height <= 0) {
             const fallback = focusedScreen();
             if (!fallback)
                 return;
             resetLocalSettingsState();
+            launcherScreen = fallback;
             targetMonitorName = fallback.name;
             requestedPlacement = centeredPlacementForScreen(fallback);
-            launcherWindow.screen = fallback;
+            if (!launcherWindow.visible)
+                launcherWindow.screen = fallback;
             applySpawnSize();
             positionTimer.restart();
             return;
@@ -175,7 +180,7 @@ Singleton {
     }
 
     function guardWindowBounds() {
-        if (!launcherWindow.visible || !launcherWindow.screen
+        if (!launcherWindow.visible || !activeScreen
             || targetMonitorName.length === 0 || boundsProcess.running)
             return;
         setWindowSize(liveWidth, liveHeight);
@@ -259,7 +264,7 @@ Singleton {
 
     function toggleCenteredPlacement() {
         const monitor = activeMonitorName;
-        const targetScreen = launcherWindow.screen;
+        const targetScreen = activeScreen;
         if (monitor.length === 0 || !targetScreen)
             return;
 
@@ -334,7 +339,7 @@ Singleton {
             queueStateCommand(["set-capture", "launcher", "false"]);
         }
         setWindowSize(BarState.defaultLauncherWidth, BarState.defaultLauncherHeight);
-        requestedPlacement = barPlacementForScreen(launcherWindow.screen);
+        requestedPlacement = barPlacementForScreen(activeScreen);
         positionTimer.restart();
         settingsMessage = "Launcher defaults loaded for " + monitor;
     }
@@ -442,9 +447,19 @@ Singleton {
     function finishPreparedOpen() {
         if (!openPreparing)
             return;
+
+        const wasVisible = launcherWindow.visible;
+
         openPreparing = false;
         launcherPositioned = true;
         launcherWindow.visible = true;
+
+        // A same-surface monitor handoff deliberately keeps the native window
+        // mapped. visibleChanged cannot fire in that case, so run the existing
+        // authoritative Hyprland positioning helper explicitly.
+        if (wasVisible)
+            positionTimer.restart();
+
         resetSelection();
     }
 
@@ -455,21 +470,36 @@ Singleton {
         FlyoutManager.claim("launcher", targetScreen.name);
         focusGrab.active = false;
         resetLocalSettingsState();
+        launcherScreen = targetScreen;
         targetMonitorName = targetScreen.name;
         requestedPlacement = placement || "center";
         loadSavedView(targetScreen, requestedPlacement);
         launcherPositioned = false;
-        launcherWindow.screen = targetScreen;
+        // Never retarget a mapped QWindow through Qt. The Hyprland
+        // positioning helper moves an already-visible launcher directly.
+        if (!launcherWindow.visible)
+            launcherWindow.screen = targetScreen;
         setWindowSize(savedView.width, savedView.height);
         search.text = "";
         prepareLauncherOpen(targetScreen);
     }
 
     function openForScreen(targetScreen) {
-        if (launcherWindow.visible || openPreparing) {
+        if (!targetScreen)
+            return;
+
+        const currentName = activeMonitorName;
+        const targetName = String(targetScreen.name || "");
+
+        // Same monitor = toggle closed.
+        // Different monitor = transfer in the same click.
+        if ((launcherWindow.visible || openPreparing)
+            && currentName.length > 0
+            && currentName === targetName) {
             close();
             return;
         }
+
         showOnScreen(targetScreen, placementForScreen(targetScreen));
     }
 
@@ -664,7 +694,7 @@ Singleton {
     }
 
     Connections {
-        target: launcherWindow.screen
+        target: root.activeScreen
         enabled: target !== null
         ignoreUnknownSignals: true
         function onWidthChanged() { screenClampTimer.restart(); }

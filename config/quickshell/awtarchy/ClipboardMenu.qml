@@ -35,6 +35,7 @@ Singleton {
     property var stateCommandQueue: []
     property bool privacyRemapPending: false
     property bool openPreparing: false
+    property var flyoutScreen: null
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string backend: configHome + "/hypr/scripts/quickshell_clipboard.sh"
@@ -42,12 +43,11 @@ Singleton {
     readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_flyout_position.sh"
     readonly property string prepareScript: configHome + "/hypr/scripts/quickshell_flyout_prepare.sh"
+    readonly property var activeScreen: flyoutScreen || clipboardWindow.screen
     readonly property int minimumPanelWidth: Math.min(480, maximumPanelWidth)
     readonly property int minimumPanelHeight: Math.min(360, maximumPanelHeight)
-    readonly property int targetScreenWidth: clipboardWindow.screen
-        ? clipboardWindow.screen.width : 1920
-    readonly property int targetScreenHeight: clipboardWindow.screen
-        ? clipboardWindow.screen.height : 1080
+    readonly property int targetScreenWidth: activeScreen ? activeScreen.width : 1920
+    readonly property int targetScreenHeight: activeScreen ? activeScreen.height : 1080
     readonly property int maximumPanelWidth: Math.max(1, targetScreenWidth - 20)
     readonly property int maximumPanelHeight: Math.max(1, targetScreenHeight - 20)
     readonly property int configuredPanelWidth: clampWidth(panelWidthOverride >= 0
@@ -64,7 +64,8 @@ Singleton {
         ? iconScaleOverride : BarState.clipboardViewFor(activeMonitorName).iconScale
     readonly property bool captureAllowed: captureAllowedOverride >= 0
         ? captureAllowedOverride === 1 : BarState.captureAllowedFor("clipboard")
-    readonly property string activeMonitorName: clipboardWindow.screen ? clipboardWindow.screen.name : ""
+    readonly property string activeMonitorName: activeScreen && activeScreen.name
+        ? String(activeScreen.name) : ""
     readonly property bool settingsDirty: savedView.width !== livePanelWidth
         || savedView.height !== livePanelHeight
         || savedView.textScale !== effectiveTextScale
@@ -128,8 +129,13 @@ Singleton {
     function finishPreparedOpen() {
         if (!openPreparing)
             return;
+
+        const wasVisible = clipboardWindow.visible;
+
         openPreparing = false;
         clipboardWindow.visible = true;
+        if (wasVisible)
+            Qt.callLater(() => root.positionWindow());
         listProcess.running = true;
         Qt.callLater(() => {
             clipboardList.positionViewAtBeginning();
@@ -180,8 +186,10 @@ Singleton {
         if (!target)
             return;
 
-        FlyoutManager.claim("clipboard");
-        clipboardWindow.screen = target;
+        FlyoutManager.claim("clipboard", target.name);
+        flyoutScreen = target;
+        if (!clipboardWindow.visible)
+            clipboardWindow.screen = target;
         placement = placementForScreen(target);
         settingsOpen = false;
         settingsPanel.resetCopySelection();
@@ -217,7 +225,7 @@ Singleton {
     }
 
     function toggleForScreen(target) {
-        const currentName = clipboardWindow.screen ? clipboardWindow.screen.name : "";
+        const currentName = activeMonitorName;
         const targetName = target ? target.name : "";
         if ((clipboardWindow.visible || openPreparing)
             && currentName.length > 0 && currentName === targetName)

@@ -27,6 +27,7 @@ Singleton {
     })
     property var stateCommandQueue: []
     property bool openPreparing: false
+    property var flyoutScreen: null
 
     readonly property var adapters: Bluetooth.adapters
         ? [...Bluetooth.adapters.values].filter(item => item !== null) : []
@@ -48,9 +49,11 @@ Singleton {
     readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_flyout_position.sh"
     readonly property string prepareScript: configHome + "/hypr/scripts/quickshell_flyout_prepare.sh"
-    readonly property string activeMonitorName: bluetoothWindow.screen ? bluetoothWindow.screen.name : ""
-    readonly property int targetScreenWidth: bluetoothWindow.screen ? bluetoothWindow.screen.width : 1920
-    readonly property int targetScreenHeight: bluetoothWindow.screen ? bluetoothWindow.screen.height : 1080
+    readonly property var activeScreen: flyoutScreen || bluetoothWindow.screen
+    readonly property string activeMonitorName: activeScreen && activeScreen.name
+        ? String(activeScreen.name) : ""
+    readonly property int targetScreenWidth: activeScreen ? activeScreen.width : 1920
+    readonly property int targetScreenHeight: activeScreen ? activeScreen.height : 1080
     readonly property int maximumPanelWidth: Math.max(1, targetScreenWidth - 20)
     readonly property int maximumPanelHeight: Math.max(1, targetScreenHeight - 20)
     readonly property int minimumPanelWidth: Math.min(360, maximumPanelWidth)
@@ -253,8 +256,13 @@ Singleton {
     function finishPreparedOpen() {
         if (!openPreparing)
             return;
+
+        const wasVisible = bluetoothWindow.visible;
+
         openPreparing = false;
         bluetoothWindow.visible = true;
+        if (wasVisible)
+            Qt.callLater(() => root.positionWindow());
         const current = adapter;
         if (current && current.enabled)
             current.discovering = true;
@@ -395,8 +403,10 @@ Singleton {
     function openForScreen(targetScreen) {
         if (!targetScreen || !available)
             return;
-        FlyoutManager.claim("bluetooth");
-        bluetoothWindow.screen = targetScreen;
+        FlyoutManager.claim("bluetooth", targetScreen.name);
+        flyoutScreen = targetScreen;
+        if (!bluetoothWindow.visible)
+            bluetoothWindow.screen = targetScreen;
         placement = placementForScreen(targetScreen);
         actionMessage = adapterBlocked ? "Bluetooth is blocked by rfkill" : "";
         settingsOpen = false;
@@ -424,7 +434,7 @@ Singleton {
     }
 
     function toggleForScreen(targetScreen) {
-        const currentName = bluetoothWindow.screen ? bluetoothWindow.screen.name : "";
+        const currentName = activeMonitorName;
         const targetName = targetScreen ? targetScreen.name : "";
         if ((bluetoothWindow.visible || openPreparing) && currentName === targetName)
             close();
