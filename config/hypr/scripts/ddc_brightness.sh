@@ -269,7 +269,8 @@ watch_state_events() {
   preview_name="$(basename "$(preview_file "$monitor")")"
   mkdir -p "$CACHE_DIR"
 
-  python3 - "$CACHE_DIR" "$state_name" "$preview_name" "$PREVIEW_MAX_AGE_MS" <<'PY'
+  python3 - "$CACHE_DIR" "$state_name" "$preview_name" \
+    "$PREVIEW_MAX_AGE_MS" "$$" <<'PY'
 import ctypes
 import os
 import select
@@ -284,8 +285,18 @@ watch_dir = os.fsencode(sys.argv[1])
 state_target = sys.argv[2]
 preview_target = sys.argv[3]
 preview_max_age_ms = int(sys.argv[4])
+owner_pid = int(sys.argv[5])
 targets = {state_target, preview_target}
 preview_path = os.path.join(sys.argv[1], preview_target)
+
+def owner_is_alive():
+    try:
+        os.kill(owner_pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 IN_ATTRIB = 0x00000004
 IN_CLOSE_WRITE = 0x00000008
@@ -314,7 +325,13 @@ print("ready", flush=True)
 
 header = struct.Struct("iIII")
 while True:
+    if not owner_is_alive():
+        break
+
     readable, _, _ = select.select([fd], [], [], 0.25)
+
+    if not owner_is_alive():
+        break
 
     if not readable:
         try:
