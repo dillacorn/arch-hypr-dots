@@ -108,5 +108,5 @@ done
 
 (( started == 1 )) || fail "Hypridle did not remain running; inspect $LOG_FILE"
 
-bash "$RESTORE_SCRIPT" >/dev/null 2>&1 \
+bash "$RESTORE_SCRIPT" 8>&- 9>&- >/dev/null 2>&1 \
     || fail "Hypridle restarted, but the Quickshell bar state could not be restored"

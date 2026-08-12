@@ -16,7 +16,7 @@ fi
 printf '0\n' >"$IDLE_STATE"
 
 if command -v qs >/dev/null 2>&1; then
-    qs -c awtarchy ipc call barstate setIdleHidden false >/dev/null 2>&1 ||
-        qs -c awtarchy ipc call barstate refreshIdle >/dev/null 2>&1 ||
+    qs -c awtarchy ipc call barstate setIdleHidden false 9>&- >/dev/null 2>&1 ||
+        qs -c awtarchy ipc call barstate refreshIdle 9>&- >/dev/null 2>&1 ||
         true
 fi
