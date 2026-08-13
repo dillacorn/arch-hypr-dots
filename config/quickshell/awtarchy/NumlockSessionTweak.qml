@@ -8,11 +8,11 @@ Singleton {
     id: root
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
-    readonly property string helper: configHome + "/hypr/scripts/quickshell_numlock_tweak.sh"
+    readonly property string manager: configHome + "/hypr/scripts/quickshell.sh"
     readonly property bool enabled: QuickSettings.disableNumlockAtSessionStart
 
     function enforce() {
-        Quickshell.execDetached([helper]);
+        Quickshell.execDetached([manager, "numlock-off"]);
     }
 
     onEnabledChanged: {
