@@ -14,7 +14,7 @@ if ! flock -n 9; then
   exit 0
 fi
 
-for cmd in grim slurp satty notify-send mktemp hyprpicker; do
+for cmd in grim slurp satty notify-send mktemp flock hyprpicker; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "$cmd missing" >&2; exit 1; }
 done
 
