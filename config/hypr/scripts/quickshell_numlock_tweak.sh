@@ -1,5 +1,3 @@
 #!/bin/sh
-set -eu
-
-hyprctl eval 'hl.config({ input = { numlock_by_default = true } })' >/dev/null
-hyprctl eval 'hl.config({ input = { numlock_by_default = false } })' >/dev/null
+# Deprecated temporary helper. Num Lock handling is implemented in Quickshell QML.
+exit 0
