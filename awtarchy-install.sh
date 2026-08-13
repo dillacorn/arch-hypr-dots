@@ -335,7 +335,7 @@ prepare_quickshell_update_target() {
 
 normalize_quickshell_update_plan() {
   local repo_dir="$1" plan_file="$2" manifest result
-  local managed_count legacy_count protected_count
+  local managed_count legacy_count
 
   manifest="${AWTARCHY_QUICKSHELL_MANAGED_HISTORY:-${repo_dir}/local/share/awtarchy/quickshell-managed-history.sha256}"
   [[ -r "$manifest" ]] \
@@ -364,7 +364,6 @@ for raw in manifest_path.read_text(encoding="utf-8").splitlines():
 rows = []
 managed_count = 0
 legacy_count = 0
-protected_count = 0
 for raw in plan_path.read_text(encoding="utf-8").splitlines():
     if not raw:
         continue
@@ -374,14 +373,7 @@ for raw in plan_path.read_text(encoding="utf-8").splitlines():
     cls, rel, local_file, target_file, baseline_file = fields
     local_path = Path(local_file)
 
-    if rel == ".config/hypr/hyprland.lua":
-        # This file is the user's machine policy. The testing updater may add
-        # it on a new system, but preserve mode must not replace any existing
-        # differing copy, even when an earlier poisoned baseline says it can.
-        if cls not in {"NEW", "USER"}:
-            cls = "USER"
-            protected_count += 1
-    elif cls in {"USER", "LEGACY", "BOTH"} and rel in known:
+    if cls in {"USER", "LEGACY", "BOTH"} and rel in known:
         if local_path.is_file() and not local_path.is_symlink():
             digest = hashlib.sha256(local_path.read_bytes()).hexdigest()
             if digest in known[rel]:
@@ -394,19 +386,16 @@ plan_path.write_text(
     "".join("\t".join(row) + "\n" for row in rows),
     encoding="utf-8",
 )
-print(managed_count, legacy_count, protected_count)
+print(managed_count, legacy_count)
 PY_UPDATE_PLAN
 )" || die "Could not normalize the Quickshell managed-file update plan"
 
-  IFS=' ' read -r managed_count legacy_count protected_count <<<"$result"
+  IFS=' ' read -r managed_count legacy_count <<<"$result"
   if (( managed_count > 0 )); then
     log "Recognized ${managed_count} previously shipped Awtarchy file(s) as managed updates."
   fi
   if (( legacy_count > 0 )); then
     log "Marked ${legacy_count} retired shell file(s) for removal without backups."
-  fi
-  if (( protected_count > 0 )); then
-    log "Protecting the existing personalized Hyprland configuration."
   fi
 }
 

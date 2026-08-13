@@ -652,8 +652,8 @@ grep -Fxq 'https://api.github.com/repos/dillacorn/awtarchy/commits/quickshell-co
   || fail "successful migration changed the stable launcher"
 [[ $stable_runtime_hash == "$(sha256sum "$home/.local/share/awtarchy/awtarchy-runtime.sh" | awk '{print $1}')" ]] \
   || fail "successful migration changed the stable runtime"
-grep -Fxq 'return { old = true }' "$home/.config/hypr/hyprland.lua" \
-  || fail "preserve update replaced the personalized Hyprland configuration"
+cmp -s "$home/.config/hypr/hyprland.lua" "$ROOT/config/hypr/hyprland.lua" \
+  || fail "updater did not advance an unchanged previously shipped Hyprland configuration"
 
 # Reproduce the poisoned-baseline failure from an already migrated desktop:
 # config-version and baseline are current, but an installed managed UI file is

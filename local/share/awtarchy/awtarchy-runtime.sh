@@ -2931,7 +2931,7 @@ top_menu() {
     choice="$(single_select_menu "Awtarchy" 0 \
       "Install Awtarchy" \
       "Dry-run Awtarchy install plan" \
-      "Update configs (preserve personal modifications)" \
+      "Update configs (merge personal modifications)" \
       "Reset configs (clean-slate managed files)" \
       "Clean Awtarchy backup files" \
       "Exit")" || exit 0
@@ -5452,8 +5452,8 @@ review_plan() {
 
     printf '\033[H\033[2J' >/dev/tty
     printf 'Awtarchy managed-file differences: %d\n\n' "${#classes[@]}" >/dev/tty
-    printf 'Click an entry, use Up/Down + Enter, or press 1-9 for a visible entry.\n' >/dev/tty
-    printf 'Page Up/Page Down changes pages. q continues to update choices.\n\n' >/dev/tty
+    printf 'Click/Enter or press 1-9 to view a diff. Entries are informational, not update toggles.\n' >/dev/tty
+    printf 'Page Up/Page Down changes pages. q closes review and continues the requested operation.\n\n' >/dev/tty
 
     for (( i = 0; i < page_size && page_start + i < ${#classes[@]}; i++ )); do
       local absolute=$((page_start + i)) marker=' '
@@ -5506,7 +5506,7 @@ select_update_mode() {
   local choice=""
   while true; do
     printf '\nUpdate mode:\n' >/dev/tty
-    printf '  1. Preserve personal modifications (recommended)\n' >/dev/tty
+    printf '  1. Update managed files and merge personal modifications (recommended)\n' >/dev/tty
     printf '  2. Clean-slate managed files\n' >/dev/tty
     printf '  3. Cancel\n' >/dev/tty
     printf 'Choose [1]: ' >/dev/tty
@@ -5673,8 +5673,10 @@ apply_plan() {
             install_live_file "$rel" "$merge_tmp" "$local_file" 1 || return 1
             MERGED+=("$rel")
           else
-            install_live_file "$rel" "$target_file" "$local_file" 1 || return 1
-            warn "Automatic merge was unsafe; installed release file and kept a backup: $rel"
+            FAILED+=("$rel")
+            warn "Automatic merge is unsafe; refusing to replace local modifications: $rel"
+            rollback_changes
+            return 1
           fi
         else
           install_live_file "$rel" "$target_file" "$local_file" 1 || return 1
@@ -5685,10 +5687,9 @@ apply_plan() {
         ;;
       ORPHANED)
         if [[ "$UPDATE_MODE" == "preserve" ]]; then
-          PRESERVED+=("$rel")
-        else
-          remove_live_file "$rel" "$local_file" 1 || return 1
+          warn "A locally modified managed file was removed upstream; removing it from the live tree and keeping a backup: $rel"
         fi
+        remove_live_file "$rel" "$local_file" 1 || return 1
         ;;
     esac
   done <"$plan_file"

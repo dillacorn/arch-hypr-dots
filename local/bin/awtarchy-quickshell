@@ -373,7 +373,7 @@ maintenance_menu() {
   while true; do
     choice="$(single_select_menu "Awtarchy Quickshell Testing" 0 \
       "Review migration without applying" \
-      "Update configs and preserve personal modifications" \
+      "Update configs and merge personal modifications" \
       "Reset managed configs to testing defaults" \
       "Refresh testing command from branch" \
       "Clean Awtarchy backup files" \
