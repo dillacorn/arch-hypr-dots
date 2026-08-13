@@ -519,6 +519,8 @@ Singleton {
     }
 
     function toggleForScreen(targetScreen) {
+        if (!FlyoutManager.acceptToggle("network"))
+            return;
         const currentName = activeMonitorName;
         const targetName = targetScreen ? targetScreen.name : "";
         if ((networkWindow.visible || openPreparing) && currentName === targetName)

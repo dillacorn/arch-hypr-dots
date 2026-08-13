@@ -743,7 +743,7 @@ PanelWindow {
                 tooltip: "power menu"
                 horizontalPadding: 10
                 hoverBackground: Theme.strongHover
-                onClicked: PowerMenu.openForScreen(bar.screen)
+                onClicked: PowerMenu.toggleForScreen(bar.screen)
                 onRightClicked: PowerMenu.openForScreen(bar.screen)
             }
         }
@@ -954,7 +954,7 @@ PanelWindow {
             BarControl {
                 vertical: true; fixedWidth: bar.barSize; label: ""; tooltip: "power menu"
                 hoverBackground: Theme.strongHover
-                onClicked: PowerMenu.openForScreen(bar.screen)
+                onClicked: PowerMenu.toggleForScreen(bar.screen)
                 onRightClicked: PowerMenu.openForScreen(bar.screen)
             }
         }

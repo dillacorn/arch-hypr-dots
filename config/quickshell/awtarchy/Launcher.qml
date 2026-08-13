@@ -487,6 +487,8 @@ Singleton {
     function openForScreen(targetScreen) {
         if (!targetScreen)
             return;
+        if (!FlyoutManager.acceptToggle("launcher"))
+            return;
 
         const currentName = activeMonitorName;
         const targetName = String(targetScreen.name || "");
@@ -529,6 +531,8 @@ Singleton {
     }
 
     function toggleFocused() {
+        if (!FlyoutManager.acceptToggle("launcher"))
+            return;
         if (launcherWindow.visible || openPreparing) {
             close();
             return;

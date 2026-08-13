@@ -38,6 +38,7 @@ jobs:
           bash -n tests/test-ddc-brightness-watcher.sh
           bash -n tests/test-hybrid-brightness.sh
           bash -n tests/test-hypridle-restart.sh
+          bash -n tests/test-flyout-toggle-debounce.sh
           bash -n tests/test-desktop-candidate-validation.sh
           bash -n tests/test-lua-validation.sh
           bash -n tests/test-quickshell-updater-migration.sh
@@ -61,6 +62,7 @@ jobs:
             tests/test-ddc-brightness-watcher.sh \
             tests/test-hybrid-brightness.sh \
             tests/test-hypridle-restart.sh \
+            tests/test-flyout-toggle-debounce.sh \
             tests/test-desktop-candidate-validation.sh \
             tests/test-lua-validation.sh \
             tests/test-quickshell-updater-migration.sh \
@@ -73,6 +75,7 @@ jobs:
           bash tests/test-ddc-brightness-watcher.sh
           bash tests/test-hybrid-brightness.sh
           bash tests/test-hypridle-restart.sh
+          bash tests/test-flyout-toggle-debounce.sh
           bash tests/test-desktop-candidate-validation.sh
           bash tests/test-lua-validation.sh
           bash tests/test-quickshell-updater-migration.sh

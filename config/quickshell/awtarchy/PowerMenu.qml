@@ -35,7 +35,12 @@ Singleton {
 
     function openFocused() { openForScreen(focusedScreen()); }
     function close() { powerWindow.visible = false; }
-    function toggleFocused() { powerWindow.visible ? close() : openFocused(); }
+    function toggleForScreen(targetScreen) {
+        if (!FlyoutManager.acceptToggle("power"))
+            return;
+        powerWindow.visible ? close() : openForScreen(targetScreen);
+    }
+    function toggleFocused() { toggleForScreen(focusedScreen()); }
 
     function runAction(action) {
         close();

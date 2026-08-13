@@ -11,7 +11,9 @@ QtObject {
     property string recentBarMonitorName: ""
     property real recentBarMonitorTimestamp: 0
     property var barWindows: []
+    property var lastToggleTimestamps: ({})
     readonly property int recentBarMonitorLifetimeMs: 1500
+    readonly property int toggleDebounceMs: 250
     signal closeRequested(string exceptSurface)
 
     // Keep the previous flyout mapped until the newly requested different
@@ -82,6 +84,21 @@ QtObject {
         recentBarMonitorName = "";
         recentBarMonitorTimestamp = 0;
         return barMonitor.length > 0 ? barMonitor : focusedMonitorName();
+    }
+
+    function acceptToggle(surface) {
+        const key = String(surface || "");
+        if (key.length === 0)
+            return true;
+
+        const now = Date.now();
+        const previous = Number(lastToggleTimestamps[key] || 0);
+        if (previous > 0 && now >= previous
+            && now - previous < toggleDebounceMs)
+            return false;
+
+        lastToggleTimestamps[key] = now;
+        return true;
     }
 
     function claim(surface, monitorName) {

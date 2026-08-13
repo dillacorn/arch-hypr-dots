@@ -218,6 +218,8 @@ Singleton {
     }
 
     function toggleFocused() {
+        if (!FlyoutManager.acceptToggle("clipboard"))
+            return;
         if (clipboardWindow.visible || openPreparing)
             close();
         else
@@ -225,6 +227,8 @@ Singleton {
     }
 
     function toggleForScreen(target) {
+        if (!FlyoutManager.acceptToggle("clipboard"))
+            return;
         const currentName = activeMonitorName;
         const targetName = target ? target.name : "";
         if ((clipboardWindow.visible || openPreparing)

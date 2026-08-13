@@ -434,6 +434,8 @@ Singleton {
     }
 
     function toggleForScreen(targetScreen) {
+        if (!FlyoutManager.acceptToggle("bluetooth"))
+            return;
         const currentName = activeMonitorName;
         const targetName = targetScreen ? targetScreen.name : "";
         if ((bluetoothWindow.visible || openPreparing) && currentName === targetName)

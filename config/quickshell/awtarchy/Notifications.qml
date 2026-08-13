@@ -513,6 +513,8 @@ Singleton {
     }
 
     function toggleForScreen(targetScreen) {
+        if (!FlyoutManager.acceptToggle("notifications"))
+            return;
         const currentName = activeMonitorName;
         const targetName = targetScreen ? targetScreen.name : "";
         if ((centerWindow.visible || openPreparing)
@@ -523,6 +525,8 @@ Singleton {
     }
 
     function toggleForItem(targetScreen, anchorItem) {
+        if (!FlyoutManager.acceptToggle("notifications"))
+            return;
         const currentName = activeMonitorName;
         const targetName = targetScreen ? targetScreen.name : "";
         if ((centerWindow.visible || openPreparing)

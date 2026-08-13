@@ -7,12 +7,18 @@ INSTALLER="${ROOT}/awtarchy-install.sh"
 STABLE_LAUNCHER="${ROOT}/local/bin/awtarchy"
 QUICKSHELL_LAUNCHER="${ROOT}/local/bin/awtarchy-quickshell"
 RUNTIME="${ROOT}/local/share/awtarchy/awtarchy-runtime.sh"
+MANAGED_HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
 TEST_COMMIT="1111111111111111111111111111111111111111"
+DESKTOP_STALE_SYSTEM_STATE_SHA="f96522fad74218f14c40f1a05902e8d41b6d3f929f9f8750040f5600eb45258c"
 TMP="$(mktemp -d)"
 
 cleanup() {
   if [[ -s ${TMP}/hypridle.pid ]]; then
     kill "$(<"${TMP}/hypridle.pid")" >/dev/null 2>&1 || true
+  fi
+  if [[ ${AWTARCHY_TEST_KEEP_TMP:-0} == 1 ]]; then
+    printf 'Preserved updater test workspace: %s\n' "$TMP" >&2
+    return
   fi
   rm -rf -- "$TMP"
 }
@@ -282,6 +288,10 @@ cat >"${fakebin}/pkill" <<'EOF'
 set -euo pipefail
 printf '%s\n' "$*" >>"${AWTARCHY_TEST_PKILL_LOG:?}"
 if [[ $* == *hypridle* && -n ${AWTARCHY_TEST_HYPRIDLE_STATE:-} ]]; then
+  if [[ -s $AWTARCHY_TEST_HYPRIDLE_STATE ]]; then
+    pid="$(<"$AWTARCHY_TEST_HYPRIDLE_STATE")"
+    [[ $pid =~ ^[0-9]+$ ]] && kill "$pid" >/dev/null 2>&1 || true
+  fi
   rm -f -- "$AWTARCHY_TEST_HYPRIDLE_STATE"
 fi
 EOF
@@ -419,6 +429,23 @@ installed_runtime="$home/.local/share/awtarchy-quickshell/awtarchy-runtime.sh"
 managed_packages="${TMP}/managed-packages"
 assert_file "$installed_launcher"
 assert_file "$installed_runtime"
+assert_file "$MANAGED_HISTORY"
+grep -Fqx "${DESKTOP_STALE_SYSTEM_STATE_SHA}"$'\t''.config/quickshell/awtarchy/SystemState.qml' \
+  "$MANAGED_HISTORY" \
+  || fail "managed history does not recognize the stale desktop SystemState.qml"
+while IFS= read -r repo_path; do
+  repo_rel="${repo_path#"$ROOT/"}"
+  current_entry="$(sha256sum "$repo_path" | awk '{print $1}')"$'\t'".${repo_rel}"
+  grep -Fqx "$current_entry" "$MANAGED_HISTORY" \
+    || fail "managed history is missing the current stock hash for ${repo_path}"
+done < <(
+  {
+    find "$ROOT/config/quickshell/awtarchy" -maxdepth 1 -type f -print
+    find "$ROOT/config/hypr/scripts" -maxdepth 1 -type f \
+      \( -name 'quickshell*' -o -name 'ddc_brightness.sh' -o -name 'hypr-ddc-brightness.sh' \) \
+      -print
+  } | LC_ALL=C sort -u
+)
 cmp -s "$installed_launcher" "$QUICKSHELL_LAUNCHER" \
   || fail "installer did not install the branch testing launcher"
 assert_file "${TMP}/system-bin/awtarchy-quickshell"
@@ -594,6 +621,75 @@ grep -Fxq 'https://api.github.com/repos/dillacorn/awtarchy/commits/quickshell-co
   || fail "successful migration changed the stable launcher"
 [[ $stable_runtime_hash == "$(sha256sum "$home/.local/share/awtarchy/awtarchy-runtime.sh" | awk '{print $1}')" ]] \
   || fail "successful migration changed the stable runtime"
+grep -Fxq 'return { old = true }' "$home/.config/hypr/hyprland.lua" \
+  || fail "preserve update replaced the personalized Hyprland configuration"
+
+# Reproduce the poisoned-baseline failure from an already migrated desktop:
+# config-version and baseline are current, but an installed managed UI file is
+# still an exact older Awtarchy copy. The updater must repair that stock file,
+# preserve an actual QML customization and hyprland.lua, and repeat retired UI
+# cleanup even though the migration marker already exists.
+stale_system_state="$home/.config/quickshell/awtarchy/SystemState.qml"
+personal_launcher="$home/.config/quickshell/awtarchy/Launcher.qml"
+repair_history="${TMP}/repair-history.sha256"
+printf '%s\n' '// previously shipped Awtarchy SystemState fixture' >"$stale_system_state"
+stale_fixture_sha="$(sha256sum "$stale_system_state" | awk '{print $1}')"
+printf '%s\t%s\n' \
+  "$stale_fixture_sha" \
+  '.config/quickshell/awtarchy/SystemState.qml' \
+  >"$repair_history"
+
+printf '\n%s\n' '// personal desktop launcher customization' >>"$personal_launcher"
+personal_launcher_sha="$(sha256sum "$personal_launcher" | awk '{print $1}')"
+printf '%s\n' '-- personal desktop Hyprland policy' >>"$home/.config/hypr/hyprland.lua"
+personal_hypr_sha="$(sha256sum "$home/.config/hypr/hyprland.lua" | awk '{print $1}')"
+
+for rel in "${RETIRED_DIRS[@]}"; do
+  mkdir -p "${home}/${rel}"
+  printf '%s\n' 'retired directory recreated after migration' >"${home}/${rel}/recreated"
+  cp -a -- "${home}/${rel}" "${home}/${rel}.backup"
+done
+for rel in "${RETIRED_FILES[@]}"; do
+  mkdir -p "$(dirname "${home}/${rel}")"
+  printf '%s\n' 'retired file recreated after migration' >"${home}/${rel}"
+  cp -a -- "${home}/${rel}" "${home}/${rel}.backup"
+done
+printf '%s\n' 'recreated retired launch cache' >"$home/.cache/wofi-drun"
+cp -a -- "$home/.cache/wofi-drun" "$home/.cache/wofi-drun.backup"
+
+for pkg in waybar waybar-git fuzzel wlogout mako wofi network-manager-applet blueman; do
+  printf '%s\n' "$pkg" >>"$package_state"
+  printf '%s\n' "$pkg" >>"$managed_packages"
+done
+LC_ALL=C sort -u -o "$package_state" "$package_state"
+LC_ALL=C sort -u -o "$managed_packages" "$managed_packages"
+
+env \
+  "${update_env[@]}" \
+  "AWTARCHY_QUICKSHELL_MANAGED_HISTORY=$repair_history" \
+  "$installed_launcher" update \
+  >"${TMP}/repair-update.out" 2>&1
+
+cmp -s "$stale_system_state" "$ROOT/config/quickshell/awtarchy/SystemState.qml" \
+  || fail "updater did not repair a previously shipped stale SystemState.qml"
+[[ $personal_launcher_sha == "$(sha256sum "$personal_launcher" | awk '{print $1}')" ]] \
+  || fail "updater replaced a genuine Launcher.qml customization"
+[[ $personal_hypr_sha == "$(sha256sum "$home/.config/hypr/hyprland.lua" | awk '{print $1}')" ]] \
+  || fail "updater replaced the personalized Hyprland configuration on repair"
+assert_retired_paths_absent "$home"
+for pkg in waybar waybar-git fuzzel wlogout mako wofi network-manager-applet blueman; do
+  assert_no_package "$package_state" "$pkg"
+  assert_no_package "$managed_packages" "$pkg"
+done
+grep -Fq 'Recognized 1 previously shipped Awtarchy file(s) as managed updates.' \
+  "${TMP}/repair-update.out" \
+  || fail "repair update did not report the stale managed-file correction"
+latest_audit="$(
+  find "$home/.local/state/awtarchy/logs" -maxdepth 1 -type f -name 'update-*.log' \
+    -printf '%T@ %p\n' | LC_ALL=C sort -nr | head -n1 | cut -d' ' -f2-
+)"
+grep -Fq '  .config/quickshell/awtarchy/SystemState.qml' "$latest_audit" \
+  || fail "repair audit did not record the corrected SystemState.qml"
 
 failure_packages="${TMP}/failure-packages"
 failure_managed="${TMP}/failure-managed-packages"

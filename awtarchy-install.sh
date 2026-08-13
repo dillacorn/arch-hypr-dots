@@ -273,6 +273,8 @@ remove_legacy_shell_files_stage() {
 # instead of relying only on old baseline reconstruction because legacy systems
 # may not have a complete baseline or managed-package ledger.
 update_cleanup_function = r'''
+QUICKSHELL_UPDATE_LEGACY_SNAPSHOT=""
+
 run_quickshell_update_pacman() {
   if [[ "${EUID}" -eq 0 ]]; then
     pacman "$@"
@@ -306,6 +308,96 @@ record_quickshell_update_packages() {
     sudo install -m 0644 "$tmp" "$managed_file"
   fi
   rm -f -- "$tmp"
+}
+
+prepare_quickshell_update_target() {
+  local target_home="$1" rel
+
+  # The repository still carries the stable Waybar-era tree while this branch
+  # is being tested. It must not enter the generated Quickshell target or the
+  # saved baseline, otherwise future updates keep treating retired files as
+  # managed configuration.
+  while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    rm -rf -- "${target_home}/${rel}"
+  done < <(quickshell_update_legacy_paths)
+}
+
+normalize_quickshell_update_plan() {
+  local repo_dir="$1" plan_file="$2" manifest result
+  local managed_count legacy_count protected_count
+
+  manifest="${AWTARCHY_QUICKSHELL_MANAGED_HISTORY:-${repo_dir}/local/share/awtarchy/quickshell-managed-history.sha256}"
+  [[ -r "$manifest" ]] \
+    || die "Quickshell managed-file history is missing: ${manifest}"
+
+  result="$(python3 - "$plan_file" "$manifest" <<'PY_UPDATE_PLAN'
+from pathlib import Path
+import hashlib
+import re
+import sys
+
+plan_path, manifest_path = map(Path, sys.argv[1:])
+
+known = {}
+for raw in manifest_path.read_text(encoding="utf-8").splitlines():
+    if not raw or raw.startswith("#"):
+        continue
+    try:
+        digest, rel = raw.split("\t", 1)
+    except ValueError:
+        raise SystemExit(f"invalid managed-history row: {raw!r}")
+    if not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise SystemExit(f"invalid managed-history checksum: {digest!r}")
+    known.setdefault(rel, set()).add(digest)
+
+rows = []
+managed_count = 0
+legacy_count = 0
+protected_count = 0
+for raw in plan_path.read_text(encoding="utf-8").splitlines():
+    if not raw:
+        continue
+    fields = raw.split("\t")
+    if len(fields) != 5:
+        raise SystemExit(f"invalid update-plan row: {raw!r}")
+    cls, rel, local_file, target_file, baseline_file = fields
+    local_path = Path(local_file)
+
+    if rel == ".config/hypr/hyprland.lua":
+        # This file is the user's machine policy. The testing updater may add
+        # it on a new system, but preserve mode must not replace any existing
+        # differing copy, even when an earlier poisoned baseline says it can.
+        if cls not in {"NEW", "USER"}:
+            cls = "USER"
+            protected_count += 1
+    elif cls in {"USER", "LEGACY", "BOTH"} and rel in known:
+        if local_path.is_file() and not local_path.is_symlink():
+            digest = hashlib.sha256(local_path.read_bytes()).hexdigest()
+            if digest in known[rel]:
+                cls = "OUTDATED"
+                managed_count += 1
+
+    rows.append((cls, rel, local_file, target_file, baseline_file))
+
+plan_path.write_text(
+    "".join("\t".join(row) + "\n" for row in rows),
+    encoding="utf-8",
+)
+print(managed_count, legacy_count, protected_count)
+PY_UPDATE_PLAN
+)" || die "Could not normalize the Quickshell managed-file update plan"
+
+  IFS=' ' read -r managed_count legacy_count protected_count <<<"$result"
+  if (( managed_count > 0 )); then
+    log "Recognized ${managed_count} previously shipped Awtarchy file(s) as managed updates."
+  fi
+  if (( legacy_count > 0 )); then
+    log "Marked ${legacy_count} retired shell file(s) for removal without backups."
+  fi
+  if (( protected_count > 0 )); then
+    log "Protecting the existing personalized Hyprland configuration."
+  fi
 }
 
 ensure_quickshell_update_prerequisites() {
@@ -378,26 +470,59 @@ quickshell_update_existing_legacy_paths() {
 
 snapshot_quickshell_update_legacy_paths() {
   local rel dest
+  QUICKSHELL_UPDATE_LEGACY_SNAPSHOT="${TMPD}/quickshell-existing-legacy.paths"
+  quickshell_update_existing_legacy_paths \
+    | LC_ALL=C sort -u >"$QUICKSHELL_UPDATE_LEGACY_SNAPSHOT"
+
   while IFS= read -r rel; do
     [[ -n "$rel" ]] || continue
     dest="${HOME_DIR}/${rel}"
     snapshot_for_rollback "$rel" "$dest"
     ROLLBACK_PATHS+=("$rel")
-  done < <(quickshell_update_existing_legacy_paths)
+  done <"$QUICKSHELL_UPDATE_LEGACY_SNAPSHOT"
+}
+
+prune_removed_quickshell_paths_from_preserved() {
+  local item root remove
+  local -a retained=()
+
+  for item in "${PRESERVED[@]}"; do
+    remove=0
+    while IFS= read -r root; do
+      [[ -n "$root" ]] || continue
+      if [[ "$item" == "$root" || "$item" == "$root/"* ]]; then
+        remove=1
+        break
+      fi
+    done < <(quickshell_update_legacy_paths)
+    (( remove == 1 )) || retained+=("$item")
+  done
+
+  PRESERVED=("${retained[@]}")
 }
 
 remove_quickshell_update_legacy_files() {
-  local rel dest
+  local rel dest removal_file
+  removal_file="${TMPD}/quickshell-remove-legacy.paths"
+  {
+    [[ -r "$QUICKSHELL_UPDATE_LEGACY_SNAPSHOT" ]] \
+      && cat "$QUICKSHELL_UPDATE_LEGACY_SNAPSHOT"
+    quickshell_update_existing_legacy_paths
+  } | LC_ALL=C sort -u >"$removal_file"
+
   while IFS= read -r rel; do
     [[ -n "$rel" ]] || continue
     dest="${HOME_DIR}/${rel}"
+    [[ -e "$dest" || -L "$dest" ]] || continue
     if ! rm -rf -- "$dest"; then
       FAILED+=("$rel")
       return 1
     fi
     CHANGED+=("$rel")
     REMOVED+=("$rel")
-  done < <(quickshell_update_existing_legacy_paths)
+  done <"$removal_file"
+
+  prune_removed_quickshell_paths_from_preserved
 }
 
 reload_quickshell_update_hyprland() {
@@ -441,8 +566,6 @@ remove_quickshell_update_legacy_packages() {
   local -a obsolete_packages=(waybar waybar-git fuzzel wlogout mako wofi network-manager-applet blueman)
   local -a obsolete_processes=(waybar fuzzel wlogout mako wofi nm-applet blueman-applet blueman-manager)
   local -a installed=()
-
-  [[ -e "$marker" ]] && return 0
 
   for pkg in "${obsolete_packages[@]}"; do
     pacman -Q "$pkg" >/dev/null 2>&1 && installed+=("$pkg")
@@ -518,15 +641,42 @@ update_apply_replacement = '''  ensure_quickshell_update_prerequisites
   snapshot_quickshell_update_legacy_paths
 
   apply_plan "$plan_file" || die "Update failed and user files were rolled back."
-  if [[ "$UPDATE_MODE" == "preserve" && -n "$fuzzel_anchor" ]]; then
-    restore_fuzzel_anchor "$fuzzel_anchor"
-  fi
 
   hardware_reconcile
 '''
 if update_apply_marker not in text:
     raise SystemExit("ERROR: could not locate updater apply sequence")
 text = text.replace(update_apply_marker, update_apply_replacement, 1)
+
+update_target_marker = '''  bootstrap_previous_baseline "$active_theme"
+'''
+update_target_replacement = '''  prepare_quickshell_update_target "$target_home"
+
+  bootstrap_previous_baseline "$active_theme"
+'''
+if update_target_marker not in text:
+    raise SystemExit("ERROR: could not locate updater target preparation sequence")
+text = text.replace(update_target_marker, update_target_replacement, 1)
+
+update_plan_marker = '''  build_plan "$target_home" "$plan_file"
+  review_plan "$plan_file"
+'''
+update_plan_replacement = '''  build_plan "$target_home" "$plan_file"
+  normalize_quickshell_update_plan "$repo_dir" "$plan_file"
+  review_plan "$plan_file"
+'''
+if update_plan_marker not in text:
+    raise SystemExit("ERROR: could not locate updater plan sequence")
+text = text.replace(update_plan_marker, update_plan_replacement, 1)
+
+# Fuzzel is retired on this branch. Do not read or restore its placement after
+# the deterministic legacy cleanup removes the configuration tree.
+text = text.replace(
+    '  local tgz="${TMPD}/awtarchy.tgz" top repo_dir target_home plan_file active_theme="" fuzzel_anchor=""',
+    '  local tgz="${TMPD}/awtarchy.tgz" top repo_dir target_home plan_file active_theme=""',
+    1,
+)
+text = text.replace('  fuzzel_anchor="$(capture_fuzzel_anchor || true)"\n', '', 1)
 
 update_validate_marker = '''  if ! validate_live; then
     rollback_changes

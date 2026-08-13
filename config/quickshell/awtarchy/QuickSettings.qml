@@ -468,6 +468,8 @@ Singleton {
     }
 
     function toggleForScreen(targetScreen) {
+        if (!FlyoutManager.acceptToggle("quick-settings"))
+            return;
         const currentName = activeMonitorName;
         const targetName = targetScreen ? targetScreen.name : "";
         if ((quickSettingsWindow.visible || openPreparing)
