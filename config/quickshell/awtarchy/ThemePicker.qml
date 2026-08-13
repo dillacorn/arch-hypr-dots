@@ -37,8 +37,7 @@ Singleton {
         });
     }
 
-    function openFocused() {
-        const target = focusedScreen();
+    function openForScreen(target) {
         if (target)
             pickerWindow.screen = target;
         search.text = "";
@@ -47,6 +46,8 @@ Singleton {
         resetSelection();
         Qt.callLater(() => search.forceActiveFocus());
     }
+
+    function openFocused() { openForScreen(focusedScreen()); }
 
     function close() {
         pickerWindow.visible = false;

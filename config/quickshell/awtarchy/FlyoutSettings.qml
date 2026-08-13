@@ -55,6 +55,7 @@ Item {
     signal iconScaleAdjustmentRequested(int delta)
     signal captureToggleRequested()
     signal copyRequested(var monitorNames)
+    signal themePickerRequested()
 
     implicitHeight: copyOpen ? 104
         : (effectiveShowCaptureControl ? 170 : 139)
@@ -520,6 +521,7 @@ Item {
             active: visible
             monitorName: root.monitorName
             monitorNames: [root.monitorName].concat(root.otherMonitorNames || [])
+            onThemePickerRequested: root.themePickerRequested()
         }
 
         RowLayout {

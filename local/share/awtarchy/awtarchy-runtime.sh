@@ -4371,8 +4371,13 @@ print(top)
 PY
 }
 
+has_controlling_tty() {
+  [[ -r /dev/tty && -w /dev/tty ]] || return 1
+  { true </dev/tty >/dev/tty; } 2>/dev/null
+}
+
 is_interactive() {
-  [[ -t 0 && -t 1 && -r /dev/tty && -w /dev/tty ]]
+  [[ -t 0 && -t 1 ]] && has_controlling_tty
 }
 
 ask_yes_no() {
@@ -5629,7 +5634,9 @@ select_merge_conflict_resolution() {
     return 0
   fi
 
-  if ! is_interactive; then
+  # apply_plan reads its TSV through stdin, so fd 0 is intentionally not a
+  # terminal here. The decision prompt itself reads from the controlling TTY.
+  if ! has_controlling_tty; then
     warn "Automatic merge conflict requires a terminal or an explicit --conflict-policy: $rel"
     MERGE_CONFLICT_RESOLUTION=abort
     return 0

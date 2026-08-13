@@ -296,6 +296,10 @@ Singleton {
         close();
     }
 
+    function openThemeMenu() {
+        ThemePicker.openForScreen(activeScreen);
+    }
+
     function forceNumlockOff() {
         if (numlockPrimeProcess.running || numlockOffProcess.running)
             return;
@@ -753,6 +757,7 @@ Singleton {
                         onIconScaleAdjustmentRequested: delta => root.adjustIconScale(delta)
                         onCaptureToggleRequested: root.toggleCaptureAllowed()
                         onCopyRequested: monitorNames => root.copyDisplaySettings(monitorNames)
+                        onThemePickerRequested: root.openThemeMenu()
                     }
                 }
 

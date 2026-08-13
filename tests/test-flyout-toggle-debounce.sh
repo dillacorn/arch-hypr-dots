@@ -47,4 +47,17 @@ require_source "${QML_DIR}/Bar.qml" \
   'onClicked: PowerMenu.toggleForScreen(bar.screen)' \
   'bar power button does not use the damped toggle path'
 
+require_source "${QML_DIR}/BarSettingsSection.qml" \
+  'label: "Themes"' \
+  'bar appearance settings do not expose the theme picker'
+require_source "${QML_DIR}/FlyoutSettings.qml" \
+  'onThemePickerRequested: root.themePickerRequested()' \
+  'flyout settings do not forward the theme-picker request'
+require_source "${QML_DIR}/QuickSettings.qml" \
+  'ThemePicker.openForScreen(activeScreen)' \
+  'quick settings do not open the theme picker on their active display'
+require_source "${QML_DIR}/ThemePicker.qml" \
+  'function openForScreen(target)' \
+  'theme picker cannot target the Quick Settings display'
+
 printf '%s\n' 'Flyout toggle debounce regression test passed.'

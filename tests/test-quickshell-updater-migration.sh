@@ -892,6 +892,60 @@ grep -Fq 'Installed release file and kept the local file as a backup: .config/qu
   "${TMP}/conflict-release.out" \
   || fail "use-release conflict policy did not report its decision"
 
+# The plan loop consumes stdin from plan.tsv. Verify that an updater running in
+# a real pseudo-terminal still reaches /dev/tty for its per-file decision.
+conflict_prompt_home="${TMP}/conflict-prompt-home"
+conflict_prompt_packages="${TMP}/conflict-prompt-packages"
+conflict_prompt_managed="${TMP}/conflict-prompt-managed"
+cp -a -- "$home" "$conflict_prompt_home"
+cp -- "$package_state" "$conflict_prompt_packages"
+cp -- "$managed_packages" "$conflict_prompt_managed"
+replace_once \
+  "$conflict_prompt_home/.config/quickshell/awtarchy/Launcher.qml" \
+  "$launcher_default_line" \
+  "$launcher_local_line"
+script_bin="$(command -v script)" \
+  || fail "util-linux script is required for the interactive conflict test"
+prompt_command="$conflict_prompt_home/.local/bin/awtarchy-quickshell update"
+set +e
+printf 'q2\n' | env \
+  "${update_env[@]}" \
+  "HOME=$conflict_prompt_home" \
+  "TERM=xterm" \
+  "AWTARCHY_TEST_TARGET_HOME=$conflict_prompt_home" \
+  "AWTARCHY_TEST_ARCHIVE=${TMP}/conflict-testing-commit.tar.gz" \
+  "AWTARCHY_TEST_PACKAGE_STATE=$conflict_prompt_packages" \
+  "AWTARCHY_MANAGED_PACKAGES_FILE=$conflict_prompt_managed" \
+  "AWTARCHY_TEST_HYPRIDLE_STATE=${TMP}/conflict-prompt-hypridle.state" \
+  "HYPRLAND_INSTANCE_SIGNATURE=" \
+  "$script_bin" --quiet --return --command "$prompt_command" \
+  "${TMP}/conflict-prompt.out" \
+  >"${TMP}/conflict-prompt-driver.out" 2>&1
+conflict_prompt_rc=${PIPESTATUS[1]}
+set -e
+if (( conflict_prompt_rc != 0 )); then
+  tail -n 30 "${TMP}/conflict-prompt.out" >&2 || true
+  fail "interactive conflict prompt did not complete the update"
+fi
+grep -Fq 'Managed-file merge conflict:' "${TMP}/conflict-prompt.out" \
+  || fail "interactive update did not show the per-file conflict prompt"
+! grep -Fq 'Automatic merge conflict requires a terminal' \
+  "${TMP}/conflict-prompt.out" \
+  || fail "interactive conflict prompt lost its controlling terminal"
+grep -Fq "$launcher_release_line" \
+  "$conflict_prompt_home/.config/quickshell/awtarchy/Launcher.qml" \
+  || fail "interactive use-release choice did not install Launcher.qml"
+prompt_backup="$(
+  find "$conflict_prompt_home/.config/quickshell/awtarchy" \
+    -maxdepth 1 -type f -name 'Launcher.qml.backup*' \
+    -exec grep -lF -- "$launcher_local_line" {} + | head -n1
+)"
+[[ -n $prompt_backup ]] \
+  || fail "interactive use-release choice did not preserve the local Launcher.qml"
+grep -Fq '// conflict-policy target marker' \
+  "$conflict_prompt_home/.config/quickshell/awtarchy/Bar.qml" \
+  || fail "interactive conflict choice did not finish unrelated managed updates"
+
 conflict_abort_home="${TMP}/conflict-abort-home"
 conflict_abort_packages="${TMP}/conflict-abort-packages"
 conflict_abort_managed="${TMP}/conflict-abort-managed"

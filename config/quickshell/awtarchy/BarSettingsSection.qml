@@ -15,6 +15,8 @@ Item {
     property var commandQueue: []
     property string message: ""
 
+    signal themePickerRequested()
+
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
         || (Quickshell.env("HOME") + "/.config")
     readonly property string managerScript: configHome + "/hypr/scripts/quickshell.sh"
@@ -262,6 +264,12 @@ Item {
                     label: "›"
                     textSize: 11
                     onClicked: root.cycleTarget(1)
+                }
+
+                SettingsButton {
+                    label: "Themes"
+                    textSize: 9
+                    onClicked: root.themePickerRequested()
                 }
 
                 SettingsButton {
