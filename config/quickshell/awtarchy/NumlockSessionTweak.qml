@@ -2,18 +2,20 @@ pragma Singleton
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import Quickshell
-import Quickshell.Hyprland
+import Quickshell.Io
 
 Singleton {
     id: root
 
-    readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
-    readonly property string helper: configHome + "/hypr/scripts/quickshell_numlock_tweak.sh"
     readonly property bool enabled: QuickSettings.disableNumlockAtSessionStart
 
     function enforce() {
-        Hyprland.dispatch("exec, sh " + helper);
+        if (primeProcess.running || offProcess.running)
+            return;
+        primeProcess.exec([
+            "hyprctl", "eval",
+            "hl.config({ input = { numlock_by_default = true } })"
+        ]);
     }
 
     onEnabledChanged: {
@@ -24,5 +26,17 @@ Singleton {
     Component.onCompleted: {
         if (enabled)
             Qt.callLater(() => root.enforce());
+    }
+
+    Process {
+        id: primeProcess
+        onExited: offProcess.exec([
+            "hyprctl", "eval",
+            "hl.config({ input = { numlock_by_default = false } })"
+        ])
+    }
+
+    Process {
+        id: offProcess
     }
 }
