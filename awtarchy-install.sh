@@ -152,12 +152,33 @@ if verify_block not in text:
     raise SystemExit("ERROR: could not locate install self-update verification block")
 text = text.replace(verify_block, verify_replacement, 1)
 
-# Updater theme application must use the Quickshell-aware theme helper instead
-# of executing legacy theme scripts that mutate removed shell configs.
+# Current Quickshell targets use the Quickshell-aware helper. Historical
+# pre-Quickshell baselines must execute the original theme script from that
+# release so the old generated stock tree can be reconstructed exactly.
+theme_runner_function = r'''
+run_awtarchy_target_theme() {
+  local repo_dir="$1" theme_script="$2" theme="$3"
+  local quickshell_helper="${repo_dir}/config/hypr/scripts/quickshell_theme_apply.sh"
+
+  if [[ -f "$quickshell_helper" ]]; then
+    bash "$quickshell_helper" "$theme"
+  else
+    bash "$theme_script"
+  fi
+}
+
+'''
+theme_runner_anchor = 'apply_theme_to_target() {\n'
+if theme_runner_anchor not in text:
+    raise SystemExit("ERROR: could not locate target theme function")
+if text.count('bash "$theme_script"') != 1:
+    raise SystemExit("ERROR: unexpected legacy theme invocation count")
 text = text.replace(
     'bash "$theme_script"',
-    'bash "${repo_dir}/config/hypr/scripts/quickshell_theme_apply.sh" "$theme"'
+    'run_awtarchy_target_theme "$repo_dir" "$theme_script" "$theme"',
+    1,
 )
+text = text.replace(theme_runner_anchor, theme_runner_function + theme_runner_anchor, 1)
 
 # No notification reload should depend on makoctl after the conversion.
 text = re.sub(
@@ -284,6 +305,53 @@ remove_legacy_shell_files_stage() {
 # may not have a complete baseline or managed-package ledger.
 update_cleanup_function = r'''
 QUICKSHELL_UPDATE_LEGACY_SNAPSHOT=""
+
+QUICKSHELL_HYPRLAND_USER_PATCH=""
+
+quickshell_hyprland_has_legacy_refs() {
+  local file="$1"
+  [[ -r "$file" ]] || return 1
+  grep -Eq \
+    'waybar\.sh start|waybar_ready_sound\.sh|fuzzel_toggle\.sh|wlogout_toggle\.sh|mako_dismiss\.sh|cliphist-(fuzzel|wofi)\.sh|waybar_(toggle|flip|rotate)\.sh|hypr_quicksettings\.sh --ui' \
+    "$file"
+}
+
+stage_quickshell_hyprland_user_patch() {
+  local target_home="$1" rel=".config/hypr/hyprland.lua"
+  local live="${HOME_DIR}/${rel}" baseline="${BASELINE_HOME}/${rel}"
+  local target="${target_home}/${rel}" patch="${TMPD}/quickshell-hyprland-user.patch" rc=0
+
+  quickshell_hyprland_has_legacy_refs "$live" || return 0
+  quickshell_hyprland_has_legacy_refs "$baseline" || return 0
+  [[ -f "$target" ]] || return 0
+  command -v git >/dev/null 2>&1 \
+    || die "git is required to record personal Hyprland modifications during migration."
+
+  set +e
+  git --no-pager diff --no-index --no-prefix -- "$baseline" "$live" >"$patch" 2>/dev/null
+  rc=$?
+  set -e
+  (( rc <= 1 )) || die "Could not record personal Hyprland modifications before migration."
+
+  if [[ -s "$patch" ]]; then
+    QUICKSHELL_HYPRLAND_USER_PATCH="$patch"
+    log "Recorded personal Hyprland modifications against the previous Awtarchy baseline."
+  else
+    rm -f -- "$patch"
+  fi
+}
+
+persist_quickshell_hyprland_user_patch() {
+  [[ -n "$QUICKSHELL_HYPRLAND_USER_PATCH" && -s "$QUICKSHELL_HYPRLAND_USER_PATCH" ]] || return 0
+  local dir="${STATE_DIR}/migrations"
+  local dest="${dir}/quickshell-hyprland-user.patch"
+  mkdir -p -- "$dir"
+  install -m 0600 "$QUICKSHELL_HYPRLAND_USER_PATCH" "$dest"
+  if [[ "${EUID}" -eq 0 ]]; then
+    chown "${TARGET_USER}:${TARGET_USER}" "$dest" 2>/dev/null || true
+  fi
+  log "Saved the pre-migration Hyprland user delta: ${dest}"
+}
 
 run_quickshell_update_pacman() {
   if [[ "${EUID}" -eq 0 ]]; then
@@ -634,6 +702,42 @@ if update_main_marker not in text:
     raise SystemExit("ERROR: could not locate updater main")
 text = text.replace(update_main_marker, update_cleanup_function + update_main_marker, 1)
 
+# A post-migration baseline must not hide a live pre-Quickshell personalized
+# Hyprland config. Reconstruct the stable baseline again so the normal BOTH
+# three-way merge can reapply the user's delta to the new Quickshell stock file.
+baseline_guard = '  [[ -d "$BASELINE_HOME" && -r "$MANIFEST_FILE" ]] && return 0\n\n'
+baseline_guard_replacement = '''  if [[ -d "$BASELINE_HOME" && -r "$MANIFEST_FILE" ]]; then
+    if quickshell_hyprland_has_legacy_refs "${HOME_DIR}/.config/hypr/hyprland.lua" \\
+      && ! quickshell_hyprland_has_legacy_refs "${BASELINE_HOME}/.config/hypr/hyprland.lua";
+    then
+      log "Live Hyprland still references the retired Awtarchy shell; reconstructing the previous stable baseline before migration."
+    else
+      return 0
+    fi
+  fi
+
+'''
+if baseline_guard not in text:
+    raise SystemExit("ERROR: could not locate previous-baseline early return")
+text = text.replace(baseline_guard, baseline_guard_replacement, 1)
+
+baseline_versions = '''  for version_file in \\
+    "${STATE_DIR}/config-version" \\
+    "${STATE_DIR}/baseline/metadata" \\
+    "${HOME_DIR}/.cache/awtarchy/version"
+  do
+'''
+baseline_versions_replacement = '''  for version_file in \\
+    "${STATE_DIR}/config-version" \\
+    "${STATE_DIR}/baseline/metadata" \\
+    "${STATE_DIR}/command-version" \\
+    "${HOME_DIR}/.cache/awtarchy/version"
+  do
+'''
+if baseline_versions not in text:
+    raise SystemExit("ERROR: could not locate previous-baseline version sources")
+text = text.replace(baseline_versions, baseline_versions_replacement, 1)
+
 update_apply_marker = '''  apply_plan "$plan_file" || die "Update failed and user files were rolled back."
   if [[ "$UPDATE_MODE" == "preserve" && -n "$fuzzel_anchor" ]]; then
     restore_fuzzel_anchor "$fuzzel_anchor"
@@ -667,6 +771,7 @@ update_plan_marker = '''  build_plan "$target_home" "$plan_file"
 '''
 update_plan_replacement = '''  build_plan "$target_home" "$plan_file"
   normalize_quickshell_update_plan "$repo_dir" "$plan_file"
+  stage_quickshell_hyprland_user_patch "$target_home"
   review_plan "$plan_file"
 '''
 if update_plan_marker not in text:
@@ -707,6 +812,7 @@ update_validate_replacement = '''  if ! reload_quickshell_update_hyprland; then
     die "Legacy shell cleanup failed. User files were rolled back."
   fi
 
+  persist_quickshell_hyprland_user_patch
   remove_quickshell_update_legacy_packages
 '''
 if update_validate_marker not in text:

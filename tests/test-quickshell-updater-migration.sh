@@ -354,6 +354,16 @@ EOF
 
 chmod 0755 "${fakebin}/"*
 
+cat >"${fakebin}/makoctl" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+cat >"${fakebin}/python" <<'EOF'
+#!/usr/bin/env bash
+exec python3 "$@"
+EOF
+chmod 0755 "${fakebin}/makoctl" "${fakebin}/python"
+
 archive_parent="${TMP}/archive"
 archive_root="${archive_parent}/awtarchy-${TEST_COMMIT}"
 mkdir -p "$archive_root"
@@ -362,59 +372,67 @@ tar -czf "${TMP}/testing-commit.tar.gz" -C "$archive_parent" "$(basename "$archi
 
 previous_parent="${TMP}/previous-archive"
 previous_root="${previous_parent}/awtarchy-2.0.0-1"
-mkdir -p \
-  "$previous_root/config/hypr/scripts" \
-  "$previous_root/config/waybar" \
-  "$previous_root/config/fuzzel" \
-  "$previous_root/config/mako"
-printf '%s\n' '# previous bashrc' >"$previous_root/bashrc"
-printf '%s\n' '# previous bash profile' >"$previous_root/bash_profile"
-printf '%s\n' '! previous Xresources' >"$previous_root/Xresources"
-printf '%s\n' 'return { old = true }' >"$previous_root/config/hypr/hyprland.lua"
-printf '%s\n' '# old waybar helper' >"$previous_root/config/hypr/scripts/waybar.sh"
-printf '%s\n' 'stock waybar' >"$previous_root/config/waybar/config"
-printf '%s\n' '[main]' 'anchor=top' >"$previous_root/config/fuzzel/fuzzel.ini"
-printf '%s\n' 'font=monospace 10' >"$previous_root/config/mako/config"
-tar -czf "${TMP}/previous-release.tar.gz" -C "$previous_parent" "$(basename "$previous_root")"
+mkdir -p "$previous_parent"
+git -C "$ROOT" archive \
+  --format=tar.gz \
+  --prefix='awtarchy-2.0.0-1/' \
+  --output="${TMP}/previous-release.tar.gz" \
+  v2.0.0-1
+tar -xzf "${TMP}/previous-release.tar.gz" -C "$previous_parent"
 
 seed_old_home() {
   local home="$1" rel
   mkdir -p \
-    "$home/.config/hypr/scripts" \
-    "$home/.local/share/applications" \
+    "$home/.cache" \
+    "$home/.config" \
+    "$home/.local/share" \
     "$home/.local/bin" \
     "$home/.local/share/awtarchy" \
     "$home/.local/state/awtarchy"
 
-  for rel in "${RETIRED_DIRS[@]}"; do
-    mkdir -p "${home}/${rel}"
-    printf '%s\n' 'retired Awtarchy directory' >"${home}/${rel}/retired-test-file"
-  done
-  for rel in "${RETIRED_FILES[@]}"; do
-    mkdir -p "$(dirname "${home}/${rel}")"
-    printf '%s\n' 'retired Awtarchy file' >"${home}/${rel}"
-  done
+  cp -a -- "$previous_root/config/." "$home/.config/"
+  if [[ -d "$previous_root/local/share/applications" ]]; then
+    mkdir -p "$home/.local/share/applications"
+    cp -a -- "$previous_root/local/share/applications/." "$home/.local/share/applications/"
+  fi
+  [[ -f "$previous_root/bashrc" ]] && cp -- "$previous_root/bashrc" "$home/.bashrc"
+  [[ -f "$previous_root/bash_profile" ]] && cp -- "$previous_root/bash_profile" "$home/.bash_profile"
+  [[ -f "$previous_root/Xresources" ]] && cp -- "$previous_root/Xresources" "$home/.Xresources"
 
-  printf '%s\n' 'return { old = true }' >"$home/.config/hypr/hyprland.lua"
-  printf '%s\n' '# old waybar helper' >"$home/.config/hypr/scripts/waybar.sh"
-  printf '%s\n' 'custom laptop waybar' >"$home/.config/waybar/config"
-  printf '%s\n' '[main]' 'anchor=top' >"$home/.config/fuzzel/fuzzel.ini"
-  printf '%s\n' 'font=monospace 10' >"$home/.config/mako/config"
-  printf '%s\n' '{"enabled":true,"monitors":{}}' >"$home/.cache/waybar/state.json"
-  chmod 0755 "$home/.config/hypr/scripts/waybar.sh"
+  mkdir -p "$home/.config/micro"
+  cat >"$home/.config/micro/settings.json" <<'EOF'
+{
+    "colorscheme": "default",
+    "autosave": 0
+}
+EOF
+
+  HOME="$home" PATH="${fakebin}:$PATH" AWTARCHY_TEST_HYPRCTL_LOG=/dev/null \
+    bash "$previous_root/config/hypr/themes/gruvbox" >/dev/null
+
+  printf '\n%s\n' '-- personal Hyprland customization survives migration' \
+    >>"$home/.config/hypr/hyprland.lua"
+  printf '\n%s\n' 'custom laptop waybar' >>"$home/.config/waybar/config"
 
   for rel in "${RETIRED_DIRS[@]}" "${RETIRED_FILES[@]}"; do
+    [[ -e "${home}/${rel}" || -L "${home}/${rel}" ]] || continue
     cp -a -- "${home}/${rel}" "${home}/${rel}.backup"
   done
-  cp -a -- "$home/.config/fuzzel" \
+  [[ -d "$home/.config/fuzzel" ]] && cp -a -- "$home/.config/fuzzel" \
     "$home/.config/fuzzel.backup.20260812-000000"
-  cp -a -- "$home/.local/share/applications/hypr_quicksettings.desktop" \
+  [[ -f "$home/.local/share/applications/hypr_quicksettings.desktop" ]] && cp -a -- \
+    "$home/.local/share/applications/hypr_quicksettings.desktop" \
     "$home/.local/share/applications/hypr_quicksettings.desktop.backup.20260812-000000"
   printf '%s\n' 'retired Wofi launch cache' >"$home/.cache/wofi-drun"
   cp -a -- "$home/.cache/wofi-drun" "$home/.cache/wofi-drun.backup"
 
   printf '%s\n' 'tag=v2.0.0-1' 'installed_at=2026-08-01T00:00:00-04:00' \
     >"$home/.local/state/awtarchy/config-version"
+  printf '%s\n' 'tag=v2.0.0-1' \
+    'revision=2222222222222222222222222222222222222222' \
+    'installed_at=2026-08-01T00:00:00-04:00' \
+    >"$home/.local/state/awtarchy/command-version"
+  printf '%s\n' gruvbox >"$home/.local/state/awtarchy/active-theme"
 
   install -m 0755 "$STABLE_LAUNCHER" "$home/.local/bin/awtarchy"
   install -m 0755 "$RUNTIME" "$home/.local/share/awtarchy/awtarchy-runtime.sh"
@@ -429,6 +447,8 @@ write_old_package_state() {
 
 home="${TMP}/home"
 seed_old_home "$home"
+legacy_personal_hypr="${TMP}/legacy-personal-hyprland.lua"
+cp -- "$home/.config/hypr/hyprland.lua" "$legacy_personal_hypr"
 stable_launcher_hash="$(sha256sum "$home/.local/bin/awtarchy" | awk '{print $1}')"
 stable_runtime_hash="$(sha256sum "$home/.local/share/awtarchy/awtarchy-runtime.sh" | awk '{print $1}')"
 
@@ -652,8 +672,52 @@ grep -Fxq 'https://api.github.com/repos/dillacorn/awtarchy/commits/quickshell-co
   || fail "successful migration changed the stable launcher"
 [[ $stable_runtime_hash == "$(sha256sum "$home/.local/share/awtarchy/awtarchy-runtime.sh" | awk '{print $1}')" ]] \
   || fail "successful migration changed the stable runtime"
-cmp -s "$home/.config/hypr/hyprland.lua" "$ROOT/config/hypr/hyprland.lua" \
-  || fail "updater did not advance an unchanged previously shipped Hyprland configuration"
+grep -Fq '.config/hypr/scripts/quickshell.sh start &' "$home/.config/hypr/hyprland.lua" \
+  || fail "updater did not migrate Hyprland startup to Quickshell"
+grep -Fq 'local power_menu = "~/.config/hypr/scripts/quickshell_power_menu.sh"' "$home/.config/hypr/hyprland.lua" \
+  || fail "updater did not migrate the power menu"
+grep -Fq -- '-- personal Hyprland customization survives migration' "$home/.config/hypr/hyprland.lua" \
+  || fail "updater lost the user's Hyprland customization"
+! grep -Fq 'fuzzel_toggle.sh' "$home/.config/hypr/hyprland.lua" \
+  || fail "updater retained the retired launcher in migrated Hyprland"
+assert_file "$home/.config/hypr/hyprland.lua.backup"
+grep -Fq 'fuzzel_toggle.sh' "$home/.config/hypr/hyprland.lua.backup" \
+  || fail "Hyprland migration backup did not preserve the old personalized config"
+assert_file "$home/.local/state/awtarchy/migrations/quickshell-hyprland-user.patch"
+grep -Fq -- '-- personal Hyprland customization survives migration' \
+  "$home/.local/state/awtarchy/migrations/quickshell-hyprland-user.patch" \
+  || fail "updater did not record the Hyprland user delta"
+grep -Fq 'Recorded personal Hyprland modifications against the previous Awtarchy baseline.' \
+  "${TMP}/update.out" \
+  || fail "updater did not report recording personal Hyprland modifications"
+
+# Reproduce an already-poisoned migration state: the current beta baseline and
+# config-version are installed, but the live personalized Hyprland file is still
+# the old Waybar-era copy. The stable command-version is the recovery source.
+poisoned_home="${TMP}/poisoned-home"
+cp -a -- "$home" "$poisoned_home"
+cp -- "$legacy_personal_hypr" "$poisoned_home/.config/hypr/hyprland.lua"
+rm -f -- "$poisoned_home/.config/hypr/hyprland.lua.backup" \
+  "$poisoned_home/.local/state/awtarchy/migrations/quickshell-hyprland-user.patch"
+
+env \
+  "${update_env[@]}" \
+  "HOME=$poisoned_home" \
+  "AWTARCHY_TEST_TARGET_HOME=$poisoned_home" \
+  "$poisoned_home/.local/bin/awtarchy-quickshell" update \
+  >"${TMP}/poisoned-update.out" 2>&1
+
+grep -Fq 'Live Hyprland still references the retired Awtarchy shell; reconstructing the previous stable baseline before migration.' \
+  "${TMP}/poisoned-update.out" \
+  || fail "poisoned baseline recovery did not reconstruct the stable baseline"
+grep -Fq '.config/hypr/scripts/quickshell.sh start &' "$poisoned_home/.config/hypr/hyprland.lua" \
+  || fail "poisoned baseline recovery did not migrate Hyprland startup"
+grep -Fq -- '-- personal Hyprland customization survives migration' "$poisoned_home/.config/hypr/hyprland.lua" \
+  || fail "poisoned baseline recovery lost the user's Hyprland customization"
+! grep -Fq 'fuzzel_toggle.sh' "$poisoned_home/.config/hypr/hyprland.lua" \
+  || fail "poisoned baseline recovery retained the retired launcher"
+assert_file "$poisoned_home/.config/hypr/hyprland.lua.backup"
+assert_file "$poisoned_home/.local/state/awtarchy/migrations/quickshell-hyprland-user.patch"
 
 # Reproduce the poisoned-baseline failure from an already migrated desktop:
 # config-version and baseline are current, but an installed managed UI file is
@@ -770,8 +834,10 @@ assert_absent "${TMP}/failure-qs-fd-leak"
 grep -Fq 'Quickshell did not start successfully. User files were rolled back.' \
   "${TMP}/failure-update.out" \
   || fail "startup failure did not report automatic rollback"
-grep -Fxq 'return { old = true }' "$failure_home/.config/hypr/hyprland.lua" \
-  || fail "rollback did not restore the old Hyprland config"
+grep -Fq 'fuzzel_toggle.sh' "$failure_home/.config/hypr/hyprland.lua" \
+  || fail "rollback did not restore the old personalized Hyprland config"
+grep -Fq -- '-- personal Hyprland customization survives migration' "$failure_home/.config/hypr/hyprland.lua" \
+  || fail "rollback lost the user's pre-migration Hyprland customization"
 grep -Fxq 'custom laptop waybar' "$failure_home/.config/waybar/config" \
   || fail "rollback did not restore the custom Waybar config"
 assert_file "$failure_home/.config/waybar.backup/config"
