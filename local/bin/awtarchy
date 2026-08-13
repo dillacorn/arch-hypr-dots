@@ -292,6 +292,7 @@ ensure_latest_updater() {
 
   if [[ $installed != "$remote" ]]; then
     self_update "$remote"
+    exec "${TARGET_HOME}/.local/bin/awtarchy" "$@"
   fi
 }
 
@@ -405,7 +406,6 @@ pause_menu() {
 
 maintenance_menu() {
   [[ -t 0 && -t 1 && -r /dev/tty && -w /dev/tty ]] || die "The Awtarchy menu requires an interactive terminal."
-  ensure_latest_updater
 
   local choice rc
   while true; do
@@ -421,19 +421,22 @@ maintenance_menu() {
     case "$choice" in
       0)
         self_update
-        pause_menu
+        exec "${TARGET_HOME}/.local/bin/awtarchy"
         ;;
       1)
+        ensure_latest_updater update
         run_runtime update-reset-backup --mode preserve || rc=$?
         pause_menu
         [[ -z ${rc:-} ]] || return "$rc"
         ;;
       2)
+        ensure_latest_updater reset
         run_runtime update-reset-backup --mode clean || rc=$?
         pause_menu
         [[ -z ${rc:-} ]] || return "$rc"
         ;;
       3)
+        ensure_latest_updater review
         run_runtime update-reset-backup --mode preserve --review-only || rc=$?
         pause_menu
         [[ -z ${rc:-} ]] || return "$rc"
@@ -497,28 +500,27 @@ main() {
       self_update
       ;;
     update)
+      ensure_latest_updater "$@"
       shift
-      ensure_latest_updater
       exec_runtime update-reset-backup --mode preserve "$@"
       ;;
     reset)
+      ensure_latest_updater "$@"
       shift
-      ensure_latest_updater
       exec_runtime update-reset-backup --mode clean "$@"
       ;;
     review)
+      ensure_latest_updater "$@"
       shift
-      ensure_latest_updater
       exec_runtime update-reset-backup --mode preserve --review-only "$@"
       ;;
     clean-backups|update-backup-cleaner|backup-cleaner)
       shift
-      ensure_latest_updater
       exec_runtime clean-backups "$@"
       ;;
     update-reset-backup)
+      ensure_latest_updater "$@"
       shift
-      ensure_latest_updater
       exec_runtime update-reset-backup "$@"
       ;;
     install|dry-run|dryrun|test)
