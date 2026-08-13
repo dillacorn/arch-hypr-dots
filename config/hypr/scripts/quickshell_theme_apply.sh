@@ -96,10 +96,19 @@ if [[ -n "$micro_scheme" && -f "$MICRO_SETTINGS" ]]; then
     python3 - "$MICRO_SETTINGS" "$micro_scheme" <<'PY'
 from pathlib import Path
 import json
+import re
 import sys
 
 path = Path(sys.argv[1])
-data = json.loads(path.read_text(encoding="utf-8"))
+text = path.read_text(encoding="utf-8")
+try:
+    data = json.loads(text)
+except json.JSONDecodeError:
+    # Legacy Awtarchy theme scripts could leave trailing commas in Micro's
+    # settings.json. Repair those before applying the new colorscheme.
+    repaired = re.sub(r",(\s*[}\]])", r"\1", text)
+    data = json.loads(repaired)
+
 data["colorscheme"] = sys.argv[2]
 path.write_text(json.dumps(data, indent=4) + "\n", encoding="utf-8")
 PY
