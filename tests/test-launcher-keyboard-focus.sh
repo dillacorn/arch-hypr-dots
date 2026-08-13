@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 LAUNCHER="${ROOT}/config/quickshell/awtarchy/Launcher.qml"
 POSITIONER="${ROOT}/config/hypr/scripts/quickshell_launcher_position.sh"
+dollar='$'
+selector_literal="${dollar}{selector_lua}"
+focus_literal="${dollar}{focus_lua}"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -20,12 +23,12 @@ require_source() {
 require_source "$LAUNCHER" 'search.forceActiveFocus();' \
   'launcher search field is not assigned active QML focus after positioning'
 require_source "$POSITIONER" \
-  'focus_lua="hl.dispatch(hl.dsp.focus({ window = \"${selector_lua}\" }))"' \
+  "focus_lua=\"hl.dispatch(hl.dsp.focus({ window = \\\"${selector_literal}\\\" }))\"" \
   'launcher positioner does not focus the exact mapped launcher window'
-require_source "$POSITIONER" '${focus_lua}' \
+require_source "$POSITIONER" "$focus_literal" \
   'launcher positioner does not dispatch its prepared focus operation'
 
-focus_dispatch_line="$(grep -nF '    ${focus_lua}' "$POSITIONER" | head -n1 | cut -d: -f1)"
+focus_dispatch_line="$(grep -nF "    ${focus_literal}" "$POSITIONER" | head -n1 | cut -d: -f1)"
 opacity_line="$(grep -nF 'prop = \"opacity_fullscreen_override\"' "$POSITIONER" | head -n1 | cut -d: -f1)"
 
 [[ -n "$focus_dispatch_line" && -n "$opacity_line" ]] \
