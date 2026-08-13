@@ -4,9 +4,6 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 LAUNCHER="${ROOT}/config/quickshell/awtarchy/Launcher.qml"
 POSITIONER="${ROOT}/config/hypr/scripts/quickshell_launcher_position.sh"
-dollar='$'
-selector_literal="${dollar}{selector_lua}"
-focus_literal="${dollar}{focus_lua}"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -18,22 +15,33 @@ require_source() {
   grep -Fq -- "$expected" "$file" || fail "$description"
 }
 
-# Item focus and compositor focus are separate. Keep the search field prepared
-# in QML, then focus the exact mapped launcher toplevel after positioning it.
+# Give the search item QML focus, then start Hyprland's focus-grab protocol
+# with only the launcher surface. This produces keyboard entry without a
+# compositor focus dispatcher or any pointer operation. Bar surfaces may join
+# only after the launcher has been the sole initial keyboard target.
 require_source "$LAUNCHER" 'search.forceActiveFocus();' \
-  'launcher search field is not assigned active QML focus after positioning'
-require_source "$POSITIONER" \
-  "focus_lua=\"hl.dispatch(hl.dsp.focus({ window = \\\"${selector_literal}\\\" }))\"" \
-  'launcher positioner does not focus the exact mapped launcher window'
-require_source "$POSITIONER" "$focus_literal" \
-  'launcher positioner does not dispatch its prepared focus operation'
+  'launcher search field is not assigned active QML focus'
+require_source "$LAUNCHER" 'property bool launcherFocusGrabExpanded: false' \
+  'launcher does not track staged focus-grab expansion'
+require_source "$LAUNCHER" 'windows: root.launcherFocusGrabExpanded' \
+  'launcher does not stage its focus-grab whitelist'
+require_source "$LAUNCHER" '            : [launcherWindow]' \
+  'launcher is not the sole initial focus-grab surface'
+require_source "$LAUNCHER" 'root.launcherFocusGrabExpanded = true;' \
+  'launcher never expands its focus-grab whitelist after activation'
 
-focus_dispatch_line="$(grep -nF "    ${focus_literal}" "$POSITIONER" | head -n1 | cut -d: -f1)"
-opacity_line="$(grep -nF 'prop = \"opacity_fullscreen_override\"' "$POSITIONER" | head -n1 | cut -d: -f1)"
-
-[[ -n "$focus_dispatch_line" && -n "$opacity_line" ]] \
-  || fail 'could not locate launcher focus sequencing statements'
-(( focus_dispatch_line > opacity_line )) \
-  || fail 'launcher is focused before its final geometry and visibility are applied'
+for forbidden in \
+  'hl.dsp.focus(' \
+  'dispatch focuswindow' \
+  'dispatch movecursor' \
+  'hl.dsp.cursor' \
+  'requestActivate' \
+  'warpCursor' \
+  'setCursorPosition'
+do
+  if grep -Fq -- "$forbidden" "$LAUNCHER" "$POSITIONER"; then
+    fail "launcher keyboard focus path contains pointer-affecting compositor operation: ${forbidden}"
+  fi
+done
 
 printf '%s\n' 'Launcher keyboard focus regression test passed.'

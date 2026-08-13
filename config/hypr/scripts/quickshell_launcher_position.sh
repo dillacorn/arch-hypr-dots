@@ -266,13 +266,8 @@ monitor_lua="${monitor_lua//\"/\\\"}"
 selector_lua="${selector//\\/\\\\}"
 selector_lua="${selector_lua//\"/\\\"}"
 resize_lua=""
-focus_lua=""
 if (( resize_on_spawn )); then
     resize_lua="hl.dispatch(hl.dsp.window.resize({ x = ${win_w}, y = ${win_h}, relative = false, window = \"${selector_lua}\" }))"
-    # A keybind can open the launcher while the pointer is nowhere near it.
-    # Focus this exact mapped toplevel so the prepared QML search field gets
-    # keyboard input immediately instead of waiting for pointer focus.
-    focus_lua="hl.dispatch(hl.dsp.focus({ window = \"${selector_lua}\" }))"
 fi
 
 # The v2 runtime rule maps the launcher fully transparent. Perform every move
@@ -292,5 +287,4 @@ hyprctl eval "
     hl.dispatch(hl.dsp.window.set_prop({ prop = \"opacity_inactive_override\", value = \"1\", window = \"${selector_lua}\" }))
     hl.dispatch(hl.dsp.window.set_prop({ prop = \"opacity_fullscreen\", value = \"1\", window = \"${selector_lua}\" }))
     hl.dispatch(hl.dsp.window.set_prop({ prop = \"opacity_fullscreen_override\", value = \"1\", window = \"${selector_lua}\" }))
-    ${focus_lua}
 " >/dev/null

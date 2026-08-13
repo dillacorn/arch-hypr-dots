@@ -54,6 +54,7 @@ Singleton {
     property string requestedPlacement: "center"
     property string savedPlacement: "center"
     property bool launcherPositioned: false
+    property bool launcherFocusGrabExpanded: false
     property bool openPreparing: false
     property bool settingsOpen: false
     property bool copySettingsOpen: false
@@ -469,6 +470,8 @@ Singleton {
 
         FlyoutManager.claim("launcher", targetScreen.name);
         focusGrab.active = false;
+        focusGrabExpansionTimer.stop();
+        launcherFocusGrabExpanded = false;
         resetLocalSettingsState();
         launcherScreen = targetScreen;
         targetMonitorName = targetScreen.name;
@@ -523,6 +526,8 @@ Singleton {
         if (settingsDirty)
             discardDraft();
         focusGrab.active = false;
+        focusGrabExpansionTimer.stop();
+        launcherFocusGrabExpanded = false;
         launcherWindow.visible = false;
         FlyoutManager.release("launcher");
         launcherPositioned = false;
@@ -722,8 +727,8 @@ Singleton {
             if (!launcherWindow.visible)
                 return;
             root.launcherPositioned = true;
+            search.forceActiveFocus();
             focusGrab.active = true;
-            Qt.callLater(() => search.forceActiveFocus());
         }
     }
 
@@ -731,9 +736,32 @@ Singleton {
         id: boundsProcess
     }
 
+    // Start the focus grab with only the launcher surface. The protocol then
+    // gives that surface keyboard entry without moving the pointer. Bar
+    // surfaces join the whitelist after the initial keyboard target is set.
+    Timer {
+        id: focusGrabExpansionTimer
+        interval: 50
+        repeat: false
+        onTriggered: {
+            if (launcherWindow.visible && focusGrab.active)
+                root.launcherFocusGrabExpanded = true;
+        }
+    }
+
     HyprlandFocusGrab {
         id: focusGrab
-        windows: [launcherWindow].concat(FlyoutManager.barWindows || [])
+        windows: root.launcherFocusGrabExpanded
+            ? [launcherWindow].concat(FlyoutManager.barWindows || [])
+            : [launcherWindow]
+        onActiveChanged: {
+            if (active) {
+                focusGrabExpansionTimer.restart();
+            } else {
+                focusGrabExpansionTimer.stop();
+                root.launcherFocusGrabExpanded = false;
+            }
+        }
         onCleared: {
             if (launcherWindow.visible)
                 root.close();
