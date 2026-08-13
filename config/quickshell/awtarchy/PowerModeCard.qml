@@ -12,11 +12,17 @@ Rectangle {
     property int iconScale: 100
     property string backendCommand: ""
 
+    readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
+        || (Quickshell.env("HOME") + "/.config")
+    readonly property string terminalLauncher: configHome + "/hypr/scripts/default_terminal.sh"
+    readonly property string setupScript: configHome + "/hypr/scripts/quickshell_power_profile_setup.sh"
     readonly property bool isLaptop: UPower.displayDevice.ready
         && UPower.displayDevice.isLaptopBattery
-    readonly property bool available: isLaptop && backendCommand.length > 0
+    readonly property bool backendReady: backendCommand === "tlpctl"
+        || backendCommand === "powerprofilesctl"
+    readonly property bool conflictDetected: backendCommand === "conflict"
 
-    visible: available
+    visible: isLaptop
     Layout.fillWidth: true
     Layout.preferredHeight: visible ? content.implicitHeight + 16 : 0
     color: Theme.popupButton
@@ -36,12 +42,28 @@ Rectangle {
     }
 
     function backendLabel() {
-        return backendCommand === "tlpctl" ? "TLP" : "power-profiles-daemon";
+        if (backendCommand === "tlpctl")
+            return "TLP";
+        if (backendCommand === "powerprofilesctl")
+            return "power-profiles-daemon";
+        if (conflictDetected)
+            return "TLP + PPD conflict";
+        return "Setup required";
     }
 
     function probeBackend() {
         if (!backendProbe.running)
             backendProbe.running = true;
+    }
+
+    function runSetup() {
+        if (setupTerminal.running)
+            return;
+        setupTerminal.exec([
+            terminalLauncher,
+            "--class", "awtarchy-power-mode-setup",
+            "--", "bash", setupScript
+        ]);
     }
 
     onActiveChanged: {
@@ -53,12 +75,21 @@ Rectangle {
         id: backendProbe
         command: [
             "bash", "-lc",
-            "if command -v tlpctl >/dev/null 2>&1 && tlpctl get >/dev/null 2>&1; then printf tlpctl; "
+            "if pacman -Qq tlp >/dev/null 2>&1 && pacman -Qq power-profiles-daemon >/dev/null 2>&1; then printf conflict; "
+                + "elif command -v tlpctl >/dev/null 2>&1 && tlpctl get >/dev/null 2>&1; then printf tlpctl; "
                 + "elif command -v powerprofilesctl >/dev/null 2>&1 && powerprofilesctl get >/dev/null 2>&1; then printf powerprofilesctl; fi"
         ]
         running: true
         stdout: StdioCollector {
             onStreamFinished: root.backendCommand = text.trim()
+        }
+    }
+
+    Process {
+        id: setupTerminal
+        onExited: {
+            root.backendCommand = "";
+            Qt.callLater(() => root.probeBackend());
         }
     }
 
@@ -80,7 +111,9 @@ Rectangle {
 
             Text {
                 Layout.fillWidth: true
-                text: "Power Mode · " + root.profileLabel(PowerProfiles.profile)
+                text: root.backendReady
+                    ? "Power Mode · " + root.profileLabel(PowerProfiles.profile)
+                    : "Power Mode"
                 color: Theme.foreground
                 font.family: Theme.fontFamily
                 font.pixelSize: root.scaledText(12)
@@ -99,6 +132,7 @@ Rectangle {
         Flow {
             Layout.fillWidth: true
             Layout.preferredHeight: childrenRect.height
+            visible: root.backendReady
             spacing: 5
 
             Repeater {
@@ -123,11 +157,34 @@ Rectangle {
             }
         }
 
+        RowLayout {
+            Layout.fillWidth: true
+            visible: !root.backendReady
+            spacing: 8
+
+            Text {
+                Layout.fillWidth: true
+                text: root.conflictDetected
+                    ? "TLP and power-profiles-daemon are both installed. Resolve the conflict before switching profiles."
+                    : "No Power Profiles backend is available yet. Awtarchy will use TLP's tlp-pd backend when TLP is installed."
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: root.scaledText(8)
+                wrapMode: Text.Wrap
+            }
+
+            SettingsButton {
+                label: root.conflictDetected ? "Resolve" : "Set Up"
+                textSize: root.scaledText(9)
+                onClicked: root.runSetup()
+            }
+        }
+
         Text {
             Layout.fillWidth: true
-            visible: PowerProfiles.degradationReason !== PerformanceDegradationReason.None
-            text: "Performance limited: "
-                + PerformanceDegradationReason.toString(PowerProfiles.degradationReason)
+            visible: root.backendReady
+                && PowerProfiles.degradationReason !== PerformanceDegradationReason.None
+            text: "Performance mode is currently degraded by the system."
             color: Theme.muted
             font.family: Theme.fontFamily
             font.pixelSize: root.scaledText(8)
