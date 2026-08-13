@@ -107,6 +107,7 @@ Usage:
   awtarchy.sh update-reset-backup [--tag <tag>] [--mode preserve|clean] [--review-only]
   awtarchy.sh update-backup-cleaner [options]
   awtarchy.sh clean-backups [options]
+  awtarchy.sh troubleshoot
   awtarchy.sh help
 
 Top-level no-arg mode opens the built-in terminal menu.
@@ -6467,6 +6468,381 @@ while :; do
 done
 }
 
+troubleshoot_main() {
+  local command_name="${AWTARCHY_TROUBLESHOOT_COMMAND:-awtarchy}"
+  local target_user="" target_home="" state_root="" log_dir="" report="" timestamp=""
+  local hypr_file="" baseline_hypr="" binds_json="" clients_json="" path="" pkg="" unit="" f=""
+  local -a recent_logs=()
+
+  case "$command_name" in
+    awtarchy|awtarchy-quickshell) ;;
+    *) command_name="awtarchy" ;;
+  esac
+
+  if [[ "${EUID}" -eq 0 && -n "${SUDO_USER:-}" && "${SUDO_USER}" != root ]]; then
+    target_user="$SUDO_USER"
+    target_home="$(getent passwd "$target_user" 2>/dev/null | cut -d: -f6 || true)"
+  else
+    target_user="${USER:-$(id -un 2>/dev/null || printf unknown)}"
+    target_home="${HOME:-}"
+  fi
+  if [[ -z "$target_home" || ! -d "$target_home" ]]; then
+    target_home="$(getent passwd "$target_user" 2>/dev/null | cut -d: -f6 || true)"
+  fi
+  [[ -n "$target_home" && -d "$target_home" ]] \
+    || die "Could not determine the user home directory for troubleshooting."
+
+  state_root="${target_home}/.local/state"
+  if [[ "$command_name" == "awtarchy-quickshell" ]]; then
+    log_dir="${state_root}/awtarchy-quickshell/logs"
+  else
+    log_dir="${state_root}/awtarchy/logs"
+  fi
+  timestamp="$(date +%Y%m%d-%H%M%S)"
+  umask 077
+  mkdir -p -- "$log_dir"
+  report="${log_dir}/troubleshoot-${timestamp}.log"
+  hypr_file="${target_home}/.config/hypr/hyprland.lua"
+  baseline_hypr="${state_root}/awtarchy/baseline/home/.config/hypr/hyprland.lua"
+
+  diag_section() {
+    printf '\n================ %s ================\n' "$1"
+  }
+
+  diag_timeout() {
+    if command -v timeout >/dev/null 2>&1; then
+      timeout 5 "$@"
+    else
+      "$@"
+    fi
+  }
+
+  diag_hash() {
+    local candidate="$1"
+    if [[ -f "$candidate" ]]; then
+      printf '%s  %s\n' "$(sha256sum "$candidate" 2>/dev/null | awk '{print $1}')" "$candidate"
+    elif [[ -L "$candidate" ]]; then
+      printf 'SYMLINK %s -> %s\n' "$candidate" "$(readlink "$candidate" 2>/dev/null || true)"
+    else
+      printf 'MISSING %s\n' "$candidate"
+    fi
+  }
+
+  diag_script() {
+    local candidate="$1"
+    printf '%-48s ' "${candidate#"${target_home}/"}"
+    if [[ -x "$candidate" ]]; then
+      printf 'EXECUTABLE'
+    elif [[ -e "$candidate" ]]; then
+      printf 'PRESENT-NOT-EXECUTABLE'
+    else
+      printf 'MISSING\n'
+      return 0
+    fi
+    if [[ -f "$candidate" ]]; then
+      if bash -n "$candidate" >/dev/null 2>&1; then
+        printf ' bash-n=OK'
+      else
+        printf ' bash-n=FAIL'
+      fi
+      printf ' sha256=%s' "$(sha256sum "$candidate" 2>/dev/null | awk '{print $1}')"
+    fi
+    printf '\n'
+  }
+
+  {
+    printf 'Awtarchy troubleshooting report\n'
+    printf 'command=%s\n' "$command_name"
+    printf 'generated_at=%s\n' "$(date -Iseconds)"
+    printf 'target_user=%s\n' "$target_user"
+    printf 'target_home=%s\n' "$target_home"
+    printf 'read_only_checks=yes\n'
+
+    diag_section "SYSTEM"
+    uname -a 2>&1 || true
+    [[ -r /etc/os-release ]] && cat /etc/os-release || true
+    printf '\n--- CPU ---\n'
+    diag_timeout lscpu 2>&1 | grep -E '^(Architecture|CPU\(s\)|Model name|Vendor ID):' || true
+    printf '\n--- DISPLAY CONTROLLERS ---\n'
+    diag_timeout lspci -nn 2>&1 | grep -Ei 'VGA compatible controller|3D controller|Display controller|2D controller' || true
+
+    diag_section "COMMANDS AND LOCAL VERSION STATE"
+    for f in awtarchy awtarchy-quickshell; do
+      path="$(command -v "$f" 2>/dev/null || true)"
+      printf '%s=%s\n' "$f" "${path:-MISSING}"
+      [[ -n "$path" ]] && diag_hash "$path"
+    done
+    for f in \
+      "${state_root}/awtarchy/command-version" \
+      "${state_root}/awtarchy-quickshell/command-version" \
+      "${state_root}/awtarchy/config-version" \
+      "${state_root}/awtarchy/hardware-state" \
+      "${state_root}/awtarchy/active-theme"
+    do
+      printf '\n--- %s ---\n' "$f"
+      if [[ -r "$f" ]]; then cat "$f"; else printf 'MISSING\n'; fi
+    done
+    printf '\n--- installed runtimes ---\n'
+    diag_hash "${target_home}/.local/share/awtarchy/awtarchy-runtime.sh"
+    diag_hash "${target_home}/.local/share/awtarchy-quickshell/awtarchy-runtime.sh"
+    printf '\n--- managed package ledger ---\n'
+    if [[ -r /var/lib/awtarchy/managed-packages ]]; then
+      cat /var/lib/awtarchy/managed-packages
+    else
+      printf 'MISSING OR UNREADABLE\n'
+    fi
+
+    diag_section "RELEVANT PACKAGES"
+    if command -v pacman >/dev/null 2>&1; then
+      for pkg in \
+        hyprland quickshell upower \
+        waybar waybar-git fuzzel wlogout mako wofi \
+        network-manager-applet blueman \
+        tlp tlp-pd power-profiles-daemon \
+        jq python
+      do
+        pacman -Q "$pkg" 2>/dev/null || printf '%-30s MISSING\n' "$pkg"
+      done
+    else
+      printf 'pacman is unavailable\n'
+    fi
+
+    diag_section "SERVICES"
+    if command -v systemctl >/dev/null 2>&1; then
+      for unit in tlp.service tlp-pd.service power-profiles-daemon.service; do
+        printf '%-34s enabled=' "$unit"
+        diag_timeout systemctl is-enabled "$unit" 2>/dev/null || printf 'not-found'
+        printf ' active='
+        diag_timeout systemctl is-active "$unit" 2>/dev/null || printf 'inactive/not-found'
+        printf '\n'
+      done
+      printf '\n--- failed system units ---\n'
+      diag_timeout systemctl --failed --no-pager --full 2>&1 || true
+      printf '\n--- failed user units ---\n'
+      diag_timeout systemctl --user --failed --no-pager --full 2>&1 || true
+      printf '\n--- relevant user units ---\n'
+      diag_timeout systemctl --user list-units --all --no-pager --full 2>&1 \
+        | grep -Ei 'awtarchy|quick|hypr|waybar|mako|wlogout|fuzzel' || true
+      printf '\n--- user timers ---\n'
+      diag_timeout systemctl --user list-timers --all --no-pager --full 2>&1 || true
+    else
+      printf 'systemctl is unavailable\n'
+    fi
+
+    diag_section "HYPRLAND"
+    if command -v hyprctl >/dev/null 2>&1; then
+      printf '%s\n' '--- version ---'
+      diag_timeout hyprctl version 2>&1 || true
+      printf '%s\n' '--- config errors ---'
+      diag_timeout hyprctl configerrors 2>&1 || true
+      printf '%s\n' '--- monitors ---'
+      diag_timeout hyprctl monitors -j 2>&1 || true
+    else
+      printf 'hyprctl is unavailable\n'
+    fi
+
+    printf '\n--- live hyprland.lua ---\n'
+    diag_hash "$hypr_file"
+    if [[ -r "$hypr_file" ]]; then
+      if command -v lua >/dev/null 2>&1; then
+        if AWTARCHY_LUA_VALIDATE_FILE="$hypr_file" lua -e 'local p=assert(os.getenv("AWTARCHY_LUA_VALIDATE_FILE")); assert(loadfile(p))' >/dev/null 2>&1; then
+          printf 'lua_syntax=OK\n'
+        else
+          printf 'lua_syntax=FAIL\n'
+        fi
+      else
+        printf 'lua_syntax=NOT_CHECKED(lua missing)\n'
+      fi
+      grep -nE -C 3 \
+        'quickshell|waybar|mako|wlogout|fuzzel|hypr_quicksettings|nm-applet|blueman-applet|local (app_launcher|wlogout|power_menu|hypr_quicksettings|waybar_|bar_|mako_dismiss|notification_dismiss|clipboard_history)|SUPER \+ P|SUPER \+ SPACE|SUPER \+ ALT \+ B|SUPER \+ CTRL \+ B|SUPER \+ ALT \+ backspace' \
+        "$hypr_file" 2>/dev/null || true
+    fi
+
+    printf '\n--- saved baseline hyprland.lua ---\n'
+    diag_hash "$baseline_hypr"
+    if [[ -r "$baseline_hypr" ]]; then
+      grep -nE -C 3 \
+        'quickshell|waybar|mako|wlogout|fuzzel|hypr_quicksettings|nm-applet|blueman-applet|SUPER \+ P|SUPER \+ SPACE|SUPER \+ ALT \+ B|SUPER \+ CTRL \+ B|SUPER \+ ALT \+ backspace' \
+        "$baseline_hypr" 2>/dev/null || true
+    fi
+    printf '\n--- baseline metadata ---\n'
+    [[ -r "${state_root}/awtarchy/baseline/metadata" ]] \
+      && cat "${state_root}/awtarchy/baseline/metadata" \
+      || printf 'MISSING\n'
+    printf '\n--- baseline manifest summary ---\n'
+    if [[ -r "${state_root}/awtarchy/baseline/manifest.paths" ]]; then
+      printf 'entries=%s\n' "$(wc -l <"${state_root}/awtarchy/baseline/manifest.paths")"
+      grep -E 'hyprland\.lua|quickshell|waybar|mako|wlogout|fuzzel|hypr_quicksettings' \
+        "${state_root}/awtarchy/baseline/manifest.paths" 2>/dev/null || true
+    else
+      printf 'MISSING\n'
+    fi
+
+    diag_section "LOADED SHELL BINDS"
+    if command -v hyprctl >/dev/null 2>&1; then
+      binds_json="$(diag_timeout hyprctl binds -j 2>/dev/null || true)"
+      if [[ -n "$binds_json" ]] && command -v jq >/dev/null 2>&1; then
+        printf '%s\n' "$binds_json" | jq '
+          .[]
+          | select(
+              ((.key // "" | ascii_upcase) == "P")
+              or ((.arg // "") | test("quick|waybar|mako|wlogout|fuzzel|awtarchy"; "i"))
+            )
+        ' 2>/dev/null || true
+      else
+        printf '%s\n' "${binds_json:-unavailable}"
+      fi
+    else
+      printf 'hyprctl is unavailable\n'
+    fi
+
+    diag_section "CURRENT QUICKSHELL HELPERS"
+    for f in \
+      quickshell.sh \
+      quickshell_launcher.sh \
+      quickshell_power_menu.sh \
+      quickshell_quick_settings_toggle.sh \
+      quickshell_clipboard_toggle.sh \
+      quickshell_notification_dismiss.sh \
+      quickshell_bar_toggle.sh \
+      quickshell_bar_flip.sh \
+      quickshell_bar_rotate.sh \
+      quickshell_resume_recover.sh \
+      hypr_quicksettings.sh \
+      hypr_quicksettings_core.sh
+    do
+      diag_script "${target_home}/.config/hypr/scripts/${f}"
+    done
+
+    diag_section "RETIRED SHELL HELPER STATUS"
+    for f in \
+      waybar.sh waybar_ready_sound.sh waybar_toggle.sh waybar_flip.sh waybar_rotate.sh \
+      fuzzel_toggle.sh wlogout_toggle.sh mako_dismiss.sh cliphist-fuzzel.sh cliphist-wofi.sh
+    do
+      diag_script "${target_home}/.config/hypr/scripts/${f}"
+    done
+    printf '\n--- legacy desktop entry ---\n'
+    diag_hash "${target_home}/.local/share/applications/hypr_quicksettings.desktop"
+    if [[ -r "${target_home}/.local/share/applications/hypr_quicksettings.desktop" ]]; then
+      cat "${target_home}/.local/share/applications/hypr_quicksettings.desktop"
+    fi
+
+    diag_section "QUICKSHELL CONFIG HASHES"
+    if [[ -d "${target_home}/.config/quickshell/awtarchy" ]]; then
+      find "${target_home}/.config/quickshell/awtarchy" -maxdepth 1 -type f -print0 2>/dev/null \
+        | sort -z \
+        | xargs -0 -r sha256sum 2>/dev/null || true
+    else
+      printf 'MISSING %s\n' "${target_home}/.config/quickshell/awtarchy"
+    fi
+
+    diag_section "RUNNING SHELL PROCESSES"
+    ps -eo pid,ppid,lstart,etime,args 2>/dev/null \
+      | grep -Ei '(^|[ /])(qs|quickshell|waybar|mako|wlogout|fuzzel)([ /]|$)|hypr_quicksettings|nm-applet|blueman' \
+      | grep -vE 'grep -Ei|troubleshoot' || true
+
+    diag_section "RELEVANT HYPRLAND CLIENTS"
+    if command -v hyprctl >/dev/null 2>&1; then
+      clients_json="$(diag_timeout hyprctl clients -j 2>/dev/null || true)"
+      if [[ -n "$clients_json" ]] && command -v jq >/dev/null 2>&1; then
+        printf '%s\n' "$clients_json" | jq '
+          .[]
+          | select(
+              ((.class // "") | test("quick|waybar|mako|wlogout|fuzzel|alacritty"; "i"))
+              or ((.initialClass // "") | test("quick|waybar|mako|wlogout|fuzzel|alacritty"; "i"))
+              or ((.title // "") | test("quick settings|awtarchy"; "i"))
+            )
+          | {address,pid,class,initialClass,title,initialTitle}
+        ' 2>/dev/null || true
+      else
+        printf '%s\n' "${clients_json:-unavailable}"
+      fi
+    else
+      printf 'hyprctl is unavailable\n'
+    fi
+
+    diag_section "QUICKSHELL IPC"
+    printf 'qs_path=%s\n' "$(command -v qs 2>/dev/null || printf MISSING)"
+    if command -v qs >/dev/null 2>&1; then
+      diag_timeout qs --version 2>&1 || true
+      printf '%s\n' '--- awtarchy control ping ---'
+      diag_timeout qs -c awtarchy ipc call control ping 2>&1 || true
+    fi
+
+    diag_section "QUICKSHELL STATE AND LOG"
+    printf '%s\n' '--- quickshell-state.json ---'
+    if [[ -r "${target_home}/.cache/awtarchy/quickshell-state.json" ]]; then
+      cat "${target_home}/.cache/awtarchy/quickshell-state.json"
+    else
+      printf 'MISSING\n'
+    fi
+    printf '%s\n' '--- quickshell.log (last 1000 lines) ---'
+    if [[ -r "${target_home}/.cache/awtarchy/quickshell.log" ]]; then
+      tail -n 1000 "${target_home}/.cache/awtarchy/quickshell.log"
+    else
+      printf 'MISSING\n'
+    fi
+
+    diag_section "AUTOSTART AND USER SERVICE REFERENCES"
+    grep -RInE \
+      'quickshell|waybar|mako|wlogout|fuzzel|hypr_quicksettings|nm-applet|blueman' \
+      "${target_home}/.config/autostart" \
+      "${target_home}/.config/systemd/user" \
+      "${target_home}/.local/share/systemd/user" \
+      "${target_home}/.bash_profile" \
+      "${target_home}/.profile" \
+      2>/dev/null || true
+
+    diag_section "RECENT AWTARCHY UPDATE LOGS"
+    mapfile -t recent_logs < <(
+      find \
+        "${state_root}/awtarchy/logs" \
+        "${state_root}/awtarchy-quickshell/logs" \
+        -maxdepth 1 -type f -name 'update-*.log' -printf '%T@ %p\n' 2>/dev/null \
+        | sort -nr | head -n 5 | cut -d' ' -f2-
+    )
+    if (( ${#recent_logs[@]} == 0 )); then
+      printf 'No update logs found.\n'
+    else
+      for f in "${recent_logs[@]}"; do
+        printf '\n---------------- %s ----------------\n' "$f"
+        cat "$f" 2>/dev/null || true
+      done
+    fi
+
+    diag_section "CURRENT BOOT USER JOURNAL"
+    if command -v journalctl >/dev/null 2>&1; then
+      diag_timeout journalctl --user -b --no-pager 2>/dev/null \
+        | grep -Ei 'quickshell|(^|/)qs|hyprland|waybar|mako|wlogout|fuzzel|quick.?settings|awtarchy' \
+        | tail -n 1000 || true
+    else
+      printf 'journalctl is unavailable\n'
+    fi
+
+    diag_section "CURRENT BOOT SYSTEM JOURNAL"
+    if command -v journalctl >/dev/null 2>&1; then
+      diag_timeout journalctl -b --no-pager 2>/dev/null \
+        | grep -Ei 'quickshell|(^|/)qs|hyprland|waybar|mako|wlogout|fuzzel|quick.?settings|awtarchy' \
+        | tail -n 1000 || true
+    else
+      printf 'journalctl is unavailable\n'
+    fi
+
+    diag_section "COREDUMPS"
+    if command -v coredumpctl >/dev/null 2>&1; then
+      diag_timeout coredumpctl --no-pager list 2>/dev/null \
+        | grep -Ei 'quickshell|(^|[ /])qs([ /]|$)|hyprland|waybar|mako|wlogout|fuzzel' \
+        | tail -n 100 || true
+    else
+      printf 'coredumpctl is unavailable\n'
+    fi
+
+    diag_section "REPORT"
+    printf 'saved_to=%s\n' "$report"
+    printf 'No configuration, packages, services, or shell processes were changed by this command.\n'
+  } | tee "$report"
+}
+
 main_awtarchy() {
   case "${1:-}" in
     "") top_menu ;;
@@ -6474,6 +6850,7 @@ main_awtarchy() {
     install) shift; run_install "$@" ;;
     update-reset-backup|update-reset) shift; update_reset_backup_main "$@" ;;
     update-backup-cleaner|clean-backups|backup-cleaner) shift; run_backup_cleaner_entry "$@" ;;
+    troubleshoot) shift; (( $# == 0 )) || die "troubleshoot does not accept options."; troubleshoot_main ;;
     __backup-cleaner) shift; update_backup_cleaner_main "$@" ;;
     help|-h|--help) usage ;;
     *) die "Unknown command: $1" ;;

@@ -465,6 +465,7 @@ Usage:
   awtarchy reset [--tag <tag>] [update options]
   awtarchy review [--tag <tag>]
   awtarchy clean-backups [options]
+  awtarchy troubleshoot
   awtarchy version
   awtarchy check-update
   awtarchy self-update
@@ -479,6 +480,14 @@ EOF
 
 main() {
   init_target
+
+  if [[ ${1:-} == troubleshoot ]]; then
+    shift
+    (( $# == 0 )) || die "troubleshoot does not accept options."
+    require_runtime
+    AWTARCHY_TROUBLESHOOT_COMMAND=awtarchy exec bash "$RUNTIME" troubleshoot
+  fi
+
   ensure_vpn_directory
 
   case "${1:-}" in

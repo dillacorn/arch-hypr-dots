@@ -410,6 +410,7 @@ Usage:
   awtarchy-quickshell reset [update options]
   awtarchy-quickshell update-reset-backup [update options]
   awtarchy-quickshell clean-backups [options]
+  awtarchy-quickshell troubleshoot
   awtarchy-quickshell version
   awtarchy-quickshell check-update
   awtarchy-quickshell self-update
@@ -449,6 +450,12 @@ main() {
       shift
       require_runtime
       exec bash "$RUNTIME" clean-backups "$@"
+      ;;
+    troubleshoot)
+      shift
+      (( $# == 0 )) || die "troubleshoot does not accept options."
+      require_runtime
+      AWTARCHY_TROUBLESHOOT_COMMAND=awtarchy-quickshell exec bash "$RUNTIME" troubleshoot
       ;;
     install|dry-run|dryrun|test)
       die "Install this command from quickshell-conversion-testing with awtarchy-install.sh."
