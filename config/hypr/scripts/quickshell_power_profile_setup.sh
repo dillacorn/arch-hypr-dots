@@ -26,6 +26,18 @@ pause() {
   read -r _ || true
 }
 
+confirm_replace_ppd() {
+  local answer=""
+  printf '\nTLP and power-profiles-daemon are both installed.\n'
+  printf 'Awtarchy uses TLP on laptops and should use tlp-pd for Power Mode.\n'
+  printf 'Replace power-profiles-daemon with tlp-pd now? [Y/n] '
+  IFS= read -r answer || return 1
+  case "$answer" in
+    ""|y|Y|yes|YES) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 is_laptop || {
   printf 'Power Mode setup is only intended for laptops.\n' >&2
   pause
@@ -40,28 +52,22 @@ have pacman || {
 
 if pacman -Qq tlp >/dev/null 2>&1; then
   if pacman -Qq power-profiles-daemon >/dev/null 2>&1; then
-    cat <<'EOF'
-TLP and power-profiles-daemon are both installed.
+    if ! confirm_replace_ppd; then
+      printf '\nNo changes were made. Resolve the TLP/PPD conflict before using Power Mode.\n' >&2
+      pause
+      exit 2
+    fi
 
-Awtarchy uses TLP for laptop power management. Running both power managers can
-cause them to overwrite the same kernel settings, so this setup will not change
-either package automatically.
-
-Remove power-profiles-daemon first, then run Power Mode setup again:
-
-  sudo systemctl disable --now power-profiles-daemon.service
-  sudo pacman -Rns power-profiles-daemon
-EOF
-    pause
-    exit 2
+    sudo systemctl disable --now power-profiles-daemon.service 2>/dev/null || true
+    sudo pacman -Rns --noconfirm power-profiles-daemon
   fi
 
   printf 'Awtarchy detected TLP. Installing its Power Profiles D-Bus backend...\n'
-  sudo pacman -S --needed tlp-pd
+  sudo pacman -S --needed --noconfirm tlp-pd
   sudo systemctl enable --now tlp.service tlp-pd.service
 else
   printf 'TLP is not installed. Installing the standard Power Profiles backend...\n'
-  sudo pacman -S --needed power-profiles-daemon
+  sudo pacman -S --needed --noconfirm power-profiles-daemon
   sudo systemctl enable --now power-profiles-daemon.service
 fi
 
