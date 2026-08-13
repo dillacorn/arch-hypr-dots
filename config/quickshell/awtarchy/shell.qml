@@ -148,6 +148,7 @@ ShellRoot {
     readonly property bool launcherReady: Launcher !== null
     readonly property bool clipboardReady: ClipboardMenu !== null
     readonly property bool quickSettingsReady: QuickSettings !== null
+    readonly property bool numlockSessionTweakReady: NumlockSessionTweak !== null
     readonly property bool networkReady: NetworkMenu !== null
     readonly property bool bluetoothReady: BluetoothMenu !== null
     readonly property bool powerReady: PowerMenu !== null
