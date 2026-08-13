@@ -905,6 +905,12 @@ Singleton {
                             }
                         }
 
+                        PowerModeCard {
+                            active: quickSettingsWindow.visible
+                            textScale: root.effectiveTextScale
+                            iconScale: root.effectiveIconScale
+                        }
+
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: barContent.implicitHeight + 16
