@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
+import Quickshell.Services.UPower
 
 Rectangle {
     id: root
@@ -9,21 +10,11 @@ Rectangle {
     property bool active: false
     property int textScale: 100
     property int iconScale: 100
-    property var statusData: ({
-        is_laptop: false,
-        available: false,
-        backend: "",
-        active: "",
-        profiles: []
-    })
-    property string actionError: ""
+    property string backendCommand: ""
 
-    readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
-        || (Quickshell.env("HOME") + "/.config")
-    readonly property string backendScript: configHome + "/hypr/scripts/quickshell_power_profiles.sh"
-    readonly property bool available: Boolean(statusData.is_laptop)
-        && Boolean(statusData.available)
-        && (statusData.profiles || []).length > 0
+    readonly property bool isLaptop: UPower.displayDevice.ready
+        && UPower.displayDevice.isLaptopBattery
+    readonly property bool available: isLaptop && backendCommand.length > 0
 
     visible: available
     Layout.fillWidth: true
@@ -37,70 +28,45 @@ Rectangle {
     }
 
     function profileLabel(profile) {
-        const value = String(profile || "");
-        if (value === "power-saver")
+        if (profile === PowerProfile.PowerSaver)
             return "Power Saver";
-        if (value === "balanced")
-            return "Balanced";
-        if (value === "performance")
+        if (profile === PowerProfile.Performance)
             return "Performance";
-        return value;
+        return "Balanced";
     }
 
     function backendLabel() {
-        if (String(statusData.backend) === "tlpctl")
-            return "TLP";
-        if (String(statusData.backend) === "powerprofilesctl")
-            return "power-profiles-daemon";
-        return "";
+        return backendCommand === "tlpctl" ? "TLP" : "power-profiles-daemon";
     }
 
-    function refresh() {
-        if (statusReader.running)
-            return;
-        statusReader.exec(["bash", backendScript, "status"]);
-    }
-
-    function setProfile(profile) {
-        if (profileWriter.running)
-            return;
-        actionError = "";
-        profileWriter.exec(["bash", backendScript, "set", String(profile)]);
+    function probeBackend() {
+        if (!backendProbe.running)
+            backendProbe.running = true;
     }
 
     onActiveChanged: {
         if (active)
-            refresh();
+            probeBackend();
     }
 
     Process {
-        id: statusReader
+        id: backendProbe
+        command: [
+            "bash", "-lc",
+            "if command -v tlpctl >/dev/null 2>&1 && tlpctl get >/dev/null 2>&1; then printf tlpctl; "
+                + "elif command -v powerprofilesctl >/dev/null 2>&1 && powerprofilesctl get >/dev/null 2>&1; then printf powerprofilesctl; fi"
+        ]
+        running: true
         stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    const parsed = JSON.parse(text.trim() || "{}");
-                    root.statusData = parsed && typeof parsed === "object"
-                        ? parsed : root.statusData;
-                } catch (error) {
-                    console.warn("Awtarchy power profile status parse failed:", error);
-                }
-            }
+            onStreamFinished: root.backendCommand = text.trim()
         }
-    }
-
-    Process {
-        id: profileWriter
-        stderr: StdioCollector {
-            onStreamFinished: root.actionError = text.trim().split("\n")[0] || ""
-        }
-        onExited: root.refresh()
     }
 
     Timer {
-        interval: 10000
+        interval: 30000
         repeat: true
         running: root.active
-        onTriggered: root.refresh()
+        onTriggered: root.probeBackend()
     }
 
     ColumnLayout {
@@ -114,7 +80,7 @@ Rectangle {
 
             Text {
                 Layout.fillWidth: true
-                text: "Power Mode · " + root.profileLabel(root.statusData.active)
+                text: "Power Mode · " + root.profileLabel(PowerProfiles.profile)
                 color: Theme.foreground
                 font.family: Theme.fontFamily
                 font.pixelSize: root.scaledText(12)
@@ -136,22 +102,32 @@ Rectangle {
             spacing: 5
 
             Repeater {
-                model: root.statusData.profiles || []
+                model: PowerProfiles.hasPerformanceProfile
+                    ? [
+                        { label: "Power Saver", value: PowerProfile.PowerSaver },
+                        { label: "Balanced", value: PowerProfile.Balanced },
+                        { label: "Performance", value: PowerProfile.Performance }
+                    ]
+                    : [
+                        { label: "Power Saver", value: PowerProfile.PowerSaver },
+                        { label: "Balanced", value: PowerProfile.Balanced }
+                    ]
 
                 SettingsButton {
                     required property var modelData
-                    label: root.profileLabel(modelData)
-                    active: String(root.statusData.active) === String(modelData)
+                    label: String(modelData.label)
+                    active: PowerProfiles.profile === modelData.value
                     textSize: root.scaledText(9)
-                    onClicked: root.setProfile(modelData)
+                    onClicked: PowerProfiles.profile = modelData.value
                 }
             }
         }
 
         Text {
             Layout.fillWidth: true
-            visible: root.actionError.length > 0
-            text: root.actionError
+            visible: PowerProfiles.degradationReason !== PerformanceDegradationReason.None
+            text: "Performance limited: "
+                + PerformanceDegradationReason.toString(PowerProfiles.degradationReason)
             color: Theme.muted
             font.family: Theme.fontFamily
             font.pixelSize: root.scaledText(8)
