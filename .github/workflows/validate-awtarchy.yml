@@ -30,6 +30,7 @@ jobs:
           bash -n config/hypr/scripts/hypridle_action.sh
           bash -n config/hypr/scripts/hypridle_restart.sh
           bash -n config/hypr/scripts/quickshell_bar_restore.sh
+          bash -n config/hypr/scripts/quickshell_launcher_position.sh
           bash -n config/hypr/scripts/restore_brightness.sh
           bash -n config/hypr/scripts/quickshell_resume_recover.sh
           bash -n tests/test-awtarchy-command.sh
@@ -39,6 +40,7 @@ jobs:
           bash -n tests/test-hybrid-brightness.sh
           bash -n tests/test-hypridle-restart.sh
           bash -n tests/test-flyout-toggle-debounce.sh
+          bash -n tests/test-launcher-keyboard-focus.sh
           bash -n tests/test-desktop-candidate-validation.sh
           bash -n tests/test-lua-validation.sh
           bash -n tests/test-quickshell-updater-migration.sh
@@ -54,6 +56,7 @@ jobs:
             config/hypr/scripts/hypr-ddc-brightness.sh \
             config/hypr/scripts/hypridle_restart.sh \
             config/hypr/scripts/quickshell_bar_restore.sh \
+            config/hypr/scripts/quickshell_launcher_position.sh \
             config/hypr/scripts/restore_brightness.sh \
             config/hypr/scripts/quickshell_resume_recover.sh \
             tests/test-awtarchy-command.sh \
@@ -63,6 +66,7 @@ jobs:
             tests/test-hybrid-brightness.sh \
             tests/test-hypridle-restart.sh \
             tests/test-flyout-toggle-debounce.sh \
+            tests/test-launcher-keyboard-focus.sh \
             tests/test-desktop-candidate-validation.sh \
             tests/test-lua-validation.sh \
             tests/test-quickshell-updater-migration.sh \
@@ -76,6 +80,7 @@ jobs:
           bash tests/test-hybrid-brightness.sh
           bash tests/test-hypridle-restart.sh
           bash tests/test-flyout-toggle-debounce.sh
+          bash tests/test-launcher-keyboard-focus.sh
           bash tests/test-desktop-candidate-validation.sh
           bash tests/test-lua-validation.sh
           bash tests/test-quickshell-updater-migration.sh

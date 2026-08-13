@@ -207,10 +207,26 @@ printf '%s\n' "$*" >>"$log"
 action="${1:-}"
 shift || true
 case "$action" in
-  -Q|-Qq)
+  -Q)
     pkg="${1:-}"
     [[ -n $pkg ]] || exit 1
+    if [[ $pkg == waybar ]] && grep -Fxq waybar-git "$state"; then
+      exit 0
+    fi
     grep -Fxq "$pkg" "$state"
+    ;;
+  -Qq)
+    if (( $# == 0 )); then
+      cat "$state"
+      exit 0
+    fi
+    pkg="${1:-}"
+    [[ -n $pkg ]] || exit 1
+    if [[ $pkg == waybar ]] && grep -Fxq waybar-git "$state"; then
+      printf '%s\n' waybar-git
+      exit 0
+    fi
+    grep -Fxq "$pkg" "$state" && printf '%s\n' "$pkg"
     ;;
   -S)
     for pkg in "$@"; do
@@ -220,6 +236,13 @@ case "$action" in
     LC_ALL=C sort -u -o "$state" "$state"
     ;;
   -Rns)
+    for pkg in "$@"; do
+      [[ $pkg == -* ]] && continue
+      if ! grep -Fxq "$pkg" "$state"; then
+        printf 'error: target not found: %s\n' "$pkg" >&2
+        exit 1
+      fi
+    done
     for pkg in "$@"; do
       [[ $pkg == -* ]] && continue
       tmp="${state}.tmp"
@@ -399,7 +422,7 @@ seed_old_home() {
 
 write_old_package_state() {
   printf '%s\n' \
-    waybar waybar-git fuzzel wlogout mako wofi network-manager-applet blueman \
+    waybar-git fuzzel wlogout mako wofi network-manager-applet blueman \
     networkmanager bluez bluez-utils jq \
     >"$1"
 }
@@ -579,6 +602,14 @@ grep -Fq 'Reconstructing previous generated baseline from release: v2.0.0-1' \
 env "${update_env[@]}" "$installed_launcher" update \
   >"${TMP}/update.out" 2>&1
 
+grep -Fq -- \
+  '-Rns --noconfirm waybar-git fuzzel wlogout mako wofi network-manager-applet blueman' \
+  "${TMP}/pacman.log" \
+  || fail "updater did not remove the exact installed retired package names"
+if grep -Fq -- '-Rns --noconfirm waybar waybar-git' "${TMP}/pacman.log"; then
+  fail "updater passed a provider alias to the package removal transaction"
+fi
+
 assert_package "$package_state" quickshell
 assert_package "$package_state" upower
 for pkg in waybar waybar-git fuzzel wlogout mako wofi network-manager-applet blueman; do
@@ -657,7 +688,7 @@ done
 printf '%s\n' 'recreated retired launch cache' >"$home/.cache/wofi-drun"
 cp -a -- "$home/.cache/wofi-drun" "$home/.cache/wofi-drun.backup"
 
-for pkg in waybar waybar-git fuzzel wlogout mako wofi network-manager-applet blueman; do
+for pkg in waybar-git fuzzel wlogout mako wofi network-manager-applet blueman; do
   printf '%s\n' "$pkg" >>"$package_state"
   printf '%s\n' "$pkg" >>"$managed_packages"
 done
@@ -753,7 +784,7 @@ assert_absent "$failure_home/.config/quickshell/awtarchy/shell.qml"
 assert_file "${TMP}/rollback-qs.state"
 [[ $(tail -n1 "${TMP}/rollback-qs.log") == start ]] \
   || fail "rollback did not restart the restored Quickshell manager"
-for pkg in waybar waybar-git fuzzel wlogout mako wofi network-manager-applet blueman; do
+for pkg in waybar-git fuzzel wlogout mako wofi network-manager-applet blueman; do
   assert_package "$failure_packages" "$pkg"
 done
 assert_package "$failure_packages" quickshell

@@ -173,12 +173,19 @@ cleanup_function = r'''
 remove_legacy_shell_packages_stage() {
   local managed_file="${AWTARCHY_MANAGED_PACKAGES_FILE:-/var/lib/awtarchy/managed-packages}"
   local marker="${HOME_DIR}/.local/state/awtarchy/quickshell-connectivity-migration-complete"
-  local pkg tmp cleanup_ok=1
+  local pkg tmp installed_names remaining_names cleanup_ok=1
   local -a obsolete=(waybar waybar-git fuzzel wlogout mako wofi network-manager-applet blueman)
+  local -a installed=()
 
+  if ! installed_names="$(pacman -Qq 2>/dev/null)"; then
+    warn "Could not query exact installed package names; retired shell package cleanup will retry later."
+    return 0
+  fi
   for pkg in "${obsolete[@]}"; do
-    pacman -Q "$pkg" >/dev/null 2>&1 || continue
+    grep -Fxq -- "$pkg" <<<"$installed_names" && installed+=("$pkg")
+  done
 
+  for pkg in "${installed[@]}"; do
     log "Removing retired Awtarchy shell package: ${pkg}"
     if pacman -Rns --noconfirm "$pkg"; then
       if [[ -f "$managed_file" ]]; then
@@ -194,8 +201,11 @@ remove_legacy_shell_packages_stage() {
   done
 
   if (( cleanup_ok == 1 )); then
+    if ! remaining_names="$(pacman -Qq 2>/dev/null)"; then
+      cleanup_ok=0
+    fi
     for pkg in "${obsolete[@]}"; do
-      pacman -Q "$pkg" >/dev/null 2>&1 && cleanup_ok=0
+      grep -Fxq -- "$pkg" <<<"$remaining_names" && cleanup_ok=0
     done
   fi
 
@@ -562,13 +572,17 @@ rollback_quickshell_update() {
 remove_quickshell_update_legacy_packages() {
   local marker="${STATE_DIR}/quickshell-connectivity-migration-complete"
   local managed_file="${AWTARCHY_MANAGED_PACKAGES_FILE:-/var/lib/awtarchy/managed-packages}"
-  local pkg process tmp
+  local pkg process tmp installed_names installed_list
   local -a obsolete_packages=(waybar waybar-git fuzzel wlogout mako wofi network-manager-applet blueman)
   local -a obsolete_processes=(waybar fuzzel wlogout mako wofi nm-applet blueman-applet blueman-manager)
   local -a installed=()
 
+  if ! installed_names="$(pacman -Qq 2>/dev/null)"; then
+    warn "Could not query exact installed package names; retired shell package cleanup will retry later."
+    return 0
+  fi
   for pkg in "${obsolete_packages[@]}"; do
-    pacman -Q "$pkg" >/dev/null 2>&1 && installed+=("$pkg")
+    grep -Fxq -- "$pkg" <<<"$installed_names" && installed+=("$pkg")
   done
 
   for process in "${obsolete_processes[@]}"; do
@@ -576,7 +590,8 @@ remove_quickshell_update_legacy_packages() {
   done
 
   if (( ${#installed[@]} )); then
-    log "Removing retired Awtarchy shell packages: ${installed[*]}"
+    installed_list="$(IFS=' '; printf '%s' "${installed[*]}")"
+    log "Removing retired Awtarchy shell packages: ${installed_list}"
     if ! run_quickshell_update_pacman -Rns --noconfirm "${installed[@]}"; then
       warn "Could not remove all retired shell packages; the migration will retry later."
       return 0
