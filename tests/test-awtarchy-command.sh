@@ -45,6 +45,43 @@ grep -Fq 'install_awtarchy_command_stage' "$RUNTIME_SOURCE" \
   || fail "runtime does not call the command installation stage"
 grep -Fq 'AWTARCHY_REPO_DIR' "$RUNTIME_SOURCE" \
   || fail "runtime does not accept the installer source directory"
+grep -Fq 'ensure_quickshell_update_prerequisites()' "$RUNTIME_SOURCE" \
+  || fail "repository runtime is missing native Quickshell migration prerequisites"
+grep -Fq 'start_quickshell_update_shell()' "$RUNTIME_SOURCE" \
+  || fail "repository runtime is missing native Quickshell startup validation"
+grep -Fq 'run_awtarchy_target_theme()' "$RUNTIME_SOURCE" \
+  || fail "repository runtime is missing native Quickshell theme generation"
+! grep -Fq 'awtarchy-runtime-quickshell.' "$INSTALLER_SOURCE" \
+  || fail "installer still generates a separate temporary Quickshell runtime"
+python3 - "$RUNTIME_SOURCE" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+legacy = {"waybar", "waybar-git", "fuzzel", "wlogout", "mako", "wofi"}
+legacy_connectivity = {"network-manager-applet", "blueman"}
+window = re.search(r'"Window Management:([^"]+)"', text)
+utilities = re.search(r'"Utilities:([^"]+)"', text)
+aur = re.search(r'declare -a PACKAGES_AUR=\(\n(?P<body>.*?)\n\)', text, re.S)
+config_dirs = re.search(r'local -a config_dirs=\(([^)]*)\)', text)
+if not (window and utilities and aur and config_dirs):
+    raise SystemExit("native runtime install-selection anchors are missing")
+for retired in legacy | legacy_connectivity:
+    if (
+        retired in window.group(1).split()
+        or retired in utilities.group(1).split()
+        or retired in aur.group("body").split()
+        or retired in config_dirs.group(1).split()
+    ):
+        raise SystemExit(f"retired shell dependency is still selected: {retired}")
+if "quickshell" not in window.group(1).split():
+    raise SystemExit("quickshell is missing from the native runtime")
+if "upower" not in utilities.group(1).split():
+    raise SystemExit("upower is missing from the native runtime")
+if "quickshell" not in config_dirs.group(1).split():
+    raise SystemExit("quickshell config is missing from fresh-install targets")
+PY
 grep -Fq 'refresh_existing_command()' "$INSTALLER_SOURCE" \
   || fail "installer does not refresh an existing command"
 grep -Fq 'UPDATER_BRANCH="main"' "$LAUNCHER_SOURCE" \
@@ -213,6 +250,10 @@ existing_output="$(
 )"
 grep -Fq 'Awtarchy is already installed' <<<"$existing_output" \
   || fail "installer did not detect the existing command"
+grep -Fq 'refreshed from the current main updater' <<<"$existing_output" \
+  || fail "stable installer did not report the production updater source"
+! grep -Fq 'quickshell-conversion-testing' <<<"$existing_output" \
+  || fail "stable installer printed testing-branch instructions"
 cmp -s "$home/.local/bin/awtarchy" "$main_root/local/bin/awtarchy" \
   || fail "installer did not leave the latest main updater launcher installed"
 cmp -s \

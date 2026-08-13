@@ -126,7 +126,7 @@ awtarchy
 Available actions:
 
 ```text
-Update Awtarchy command
+Refresh Awtarchy updater from main
 Update configs (preserve personal modifications)
 Reset configs (clean-slate managed files)
 Review config changes without applying
@@ -163,7 +163,9 @@ Up/Down = move
 
 ## 🔄 Updating Awtarchy
 
-The installed command checks the latest GitHub release when maintenance starts. Command updates and config updates remain separate operations.
+The installed command refreshes its launcher and runtime from the current `main`
+head before update, reset, and review operations. Managed configs update only
+from the latest published release unless an explicit release tag is selected.
 
 Update only the installed command and runtime:
 

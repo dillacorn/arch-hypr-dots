@@ -9,6 +9,8 @@ QUICKSHELL_LAUNCHER="${ROOT}/local/bin/awtarchy-quickshell"
 RUNTIME="${ROOT}/local/share/awtarchy/awtarchy-runtime.sh"
 MANAGED_HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
 TEST_COMMIT="1111111111111111111111111111111111111111"
+TEST_MAIN_COMMIT="3333333333333333333333333333333333333333"
+TEST_RELEASE_TAG="v9.9.9"
 DESKTOP_STALE_SYSTEM_STATE_SHA="f96522fad74218f14c40f1a05902e8d41b6d3f929f9f8750040f5600eb45258c"
 TMP="$(mktemp -d)"
 
@@ -189,11 +191,15 @@ while (( $# )); do
 done
 printf '%s\n' "$url" >>"${AWTARCHY_TEST_CURL_LOG:?}"
 if [[ $url == *'/releases/latest' ]]; then
-  printf '%s\n' '{"tag_name":"v2.0.0-1"}'
+  printf '{"tag_name":"%s"}\n' "${AWTARCHY_TEST_LATEST_TAG:-v2.0.0-1}"
   exit 0
 fi
 if [[ $url == 'https://api.github.com/repos/dillacorn/awtarchy/commits/quickshell-conversion-testing' ]]; then
   printf '{"sha":"%s"}\n' "${AWTARCHY_TEST_COMMIT:?}"
+  exit 0
+fi
+if [[ $url == 'https://api.github.com/repos/dillacorn/awtarchy/commits/main' ]]; then
+  printf '{"sha":"%s"}\n' "${AWTARCHY_TEST_MAIN_COMMIT:?}"
   exit 0
 fi
 if [[ $url == 'https://github.com/dillacorn/awtarchy/archive/refs/tags/v2.0.0-1.tar.gz' ]]; then
@@ -202,6 +208,26 @@ if [[ $url == 'https://github.com/dillacorn/awtarchy/archive/refs/tags/v2.0.0-1.
   [[ $speed_limit == 1024 ]] || exit 45
   [[ $speed_time == 30 ]] || exit 46
   cp -- "${AWTARCHY_TEST_PREVIOUS_ARCHIVE:?}" "$out"
+  exit 0
+fi
+if [[ -n ${AWTARCHY_TEST_RELEASE_TAG:-} \
+  && $url == "https://github.com/dillacorn/awtarchy/archive/refs/tags/${AWTARCHY_TEST_RELEASE_TAG}.tar.gz" ]];
+then
+  [[ -n $out ]] || exit 43
+  (( progress == 1 )) || exit 44
+  [[ $speed_limit == 1024 ]] || exit 45
+  [[ $speed_time == 30 ]] || exit 46
+  cp -- "${AWTARCHY_TEST_RELEASE_ARCHIVE:?}" "$out"
+  exit 0
+fi
+if [[ -n ${AWTARCHY_TEST_MAIN_COMMIT:-} \
+  && $url == "https://github.com/dillacorn/awtarchy/archive/${AWTARCHY_TEST_MAIN_COMMIT}.tar.gz" ]];
+then
+  [[ -n $out ]] || exit 43
+  (( progress == 1 )) || exit 44
+  [[ $speed_limit == 1024 ]] || exit 45
+  [[ $speed_time == 30 ]] || exit 46
+  cp -- "${AWTARCHY_TEST_MAIN_ARCHIVE:?}" "$out"
   exit 0
 fi
 expected="https://github.com/dillacorn/awtarchy/archive/${AWTARCHY_TEST_COMMIT:?}.tar.gz"
@@ -384,6 +410,18 @@ archive_root="${archive_parent}/awtarchy-${TEST_COMMIT}"
 mkdir -p "$archive_root"
 tar --exclude=.git -C "$ROOT" -cf - . | tar -C "$archive_root" -xf -
 tar -czf "${TMP}/testing-commit.tar.gz" -C "$archive_parent" "$(basename "$archive_root")"
+
+main_parent="${TMP}/main-archive"
+main_root="${main_parent}/awtarchy-${TEST_MAIN_COMMIT}"
+mkdir -p "$main_parent"
+cp -a -- "$archive_root" "$main_root"
+tar -czf "${TMP}/main.tar.gz" -C "$main_parent" "$(basename "$main_root")"
+
+release_parent="${TMP}/release-archive"
+release_root="${release_parent}/awtarchy-${TEST_RELEASE_TAG#v}"
+mkdir -p "$release_parent"
+cp -a -- "$archive_root" "$release_root"
+tar -czf "${TMP}/release.tar.gz" -C "$release_parent" "$(basename "$release_root")"
 
 previous_parent="${TMP}/previous-archive"
 previous_root="${previous_parent}/awtarchy-2.0.0-1"
@@ -721,6 +759,78 @@ grep -Fq -- '-- personal Hyprland customization survives migration' \
 grep -Fq 'Recorded personal Hyprland modifications against the previous Awtarchy baseline.' \
   "${TMP}/update.out" \
   || fail "updater did not report recording personal Hyprland modifications"
+
+# Model the exact beta-to-release handoff on a machine that already completed
+# the awtarchy-quickshell migration. The normal command must adopt the release
+# tag without rebuilding from the old Waybar baseline or losing local changes.
+beta_home="${TMP}/beta-to-release-home"
+beta_packages="${TMP}/beta-to-release-packages"
+beta_managed="${TMP}/beta-to-release-managed-packages"
+beta_runtime_dir="${TMP}/beta-to-release-runtime"
+cp -a -- "$home" "$beta_home"
+cp -- "$package_state" "$beta_packages"
+cp -- "$managed_packages" "$beta_managed"
+mkdir -p "$beta_runtime_dir"
+: >"${TMP}/beta-to-release-curl.log"
+: >"${TMP}/beta-to-release-pacman.log"
+: >"${TMP}/beta-to-release-hyprctl.log"
+: >"${TMP}/beta-to-release-pkill.log"
+: >"${TMP}/beta-to-release-hypridle.state"
+
+env \
+  "HOME=$beta_home" \
+  "USER=$TARGET_USER" \
+  "SUDO_USER=$TARGET_USER" \
+  "PATH=${fakebin}:$PATH" \
+  "XDG_RUNTIME_DIR=$beta_runtime_dir" \
+  "HYPRLAND_INSTANCE_SIGNATURE=" \
+  "AWTARCHY_TEST_SKIP_CURSOR_REFRESH=1" \
+  "AWTARCHY_TEST_TARGET_USER=$TARGET_USER" \
+  "AWTARCHY_TEST_TARGET_HOME=$beta_home" \
+  "AWTARCHY_TEST_LATEST_TAG=$TEST_RELEASE_TAG" \
+  "AWTARCHY_TEST_RELEASE_TAG=$TEST_RELEASE_TAG" \
+  "AWTARCHY_TEST_RELEASE_ARCHIVE=${TMP}/release.tar.gz" \
+  "AWTARCHY_TEST_PREVIOUS_ARCHIVE=${TMP}/previous-release.tar.gz" \
+  "AWTARCHY_TEST_MAIN_COMMIT=$TEST_MAIN_COMMIT" \
+  "AWTARCHY_TEST_MAIN_ARCHIVE=${TMP}/main.tar.gz" \
+  "AWTARCHY_TEST_COMMIT=$TEST_COMMIT" \
+  "AWTARCHY_TEST_ARCHIVE=${TMP}/testing-commit.tar.gz" \
+  "AWTARCHY_TEST_CURL_LOG=${TMP}/beta-to-release-curl.log" \
+  "AWTARCHY_TEST_PACKAGE_STATE=$beta_packages" \
+  "AWTARCHY_MANAGED_PACKAGES_FILE=$beta_managed" \
+  "AWTARCHY_TEST_PACMAN_LOG=${TMP}/beta-to-release-pacman.log" \
+  "AWTARCHY_TEST_HYPRCTL_LOG=${TMP}/beta-to-release-hyprctl.log" \
+  "AWTARCHY_TEST_PKILL_LOG=${TMP}/beta-to-release-pkill.log" \
+  "AWTARCHY_TEST_HYPRIDLE_STATE=${TMP}/beta-to-release-hypridle.state" \
+  "$beta_home/.local/bin/awtarchy" update \
+  >"${TMP}/beta-to-release.out" 2>&1
+
+grep -Fq "Awtarchy updater refreshed to main@${TEST_MAIN_COMMIT}." \
+  "${TMP}/beta-to-release.out" \
+  || fail "beta handoff did not refresh the normal command from main"
+grep -Fxq "tag=${TEST_RELEASE_TAG}" \
+  "$beta_home/.local/state/awtarchy/config-version" \
+  || fail "beta handoff did not adopt the stable release tag"
+grep -Fxq "tag=${TEST_RELEASE_TAG}" \
+  "$beta_home/.local/state/awtarchy/baseline/metadata" \
+  || fail "beta handoff did not replace the testing baseline label"
+grep -Fxq 'tag=main' "$beta_home/.local/state/awtarchy/command-version" \
+  || fail "beta handoff did not restore normal command state"
+grep -Fxq "revision=${TEST_MAIN_COMMIT}" \
+  "$beta_home/.local/state/awtarchy/command-version" \
+  || fail "beta handoff did not record the exact main updater commit"
+grep -Fq -- '-- personal Hyprland customization survives migration' \
+  "$beta_home/.config/hypr/hyprland.lua" \
+  || fail "beta handoff lost the user's Hyprland customization"
+assert_retired_paths_absent "$beta_home"
+assert_package "$beta_packages" quickshell
+assert_package "$beta_packages" upower
+grep -Fxq "https://github.com/dillacorn/awtarchy/archive/${TEST_MAIN_COMMIT}.tar.gz" \
+  "${TMP}/beta-to-release-curl.log" \
+  || fail "beta handoff did not pin the normal command to main"
+grep -Fxq "https://github.com/dillacorn/awtarchy/archive/refs/tags/${TEST_RELEASE_TAG}.tar.gz" \
+  "${TMP}/beta-to-release-curl.log" \
+  || fail "beta handoff did not download the stable release"
 
 # Reproduce an already-poisoned migration state: the current beta baseline and
 # config-version are installed, but the live personalized Hyprland file is still
@@ -1065,5 +1175,91 @@ grep -Fxq 'tag=v2.0.0-1' "$failure_home/.local/state/awtarchy/config-version" \
   || fail "failed migration changed the stable launcher"
 [[ $stable_runtime_hash == "$(sha256sum "$failure_home/.local/share/awtarchy/awtarchy-runtime.sh" | awk '{print $1}')" ]] \
   || fail "failed migration changed the stable runtime"
+
+# Exercise the future production path end to end. The installed `awtarchy`
+# command must refresh its launcher/runtime from the exact main commit, re-exec
+# itself, and then migrate configs from the latest release archive. This is the
+# path users will run after the conversion reaches main and a release is made.
+production_home="${TMP}/production-home"
+production_packages="${TMP}/production-packages"
+production_managed="${TMP}/production-managed-packages"
+production_runtime_dir="${TMP}/production-runtime"
+seed_old_home "$production_home"
+write_old_package_state "$production_packages"
+cp -- "$production_packages" "$production_managed"
+mkdir -p "$production_runtime_dir"
+: >"${TMP}/production-curl.log"
+: >"${TMP}/production-pacman.log"
+: >"${TMP}/production-hyprctl.log"
+: >"${TMP}/production-pkill.log"
+: >"${TMP}/production-hypridle.state"
+
+production_env=(
+  "HOME=$production_home"
+  "USER=$TARGET_USER"
+  "SUDO_USER=$TARGET_USER"
+  "PATH=${fakebin}:$PATH"
+  "XDG_RUNTIME_DIR=$production_runtime_dir"
+  "AWTARCHY_TEST_SKIP_CURSOR_REFRESH=1"
+  "AWTARCHY_TEST_TARGET_USER=$TARGET_USER"
+  "AWTARCHY_TEST_TARGET_HOME=$production_home"
+  "AWTARCHY_TEST_LATEST_TAG=$TEST_RELEASE_TAG"
+  "AWTARCHY_TEST_RELEASE_TAG=$TEST_RELEASE_TAG"
+  "AWTARCHY_TEST_RELEASE_ARCHIVE=${TMP}/release.tar.gz"
+  "AWTARCHY_TEST_PREVIOUS_ARCHIVE=${TMP}/previous-release.tar.gz"
+  "AWTARCHY_TEST_MAIN_COMMIT=$TEST_MAIN_COMMIT"
+  "AWTARCHY_TEST_MAIN_ARCHIVE=${TMP}/main.tar.gz"
+  "AWTARCHY_TEST_COMMIT=$TEST_COMMIT"
+  "AWTARCHY_TEST_ARCHIVE=${TMP}/testing-commit.tar.gz"
+  "AWTARCHY_TEST_CURL_LOG=${TMP}/production-curl.log"
+  "AWTARCHY_TEST_PACKAGE_STATE=$production_packages"
+  "AWTARCHY_MANAGED_PACKAGES_FILE=$production_managed"
+  "AWTARCHY_TEST_PACMAN_LOG=${TMP}/production-pacman.log"
+  "AWTARCHY_TEST_HYPRCTL_LOG=${TMP}/production-hyprctl.log"
+  "AWTARCHY_TEST_PKILL_LOG=${TMP}/production-pkill.log"
+  "AWTARCHY_TEST_HYPRIDLE_STATE=${TMP}/production-hypridle.state"
+)
+
+env "${production_env[@]}" "$production_home/.local/bin/awtarchy" update \
+  >"${TMP}/production-update.out" 2>&1
+
+grep -Fq "Awtarchy updater refreshed to main@${TEST_MAIN_COMMIT}." \
+  "${TMP}/production-update.out" \
+  || fail "production command did not refresh and re-exec the exact main updater"
+grep -Fq "Release tag: ${TEST_RELEASE_TAG}" "${TMP}/production-update.out" \
+  || fail "production updater did not select the latest release"
+grep -Fxq 'tag=main' "$production_home/.local/state/awtarchy/command-version" \
+  || fail "production self-update did not record main as its command source"
+grep -Fxq "revision=${TEST_MAIN_COMMIT}" \
+  "$production_home/.local/state/awtarchy/command-version" \
+  || fail "production self-update did not record the exact main commit"
+grep -Fxq "tag=${TEST_RELEASE_TAG}" \
+  "$production_home/.local/state/awtarchy/config-version" \
+  || fail "production update did not record the latest release tag"
+grep -Fxq "tag=${TEST_RELEASE_TAG}" \
+  "$production_home/.local/state/awtarchy/baseline/metadata" \
+  || fail "production baseline did not record the latest release tag"
+grep -Fxq "https://github.com/dillacorn/awtarchy/archive/${TEST_MAIN_COMMIT}.tar.gz" \
+  "${TMP}/production-curl.log" \
+  || fail "production command did not download the exact main updater commit"
+grep -Fxq "https://github.com/dillacorn/awtarchy/archive/refs/tags/${TEST_RELEASE_TAG}.tar.gz" \
+  "${TMP}/production-curl.log" \
+  || fail "production updater did not download the latest release archive"
+cmp -s "$production_home/.local/bin/awtarchy" "$main_root/local/bin/awtarchy" \
+  || fail "production self-update installed the wrong main launcher"
+cmp -s "$production_home/.local/share/awtarchy/awtarchy-runtime.sh" \
+  "$main_root/local/share/awtarchy/awtarchy-runtime.sh" \
+  || fail "production self-update installed a runtime different from main"
+assert_file "$production_home/.config/quickshell/awtarchy/shell.qml"
+assert_file "$production_home/.config/quickshell/awtarchy/theme.json"
+assert_retired_paths_absent "$production_home"
+grep -Fq -- '-- personal Hyprland customization survives migration' \
+  "$production_home/.config/hypr/hyprland.lua" \
+  || fail "production updater lost the user's Hyprland customization"
+assert_package "$production_packages" quickshell
+assert_package "$production_packages" upower
+for pkg in waybar waybar-git fuzzel wlogout mako wofi network-manager-applet blueman; do
+  assert_no_package "$production_packages" "$pkg"
+done
 
 printf 'Quickshell updater migration tests passed.\n'

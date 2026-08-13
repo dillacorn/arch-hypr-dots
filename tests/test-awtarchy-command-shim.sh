@@ -5,7 +5,6 @@ IFS=$'\n\t'
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALLER_SOURCE="${ROOT}/awtarchy-install.sh"
 TMP="$(mktemp -d)"
-export AWTARCHY_TEST_RUNTIME_PASSTHROUGH=1
 
 cleanup() {
   rm -rf -- "$TMP"
