@@ -48,6 +48,7 @@ Singleton {
     readonly property string terminalLauncher: configHome + "/hypr/scripts/default_terminal.sh"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_flyout_position.sh"
     readonly property string prepareScript: configHome + "/hypr/scripts/quickshell_flyout_prepare.sh"
+    readonly property bool disableNumlockAtSessionStart: numlockSettings.disableNumlockAtSessionStart
     readonly property var activeScreen: flyoutScreen || quickSettingsWindow.screen
     readonly property string activeMonitorName: activeScreen && activeScreen.name
         ? String(activeScreen.name) : ""
@@ -295,6 +296,24 @@ Singleton {
         close();
     }
 
+    function forceNumlockOff() {
+        if (numlockPrimeProcess.running || numlockOffProcess.running)
+            return;
+        numlockPrimeProcess.exec([
+            "hyprctl", "keyword", "input:numlock_by_default", "true"
+        ]);
+    }
+
+    function toggleNumlockSessionStart() {
+        numlockSettings.disableNumlockAtSessionStart = !numlockSettings.disableNumlockAtSessionStart;
+        if (numlockSettings.disableNumlockAtSessionStart) {
+            forceNumlockOff();
+            actionMessage = "Num Lock will be disabled at session start";
+        } else {
+            actionMessage = "Num Lock session-start override disabled";
+        }
+    }
+
     function loadSavedView(targetScreen) {
         if (!targetScreen)
             return;
@@ -477,6 +496,33 @@ Singleton {
             close();
         else
             openForScreen(targetScreen);
+    }
+
+    FileView {
+        id: quickSettingsTweaksFile
+        path: Quickshell.statePath("quick-settings-tweaks.json")
+        printErrors: false
+        onAdapterUpdated: writeAdapter()
+        onLoaded: {
+            if (numlockSettings.disableNumlockAtSessionStart)
+                Qt.callLater(() => root.forceNumlockOff());
+        }
+
+        JsonAdapter {
+            id: numlockSettings
+            property bool disableNumlockAtSessionStart: false
+        }
+    }
+
+    Process {
+        id: numlockPrimeProcess
+        onExited: numlockOffProcess.exec([
+            "hyprctl", "keyword", "input:numlock_by_default", "false"
+        ])
+    }
+
+    Process {
+        id: numlockOffProcess
     }
 
     IpcHandler {
@@ -1386,6 +1432,52 @@ Singleton {
                                             }
                                         }
                                     }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: numlockContent.implicitHeight + 16
+                            color: Theme.popupButton
+                            border.width: 1
+                            border.color: Theme.active
+
+                            ColumnLayout {
+                                id: numlockContent
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                spacing: 5
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "Disable Num Lock at session start"
+                                        color: Theme.foreground
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: root.scaledText(11)
+                                        font.bold: true
+                                        elide: Text.ElideRight
+                                    }
+
+                                    SettingsButton {
+                                        label: root.disableNumlockAtSessionStart ? "On" : "Off"
+                                        active: root.disableNumlockAtSessionStart
+                                        textSize: root.scaledText(9)
+                                        onClicked: root.toggleNumlockSessionStart()
+                                    }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "Forces Num Lock off when this Quickshell session starts. Useful when firmware or a login manager leaves it enabled."
+                                    color: Theme.muted
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: root.scaledText(8)
+                                    wrapMode: Text.Wrap
                                 }
                             }
                         }
