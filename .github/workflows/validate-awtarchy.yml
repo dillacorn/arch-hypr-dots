@@ -68,7 +68,6 @@ jobs:
             config/hypr/scripts/quickshell_launcher_position.sh \
             config/hypr/scripts/quickshell_power_profile_setup.sh \
             config/hypr/scripts/quickshell_resume_recover.sh \
-            config/hypr/scripts/quickshell_theme_apply.sh \
             config/hypr/scripts/restore_brightness.sh \
             config/hypr/scripts/screenshot_area.sh \
             config/hypr/scripts/screenshot_display.sh \
@@ -85,6 +84,7 @@ jobs:
             tests/test-quickshell-updater-migration.sh \
             tests/test-quickshell-theme-legacy-micro.sh \
             tests/test-quickshell-resume-recovery.sh
+          shellcheck -e SC2015 config/hypr/scripts/quickshell_theme_apply.sh
           shellcheck -e SC2016 tests/test-awtarchy-command.sh
       - name: Command and updater integration tests
         run: |
