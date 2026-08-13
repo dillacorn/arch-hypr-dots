@@ -4128,6 +4128,8 @@ HARDWARE_FILE=""
 ACTIVE_THEME_FILE=""
 AUDIT_LOG=""
 UPDATE_MODE=""
+CONFLICT_POLICY="prompt"
+MERGE_CONFLICT_RESOLUTION=""
 REVIEW_ONLY=0
 ASSUME_YES=0
 TAG_OVERRIDE=""
@@ -4243,6 +4245,14 @@ parse_args() {
         [[ "$UPDATE_MODE" == "preserve" || "$UPDATE_MODE" == "clean" ]] || die "--mode must be preserve or clean"
         shift 2
         ;;
+      --conflict-policy)
+        CONFLICT_POLICY="${2:-}"
+        case "$CONFLICT_POLICY" in
+          prompt|keep-local|use-release|abort) ;;
+          *) die "--conflict-policy must be prompt, keep-local, use-release, or abort" ;;
+        esac
+        shift 2
+        ;;
       --review-only)
         REVIEW_ONLY=1
         shift
@@ -4260,6 +4270,8 @@ Options:
   --tag <tag>              Update from an exact GitHub release tag
   --testing-commit <sha>   Test configs from an exact GitHub commit
   --mode preserve|clean    Select update mode without the menu
+  --conflict-policy <mode> Resolve merge conflicts with prompt, keep-local,
+                           use-release, or abort (default: prompt)
   --review-only            Download, classify, and review without changing files
   --yes                    Accept conservative hardware cleanup prompts
 EOF
@@ -5608,6 +5620,38 @@ attempt_merge() {
   validate_candidate "$out" "$rel"
 }
 
+select_merge_conflict_resolution() {
+  local rel="$1" choice=""
+  MERGE_CONFLICT_RESOLUTION=""
+
+  if [[ "$CONFLICT_POLICY" != "prompt" ]]; then
+    MERGE_CONFLICT_RESOLUTION="$CONFLICT_POLICY"
+    return 0
+  fi
+
+  if ! is_interactive; then
+    warn "Automatic merge conflict requires a terminal or an explicit --conflict-policy: $rel"
+    MERGE_CONFLICT_RESOLUTION=abort
+    return 0
+  fi
+
+  while true; do
+    printf '\nManaged-file merge conflict:\n' >/dev/tty
+    printf '  %s\n\n' "$rel" >/dev/tty
+    printf 'Your local file and the release changed overlapping lines.\n' >/dev/tty
+    printf '  1. Keep the local file and skip its release changes\n' >/dev/tty
+    printf '  2. Use the release file and save the local file as a backup\n' >/dev/tty
+    printf '  3. Cancel the update and roll back\n' >/dev/tty
+    printf 'Choose [3]: ' >/dev/tty
+    IFS= read -r choice </dev/tty || choice=3
+    case "$choice" in
+      1) MERGE_CONFLICT_RESOLUTION=keep-local; return 0 ;;
+      2) MERGE_CONFLICT_RESOLUTION=use-release; return 0 ;;
+      ""|3) MERGE_CONFLICT_RESOLUTION=abort; return 0 ;;
+    esac
+  done
+}
+
 install_live_file() {
   local rel="$1" target_file="$2" local_file="$3" persistent_backup="${4:-0}"
   if ! validate_candidate "$target_file" "$rel"; then
@@ -5674,10 +5718,23 @@ apply_plan() {
             install_live_file "$rel" "$merge_tmp" "$local_file" 1 || return 1
             MERGED+=("$rel")
           else
-            FAILED+=("$rel")
-            warn "Automatic merge is unsafe; refusing to replace local modifications: $rel"
-            rollback_changes
-            return 1
+            select_merge_conflict_resolution "$rel"
+            case "$MERGE_CONFLICT_RESOLUTION" in
+              keep-local)
+                PRESERVED+=("$rel")
+                warn "Kept local file; release changes were skipped for: $rel"
+                ;;
+              use-release)
+                install_live_file "$rel" "$target_file" "$local_file" 1 || return 1
+                warn "Installed release file and kept the local file as a backup: $rel"
+                ;;
+              *)
+                FAILED+=("$rel")
+                warn "Automatic merge is unsafe; refusing to replace local modifications: $rel"
+                rollback_changes
+                return 1
+                ;;
+            esac
           fi
         else
           install_live_file "$rel" "$target_file" "$local_file" 1 || return 1
