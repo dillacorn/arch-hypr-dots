@@ -8,6 +8,7 @@ umask 022
 
 REPO_OWNER="dillacorn"
 REPO_NAME="awtarchy"
+UPDATER_BRANCH="main"
 TARGET_USER=""
 TARGET_HOME=""
 DATA_HOME=""
@@ -56,10 +57,14 @@ state_value() {
   sed -n "s/^${key}=//p" "$file" | head -n1
 }
 
-installed_command_tag() {
-  local tag=""
-  tag="$(state_value tag "$COMMAND_VERSION_FILE" 2>/dev/null || true)"
-  [[ -n $tag ]] && printf '%s\n' "$tag" || printf '%s\n' unknown
+installed_updater_commit() {
+  local revision=""
+  revision="$(state_value revision "$COMMAND_VERSION_FILE" 2>/dev/null || true)"
+  if [[ $revision =~ ^[0-9a-fA-F]{40}$ ]]; then
+    printf '%s\n' "${revision,,}"
+  else
+    printf '%s\n' unknown
+  fi
 }
 
 installed_config_tag() {
@@ -124,11 +129,30 @@ print(tag)
 PY
 }
 
-urlencode_tag() {
-  python3 - "$1" <<'PY'
+updater_branch_head() {
+  have curl || return 1
+  have python3 || return 1
+  curl_args api
+
+  local json=""
+  json="$(curl "${CURL_ARGS[@]}" \
+    "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/commits/${UPDATER_BRANCH}")" \
+    || return 1
+
+  python3 - "$json" <<'PY'
+import json
+import re
 import sys
-from urllib.parse import quote
-print(quote(sys.argv[1], safe="-._~"))
+
+try:
+    payload = json.loads(sys.argv[1])
+except (IndexError, json.JSONDecodeError):
+    raise SystemExit(1)
+
+revision = str(payload.get("sha") or "").strip().lower()
+if not re.fullmatch(r"[0-9a-f]{40}", revision):
+    raise SystemExit(1)
+print(revision)
 PY
 }
 
@@ -172,13 +196,13 @@ atomic_install() {
 }
 
 write_command_version() {
-  local tag="$1" revision="${2:-}" tmp dir
+  local revision="$1" tmp dir
   dir="$(dirname "$COMMAND_VERSION_FILE")"
   mkdir -p -- "$dir"
   tmp="$(mktemp --tmpdir="$dir" '.command-version.tmp.XXXXXX')"
   {
-    printf 'tag=%s\n' "$tag"
-    [[ -n $revision ]] && printf 'revision=%s\n' "$revision"
+    printf 'tag=%s\n' "$UPDATER_BRANCH"
+    printf 'revision=%s\n' "$revision"
     printf 'updated_at=%s\n' "$(date -Iseconds)"
   } >"$tmp"
   chmod 0644 "$tmp"
@@ -189,29 +213,45 @@ write_command_version() {
 }
 
 self_update() {
-  local tag="${1:-}" tmp archive encoded top repo_dir new_runtime new_launcher revision=""
+  local commit="${1:-}" installed tmp archive top repo_dir new_runtime new_launcher
+
   have curl || die "curl is required for self-update."
   have tar || die "tar is required for self-update."
   have python3 || die "python3 is required for self-update."
-  have sha256sum || die "sha256sum is required for self-update."
 
-  [[ -n $tag ]] || tag="$(latest_release_tag)" || die "Could not determine the latest Awtarchy release."
-  encoded="$(urlencode_tag "$tag")"
+  [[ -n $commit ]] || commit="$(updater_branch_head)" \
+    || die "Could not resolve the current ${UPDATER_BRANCH} updater head."
+  [[ $commit =~ ^[0-9a-fA-F]{40}$ ]] \
+    || die "Updater branch returned an invalid commit SHA."
+  commit="${commit,,}"
+
+  installed="$(installed_updater_commit)"
+  if [[ $installed == "$commit" ]]; then
+    log "Awtarchy updater is already current at ${UPDATER_BRANCH}@${commit}."
+    return 0
+  fi
+
   tmp="$(mktemp -d)"
   archive="${tmp}/awtarchy.tar.gz"
 
   curl_args download
-  log "Downloading Awtarchy ${tag} (stalled transfers abort after 30 seconds)..."
+  log "Downloading Awtarchy updater ${UPDATER_BRANCH}@${commit} (stalled transfers abort after 30 seconds)..."
   if ! curl "${CURL_ARGS[@]}" -o "$archive" \
-    "https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/tags/${encoded}.tar.gz"; then
+    "https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/${commit}.tar.gz";
+  then
     rm -rf -- "$tmp"
-    die "Failed to download release ${tag}."
+    die "Failed to download updater commit ${commit}."
   fi
 
   top="$(archive_topdir "$archive")" || {
     rm -rf -- "$tmp"
-    die "Release archive validation failed."
+    die "Updater archive validation failed."
   }
+  [[ $top == "${REPO_NAME}-${commit}" ]] || {
+    rm -rf -- "$tmp"
+    die "Updater archive does not match commit ${commit}."
+  }
+
   tar -xzf "$archive" -C "$tmp"
   repo_dir="${tmp}/${top}"
   new_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
@@ -219,11 +259,11 @@ self_update() {
 
   [[ -f $new_runtime ]] || {
     rm -rf -- "$tmp"
-    die "Release ${tag} does not contain the Awtarchy runtime."
+    die "Updater commit ${commit} does not contain the Awtarchy runtime."
   }
   [[ -f $new_launcher ]] || {
     rm -rf -- "$tmp"
-    die "Release ${tag} does not contain the Awtarchy command."
+    die "Updater commit ${commit} does not contain the Awtarchy command."
   }
   bash -n "$new_runtime" || {
     rm -rf -- "$tmp"
@@ -234,59 +274,61 @@ self_update() {
     die "Downloaded Awtarchy command failed Bash syntax validation."
   }
 
-  revision="$(sha256sum "$new_runtime" | awk '{print $1}')"
   atomic_install "$new_runtime" "$RUNTIME" 0755
   atomic_install "$new_launcher" "${TARGET_HOME}/.local/bin/awtarchy" 0755
-  write_command_version "$tag" "$revision"
+  write_command_version "$commit"
   rm -rf -- "$tmp"
 
-  log "Awtarchy command updated to ${tag}."
+  log "Awtarchy updater refreshed to ${UPDATER_BRANCH}@${commit}."
+}
+
+ensure_latest_updater() {
+  [[ ${AWTARCHY_SKIP_UPDATE_CHECK:-0} == 1 ]] && return 0
+
+  local installed remote
+  installed="$(installed_updater_commit)"
+  remote="$(updater_branch_head)" \
+    || die "Could not determine the latest Awtarchy updater from ${UPDATER_BRANCH}."
+
+  if [[ $installed != "$remote" ]]; then
+    self_update "$remote"
+  fi
 }
 
 print_version_status() {
-  local installed latest="" status="Unknown" config
-  installed="$(installed_command_tag)"
+  local installed remote="" updater_status="Remote main unavailable"
+  local config latest="" config_status="Latest release unavailable"
+
+  installed="$(installed_updater_commit)"
   config="$(installed_config_tag)"
-  if latest="$(latest_release_tag 2>/dev/null)"; then
-    if [[ $installed == "$latest" ]]; then
-      status="Up to date"
-    elif [[ $installed == unknown || $installed == unreleased ]]; then
-      status="Local or untracked command build"
+
+  if remote="$(updater_branch_head 2>/dev/null)"; then
+    if [[ $installed == "$remote" ]]; then
+      updater_status="Up to date"
+    elif [[ $installed == unknown ]]; then
+      updater_status="Updater state is untracked or from the legacy release-based updater"
     else
-      status="Update available"
+      updater_status="Updater refresh available"
     fi
-  else
-    status="Latest release unavailable"
   fi
 
-  printf 'Command release:   %s\n' "$installed"
-  printf 'Config release:    %s\n' "$config"
-  printf 'Latest release:    %s\n' "${latest:-unavailable}"
-  printf 'Command status:    %s\n' "$status"
-}
-
-maybe_offer_update() {
-  [[ ${AWTARCHY_SKIP_UPDATE_CHECK:-0} == 1 ]] && return 0
-  local installed latest answer=""
-  installed="$(installed_command_tag)"
-  latest="$(latest_release_tag 2>/dev/null || true)"
-  [[ -n $latest ]] || return 0
-
-  if [[ $installed == "$latest" ]]; then
-    return 0
-  fi
-  if [[ $installed == unknown || $installed == unreleased ]]; then
-    return 0
+  if latest="$(latest_release_tag 2>/dev/null)"; then
+    if [[ $config == "$latest" ]]; then
+      config_status="Up to date"
+    elif [[ $config == unknown || $config == unreleased ]]; then
+      config_status="Local or untracked config build"
+    else
+      config_status="Config update available"
+    fi
   fi
 
-  printf 'Awtarchy command update available: %s -> %s\n' "$installed" "$latest"
-  [[ -t 0 && -t 1 && -r /dev/tty && -w /dev/tty ]] || return 0
-  printf 'Update the Awtarchy command now? [Y/n] ' >/dev/tty
-  IFS= read -r answer </dev/tty || true
-  case "$answer" in
-    n|N|no|NO) return 0 ;;
-    *) self_update "$latest" ;;
-  esac
+  printf 'Updater branch:     %s\n' "$UPDATER_BRANCH"
+  printf 'Updater commit:     %s\n' "$installed"
+  printf 'Remote main head:   %s\n' "${remote:-unavailable}"
+  printf 'Updater status:     %s\n' "$updater_status"
+  printf 'Config release:     %s\n' "$config"
+  printf 'Latest release:     %s\n' "${latest:-unavailable}"
+  printf 'Config status:      %s\n' "$config_status"
 }
 
 require_runtime() {
@@ -363,12 +405,12 @@ pause_menu() {
 
 maintenance_menu() {
   [[ -t 0 && -t 1 && -r /dev/tty && -w /dev/tty ]] || die "The Awtarchy menu requires an interactive terminal."
-  maybe_offer_update
+  ensure_latest_updater
 
   local choice rc
   while true; do
     choice="$(single_select_menu "Awtarchy Maintenance" 0 \
-      "Update Awtarchy command" \
+      "Refresh Awtarchy updater from main" \
       "Update configs (preserve personal modifications)" \
       "Reset configs (clean-slate managed files)" \
       "Review config changes without applying" \
@@ -422,7 +464,11 @@ Usage:
   awtarchy clean-backups [options]
   awtarchy version
   awtarchy check-update
-  awtarchy self-update [--tag <tag>]
+  awtarchy self-update
+
+The updater always refreshes from the current `main` branch head.
+Managed configs still update only from the latest published release unless
+an explicit --tag is passed to an update/reset/review operation.
 
 Installation is handled only by awtarchy-install.sh.
 EOF
@@ -438,55 +484,41 @@ main() {
       ;;
     check-update)
       print_version_status
-      local installed latest
-      installed="$(installed_command_tag)"
-      latest="$(latest_release_tag 2>/dev/null || true)"
-      if [[ -n $latest && $installed != unknown && $installed != unreleased && $installed != "$latest" ]]; then
+      local installed remote=""
+      installed="$(installed_updater_commit)"
+      remote="$(updater_branch_head 2>/dev/null || true)"
+      if [[ -n $remote && $installed != "$remote" ]]; then
         return 10
       fi
       ;;
     self-update)
       shift
-      local tag=""
-      while (( $# )); do
-        case "$1" in
-          --tag)
-            tag="${2:-}"
-            [[ -n $tag ]] || die "--tag requires a release tag."
-            shift 2
-            ;;
-          -h|--help)
-            usage
-            return 0
-            ;;
-          *) die "Unknown self-update option: $1" ;;
-        esac
-      done
-      self_update "$tag"
+      (( $# == 0 )) || die "self-update does not accept options; the updater source is always ${UPDATER_BRANCH}."
+      self_update
       ;;
     update)
       shift
-      maybe_offer_update
+      ensure_latest_updater
       exec_runtime update-reset-backup --mode preserve "$@"
       ;;
     reset)
       shift
-      maybe_offer_update
+      ensure_latest_updater
       exec_runtime update-reset-backup --mode clean "$@"
       ;;
     review)
       shift
-      maybe_offer_update
+      ensure_latest_updater
       exec_runtime update-reset-backup --mode preserve --review-only "$@"
       ;;
     clean-backups|update-backup-cleaner|backup-cleaner)
       shift
-      maybe_offer_update
+      ensure_latest_updater
       exec_runtime clean-backups "$@"
       ;;
     update-reset-backup)
       shift
-      maybe_offer_update
+      ensure_latest_updater
       exec_runtime update-reset-backup "$@"
       ;;
     install|dry-run|dryrun|test)
