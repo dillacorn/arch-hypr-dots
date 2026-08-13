@@ -30,10 +30,15 @@ jobs:
           bash -n config/hypr/scripts/hypr-ddc-brightness.sh
           bash -n config/hypr/scripts/hypridle_action.sh
           bash -n config/hypr/scripts/hypridle_restart.sh
+          bash -n config/hypr/scripts/hyprsunset_ctl.sh
           bash -n config/hypr/scripts/quickshell_bar_restore.sh
           bash -n config/hypr/scripts/quickshell_launcher_position.sh
-          bash -n config/hypr/scripts/restore_brightness.sh
+          bash -n config/hypr/scripts/quickshell_power_profile_setup.sh
           bash -n config/hypr/scripts/quickshell_resume_recover.sh
+          bash -n config/hypr/scripts/restore_brightness.sh
+          bash -n config/hypr/scripts/screenshot_area.sh
+          bash -n config/hypr/scripts/screenshot_display.sh
+          bash -n config/hypr/scripts/screenshot_fullscreen.sh
           bash -n tests/test-awtarchy-command.sh
           bash -n tests/test-awtarchy-command-shim.sh
           bash -n tests/test-bar-wheel-input.sh
@@ -56,10 +61,15 @@ jobs:
             config/hypr/scripts/dim_display.sh \
             config/hypr/scripts/hypr-ddc-brightness.sh \
             config/hypr/scripts/hypridle_restart.sh \
+            config/hypr/scripts/hyprsunset_ctl.sh \
             config/hypr/scripts/quickshell_bar_restore.sh \
             config/hypr/scripts/quickshell_launcher_position.sh \
-            config/hypr/scripts/restore_brightness.sh \
+            config/hypr/scripts/quickshell_power_profile_setup.sh \
             config/hypr/scripts/quickshell_resume_recover.sh \
+            config/hypr/scripts/restore_brightness.sh \
+            config/hypr/scripts/screenshot_area.sh \
+            config/hypr/scripts/screenshot_display.sh \
+            config/hypr/scripts/screenshot_fullscreen.sh \
             tests/test-awtarchy-command-shim.sh \
             tests/test-bar-wheel-input.sh \
             tests/test-ddc-brightness-watcher.sh \
