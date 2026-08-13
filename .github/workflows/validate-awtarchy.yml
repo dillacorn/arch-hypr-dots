@@ -52,6 +52,7 @@ jobs:
           bash -n tests/test-lua-validation.sh
           bash -n tests/test-quickshell-updater-migration.sh
           bash -n tests/test-quickshell-theme-legacy-micro.sh
+          bash -n tests/test-troubleshoot-command.sh
           bash -n tests/test-quickshell-resume-recovery.sh
       - name: ShellCheck command code
         run: |
@@ -83,6 +84,7 @@ jobs:
             tests/test-lua-validation.sh \
             tests/test-quickshell-updater-migration.sh \
             tests/test-quickshell-theme-legacy-micro.sh \
+            tests/test-troubleshoot-command.sh \
             tests/test-quickshell-resume-recovery.sh
           shellcheck -e SC2015 config/hypr/scripts/quickshell_theme_apply.sh
           shellcheck -e SC2016 tests/test-awtarchy-command.sh
@@ -104,4 +106,5 @@ jobs:
           bash tests/test-lua-validation.sh
           bash tests/test-quickshell-updater-migration.sh
           bash tests/test-quickshell-theme-legacy-micro.sh
+          bash tests/test-troubleshoot-command.sh
           bash tests/test-quickshell-resume-recovery.sh
