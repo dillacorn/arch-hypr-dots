@@ -21,6 +21,7 @@ jobs:
           test ! -e awtarchy.sh
           bash -n awtarchy-install.sh
           bash -n local/bin/awtarchy
+          grep -Fq 'exec "${TARGET_HOME}/.local/bin/awtarchy" "$@"' local/bin/awtarchy
           bash -n local/bin/awtarchy-quickshell
           bash -n local/share/awtarchy/awtarchy-runtime.sh
           bash -n config/hypr/scripts/awtarchy-tips-tui.sh
@@ -73,7 +74,11 @@ jobs:
           shellcheck -e SC2016 tests/test-awtarchy-command.sh
       - name: Command and updater integration tests
         run: |
-          bash tests/test-awtarchy-command.sh
+          no_sudo_bin="$(mktemp -d)"
+          printf '%s\n' '#!/usr/bin/env bash' 'exit 1' >"${no_sudo_bin}/sudo"
+          chmod 0755 "${no_sudo_bin}/sudo"
+          PATH="${no_sudo_bin}:$PATH" bash tests/test-awtarchy-command.sh
+          rm -rf -- "$no_sudo_bin"
           bash tests/test-awtarchy-command-shim.sh
           bash tests/test-bar-wheel-input.sh
           bash tests/test-ddc-brightness-watcher.sh
