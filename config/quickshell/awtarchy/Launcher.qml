@@ -78,6 +78,7 @@ Singleton {
     property var stateCommandQueue: []
     property string settingsMessage: ""
     property bool privacyRemapPending: false
+    property bool resetResizePending: false
 
     function focusedScreen() {
         const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
@@ -334,14 +335,20 @@ Singleton {
         iconScaleOverride = 100;
         centeredPlacementOverride = 0;
         captureAllowedOverride = 0;
-        if (wasCaptureAllowed) {
-            savedView = Object.assign({}, savedView, { captureAllowed: false });
-            privacyRemapPending = true;
-            queueStateCommand(["set-capture", "launcher", "false"]);
-        }
+        savedView = ({
+            width: BarState.defaultLauncherWidth,
+            height: BarState.defaultLauncherHeight,
+            textScale: 100,
+            iconScale: 100,
+            centered: false,
+            captureAllowed: false
+        });
+        savedPlacement = barPlacementForScreen(activeScreen);
+        requestedPlacement = savedPlacement;
+        privacyRemapPending = privacyRemapPending || wasCaptureAllowed;
+        resetResizePending = true;
         setWindowSize(BarState.defaultLauncherWidth, BarState.defaultLauncherHeight);
-        requestedPlacement = barPlacementForScreen(activeScreen);
-        positionTimer.restart();
+        queueStateCommand(["reset-monitor", monitor]);
         settingsMessage = "Launcher defaults loaded for " + monitor;
     }
 
@@ -640,6 +647,13 @@ Singleton {
         id: sizeStateWriter
         onExited: {
             BarState.refresh();
+            if (root.resetResizePending && root.stateCommandQueue.length === 0) {
+                root.resetResizePending = false;
+                root.setWindowSize(BarState.defaultLauncherWidth,
+                    BarState.defaultLauncherHeight);
+                if (launcherWindow.visible && !root.privacyRemapPending)
+                    positionTimer.restart();
+            }
             privacyRuleUpdater.exec([root.runtimeRulesScript]);
             Qt.callLater(() => root.runNextStateCommand());
         }
