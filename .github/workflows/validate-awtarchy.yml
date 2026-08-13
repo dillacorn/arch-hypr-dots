@@ -35,6 +35,7 @@ jobs:
           bash -n config/hypr/scripts/quickshell_launcher_position.sh
           bash -n config/hypr/scripts/quickshell_power_profile_setup.sh
           bash -n config/hypr/scripts/quickshell_resume_recover.sh
+          bash -n config/hypr/scripts/quickshell_theme_apply.sh
           bash -n config/hypr/scripts/restore_brightness.sh
           bash -n config/hypr/scripts/screenshot_area.sh
           bash -n config/hypr/scripts/screenshot_display.sh
@@ -50,6 +51,7 @@ jobs:
           bash -n tests/test-desktop-candidate-validation.sh
           bash -n tests/test-lua-validation.sh
           bash -n tests/test-quickshell-updater-migration.sh
+          bash -n tests/test-quickshell-theme-legacy-micro.sh
           bash -n tests/test-quickshell-resume-recovery.sh
       - name: ShellCheck command code
         run: |
@@ -66,6 +68,7 @@ jobs:
             config/hypr/scripts/quickshell_launcher_position.sh \
             config/hypr/scripts/quickshell_power_profile_setup.sh \
             config/hypr/scripts/quickshell_resume_recover.sh \
+            config/hypr/scripts/quickshell_theme_apply.sh \
             config/hypr/scripts/restore_brightness.sh \
             config/hypr/scripts/screenshot_area.sh \
             config/hypr/scripts/screenshot_display.sh \
@@ -80,6 +83,7 @@ jobs:
             tests/test-desktop-candidate-validation.sh \
             tests/test-lua-validation.sh \
             tests/test-quickshell-updater-migration.sh \
+            tests/test-quickshell-theme-legacy-micro.sh \
             tests/test-quickshell-resume-recovery.sh
           shellcheck -e SC2016 tests/test-awtarchy-command.sh
       - name: Command and updater integration tests
@@ -99,4 +103,5 @@ jobs:
           bash tests/test-desktop-candidate-validation.sh
           bash tests/test-lua-validation.sh
           bash tests/test-quickshell-updater-migration.sh
+          bash tests/test-quickshell-theme-legacy-micro.sh
           bash tests/test-quickshell-resume-recovery.sh
