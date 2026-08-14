@@ -1,4 +1,4 @@
-# Temporary verification workflow; remove after the final branch validation passes.
+# Temporary final validation after the production migration harness cleanup; remove after success.
 name: Final Quickshell Validation
 
 on:
