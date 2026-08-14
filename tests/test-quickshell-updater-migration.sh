@@ -3,7 +3,6 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-INSTALLER="${ROOT}/awtarchy-install.sh"
 STABLE_LAUNCHER="${ROOT}/local/bin/awtarchy"
 RUNTIME="${ROOT}/local/share/awtarchy/awtarchy-runtime.sh"
 MANAGED_HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
