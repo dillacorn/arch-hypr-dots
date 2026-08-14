@@ -58,6 +58,10 @@ require_contains "$capture_button" 'enabled: !root.locked'
 
 for file in "$launcher" "$clipboard_menu" "$notifications" "$quick_settings" "$network_menu" "$bluetooth_menu"; do
     require_contains "$file" 'CaptureEyeButton {'
+done
+
+require_contains "$launcher" 'root.toggleCaptureAllowed();'
+for file in "$clipboard_menu" "$notifications" "$quick_settings" "$network_menu" "$bluetooth_menu"; do
     require_contains "$file" 'onClicked: root.toggleCaptureAllowed()'
 done
 
