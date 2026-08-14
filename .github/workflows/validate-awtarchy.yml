@@ -52,6 +52,7 @@ jobs:
           bash -n tests/test-launcher-keyboard-focus.sh
           bash -n tests/test-desktop-candidate-validation.sh
           bash -n tests/test-lua-validation.sh
+          bash -n tests/test-quickshell-production-readiness.sh
           bash -n tests/test-quickshell-updater-migration.sh
           bash -n tests/test-quickshell-theme-legacy-micro.sh
           bash -n tests/test-troubleshoot-command.sh
@@ -84,6 +85,7 @@ jobs:
             tests/test-launcher-keyboard-focus.sh \
             tests/test-desktop-candidate-validation.sh \
             tests/test-lua-validation.sh \
+            tests/test-quickshell-production-readiness.sh \
             tests/test-quickshell-updater-migration.sh \
             tests/test-quickshell-theme-legacy-micro.sh \
             tests/test-troubleshoot-command.sh \
@@ -106,6 +108,7 @@ jobs:
           bash tests/test-launcher-keyboard-focus.sh
           bash tests/test-desktop-candidate-validation.sh
           bash tests/test-lua-validation.sh
+          bash tests/test-quickshell-production-readiness.sh
           bash tests/test-quickshell-updater-migration.sh
           bash tests/test-quickshell-theme-legacy-micro.sh
           bash tests/test-troubleshoot-command.sh
