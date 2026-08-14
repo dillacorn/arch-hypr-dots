@@ -1,0 +1,106 @@
+name: Quickshell Final Privacy Hardening
+
+on:
+  push:
+    branches: [quickshell-conversion-testing]
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Apply final privacy hardening
+        id: patch
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          network = Path('config/quickshell/awtarchy/NetworkMenu.qml')
+          text = network.read_text()
+          old = '''    Component.onCompleted: {
+              root.vpnPrivacyAction = "unlock";
+              vpnPrivacyProcess.exec([root.sensitiveCaptureScript, "network", "unlock"]);
+          }
+          '''.replace('\n          ', '\n').lstrip('\n')
+          new = '''    Component.onCompleted: {
+              networkWindow.visible = false;
+              root.vpnPrivacyAction = "unlock";
+              vpnPrivacyProcess.exec([root.sensitiveCaptureScript, "network", "unlock"]);
+          }
+          '''.replace('\n          ', '\n').lstrip('\n')
+          if old in text:
+              text = text.replace(old, new, 1)
+              network.write_text(text)
+          elif new not in text:
+              raise SystemExit('Network startup privacy marker changed unexpectedly')
+
+          launcher = Path('config/quickshell/awtarchy/Launcher.qml')
+          text = launcher.read_text()
+          ugly = '''                        CaptureEyeButton {
+                    captureAllowed: root.captureAllowed
+                    textSize: 13
+                    onClicked: {
+                        root.toggleCaptureAllowed();
+                        Qt.callLater(() => search.forceActiveFocus());
+                    }
+                }
+          '''.replace('\n          ', '\n').lstrip('\n')
+          clean = '''                        CaptureEyeButton {
+                              captureAllowed: root.captureAllowed
+                              textSize: 13
+                              onClicked: {
+                                  root.toggleCaptureAllowed();
+                                  Qt.callLater(() => search.forceActiveFocus());
+                              }
+                          }
+          '''.replace('\n          ', '\n').lstrip('\n')
+          if ugly in text:
+              text = text.replace(ugly, clean, 1)
+              launcher.write_text(text)
+          elif clean not in text:
+              raise SystemExit('Launcher capture eye marker changed unexpectedly')
+          PY
+
+          if git diff --quiet -- config/quickshell/awtarchy/NetworkMenu.qml config/quickshell/awtarchy/Launcher.qml; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify focused privacy regression
+        if: steps.patch.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          bash tests/test-quickshell-capture-privacy.sh
+          git diff --check
+
+      - name: Refresh managed history
+        if: steps.patch.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          manifest='local/share/awtarchy/quickshell-managed-history.sha256'
+          while IFS='|' read -r source managed; do
+            hash="$(sha256sum "$source" | awk '{print $1}')"
+            line="${hash}	${managed}"
+            grep -Fqx -- "$line" "$manifest" || printf '%b\n' "$line" >> "$manifest"
+          done <<'EOF'
+          config/quickshell/awtarchy/NetworkMenu.qml|.config/quickshell/awtarchy/NetworkMenu.qml
+          config/quickshell/awtarchy/Launcher.qml|.config/quickshell/awtarchy/Launcher.qml
+          EOF
+
+      - name: Commit hardening
+        if: steps.patch.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add config/quickshell/awtarchy/NetworkMenu.qml config/quickshell/awtarchy/Launcher.qml local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'Finish flyout privacy hardening'
+          git push origin HEAD:quickshell-conversion-testing
