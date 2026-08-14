@@ -1,0 +1,891 @@
+name: Apply Quickshell Privacy Fixes
+
+on:
+  push:
+    branches: [quickshell-conversion-testing]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Apply reviewed privacy and Num Lock patch
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          root = Path('.')
+          qml = root / 'config/quickshell/awtarchy'
+          scripts = root / 'config/hypr/scripts'
+
+          def read(path):
+              return path.read_text()
+
+          def write(path, text):
+              path.write_text(text)
+
+          def replace_one(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              return text.replace(old, new, 1)
+
+          network = qml / 'NetworkMenu.qml'
+          network_text = read(network)
+          if 'property bool vpnPrivacyOpening: false' in network_text:
+              print('Privacy patch already applied; no production rewrite needed.')
+              sys.exit(0)
+
+          # FlyoutSettings: capture toggles belong in the visible flyout headers,
+          # and VPN content must only exist behind NetworkMenu's protected gate.
+          path = qml / 'FlyoutSettings.qml'
+          text = read(path)
+          text = replace_one(
+              text,
+              '    implicitHeight: copyOpen ? 104\n'
+              '        : (effectiveShowCaptureControl ? 170 : 139)\n'
+              '            + (surfaceLabel === "Network" ? vpnSection.implicitHeight + 6 : 0)\n'
+              '            + (surfaceLabel === "Quick Settings" ? barSection.implicitHeight + 6 : 0)\n',
+              '    implicitHeight: copyOpen ? 104\n'
+              '        : 139 + (surfaceLabel === "Quick Settings" ? barSection.implicitHeight + 6 : 0)\n',
+              'FlyoutSettings implicitHeight')
+          capture_start = text.index('        RowLayout {\n            Layout.fillWidth: true\n            Layout.preferredHeight: 28\n            spacing: 6\n            visible: !root.copyOpen && root.effectiveShowCaptureControl\n')
+          vpn_start = text.index('        NetworkVpnSection {', capture_start)
+          text = text[:capture_start] + text[vpn_start:]
+          vpn_start = text.index('        NetworkVpnSection {')
+          bar_start = text.index('        BarSettingsSection {', vpn_start)
+          text = text[:vpn_start] + text[bar_start:]
+          write(path, text)
+
+          # Shared header eye for Clipboard.
+          path = qml / 'ClipboardMenu.qml'
+          text = read(path)
+          needle = ('                        Rectangle {\n'
+                    '                            Layout.preferredWidth: 28\n'
+                    '                            Layout.preferredHeight: 26\n'
+                    '                            color: root.settingsOpen ? Theme.focus\n')
+          insert = ('                        CaptureEyeButton {\n'
+                    '                            captureAllowed: root.captureAllowed\n'
+                    '                            textSize: Math.max(11, Math.round(13 * root.effectiveIconScale / 100))\n'
+                    '                            onClicked: root.toggleCaptureAllowed()\n'
+                    '                        }\n\n') + needle
+          text = replace_one(text, needle, insert, 'Clipboard capture eye')
+          text = text.replace('                        captureAllowed: root.captureAllowed\n', '', 1)
+          text = text.replace('                        onCaptureToggleRequested: root.toggleCaptureAllowed()\n', '', 1)
+          write(path, text)
+
+          # Shared header eye for Notifications.
+          path = qml / 'Notifications.qml'
+          text = read(path)
+          needle = ('                        Rectangle {\n'
+                    '                            Layout.preferredWidth: 28\n'
+                    '                            Layout.preferredHeight: 26\n'
+                    '                            color: root.settingsOpen ? Theme.focus\n')
+          insert = ('                        CaptureEyeButton {\n'
+                    '                            captureAllowed: root.captureAllowed\n'
+                    '                            textSize: Math.max(11, Math.round(13 * root.effectiveIconScale / 100))\n'
+                    '                            onClicked: root.toggleCaptureAllowed()\n'
+                    '                        }\n\n') + needle
+          text = replace_one(text, needle, insert, 'Notifications capture eye')
+          text = text.replace('                        captureAllowed: root.captureAllowed\n', '', 1)
+          text = text.replace('                        onCaptureToggleRequested: root.toggleCaptureAllowed()\n', '', 1)
+          write(path, text)
+
+          # Quick Settings eye and Num Lock singleton handoff.
+          path = qml / 'QuickSettings.qml'
+          text = read(path)
+          old = '''    function forceNumlockOff() {
+              if (numlockPrimeProcess.running || numlockOffProcess.running)
+                  return;
+              numlockPrimeProcess.exec([
+                  "hyprctl", "keyword", "input:numlock_by_default", "true"
+              ]);
+          }
+
+          '''
+          text = replace_one(text, old, '', 'QuickSettings duplicate Num Lock function')
+          text = replace_one(
+              text,
+              '''        if (numlockSettings.disableNumlockAtSessionStart) {
+                  forceNumlockOff();
+                  actionMessage = "Num Lock will be disabled at session start";
+          ''',
+              '''        if (numlockSettings.disableNumlockAtSessionStart) {
+                  NumlockSessionTweak.enforce();
+                  actionMessage = "Num Lock will be disabled at session start";
+          ''',
+              'QuickSettings Num Lock toggle')
+          text = replace_one(
+              text,
+              '''        onLoaded: {
+                  if (numlockSettings.disableNumlockAtSessionStart)
+                      Qt.callLater(() => root.forceNumlockOff());
+              }
+          ''',
+              '''        onLoaded: {
+                  if (numlockSettings.disableNumlockAtSessionStart)
+                      Qt.callLater(() => NumlockSessionTweak.enforce());
+              }
+          ''',
+              'QuickSettings Num Lock load')
+          text = replace_one(
+              text,
+              '''
+              Process {
+                  id: numlockPrimeProcess
+                  onExited: numlockOffProcess.exec([
+                      "hyprctl", "keyword", "input:numlock_by_default", "false"
+                  ])
+              }
+
+              Process {
+                  id: numlockOffProcess
+              }
+          ''',
+              '\n',
+              'QuickSettings Num Lock processes')
+          gear = '''                        SettingsButton {
+                              label: ""
+                              active: root.settingsOpen
+          '''
+          eye = '''                        CaptureEyeButton {
+                              captureAllowed: root.captureAllowed
+                              textSize: root.scaledIcon(12)
+                              onClicked: root.toggleCaptureAllowed()
+                          }
+
+          ''' + gear
+          text = replace_one(text, gear, eye, 'QuickSettings capture eye')
+          text = text.replace('                        captureAllowed: root.captureAllowed\n', '', 1)
+          text = text.replace('                        onCaptureToggleRequested: root.toggleCaptureAllowed()\n', '', 1)
+          write(path, text)
+
+          # Network owns capture state and gates VPN rendering behind an applied
+          # runtime capture lock.
+          path = network
+          text = network_text
+          text = replace_one(text,
+              '    property bool vpnOpen: false\n',
+              '    property bool vpnOpen: false\n'
+              '    property bool vpnPrivacyOpening: false\n'
+              '    property bool vpnPrivacyUnlockPending: false\n'
+              '    property string vpnPrivacyAction: ""\n',
+              'Network VPN privacy properties')
+          text = replace_one(text,
+              '    property int iconScaleOverride: -1\n',
+              '    property int iconScaleOverride: -1\n'
+              '    property int captureAllowedOverride: -1\n'
+              '    property bool privacyRemapPending: false\n',
+              'Network capture properties')
+          text = replace_one(text,
+              '        iconScale: 100\n    })\n',
+              '        iconScale: 100,\n        captureAllowed: false\n    })\n',
+              'Network saved capture state')
+          text = replace_one(text,
+              '    readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"\n',
+              '    readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"\n'
+              '    readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"\n'
+              '    readonly property string sensitiveCaptureScript: configHome + "/hypr/scripts/quickshell_sensitive_capture.sh"\n',
+              'Network privacy helper paths')
+          text = replace_one(text,
+              '    readonly property int effectiveIconScale: iconScaleOverride >= 0\n'
+              '        ? iconScaleOverride : BarState.networkViewFor(activeMonitorName).iconScale\n',
+              '    readonly property int effectiveIconScale: iconScaleOverride >= 0\n'
+              '        ? iconScaleOverride : BarState.networkViewFor(activeMonitorName).iconScale\n'
+              '    readonly property bool captureAllowed: captureAllowedOverride >= 0\n'
+              '        ? captureAllowedOverride === 1 : BarState.captureAllowedFor("network")\n',
+              'Network capture property')
+          text = replace_one(text,
+              '        || savedView.iconScale !== effectiveIconScale\n',
+              '        || savedView.iconScale !== effectiveIconScale\n'
+              '        || savedView.captureAllowed !== captureAllowed\n',
+              'Network dirty capture state')
+          text = replace_one(text,
+              '        iconScaleOverride = persisted.iconScale;\n'
+              '        savedView = ({\n'
+              '            width: panelWidthOverride,\n'
+              '            height: panelHeightOverride,\n'
+              '            textScale: textScaleOverride,\n'
+              '            iconScale: iconScaleOverride\n'
+              '        });\n',
+              '        iconScaleOverride = persisted.iconScale;\n'
+              '        captureAllowedOverride = BarState.captureAllowedFor("network") ? 1 : 0;\n'
+              '        savedView = ({\n'
+              '            width: panelWidthOverride,\n'
+              '            height: panelHeightOverride,\n'
+              '            textScale: textScaleOverride,\n'
+              '            iconScale: iconScaleOverride,\n'
+              '            captureAllowed: captureAllowed\n'
+              '        });\n',
+              'Network load capture state')
+          text = replace_one(text,
+              '            textScale: effectiveTextScale,\n'
+              '            iconScale: effectiveIconScale\n'
+              '        });\n',
+              '            textScale: effectiveTextScale,\n'
+              '            iconScale: effectiveIconScale,\n'
+              '            captureAllowed: captureAllowed\n'
+              '        });\n',
+              'Network accept capture state')
+          text = replace_one(text,
+              '        iconScaleOverride = savedView.iconScale;\n'
+              '        applyWindowSize(width, height);\n',
+              '        iconScaleOverride = savedView.iconScale;\n'
+              '        captureAllowedOverride = savedView.captureAllowed ? 1 : 0;\n'
+              '        applyWindowSize(width, height);\n',
+              'Network discard capture state')
+          text = replace_one(text,
+              '            String(effectiveTextScale), String(effectiveIconScale), "false"\n',
+              '            String(effectiveTextScale), String(effectiveIconScale),\n'
+              '            captureAllowed ? "true" : "false"\n',
+              'Network save capture state')
+          text = replace_one(text,
+              '''    function resetDisplaySettings() {
+              if (activeMonitorName.length === 0)
+                  return;
+              textScaleOverride = 100;
+              iconScaleOverride = 100;
+          ''',
+              '''    function resetDisplaySettings() {
+              if (activeMonitorName.length === 0)
+                  return;
+              const wasCaptureAllowed = captureAllowed;
+              textScaleOverride = 100;
+              iconScaleOverride = 100;
+              captureAllowedOverride = 0;
+          ''',
+              'Network reset capture state')
+          text = replace_one(text,
+              '            textScale: 100,\n'
+              '            iconScale: 100\n'
+              '        });\n'
+              '        queueStateCommand(["reset-flyout", "network", activeMonitorName]);\n',
+              '            textScale: 100,\n'
+              '            iconScale: 100,\n'
+              '            captureAllowed: false\n'
+              '        });\n'
+              '        privacyRemapPending = wasCaptureAllowed;\n'
+              '        queueStateCommand(["reset-flyout", "network", activeMonitorName]);\n',
+              'Network reset saved capture state')
+          text = replace_one(text,
+              '    function toggleSettings() {\n',
+              '''    function toggleCaptureAllowed() {
+              if (vpnOpen || vpnPrivacyOpening)
+                  return;
+              const next = !captureAllowed;
+              captureAllowedOverride = next ? 1 : 0;
+              savedView = Object.assign({}, savedView, { captureAllowed: next });
+              privacyRemapPending = true;
+              queueStateCommand(["set-capture", "network", next ? "true" : "false"]);
+              settingsMessage = next
+                  ? "Network is visible in captures" : "Network capture protection enabled";
+          }
+
+              function startVpnUnlock() {
+              if (vpnPrivacyProcess.running) {
+                  vpnPrivacyUnlockPending = true;
+                  return;
+              }
+              vpnPrivacyUnlockPending = false;
+              vpnPrivacyAction = "unlock";
+              vpnPrivacyProcess.exec([root.sensitiveCaptureScript, "network", "unlock"]);
+          }
+
+              function openVpnView() {
+              if (vpnOpen || vpnPrivacyOpening)
+                  return;
+              if (vpnPrivacyProcess.running) {
+                  actionMessage = "VPN privacy protection is still initializing";
+                  return;
+              }
+              settingsOpen = false;
+              settingsPanel.resetCopySelection();
+              settingsMessage = "";
+              cancelWifiPassword();
+              vpnPrivacyUnlockPending = false;
+              vpnPrivacyOpening = true;
+              vpnPrivacyAction = "lock";
+              vpnPrivacyProcess.exec([root.sensitiveCaptureScript, "network", "lock"]);
+          }
+
+              function closeVpnView() {
+              const wasSensitive = vpnOpen || vpnPrivacyOpening;
+              vpnOpen = false;
+              vpnPrivacyOpening = false;
+              if (wasSensitive)
+                  startVpnUnlock();
+          }
+
+              function toggleSettings() {
+          ''',
+              'Network capture/VPN helpers')
+          text = replace_one(text,
+              '''        settingsOpen = !settingsOpen;
+              if (settingsOpen)
+                  vpnOpen = false;
+              settingsPanel.resetCopySelection();
+              settingsMessage = "";
+          }
+
+              function toggleVpn() {
+              vpnOpen = !vpnOpen;
+              if (vpnOpen) {
+                  settingsOpen = false;
+                  settingsPanel.resetCopySelection();
+                  settingsMessage = "";
+                  cancelWifiPassword();
+              }
+          }
+          ''',
+              '''        if (vpnOpen || vpnPrivacyOpening)
+                  closeVpnView();
+              settingsOpen = !settingsOpen;
+              settingsPanel.resetCopySelection();
+              settingsMessage = "";
+          }
+
+              function toggleVpn() {
+              if (vpnOpen || vpnPrivacyOpening)
+                  closeVpnView();
+              else
+                  openVpnView();
+          }
+          ''',
+              'Network VPN toggle')
+          text = replace_one(text,
+              '        settingsOpen = false;\n'
+              '        vpnOpen = false;\n'
+              '        settingsMessage = "";\n',
+              '        settingsOpen = false;\n'
+              '        if (vpnOpen || vpnPrivacyOpening)\n'
+              '            closeVpnView();\n'
+              '        settingsMessage = "";\n',
+              'Network open transition')
+          text = replace_one(text,
+              '        networkWindow.visible = false;\n'
+              '        setWifiScanning(false);\n',
+              '        networkWindow.visible = false;\n'
+              '        if (vpnOpen || vpnPrivacyOpening)\n'
+              '            closeVpnView();\n'
+              '        setWifiScanning(false);\n',
+              'Network close sensitive view')
+          text = replace_one(text,
+              '        settingsOpen = false;\n'
+              '        vpnOpen = false;\n'
+              '        settingsMessage = "";\n',
+              '        settingsOpen = false;\n'
+              '        settingsMessage = "";\n',
+              'Network close VPN reset')
+          text = replace_one(text,
+              '''    Process {
+              id: stateWriter
+              onExited: {
+                  BarState.refresh();
+                  Qt.callLater(() => root.runNextStateCommand());
+              }
+          }
+
+              IpcHandler {
+          ''',
+              '''    Process {
+              id: stateWriter
+              onExited: {
+                  BarState.refresh();
+                  privacyRuleUpdater.exec([root.runtimeRulesScript]);
+                  Qt.callLater(() => root.runNextStateCommand());
+              }
+          }
+
+              Process {
+              id: privacyRuleUpdater
+              onExited: {
+                  if (!root.privacyRemapPending)
+                      return;
+                  root.privacyRemapPending = false;
+                  if (!networkWindow.visible || root.vpnOpen || root.vpnPrivacyOpening)
+                      return;
+                  networkWindow.visible = false;
+                  Qt.callLater(() => {
+                      networkWindow.visible = true;
+                      root.positionWindow();
+                  });
+              }
+          }
+
+              Process {
+              id: vpnPrivacyProcess
+              onExited: (exitCode, exitStatus) => {
+                  const completedAction = root.vpnPrivacyAction;
+                  root.vpnPrivacyAction = "";
+
+                  if (completedAction === "lock") {
+                      if (exitCode !== 0) {
+                          root.vpnPrivacyOpening = false;
+                          root.vpnOpen = false;
+                          root.actionMessage = "VPN capture protection unavailable";
+                          root.vpnPrivacyUnlockPending = false;
+                          Qt.callLater(() => root.startVpnUnlock());
+                          return;
+                      }
+                      if (root.vpnPrivacyUnlockPending) {
+                          root.vpnPrivacyOpening = false;
+                          root.vpnOpen = false;
+                          root.vpnPrivacyUnlockPending = false;
+                          Qt.callLater(() => root.startVpnUnlock());
+                          return;
+                      }
+                      root.vpnPrivacyOpening = false;
+                      root.vpnOpen = true;
+                      return;
+                  }
+
+                  if (completedAction === "unlock")
+                      root.vpnPrivacyUnlockPending = false;
+              }
+          }
+
+              Component.onCompleted: {
+              root.vpnPrivacyAction = "unlock";
+              vpnPrivacyProcess.exec([root.sensitiveCaptureScript, "network", "unlock"]);
+          }
+
+              IpcHandler {
+          ''',
+              'Network privacy processes')
+          vpn_button = '''                        SettingsButton {
+                              label: "󰒃"
+                              active: root.vpnOpen
+          '''
+          eye = '''                        CaptureEyeButton {
+                              captureAllowed: root.captureAllowed && !root.vpnOpen && !root.vpnPrivacyOpening
+                              locked: root.vpnOpen || root.vpnPrivacyOpening
+                              textSize: root.scaledIcon(12)
+                              onClicked: root.toggleCaptureAllowed()
+                          }
+
+          ''' + vpn_button.replace('active: root.vpnOpen', 'active: root.vpnOpen || root.vpnPrivacyOpening')
+          text = replace_one(text, vpn_button, eye, 'Network capture eye')
+          text = text.replace('                        captureAllowed: false\n', '', 1)
+          text = text.replace('                        showCaptureControl: false\n', '', 1)
+          write(path, text)
+
+          # Bluetooth owns capture state and exposes the same eye control.
+          path = qml / 'BluetoothMenu.qml'
+          text = read(path)
+          text = replace_one(text,
+              '    property int iconScaleOverride: -1\n',
+              '    property int iconScaleOverride: -1\n'
+              '    property int captureAllowedOverride: -1\n'
+              '    property bool privacyRemapPending: false\n',
+              'Bluetooth capture properties')
+          text = replace_one(text,
+              '        iconScale: 100\n    })\n',
+              '        iconScale: 100,\n        captureAllowed: false\n    })\n',
+              'Bluetooth saved capture state')
+          text = replace_one(text,
+              '    readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"\n',
+              '    readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"\n'
+              '    readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"\n',
+              'Bluetooth runtime rules path')
+          text = replace_one(text,
+              '    readonly property int effectiveIconScale: iconScaleOverride >= 0\n'
+              '        ? iconScaleOverride : BarState.bluetoothViewFor(activeMonitorName).iconScale\n',
+              '    readonly property int effectiveIconScale: iconScaleOverride >= 0\n'
+              '        ? iconScaleOverride : BarState.bluetoothViewFor(activeMonitorName).iconScale\n'
+              '    readonly property bool captureAllowed: captureAllowedOverride >= 0\n'
+              '        ? captureAllowedOverride === 1 : BarState.captureAllowedFor("bluetooth")\n',
+              'Bluetooth capture property')
+          text = replace_one(text,
+              '        || savedView.iconScale !== effectiveIconScale\n',
+              '        || savedView.iconScale !== effectiveIconScale\n'
+              '        || savedView.captureAllowed !== captureAllowed\n',
+              'Bluetooth dirty capture state')
+          text = replace_one(text,
+              '        iconScaleOverride = persisted.iconScale;\n'
+              '        savedView = ({\n'
+              '            width: panelWidthOverride,\n'
+              '            height: panelHeightOverride,\n'
+              '            textScale: textScaleOverride,\n'
+              '            iconScale: iconScaleOverride\n'
+              '        });\n',
+              '        iconScaleOverride = persisted.iconScale;\n'
+              '        captureAllowedOverride = BarState.captureAllowedFor("bluetooth") ? 1 : 0;\n'
+              '        savedView = ({\n'
+              '            width: panelWidthOverride,\n'
+              '            height: panelHeightOverride,\n'
+              '            textScale: textScaleOverride,\n'
+              '            iconScale: iconScaleOverride,\n'
+              '            captureAllowed: captureAllowed\n'
+              '        });\n',
+              'Bluetooth load capture state')
+          text = replace_one(text,
+              '            textScale: effectiveTextScale,\n'
+              '            iconScale: effectiveIconScale\n'
+              '        });\n',
+              '            textScale: effectiveTextScale,\n'
+              '            iconScale: effectiveIconScale,\n'
+              '            captureAllowed: captureAllowed\n'
+              '        });\n',
+              'Bluetooth accept capture state')
+          text = replace_one(text,
+              '        iconScaleOverride = savedView.iconScale;\n'
+              '        applyWindowSize(width, height);\n',
+              '        iconScaleOverride = savedView.iconScale;\n'
+              '        captureAllowedOverride = savedView.captureAllowed ? 1 : 0;\n'
+              '        applyWindowSize(width, height);\n',
+              'Bluetooth discard capture state')
+          text = replace_one(text,
+              '            String(effectiveTextScale), String(effectiveIconScale), "false"\n',
+              '            String(effectiveTextScale), String(effectiveIconScale),\n'
+              '            captureAllowed ? "true" : "false"\n',
+              'Bluetooth save capture state')
+          text = replace_one(text,
+              '''    function resetDisplaySettings() {
+              if (activeMonitorName.length === 0)
+                  return;
+              textScaleOverride = 100;
+              iconScaleOverride = 100;
+          ''',
+              '''    function resetDisplaySettings() {
+              if (activeMonitorName.length === 0)
+                  return;
+              const wasCaptureAllowed = captureAllowed;
+              textScaleOverride = 100;
+              iconScaleOverride = 100;
+              captureAllowedOverride = 0;
+          ''',
+              'Bluetooth reset capture state')
+          text = replace_one(text,
+              '            textScale: 100,\n'
+              '            iconScale: 100\n'
+              '        });\n'
+              '        queueStateCommand(["reset-flyout", "bluetooth", activeMonitorName]);\n',
+              '            textScale: 100,\n'
+              '            iconScale: 100,\n'
+              '            captureAllowed: false\n'
+              '        });\n'
+              '        privacyRemapPending = wasCaptureAllowed;\n'
+              '        queueStateCommand(["reset-flyout", "bluetooth", activeMonitorName]);\n',
+              'Bluetooth reset saved capture state')
+          text = replace_one(text,
+              '    function toggleSettings() {\n',
+              '''    function toggleCaptureAllowed() {
+              const next = !captureAllowed;
+              captureAllowedOverride = next ? 1 : 0;
+              savedView = Object.assign({}, savedView, { captureAllowed: next });
+              privacyRemapPending = true;
+              queueStateCommand(["set-capture", "bluetooth", next ? "true" : "false"]);
+              settingsMessage = next
+                  ? "Bluetooth is visible in captures" : "Bluetooth capture protection enabled";
+          }
+
+              function toggleSettings() {
+          ''',
+              'Bluetooth capture toggle')
+          text = replace_one(text,
+              '''    Process {
+              id: stateWriter
+              onExited: {
+                  BarState.refresh();
+                  Qt.callLater(() => root.runNextStateCommand());
+              }
+          }
+
+              Timer {
+          ''',
+              '''    Process {
+              id: stateWriter
+              onExited: {
+                  BarState.refresh();
+                  privacyRuleUpdater.exec([root.runtimeRulesScript]);
+                  Qt.callLater(() => root.runNextStateCommand());
+              }
+          }
+
+              Process {
+              id: privacyRuleUpdater
+              onExited: {
+                  if (!root.privacyRemapPending)
+                      return;
+                  root.privacyRemapPending = false;
+                  if (!bluetoothWindow.visible)
+                      return;
+                  bluetoothWindow.visible = false;
+                  Qt.callLater(() => {
+                      bluetoothWindow.visible = true;
+                      root.positionWindow();
+                  });
+              }
+          }
+
+              Timer {
+          ''',
+              'Bluetooth privacy process')
+          gear = '''                        SettingsButton {
+                              label: ""
+                              active: root.settingsOpen
+          '''
+          eye = '''                        CaptureEyeButton {
+                              captureAllowed: root.captureAllowed
+                              textSize: root.scaledIcon(12)
+                              onClicked: root.toggleCaptureAllowed()
+                          }
+
+          ''' + gear
+          text = replace_one(text, gear, eye, 'Bluetooth capture eye')
+          text = text.replace('                        captureAllowed: false\n', '', 1)
+          text = text.replace('                        showCaptureControl: false\n', '', 1)
+          write(path, text)
+
+          # VPN diagnostics: reliable icon, cleaner alias, explicit warning that
+          # the browser is outside the protected flyout.
+          path = qml / 'NetworkVpnSection.qml'
+          text = read(path)
+          text = text.replace('    readonly property bool browserLinkAllowed: BarState.captureAllowedFor("network")\n', '')
+          text = replace_one(text, '                text: " WireGuard VPN"\n', '                text: "󰒃 WireGuard VPN"\n', 'WireGuard icon')
+          text = replace_one(text,
+              '''            SettingsButton {
+                  label: "WTFIsMyIP"
+                  available: root.browserLinkAllowed
+                  textSize: root.scaledText(8)
+                  onClicked: Quickshell.execDetached([root.helper, "open-ip-site"])
+              }
+          ''',
+              '''            SettingsButton {
+                  label: "myip.wtf"
+                  textSize: root.scaledText(8)
+                  onClicked: Quickshell.execDetached([root.helper, "open-ip-site"])
+              }
+          ''',
+              'myip.wtf button')
+          text = replace_one(text,
+              '''        Text {
+              Layout.fillWidth: true
+              visible: !root.browserLinkAllowed
+              text: "WTFIsMyIP opens in your normal Firefox session. Enable Network capture visibility in the cog first so the browser tab cannot be exposed by mistake."
+              color: Theme.muted
+          ''',
+              '''        Text {
+              Layout.fillWidth: true
+              text: "myip.wtf opens in your normal Firefox session outside this protected VPN panel. It can show your public IP, hostname, location, ISP, browser headers, and XML/YAML/JSON/plain-text output."
+              color: Theme.muted
+          ''',
+              'myip.wtf warning')
+          write(path, text)
+
+          # Num Lock singleton: immediate enforcement plus a bounded startup
+          # burst. Later Hyprland config reloads are handled in shell.qml.
+          path = qml / 'NumlockSessionTweak.qml'
+          write(path, '''pragma Singleton
+          pragma ComponentBehavior: Bound
+
+          import QtQuick
+          import Quickshell
+          import Quickshell.Io
+
+          Singleton {
+              id: root
+
+              property bool stateLoaded: false
+              property int startupAttemptsRemaining: 0
+              readonly property bool enabled: numlockSettings.disableNumlockAtSessionStart
+
+              function enforce() {
+                  if (!enabled || primeProcess.running || offProcess.running)
+                      return;
+
+                  primeProcess.exec([
+                      "hyprctl", "eval",
+                      "hl.config({ input = { numlock_by_default = true } })"
+                  ]);
+              }
+
+              function beginEnforcementBurst() {
+                  if (!enabled) {
+                      startupAttemptsRemaining = 0;
+                      return;
+                  }
+                  startupAttemptsRemaining = 4;
+                  enforce();
+              }
+
+              FileView {
+                  id: settingsFile
+                  path: Quickshell.statePath("quick-settings-tweaks.json")
+                  watchChanges: true
+                  printErrors: false
+                  onFileChanged: reload()
+                  onLoaded: {
+                      root.stateLoaded = true;
+                      if (numlockSettings.disableNumlockAtSessionStart)
+                          Qt.callLater(() => root.beginEnforcementBurst());
+                  }
+
+                  JsonAdapter {
+                      id: numlockSettings
+                      property bool disableNumlockAtSessionStart: false
+
+                      onDisableNumlockAtSessionStartChanged: {
+                          if (!root.stateLoaded)
+                              return;
+                          if (disableNumlockAtSessionStart)
+                              Qt.callLater(() => root.beginEnforcementBurst());
+                          else
+                              root.startupAttemptsRemaining = 0;
+                      }
+                  }
+              }
+
+              Timer {
+                  interval: 1500
+                  repeat: true
+                  running: root.enabled && root.startupAttemptsRemaining > 0
+                  onTriggered: {
+                      root.enforce();
+                      root.startupAttemptsRemaining--;
+                  }
+              }
+
+              Timer {
+                  interval: 1000
+                  repeat: true
+                  running: !root.stateLoaded
+                  onTriggered: settingsFile.reload()
+              }
+
+              Process {
+                  id: primeProcess
+                  onExited: {
+                      if (!root.enabled)
+                          return;
+                      offProcess.exec([
+                          "hyprctl", "eval",
+                          "hl.config({ input = { numlock_by_default = false } })"
+                      ]);
+                  }
+              }
+
+              Process {
+                  id: offProcess
+              }
+          }
+          '''.replace('\n          ', '\n').lstrip())
+
+          # Force NumlockSessionTweak construction and reapply after any later
+          # Hyprland config reload that restores the stock numlock default.
+          path = qml / 'shell.qml'
+          text = read(path)
+          text = replace_one(text,
+              '    readonly property bool quickSettingsReady: QuickSettings !== null\n',
+              '    readonly property bool quickSettingsReady: QuickSettings !== null\n'
+              '    readonly property bool numlockTweakReady: NumlockSessionTweak.enabled || !NumlockSessionTweak.enabled\n',
+              'shell Num Lock singleton construction')
+          text = replace_one(text,
+              '''            if (event.name === "configreloaded") {
+                  runtimeRules.exec([root.runtimeRulesScript]);
+                  return;
+              }
+          ''',
+              '''            if (event.name === "configreloaded") {
+                  runtimeRules.exec([root.runtimeRulesScript]);
+                  NumlockSessionTweak.enforce();
+                  return;
+              }
+          ''',
+              'shell Num Lock config reload enforcement')
+          write(path, text)
+
+          # Runtime rules honor the sensitive lock on every invocation. The
+          # dedicated VPN editor/public-IP surfaces remain protected always.
+          path = scripts / 'quickshell_runtime_rules.sh'
+          text = read(path)
+          text = replace_one(text,
+              'STATE_FILE="${CACHE_HOME}/awtarchy/quickshell-state.json"\n',
+              'STATE_FILE="${CACHE_HOME}/awtarchy/quickshell-state.json"\n'
+              'RUNTIME_ROOT="${XDG_RUNTIME_DIR:-${CACHE_HOME}/awtarchy-runtime}"\n'
+              'NETWORK_SENSITIVE_LOCK="${RUNTIME_ROOT}/awtarchy/network-sensitive-capture.lock"\n',
+              'runtime sensitive lock path')
+          text = replace_one(text,
+              'bluetooth_protected=true\n',
+              'bluetooth_protected=true\n'
+              'network_sensitive_locked=false\n'
+              '[[ -e "$NETWORK_SENSITIVE_LOCK" ]] && network_sensitive_locked=true\n',
+              'runtime sensitive lock state')
+          text = replace_one(text,
+              'capture_allowed bluetooth && bluetooth_protected=false\n',
+              'capture_allowed bluetooth && bluetooth_protected=false\n'
+              'if [[ "$network_sensitive_locked" == true ]]; then\n'
+              '    network_protected=true\n'
+              'fi\n',
+              'runtime forced network protection')
+          text = replace_one(text,
+              'awtarchy_vpn_editor_privacy_rule_v1:set_enabled(${network_protected})\n'
+              'awtarchy_public_ip_privacy_rule_v1:set_enabled(${network_protected})\n',
+              'awtarchy_vpn_editor_privacy_rule_v1:set_enabled(true)\n'
+              'awtarchy_public_ip_privacy_rule_v1:set_enabled(true)\n',
+              'runtime always-private VPN helpers')
+          write(path, text)
+
+          # Cleaner alias for both the interactive site and plain-text lookup.
+          path = scripts / 'quickshell_wireguard.sh'
+          text = read(path)
+          text = replace_one(text, 'WTFISMYIP_URL="https://wtfismyip.com/"\n', 'WTFISMYIP_URL="https://myip.wtf/"\n', 'myip.wtf page URL')
+          text = replace_one(text, 'WTFISMYIP_TEXT_URL="https://wtfismyip.com/text"\n', 'WTFISMYIP_TEXT_URL="https://myip.wtf/text"\n', 'myip.wtf text URL')
+          write(path, text)
+
+          print('Applied Quickshell flyout privacy and Num Lock patch.')
+          PY
+
+      - name: Verify focused regression before commit
+        run: |
+          set -euo pipefail
+          bash -n config/hypr/scripts/quickshell_sensitive_capture.sh
+          bash -n config/hypr/scripts/quickshell_runtime_rules.sh
+          bash -n config/hypr/scripts/quickshell_wireguard.sh
+          bash tests/test-quickshell-capture-privacy.sh
+
+      - name: Refresh managed history for changed stock files
+        run: |
+          set -euo pipefail
+          manifest='local/share/awtarchy/quickshell-managed-history.sha256'
+          printf '\n# Flyout capture privacy and Num Lock reliability update.\n' >> "$manifest"
+          while IFS='|' read -r source managed; do
+            hash="$(sha256sum "$source" | awk '{print $1}')"
+            line="${hash}	${managed}"
+            grep -Fqx -- "$line" "$manifest" || printf '%b\n' "$line" >> "$manifest"
+          done <<'EOF'
+          config/quickshell/awtarchy/CaptureEyeButton.qml|.config/quickshell/awtarchy/CaptureEyeButton.qml
+          config/quickshell/awtarchy/ClipboardMenu.qml|.config/quickshell/awtarchy/ClipboardMenu.qml
+          config/quickshell/awtarchy/Notifications.qml|.config/quickshell/awtarchy/Notifications.qml
+          config/quickshell/awtarchy/QuickSettings.qml|.config/quickshell/awtarchy/QuickSettings.qml
+          config/quickshell/awtarchy/NetworkMenu.qml|.config/quickshell/awtarchy/NetworkMenu.qml
+          config/quickshell/awtarchy/BluetoothMenu.qml|.config/quickshell/awtarchy/BluetoothMenu.qml
+          config/quickshell/awtarchy/FlyoutSettings.qml|.config/quickshell/awtarchy/FlyoutSettings.qml
+          config/quickshell/awtarchy/NetworkVpnSection.qml|.config/quickshell/awtarchy/NetworkVpnSection.qml
+          config/quickshell/awtarchy/NumlockSessionTweak.qml|.config/quickshell/awtarchy/NumlockSessionTweak.qml
+          config/quickshell/awtarchy/shell.qml|.config/quickshell/awtarchy/shell.qml
+          config/hypr/scripts/quickshell_sensitive_capture.sh|.config/hypr/scripts/quickshell_sensitive_capture.sh
+          config/hypr/scripts/quickshell_runtime_rules.sh|.config/hypr/scripts/quickshell_runtime_rules.sh
+          config/hypr/scripts/quickshell_wireguard.sh|.config/hypr/scripts/quickshell_wireguard.sh
+          EOF
+
+      - name: Commit applied patch
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo 'No patch changes to commit.'
+            exit 0
+          fi
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add config local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'Harden flyout capture privacy and Num Lock tweak'
+          git push origin HEAD:quickshell-conversion-testing
