@@ -9,6 +9,7 @@ Singleton {
     id: root
 
     property bool stateLoaded: false
+    property int startupAttemptsRemaining: 0
     readonly property bool enabled: numlockSettings.disableNumlockAtSessionStart
 
     function enforce() {
@@ -21,6 +22,15 @@ Singleton {
         ]);
     }
 
+    function beginEnforcementBurst() {
+        if (!enabled) {
+            startupAttemptsRemaining = 0;
+            return;
+        }
+        startupAttemptsRemaining = 4;
+        enforce();
+    }
+
     FileView {
         id: settingsFile
         path: Quickshell.statePath("quick-settings-tweaks.json")
@@ -30,7 +40,7 @@ Singleton {
         onLoaded: {
             root.stateLoaded = true;
             if (numlockSettings.disableNumlockAtSessionStart)
-                Qt.callLater(() => root.enforce());
+                Qt.callLater(() => root.beginEnforcementBurst());
         }
 
         JsonAdapter {
@@ -38,9 +48,23 @@ Singleton {
             property bool disableNumlockAtSessionStart: false
 
             onDisableNumlockAtSessionStartChanged: {
-                if (root.stateLoaded && disableNumlockAtSessionStart)
-                    Qt.callLater(() => root.enforce());
+                if (!root.stateLoaded)
+                    return;
+                if (disableNumlockAtSessionStart)
+                    Qt.callLater(() => root.beginEnforcementBurst());
+                else
+                    root.startupAttemptsRemaining = 0;
             }
+        }
+    }
+
+    Timer {
+        interval: 1500
+        repeat: true
+        running: root.enabled && root.startupAttemptsRemaining > 0
+        onTriggered: {
+            root.enforce();
+            root.startupAttemptsRemaining--;
         }
     }
 

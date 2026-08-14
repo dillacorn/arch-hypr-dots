@@ -300,18 +300,10 @@ Singleton {
         ThemePicker.openForScreen(activeScreen);
     }
 
-    function forceNumlockOff() {
-        if (numlockPrimeProcess.running || numlockOffProcess.running)
-            return;
-        numlockPrimeProcess.exec([
-            "hyprctl", "keyword", "input:numlock_by_default", "true"
-        ]);
-    }
-
     function toggleNumlockSessionStart() {
         numlockSettings.disableNumlockAtSessionStart = !numlockSettings.disableNumlockAtSessionStart;
         if (numlockSettings.disableNumlockAtSessionStart) {
-            forceNumlockOff();
+            NumlockSessionTweak.enforce();
             actionMessage = "Num Lock will be disabled at session start";
         } else {
             actionMessage = "Num Lock session-start override disabled";
@@ -509,7 +501,7 @@ Singleton {
         onAdapterUpdated: writeAdapter()
         onLoaded: {
             if (numlockSettings.disableNumlockAtSessionStart)
-                Qt.callLater(() => root.forceNumlockOff());
+                Qt.callLater(() => NumlockSessionTweak.enforce());
         }
 
         JsonAdapter {
@@ -518,16 +510,6 @@ Singleton {
         }
     }
 
-    Process {
-        id: numlockPrimeProcess
-        onExited: numlockOffProcess.exec([
-            "hyprctl", "keyword", "input:numlock_by_default", "false"
-        ])
-    }
-
-    Process {
-        id: numlockOffProcess
-    }
 
     IpcHandler {
         target: "quicksettings"
@@ -713,6 +695,12 @@ Singleton {
                             available: root.settingsDirty
                             textSize: root.scaledIcon(12)
                             onClicked: root.saveDisplaySettings()
+                        }
+
+                        CaptureEyeButton {
+                            captureAllowed: root.captureAllowed
+                            textSize: root.scaledIcon(12)
+                            onClicked: root.toggleCaptureAllowed()
                         }
 
                         SettingsButton {

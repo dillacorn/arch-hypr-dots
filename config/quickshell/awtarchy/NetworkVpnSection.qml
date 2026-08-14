@@ -28,7 +28,6 @@ Rectangle {
         || (Quickshell.env("HOME") + "/.config")
     readonly property string homeDir: Quickshell.env("HOME") || "~"
     readonly property string helper: configHome + "/hypr/scripts/quickshell_wireguard.sh"
-    readonly property bool browserLinkAllowed: BarState.captureAllowedFor("network")
     readonly property int profileRowHeight: Math.max(40,
         scaledText(10) + scaledText(8) + 16)
     readonly property int profileListHeight: profiles.length === 0 ? 0
@@ -216,7 +215,7 @@ Rectangle {
 
             Text {
                 Layout.fillWidth: true
-                text: " WireGuard VPN"
+                text: "󰒃 WireGuard VPN"
                 color: Theme.foreground
                 font.family: Theme.fontFamily
                 font.pixelSize: root.scaledText(12)
@@ -470,8 +469,7 @@ Rectangle {
                 }
 
                 SettingsButton {
-                    label: "WTFIsMyIP"
-                    available: root.browserLinkAllowed
+                    label: "myip.wtf"
                     textSize: root.scaledText(8)
                     onClicked: Quickshell.execDetached([root.helper, "open-ip-site"])
                 }
@@ -480,8 +478,7 @@ Rectangle {
 
         Text {
             Layout.fillWidth: true
-            visible: !root.browserLinkAllowed
-            text: "WTFIsMyIP opens in your normal Firefox session. Enable Network capture visibility in the cog first so the browser tab cannot be exposed by mistake."
+            text: "myip.wtf opens in your normal Firefox session outside this protected VPN panel. It can show your public IP, hostname, location, ISP, browser headers, and XML/YAML/JSON/plain-text output."
             color: Theme.muted
             font.family: Theme.fontFamily
             font.pixelSize: root.scaledText(7)

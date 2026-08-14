@@ -18,12 +18,15 @@ Singleton {
     property int panelHeightOverride: -1
     property int textScaleOverride: -1
     property int iconScaleOverride: -1
+    property int captureAllowedOverride: -1
+    property bool privacyRemapPending: false
     property string settingsMessage: ""
     property var savedView: ({
         width: BarState.defaultBluetoothWidth,
         height: BarState.defaultBluetoothHeight,
         textScale: 100,
-        iconScale: 100
+        iconScale: 100,
+        captureAllowed: false
     })
     property var stateCommandQueue: []
     property bool openPreparing: false
@@ -47,6 +50,7 @@ Singleton {
     readonly property color barForeground: adapterEnabled ? Theme.foreground : Theme.muted
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
+    readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_flyout_position.sh"
     readonly property string prepareScript: configHome + "/hypr/scripts/quickshell_flyout_prepare.sh"
     readonly property var activeScreen: flyoutScreen || bluetoothWindow.screen
@@ -70,10 +74,13 @@ Singleton {
         ? textScaleOverride : BarState.bluetoothViewFor(activeMonitorName).textScale
     readonly property int effectiveIconScale: iconScaleOverride >= 0
         ? iconScaleOverride : BarState.bluetoothViewFor(activeMonitorName).iconScale
+    readonly property bool captureAllowed: captureAllowedOverride >= 0
+        ? captureAllowedOverride === 1 : BarState.captureAllowedFor("bluetooth")
     readonly property bool settingsDirty: savedView.width !== livePanelWidth
         || savedView.height !== livePanelHeight
         || savedView.textScale !== effectiveTextScale
         || savedView.iconScale !== effectiveIconScale
+        || savedView.captureAllowed !== captureAllowed
 
     function devices() {
         const current = adapter;
@@ -291,11 +298,13 @@ Singleton {
         panelHeightOverride = clampHeight(persisted.height);
         textScaleOverride = persisted.textScale;
         iconScaleOverride = persisted.iconScale;
+        captureAllowedOverride = BarState.captureAllowedFor("bluetooth") ? 1 : 0;
         savedView = ({
             width: panelWidthOverride,
             height: panelHeightOverride,
             textScale: textScaleOverride,
-            iconScale: iconScaleOverride
+            iconScale: iconScaleOverride,
+            captureAllowed: captureAllowed
         });
     }
 
@@ -304,7 +313,8 @@ Singleton {
             width: livePanelWidth,
             height: livePanelHeight,
             textScale: effectiveTextScale,
-            iconScale: effectiveIconScale
+            iconScale: effectiveIconScale,
+            captureAllowed: captureAllowed
         });
     }
 
@@ -313,6 +323,7 @@ Singleton {
         const height = savedView.height;
         textScaleOverride = savedView.textScale;
         iconScaleOverride = savedView.iconScale;
+        captureAllowedOverride = savedView.captureAllowed ? 1 : 0;
         applyWindowSize(width, height);
     }
 
@@ -337,7 +348,8 @@ Singleton {
         queueStateCommand([
             "save-flyout", "bluetooth", activeMonitorName,
             String(livePanelWidth), String(livePanelHeight),
-            String(effectiveTextScale), String(effectiveIconScale), "false"
+            String(effectiveTextScale), String(effectiveIconScale),
+            captureAllowed ? "true" : "false"
         ]);
         panelWidthOverride = livePanelWidth;
         panelHeightOverride = livePanelHeight;
@@ -348,15 +360,19 @@ Singleton {
     function resetDisplaySettings() {
         if (activeMonitorName.length === 0)
             return;
+        const wasCaptureAllowed = captureAllowed;
         textScaleOverride = 100;
         iconScaleOverride = 100;
+        captureAllowedOverride = 0;
         applyWindowSize(BarState.defaultBluetoothWidth, BarState.defaultBluetoothHeight);
         savedView = ({
             width: panelWidthOverride,
             height: panelHeightOverride,
             textScale: 100,
-            iconScale: 100
+            iconScale: 100,
+            captureAllowed: false
         });
+        privacyRemapPending = wasCaptureAllowed;
         queueStateCommand(["reset-flyout", "bluetooth", activeMonitorName]);
         settingsMessage = "Bluetooth defaults restored for " + activeMonitorName;
     }
@@ -392,6 +408,16 @@ Singleton {
     function adjustIconScale(delta) {
         iconScaleOverride = Math.max(50, Math.min(200, effectiveIconScale + delta));
         settingsMessage = "Icon size " + iconScaleOverride + "%";
+    }
+
+    function toggleCaptureAllowed() {
+        const next = !captureAllowed;
+        captureAllowedOverride = next ? 1 : 0;
+        savedView = Object.assign({}, savedView, { captureAllowed: next });
+        privacyRemapPending = true;
+        queueStateCommand(["set-capture", "bluetooth", next ? "true" : "false"]);
+        settingsMessage = next
+            ? "Bluetooth is visible in captures" : "Bluetooth capture protection enabled";
     }
 
     function toggleSettings() {
@@ -472,7 +498,24 @@ Singleton {
         id: stateWriter
         onExited: {
             BarState.refresh();
+            privacyRuleUpdater.exec([root.runtimeRulesScript]);
             Qt.callLater(() => root.runNextStateCommand());
+        }
+    }
+
+    Process {
+        id: privacyRuleUpdater
+        onExited: {
+            if (!root.privacyRemapPending)
+                return;
+            root.privacyRemapPending = false;
+            if (!bluetoothWindow.visible)
+                return;
+            bluetoothWindow.visible = false;
+            Qt.callLater(() => {
+                bluetoothWindow.visible = true;
+                root.positionWindow();
+            });
         }
     }
 
@@ -560,6 +603,12 @@ Singleton {
                             horizontalPadding: 10
                             onClicked: root.saveDisplaySettings()
                         }
+                        CaptureEyeButton {
+                            captureAllowed: root.captureAllowed
+                            textSize: root.scaledIcon(12)
+                            onClicked: root.toggleCaptureAllowed()
+                        }
+
                         SettingsButton {
                             label: ""
                             active: root.settingsOpen

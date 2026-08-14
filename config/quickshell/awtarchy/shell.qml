@@ -148,6 +148,7 @@ ShellRoot {
     readonly property bool launcherReady: Launcher !== null
     readonly property bool clipboardReady: ClipboardMenu !== null
     readonly property bool quickSettingsReady: QuickSettings !== null
+    readonly property bool numlockTweakReady: NumlockSessionTweak.enabled || !NumlockSessionTweak.enabled
     readonly property bool networkReady: NetworkMenu !== null
     readonly property bool bluetoothReady: BluetoothMenu !== null
     readonly property bool powerReady: PowerMenu !== null
@@ -225,6 +226,7 @@ ShellRoot {
 
             if (event.name === "configreloaded") {
                 runtimeRules.exec([root.runtimeRulesScript]);
+                NumlockSessionTweak.enforce();
                 return;
             }
 

@@ -642,6 +642,12 @@ Singleton {
                             }
                         }
 
+                        CaptureEyeButton {
+                            captureAllowed: root.captureAllowed
+                            textSize: Math.max(11, Math.round(13 * root.effectiveIconScale / 100))
+                            onClicked: root.toggleCaptureAllowed()
+                        }
+
                         Rectangle {
                             Layout.preferredWidth: 28
                             Layout.preferredHeight: 26

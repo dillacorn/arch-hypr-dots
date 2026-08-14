@@ -7,6 +7,8 @@ command -v hyprctl >/dev/null 2>&1 || exit 127
 
 CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 STATE_FILE="${CACHE_HOME}/awtarchy/quickshell-state.json"
+RUNTIME_ROOT="${XDG_RUNTIME_DIR:-${CACHE_HOME}/awtarchy-runtime}"
+NETWORK_SENSITIVE_LOCK="${RUNTIME_ROOT}/awtarchy/network-sensitive-capture.lock"
 
 # Privacy is fail-closed: absent, invalid, or unreadable state means that the
 # sensitive surface stays masked in screenshots and screen recordings.
@@ -25,12 +27,17 @@ notifications_protected=true
 quick_settings_protected=true
 network_protected=true
 bluetooth_protected=true
+network_sensitive_locked=false
+[[ -e "$NETWORK_SENSITIVE_LOCK" ]] && network_sensitive_locked=true
 capture_allowed launcher && launcher_protected=false
 capture_allowed clipboard && clipboard_protected=false
 capture_allowed notifications && notifications_protected=false
 capture_allowed quick_settings && quick_settings_protected=false
 capture_allowed network && network_protected=false
 capture_allowed bluetooth && bluetooth_protected=false
+if [[ "$network_sensitive_locked" == true ]]; then
+    network_protected=true
+fi
 
 if ! hyprctl eval "
 if awtarchy_launcher_privacy_rule == nil then
@@ -126,8 +133,8 @@ awtarchy_notifications_center_window_privacy_rule_v2:set_enabled(${notifications
 awtarchy_quick_settings_window_privacy_rule_v2:set_enabled(${quick_settings_protected})
 awtarchy_network_window_privacy_rule_v3:set_enabled(${network_protected})
 awtarchy_bluetooth_window_privacy_rule_v3:set_enabled(${bluetooth_protected})
-awtarchy_vpn_editor_privacy_rule_v1:set_enabled(${network_protected})
-awtarchy_public_ip_privacy_rule_v1:set_enabled(${network_protected})
+awtarchy_vpn_editor_privacy_rule_v1:set_enabled(true)
+awtarchy_public_ip_privacy_rule_v1:set_enabled(true)
 hl.exec_scheduled_prop_refresh_immediately()
 " >/dev/null; then
     printf '%s\n' 'quickshell_runtime_rules.sh: failed to register capture privacy rules' >&2

@@ -58,9 +58,7 @@ Item {
     signal themePickerRequested()
 
     implicitHeight: copyOpen ? 104
-        : (effectiveShowCaptureControl ? 170 : 139)
-            + (surfaceLabel === "Network" ? vpnSection.implicitHeight + 6 : 0)
-            + (surfaceLabel === "Quick Settings" ? barSection.implicitHeight + 6 : 0)
+        : 139 + (surfaceLabel === "Quick Settings" ? barSection.implicitHeight + 6 : 0)
 
     function targetSelected(name) {
         const dependency = copySelectionRevision;
@@ -462,56 +460,6 @@ Item {
             }
 
             Item { Layout.fillWidth: true }
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 28
-            spacing: 6
-            visible: !root.copyOpen && root.effectiveShowCaptureControl
-
-            Text {
-                Layout.fillWidth: true
-                text: "Allow in screenshots and screen recordings"
-                color: Theme.foreground
-                font.family: Theme.fontFamily
-                font.pixelSize: 11
-                elide: Text.ElideRight
-            }
-
-            Rectangle {
-                Layout.preferredWidth: 64
-                Layout.preferredHeight: 24
-                color: root.effectiveCaptureAllowed ? Theme.focus
-                    : (captureMouse.containsMouse ? Theme.subtleHover : "transparent")
-                border.width: 1
-                border.color: Theme.focus
-
-                Text {
-                    anchors.centerIn: parent
-                    text: root.effectiveCaptureAllowed ? "On" : "Off"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 11
-                }
-
-                MouseArea {
-                    id: captureMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.toggleCaptureControl()
-                }
-            }
-        }
-
-        NetworkVpnSection {
-            id: vpnSection
-            Layout.fillWidth: true
-            visible: !root.copyOpen && root.surfaceLabel === "Network"
-            active: visible
-            textScale: root.textScale
-            iconScale: root.iconScale
         }
 
         BarSettingsSection {

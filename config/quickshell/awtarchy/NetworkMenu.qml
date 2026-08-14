@@ -17,16 +17,22 @@ Singleton {
     property string actionMessage: ""
     property bool settingsOpen: false
     property bool vpnOpen: false
+    property bool vpnPrivacyOpening: false
+    property bool vpnPrivacyUnlockPending: false
+    property string vpnPrivacyAction: ""
     property int panelWidthOverride: -1
     property int panelHeightOverride: -1
     property int textScaleOverride: -1
     property int iconScaleOverride: -1
+    property int captureAllowedOverride: -1
+    property bool privacyRemapPending: false
     property string settingsMessage: ""
     property var savedView: ({
         width: BarState.defaultNetworkWidth,
         height: BarState.defaultNetworkHeight,
         textScale: 100,
-        iconScale: 100
+        iconScale: 100,
+        captureAllowed: false
     })
     property var stateCommandQueue: []
     property bool openPreparing: false
@@ -49,6 +55,8 @@ Singleton {
         ? Theme.foreground : Theme.muted
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
+    readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
+    readonly property string sensitiveCaptureScript: configHome + "/hypr/scripts/quickshell_sensitive_capture.sh"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_flyout_position.sh"
     readonly property string prepareScript: configHome + "/hypr/scripts/quickshell_flyout_prepare.sh"
     readonly property var activeScreen: flyoutScreen || networkWindow.screen
@@ -72,10 +80,13 @@ Singleton {
         ? textScaleOverride : BarState.networkViewFor(activeMonitorName).textScale
     readonly property int effectiveIconScale: iconScaleOverride >= 0
         ? iconScaleOverride : BarState.networkViewFor(activeMonitorName).iconScale
+    readonly property bool captureAllowed: captureAllowedOverride >= 0
+        ? captureAllowedOverride === 1 : BarState.captureAllowedFor("network")
     readonly property bool settingsDirty: savedView.width !== livePanelWidth
         || savedView.height !== livePanelHeight
         || savedView.textScale !== effectiveTextScale
         || savedView.iconScale !== effectiveIconScale
+        || savedView.captureAllowed !== captureAllowed
 
     function devicesOfType(type) {
         const devices = Networking.devices ? Networking.devices.values : [];
@@ -362,11 +373,13 @@ Singleton {
         panelHeightOverride = clampHeight(persisted.height);
         textScaleOverride = persisted.textScale;
         iconScaleOverride = persisted.iconScale;
+        captureAllowedOverride = BarState.captureAllowedFor("network") ? 1 : 0;
         savedView = ({
             width: panelWidthOverride,
             height: panelHeightOverride,
             textScale: textScaleOverride,
-            iconScale: iconScaleOverride
+            iconScale: iconScaleOverride,
+            captureAllowed: captureAllowed
         });
     }
 
@@ -375,7 +388,8 @@ Singleton {
             width: livePanelWidth,
             height: livePanelHeight,
             textScale: effectiveTextScale,
-            iconScale: effectiveIconScale
+            iconScale: effectiveIconScale,
+            captureAllowed: captureAllowed
         });
     }
 
@@ -384,6 +398,7 @@ Singleton {
         const height = savedView.height;
         textScaleOverride = savedView.textScale;
         iconScaleOverride = savedView.iconScale;
+        captureAllowedOverride = savedView.captureAllowed ? 1 : 0;
         applyWindowSize(width, height);
     }
 
@@ -408,7 +423,8 @@ Singleton {
         queueStateCommand([
             "save-flyout", "network", activeMonitorName,
             String(livePanelWidth), String(livePanelHeight),
-            String(effectiveTextScale), String(effectiveIconScale), "false"
+            String(effectiveTextScale), String(effectiveIconScale),
+            captureAllowed ? "true" : "false"
         ]);
         panelWidthOverride = livePanelWidth;
         panelHeightOverride = livePanelHeight;
@@ -419,15 +435,19 @@ Singleton {
     function resetDisplaySettings() {
         if (activeMonitorName.length === 0)
             return;
+        const wasCaptureAllowed = captureAllowed;
         textScaleOverride = 100;
         iconScaleOverride = 100;
+        captureAllowedOverride = 0;
         applyWindowSize(BarState.defaultNetworkWidth, BarState.defaultNetworkHeight);
         savedView = ({
             width: panelWidthOverride,
             height: panelHeightOverride,
             textScale: 100,
-            iconScale: 100
+            iconScale: 100,
+            captureAllowed: false
         });
+        privacyRemapPending = wasCaptureAllowed;
         queueStateCommand(["reset-flyout", "network", activeMonitorName]);
         settingsMessage = "Network defaults restored for " + activeMonitorName;
     }
@@ -465,24 +485,66 @@ Singleton {
         settingsMessage = "Icon size " + iconScaleOverride + "%";
     }
 
+    function toggleCaptureAllowed() {
+        if (vpnOpen || vpnPrivacyOpening)
+            return;
+        const next = !captureAllowed;
+        captureAllowedOverride = next ? 1 : 0;
+        savedView = Object.assign({}, savedView, { captureAllowed: next });
+        privacyRemapPending = true;
+        queueStateCommand(["set-capture", "network", next ? "true" : "false"]);
+        settingsMessage = next
+            ? "Network is visible in captures" : "Network capture protection enabled";
+    }
+
+    function startVpnUnlock() {
+        if (vpnPrivacyProcess.running) {
+            vpnPrivacyUnlockPending = true;
+            return;
+        }
+        vpnPrivacyUnlockPending = false;
+        vpnPrivacyAction = "unlock";
+        vpnPrivacyProcess.exec([root.sensitiveCaptureScript, "network", "unlock"]);
+    }
+
+    function openVpnView() {
+        if (vpnOpen || vpnPrivacyOpening)
+            return;
+        if (vpnPrivacyProcess.running) {
+            actionMessage = "VPN privacy protection is still initializing";
+            return;
+        }
+        settingsOpen = false;
+        settingsPanel.resetCopySelection();
+        settingsMessage = "";
+        cancelWifiPassword();
+        vpnPrivacyUnlockPending = false;
+        vpnPrivacyOpening = true;
+        vpnPrivacyAction = "lock";
+        vpnPrivacyProcess.exec([root.sensitiveCaptureScript, "network", "lock"]);
+    }
+
+    function closeVpnView() {
+        const wasSensitive = vpnOpen || vpnPrivacyOpening;
+        vpnOpen = false;
+        vpnPrivacyOpening = false;
+        if (wasSensitive)
+            startVpnUnlock();
+    }
+
     function toggleSettings() {
+        if (vpnOpen || vpnPrivacyOpening)
+            closeVpnView();
         settingsOpen = !settingsOpen;
-        if (settingsOpen)
-            vpnOpen = false;
         settingsPanel.resetCopySelection();
         settingsMessage = "";
     }
-
     function toggleVpn() {
-        vpnOpen = !vpnOpen;
-        if (vpnOpen) {
-            settingsOpen = false;
-            settingsPanel.resetCopySelection();
-            settingsMessage = "";
-            cancelWifiPassword();
-        }
+        if (vpnOpen || vpnPrivacyOpening)
+            closeVpnView();
+        else
+            openVpnView();
     }
-
     function openForScreen(targetScreen) {
         if (!targetScreen || !available)
             return;
@@ -493,7 +555,8 @@ Singleton {
         placement = placementForScreen(targetScreen);
         actionMessage = "";
         settingsOpen = false;
-        vpnOpen = false;
+        if (vpnOpen || vpnPrivacyOpening)
+            closeVpnView();
         settingsMessage = "";
         settingsPanel.resetCopySelection();
         cancelWifiPassword();
@@ -508,11 +571,12 @@ Singleton {
         if (settingsDirty)
             discardDraft();
         networkWindow.visible = false;
+        if (vpnOpen || vpnPrivacyOpening)
+            closeVpnView();
         setWifiScanning(false);
         cancelWifiPassword();
         actionMessage = "";
         settingsOpen = false;
-        vpnOpen = false;
         settingsMessage = "";
         settingsPanel.resetCopySelection();
         FlyoutManager.release("network");
@@ -552,8 +616,62 @@ Singleton {
         id: stateWriter
         onExited: {
             BarState.refresh();
+            privacyRuleUpdater.exec([root.runtimeRulesScript]);
             Qt.callLater(() => root.runNextStateCommand());
         }
+    }
+
+    Process {
+        id: privacyRuleUpdater
+        onExited: {
+            if (!root.privacyRemapPending)
+                return;
+            root.privacyRemapPending = false;
+            if (!networkWindow.visible || root.vpnOpen || root.vpnPrivacyOpening)
+                return;
+            networkWindow.visible = false;
+            Qt.callLater(() => {
+                networkWindow.visible = true;
+                root.positionWindow();
+            });
+        }
+    }
+
+    Process {
+        id: vpnPrivacyProcess
+        onExited: (exitCode, exitStatus) => {
+            const completedAction = root.vpnPrivacyAction;
+            root.vpnPrivacyAction = "";
+
+            if (completedAction === "lock") {
+                if (exitCode !== 0) {
+                    root.vpnPrivacyOpening = false;
+                    root.vpnOpen = false;
+                    root.actionMessage = "VPN capture protection unavailable";
+                    root.vpnPrivacyUnlockPending = false;
+                    Qt.callLater(() => root.startVpnUnlock());
+                    return;
+                }
+                if (root.vpnPrivacyUnlockPending) {
+                    root.vpnPrivacyOpening = false;
+                    root.vpnOpen = false;
+                    root.vpnPrivacyUnlockPending = false;
+                    Qt.callLater(() => root.startVpnUnlock());
+                    return;
+                }
+                root.vpnPrivacyOpening = false;
+                root.vpnOpen = true;
+                return;
+            }
+
+            if (completedAction === "unlock")
+                root.vpnPrivacyUnlockPending = false;
+        }
+    }
+
+    Component.onCompleted: {
+        root.vpnPrivacyAction = "unlock";
+        vpnPrivacyProcess.exec([root.sensitiveCaptureScript, "network", "unlock"]);
     }
 
     IpcHandler {
@@ -633,9 +751,16 @@ Singleton {
                             horizontalPadding: 10
                             onClicked: root.saveDisplaySettings()
                         }
+                        CaptureEyeButton {
+                            captureAllowed: root.captureAllowed && !root.vpnOpen && !root.vpnPrivacyOpening
+                            locked: root.vpnOpen || root.vpnPrivacyOpening
+                            textSize: root.scaledIcon(12)
+                            onClicked: root.toggleCaptureAllowed()
+                        }
+
                         SettingsButton {
                             label: "󰒃"
-                            active: root.vpnOpen
+                            active: root.vpnOpen || root.vpnPrivacyOpening
                             textSize: root.scaledIcon(12)
                             horizontalPadding: 10
                             onClicked: root.toggleVpn()

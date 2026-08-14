@@ -9,8 +9,8 @@ EDITOR_TITLE="Awtarchy VPN Config Editor"
 EDITOR_CLASS="awtarchy-vpn-editor"
 FIREFOX="/usr/bin/firefox"
 WG_QUICK="/usr/bin/wg-quick"
-WTFISMYIP_URL="https://wtfismyip.com/"
-WTFISMYIP_TEXT_URL="https://wtfismyip.com/text"
+WTFISMYIP_URL="https://myip.wtf/"
+WTFISMYIP_TEXT_URL="https://myip.wtf/text"
 
 mkdir -p -- "$VPN_DIR"
 chmod 0700 "$VPN_DIR" 2>/dev/null || true
