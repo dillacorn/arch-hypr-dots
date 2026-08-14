@@ -994,6 +994,15 @@ Singleton {
                             }
                         }
 
+                        CaptureEyeButton {
+                    captureAllowed: root.captureAllowed
+                    textSize: 13
+                    onClicked: {
+                        root.toggleCaptureAllowed();
+                        Qt.callLater(() => search.forceActiveFocus());
+                    }
+                }
+
                         Rectangle {
                             Layout.preferredWidth: 28
                             Layout.preferredHeight: 26
@@ -1028,7 +1037,7 @@ Singleton {
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: root.settingsOpen
-                        ? (root.copySettingsOpen ? 108 : 170) : 0
+                        ? (root.copySettingsOpen ? 108 : 139) : 0
                     visible: root.settingsOpen
                     color: Theme.popupButton
                     border.width: 0
@@ -1074,50 +1083,6 @@ Singleton {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: root.resetDisplaySettings()
-                                }
-                            }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 28
-                            spacing: 6
-                            visible: !root.copySettingsOpen
-
-                            Text {
-                                Layout.fillWidth: true
-                                text: "Allow in screenshots and screen recordings"
-                                color: Theme.foreground
-                                font.family: Theme.fontFamily
-                                font.pixelSize: 11
-                                elide: Text.ElideRight
-                            }
-
-                            Rectangle {
-                                Layout.preferredWidth: 64
-                                Layout.preferredHeight: 24
-                                color: root.captureAllowed ? Theme.focus
-                                    : (captureAllowedMouse.containsMouse ? Theme.subtleHover : "transparent")
-                                border.width: 1
-                                border.color: Theme.focus
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: root.captureAllowed ? "On" : "Off"
-                                    color: Theme.foreground
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: 11
-                                }
-
-                                MouseArea {
-                                    id: captureAllowedMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        root.toggleCaptureAllowed();
-                                        Qt.callLater(() => search.forceActiveFocus());
-                                    }
                                 }
                             }
                         }
