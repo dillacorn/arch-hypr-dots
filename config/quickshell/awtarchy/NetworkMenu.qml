@@ -670,6 +670,7 @@ Singleton {
     }
 
     Component.onCompleted: {
+        networkWindow.visible = false;
         root.vpnPrivacyAction = "unlock";
         vpnPrivacyProcess.exec([root.sensitiveCaptureScript, "network", "unlock"]);
     }

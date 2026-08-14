@@ -995,13 +995,13 @@ Singleton {
                         }
 
                         CaptureEyeButton {
-                    captureAllowed: root.captureAllowed
-                    textSize: 13
-                    onClicked: {
-                        root.toggleCaptureAllowed();
-                        Qt.callLater(() => search.forceActiveFocus());
-                    }
-                }
+                            captureAllowed: root.captureAllowed
+                            textSize: 13
+                            onClicked: {
+                                root.toggleCaptureAllowed();
+                                Qt.callLater(() => search.forceActiveFocus());
+                            }
+                        }
 
                         Rectangle {
                             Layout.preferredWidth: 28
