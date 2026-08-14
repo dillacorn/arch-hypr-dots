@@ -1,0 +1,133 @@
+name: Convert Quickshell Migration Test
+
+on:
+  push:
+    branches: [quickshell-conversion-testing]
+
+permissions:
+  contents: write
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect stale beta harness
+        id: detect
+        run: |
+          if grep -Fq -- '--quickshell-command' tests/test-quickshell-updater-migration.sh; then
+            echo 'needed=true' >>"$GITHUB_OUTPUT"
+          else
+            echo 'needed=false' >>"$GITHUB_OUTPUT"
+          fi
+      - name: Convert harness to production awtarchy command
+        if: steps.detect.outputs.needed == 'true'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('tests/test-quickshell-updater-migration.sh')
+          text = path.read_text(encoding='utf-8')
+
+          old_line = 'QUICKSHELL_LAUNCHER="${ROOT}/local/bin/awtarchy-quickshell"\n'
+          if text.count(old_line) != 1:
+              raise SystemExit('expected one QUICKSHELL_LAUNCHER declaration')
+          text = text.replace(old_line, '', 1)
+
+          replacement = r'''installed_launcher="$home/.local/bin/awtarchy"
+          installed_runtime="$home/.local/share/awtarchy/awtarchy-runtime.sh"
+          managed_packages="${TMP}/managed-packages"
+          assert_file "$installed_launcher"
+          assert_file "$installed_runtime"
+          assert_file "$MANAGED_HISTORY"
+          grep -Fqx "${DESKTOP_STALE_SYSTEM_STATE_SHA}"$'\t''.config/quickshell/awtarchy/SystemState.qml' \
+            "$MANAGED_HISTORY" \
+            || fail "managed history does not recognize the stale desktop SystemState.qml"
+          while IFS= read -r repo_path; do
+            repo_rel="${repo_path#"$ROOT/"}"
+            current_entry="$(sha256sum "$repo_path" | awk '{print $1}')"$'\t'".${repo_rel}"
+            grep -Fqx "$current_entry" "$MANAGED_HISTORY" \
+              || fail "managed history is missing the current stock hash for ${repo_path}"
+          done < <(
+            {
+              find "$ROOT/config/quickshell/awtarchy" -maxdepth 1 -type f -print
+              find "$ROOT/config/hypr/scripts" -maxdepth 1 -type f \
+                \( -name 'quickshell*' -o -name 'ddc_brightness.sh' -o -name 'hypr-ddc-brightness.sh' \) \
+                -print
+            } | LC_ALL=C sort -u
+          )
+          bash -n "$installed_runtime"
+          bash -n "$installed_launcher"
+          grep -Fq -- '--testing-commit' "$installed_runtime" \
+            || fail "production runtime did not retain pinned-commit migration support"
+          grep -Fq 'ensure_quickshell_update_prerequisites' "$installed_runtime" \
+            || fail "production runtime did not receive updater migration prerequisites"
+          grep -Fq 'start_quickshell_update_shell' "$installed_runtime" \
+            || fail "production runtime did not receive live shell validation"
+          grep -Fq 'restart 9>&-' "$installed_runtime" \
+            || fail "production runtime does not close the updater lock for Quickshell"
+          grep -Fq ' start 9>&-' "$installed_runtime" \
+            || fail "production runtime does not restart a restored Quickshell after rollback"
+
+          failure_home='''
+
+          pattern = re.compile(r'common_env=\(\n.*?\nfailure_home=', re.S)
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit('expected one beta installer harness block')
+
+          text = text.replace(
+              '"$installed_launcher" review \\\n',
+              '"$installed_launcher" review --testing-commit "$TEST_COMMIT" \\\n',
+          )
+          text = text.replace(
+              '"$installed_launcher" update \\\n',
+              '"$installed_launcher" update --testing-commit "$TEST_COMMIT" \\\n',
+          )
+          text = text.replace(
+              '/.local/bin/awtarchy-quickshell" update \\\n',
+              '/.local/bin/awtarchy" update --testing-commit "$TEST_COMMIT" \\\n',
+          )
+          text = text.replace(
+              'prompt_command="$conflict_prompt_home/.local/bin/awtarchy-quickshell update"',
+              'prompt_command="$conflict_prompt_home/.local/bin/awtarchy update --testing-commit $TEST_COMMIT"',
+          )
+
+          branch_lookup = r'''grep -Fxq 'https://api.github.com/repos/dillacorn/awtarchy/commits/quickshell-conversion-testing' \
+            "${TMP}/curl.log" \
+            || fail "testing command did not resolve the configured branch head"
+          '''
+          if branch_lookup not in text:
+              raise SystemExit('expected testing branch lookup assertion')
+          text = text.replace(branch_lookup, '', 1)
+
+          text = text.replace(
+              '# Model the exact beta-to-release handoff on a machine that already completed\n# the awtarchy-quickshell migration. The normal command must adopt the release',
+              '# Model the exact testing-commit-to-release handoff on a machine that already\n# completed the Quickshell migration. The normal command must adopt the release',
+              1,
+          )
+          text = text.replace('beta handoff', 'release handoff')
+
+          if '--quickshell-command' in text:
+              raise SystemExit('beta installer option remains after conversion')
+          if '/.local/bin/awtarchy-quickshell" update' in text:
+              raise SystemExit('beta update command remains after conversion')
+
+          path.write_text(text, encoding='utf-8')
+          PY
+          bash -n tests/test-quickshell-updater-migration.sh
+          git diff --check
+      - name: Run converted migration test
+        if: steps.detect.outputs.needed == 'true'
+        run: bash tests/test-quickshell-updater-migration.sh
+      - name: Commit converted test
+        if: steps.detect.outputs.needed == 'true'
+        run: |
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add tests/test-quickshell-updater-migration.sh
+          git commit -m 'Test Quickshell migration through production command'
+          git push origin HEAD:quickshell-conversion-testing
