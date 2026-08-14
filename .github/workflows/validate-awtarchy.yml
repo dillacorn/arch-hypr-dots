@@ -2,7 +2,7 @@ name: Validate Awtarchy
 
 on:
   push:
-    branches: [main, quickshell-conversion-testing]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
