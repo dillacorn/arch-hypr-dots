@@ -28,6 +28,7 @@ require_not_contains() {
 
 capture_button="$QML_DIR/CaptureEyeButton.qml"
 flyout_settings="$QML_DIR/FlyoutSettings.qml"
+launcher="$QML_DIR/Launcher.qml"
 network_menu="$QML_DIR/NetworkMenu.qml"
 vpn_section="$QML_DIR/NetworkVpnSection.qml"
 bluetooth_menu="$QML_DIR/BluetoothMenu.qml"
@@ -41,7 +42,7 @@ capture_lock="$SCRIPT_DIR/quickshell_sensitive_capture.sh"
 wireguard_helper="$SCRIPT_DIR/quickshell_wireguard.sh"
 
 for file in \
-    "$capture_button" "$flyout_settings" "$network_menu" "$vpn_section" \
+    "$capture_button" "$flyout_settings" "$launcher" "$network_menu" "$vpn_section" \
     "$bluetooth_menu" "$quick_settings" "$clipboard_menu" "$notifications" \
     "$shell_qml" "$numlock_tweak" "$runtime_rules" "$capture_lock" \
     "$wireguard_helper"; do
@@ -50,23 +51,19 @@ done
 
 [[ -x "$capture_lock" ]] || fail "quickshell_sensitive_capture.sh must be executable"
 
-# Every user-facing flyout header exposes the same immediate capture indicator.
+# Every FlyoutManager surface exposes the same immediate capture indicator.
 require_contains "$capture_button" 'text: root.captureAllowed ? "" : ""'
 require_contains "$capture_button" 'property bool locked: false'
 require_contains "$capture_button" 'enabled: !root.locked'
 
-for file in "$clipboard_menu" "$notifications" "$quick_settings" "$network_menu" "$bluetooth_menu"; do
+for file in "$launcher" "$clipboard_menu" "$notifications" "$quick_settings" "$network_menu" "$bluetooth_menu"; do
     require_contains "$file" 'CaptureEyeButton {'
+    require_contains "$file" 'onClicked: root.toggleCaptureAllowed()'
 done
 
-require_contains "$clipboard_menu" 'onClicked: root.toggleCaptureAllowed()'
-require_contains "$notifications" 'onClicked: root.toggleCaptureAllowed()'
-require_contains "$quick_settings" 'onClicked: root.toggleCaptureAllowed()'
-require_contains "$network_menu" 'onClicked: root.toggleCaptureAllowed()'
-require_contains "$bluetooth_menu" 'onClicked: root.toggleCaptureAllowed()'
-
-# Capture visibility is no longer buried in FlyoutSettings, and VPN content may
-# only exist behind NetworkMenu's dedicated protected VPN view.
+# Capture visibility is no longer buried in any settings panel, and VPN content
+# may only exist behind NetworkMenu's dedicated protected VPN view.
+require_not_contains "$launcher" 'Allow in screenshots and screen recordings'
 require_not_contains "$flyout_settings" 'Allow in screenshots and screen recordings'
 require_not_contains "$flyout_settings" 'NetworkVpnSection {'
 
