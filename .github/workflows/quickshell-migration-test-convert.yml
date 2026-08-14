@@ -140,7 +140,7 @@ jobs:
           git diff --check
       - name: Run converted migration test
         if: steps.detect.outputs.needed == 'true'
-        run: bash tests/test-quickshell-updater-migration.sh
+        run: bash -x tests/test-quickshell-updater-migration.sh
       - name: Commit converted test and managed hashes
         if: steps.detect.outputs.needed == 'true'
         run: |
