@@ -28,16 +28,8 @@ jobs:
               print('Launcher eye already applied.')
               raise SystemExit(0)
 
-          save_block = '''                        Rectangle {
-                              Layout.preferredWidth: 30
-                              Layout.preferredHeight: 26
-                              color: root.settingsDirty
-          '''
-          save_at = text.find(save_block)
-          if save_at < 0:
-              raise SystemExit('Launcher save control marker missing')
-
-          next_settings = text.find('                        Rectangle {\n                            Layout.preferredWidth: 28\n                            Layout.preferredHeight: 26\n                            color: root.settingsOpen', save_at)
+          settings_marker = '                        Rectangle {\n                            Layout.preferredWidth: 28\n                            Layout.preferredHeight: 26\n                            color: root.settingsOpen'
+          next_settings = text.find(settings_marker)
           if next_settings < 0:
               raise SystemExit('Launcher settings control marker missing')
 
