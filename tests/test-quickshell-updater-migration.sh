@@ -5,7 +5,6 @@ IFS=$'\n\t'
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALLER="${ROOT}/awtarchy-install.sh"
 STABLE_LAUNCHER="${ROOT}/local/bin/awtarchy"
-QUICKSHELL_LAUNCHER="${ROOT}/local/bin/awtarchy-quickshell"
 RUNTIME="${ROOT}/local/share/awtarchy/awtarchy-runtime.sh"
 MANAGED_HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
 TEST_COMMIT="1111111111111111111111111111111111111111"
@@ -190,6 +189,10 @@ while (( $# )); do
   esac
 done
 printf '%s\n' "$url" >>"${AWTARCHY_TEST_CURL_LOG:?}"
+if [[ $url == *'/contents/local/share/awtarchy/quickshell-managed-history.sha256' ]]; then
+  [[ -n ${AWTARCHY_TEST_RELEASE_TAG:-} ]] || exit 42
+  exit 0
+fi
 if [[ $url == *'/releases/latest' ]]; then
   printf '{"tag_name":"%s"}\n' "${AWTARCHY_TEST_LATEST_TAG:-v2.0.0-1}"
   exit 0
@@ -521,33 +524,18 @@ cp -- "$home/.config/hypr/hyprland.lua" "$legacy_personal_hypr"
 stable_launcher_hash="$(sha256sum "$home/.local/bin/awtarchy" | awk '{print $1}')"
 stable_runtime_hash="$(sha256sum "$home/.local/share/awtarchy/awtarchy-runtime.sh" | awk '{print $1}')"
 
-common_env=(
-  "HOME=$home"
-  "USER=$TARGET_USER"
-  "SUDO_USER=$TARGET_USER"
-  "PATH=${fakebin}:$PATH"
-  "AWTARCHY_INSTALL_BRANCH=quickshell-conversion-testing"
-  "AWTARCHY_TESTING_COMMIT=$TEST_COMMIT"
-  "AWTARCHY_SYSTEM_BIN_DIR=${TMP}/system-bin"
-  "AWTARCHY_TEST_TARGET_USER=$TARGET_USER"
-  "AWTARCHY_TEST_TARGET_HOME=$home"
-)
-mkdir -p "${TMP}/system-bin"
-env "${common_env[@]}" bash "$INSTALLER" --quickshell-command \
-  >"${TMP}/installer.out"
-
-installed_launcher="$home/.local/bin/awtarchy-quickshell"
-installed_runtime="$home/.local/share/awtarchy-quickshell/awtarchy-runtime.sh"
+installed_launcher="$home/.local/bin/awtarchy"
+installed_runtime="$home/.local/share/awtarchy/awtarchy-runtime.sh"
 managed_packages="${TMP}/managed-packages"
 assert_file "$installed_launcher"
 assert_file "$installed_runtime"
 assert_file "$MANAGED_HISTORY"
-grep -Fqx "${DESKTOP_STALE_SYSTEM_STATE_SHA}"$'\t''.config/quickshell/awtarchy/SystemState.qml' \
+grep -Fqx "${DESKTOP_STALE_SYSTEM_STATE_SHA}"$'	''.config/quickshell/awtarchy/SystemState.qml' \
   "$MANAGED_HISTORY" \
   || fail "managed history does not recognize the stale desktop SystemState.qml"
 while IFS= read -r repo_path; do
   repo_rel="${repo_path#"$ROOT/"}"
-  current_entry="$(sha256sum "$repo_path" | awk '{print $1}')"$'\t'".${repo_rel}"
+  current_entry="$(sha256sum "$repo_path" | awk '{print $1}')"$'	'".${repo_rel}"
   grep -Fqx "$current_entry" "$MANAGED_HISTORY" \
     || fail "managed history is missing the current stock hash for ${repo_path}"
 done < <(
@@ -558,29 +546,18 @@ done < <(
       -print
   } | LC_ALL=C sort -u
 )
-cmp -s "$installed_launcher" "$QUICKSHELL_LAUNCHER" \
-  || fail "installer did not install the branch testing launcher"
-assert_file "${TMP}/system-bin/awtarchy-quickshell"
-assert_absent "${TMP}/system-bin/awtarchy"
-[[ $stable_launcher_hash == "$(sha256sum "$home/.local/bin/awtarchy" | awk '{print $1}')" ]] \
-  || fail "testing command installation changed the stable launcher"
-[[ $stable_runtime_hash == "$(sha256sum "$home/.local/share/awtarchy/awtarchy-runtime.sh" | awk '{print $1}')" ]] \
-  || fail "testing command installation changed the stable runtime"
-grep -Fxq "revision=${TEST_COMMIT}" \
-  "$home/.local/state/awtarchy-quickshell/command-version" \
-  || fail "testing command did not record its exact commit"
 bash -n "$installed_runtime"
 bash -n "$installed_launcher"
 grep -Fq -- '--testing-commit' "$installed_runtime" \
-  || fail "testing runtime did not retain pinned-commit support"
+  || fail "production runtime did not retain pinned-commit migration support"
 grep -Fq 'ensure_quickshell_update_prerequisites' "$installed_runtime" \
-  || fail "testing runtime did not receive updater migration prerequisites"
+  || fail "production runtime did not receive updater migration prerequisites"
 grep -Fq 'start_quickshell_update_shell' "$installed_runtime" \
-  || fail "testing runtime did not receive live shell validation"
+  || fail "production runtime did not receive live shell validation"
 grep -Fq 'restart 9>&-' "$installed_runtime" \
-  || fail "testing runtime does not close the updater lock for Quickshell"
+  || fail "production runtime does not close the updater lock for Quickshell"
 grep -Fq ' start 9>&-' "$installed_runtime" \
-  || fail "testing runtime does not restart a restored Quickshell after rollback"
+  || fail "production runtime does not restart a restored Quickshell after rollback"
 
 failure_home="${TMP}/failure-home"
 cp -a -- "$home" "$failure_home"
@@ -676,7 +653,7 @@ update_env=(
 
 hypr_hash_before="$(sha256sum "$home/.config/hypr/hyprland.lua" | awk '{print $1}')"
 packages_hash_before="$(sha256sum "$package_state" | awk '{print $1}')"
-env "${update_env[@]}" "$installed_launcher" review \
+env "${update_env[@]}" "$installed_launcher" review --testing-commit "$TEST_COMMIT" \
   >"${TMP}/review.out" 2>&1
 [[ $hypr_hash_before == "$(sha256sum "$home/.config/hypr/hyprland.lua" | awk '{print $1}')" ]] \
   || fail "review-only changed the live Hyprland config"
@@ -688,7 +665,7 @@ grep -Fq 'Reconstructing previous generated baseline from release: v2.0.0-1' \
   "${TMP}/review.out" \
   || fail "updater did not reconstruct the previous baseline from config-version"
 
-env "${update_env[@]}" "$installed_launcher" update \
+env "${update_env[@]}" "$installed_launcher" update --testing-commit "$TEST_COMMIT" \
   >"${TMP}/update.out" 2>&1
 
 grep -Fq -- \
@@ -734,9 +711,6 @@ grep -Fxq "tag=quickshell-conversion-testing@${TEST_COMMIT}" \
 grep -Fxq "https://github.com/dillacorn/awtarchy/archive/${TEST_COMMIT}.tar.gz" \
   "${TMP}/curl.log" \
   || fail "updater did not download the exact pinned commit"
-grep -Fxq 'https://api.github.com/repos/dillacorn/awtarchy/commits/quickshell-conversion-testing' \
-  "${TMP}/curl.log" \
-  || fail "testing command did not resolve the configured branch head"
 [[ $stable_launcher_hash == "$(sha256sum "$home/.local/bin/awtarchy" | awk '{print $1}')" ]] \
   || fail "successful migration changed the stable launcher"
 [[ $stable_runtime_hash == "$(sha256sum "$home/.local/share/awtarchy/awtarchy-runtime.sh" | awk '{print $1}')" ]] \
@@ -760,8 +734,8 @@ grep -Fq 'Recorded personal Hyprland modifications against the previous Awtarchy
   "${TMP}/update.out" \
   || fail "updater did not report recording personal Hyprland modifications"
 
-# Model the exact beta-to-release handoff on a machine that already completed
-# the awtarchy-quickshell migration. The normal command must adopt the release
+# Model the exact testing-commit-to-release handoff on a machine that already
+# completed the Quickshell migration. The normal command must adopt the release
 # tag without rebuilding from the old Waybar baseline or losing local changes.
 beta_home="${TMP}/beta-to-release-home"
 beta_packages="${TMP}/beta-to-release-packages"
@@ -807,30 +781,30 @@ env \
 
 grep -Fq "Awtarchy updater refreshed to main@${TEST_MAIN_COMMIT}." \
   "${TMP}/beta-to-release.out" \
-  || fail "beta handoff did not refresh the normal command from main"
+  || fail "release handoff did not refresh the normal command from main"
 grep -Fxq "tag=${TEST_RELEASE_TAG}" \
   "$beta_home/.local/state/awtarchy/config-version" \
-  || fail "beta handoff did not adopt the stable release tag"
+  || fail "release handoff did not adopt the stable release tag"
 grep -Fxq "tag=${TEST_RELEASE_TAG}" \
   "$beta_home/.local/state/awtarchy/baseline/metadata" \
-  || fail "beta handoff did not replace the testing baseline label"
+  || fail "release handoff did not replace the testing baseline label"
 grep -Fxq 'tag=main' "$beta_home/.local/state/awtarchy/command-version" \
-  || fail "beta handoff did not restore normal command state"
+  || fail "release handoff did not restore normal command state"
 grep -Fxq "revision=${TEST_MAIN_COMMIT}" \
   "$beta_home/.local/state/awtarchy/command-version" \
-  || fail "beta handoff did not record the exact main updater commit"
+  || fail "release handoff did not record the exact main updater commit"
 grep -Fq -- '-- personal Hyprland customization survives migration' \
   "$beta_home/.config/hypr/hyprland.lua" \
-  || fail "beta handoff lost the user's Hyprland customization"
+  || fail "release handoff lost the user's Hyprland customization"
 assert_retired_paths_absent "$beta_home"
 assert_package "$beta_packages" quickshell
 assert_package "$beta_packages" upower
 grep -Fxq "https://github.com/dillacorn/awtarchy/archive/${TEST_MAIN_COMMIT}.tar.gz" \
   "${TMP}/beta-to-release-curl.log" \
-  || fail "beta handoff did not pin the normal command to main"
+  || fail "release handoff did not pin the normal command to main"
 grep -Fxq "https://github.com/dillacorn/awtarchy/archive/refs/tags/${TEST_RELEASE_TAG}.tar.gz" \
   "${TMP}/beta-to-release-curl.log" \
-  || fail "beta handoff did not download the stable release"
+  || fail "release handoff did not download the stable release"
 
 # Reproduce an already-poisoned migration state: the current beta baseline and
 # config-version are installed, but the live personalized Hyprland file is still
@@ -845,7 +819,7 @@ env \
   "${update_env[@]}" \
   "HOME=$poisoned_home" \
   "AWTARCHY_TEST_TARGET_HOME=$poisoned_home" \
-  "$poisoned_home/.local/bin/awtarchy-quickshell" update \
+  "$poisoned_home/.local/bin/awtarchy" update --testing-commit "$TEST_COMMIT" \
   >"${TMP}/poisoned-update.out" 2>&1
 
 grep -Fq 'Live Hyprland still references the retired Awtarchy shell; reconstructing the previous stable baseline before migration.' \
@@ -903,7 +877,7 @@ LC_ALL=C sort -u -o "$managed_packages" "$managed_packages"
 env \
   "${update_env[@]}" \
   "AWTARCHY_QUICKSHELL_MANAGED_HISTORY=$repair_history" \
-  "$installed_launcher" update \
+  "$installed_launcher" update --testing-commit "$TEST_COMMIT" \
   >"${TMP}/repair-update.out" 2>&1
 
 cmp -s "$stale_system_state" "$ROOT/config/quickshell/awtarchy/SystemState.qml" \
@@ -949,7 +923,7 @@ env \
   "AWTARCHY_MANAGED_PACKAGES_FILE=$conflict_keep_managed" \
   "AWTARCHY_TEST_HYPRIDLE_STATE=${TMP}/conflict-keep-hypridle.state" \
   "HYPRLAND_INSTANCE_SIGNATURE=" \
-  "$conflict_keep_home/.local/bin/awtarchy-quickshell" update \
+  "$conflict_keep_home/.local/bin/awtarchy" update --testing-commit "$TEST_COMMIT" \
   --conflict-policy keep-local \
   >"${TMP}/conflict-keep.out" 2>&1
 grep -Fq "$launcher_local_line" \
@@ -981,7 +955,7 @@ env \
   "AWTARCHY_MANAGED_PACKAGES_FILE=$conflict_release_managed" \
   "AWTARCHY_TEST_HYPRIDLE_STATE=${TMP}/conflict-release-hypridle.state" \
   "HYPRLAND_INSTANCE_SIGNATURE=" \
-  "$conflict_release_home/.local/bin/awtarchy-quickshell" update \
+  "$conflict_release_home/.local/bin/awtarchy" update --testing-commit "$TEST_COMMIT" \
   --conflict-policy use-release \
   >"${TMP}/conflict-release.out" 2>&1
 grep -Fq "$launcher_release_line" \
@@ -1016,7 +990,7 @@ replace_once \
   "$launcher_local_line"
 script_bin="$(command -v script)" \
   || fail "util-linux script is required for the interactive conflict test"
-prompt_command="$conflict_prompt_home/.local/bin/awtarchy-quickshell update"
+prompt_command="$conflict_prompt_home/.local/bin/awtarchy update --testing-commit $TEST_COMMIT"
 set +e
 printf 'q2\n' | env \
   "${update_env[@]}" \
@@ -1078,7 +1052,7 @@ env \
   "AWTARCHY_MANAGED_PACKAGES_FILE=$conflict_abort_managed" \
   "AWTARCHY_TEST_HYPRIDLE_STATE=${TMP}/conflict-abort-hypridle.state" \
   "HYPRLAND_INSTANCE_SIGNATURE=" \
-  "$conflict_abort_home/.local/bin/awtarchy-quickshell" update \
+  "$conflict_abort_home/.local/bin/awtarchy" update --testing-commit "$TEST_COMMIT" \
   >"${TMP}/conflict-abort.out" 2>&1
 conflict_abort_rc=$?
 set -e
@@ -1139,7 +1113,7 @@ failure_env=(
 )
 
 set +e
-env "${failure_env[@]}" "$failure_home/.local/bin/awtarchy-quickshell" update \
+env "${failure_env[@]}" "$failure_home/.local/bin/awtarchy" update --testing-commit "$TEST_COMMIT" \
   >"${TMP}/failure-update.out" 2>&1
 failure_rc=$?
 set -e
