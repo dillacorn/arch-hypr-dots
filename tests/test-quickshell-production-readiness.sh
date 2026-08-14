@@ -29,8 +29,8 @@ assert_contains() {
 for rel in \
   local/bin/awtarchy-quickshell \
   QUICKSHELL_CONVERSION.md \
-  config/quickshell/awtarchy/quickshell_flyout_handoff_test.py \
-  config/quickshell/awtarchy/quickshell_flyout_warp_guard_test.py \
+  config/hypr/scripts/quickshell_flyout_handoff_test.py \
+  config/hypr/scripts/quickshell_flyout_warp_guard_test.py \
   tests/test-awtarchy-quickshell-isolation.sh
 do
   assert_absent "$rel"
