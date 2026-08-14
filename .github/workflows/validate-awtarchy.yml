@@ -38,6 +38,8 @@ jobs:
           bash -n config/hypr/scripts/quickshell_launcher_position.sh
           bash -n config/hypr/scripts/quickshell_power_profile_setup.sh
           bash -n config/hypr/scripts/quickshell_resume_recover.sh
+          bash -n config/hypr/scripts/quickshell_runtime_rules.sh
+          bash -n config/hypr/scripts/quickshell_sensitive_capture.sh
           bash -n config/hypr/scripts/quickshell_theme_apply.sh
           bash -n config/hypr/scripts/quickshell_wireguard.sh
           bash -n config/hypr/scripts/restore_brightness.sh
@@ -54,11 +56,13 @@ jobs:
           bash -n tests/test-launcher-keyboard-focus.sh
           bash -n tests/test-desktop-candidate-validation.sh
           bash -n tests/test-lua-validation.sh
+          bash -n tests/test-quickshell-capture-privacy.sh
           bash -n tests/test-quickshell-production-readiness.sh
           bash -n tests/test-quickshell-updater-migration.sh
           bash -n tests/test-quickshell-theme-legacy-micro.sh
           bash -n tests/test-troubleshoot-command.sh
           bash -n tests/test-quickshell-resume-recovery.sh
+          test -x config/hypr/scripts/quickshell_sensitive_capture.sh
       - name: ShellCheck command code
         run: |
           shellcheck \
@@ -73,6 +77,9 @@ jobs:
             config/hypr/scripts/quickshell_launcher_position.sh \
             config/hypr/scripts/quickshell_power_profile_setup.sh \
             config/hypr/scripts/quickshell_resume_recover.sh \
+            config/hypr/scripts/quickshell_runtime_rules.sh \
+            config/hypr/scripts/quickshell_sensitive_capture.sh \
+            config/hypr/scripts/quickshell_wireguard.sh \
             config/hypr/scripts/restore_brightness.sh \
             config/hypr/scripts/screenshot_area.sh \
             config/hypr/scripts/screenshot_display.sh \
@@ -86,6 +93,7 @@ jobs:
             tests/test-launcher-keyboard-focus.sh \
             tests/test-desktop-candidate-validation.sh \
             tests/test-lua-validation.sh \
+            tests/test-quickshell-capture-privacy.sh \
             tests/test-quickshell-updater-migration.sh \
             tests/test-quickshell-theme-legacy-micro.sh \
             tests/test-troubleshoot-command.sh \
@@ -108,6 +116,7 @@ jobs:
           bash tests/test-launcher-keyboard-focus.sh
           bash tests/test-desktop-candidate-validation.sh
           bash tests/test-lua-validation.sh
+          bash tests/test-quickshell-capture-privacy.sh
           bash tests/test-quickshell-production-readiness.sh
           bash tests/test-quickshell-updater-migration.sh
           bash tests/test-quickshell-theme-legacy-micro.sh
