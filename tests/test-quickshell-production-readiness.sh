@@ -132,6 +132,31 @@ fi
 grep -Eqi 'hook|PreUp|PostUp|PreDown|PostDown' "${TMPD}/wg.err" \
   || fail 'WireGuard hook rejection did not explain the unsafe profile'
 
+cat >"${VPN_DIR}/safe-target.conf" <<'EOF_SAFE_PROFILE'
+[Interface]
+PrivateKey = test
+Address = 10.0.0.2/32
+
+[Peer]
+PublicKey = test
+AllowedIPs = 0.0.0.0/0
+EOF_SAFE_PROFILE
+ln -s -- safe-target.conf "${VPN_DIR}/linked.conf"
+if AWTARCHY_VPN_DIR="$VPN_DIR" HOME="$HOME_DIR" bash "$WIREGUARD" up linked >"${TMPD}/wg-link.out" 2>"${TMPD}/wg-link.err"; then
+  fail 'WireGuard symbolic-link profile was accepted'
+fi
+grep -Eqi 'symbolic link|symlink' "${TMPD}/wg-link.err" \
+  || fail 'WireGuard symbolic-link rejection did not explain the unsafe profile path'
+
+cp -- "${VPN_DIR}/safe-target.conf" "${VPN_DIR}/unreadable.conf"
+chmod 000 "${VPN_DIR}/unreadable.conf"
+if AWTARCHY_VPN_DIR="$VPN_DIR" HOME="$HOME_DIR" bash "$WIREGUARD" up unreadable >"${TMPD}/wg-read.out" 2>"${TMPD}/wg-read.err"; then
+  fail 'Unreadable WireGuard profile was accepted'
+fi
+grep -Eqi 'read|inspect' "${TMPD}/wg-read.err" \
+  || fail 'Unreadable WireGuard profile did not fail closed during inspection'
+chmod 0600 "${VPN_DIR}/unreadable.conf"
+
 # Both writers of quickshell-state.json must serialize through the same lock.
 assert_contains "$SHELL_MANAGER" 'STATE_LOCK_FILE="${STATE_FILE}.lock"'
 assert_contains "$SHELL_MANAGER" 'flock -x'
