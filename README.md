@@ -24,8 +24,7 @@ pronounced: **aw-tar-chee**
 
 awtarchy targets users who prefer TTY login, direct shell interaction, and manual control over their system. It assumes comfort with the command line and basic Arch Linux maintenance.
 
-> Note on originality
-> awtarchy is not an Omarchy clone. All code, scripts, and configurations are original and include features not present in Omarchy or similar projects.
+Awtarchy-authored code and configuration is licensed under MIT unless otherwise noted. Third-party material retains its respective copyright and license. See `THIRD_PARTY_NOTICES.md` for redistributed or adapted third-party material that warrants attribution.
 
 ---
 
@@ -33,7 +32,7 @@ awtarchy targets users who prefer TTY login, direct shell interaction, and manua
 
 [![overview](https://github.com/dillacorn/awtarchy/raw/main/previews/overview.png)](https://github.com/dillacorn/awtarchy/tree/main/previews.md)
 
-## 🖥️ System Overview
+## System Overview
 
 | Component          | Details                                                                                                                                                                                                |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -46,54 +45,52 @@ awtarchy targets users who prefer TTY login, direct shell interaction, and manua
 | **Window Manager** | [Hyprland](https://github.com/hyprwm/Hyprland) ([config](https://github.com/dillacorn/awtarchy/tree/main/config/hypr))                                                                                 |
 | **Kernel**         | [Arch Linux](https://archlinux.org/packages/core/x86_64/linux/) · [Arch Linux LTS](https://archlinux.org/packages/core/x86_64/linux-lts/) · [CachyOS kernel](https://github.com/CachyOS/linux-cachyos) |
 
-## 🚀 Installer and Maintenance Command
+## Install
 
-Awtarchy uses two user-facing entrypoints:
-
-```text
-awtarchy-install.sh    Initial installation or intentional full reinstall
-awtarchy               Updates and maintenance after installation
-```
-
-The installed command lives at `~/.local/bin/awtarchy`. Run `awtarchy help` for the full command and option list.
-
-The installer and maintenance command use built-in terminal menus without depending on `fzf`, `gum`, `dialog`, or `whiptail`.
-
-## 📦 Install
-
-Install Arch first with `archinstall` and choose the Minimal profile.
-
-Then install Git:
+Awtarchy expects a minimal vanilla Arch installation. `archinstall` with the Minimal profile is the recommended starting point.
 
 ```bash
 sudo pacman -S git --noconfirm
-```
-
-Clone the repo and run the installer:
-
-```bash
 git clone https://github.com/dillacorn/awtarchy
 cd awtarchy
 sudo ./awtarchy-install.sh
 ```
 
-After installation:
+After installation, use:
 
 ```bash
 awtarchy
 ```
 
-### Existing installations
+The installed maintenance command lives at `~/.local/bin/awtarchy`.
 
-If the installer finds an existing Awtarchy installation, it installs or refreshes the maintenance command without reinstalling packages or replacing managed configs.
+If Awtarchy is already installed, running the installer refreshes the maintenance command without reinstalling packages or replacing managed configs. Use `sudo ./awtarchy-install.sh --reinstall` only when you intentionally want the full installer again.
 
-To intentionally run the complete installer again:
+## Maintenance
 
-```bash
-sudo ./awtarchy-install.sh --reinstall
+Run `awtarchy` with no arguments for the interactive maintenance menu.
+
+Common commands:
+
+```text
+awtarchy update          Update from the latest published release while preserving personal modifications
+awtarchy reset           Reset managed configs to published release defaults
+awtarchy review          Preview managed config changes without applying them
+awtarchy version         Show updater, config release, and git-testing status
+awtarchy git             Test an unreleased remote branch or exact branch commit
+awtarchy clean-backups   Review and clean Awtarchy backup files
+awtarchy help            Show the full command list
 ```
 
-Existing users migrating from the older repository-only updater can run:
+`awtarchy update`, `reset`, and `review` remain release-based. The launcher/runtime can refresh from `main` independently so updater fixes do not require a config release.
+
+`awtarchy git` is an explicit unreleased-testing mode. It shows the selected remote branch and exact commit and keeps git-testing state separate from stable release state.
+
+## Existing installations and Quickshell migration
+
+Existing Awtarchy users can update through the normal `awtarchy update` flow once the Quickshell release is published. The updater preserves personalized managed files where possible, creates backups when required, and migrates retired Waybar/Fuzzel-era managed files to the Quickshell shell.
+
+For installations still using the old repository-only updater:
 
 ```bash
 cd ~/awtarchy
@@ -101,7 +98,9 @@ git pull --ff-only
 sudo ./awtarchy-install.sh
 ```
 
-### Dry-run
+This installs the current maintenance command without broadly replacing managed configs.
+
+## Dry-run
 
 Review the installer questionnaire and install plan without changing the system:
 
@@ -109,52 +108,31 @@ Review the installer questionnaire and install plan without changing the system:
 ./awtarchy-install.sh --dry-run
 ```
 
-## ⚙️ Installer Behavior
-
-The installer collects choices before making changes. It lets you choose the system type, install sections, Arch package categories, AUR packages, Flatpak apps, and shell-file overwrite behavior, then shows a final review screen before a live install starts.
-
-## 🧭 Maintenance
-
-Run `awtarchy` with no arguments for the interactive maintenance menu.
-
-Common commands:
-
-```text
-awtarchy update          Update configs and preserve personal modifications
-awtarchy reset           Reset managed configs to release defaults
-awtarchy review          Preview managed config changes without applying them
-awtarchy version         Show updater and config release status
-awtarchy clean-backups   Review and clean Awtarchy backup files
-awtarchy help            Show all commands and options
-```
-
-The `awtarchy` launcher/runtime refreshes from the current `main` head. Managed configs update from published releases so the updater and config release remain separate.
-
-## 🎨 Wallpaper Collections
+## Wallpaper Collections
 
 * [dharmx/walls](https://github.com/dharmx/walls)
 * [Gruvbox Wallpapers](https://github.com/AngelJumbo/gruvbox-wallpapers)
 * [Aesthetic Wallpapers](https://github.com/D3Ext/aesthetic-wallpapers)
 
-## 🌐 Browser Notes
+## Browser Notes
 
 * [Firefox + Betterfox](browser_notes/firefox.md)
 * [Brave](browser_notes/brave.md)
 * [Mullvad](browser_notes/mullvad.md)
 
-## 📦 Optional Packages
+## Optional Packages
 
 * [Optional Packages](extra_notes/optional_packages.md)
 
 ## License
 
-This project is licensed under the [MIT License](https://github.com/dillacorn/awtarchy/blob/main/LICENSE).
+Awtarchy-authored code and configuration is licensed under the [MIT License](https://github.com/dillacorn/awtarchy/blob/main/LICENSE) unless otherwise noted. Third-party material retains its original copyright and licensing terms.
 
 ## Legal Notice
 
 This project is a general-purpose open-source utility that runs locally on the user’s system. It does not provide a hosted service and does not collect user data. Users are responsible for complying with laws and regulations in their own jurisdiction when using this software.
 
-## ☕ Donate
+## Donate
 
 Built and maintained out of passion. Always FOSS. Donations appreciated.
 [Donate via PayPal](https://www.paypal.com/donate/?business=XSNV4QP8JFY9Y&no_recurring=0&item_name=Built+and+maintained+out+of+passion.+Always+FOSS.+Donations+appreciated.+%28smtty%2C+MicLockTray%2C+awtarchy%29&currency_code=USD)
