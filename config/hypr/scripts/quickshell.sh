@@ -9,6 +9,7 @@ CONFIG_NAME="${QUICKSHELL_CONFIG_NAME:-awtarchy}"
 CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 STATE_DIR="${CACHE_HOME}/awtarchy"
 STATE_FILE="${STATE_DIR}/quickshell-state.json"
+STATE_LOCK_FILE="${STATE_FILE}.lock"
 LEGACY_STATE_FILE="${CACHE_HOME}/waybar/state.json"
 LOG_FILE="${STATE_DIR}/quickshell.log"
 
@@ -45,10 +46,12 @@ need() {
 need qs
 need hyprctl
 need jq
+need flock
 
 remove_legacy_quicksettings_desktop
 mkdir -p "$STATE_DIR"
 [[ -e "$STATE_DIR/quickshell-dnd" ]] || printf '0\n' >"$STATE_DIR/quickshell-dnd"
+exec 8>"$STATE_LOCK_FILE"
 
 ensure_state() {
     local monitors tmp
@@ -104,9 +107,15 @@ wait_for_shell_stop() {
 start_shell() {
     local stable_pings=0
 
+    # start/restart do not otherwise need to hold the shared state lock while
+    # Quickshell constructs QML. Lock only the state normalization itself so a
+    # launcher/flyout state writer can never lose an update.
+    flock -x 8
     ensure_state
+    flock -u 8
+
     is_running && return 0
-    nohup qs -c "$CONFIG_NAME" >>"$LOG_FILE" 2>&1 &
+    nohup qs -c "$CONFIG_NAME" 8>&- >>"$LOG_FILE" 2>&1 &
     disown 2>/dev/null || true
 
     # A configuration can expose control IPC briefly and still fail during
@@ -397,6 +406,21 @@ USAGE
 }
 
 cmd="${1:-}"
+case "$cmd" in
+    start|restart)
+        # start_shell takes the lock only around state normalization and releases
+        # it before Quickshell construction to avoid blocking QML-owned writers.
+        ;;
+    stop|status|list-monitors|focused-monitor|""|-h|--help|help)
+        ;;
+    *)
+        # All remaining public commands can read/modify quickshell-state.json.
+        # Keep the entire read-modify-write sequence serialized with the same
+        # lock used by quickshell_application_state.sh.
+        flock -x 8
+        ;;
+esac
+
 case "$cmd" in
     start) start_shell ;;
     stop) stop_shell ;;
