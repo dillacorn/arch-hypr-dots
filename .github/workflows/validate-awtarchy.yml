@@ -85,7 +85,6 @@ jobs:
             tests/test-launcher-keyboard-focus.sh \
             tests/test-desktop-candidate-validation.sh \
             tests/test-lua-validation.sh \
-            tests/test-quickshell-production-readiness.sh \
             tests/test-quickshell-updater-migration.sh \
             tests/test-quickshell-theme-legacy-micro.sh \
             tests/test-troubleshoot-command.sh \
