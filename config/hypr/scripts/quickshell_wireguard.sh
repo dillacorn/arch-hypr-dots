@@ -73,8 +73,8 @@ reject_privileged_hooks() {
 run_privileged_wg_quick() {
     local action="$1" conf="$2"
 
-    [[ -x "$WG_QUICK" ]] || fail "wg-quick is unavailable at ${WG_QUICK}. Install wireguard-tools."
     reject_privileged_hooks "$conf"
+    [[ -x "$WG_QUICK" ]] || fail "wg-quick is unavailable at ${WG_QUICK}. Install wireguard-tools."
 
     if command -v pkexec >/dev/null 2>&1; then
         exec pkexec "$WG_QUICK" "$action" "$conf"
