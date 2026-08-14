@@ -29,7 +29,9 @@ profile_conf() {
     local name="$1"
     valid_profile_name "$name" || fail "Invalid WireGuard profile name: $name"
     local conf="${VPN_DIR}/${name}.conf"
+    [[ ! -L "$conf" ]] || fail "WireGuard profile must not be a symbolic link: $conf"
     [[ -f "$conf" ]] || fail "WireGuard profile not found: $conf"
+    [[ -r "$conf" ]] || fail "WireGuard profile is not readable: $conf"
     printf '%s\n' "$conf"
 }
 
@@ -63,11 +65,20 @@ list_profiles() {
 }
 
 reject_privileged_hooks() {
-    local conf="$1"
+    local conf="$1" rc=0
 
-    if grep -Eiq '^[[:space:]]*(PreUp|PostUp|PreDown|PostDown)[[:space:]]*=' "$conf"; then
-        fail "WireGuard profile contains PreUp/PostUp/PreDown/PostDown hooks. Awtarchy refuses to run imported command hooks as root."
-    fi
+    grep -Eiq '^[[:space:]]*(PreUp|PostUp|PreDown|PostDown)[[:space:]]*=' "$conf" || rc=$?
+    case "$rc" in
+        0)
+            fail "WireGuard profile contains PreUp/PostUp/PreDown/PostDown hooks. Awtarchy refuses to run imported command hooks as root."
+            ;;
+        1)
+            return 0
+            ;;
+        *)
+            fail "Could not safely inspect WireGuard profile before privilege escalation: $conf"
+            ;;
+    esac
 }
 
 run_privileged_wg_quick() {
