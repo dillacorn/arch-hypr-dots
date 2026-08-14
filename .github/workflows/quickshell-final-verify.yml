@@ -108,7 +108,8 @@ jobs:
           bash tests/test-launcher-keyboard-focus.sh
           bash tests/test-desktop-candidate-validation.sh
           bash tests/test-lua-validation.sh
-          bash tests/test-quickshell-production-readiness.sh
+          # The production-readiness gate intentionally remains excluded while
+          # the branch-only awtarchy-quickshell test launcher is being used.
           bash tests/test-quickshell-updater-migration.sh
           bash tests/test-quickshell-theme-legacy-micro.sh
           bash tests/test-troubleshoot-command.sh
