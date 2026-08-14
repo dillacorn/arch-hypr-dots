@@ -1,0 +1,114 @@
+name: Final Quickshell Validation
+
+on:
+  push:
+    branches: [quickshell-conversion-testing]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y desktop-file-utils shellcheck lua5.4
+      - name: Bash syntax
+        run: |
+          test ! -e awtarchy.sh
+          bash -n awtarchy-install.sh
+          bash -n local/bin/awtarchy
+          grep -Fq 'exec "${TARGET_HOME}/.local/bin/awtarchy" "$@"' local/bin/awtarchy
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n config/hypr/scripts/awtarchy-tips-tui.sh
+          bash -n config/hypr/scripts/ddc_brightness.sh
+          bash -n config/hypr/scripts/dim_display.sh
+          bash -n config/hypr/scripts/hypr-ddc-brightness.sh
+          bash -n config/hypr/scripts/hypridle_action.sh
+          bash -n config/hypr/scripts/hypridle_restart.sh
+          bash -n config/hypr/scripts/hyprsunset_ctl.sh
+          bash -n config/hypr/scripts/quickshell.sh
+          bash -n config/hypr/scripts/quickshell_application_state.sh
+          bash -n config/hypr/scripts/quickshell_bar_restore.sh
+          bash -n config/hypr/scripts/quickshell_launcher_position.sh
+          bash -n config/hypr/scripts/quickshell_power_profile_setup.sh
+          bash -n config/hypr/scripts/quickshell_resume_recover.sh
+          bash -n config/hypr/scripts/quickshell_theme_apply.sh
+          bash -n config/hypr/scripts/quickshell_wireguard.sh
+          bash -n config/hypr/scripts/restore_brightness.sh
+          bash -n config/hypr/scripts/screenshot_area.sh
+          bash -n config/hypr/scripts/screenshot_display.sh
+          bash -n config/hypr/scripts/screenshot_fullscreen.sh
+          bash -n tests/test-awtarchy-command.sh
+          bash -n tests/test-awtarchy-command-shim.sh
+          bash -n tests/test-bar-wheel-input.sh
+          bash -n tests/test-ddc-brightness-watcher.sh
+          bash -n tests/test-hybrid-brightness.sh
+          bash -n tests/test-hypridle-restart.sh
+          bash -n tests/test-flyout-toggle-debounce.sh
+          bash -n tests/test-launcher-keyboard-focus.sh
+          bash -n tests/test-desktop-candidate-validation.sh
+          bash -n tests/test-lua-validation.sh
+          bash -n tests/test-quickshell-production-readiness.sh
+          bash -n tests/test-quickshell-updater-migration.sh
+          bash -n tests/test-quickshell-theme-legacy-micro.sh
+          bash -n tests/test-troubleshoot-command.sh
+          bash -n tests/test-quickshell-resume-recovery.sh
+      - name: ShellCheck command code
+        run: |
+          shellcheck \
+            awtarchy-install.sh \
+            local/bin/awtarchy \
+            config/hypr/scripts/ddc_brightness.sh \
+            config/hypr/scripts/dim_display.sh \
+            config/hypr/scripts/hypr-ddc-brightness.sh \
+            config/hypr/scripts/hypridle_restart.sh \
+            config/hypr/scripts/hyprsunset_ctl.sh \
+            config/hypr/scripts/quickshell_bar_restore.sh \
+            config/hypr/scripts/quickshell_launcher_position.sh \
+            config/hypr/scripts/quickshell_power_profile_setup.sh \
+            config/hypr/scripts/quickshell_resume_recover.sh \
+            config/hypr/scripts/quickshell_wireguard.sh \
+            config/hypr/scripts/restore_brightness.sh \
+            config/hypr/scripts/screenshot_area.sh \
+            config/hypr/scripts/screenshot_display.sh \
+            config/hypr/scripts/screenshot_fullscreen.sh \
+            tests/test-awtarchy-command-shim.sh \
+            tests/test-bar-wheel-input.sh \
+            tests/test-ddc-brightness-watcher.sh \
+            tests/test-hybrid-brightness.sh \
+            tests/test-hypridle-restart.sh \
+            tests/test-flyout-toggle-debounce.sh \
+            tests/test-launcher-keyboard-focus.sh \
+            tests/test-desktop-candidate-validation.sh \
+            tests/test-lua-validation.sh \
+            tests/test-quickshell-updater-migration.sh \
+            tests/test-quickshell-theme-legacy-micro.sh \
+            tests/test-troubleshoot-command.sh \
+            tests/test-quickshell-resume-recovery.sh
+          shellcheck -e SC2015 config/hypr/scripts/quickshell_theme_apply.sh
+          shellcheck -e SC2016 tests/test-awtarchy-command.sh
+      - name: Command and updater integration tests
+        run: |
+          no_sudo_bin="$(mktemp -d)"
+          printf '%s\n' '#!/usr/bin/env bash' 'exit 1' >"${no_sudo_bin}/sudo"
+          chmod 0755 "${no_sudo_bin}/sudo"
+          PATH="${no_sudo_bin}:$PATH" bash tests/test-awtarchy-command.sh
+          rm -rf -- "$no_sudo_bin"
+          bash tests/test-awtarchy-command-shim.sh
+          bash tests/test-bar-wheel-input.sh
+          bash tests/test-ddc-brightness-watcher.sh
+          bash tests/test-hybrid-brightness.sh
+          bash tests/test-hypridle-restart.sh
+          bash tests/test-flyout-toggle-debounce.sh
+          bash tests/test-launcher-keyboard-focus.sh
+          bash tests/test-desktop-candidate-validation.sh
+          bash tests/test-lua-validation.sh
+          bash tests/test-quickshell-production-readiness.sh
+          bash tests/test-quickshell-updater-migration.sh
+          bash tests/test-quickshell-theme-legacy-micro.sh
+          bash tests/test-troubleshoot-command.sh
+          bash tests/test-quickshell-resume-recovery.sh
