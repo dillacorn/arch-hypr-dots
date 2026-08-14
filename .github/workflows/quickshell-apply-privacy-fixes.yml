@@ -17,25 +17,7 @@ jobs:
 
       - name: Scope duplicate Network transition marker
         run: |
-          python3 <<'PY'
-          from pathlib import Path
-
-          path = Path('tests/apply-quickshell-privacy-fixes.py')
-          text = path.read_text()
-          old = '''    if count != 1:
-        raise SystemExit(f"{label}: expected one match, found {count}")
-    return text.replace(old, new, 1)
-'''
-          new = '''    if label == "Network open sensitive cleanup" and count == 2:
-        return text.replace(old, new, 1)
-    if count != 1:
-        raise SystemExit(f"{label}: expected one match, found {count}")
-    return text.replace(old, new, 1)
-'''
-          if text.count(old) != 1:
-              raise SystemExit('temporary patcher replace_once body changed unexpectedly')
-          path.write_text(text.replace(old, new, 1))
-          PY
+          python3 -c 'from pathlib import Path; p=Path("tests/apply-quickshell-privacy-fixes.py"); t=p.read_text(); old="    if count != 1:\n        raise SystemExit(f\"{label}: expected one match, found {count}\")\n    return text.replace(old, new, 1)\n"; new="    if label == \"Network open sensitive cleanup\" and count == 2:\n        return text.replace(old, new, 1)\n    if count != 1:\n        raise SystemExit(f\"{label}: expected one match, found {count}\")\n    return text.replace(old, new, 1)\n"; assert t.count(old) == 1; p.write_text(t.replace(old,new,1))'
 
       - name: Apply reviewed privacy and Num Lock patch
         id: patch
