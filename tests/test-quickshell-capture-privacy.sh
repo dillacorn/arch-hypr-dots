@@ -79,7 +79,8 @@ require_contains "$bluetooth_menu" '["set-capture", "bluetooth", next ? "true" :
 
 # VPN is fail-closed. The sensitive lock must be installed before vpnOpen becomes
 # true, must survive unrelated runtime-rule refreshes, and must be removed only
-# after the sensitive view has been hidden.
+# after the sensitive view has been hidden. Hot-reload cleanup also hides the
+# reused Network window before clearing a stale lock.
 require_contains "$network_menu" 'property bool vpnPrivacyOpening: false'
 require_contains "$network_menu" 'vpnPrivacyProcess.exec([root.sensitiveCaptureScript, "network", "lock"])'
 require_contains "$network_menu" 'if (exitCode !== 0)'
@@ -87,10 +88,13 @@ require_contains "$network_menu" 'root.vpnOpen = true;'
 require_contains "$network_menu" 'root.vpnOpen = false;'
 require_contains "$network_menu" 'vpnPrivacyProcess.exec([root.sensitiveCaptureScript, "network", "unlock"])'
 require_contains "$network_menu" 'locked: root.vpnOpen || root.vpnPrivacyOpening'
+require_contains "$network_menu" $'Component.onCompleted: {\n        networkWindow.visible = false;\n        root.vpnPrivacyAction = "unlock";'
 require_contains "$runtime_rules" 'network_sensitive_locked=true'
 require_contains "$runtime_rules" '[[ -e "$NETWORK_SENSITIVE_LOCK" ]] && network_sensitive_locked=true'
 require_contains "$runtime_rules" 'if [[ "$network_sensitive_locked" == true ]]; then'
 require_contains "$runtime_rules" 'network_protected=true'
+require_contains "$runtime_rules" 'awtarchy_vpn_editor_privacy_rule_v1:set_enabled(true)'
+require_contains "$runtime_rules" 'awtarchy_public_ip_privacy_rule_v1:set_enabled(true)'
 require_contains "$capture_lock" 'network-sensitive-capture.lock'
 require_contains "$capture_lock" 'exec "$RUNTIME_RULES"'
 
