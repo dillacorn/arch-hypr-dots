@@ -19,10 +19,11 @@ jobs:
         id: patch
         run: |
           set -euo pipefail
-          python3 -c 'from pathlib import Path; p=Path("config/quickshell/awtarchy/NetworkMenu.qml"); t=p.read_text(); old="    Component.onCompleted: {\n        root.vpnPrivacyAction = \"unlock\";\n"; new="    Component.onCompleted: {\n        networkWindow.visible = false;\n        root.vpnPrivacyAction = \"unlock\";\n"; assert old in t or new in t; p.write_text(t.replace(old,new,1)) if old in t else None'
-          python3 -c 'from pathlib import Path; p=Path("config/quickshell/awtarchy/Launcher.qml"); t=p.read_text(); old="                        CaptureEyeButton {\n                    captureAllowed: root.captureAllowed\n                    textSize: 13\n                    onClicked: {\n                        root.toggleCaptureAllowed();\n                        Qt.callLater(() => search.forceActiveFocus());\n                    }\n                }\n"; new="                        CaptureEyeButton {\n                            captureAllowed: root.captureAllowed\n                            textSize: 13\n                            onClicked: {\n                                root.toggleCaptureAllowed();\n                                Qt.callLater(() => search.forceActiveFocus());\n                            }\n                        }\n"; assert old in t or new in t; p.write_text(t.replace(old,new,1)) if old in t else None'
+          python3 -c 'from pathlib import Path; p=Path("config/quickshell/awtarchy/NetworkMenu.qml"); t=p.read_text(); marker="    function toggleSettings() {\n"; addition="    function showVpnAfterPrivacyLock() {\n        networkWindow.visible = false;\n        vpnPrivacyOpening = false;\n        vpnOpen = true;\n        Qt.callLater(() => {\n            if (FlyoutManager.activeSurface !== \"network\" || !root.vpnOpen)\n                return;\n            networkWindow.visible = true;\n            root.positionWindow();\n        });\n    }\n\n    function remapNetworkAfterVpnUnlock() {\n        if (!networkWindow.visible || vpnOpen || vpnPrivacyOpening)\n            return;\n        networkWindow.visible = false;\n        Qt.callLater(() => {\n            if (FlyoutManager.activeSurface !== \"network\"\n                || root.vpnOpen || root.vpnPrivacyOpening)\n                return;\n            networkWindow.visible = true;\n            root.positionWindow();\n        });\n    }\n\n"; present="    function showVpnAfterPrivacyLock()" in t; assert present or marker in t; p.write_text(t.replace(marker,addition+marker,1)) if not present else None'
+          python3 -c 'from pathlib import Path; p=Path("config/quickshell/awtarchy/NetworkMenu.qml"); t=p.read_text(); old="                root.vpnPrivacyOpening = false;\n                root.vpnOpen = true;\n                return;\n"; new="                root.showVpnAfterPrivacyLock();\n                return;\n"; assert old in t or new in t; p.write_text(t.replace(old,new,1)) if old in t else None'
+          python3 -c 'from pathlib import Path; p=Path("config/quickshell/awtarchy/NetworkMenu.qml"); t=p.read_text(); old="            if (completedAction === \"unlock\")\n                root.vpnPrivacyUnlockPending = false;\n"; new="            if (completedAction === \"unlock\") {\n                root.vpnPrivacyUnlockPending = false;\n                if (exitCode === 0)\n                    root.remapNetworkAfterVpnUnlock();\n            }\n"; assert old in t or new in t; p.write_text(t.replace(old,new,1)) if old in t else None'
 
-          if git diff --quiet -- config/quickshell/awtarchy/NetworkMenu.qml config/quickshell/awtarchy/Launcher.qml; then
+          if git diff --quiet -- config/quickshell/awtarchy/NetworkMenu.qml; then
             echo 'changed=false' >> "$GITHUB_OUTPUT"
           else
             echo 'changed=true' >> "$GITHUB_OUTPUT"
@@ -40,12 +41,11 @@ jobs:
         run: |
           set -euo pipefail
           manifest='local/share/awtarchy/quickshell-managed-history.sha256'
-          for source in config/quickshell/awtarchy/NetworkMenu.qml config/quickshell/awtarchy/Launcher.qml; do
-            managed=".${source#config}"
-            hash="$(sha256sum "$source" | awk '{print $1}')"
-            line="${hash}	${managed}"
-            grep -Fqx -- "$line" "$manifest" || printf '%b\n' "$line" >> "$manifest"
-          done
+          source='config/quickshell/awtarchy/NetworkMenu.qml'
+          managed='.config/quickshell/awtarchy/NetworkMenu.qml'
+          hash="$(sha256sum "$source" | awk '{print $1}')"
+          line="${hash}	${managed}"
+          grep -Fqx -- "$line" "$manifest" || printf '%b\n' "$line" >> "$manifest"
 
       - name: Commit hardening
         if: steps.patch.outputs.changed == 'true'
@@ -53,6 +53,6 @@ jobs:
           set -euo pipefail
           git config user.name 'dillacorn'
           git config user.email '28743863+dillacorn@users.noreply.github.com'
-          git add config/quickshell/awtarchy/NetworkMenu.qml config/quickshell/awtarchy/Launcher.qml local/share/awtarchy/quickshell-managed-history.sha256
-          git commit -m 'Finish flyout privacy hardening'
+          git add config/quickshell/awtarchy/NetworkMenu.qml local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'Remap Network flyout around VPN privacy changes'
           git push origin HEAD:quickshell-conversion-testing
