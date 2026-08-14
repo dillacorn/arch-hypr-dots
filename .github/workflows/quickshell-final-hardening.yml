@@ -19,45 +19,8 @@ jobs:
         id: patch
         run: |
           set -euo pipefail
-          python3 <<'PY'
-          from pathlib import Path
-
-          network = Path('config/quickshell/awtarchy/NetworkMenu.qml')
-          text = network.read_text()
-          old = '    Component.onCompleted: {\n        root.vpnPrivacyAction = "unlock";\n'
-          new = '    Component.onCompleted: {\n        networkWindow.visible = false;\n        root.vpnPrivacyAction = "unlock";\n'
-          if old in text:
-              text = text.replace(old, new, 1)
-              network.write_text(text)
-          elif new not in text:
-              raise SystemExit('Network startup privacy anchor changed unexpectedly')
-
-          launcher = Path('config/quickshell/awtarchy/Launcher.qml')
-          text = launcher.read_text()
-          old = '''                        CaptureEyeButton {
-                    captureAllowed: root.captureAllowed
-                    textSize: 13
-                    onClicked: {
-                        root.toggleCaptureAllowed();
-                        Qt.callLater(() => search.forceActiveFocus());
-                    }
-                }
-'''
-          new = '''                        CaptureEyeButton {
-                            captureAllowed: root.captureAllowed
-                            textSize: 13
-                            onClicked: {
-                                root.toggleCaptureAllowed();
-                                Qt.callLater(() => search.forceActiveFocus());
-                            }
-                        }
-'''
-          if old in text:
-              text = text.replace(old, new, 1)
-              launcher.write_text(text)
-          elif new not in text:
-              raise SystemExit('Launcher capture eye anchor changed unexpectedly')
-          PY
+          python3 -c 'from pathlib import Path; p=Path("config/quickshell/awtarchy/NetworkMenu.qml"); t=p.read_text(); old="    Component.onCompleted: {\n        root.vpnPrivacyAction = \"unlock\";\n"; new="    Component.onCompleted: {\n        networkWindow.visible = false;\n        root.vpnPrivacyAction = \"unlock\";\n"; assert old in t or new in t; p.write_text(t.replace(old,new,1)) if old in t else None'
+          python3 -c 'from pathlib import Path; p=Path("config/quickshell/awtarchy/Launcher.qml"); t=p.read_text(); old="                        CaptureEyeButton {\n                    captureAllowed: root.captureAllowed\n                    textSize: 13\n                    onClicked: {\n                        root.toggleCaptureAllowed();\n                        Qt.callLater(() => search.forceActiveFocus());\n                    }\n                }\n"; new="                        CaptureEyeButton {\n                            captureAllowed: root.captureAllowed\n                            textSize: 13\n                            onClicked: {\n                                root.toggleCaptureAllowed();\n                                Qt.callLater(() => search.forceActiveFocus());\n                            }\n                        }\n"; assert old in t or new in t; p.write_text(t.replace(old,new,1)) if old in t else None'
 
           if git diff --quiet -- config/quickshell/awtarchy/NetworkMenu.qml config/quickshell/awtarchy/Launcher.qml; then
             echo 'changed=false' >> "$GITHUB_OUTPUT"
@@ -77,14 +40,12 @@ jobs:
         run: |
           set -euo pipefail
           manifest='local/share/awtarchy/quickshell-managed-history.sha256'
-          while IFS='|' read -r source managed; do
+          for source in config/quickshell/awtarchy/NetworkMenu.qml config/quickshell/awtarchy/Launcher.qml; do
+            managed=".${source#config}"
             hash="$(sha256sum "$source" | awk '{print $1}')"
             line="${hash}	${managed}"
             grep -Fqx -- "$line" "$manifest" || printf '%b\n' "$line" >> "$manifest"
-          done <<'EOF'
-          config/quickshell/awtarchy/NetworkMenu.qml|.config/quickshell/awtarchy/NetworkMenu.qml
-          config/quickshell/awtarchy/Launcher.qml|.config/quickshell/awtarchy/Launcher.qml
-          EOF
+          done
 
       - name: Commit hardening
         if: steps.patch.outputs.changed == 'true'
