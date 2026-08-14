@@ -129,6 +129,65 @@ print(tag)
 PY
 }
 
+requested_config_tag() {
+  local tag=""
+  while (( $# > 0 )); do
+    case "$1" in
+      --tag)
+        shift
+        (( $# > 0 )) || die "--tag requires a value."
+        tag="$1"
+        ;;
+      --testing-commit)
+        return 2
+        ;;
+    esac
+    shift
+  done
+
+  if [[ -n $tag ]]; then
+    printf '%s\n' "$tag"
+    return 0
+  fi
+
+  latest_release_tag || die "Could not determine the latest Awtarchy config release."
+}
+
+release_has_quickshell_payload() {
+  local ref="$1"
+  have curl || return 1
+  curl_args api
+  curl "${CURL_ARGS[@]}" \
+    --get \
+    --data-urlencode "ref=${ref}" \
+    --output /dev/null \
+    "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/local/share/awtarchy/quickshell-managed-history.sha256" \
+    2>/dev/null
+}
+
+config_release_ready_or_noop() {
+  [[ -z ${AWTARCHY_TESTING_COMMIT:-} ]] || return 0
+
+  local tag installed rc=0
+  tag="$(requested_config_tag "$@")" || rc=$?
+  if (( rc == 2 )); then
+    return 0
+  fi
+  (( rc == 0 )) || return "$rc"
+
+  if release_has_quickshell_payload "$tag"; then
+    return 0
+  fi
+
+  installed="$(installed_config_tag)"
+  if [[ $installed == "$tag" ]]; then
+    log "Config release ${tag} predates the Quickshell migration and is already installed. No managed files changed."
+    return 1
+  fi
+
+  die "Config release ${tag} predates the Quickshell migration. No managed files were changed; publish or select a Quickshell-capable release before updating."
+}
+
 updater_branch_head() {
   have curl || return 1
   have python3 || return 1
@@ -425,19 +484,25 @@ maintenance_menu() {
         ;;
       1)
         ensure_latest_updater update
-        run_runtime update-reset-backup --mode preserve || rc=$?
+        if config_release_ready_or_noop; then
+          run_runtime update-reset-backup --mode preserve || rc=$?
+        fi
         pause_menu
         [[ -z ${rc:-} ]] || return "$rc"
         ;;
       2)
         ensure_latest_updater reset
-        run_runtime update-reset-backup --mode clean || rc=$?
+        if config_release_ready_or_noop; then
+          run_runtime update-reset-backup --mode clean || rc=$?
+        fi
         pause_menu
         [[ -z ${rc:-} ]] || return "$rc"
         ;;
       3)
         ensure_latest_updater review
-        run_runtime update-reset-backup --mode preserve --review-only || rc=$?
+        if config_release_ready_or_noop; then
+          run_runtime update-reset-backup --mode preserve --review-only || rc=$?
+        fi
         pause_menu
         [[ -z ${rc:-} ]] || return "$rc"
         ;;
@@ -469,6 +534,7 @@ Usage:
   awtarchy version
   awtarchy check-update
   awtarchy self-update
+  awtarchy help
 
 The updater always refreshes from the current `main` branch head.
 Managed configs still update only from the latest published release unless
@@ -481,18 +547,16 @@ EOF
 main() {
   init_target
 
-  if [[ ${1:-} == troubleshoot ]]; then
-    shift
-    (( $# == 0 )) || die "troubleshoot does not accept options."
-    require_runtime
-    AWTARCHY_TROUBLESHOOT_COMMAND=awtarchy exec bash "$RUNTIME" troubleshoot
-  fi
-
-  ensure_vpn_directory
-
   case "${1:-}" in
+    troubleshoot)
+      shift
+      (( $# == 0 )) || die "troubleshoot does not accept options."
+      require_runtime
+      AWTARCHY_TROUBLESHOOT_COMMAND=awtarchy exec bash "$RUNTIME" troubleshoot
+      ;;
     version)
       print_version_status
+      return 0
       ;;
     check-update)
       print_version_status
@@ -502,7 +566,17 @@ main() {
       if [[ -n $remote && $installed != "$remote" ]]; then
         return 10
       fi
+      return 0
       ;;
+    help|-h|--help)
+      usage
+      return 0
+      ;;
+  esac
+
+  ensure_vpn_directory
+
+  case "${1:-}" in
     self-update)
       shift
       (( $# == 0 )) || die "self-update does not accept options; the updater source is always ${UPDATER_BRANCH}."
@@ -511,16 +585,19 @@ main() {
     update)
       ensure_latest_updater "$@"
       shift
+      config_release_ready_or_noop "$@" || return 0
       exec_runtime update-reset-backup --mode preserve "$@"
       ;;
     reset)
       ensure_latest_updater "$@"
       shift
+      config_release_ready_or_noop "$@" || return 0
       exec_runtime update-reset-backup --mode clean "$@"
       ;;
     review)
       ensure_latest_updater "$@"
       shift
+      config_release_ready_or_noop "$@" || return 0
       exec_runtime update-reset-backup --mode preserve --review-only "$@"
       ;;
     clean-backups|update-backup-cleaner|backup-cleaner)
@@ -530,13 +607,11 @@ main() {
     update-reset-backup)
       ensure_latest_updater "$@"
       shift
+      config_release_ready_or_noop "$@" || return 0
       exec_runtime update-reset-backup "$@"
       ;;
     install|dry-run|dryrun|test)
       die "Installation is handled by awtarchy-install.sh, not the awtarchy maintenance command."
-      ;;
-    help|-h|--help)
-      usage
       ;;
     "")
       maintenance_menu
