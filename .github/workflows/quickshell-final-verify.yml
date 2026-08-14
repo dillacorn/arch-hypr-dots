@@ -1,3 +1,4 @@
+# Temporary verification workflow; remove after the final branch validation passes.
 name: Final Quickshell Validation
 
 on:
