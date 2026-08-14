@@ -11,24 +11,24 @@ fail() {
 }
 
 require_file() {
-    [[ -f "$1" ]] || fail "missing file: ${1#$ROOT_DIR/}"
+    [[ -f "$1" ]] || fail "missing file: ${1#"$ROOT_DIR"/}"
 }
 
 require_contains() {
     local file="$1" needle="$2"
-    grep -Fq -- "$needle" "$file" || fail "${file#$ROOT_DIR/} missing: $needle"
+    grep -Fq -- "$needle" "$file" || fail "${file#"$ROOT_DIR"/} missing: $needle"
 }
 
 require_sequence() {
     local file="$1" needle="$2" content
     content="$(<"$file")"
-    [[ "$content" == *"$needle"* ]] || fail "${file#$ROOT_DIR/} missing ordered sequence"
+    [[ "$content" == *"$needle"* ]] || fail "${file#"$ROOT_DIR"/} missing ordered sequence"
 }
 
 require_not_contains() {
     local file="$1" needle="$2"
     if grep -Fq -- "$needle" "$file"; then
-        fail "${file#$ROOT_DIR/} still contains: $needle"
+        fail "${file#"$ROOT_DIR"/} still contains: $needle"
     fi
 }
 
@@ -96,13 +96,13 @@ require_contains "$network_menu" 'vpnPrivacyProcess.exec([root.sensitiveCaptureS
 require_contains "$network_menu" 'locked: root.vpnOpen || root.vpnPrivacyOpening'
 require_sequence "$network_menu" $'Component.onCompleted: {\n        networkWindow.visible = false;\n        root.vpnPrivacyAction = "unlock";'
 require_contains "$runtime_rules" 'network_sensitive_locked=true'
-require_contains "$runtime_rules" '[[ -e "$NETWORK_SENSITIVE_LOCK" ]] && network_sensitive_locked=true'
-require_contains "$runtime_rules" 'if [[ "$network_sensitive_locked" == true ]]; then'
+require_contains "$runtime_rules" "[[ -e \"\$NETWORK_SENSITIVE_LOCK\" ]] && network_sensitive_locked=true"
+require_contains "$runtime_rules" "if [[ \"\$network_sensitive_locked\" == true ]]; then"
 require_contains "$runtime_rules" 'network_protected=true'
 require_contains "$runtime_rules" 'awtarchy_vpn_editor_privacy_rule_v1:set_enabled(true)'
 require_contains "$runtime_rules" 'awtarchy_public_ip_privacy_rule_v1:set_enabled(true)'
 require_contains "$capture_lock" 'network-sensitive-capture.lock'
-require_contains "$capture_lock" 'exec "$RUNTIME_RULES"'
+require_contains "$capture_lock" "exec \"\$RUNTIME_RULES\""
 
 # VPN/public-IP tools stay inside the protected VPN view. myip.wtf remains an
 # explicit external diagnostic option and uses the cleaner alias for both page
