@@ -298,8 +298,8 @@ show_existing_install_message() {
   cat <<EOF_MESSAGE
 Awtarchy is already installed for ${TARGET_USER}.
 
-The installed launcher/runtime were refreshed. No packages or managed configs
-were changed.
+The installed launcher/runtime were refreshed from the current main updater.
+No packages or managed configs were changed.
 
   awtarchy                 Open the maintenance menu
   awtarchy review          Review the latest release without applying it
