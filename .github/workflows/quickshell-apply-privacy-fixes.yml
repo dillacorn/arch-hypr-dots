@@ -15,12 +15,34 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Scope duplicate Network transition marker
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('tests/apply-quickshell-privacy-fixes.py')
+          text = path.read_text()
+          old = '''    if count != 1:
+        raise SystemExit(f"{label}: expected one match, found {count}")
+    return text.replace(old, new, 1)
+'''
+          new = '''    if label == "Network open sensitive cleanup" and count == 2:
+        return text.replace(old, new, 1)
+    if count != 1:
+        raise SystemExit(f"{label}: expected one match, found {count}")
+    return text.replace(old, new, 1)
+'''
+          if text.count(old) != 1:
+              raise SystemExit('temporary patcher replace_once body changed unexpectedly')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
       - name: Apply reviewed privacy and Num Lock patch
         id: patch
         run: |
           set -euo pipefail
           python3 tests/apply-quickshell-privacy-fixes.py
-          if git diff --quiet; then
+          if git diff --quiet -- config local/share/awtarchy/quickshell-managed-history.sha256; then
             echo 'changed=false' >> "$GITHUB_OUTPUT"
           else
             echo 'changed=true' >> "$GITHUB_OUTPUT"
