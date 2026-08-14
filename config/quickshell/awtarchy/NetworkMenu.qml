@@ -532,6 +532,31 @@ Singleton {
             startVpnUnlock();
     }
 
+    function showVpnAfterPrivacyLock() {
+        networkWindow.visible = false;
+        vpnPrivacyOpening = false;
+        vpnOpen = true;
+        Qt.callLater(() => {
+            if (FlyoutManager.activeSurface !== "network" || !root.vpnOpen)
+                return;
+            networkWindow.visible = true;
+            root.positionWindow();
+        });
+    }
+
+    function remapNetworkAfterVpnUnlock() {
+        if (!networkWindow.visible || vpnOpen || vpnPrivacyOpening)
+            return;
+        networkWindow.visible = false;
+        Qt.callLater(() => {
+            if (FlyoutManager.activeSurface !== "network"
+                || root.vpnOpen || root.vpnPrivacyOpening)
+                return;
+            networkWindow.visible = true;
+            root.positionWindow();
+        });
+    }
+
     function toggleSettings() {
         if (vpnOpen || vpnPrivacyOpening)
             closeVpnView();
@@ -659,13 +684,15 @@ Singleton {
                     Qt.callLater(() => root.startVpnUnlock());
                     return;
                 }
-                root.vpnPrivacyOpening = false;
-                root.vpnOpen = true;
+                root.showVpnAfterPrivacyLock();
                 return;
             }
 
-            if (completedAction === "unlock")
+            if (completedAction === "unlock") {
                 root.vpnPrivacyUnlockPending = false;
+                if (exitCode === 0)
+                    root.remapNetworkAfterVpnUnlock();
+            }
         }
     }
 
