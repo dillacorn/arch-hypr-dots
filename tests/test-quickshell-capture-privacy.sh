@@ -84,13 +84,18 @@ require_contains "$bluetooth_menu" 'readonly property bool captureAllowed:'
 require_contains "$bluetooth_menu" '["set-capture", "bluetooth", next ? "true" : "false"]'
 
 # VPN is fail-closed. The sensitive lock must be installed before vpnOpen becomes
-# true, must survive unrelated runtime-rule refreshes, and must be removed only
-# after the sensitive view has been hidden. Hot-reload cleanup also hides the
-# reused Network window before clearing a stale lock.
+# true and the already-mapped Network window must be remapped before VPN content
+# is shown. Otherwise an existing shareable surface could keep the old rule.
 require_contains "$network_menu" 'property bool vpnPrivacyOpening: false'
 require_contains "$network_menu" 'vpnPrivacyProcess.exec([root.sensitiveCaptureScript, "network", "lock"])'
 require_contains "$network_menu" 'if (exitCode !== 0)'
-require_contains "$network_menu" 'root.vpnOpen = true;'
+require_contains "$network_menu" 'function showVpnAfterPrivacyLock()'
+require_sequence "$network_menu" $'networkWindow.visible = false;\n        vpnPrivacyOpening = false;\n        vpnOpen = true;\n        Qt.callLater(() => {'
+require_contains "$network_menu" 'if (FlyoutManager.activeSurface !== "network" || !root.vpnOpen)'
+require_contains "$network_menu" 'root.showVpnAfterPrivacyLock();'
+require_contains "$network_menu" 'function remapNetworkAfterVpnUnlock()'
+require_sequence "$network_menu" $'networkWindow.visible = false;\n        Qt.callLater(() => {\n            if (FlyoutManager.activeSurface !== "network"'
+require_contains "$network_menu" 'root.remapNetworkAfterVpnUnlock();'
 require_contains "$network_menu" 'root.vpnOpen = false;'
 require_contains "$network_menu" 'vpnPrivacyProcess.exec([root.sensitiveCaptureScript, "network", "unlock"])'
 require_contains "$network_menu" 'locked: root.vpnOpen || root.vpnPrivacyOpening'
