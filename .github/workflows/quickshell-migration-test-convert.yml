@@ -106,6 +106,16 @@ jobs:
               raise SystemExit('expected testing branch lookup assertion')
           text = text.replace(branch_lookup, '', 1)
 
+          curl_marker = "if [[ $url == *'/releases/latest' ]]; then\n"
+          release_marker_case = r'''if [[ $url == *'/contents/local/share/awtarchy/quickshell-managed-history.sha256' ]]; then
+            [[ -n ${AWTARCHY_TEST_RELEASE_TAG:-} ]] || exit 42
+            exit 0
+          fi
+          '''
+          if text.count(curl_marker) != 1:
+              raise SystemExit('expected one latest-release fake curl case')
+          text = text.replace(curl_marker, release_marker_case + curl_marker, 1)
+
           text = text.replace(
               '# Model the exact beta-to-release handoff on a machine that already completed\n# the awtarchy-quickshell migration. The normal command must adopt the release',
               '# Model the exact testing-commit-to-release handoff on a machine that already\n# completed the Quickshell migration. The normal command must adopt the release',
