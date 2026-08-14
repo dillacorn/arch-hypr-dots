@@ -8,6 +8,7 @@ VPN_DIR="${AWTARCHY_VPN_DIR:-${HOME}/vpn}"
 EDITOR_TITLE="Awtarchy VPN Config Editor"
 EDITOR_CLASS="awtarchy-vpn-editor"
 FIREFOX="/usr/bin/firefox"
+WG_QUICK="/usr/bin/wg-quick"
 WTFISMYIP_URL="https://wtfismyip.com/"
 WTFISMYIP_TEXT_URL="https://wtfismyip.com/text"
 
@@ -61,18 +62,26 @@ list_profiles() {
     printf '%s\n' "$json"
 }
 
+reject_privileged_hooks() {
+    local conf="$1"
+
+    if grep -Eiq '^[[:space:]]*(PreUp|PostUp|PreDown|PostDown)[[:space:]]*=' "$conf"; then
+        fail "WireGuard profile contains PreUp/PostUp/PreDown/PostDown hooks. Awtarchy refuses to run imported command hooks as root."
+    fi
+}
+
 run_privileged_wg_quick() {
     local action="$1" conf="$2"
-    local wg_quick
-    wg_quick="$(command -v wg-quick || true)"
-    [[ -n "$wg_quick" ]] || fail "wg-quick is unavailable. Install wireguard-tools."
+
+    [[ -x "$WG_QUICK" ]] || fail "wg-quick is unavailable at ${WG_QUICK}. Install wireguard-tools."
+    reject_privileged_hooks "$conf"
 
     if command -v pkexec >/dev/null 2>&1; then
-        exec pkexec "$wg_quick" "$action" "$conf"
+        exec pkexec "$WG_QUICK" "$action" "$conf"
     fi
 
     if command -v alacritty >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
-        exec alacritty --title "Awtarchy WireGuard" -e sudo "$wg_quick" "$action" "$conf"
+        exec alacritty --title "Awtarchy WireGuard" -e sudo "$WG_QUICK" "$action" "$conf"
     fi
 
     fail "A privilege prompt is required but neither pkexec nor an Alacritty+sudo fallback is available."
