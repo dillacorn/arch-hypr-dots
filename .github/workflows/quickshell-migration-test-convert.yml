@@ -121,15 +121,31 @@ jobs:
           path.write_text(text, encoding='utf-8')
           PY
           bash -n tests/test-quickshell-updater-migration.sh
+      - name: Refresh current managed stock hashes
+        if: steps.detect.outputs.needed == 'true'
+        run: |
+          manifest='local/share/awtarchy/quickshell-managed-history.sha256'
+          while IFS= read -r repo_path; do
+            repo_rel="${repo_path#./}"
+            entry="$(sha256sum "$repo_path" | awk '{print $1}')"$'\t'".${repo_rel}"
+            grep -Fqx "$entry" "$manifest" || printf '%s\n' "$entry" >>"$manifest"
+          done < <(
+            {
+              find ./config/quickshell/awtarchy -maxdepth 1 -type f -print
+              find ./config/hypr/scripts -maxdepth 1 -type f \
+                \( -name 'quickshell*' -o -name 'ddc_brightness.sh' -o -name 'hypr-ddc-brightness.sh' \) \
+                -print
+            } | LC_ALL=C sort -u
+          )
           git diff --check
       - name: Run converted migration test
         if: steps.detect.outputs.needed == 'true'
         run: bash tests/test-quickshell-updater-migration.sh
-      - name: Commit converted test
+      - name: Commit converted test and managed hashes
         if: steps.detect.outputs.needed == 'true'
         run: |
           git config user.name dillacorn
           git config user.email 28743863+dillacorn@users.noreply.github.com
-          git add tests/test-quickshell-updater-migration.sh
+          git add tests/test-quickshell-updater-migration.sh local/share/awtarchy/quickshell-managed-history.sha256
           git commit -m 'Test Quickshell migration through production command'
           git push origin HEAD:quickshell-conversion-testing
