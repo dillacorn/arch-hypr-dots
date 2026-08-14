@@ -48,6 +48,8 @@ for file in \
     require_file "$file"
 done
 
+[[ -x "$capture_lock" ]] || fail "quickshell_sensitive_capture.sh must be executable"
+
 # Every user-facing flyout header exposes the same immediate capture indicator.
 require_contains "$capture_button" 'text: root.captureAllowed ? "" : ""'
 require_contains "$capture_button" 'property bool locked: false'
