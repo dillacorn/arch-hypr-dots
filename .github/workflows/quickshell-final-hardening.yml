@@ -24,26 +24,17 @@ jobs:
 
           network = Path('config/quickshell/awtarchy/NetworkMenu.qml')
           text = network.read_text()
-          old = '''    Component.onCompleted: {
-              root.vpnPrivacyAction = "unlock";
-              vpnPrivacyProcess.exec([root.sensitiveCaptureScript, "network", "unlock"]);
-          }
-          '''.replace('\n          ', '\n').lstrip('\n')
-          new = '''    Component.onCompleted: {
-              networkWindow.visible = false;
-              root.vpnPrivacyAction = "unlock";
-              vpnPrivacyProcess.exec([root.sensitiveCaptureScript, "network", "unlock"]);
-          }
-          '''.replace('\n          ', '\n').lstrip('\n')
+          old = '    Component.onCompleted: {\n        root.vpnPrivacyAction = "unlock";\n'
+          new = '    Component.onCompleted: {\n        networkWindow.visible = false;\n        root.vpnPrivacyAction = "unlock";\n'
           if old in text:
               text = text.replace(old, new, 1)
               network.write_text(text)
           elif new not in text:
-              raise SystemExit('Network startup privacy marker changed unexpectedly')
+              raise SystemExit('Network startup privacy anchor changed unexpectedly')
 
           launcher = Path('config/quickshell/awtarchy/Launcher.qml')
           text = launcher.read_text()
-          ugly = '''                        CaptureEyeButton {
+          old = '''                        CaptureEyeButton {
                     captureAllowed: root.captureAllowed
                     textSize: 13
                     onClicked: {
@@ -51,21 +42,21 @@ jobs:
                         Qt.callLater(() => search.forceActiveFocus());
                     }
                 }
-          '''.replace('\n          ', '\n').lstrip('\n')
-          clean = '''                        CaptureEyeButton {
-                              captureAllowed: root.captureAllowed
-                              textSize: 13
-                              onClicked: {
-                                  root.toggleCaptureAllowed();
-                                  Qt.callLater(() => search.forceActiveFocus());
-                              }
-                          }
-          '''.replace('\n          ', '\n').lstrip('\n')
-          if ugly in text:
-              text = text.replace(ugly, clean, 1)
+'''
+          new = '''                        CaptureEyeButton {
+                            captureAllowed: root.captureAllowed
+                            textSize: 13
+                            onClicked: {
+                                root.toggleCaptureAllowed();
+                                Qt.callLater(() => search.forceActiveFocus());
+                            }
+                        }
+'''
+          if old in text:
+              text = text.replace(old, new, 1)
               launcher.write_text(text)
-          elif clean not in text:
-              raise SystemExit('Launcher capture eye marker changed unexpectedly')
+          elif new not in text:
+              raise SystemExit('Launcher capture eye anchor changed unexpectedly')
           PY
 
           if git diff --quiet -- config/quickshell/awtarchy/NetworkMenu.qml config/quickshell/awtarchy/Launcher.qml; then
