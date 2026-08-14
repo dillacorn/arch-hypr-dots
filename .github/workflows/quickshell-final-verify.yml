@@ -1,5 +1,5 @@
 name: Final Quickshell Verification
-# Final verification trigger after VPN privacy remap hardening.
+# Final verification trigger after managed privacy hashes were validated.
 
 on:
   push:
