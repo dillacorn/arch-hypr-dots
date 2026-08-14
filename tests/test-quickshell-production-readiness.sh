@@ -39,7 +39,6 @@ done
 INSTALLER="${REPO_ROOT}/awtarchy-install.sh"
 WORKFLOW="${REPO_ROOT}/.github/workflows/validate-awtarchy.yml"
 LAUNCHER="${REPO_ROOT}/local/bin/awtarchy"
-RUNTIME="${REPO_ROOT}/local/share/awtarchy/awtarchy-runtime.sh"
 WIREGUARD="${REPO_ROOT}/config/hypr/scripts/quickshell_wireguard.sh"
 SHELL_MANAGER="${REPO_ROOT}/config/hypr/scripts/quickshell.sh"
 APP_STATE="${REPO_ROOT}/config/hypr/scripts/quickshell_application_state.sh"
@@ -73,6 +72,42 @@ env "${COMMON_ENV[@]}" bash "$LAUNCHER" help >/dev/null
 env "${COMMON_ENV[@]}" bash "$LAUNCHER" version >/dev/null
 [[ ! -e "${HOME_DIR}/vpn" ]] || fail 'awtarchy version created ~/vpn'
 
+# The main updater can refresh before a matching Quickshell release is
+# published. An already-installed pre-Quickshell release must become a safe
+# no-op instead of entering the Quickshell migration runtime.
+assert_contains "$LAUNCHER" 'release_has_quickshell_payload'
+assert_contains "$LAUNCHER" 'config_release_ready_or_noop'
+mkdir -p -- \
+  "${HOME_DIR}/.local/state/awtarchy" \
+  "${HOME_DIR}/.local/share/awtarchy"
+printf 'tag=v2.0.0-1\n' >"${HOME_DIR}/.local/state/awtarchy/config-version"
+cat >"${HOME_DIR}/.local/share/awtarchy/awtarchy-runtime.sh" <<EOF_RUNTIME
+#!/usr/bin/env bash
+printf 'runtime invoked\n' >"${TMPD}/runtime-invoked"
+exit 99
+EOF_RUNTIME
+chmod 0755 "${HOME_DIR}/.local/share/awtarchy/awtarchy-runtime.sh"
+cat >"${FAKE_BIN}/curl" <<'EOF_RELEASE_CURL'
+#!/usr/bin/env bash
+case " $* " in
+  *'/releases/latest'*)
+    printf '%s\n' '{"tag_name":"v2.0.0-1"}'
+    ;;
+  *'quickshell-managed-history.sha256'*)
+    exit 22
+    ;;
+  *)
+    exit 22
+    ;;
+esac
+EOF_RELEASE_CURL
+chmod 0755 "${FAKE_BIN}/curl"
+
+env "${COMMON_ENV[@]}" bash "$LAUNCHER" update >"${TMPD}/pre-quickshell.out"
+[[ ! -e "${TMPD}/runtime-invoked" ]] || fail 'pre-Quickshell release entered the migration runtime'
+grep -Fq 'predates the Quickshell migration and is already installed' "${TMPD}/pre-quickshell.out" \
+  || fail 'pre-Quickshell release guard did not report its safe no-op'
+
 # User-provided WireGuard profiles must not inject root command hooks, and the
 # elevated executable must be the trusted Arch wireguard-tools path.
 assert_contains "$WIREGUARD" 'WG_QUICK="/usr/bin/wg-quick"'
@@ -102,27 +137,5 @@ assert_contains "$SHELL_MANAGER" 'STATE_LOCK_FILE="${STATE_FILE}.lock"'
 assert_contains "$SHELL_MANAGER" 'flock -x'
 assert_contains "$APP_STATE" 'STATE_LOCK_FILE="${STATE_FILE}.lock"'
 assert_contains "$APP_STATE" 'flock -x'
-
-# A production updater can self-refresh before a matching Quickshell release is
-# published. It must detect a pre-Quickshell release before invoking migration
-# normalization or retiring Waybar/Fuzzel-era files.
-assert_contains "$RUNTIME" 'quickshell_update_target_ready'
-python3 - "$RUNTIME" <<'PY'
-from pathlib import Path
-import sys
-
-text = Path(sys.argv[1]).read_text(encoding="utf-8")
-main_start = text.index('main() {', text.index('update_reset_backup_main()'))
-main_end = text.index('\nmain "$@"', main_start)
-main = text[main_start:main_end]
-
-gate = main.find('quickshell_update_target_ready')
-build = main.find('build_target_home "$repo_dir" "$target_home"')
-prepare = main.find('prepare_quickshell_update_target "$target_home"')
-if gate < 0 or build < 0 or prepare < 0:
-    raise SystemExit('FAIL: updater production-readiness gate or migration calls are missing')
-if not (gate < build and gate < prepare):
-    raise SystemExit('FAIL: updater checks Quickshell release readiness too late')
-PY
 
 printf 'PASS: Quickshell production readiness regressions\n'
