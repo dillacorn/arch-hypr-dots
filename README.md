@@ -51,21 +51,11 @@ awtarchy targets users who prefer TTY login, direct shell interaction, and manua
 Awtarchy uses two user-facing entrypoints:
 
 ```text
-awtarchy-install.sh    Initial installation only
-awtarchy               Updates, config maintenance, version checks, and backup cleanup
+awtarchy-install.sh    Initial installation or intentional full reinstall
+awtarchy               Updates and maintenance after installation
 ```
 
-The installer deploys the permanent command to:
-
-```text
-~/.local/bin/awtarchy
-```
-
-Its internal runtime is stored at:
-
-```text
-~/.local/share/awtarchy/awtarchy-runtime.sh
-```
+The installed command lives at `~/.local/bin/awtarchy`. Run `awtarchy help` for the full command and option list.
 
 The installer and maintenance command use built-in terminal menus without depending on `fzf`, `gum`, `dialog`, or `whiptail`.
 
@@ -79,7 +69,7 @@ Then install Git:
 sudo pacman -S git --noconfirm
 ```
 
-Clone the repo and start the install-only entrypoint:
+Clone the repo and run the installer:
 
 ```bash
 git clone https://github.com/dillacorn/awtarchy
@@ -87,17 +77,15 @@ cd awtarchy
 sudo ./awtarchy-install.sh
 ```
 
-After installation, open a new shell and run:
+After installation:
 
 ```bash
 awtarchy
 ```
 
-### Existing-install detection
+### Existing installations
 
-When `awtarchy-install.sh` finds the installed command, it stops before rerunning the installer and prints the maintenance commands.
-
-When it detects a legacy Awtarchy installation without the command, it installs only `~/.local/bin/awtarchy`, the internal runtime, and version state. It does not reinstall packages or replace managed configs.
+If the installer finds an existing Awtarchy installation, it installs or refreshes the maintenance command without reinstalling packages or replacing managed configs.
 
 To intentionally run the complete installer again:
 
@@ -105,107 +93,7 @@ To intentionally run the complete installer again:
 sudo ./awtarchy-install.sh --reinstall
 ```
 
-## 🧪 Installer Dry-run
-
-Dry-run lets you test the installer questionnaire and review the install plan without changing the system:
-
-```bash
-./awtarchy-install.sh --dry-run
-```
-
-For a detected legacy installation, dry-run reports the command migration without installing it.
-
-## 🧭 Maintenance Menu
-
-Running the installed command without arguments opens the maintenance menu:
-
-```bash
-awtarchy
-```
-
-Available actions:
-
-```text
-Refresh Awtarchy updater from main
-Update configs (preserve personal modifications)
-Reset configs (clean-slate managed files)
-Review config changes without applying
-Clean Awtarchy backup files
-Version information
-Exit
-```
-
-Installation is deliberately excluded from this menu. Use `awtarchy-install.sh` only when performing an initial installation or intentional full reinstall.
-
-## ⚙️ Installer Behavior
-
-The installer collects choices at the beginning before making changes.
-
-It lets you choose:
-
-* system type: laptop or desktop
-* install sections
-* Arch repo package categories
-* AUR packages
-* Flatpak apps
-* shell-file overwrite behavior
-
-Before a live install starts, awtarchy shows a final review screen.
-
-Arch package categories can be edited from the package menu:
-
-```text
-Enter/e = edit category
-Space = select/clear category
-b = back
-Up/Down = move
-```
-
-## 🔄 Updating Awtarchy
-
-The installed command refreshes its launcher and runtime from the current `main`
-head before update, reset, and review operations. Managed configs update only
-from the latest published release unless an explicit release tag is selected.
-
-Update only the installed command and runtime:
-
-```bash
-awtarchy self-update
-```
-
-Show the installed command release, installed config release, and latest release:
-
-```bash
-awtarchy version
-```
-
-Update configs while preserving personal modifications:
-
-```bash
-awtarchy update
-```
-
-Reset managed configs to the release defaults:
-
-```bash
-awtarchy reset
-```
-
-Preview config changes without applying them:
-
-```bash
-awtarchy review
-```
-
-Use a specific release tag:
-
-```bash
-awtarchy update --tag v1.0.0
-```
-
-### Existing installation migration
-
-Existing users need one final repository-based migration to install the new command:
+Existing users migrating from the older repository-only updater can run:
 
 ```bash
 cd ~/awtarchy
@@ -213,41 +101,34 @@ git pull --ff-only
 sudo ./awtarchy-install.sh
 ```
 
-The installer detects the legacy Awtarchy state and performs a command-only migration. Existing packages and managed configs are left untouched. After migration, rerunning `awtarchy-install.sh` prints the maintenance commands and exits unless `--reinstall` is supplied.
+### Dry-run
 
-## 🧹 Clean Backup Files
-
-The backup cleaner scans common awtarchy-managed paths under your home directory, lists matching `.backup` files, and lets you mark files as `[KEEP]` before deleting the rest.
-
-Interactive cleaner:
+Review the installer questionnaire and install plan without changing the system:
 
 ```bash
-awtarchy clean-backups
+./awtarchy-install.sh --dry-run
 ```
 
-List only, no prompt, no deletes:
+## ⚙️ Installer Behavior
 
-```bash
-awtarchy clean-backups --dry-run
+The installer collects choices before making changes. It lets you choose the system type, install sections, Arch package categories, AUR packages, Flatpak apps, and shell-file overwrite behavior, then shows a final review screen before a live install starts.
+
+## 🧭 Maintenance
+
+Run `awtarchy` with no arguments for the interactive maintenance menu.
+
+Common commands:
+
+```text
+awtarchy update          Update configs and preserve personal modifications
+awtarchy reset           Reset managed configs to release defaults
+awtarchy review          Preview managed config changes without applying them
+awtarchy version         Show updater and config release status
+awtarchy clean-backups   Review and clean Awtarchy backup files
+awtarchy help            Show all commands and options
 ```
 
-Delete without prompting:
-
-```bash
-awtarchy clean-backups --yes
-```
-
-Only match backups older than 14 days:
-
-```bash
-awtarchy clean-backups --older-than 14
-```
-
-Archive matches before deletion:
-
-```bash
-awtarchy clean-backups --archive "$HOME/awtarchy-backups.tar.gz"
-```
+The `awtarchy` launcher/runtime refreshes from the current `main` head. Managed configs update from published releases so the updater and config release remain separate.
 
 ## 🎨 Wallpaper Collections
 
