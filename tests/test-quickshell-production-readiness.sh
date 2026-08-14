@@ -47,6 +47,10 @@ assert_not_contains "$INSTALLER" '--quickshell-command'
 assert_not_contains "$INSTALLER" 'awtarchy-quickshell'
 assert_not_contains "$WORKFLOW" 'quickshell-conversion-testing'
 assert_not_contains "$WORKFLOW" 'local/bin/awtarchy-quickshell'
+assert_contains "$LAUNCHER" 'git-testing'
+assert_contains "$LAUNCHER" 'Git testing'
+assert_contains "$LAUNCHER" 'branch'
+assert_contains "$LAUNCHER" 'revision'
 
 # Help and version are read-only inspection commands. They must not create ~/vpn.
 HOME_DIR="${TMPD}/home"
