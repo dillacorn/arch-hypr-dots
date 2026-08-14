@@ -19,6 +19,12 @@ require_contains() {
     grep -Fq -- "$needle" "$file" || fail "${file#$ROOT_DIR/} missing: $needle"
 }
 
+require_sequence() {
+    local file="$1" needle="$2" content
+    content="$(<"$file")"
+    [[ "$content" == *"$needle"* ]] || fail "${file#$ROOT_DIR/} missing ordered sequence"
+}
+
 require_not_contains() {
     local file="$1" needle="$2"
     if grep -Fq -- "$needle" "$file"; then
@@ -88,7 +94,7 @@ require_contains "$network_menu" 'root.vpnOpen = true;'
 require_contains "$network_menu" 'root.vpnOpen = false;'
 require_contains "$network_menu" 'vpnPrivacyProcess.exec([root.sensitiveCaptureScript, "network", "unlock"])'
 require_contains "$network_menu" 'locked: root.vpnOpen || root.vpnPrivacyOpening'
-require_contains "$network_menu" $'Component.onCompleted: {\n        networkWindow.visible = false;\n        root.vpnPrivacyAction = "unlock";'
+require_sequence "$network_menu" $'Component.onCompleted: {\n        networkWindow.visible = false;\n        root.vpnPrivacyAction = "unlock";'
 require_contains "$runtime_rules" 'network_sensitive_locked=true'
 require_contains "$runtime_rules" '[[ -e "$NETWORK_SENSITIVE_LOCK" ]] && network_sensitive_locked=true'
 require_contains "$runtime_rules" 'if [[ "$network_sensitive_locked" == true ]]; then'
