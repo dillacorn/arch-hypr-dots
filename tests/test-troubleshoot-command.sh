@@ -17,9 +17,7 @@ marker="${TMP}/network-called"
 mkdir -p \
   "$home/.local/bin" \
   "$home/.local/share/awtarchy" \
-  "$home/.local/share/awtarchy-quickshell" \
   "$home/.local/state/awtarchy/logs" \
-  "$home/.local/state/awtarchy-quickshell" \
   "$home/.local/state/awtarchy/baseline/home/.config/hypr" \
   "$home/.config/hypr/scripts" \
   "$home/.config/quickshell/awtarchy" \
@@ -27,9 +25,7 @@ mkdir -p \
   "$fakebin"
 
 install -m 0755 "$ROOT/local/bin/awtarchy" "$home/.local/bin/awtarchy"
-install -m 0755 "$ROOT/local/bin/awtarchy-quickshell" "$home/.local/bin/awtarchy-quickshell"
 install -m 0755 "$ROOT/local/share/awtarchy/awtarchy-runtime.sh" "$home/.local/share/awtarchy/awtarchy-runtime.sh"
-install -m 0755 "$ROOT/local/share/awtarchy/awtarchy-runtime.sh" "$home/.local/share/awtarchy-quickshell/awtarchy-runtime.sh"
 
 cat >"$home/.config/hypr/hyprland.lua" <<'EOF'
 local wlogout = "~/.config/hypr/scripts/wlogout_toggle.sh"
@@ -107,41 +103,28 @@ common_env=(
   "PATH=${fakebin}:${home}/.local/bin:/usr/bin:/bin"
 )
 
-stable_out="${TMP}/stable.out"
-beta_out="${TMP}/beta.out"
-env "${common_env[@]}" "$home/.local/bin/awtarchy" troubleshoot >"$stable_out"
-[[ ! -e "$home/vpn" ]] || fail 'stable troubleshoot created ~/vpn'
-[[ ! -e "$marker" ]] || fail 'stable troubleshoot accessed the network'
+out="${TMP}/troubleshoot.out"
+env "${common_env[@]}" "$home/.local/bin/awtarchy" troubleshoot >"$out"
+[[ ! -e "$home/vpn" ]] || fail 'troubleshoot created ~/vpn'
+[[ ! -e "$marker" ]] || fail 'troubleshoot accessed the network'
 
-env "${common_env[@]}" "$home/.local/bin/awtarchy-quickshell" troubleshoot >"$beta_out"
-[[ ! -e "$marker" ]] || fail 'beta troubleshoot accessed the network'
-
-for out in "$stable_out" "$beta_out"; do
-  grep -Fq 'Awtarchy troubleshooting report' "$out" || fail "missing report header in $out"
-  grep -Fq 'SUPER + P' "$out" || fail "missing Hyprland bind evidence in $out"
-  grep -Fq 'wlogout_toggle.sh' "$out" || fail "missing retired helper evidence in $out"
-  grep -Fq 'quickshell_power_menu.sh' "$out" || fail "missing current helper evidence in $out"
-  grep -Fq 'fixture quickshell log' "$out" || fail "missing Quickshell log in $out"
-  grep -Fq 'fixture awtarchy quickshell journal line' "$out" || fail "missing journal evidence in $out"
-  grep -Fq 'No configuration, packages, services, or shell processes were changed by this command.' "$out" \
-    || fail "missing read-only statement in $out"
-done
-
-grep -Fq 'command=awtarchy' "$stable_out" || fail 'stable command label missing'
-grep -Fq 'command=awtarchy-quickshell' "$beta_out" || fail 'beta command label missing'
+grep -Fq 'Awtarchy troubleshooting report' "$out" || fail 'missing report header'
+grep -Fq 'SUPER + P' "$out" || fail 'missing Hyprland bind evidence'
+grep -Fq 'wlogout_toggle.sh' "$out" || fail 'missing retired helper evidence'
+grep -Fq 'quickshell_power_menu.sh' "$out" || fail 'missing current helper evidence'
+grep -Fq 'fixture quickshell log' "$out" || fail 'missing Quickshell log'
+grep -Fq 'fixture awtarchy quickshell journal line' "$out" || fail 'missing journal evidence'
+grep -Fq 'No configuration, packages, services, or shell processes were changed by this command.' "$out" \
+  || fail 'missing read-only statement'
+grep -Fq 'command=awtarchy' "$out" || fail 'production command label missing'
 
 compgen -G "$home/.local/state/awtarchy/logs/troubleshoot-*.log" >/dev/null \
-  || fail 'stable troubleshoot report was not saved'
-compgen -G "$home/.local/state/awtarchy-quickshell/logs/troubleshoot-*.log" >/dev/null \
-  || fail 'beta troubleshoot report was not saved'
+  || fail 'troubleshoot report was not saved'
 
 set +e
 env "${common_env[@]}" "$home/.local/bin/awtarchy" troubleshoot --bad >/dev/null 2>&1
-stable_rc=$?
-env "${common_env[@]}" "$home/.local/bin/awtarchy-quickshell" troubleshoot --bad >/dev/null 2>&1
-beta_rc=$?
+rc=$?
 set -e
-(( stable_rc != 0 )) || fail 'stable troubleshoot accepted an option'
-(( beta_rc != 0 )) || fail 'beta troubleshoot accepted an option'
+(( rc != 0 )) || fail 'troubleshoot accepted an option'
 
 printf 'Troubleshoot command tests passed.\n'
