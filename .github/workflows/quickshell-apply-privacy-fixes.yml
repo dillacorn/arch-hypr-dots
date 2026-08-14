@@ -1,0 +1,72 @@
+name: Apply Quickshell Privacy Fixes
+
+on:
+  push:
+    branches: [quickshell-conversion-testing]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Apply reviewed privacy and Num Lock patch
+        id: patch
+        run: |
+          set -euo pipefail
+          python3 tests/apply-quickshell-privacy-fixes.py
+          if git diff --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify focused regression before commit
+        if: steps.patch.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          bash -n config/hypr/scripts/quickshell_sensitive_capture.sh
+          bash -n config/hypr/scripts/quickshell_runtime_rules.sh
+          bash -n config/hypr/scripts/quickshell_wireguard.sh
+          bash tests/test-quickshell-capture-privacy.sh
+
+      - name: Refresh managed history for changed stock files
+        if: steps.patch.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          manifest='local/share/awtarchy/quickshell-managed-history.sha256'
+          printf '\n# Flyout capture privacy and Num Lock reliability update.\n' >> "$manifest"
+          while IFS='|' read -r source managed; do
+            hash="$(sha256sum "$source" | awk '{print $1}')"
+            line="${hash}	${managed}"
+            grep -Fqx -- "$line" "$manifest" || printf '%b\n' "$line" >> "$manifest"
+          done <<'EOF'
+          config/quickshell/awtarchy/CaptureEyeButton.qml|.config/quickshell/awtarchy/CaptureEyeButton.qml
+          config/quickshell/awtarchy/ClipboardMenu.qml|.config/quickshell/awtarchy/ClipboardMenu.qml
+          config/quickshell/awtarchy/Notifications.qml|.config/quickshell/awtarchy/Notifications.qml
+          config/quickshell/awtarchy/QuickSettings.qml|.config/quickshell/awtarchy/QuickSettings.qml
+          config/quickshell/awtarchy/NetworkMenu.qml|.config/quickshell/awtarchy/NetworkMenu.qml
+          config/quickshell/awtarchy/BluetoothMenu.qml|.config/quickshell/awtarchy/BluetoothMenu.qml
+          config/quickshell/awtarchy/FlyoutSettings.qml|.config/quickshell/awtarchy/FlyoutSettings.qml
+          config/quickshell/awtarchy/NetworkVpnSection.qml|.config/quickshell/awtarchy/NetworkVpnSection.qml
+          config/quickshell/awtarchy/NumlockSessionTweak.qml|.config/quickshell/awtarchy/NumlockSessionTweak.qml
+          config/quickshell/awtarchy/shell.qml|.config/quickshell/awtarchy/shell.qml
+          config/hypr/scripts/quickshell_sensitive_capture.sh|.config/hypr/scripts/quickshell_sensitive_capture.sh
+          config/hypr/scripts/quickshell_runtime_rules.sh|.config/hypr/scripts/quickshell_runtime_rules.sh
+          config/hypr/scripts/quickshell_wireguard.sh|.config/hypr/scripts/quickshell_wireguard.sh
+          EOF
+
+      - name: Commit applied patch
+        if: steps.patch.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add config local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'Harden flyout capture privacy and Num Lock tweak'
+          git push origin HEAD:quickshell-conversion-testing
