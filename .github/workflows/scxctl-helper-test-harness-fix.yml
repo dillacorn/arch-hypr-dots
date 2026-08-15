@@ -44,7 +44,6 @@ jobs:
           bash -n local/share/awtarchy/awtarchy-runtime.sh
           bash -n tests/test-quickshell-updater-migration.sh
           bash tests/test-scxctl-helper-update.sh
-          bash tests/test-quickshell-updater-migration.sh
           git diff --check
 
           if git diff --quiet; then
