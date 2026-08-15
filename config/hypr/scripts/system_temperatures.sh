@@ -165,6 +165,17 @@ emit_gpu() {
     done
   done
 
+  if [[ -z "$best" ]] && command -v nvidia-smi >/dev/null 2>&1; then
+    while IFS= read -r c; do
+      c="$(printf '%s' "$c" | sanitize)"
+      [[ "$c" =~ ^-?[0-9]+$ ]] || continue
+      (( c >= -20 && c <= 150 )) || continue
+      if [[ -z "$best" ]] || (( c > best )); then
+        best="$c"
+      fi
+    done < <(nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits 2>/dev/null || true)
+  fi
+
   if [[ -n "$best" ]]; then
     printf 'GPU_TEMP %s°\n' "$best"
   else
