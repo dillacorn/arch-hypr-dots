@@ -75,6 +75,37 @@ init_target() {
   GIT_TEST_STATE_FILE="${STATE_HOME}/awtarchy/git-testing"
 }
 
+cleanup_legacy_quickshell_command() {
+  local legacy_launcher="${TARGET_HOME}/.local/bin/awtarchy-quickshell"
+  local legacy_data="${DATA_HOME}/awtarchy-quickshell"
+  local legacy_state="${STATE_HOME}/awtarchy-quickshell"
+  local marker='Temporary branch-only maintenance command for the Quickshell migration.'
+  local recognized=0 removed=0
+
+  if [[ -f $legacy_launcher && ! -L $legacy_launcher ]]; then
+    if grep -Fq -- "$marker" "$legacy_launcher"; then
+      recognized=1
+      rm -f -- "$legacy_launcher"
+      removed=1
+    fi
+  elif [[ ! -e $legacy_launcher && ! -L $legacy_launcher ]]; then
+    recognized=1
+  fi
+
+  if (( recognized == 1 )); then
+    if [[ -e $legacy_data || -L $legacy_data ]]; then
+      rm -rf -- "$legacy_data"
+      removed=1
+    fi
+    if [[ -e $legacy_state || -L $legacy_state ]]; then
+      rm -rf -- "$legacy_state"
+      removed=1
+    fi
+  fi
+
+  (( removed == 0 )) || log "Removed obsolete awtarchy-quickshell testing command state."
+}
+
 ensure_vpn_directory() {
   local vpn_dir="${TARGET_HOME}/vpn"
   if [[ ${EUID} -eq 0 && $TARGET_USER != root ]]; then
@@ -323,8 +354,6 @@ protect_git_state_before_updater_refresh() {
   local remote=""
   config_is_git_testing || return 0
 
-  # An updater from a pre-Quickshell main does not understand integrated Git
-  # state. Verify the selected stable target before allowing self-refresh.
   config_release_ready_or_noop "$@"
   remote="$(updater_branch_head)" \
     || die "Could not determine the current main updater before leaving Git-testing state."
@@ -1027,6 +1056,7 @@ main() {
       ;;
   esac
 
+  cleanup_legacy_quickshell_command
   ensure_vpn_directory
 
   case "${1:-}" in
