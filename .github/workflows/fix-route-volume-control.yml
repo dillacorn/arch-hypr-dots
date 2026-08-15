@@ -20,7 +20,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected=36be27984b10fcc72362ad873c961eea598f668e
+          expected=a96f954714cacf4e3466f2f42a7ccbf410c8cd96
           actual="$(git rev-parse HEAD^)"
           [[ "$actual" == "$expected" ]] || {
             printf 'Expected parent %s, got %s\n' "$expected" "$actual" >&2
@@ -32,6 +32,13 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/fix-route-volume-control.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("config/hypr/scripts/quickshell_volume.sh")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace('route[\\"index\\"]', "route['index']")
+          path.write_text(text, encoding="utf-8")
+          PY
 
       - name: Refresh managed history
         shell: bash
