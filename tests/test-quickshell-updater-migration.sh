@@ -745,7 +745,6 @@ update_env=(
   "AWTARCHY_TEST_QS_STATE=${TMP}/qs.state"
   "AWTARCHY_TEST_QS_FAIL_FILE=${TMP}/qs.fail"
   "AWTARCHY_TEST_QS_FD_LEAK_FILE=${TMP}/qs-fd-leak"
-  "AWTARCHY_TEST_QS_STALL_QUIT=1"
   "AWTARCHY_TEST_QS_KILL_LOG=${TMP}/qs-kill.log"
   "AWTARCHY_TEST_HYPRIDLE_STATE=${TMP}/hypridle.state"
   "AWTARCHY_TEST_HYPRIDLE_PID=${TMP}/hypridle.pid"
@@ -851,8 +850,8 @@ grep -Fxq -- "-c ${home}/.config/hypr/hypridle.conf" "${TMP}/hypridle.args" \
   || fail "Hypridle restart did not restore the idle-hidden bar state"
 grep -Fq 'Restarting Hypridle to load updated idle callbacks...' "${TMP}/update.out" \
   || fail "updater did not report the Hypridle callback refresh"
-grep -Eq '^kill --pid [0-9]+$' "${TMP}/qs-kill.log" \
-  || fail "Quickshell manager did not request shutdown for the exact running PID"
+[[ ! -s ${TMP}/qs-kill.log ]] \
+  || fail "Quickshell manager unexpectedly used the crash-prone qs kill teardown"
 grep -Fxq "tag=quickshell-conversion-testing@${TEST_COMMIT}" \
   "$home/.local/state/awtarchy/config-version" \
   || fail "config version did not record the exact testing commit"
