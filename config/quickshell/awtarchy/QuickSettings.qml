@@ -1028,7 +1028,7 @@ Singleton {
 
                                 Text {
                                     Layout.fillWidth: true
-                                    text: "Global limit for Wiremix and bar volume scrolling · click bar to set · range 10–200%"
+                                    text: "Global limit for Wiremix and bar volume scrolling · click bar to set · range 100–200%"
                                     color: Theme.muted
                                     font.family: Theme.fontFamily
                                     font.pixelSize: root.scaledText(8)

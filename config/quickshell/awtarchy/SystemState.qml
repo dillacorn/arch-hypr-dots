@@ -113,8 +113,9 @@ Singleton {
         if (!sink || !sink.audio)
             return;
 
-        if (sink.audio.volume > 1.0)
-            sink.audio.volume = 1.0;
+        const maximum = AudioLimitState.limitPercent / 100;
+        if (sink.audio.volume > maximum)
+            sink.audio.volume = maximum;
     }
 
     function plainTemp(text) {

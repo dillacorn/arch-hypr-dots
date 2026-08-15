@@ -12,7 +12,7 @@ Singleton {
         || (Quickshell.env("HOME") + "/.config")
     readonly property string configPath: configHome + "/wiremix/wiremix.toml"
     readonly property string volumeScript: configHome + "/hypr/scripts/quickshell_volume.sh"
-    readonly property int minimumPercent: 10
+    readonly property int minimumPercent: 100
     readonly property int maximumPercent: 200
     readonly property int stepPercent: 5
     property int limitPercent: 100
