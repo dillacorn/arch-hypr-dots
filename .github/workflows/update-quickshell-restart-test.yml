@@ -14,13 +14,13 @@ jobs:
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Verify guarded staging commit
         shell: bash
         run: |
           set -euo pipefail
-          expected=fbf8e78ee7ce644587395dfd7d978239bfd6db7c
+          expected=5e40a44a4aa99df9d43c662a1ffe671df1b4a1c8
           actual="$(git rev-parse HEAD^)"
           [[ "$actual" == "$expected" ]] || exit 1
 
