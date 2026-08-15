@@ -757,7 +757,7 @@ replace_quickshell_ui_from_baseline() {
 reconcile_quickshell_ui_after_update() {
   local baseline_root="${STATE_HOME}/awtarchy/baseline/home"
   local stamp="$(date +%Y%m%d-%H%M%S)" rel="" baseline="" live=""
-  local choice="" per_file="" replaced=0
+  local choice="" per_file="" replaced=0 manager=""
   local -a ui_files=(
     ".config/quickshell/awtarchy/AudioLimitState.qml"
     ".config/quickshell/awtarchy/Bar.qml"
@@ -824,9 +824,11 @@ reconcile_quickshell_ui_after_update() {
   esac
 
   if (( replaced == 1 )); then
-    local manager="${TARGET_HOME}/.config/hypr/scripts/quickshell.sh"
+    manager="${TARGET_HOME}/.config/hypr/scripts/quickshell.sh"
     if [[ -f "$manager" && ! -L "$manager" ]]; then
-      bash "$manager" restart || warn=''
+      if ! bash "$manager" restart; then
+        printf 'WARN: Quickshell UI files were updated, but Quickshell could not be restarted automatically.\n' >&2
+      fi
     fi
   fi
 }
@@ -1204,6 +1206,7 @@ main() {
       exec_runtime update-reset-backup "$@"
       ;;
     git)
+      ensure_latest_updater "$@"
       shift
       if (( $# == 0 )); then
         git_menu
