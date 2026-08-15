@@ -5799,10 +5799,15 @@ def identity(path):
 
 new_paths = paths(target)
 old_paths = set()
+legacy_nonmanaged_baseline_paths = {
+    ".local/state/awtarchy/active-theme",
+}
 if manifest.is_file():
     for line in manifest.read_text().splitlines():
         rel = line.strip()
         if not rel:
+            continue
+        if rel in legacy_nonmanaged_baseline_paths:
             continue
         if not valid_rel(rel):
             raise SystemExit(f"unsafe managed baseline path: {rel}")
