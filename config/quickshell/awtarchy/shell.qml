@@ -150,6 +150,7 @@ ShellRoot {
     readonly property bool quickSettingsReady: QuickSettings !== null
     readonly property bool numlockTweakReady: NumlockSessionTweak.enabled || !NumlockSessionTweak.enabled
     readonly property bool networkReady: NetworkMenu !== null
+    readonly property bool bluetoothPowerStateReady: BluetoothPowerState !== null
     readonly property bool bluetoothReady: BluetoothMenu !== null
     readonly property bool powerReady: PowerMenu !== null
     readonly property bool themesReady: ThemePicker !== null
