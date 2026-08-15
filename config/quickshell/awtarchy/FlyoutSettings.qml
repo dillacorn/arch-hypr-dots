@@ -58,7 +58,8 @@ Item {
     signal themePickerRequested()
 
     implicitHeight: copyOpen ? 104
-        : 139 + (surfaceLabel === "Quick Settings" ? barSection.implicitHeight + 6 : 0)
+        : 139 + (surfaceLabel === "Quick Settings"
+            ? volumeLimitRow.implicitHeight + barSection.implicitHeight + 9 : 0)
 
     function targetSelected(name) {
         const dependency = copySelectionRevision;
@@ -460,6 +461,61 @@ Item {
             }
 
             Item { Layout.fillWidth: true }
+        }
+
+        RowLayout {
+            id: volumeLimitRow
+            Layout.fillWidth: true
+            Layout.preferredHeight: 28
+            spacing: 6
+            visible: !root.copyOpen && root.surfaceLabel === "Quick Settings"
+
+            Text {
+                Layout.fillWidth: true
+                text: "Maximum output volume"
+                color: Theme.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: 11
+            }
+
+            SettingsButton {
+                label: "−"
+                available: AudioLimitState.limitPercent > AudioLimitState.minimumPercent
+                textSize: 11
+                onClicked: AudioLimitState.setLimit(
+                    AudioLimitState.limitPercent - AudioLimitState.stepPercent)
+            }
+
+            Text {
+                Layout.preferredWidth: 46
+                text: AudioLimitState.limitPercent + "%"
+                color: Theme.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: 10
+                horizontalAlignment: Text.AlignHCenter
+            }
+
+            SettingsButton {
+                label: "+"
+                available: AudioLimitState.limitPercent < AudioLimitState.maximumPercent
+                textSize: 11
+                onClicked: AudioLimitState.setLimit(
+                    AudioLimitState.limitPercent + AudioLimitState.stepPercent)
+            }
+
+            Text {
+                text: "Wiremix + bar scroll"
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: 9
+            }
+
+            SettingsButton {
+                label: "Reset"
+                available: AudioLimitState.limitPercent !== 100
+                textSize: 9
+                onClicked: AudioLimitState.setLimit(100)
+            }
         }
 
         BarSettingsSection {

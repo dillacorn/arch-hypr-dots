@@ -208,4 +208,12 @@ assert_contains "$SHELL_MANAGER" 'flock -x'
 assert_contains "$APP_STATE" 'STATE_LOCK_FILE="${STATE_FILE}.lock"'
 assert_contains "$APP_STATE" 'flock -x'
 
+assert_contains "$APP_STATE" 'set-notification-popup-limit'
+assert_contains "$APP_STATE" '{popup_limit:$popup_limit}'
+assert_not_contains "$APP_STATE" '.notification_popup_limit = $popup_limit'
+assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/FlyoutSettings.qml" 'text: "Maximum output volume"'
+assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/Notifications.qml" 'persisted.popupLimit'
+assert_not_contains "${REPO_ROOT}/config/quickshell/awtarchy/Notifications.qml" 'notification-popup-limits.json'
+assert_contains "$LAUNCHER" 'Update to current Awtarchy UI files and create backups (recommended)'
+
 printf 'PASS: Quickshell production readiness regressions\n'

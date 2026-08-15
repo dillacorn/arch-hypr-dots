@@ -792,11 +792,12 @@ reconcile_quickshell_ui_after_update() {
     return 0
   fi
 
-  printf '  1. Keep all local UI files\n' >/dev/tty
-  printf '  2. Use current Awtarchy versions for all files above and create backups\n' >/dev/tty
+  printf '  1. Keep my modified UI code and skip these Awtarchy UI updates\n' >/dev/tty
+  printf '  2. Update to current Awtarchy UI files and create backups (recommended)\n' >/dev/tty
   printf '  3. Review each file individually\n' >/dev/tty
-  printf 'Choose [1]: ' >/dev/tty
-  IFS= read -r choice </dev/tty || choice=1
+  printf 'Choose [2]: ' >/dev/tty
+  IFS= read -r choice </dev/tty || choice=2
+  [[ -n $choice ]] || choice=2
 
   case "$choice" in
     2)
@@ -819,7 +820,7 @@ reconcile_quickshell_ui_after_update() {
       done
       ;;
     *)
-      printf 'Kept local Quickshell UI files.\n'
+      printf 'Kept modified local Quickshell UI code; current Awtarchy UI updates were skipped.\n'
       return 0
       ;;
   esac
