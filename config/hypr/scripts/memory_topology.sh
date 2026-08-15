@@ -55,6 +55,21 @@ from_dmidecode() {
   parse_dmidecode "$data"
 }
 
+from_cached_sudo_dmidecode() {
+  command -v sudo >/dev/null 2>&1 || return 1
+  command -v dmidecode >/dev/null 2>&1 || return 1
+
+  local data result
+  data="$(sudo -n dmidecode -t 17 2>/dev/null)" || return 1
+  [[ -n "$data" ]] || return 1
+  result="$(parse_dmidecode "$data")" || return 1
+
+  install -d -m 0755 "$CACHE_DIR"
+  printf '%s\n' "$result" > "$CACHE_FILE"
+  chmod 0644 "$CACHE_FILE"
+  printf '%s\n' "$result"
+}
+
 from_cache() {
   [[ -r "$CACHE_FILE" ]] || return 1
   local line
@@ -140,6 +155,7 @@ main() {
   from_cache && return 0
   from_edac && return 0
   from_dmidecode && return 0
+  from_cached_sudo_dmidecode && return 0
   print_result "?" "?" "?" "needs-SMBIOS-cache"
 }
 
