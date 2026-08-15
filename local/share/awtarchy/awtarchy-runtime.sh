@@ -6649,6 +6649,89 @@ PY_UPDATE_PLAN
   fi
 }
 
+scxctl_update_helper_is_current() {
+  local source="$1"
+  local destination="/usr/local/libexec/awtarchy/scxctl-helper"
+  local owner="" mode=""
+
+  [[ -f "$source" && ! -L "$source" ]] || return 1
+  [[ -f "$destination" && ! -L "$destination" && -x "$destination" ]] || return 1
+  owner="$(/usr/bin/stat -c %u -- "$destination" 2>/dev/null)" || return 1
+  mode="$(/usr/bin/stat -c %a -- "$destination" 2>/dev/null)" || return 1
+  [[ "$owner" == 0 && "$mode" =~ ^[0-7]{3,4}$ ]] || return 1
+  (( (8#$mode & 8#022) == 0 )) || return 1
+  /usr/bin/cmp -s -- "$source" "$destination"
+}
+
+repair_scxctl_update_helper() {
+  local repo_dir="$1"
+  local source="${repo_dir}/local/libexec/awtarchy/scxctl-helper"
+  local destination="/usr/local/libexec/awtarchy/scxctl-helper"
+  local destination_dir="${destination%/*}"
+  local temporary="" source_hash="" installed_hash="" first_line=""
+
+  [[ -f "$source" && ! -L "$source" ]] \
+    || die "Release is missing the trusted sched-ext helper: ${source}"
+  first_line="$(/usr/bin/head -n1 -- "$source" 2>/dev/null || true)"
+  [[ "$first_line" == '#!/usr/bin/bash' ]] \
+    || die "Release sched-ext helper does not use the fixed /usr/bin/bash interpreter."
+  /usr/bin/bash -n "$source" \
+    || die "Release sched-ext helper failed Bash syntax validation."
+
+  scxctl_update_helper_is_current "$source" && return 0
+
+  have sudo || die "sudo is required to install the trusted sched-ext helper."
+  source_hash="$(/usr/bin/sha256sum "$source" | /usr/bin/awk '{print $1}')"
+  [[ "$source_hash" =~ ^[0-9a-f]{64}$ ]] \
+    || die "Could not hash the release sched-ext helper."
+
+  log "Installing trusted sched-ext helper..."
+  sudo -v || die "sudo authentication failed; no managed configs were changed."
+  if sudo /usr/bin/test -L "$destination_dir"; then
+    die "Refusing symbolic-link sched-ext helper directory: ${destination_dir}"
+  fi
+  sudo /usr/bin/install -d -m 0755 -o root -g root "$destination_dir" \
+    || die "Could not create the sched-ext helper directory."
+  sudo /usr/bin/test ! -L "$destination_dir" \
+    || die "Refusing symbolic-link sched-ext helper directory: ${destination_dir}"
+
+  temporary="$(sudo /usr/bin/mktemp "${destination_dir}/.scxctl-helper.XXXXXX")" \
+    || die "Could not create a temporary sched-ext helper."
+  if ! sudo /usr/bin/install -m 0755 -o root -g root "$source" "$temporary"; then
+    sudo /usr/bin/rm -f -- "$temporary" || true
+    die "Could not stage the sched-ext helper."
+  fi
+
+  installed_hash="$(sudo /usr/bin/sha256sum "$temporary" | /usr/bin/awk '{print $1}')" \
+    || {
+      sudo /usr/bin/rm -f -- "$temporary" || true
+      die "Could not verify the staged sched-ext helper."
+    }
+  if [[ "$installed_hash" != "$source_hash" ]]; then
+    sudo /usr/bin/rm -f -- "$temporary" || true
+    die "Staged sched-ext helper did not match the release source."
+  fi
+
+  first_line="$(sudo /usr/bin/head -n1 -- "$temporary" 2>/dev/null || true)"
+  if [[ "$first_line" != '#!/usr/bin/bash' ]]; then
+    sudo /usr/bin/rm -f -- "$temporary" || true
+    die "Staged sched-ext helper has an unsafe interpreter."
+  fi
+  if ! sudo /usr/bin/bash -n "$temporary"; then
+    sudo /usr/bin/rm -f -- "$temporary" || true
+    die "Staged sched-ext helper failed Bash syntax validation."
+  fi
+
+  sudo /usr/bin/mv -Tf -- "$temporary" "$destination" \
+    || {
+      sudo /usr/bin/rm -f -- "$temporary" || true
+      die "Could not activate the sched-ext helper."
+    }
+  scxctl_update_helper_is_current "$source" \
+    || die "Trusted sched-ext helper verification failed after installation."
+  log "Trusted sched-ext helper installed."
+}
+
 ensure_quickshell_update_prerequisites() {
   command -v pacman >/dev/null 2>&1 \
     || die "pacman is required for the Quickshell migration"
@@ -6971,6 +7054,9 @@ main() {
   select_update_mode
   log "Selected update mode: ${UPDATE_MODE}"
 
+  if [[ ${AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR:-0} != 1 ]]; then
+    repair_scxctl_update_helper "$repo_dir"
+  fi
   ensure_quickshell_update_prerequisites
   snapshot_quickshell_update_legacy_paths
 
