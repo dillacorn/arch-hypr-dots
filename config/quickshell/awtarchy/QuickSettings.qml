@@ -306,6 +306,15 @@ Singleton {
         close();
     }
 
+    function authorizeScheduler() {
+        actionMessage = "Complete sched-ext authorization in the terminal";
+        actionError = "";
+        Quickshell.execDetached([
+            terminalLauncher, "--class", "awtarchy-scxctl-auth", "--hold", "--",
+            backend, "--authorize-scheduler"
+        ]);
+    }
+
     function openThemeMenu() {
         ThemePicker.openForScreen(activeScreen);
     }
@@ -1416,8 +1425,17 @@ Singleton {
                                         onClicked: root.schedulerEditorOpen = !root.schedulerEditorOpen
                                     }
                                     SettingsButton {
+                                        label: "Authorize"
+                                        visible: Boolean(root.schedulerStatus.available)
+                                            && !Boolean(root.schedulerStatus.authorized)
+                                        available: visible
+                                        textSize: root.scaledText(9)
+                                        onClicked: root.authorizeScheduler()
+                                    }
+                                    SettingsButton {
                                         label: "Start / Switch"
                                         available: Boolean(root.schedulerStatus.available)
+                                            && Boolean(root.schedulerStatus.authorized)
                                             && root.selectedSchedulerName.length > 0
                                         textSize: root.scaledText(9)
                                         onClicked: root.queueAction([
@@ -1427,6 +1445,7 @@ Singleton {
                                     SettingsButton {
                                         label: "Stop"
                                         available: Boolean(root.schedulerStatus.enabled)
+                                            && Boolean(root.schedulerStatus.authorized)
                                         textSize: root.scaledText(9)
                                         onClicked: root.queueAction(["scheduler-stop"], "Stopping sched-ext…")
                                     }
@@ -1437,7 +1456,7 @@ Singleton {
                                     visible: !root.schedulerStatus.available || !root.schedulerStatus.authorized
                                     text: !root.schedulerStatus.available
                                         ? "scxctl is unavailable"
-                                        : "Starting sched-ext needs the existing one-time scxctl authorization"
+                                        : "Authorize once to let Quick Settings start, switch, and stop sched-ext"
                                     color: Theme.muted
                                     font.family: Theme.fontFamily
                                     font.pixelSize: root.scaledText(9)

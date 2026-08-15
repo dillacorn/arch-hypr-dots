@@ -246,6 +246,23 @@ machine_brightness_percent() {
   brightness_quiet set "$target"
 }
 
+machine_scheduler_authorize() {
+  if (( EUID != 0 )) && [[ ! -t 0 ]]; then
+    printf 'sched-ext authorization requires an interactive terminal\n' >&2
+    return 4
+  fi
+
+  if ! ensure_scxctl_nopasswd_rule; then
+    printf '%s\n' "${MSG:-sched-ext authorization failed}" >&2
+    return 1
+  fi
+
+  printf '%s\n' "${MSG:-sched-ext authorization complete}"
+  if have_cmd qs; then
+    qs -c awtarchy ipc call quicksettings refresh >/dev/null 2>&1 || true
+  fi
+}
+
 machine_scheduler_start() {
   local scheduler="$1"
   valid_scheduler "$scheduler" || return 2
@@ -352,6 +369,9 @@ case "${1:-}" in
   --status-json)
     shift
     machine_status "${1:-}" "${2:-}"
+    ;;
+  --authorize-scheduler)
+    machine_scheduler_authorize
     ;;
   --action)
     shift
