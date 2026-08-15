@@ -151,7 +151,7 @@ start_shell() {
 }
 
 stop_shell() {
-    local pid
+    local pid local_quickshell_alive
     local -a pids=()
 
     mapfile -t pids < <(instance_pids)
@@ -166,6 +166,26 @@ stop_shell() {
     done
 
     wait_for_pids_stop "${pids[@]}" && return 0
+
+    # Quickshell 0.3.x can crash or hang while tearing down Qt shortcuts after
+    # accepting the IPC shutdown request. Do not leave the updater wedged on
+    # that old process. Only force-kill PIDs that still resolve to quickshell.
+    printf 'quickshell.sh: graceful shutdown stalled for PID(s): %s; forcing old Quickshell process to stop.\n' "${pids[*]}" >&2
+    for pid in "${pids[@]}"; do
+        [[ "$(basename "$(readlink -f "/proc/${pid}/exe" 2>/dev/null || true)")" == "quickshell" ]] || continue
+        kill -KILL -- "$pid" 2>/dev/null || true
+    done
+
+    for _ in {1..40}; do
+        local_quickshell_alive=0
+        for pid in "${pids[@]}"; do
+            [[ "$(basename "$(readlink -f "/proc/${pid}/exe" 2>/dev/null || true)")" == "quickshell" ]] || continue
+            local_quickshell_alive=1
+            break
+        done
+        (( local_quickshell_alive == 0 )) && return 0
+        sleep 0.05
+    done
 
     printf 'quickshell.sh: Quickshell shutdown did not finish for PID(s): %s\n' "${pids[*]}" >&2
     return 1

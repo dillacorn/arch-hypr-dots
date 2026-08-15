@@ -53,6 +53,7 @@ Singleton {
     readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_flyout_position.sh"
     readonly property string prepareScript: configHome + "/hypr/scripts/quickshell_flyout_prepare.sh"
+    readonly property string bluetoothStateScript: configHome + "/hypr/scripts/quickshell_bluetooth_state.sh"
     readonly property var activeScreen: flyoutScreen || bluetoothWindow.screen
     readonly property string activeMonitorName: activeScreen && activeScreen.name
         ? String(activeScreen.name) : ""
@@ -143,17 +144,18 @@ Singleton {
             return;
         }
 
-        if (!current.enabled && current.state === BluetoothAdapterState.Blocked) {
-            actionMessage = "Unblocking Bluetooth…";
-            rfkillUnblock.exec(["rfkill", "unblock", "bluetooth"]);
+        const enableRequested = !current.enabled
+            || current.state === BluetoothAdapterState.Blocked;
+        if (enableRequested) {
+            actionMessage = "Enabling Bluetooth…";
+            bluetoothEnable.exec([bluetoothStateScript, "set", "enabled"]);
             return;
         }
 
-        const nextEnabled = !current.enabled;
-        if (!nextEnabled && current.discovering)
+        if (current.discovering)
             current.discovering = false;
-        current.enabled = nextEnabled;
-        actionMessage = nextEnabled ? "Bluetooth enabled" : "Bluetooth disabled";
+        actionMessage = "Disabling Bluetooth…";
+        bluetoothDisable.exec([bluetoothStateScript, "set", "disabled"]);
     }
 
     function retryEnableAfterRfkill() {
@@ -475,6 +477,8 @@ Singleton {
             close();
     }
 
+    Component.onCompleted: bluetoothRestore.exec([bluetoothStateScript, "restore"])
+
     Connections {
         target: FlyoutManager
         function onCloseRequested(exceptSurface) {
@@ -490,8 +494,26 @@ Singleton {
     }
 
     Process {
-        id: rfkillUnblock
-        onExited: rfkillRetry.restart()
+        id: bluetoothEnable
+        onExited: (exitCode, exitStatus) => {
+            if (exitCode !== 0) {
+                root.actionMessage = "Failed to enable Bluetooth";
+                return;
+            }
+            rfkillRetry.restart();
+        }
+    }
+
+    Process {
+        id: bluetoothDisable
+        onExited: (exitCode, exitStatus) => {
+            root.actionMessage = exitCode === 0
+                ? "Bluetooth disabled" : "Failed to disable Bluetooth";
+        }
+    }
+
+    Process {
+        id: bluetoothRestore
     }
 
     Process {
