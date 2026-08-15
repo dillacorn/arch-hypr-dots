@@ -73,6 +73,7 @@ jobs:
           bash -n tests/test-usb-refresh-security.sh
           bash -n tests/test-quickshell-resume-recovery.sh
           python3 -m py_compile local/libexec/awtarchy/wireguard-helper
+          python3 -m py_compile tests/test-config-noise-comparison.py
           test -x config/hypr/scripts/quickshell_sensitive_capture.sh
       - name: ShellCheck command code
         run: |
@@ -148,6 +149,7 @@ jobs:
           bash tests/test-playerctl-dependency.sh
           bash tests/test-quickshell-capture-privacy.sh
           bash tests/test-quickshell-production-readiness.sh
+          python3 tests/test-config-noise-comparison.py
           bash tests/test-quickshell-updater-migration.sh
           bash tests/test-security-boundaries.sh
           bash tests/test-quickshell-theme-legacy-micro.sh

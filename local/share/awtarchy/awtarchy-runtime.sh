@@ -5748,7 +5748,7 @@ build_plan() {
   local target_home="$1" plan_file="$2"
   python3 - "$HOME_DIR" "$target_home" "$BASELINE_HOME" "$MANIFEST_FILE" "$plan_file" <<'PY'
 from pathlib import Path, PurePosixPath
-import os, stat, sys
+import json, os, re, stat, sys
 home, target, baseline, manifest, out = map(Path, sys.argv[1:])
 
 CONFIG_ROOTS = {
@@ -5790,13 +5790,105 @@ def paths(root):
             found.add(rel)
     return found
 
-def identity(path):
+def semantic_file_bytes(rel, path):
+    data = path.read_bytes()
+
+    if rel == ".config/micro/bindings.json":
+        try:
+            parsed = json.loads(data.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return data
+        return json.dumps(
+            parsed,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+    ini_like = {
+        ".config/SpeedCrunch/SpeedCrunch.ini",
+        ".config/pcmanfm-qt/default/settings.conf",
+        ".config/qt5ct/qt5ct.conf",
+        ".config/qt6ct/qt6ct.conf",
+    }
+    if rel not in ini_like:
+        return data
+
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data
+
+    section = ""
+    normalized = []
+    speedcrunch_noise = {
+        "Layout\\ManualWindowGeometry",
+        "Layout\\State",
+        "Layout\\WindowGeometry",
+        "Layout\\WindowOnFullScreen",
+    }
+    pcman_noise = {
+        "Desktop": {
+            "LastSlide",
+            "ScreenNames",
+            "WallpaperDialogSize",
+            "WallpaperDialogSplitterPos",
+        },
+        "FolderView": {"CustomColumnWidths"},
+        "Search": {"ContentPatterns", "NamePatterns"},
+        "Window": {
+            "LastWindowHeight",
+            "LastWindowMaximized",
+            "LastWindowWidth",
+            "SplitViewTabsNum",
+            "SplitterPos",
+            "TabPaths",
+        },
+    }
+
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            section = stripped[1:-1]
+            normalized.append(raw_line)
+            continue
+
+        key = stripped.split("=", 1)[0] if "=" in stripped else ""
+
+        if rel == ".config/SpeedCrunch/SpeedCrunch.ini" and section == "SpeedCrunch" and key in speedcrunch_noise:
+            continue
+
+        if rel == ".config/pcmanfm-qt/default/settings.conf":
+            if key in pcman_noise.get(section, set()):
+                continue
+            if (
+                section == "Desktop"
+                and key == "NoItemTooltip"
+                and stripped.split("=", 1)[1].strip().lower() == "false"
+            ):
+                continue
+            if section == "Desktop" and key == "Font":
+                raw_line = re.sub(r',,0,0"$', '"', raw_line)
+
+        if (
+            rel in {".config/qt5ct/qt5ct.conf", ".config/qt6ct/qt6ct.conf"}
+            and section == "SettingsWindow"
+            and key == "geometry"
+        ):
+            continue
+
+        normalized.append(raw_line)
+
+    return ("\n".join(normalized) + "\n").encode("utf-8")
+
+
+def identity(rel, path):
     if not path.exists() and not path.is_symlink():
         return None
     if path.is_symlink():
         return ("link", os.readlink(path))
     mode = stat.S_IMODE(path.stat().st_mode)
-    return ("file", mode, path.read_bytes())
+    return ("file", mode, semantic_file_bytes(rel, path))
 
 new_paths = paths(target)
 old_paths = set()
@@ -5819,7 +5911,7 @@ for rel in all_paths:
     local = home / rel
     new = target / rel
     old = baseline / rel
-    li, ni, oi = identity(local), identity(new), identity(old)
+    li, ni, oi = identity(rel, local), identity(rel, new), identity(rel, old)
     if ni is not None and li == ni:
         continue
     if ni is None:
