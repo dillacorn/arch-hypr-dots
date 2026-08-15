@@ -1,0 +1,77 @@
+name: Apply volume limit interaction fix
+
+on:
+  push:
+    paths:
+      - .github/workflows/fix-volume-limit-interaction.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          fetch-depth: 2
+
+      - name: Verify guarded staging commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=daabb53e664b3b44514b7cef3a5e087a17eb4213
+          actual="$(git rev-parse HEAD^)"
+          [[ "$actual" == "$expected" ]] || {
+            printf 'Expected parent %s, got %s\n' "$expected" "$actual" >&2
+            exit 1
+          }
+
+      - name: Apply volume interaction fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/fix-volume-limit-interaction.py
+
+      - name: Refresh managed history
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=local/share/awtarchy/quickshell-managed-history.sha256
+          {
+            printf '\n# 2026-08-14 maximum output volume interaction and amplified bar scrolling\n'
+            for src in \
+              config/quickshell/awtarchy/AudioLimitState.qml \
+              config/quickshell/awtarchy/Bar.qml \
+              config/quickshell/awtarchy/QuickSettings.qml
+            do
+              hash="$(sha256sum "$src" | awk '{print $1}')"
+              printf '%s\t.%s\n' "$hash" "$src"
+            done
+          } >> "$manifest"
+
+      - name: Validate patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          bash tests/test-quickshell-production-readiness.sh
+          grep -Fq 'function outputLimitForPosition(x, width)' config/quickshell/awtarchy/QuickSettings.qml
+          grep -Fq 'AudioLimitState.setLimit(root.outputVolumeHoverPercent)' config/quickshell/awtarchy/QuickSettings.qml
+          grep -Fq '"wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@"' config/quickshell/awtarchy/Bar.qml
+          grep -Fq '"--limit", String(AudioLimitState.limitPercent / 100)' config/quickshell/awtarchy/Bar.qml
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add \
+            config/quickshell/awtarchy/AudioLimitState.qml \
+            config/quickshell/awtarchy/Bar.qml \
+            config/quickshell/awtarchy/QuickSettings.qml \
+            local/share/awtarchy/quickshell-managed-history.sha256 \
+            tests/test-quickshell-production-readiness.sh
+          git commit -m 'Fix volume limit interaction'
+          git push origin HEAD:main
