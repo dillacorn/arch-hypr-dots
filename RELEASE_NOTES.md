@@ -5,7 +5,8 @@
 - Awtarchy's desktop shell has been rebuilt around [Quickshell](https://github.com/quickshell-mirror/quickshell), replacing the previous Waybar/Fuzzel-era shell stack.
 - The Quickshell shell now owns the bar, application launcher, notifications, Quick Settings, network and Bluetooth controls, power controls, clipboard UI, display controls, and other shell surfaces that were previously split across several programs and helper scripts.
 - Existing Awtarchy installations can migrate through the normal `awtarchy update` flow. Preserve mode keeps personalized managed files where possible, creates backups when required, and migrates supported Hyprland customizations.
-- The updater now tracks the command/runtime separately from published config releases, supports explicit Git branch testing, validates migrations before applying them, and can reconcile older preserved Quickshell UI files without replacing `hyprland.lua`.
+- Published config updates remain release-based through `awtarchy update`, while the installed launcher/runtime can refresh from `main` independently so updater fixes do not require a new config release.
+- The updater supports explicit Git testing, validates migrations before applying them, and can reconcile older preserved Quickshell UI files without broadly replacing `hyprland.lua`.
 - Awtarchy's Quickshell configuration includes multi-monitor behavior, per-display shell settings, capture-privacy controls, notification controls, audio limits, display brightness controls, and shell recovery handling.
 
 ## Start Here
@@ -84,6 +85,16 @@ That step installs the current maintenance command without broadly replacing man
 ```bash
 awtarchy update
 ```
+
+## Optional: Latest `main`
+
+Users who want the newest unreleased commit instead of the latest published release can use:
+
+```bash
+awtarchy git update --branch main
+```
+
+Git testing records the exact remote revision separately from stable release state. Run `awtarchy update` to return to the latest published release.
 
 ## Retired shell programs
 
