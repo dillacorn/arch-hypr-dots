@@ -756,7 +756,7 @@ replace_quickshell_ui_from_baseline() {
 
 reconcile_quickshell_ui_after_update() {
   local baseline_root="${STATE_HOME}/awtarchy/baseline/home"
-  local stamp="$(date +%Y%m%d-%H%M%S)" rel="" baseline="" live=""
+  local stamp="" rel="" baseline="" live=""
   local choice="" per_file="" replaced=0 manager=""
   local -a ui_files=(
     ".config/quickshell/awtarchy/AudioLimitState.qml"
@@ -770,6 +770,7 @@ reconcile_quickshell_ui_after_update() {
   )
   local -a differences=()
 
+  stamp="$(date +%Y%m%d-%H%M%S)"
   [[ -d "$baseline_root" ]] || return 0
   for rel in "${ui_files[@]}"; do
     baseline="${baseline_root}/${rel}"
