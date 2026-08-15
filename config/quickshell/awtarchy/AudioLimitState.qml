@@ -21,7 +21,7 @@ Singleton {
         const numeric = Number(value);
         if (!Number.isFinite(numeric))
             return 100;
-        const rounded = Math.round(numeric / stepPercent) * stepPercent;
+        const rounded = Math.round(numeric);
         return Math.max(minimumPercent, Math.min(maximumPercent, rounded));
     }
 

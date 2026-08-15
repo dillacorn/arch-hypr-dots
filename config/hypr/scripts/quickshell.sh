@@ -142,14 +142,10 @@ stop_shell() {
         return 0
     fi
 
-    ipc control quit >/dev/null 2>&1 || true
-
-    wait_for_shell_stop && return 0
-
-    # Qt can remove the visible shell before its process and IPC endpoint have
-    # finished shutting down. Fall back to Quickshell's instance-aware kill
-    # command, repeating it in case an older duplicate instance is exposed.
-    printf 'quickshell.sh: Graceful stop timed out; forcing the Awtarchy instance to stop\n' >&2
+    # Explicit stop/restart operations need the instance gone before the new
+    # QML tree can start. The IPC Qt.quit() path routinely leaves the endpoint
+    # alive until the full timeout, while the config-scoped Quickshell kill
+    # command is the existing reliable fallback. Use it immediately.
     for _ in {1..3}; do
         qs -c "$CONFIG_NAME" kill >/dev/null 2>&1 || true
         wait_for_shell_stop && return 0
