@@ -1,0 +1,30 @@
+name: Refresh scxctl managed history
+
+on:
+  push:
+    branches: [scxctl-auth-testing]
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+      - name: Append current QuickSettings stock hash
+        run: |
+          set -euo pipefail
+          manifest="local/share/awtarchy/quickshell-managed-history.sha256"
+          path=".config/quickshell/awtarchy/QuickSettings.qml"
+          hash="$(sha256sum config/quickshell/awtarchy/QuickSettings.qml | awk '{print $1}')"
+          line="${hash}	${path}"
+          if grep -Fxq "$line" "$manifest"; then
+            exit 0
+          fi
+          printf '%b\n' "$line" >> "$manifest"
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add "$manifest"
+          git commit -m "Track inline Quick Settings stock hash"
+          git push origin HEAD:scxctl-auth-testing
