@@ -13,6 +13,8 @@ pronounced: **aw-tar-chee**
 1. Install Arch with `archinstall` and select the Minimal profile.
 2. Apply the awtarchy overlay on top of that base system.
 
+> **Development note:** Awtarchy is a personal passion project maintained in spare time. Large language models have been used as development tools to assist with writing, reviewing, refactoring, documentation, and troubleshooting parts of the project. I use that assistance to spend more of my limited project time testing changes on real systems, diagnosing failures, and validating releases. LLM-assisted changes are not assumed correct simply because they were generated; they are reviewed and tested as part of the normal development process.
+
 ## Why this approach
 
 * Flexible: works over any clean Arch install.
@@ -43,6 +45,7 @@ Awtarchy-authored code and configuration is licensed under MIT unless otherwise 
 | **Terminal**       | [Alacritty](https://github.com/alacritty/alacritty)                                                                                                                                                    |
 | **Bootloader**     | [systemd-boot](https://man.archlinux.org/man/systemd-boot.7) and/or [Limine](https://github.com/limine-bootloader/limine)                                                                              |
 | **Window Manager** | [Hyprland](https://github.com/hyprwm/Hyprland) ([config](https://github.com/dillacorn/awtarchy/tree/main/config/hypr))                                                                                 |
+| **Shell**          | [Quickshell](https://github.com/quickshell-mirror/quickshell) ([Awtarchy config](https://github.com/dillacorn/awtarchy/tree/main/config/quickshell/awtarchy))                                          |
 | **Kernel**         | [Arch Linux](https://archlinux.org/packages/core/x86_64/linux/) · [Arch Linux LTS](https://archlinux.org/packages/core/x86_64/linux-lts/) · [CachyOS kernel](https://github.com/CachyOS/linux-cachyos) |
 
 ## Install
@@ -88,7 +91,15 @@ awtarchy help            Show the full command list
 
 ## Existing installations and Quickshell migration
 
-Existing Awtarchy users can update through the normal `awtarchy update` flow once the Quickshell release is published. The updater preserves personalized managed files where possible, creates backups when required, and migrates retired Waybar/Fuzzel-era managed files to the Quickshell shell.
+Starting with **Awtarchy v3.0.0 Quickshell**, existing Awtarchy users can migrate through the normal maintenance command:
+
+```bash
+awtarchy update
+```
+
+The v3.0.0 update replaces Awtarchy's previous Waybar/Fuzzel-era shell stack with the Quickshell implementation. Preserve mode keeps personalized managed files where possible, creates backups when required, migrates supported Hyprland customizations, and removes retired Awtarchy-managed shell packages and configuration that are no longer used.
+
+The retired shell stack includes Waybar/`waybar-git`, Fuzzel, Mako, Wlogout, Wofi, `network-manager-applet`, and Blueman. NetworkManager, BlueZ, and their underlying system services remain; the retired GUI applets are replaced by Awtarchy's Quickshell interfaces.
 
 For installations still using the old repository-only updater:
 
@@ -98,7 +109,7 @@ git pull --ff-only
 sudo ./awtarchy-install.sh
 ```
 
-This installs the current maintenance command without broadly replacing managed configs.
+This installs the current maintenance command without broadly replacing managed configs. After that migration, use `awtarchy update` for the v3.0.0 Quickshell release and future published updates.
 
 ## Dry-run
 
