@@ -43,6 +43,7 @@ jobs:
           bash -n config/hypr/scripts/quickshell_runtime_rules.sh
           bash -n config/hypr/scripts/quickshell_sensitive_capture.sh
           bash -n config/hypr/scripts/quickshell_theme_apply.sh
+          bash -n config/hypr/scripts/quickshell_volume.sh
           bash -n config/hypr/scripts/quickshell_wireguard.sh
           bash -n config/hypr/scripts/usb_refresh_fixer.sh
           bash -n config/hypr/scripts/restore_brightness.sh
@@ -89,6 +90,7 @@ jobs:
             config/hypr/scripts/quickshell_resume_recover.sh \
             config/hypr/scripts/quickshell_runtime_rules.sh \
             config/hypr/scripts/quickshell_sensitive_capture.sh \
+            config/hypr/scripts/quickshell_volume.sh \
             config/hypr/scripts/quickshell_wireguard.sh \
             config/hypr/scripts/usb_refresh_fixer.sh \
             config/hypr/scripts/restore_brightness.sh \
