@@ -78,7 +78,8 @@ init_target() {
 cleanup_legacy_quickshell_command() {
   local legacy_launcher="${TARGET_HOME}/.local/bin/awtarchy-quickshell"
   local legacy_data="${DATA_HOME}/awtarchy-quickshell"
-  local legacy_state="${STATE_HOME}/awtarchy-quickshell"
+  local legacy_state_dir="${STATE_HOME}/awtarchy-quickshell"
+  local legacy_command_state="${legacy_state_dir}/command-version"
   local marker='Temporary branch-only maintenance command for the Quickshell migration.'
   local recognized=0 removed=0
 
@@ -97,9 +98,10 @@ cleanup_legacy_quickshell_command() {
       rm -rf -- "$legacy_data"
       removed=1
     fi
-    if [[ -e $legacy_state || -L $legacy_state ]]; then
-      rm -rf -- "$legacy_state"
+    if [[ -f $legacy_command_state && ! -L $legacy_command_state ]]; then
+      rm -f -- "$legacy_command_state"
       removed=1
+      rmdir -- "$legacy_state_dir" 2>/dev/null || true
     fi
   fi
 
