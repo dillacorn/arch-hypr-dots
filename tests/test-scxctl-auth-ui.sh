@@ -48,9 +48,9 @@ assert_contains "$BACKEND" 'machine_scheduler_authorize_stdin()' \
   'backend has no stdin-only scheduler authorization function'
 assert_contains "$BACKEND" 'ensure_scxctl_nopasswd_rule stdin 1' \
   'backend does not force repair the restricted sudoers rule during explicit authorization'
-assert_contains "$BACKEND" -- '--authorize-scheduler-stdin)' \
+assert_contains "$BACKEND" '--authorize-scheduler-stdin)' \
   'backend has no stdin-only authorization entrypoint'
-assert_not_contains "$BACKEND" -- '--authorize-scheduler)' \
+assert_not_contains "$BACKEND" '--authorize-scheduler)' \
   'obsolete terminal authorization entrypoint is still exposed'
 
 printf '%s\n' 'PASS: Quick Settings provides masked inline sched-ext authorization over process stdin.'
