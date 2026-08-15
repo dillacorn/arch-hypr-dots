@@ -433,10 +433,6 @@ ensure_scxctl_nopasswd_rule() {
     return 1
   fi
 
-  if sudo test -f "$sudoers_target" && sudo_can_run_scxctl_noninteractive; then
-    return 0
-  fi
-
   if ! sudoers_included; then
     MSG='sched-ext: /etc/sudoers.d not included'
     return 1
@@ -468,7 +464,8 @@ ensure_scxctl_nopasswd_rule() {
     return 1
   fi
 
-  if ! sudo_can_run_scxctl_noninteractive; then
+  sudo -k
+  if ! sudo -n "$SCXCTL_HELPER" list >/dev/null 2>&1; then
     MSG='sched-ext: sudoers rule installed but unusable'
     return 1
   fi
