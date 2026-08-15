@@ -24,6 +24,7 @@ MENU_FIRST_ROW=0
 MENU_VISIBLE_START=0
 MENU_VISIBLE_END=0
 MENU_PAGE_SIZE=0
+declare -A MENU_SELECTIONS=()
 
 cleanup_terminal() {
     printf '\033[?1000l\033[?1006l\033[?25h\033[0m' >&3 2>/dev/null || true
@@ -126,10 +127,12 @@ prompt_filter() {
 }
 
 menu_select() {
-    local title="$1" items_name="$2" subtitle="${3:-}"
+    local title="$1" items_name="$2" subtitle="${3:-}" initial_original="${4:-0}"
     local -n items_ref="$items_name"
-    local selected=0 filter="" key="" i original total lines cols start end row label
+    local selected=0 filter="" key="" i original total lines cols start end row label restore_initial=1
     local -a view=()
+
+    [[ "$initial_original" =~ ^[0-9]+$ ]] || initial_original=0
 
     while true; do
         view=()
@@ -141,6 +144,19 @@ menu_select() {
         done
 
         total="${#view[@]}"
+        if (( restore_initial )); then
+            selected=0
+            if (( total > 0 )); then
+                for i in "${!view[@]}"; do
+                    if [[ "${view[$i]}" == "$initial_original" ]]; then
+                        selected="$i"
+                        break
+                    fi
+                done
+            fi
+            restore_initial=0
+        fi
+
         if (( total == 0 )); then
             selected=0
         elif (( selected >= total )); then
@@ -789,15 +805,17 @@ run_article_menu() {
     local title="$1" labels_name="$2" ids_name="$3"
     local -n labels_ref="$labels_name"
     local -n ids_ref="$ids_name"
-    local choice
+    local choice menu_key="article:$labels_name"
 
-    while choice="$(menu_select "$title" "$labels_name")"; do
+    while choice="$(menu_select "$title" "$labels_name" "" "${MENU_SELECTIONS[$menu_key]:-0}")"; do
+        MENU_SELECTIONS["$menu_key"]="$choice"
         show_article "${ids_ref[$choice]}" "${labels_ref[$choice]}"
     done
 }
 
 menu_extra_notes() {
     local choice file
+    local menu_key="extra-notes"
     local -a files=() labels=()
 
     if [[ ! -d "$EXTRA_NOTES_DIR" ]]; then
@@ -818,7 +836,8 @@ menu_extra_notes() {
             return
         fi
 
-        choice="$(menu_select "Extra Notes" labels "Local files from $EXTRA_NOTES_DIR")" || return
+        choice="$(menu_select "Extra Notes" labels "Local files from $EXTRA_NOTES_DIR" "${MENU_SELECTIONS[$menu_key]:-0}")" || return
+        MENU_SELECTIONS["$menu_key"]="$choice"
         view_file "${files[$choice]}"
     done
 }
@@ -933,7 +952,8 @@ run_tui() {
             "Quit"
         )
 
-        choice="$(menu_select "Awtarchy Tips" home "$context")" || break
+        choice="$(menu_select "Awtarchy Tips" home "$context" "${MENU_SELECTIONS[home]:-0}")" || break
+        MENU_SELECTIONS["home"]="$choice"
         case "$choice" in
             0) run_article_menu "Getting Started" getting_labels getting_ids ;;
             1) run_article_menu "Essential Keybinds" keybind_labels keybind_ids ;;
