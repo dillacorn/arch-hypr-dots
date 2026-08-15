@@ -5,12 +5,31 @@ on:
     branches: [scxctl-auth-testing]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
-      - name: Regression
-        run: bash tests/test-scxctl-auth-ui.sh
+      - name: Apply candidate patch
+        run: python3 tests/apply-scxctl-auth-patch.py
+      - name: Validate
+        run: |
+          bash -n config/hypr/scripts/hypr_quicksettings.sh
+          bash tests/test-scxctl-auth-ui.sh
+          git diff --check
+      - name: Commit candidate patch
+        run: |
+          if git diff --quiet -- \
+            config/hypr/scripts/hypr_quicksettings.sh \
+            config/quickshell/awtarchy/QuickSettings.qml; then
+            exit 0
+          fi
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add \
+            config/hypr/scripts/hypr_quicksettings.sh \
+            config/quickshell/awtarchy/QuickSettings.qml
+          git commit -m "Fix sched-ext authorization from Quick Settings"
+          git push origin HEAD:scxctl-auth-testing
