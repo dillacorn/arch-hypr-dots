@@ -93,11 +93,24 @@ is_running() {
     ipc control ping >/dev/null 2>&1
 }
 
-wait_for_shell_stop() {
+instance_pids() {
+    qs -c "$CONFIG_NAME" list --json 2>/dev/null \
+        | jq -r '.[] | .pid | select(type == "number" and . > 0)' 2>/dev/null
+}
+
+wait_for_pids_stop() {
+    local pid alive
+    local -a pids=("$@")
+
     for _ in {1..100}; do
-        if ! is_running; then
-            return 0
-        fi
+        alive=0
+        for pid in "${pids[@]}"; do
+            if kill -0 "$pid" 2>/dev/null; then
+                alive=1
+                break
+            fi
+        done
+        (( alive == 0 )) && return 0
         sleep 0.05
     done
 
@@ -138,20 +151,23 @@ start_shell() {
 }
 
 stop_shell() {
-    if ! is_running; then
-        return 0
-    fi
+    local pid
+    local -a pids=()
 
-    # Explicit stop/restart operations need the instance gone before the new
-    # QML tree can start. The IPC Qt.quit() path routinely leaves the endpoint
-    # alive until the full timeout, while the config-scoped Quickshell kill
-    # command is the existing reliable fallback. Use it immediately.
-    for _ in {1..3}; do
-        qs -c "$CONFIG_NAME" kill >/dev/null 2>&1 || true
-        wait_for_shell_stop && return 0
+    mapfile -t pids < <(instance_pids)
+    (( ${#pids[@]} > 0 )) || return 0
+
+    # Quickshell's kill command is an IPC shutdown request. Target each exact
+    # old PID, then wait for those processes to really exit before starting a
+    # replacement. IPC can disappear slightly before Qt/Wayland teardown is
+    # complete, and starting the new instance in that gap can race the old one.
+    for pid in "${pids[@]}"; do
+        qs kill --pid "$pid" >/dev/null 2>&1 || true
     done
 
-    printf 'quickshell.sh: Quickshell did not stop cleanly\n' >&2
+    wait_for_pids_stop "${pids[@]}" && return 0
+
+    printf 'quickshell.sh: Quickshell shutdown did not finish for PID(s): %s\n' "${pids[*]}" >&2
     return 1
 }
 
