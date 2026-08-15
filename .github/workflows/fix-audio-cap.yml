@@ -1,0 +1,112 @@
+name: Fix audio output cap
+
+on:
+  push:
+    paths:
+      - .github/workflows/fix-audio-cap.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          fetch-depth: 2
+
+      - name: Verify guarded staging commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=436f1cb38b23440dd52cd0dab608dc271c760949
+          actual="$(git rev-parse HEAD^)"
+          [[ "$actual" == "$expected" ]] || {
+            printf 'Expected parent %s, got %s\n' "$expected" "$actual" >&2
+            exit 1
+          }
+
+      - name: Apply audio cap fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one match, found {count}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace_once(
+              "config/quickshell/awtarchy/SystemState.qml",
+              '''    function clampAudioVolume() {\n        const sink = Pipewire.defaultAudioSink;\n        if (!sink || !sink.audio)\n            return;\n\n        if (sink.audio.volume > 1.0)\n            sink.audio.volume = 1.0;\n    }\n''',
+              '''    function clampAudioVolume() {\n        const sink = Pipewire.defaultAudioSink;\n        if (!sink || !sink.audio)\n            return;\n\n        const maximum = AudioLimitState.limitPercent / 100;\n        if (sink.audio.volume > maximum)\n            sink.audio.volume = maximum;\n    }\n'''
+          )
+
+          replace_once(
+              "config/quickshell/awtarchy/AudioLimitState.qml",
+              '    readonly property int minimumPercent: 10\n',
+              '    readonly property int minimumPercent: 100\n'
+          )
+
+          replace_once(
+              "config/quickshell/awtarchy/QuickSettings.qml",
+              '                                    text: "Global limit for Wiremix and bar volume scrolling · click bar to set · range 10–200%"\n',
+              '                                    text: "Global limit for Wiremix and bar volume scrolling · click bar to set · range 100–200%"\n'
+          )
+
+          path = Path("tests/test-quickshell-production-readiness.sh")
+          text = path.read_text(encoding="utf-8")
+          marker = '''assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/QuickSettings.qml" 'AudioLimitState.setLimit(root.outputVolumeHoverPercent)'\n'''
+          addition = marker + '''assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/AudioLimitState.qml" 'readonly property int minimumPercent: 100'\nassert_contains "${REPO_ROOT}/config/quickshell/awtarchy/QuickSettings.qml" 'range 100–200%'\nassert_contains "${REPO_ROOT}/config/quickshell/awtarchy/SystemState.qml" 'const maximum = AudioLimitState.limitPercent / 100;'\nassert_contains "${REPO_ROOT}/config/quickshell/awtarchy/SystemState.qml" 'sink.audio.volume = maximum;'\nassert_not_contains "${REPO_ROOT}/config/quickshell/awtarchy/SystemState.qml" 'sink.audio.volume > 1.0'\nassert_not_contains "${REPO_ROOT}/config/quickshell/awtarchy/SystemState.qml" 'sink.audio.volume = 1.0'\n'''
+          if text.count(marker) != 1:
+              raise SystemExit("production readiness insertion marker mismatch")
+          path.write_text(text.replace(marker, addition, 1), encoding="utf-8")
+          PY
+
+      - name: Refresh managed history
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=local/share/awtarchy/quickshell-managed-history.sha256
+          {
+            printf '\n# 2026-08-14 configurable 100-200 percent output cap\n'
+            for src in \
+              config/quickshell/awtarchy/SystemState.qml \
+              config/quickshell/awtarchy/AudioLimitState.qml \
+              config/quickshell/awtarchy/QuickSettings.qml
+            do
+              hash="$(sha256sum "$src" | awk '{print $1}')"
+              printf '%s\t.%s\n' "$hash" "$src"
+            done
+          } >> "$manifest"
+
+      - name: Validate patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          bash tests/test-quickshell-production-readiness.sh
+          grep -Fq 'readonly property int minimumPercent: 100' config/quickshell/awtarchy/AudioLimitState.qml
+          grep -Fq 'const maximum = AudioLimitState.limitPercent / 100;' config/quickshell/awtarchy/SystemState.qml
+          ! grep -Fq 'sink.audio.volume > 1.0' config/quickshell/awtarchy/SystemState.qml
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add \
+            config/quickshell/awtarchy/SystemState.qml \
+            config/quickshell/awtarchy/AudioLimitState.qml \
+            config/quickshell/awtarchy/QuickSettings.qml \
+            local/share/awtarchy/quickshell-managed-history.sha256 \
+            tests/test-quickshell-production-readiness.sh
+          git commit -m 'Fix configurable output volume cap'
+          git push origin HEAD:main
