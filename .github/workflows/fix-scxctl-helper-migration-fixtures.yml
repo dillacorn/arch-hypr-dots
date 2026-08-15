@@ -1,0 +1,49 @@
+name: Fix scxctl helper migration fixtures
+
+on:
+  push:
+    branches: [scxctl-helper-update-testing]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          fetch-depth: 0
+      - name: Patch every updater fixture
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('tests/test-quickshell-updater-migration.sh')
+          lines = path.read_text().splitlines(keepends=True)
+          out = []
+          for i, line in enumerate(lines):
+              out.append(line)
+              if 'AWTARCHY_TEST_SKIP_CURSOR_REFRESH=1' not in line:
+                  continue
+              next_line = lines[i + 1] if i + 1 < len(lines) else ''
+              if 'AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR=1' in next_line:
+                  continue
+              indent = line[:len(line) - len(line.lstrip())]
+              continuation = ' \\\n' if line.rstrip('\n').endswith(' \\') else '\n'
+              out.append(f'{indent}"AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR=1"{continuation}')
+          path.write_text(''.join(out))
+          PY
+
+          bash -n tests/test-quickshell-updater-migration.sh
+          git diff --check
+
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add tests/test-quickshell-updater-migration.sh
+          git commit -m "Keep all updater fixtures host-safe"
+          git push origin HEAD:scxctl-helper-update-testing
