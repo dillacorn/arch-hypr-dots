@@ -28,8 +28,8 @@ assert_contains "$QML" 'stdinEnabled: true' \
   'sched-ext authorization process does not accept password input on stdin'
 assert_contains "$QML" 'backend, "--authorize-scheduler-stdin"' \
   'inline authorization does not call the stdin-only backend entrypoint'
-assert_contains "$QML" 'schedulerAuthRunner.write(root.schedulerAuthPendingPassword + "\\n");' \
-  'Quick Settings does not write the password directly to backend stdin'
+assert_contains "$QML" 'schedulerAuthRunner.write(root.schedulerAuthPendingPassword + "\\n\\n\\n");' \
+  'Quick Settings does not send a bounded stdin response for sudo password attempts'
 assert_contains "$QML" 'echoMode: TextInput.Password' \
   'sched-ext password input is not masked'
 assert_contains "$QML" 'schedulerPasswordInput.text = "";' \
