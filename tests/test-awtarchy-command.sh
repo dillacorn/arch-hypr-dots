@@ -9,6 +9,7 @@ LAUNCHER_SOURCE="${ROOT}/local/bin/awtarchy"
 TMP="$(mktemp -d)"
 TEST_USER=""
 TEST_MAIN_COMMIT="2222222222222222222222222222222222222222"
+TEST_RELEASE_COMMIT="3333333333333333333333333333333333333333"
 
 cleanup() {
   if [[ -n ${TEST_USER:-} ]] && command -v sudo >/dev/null 2>&1; then
@@ -49,8 +50,8 @@ grep -Fq 'ensure_quickshell_update_prerequisites()' "$RUNTIME_SOURCE" \
   || fail "repository runtime is missing native Quickshell migration prerequisites"
 grep -Fq 'start_quickshell_update_shell()' "$RUNTIME_SOURCE" \
   || fail "repository runtime is missing native Quickshell startup validation"
-grep -Fq 'run_awtarchy_target_theme()' "$RUNTIME_SOURCE" \
-  || fail "repository runtime is missing native Quickshell theme generation"
+grep -Fq 'render_theme_target()' "$RUNTIME_SOURCE" \
+  || fail "repository runtime is missing data-only Quickshell theme generation"
 ! grep -Fq 'awtarchy-runtime-quickshell.' "$INSTALLER_SOURCE" \
   || fail "installer still generates a separate temporary Quickshell runtime"
 python3 - "$RUNTIME_SOURCE" <<'PY'
@@ -91,7 +92,7 @@ grep -Fq 'commits/${UPDATER_BRANCH}' "$LAUNCHER_SOURCE" \
 grep -Fq 'archive/${commit}.tar.gz' "$LAUNCHER_SOURCE" \
   || fail "maintenance command does not pin updater downloads to an exact main commit"
 
-release_root="${TMP}/awtarchy-v9.9.9"
+release_root="${TMP}/awtarchy-${TEST_RELEASE_COMMIT}"
 mkdir -p "$release_root"
 tar --exclude='.git' -C "$ROOT" -cf - . | tar -C "$release_root" -xf -
 tar -czf "${TMP}/release.tar.gz" -C "$TMP" "$(basename "$release_root")"
@@ -113,9 +114,10 @@ url=""
 progress=0
 speed_limit=""
 speed_time=""
+data_ref=""
 while (( $# )); do
   case "$1" in
-    -o)
+    -o|--output)
       out="$2"
       shift 2
       ;;
@@ -124,6 +126,13 @@ while (( $# )); do
       ;;
     --progress-bar)
       progress=1
+      shift
+      ;;
+    --data-urlencode)
+      data_ref="${2#ref=}"
+      shift 2
+      ;;
+    --get|--silent|--show-error|-f|-L|-fL)
       shift
       ;;
     --speed-limit)
@@ -148,6 +157,19 @@ if [[ $url == *'/releases/latest' ]]; then
   printf '%s\n' '{"tag_name":"v9.9.9"}'
   exit 0
 fi
+if [[ $url == 'https://api.github.com/repos/dillacorn/awtarchy/releases/tags/v9.9.9' ]]; then
+  printf '%s\n' '{"tag_name":"v9.9.9","draft":false,"published_at":"2026-01-01T00:00:00Z"}'
+  exit 0
+fi
+if [[ $url == 'https://api.github.com/repos/dillacorn/awtarchy/git/ref/tags/v9.9.9' ]]; then
+  printf '{"object":{"type":"commit","sha":"%s"}}\n' \
+    "${AWTARCHY_TEST_RELEASE_COMMIT:?}"
+  exit 0
+fi
+if [[ $url == *'/contents/local/share/awtarchy/quickshell-managed-history.sha256' ]]; then
+  [[ $data_ref == "${AWTARCHY_TEST_RELEASE_COMMIT:?}" ]] || exit 7
+  exit 0
+fi
 if [[ $url == 'https://api.github.com/repos/dillacorn/awtarchy/commits/main' ]]; then
   printf '{"sha":"%s"}\n' "${AWTARCHY_TEST_MAIN_COMMIT:?}"
   exit 0
@@ -160,7 +182,7 @@ if [[ $url == "https://github.com/dillacorn/awtarchy/archive/${AWTARCHY_TEST_MAI
   cp -- "${AWTARCHY_TEST_MAIN_ARCHIVE:?}" "$out"
   exit 0
 fi
-if [[ $url == 'https://github.com/dillacorn/awtarchy/archive/refs/tags/v9.9.9.tar.gz' ]]; then
+if [[ $url == "https://github.com/dillacorn/awtarchy/archive/${AWTARCHY_TEST_RELEASE_COMMIT:?}.tar.gz" ]]; then
   cp -- "${AWTARCHY_TEST_RELEASE_ARCHIVE:?}" "$out"
   exit 0
 fi
@@ -174,6 +196,7 @@ common_test_env=(
   "PATH=${fakebin}:$PATH"
   "AWTARCHY_TEST_CURL_LOG=$curl_log"
   "AWTARCHY_TEST_MAIN_COMMIT=$TEST_MAIN_COMMIT"
+  "AWTARCHY_TEST_RELEASE_COMMIT=$TEST_RELEASE_COMMIT"
   "AWTARCHY_TEST_MAIN_ARCHIVE=${TMP}/main.tar.gz"
   "AWTARCHY_TEST_RELEASE_ARCHIVE=${TMP}/release.tar.gz"
 )
@@ -300,6 +323,67 @@ legacy_dry_output="$(
   || fail "legacy dry-run installed the maintenance command"
 grep -Fq 'No files were changed because --dry-run was used' <<<"$legacy_dry_output" \
   || fail "legacy dry-run did not explain the migration"
+
+# A checkout on any non-main branch must refresh the normal integrated command
+# without replacing it from main or installing a second testing executable.
+branch_source="${TMP}/unreleased-source"
+mkdir -p "$branch_source"
+tar --exclude='.git' -C "$ROOT" -cf - . | tar -C "$branch_source" -xf -
+git -C "$branch_source" init -q -b feature/testing
+git -C "$branch_source" add .
+git -C "$branch_source" \
+  -c user.name='Awtarchy Test' \
+  -c user.email='awtarchy-test@example.invalid' \
+  commit -qm 'Create unreleased installer fixture'
+branch_revision="$(git -C "$branch_source" rev-parse HEAD)"
+branch_home="${TMP}/branch-home"
+mkdir -p \
+  "$branch_home/.local/bin" \
+  "$branch_home/.local/share/awtarchy" \
+  "$branch_home/.local/state/awtarchy"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 91' >"$branch_home/.local/bin/awtarchy"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 92' \
+  >"$branch_home/.local/share/awtarchy/awtarchy-runtime.sh"
+chmod 0755 \
+  "$branch_home/.local/bin/awtarchy" \
+  "$branch_home/.local/share/awtarchy/awtarchy-runtime.sh"
+printf 'tag=v2.0.0-1\nupdated_at=2000-01-01T00:00:00Z\n' \
+  >"$branch_home/.local/state/awtarchy/config-version"
+branch_curl_log="${TMP}/branch-curl.log"
+: >"$branch_curl_log"
+branch_output="$(
+  env \
+    "${common_test_env[@]}" \
+    "HOME=$branch_home" \
+    "USER=$(id -un)" \
+    "LOGNAME=$(id -un)" \
+    "AWTARCHY_TEST_CURL_LOG=$branch_curl_log" \
+    "AWTARCHY_SYSTEM_BIN_DIR=${TMP}/branch-system-bin" \
+    bash "$branch_source/awtarchy-install.sh"
+)"
+cmp -s "$branch_home/.local/bin/awtarchy" \
+  "$branch_source/local/bin/awtarchy" \
+  || fail "unreleased installer did not install the integrated command"
+cmp -s "$branch_home/.local/share/awtarchy/awtarchy-runtime.sh" \
+  "$branch_source/local/share/awtarchy/awtarchy-runtime.sh" \
+  || fail "unreleased installer did not install the matching runtime"
+grep -Fxq 'tag=unreleased' \
+  "$branch_home/.local/state/awtarchy/command-version" \
+  || fail "unreleased installer did not distinguish command state from a release"
+grep -Fxq "revision=${branch_revision}" \
+  "$branch_home/.local/state/awtarchy/command-version" \
+  || fail "unreleased installer did not record its exact source revision"
+grep -Fxq 'tag=v2.0.0-1' \
+  "$branch_home/.local/state/awtarchy/config-version" \
+  || fail "unreleased command refresh changed stable config state"
+grep -Fq "feature/testing@${branch_revision}" <<<"$branch_output" \
+  || fail "unreleased installer did not identify its branch and exact revision"
+grep -Fq 'awtarchy git review --branch feature/testing --commit' <<<"$branch_output" \
+  || fail "unreleased installer did not explain integrated Git testing"
+[[ ! -s $branch_curl_log ]] \
+  || fail "unreleased installer unexpectedly refreshed from main"
+[[ ! -e $branch_home/.local/bin/awtarchy-quickshell ]] \
+  || fail "unreleased installer created the retired testing command"
 
 set +e
 maintenance_output="$(HOME="$home" USER="$(id -un)" bash "$INSTALLER_SOURCE" update 2>&1)"

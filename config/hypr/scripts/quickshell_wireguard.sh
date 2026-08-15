@@ -8,7 +8,7 @@ VPN_DIR="${AWTARCHY_VPN_DIR:-${HOME}/vpn}"
 EDITOR_TITLE="Awtarchy VPN Config Editor"
 EDITOR_CLASS="awtarchy-vpn-editor"
 FIREFOX="/usr/bin/firefox"
-WG_QUICK="/usr/bin/wg-quick"
+WIREGUARD_HELPER="/usr/local/libexec/awtarchy/wireguard-helper"
 WTFISMYIP_URL="https://myip.wtf/"
 WTFISMYIP_TEXT_URL="https://myip.wtf/text"
 
@@ -67,7 +67,7 @@ list_profiles() {
 reject_privileged_hooks() {
     local conf="$1" rc=0
 
-    grep -Eiq '^[[:space:]]*(PreUp|PostUp|PreDown|PostDown)[[:space:]]*=' "$conf" || rc=$?
+    grep -Eiq '^[[:space:]]*(PreUp|PostUp|PreDown|PostDown)([[:space:]#=]|$)' "$conf" || rc=$?
     case "$rc" in
         0)
             fail "WireGuard profile contains PreUp/PostUp/PreDown/PostDown hooks. Awtarchy refuses to run imported command hooks as root."
@@ -82,17 +82,26 @@ reject_privileged_hooks() {
 }
 
 run_privileged_wg_quick() {
-    local action="$1" conf="$2"
+    local action="$1" name="$2" conf="$3" helper_mode=""
 
     reject_privileged_hooks "$conf"
-    [[ -x "$WG_QUICK" ]] || fail "wg-quick is unavailable at ${WG_QUICK}. Install wireguard-tools."
+    [[ -f "$WIREGUARD_HELPER" && ! -L "$WIREGUARD_HELPER" && -x "$WIREGUARD_HELPER" ]] \
+        || fail "Awtarchy's root-owned WireGuard helper is unavailable. Run the Awtarchy installer once to repair it."
+    [[ "$(stat -c %u -- "$WIREGUARD_HELPER" 2>/dev/null || true)" == 0 ]] \
+        || fail "Awtarchy's WireGuard helper is not owned by root."
+    helper_mode="$(stat -c %a -- "$WIREGUARD_HELPER" 2>/dev/null || true)"
+    [[ "$helper_mode" =~ ^[0-7]+$ ]] \
+        || fail "Awtarchy's WireGuard helper has an invalid mode."
+    (( (8#$helper_mode & 8#022) == 0 )) \
+        || fail "Awtarchy's WireGuard helper is writable by an unsafe account."
 
-    if command -v pkexec >/dev/null 2>&1; then
-        exec pkexec "$WG_QUICK" "$action" "$conf"
+    if [[ -x /usr/bin/pkexec ]]; then
+        exec /usr/bin/pkexec "$WIREGUARD_HELPER" "$action" "$name"
     fi
 
-    if command -v alacritty >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
-        exec alacritty --title "Awtarchy WireGuard" -e sudo "$WG_QUICK" "$action" "$conf"
+    if [[ -x /usr/bin/alacritty && -x /usr/bin/sudo ]]; then
+        exec /usr/bin/alacritty --title "Awtarchy WireGuard" \
+            -e /usr/bin/sudo "$WIREGUARD_HELPER" "$action" "$name"
     fi
 
     fail "A privilege prompt is required but neither pkexec nor an Alacritty+sudo fallback is available."
@@ -189,7 +198,7 @@ case "${1:-}" in
         name="${2:-}"
         [[ -n "$name" ]] || fail "Profile name is required"
         conf="$(profile_conf "$name")"
-        run_privileged_wg_quick "$action" "$conf"
+        run_privileged_wg_quick "$action" "$name" "$conf"
         ;;
     edit)
         name="${2:-}"

@@ -5,7 +5,7 @@
 Type=Application
 Name=Quickshell Bar flip (focused display)
 Comment=Flip Quickshell Bar side on the currently focused monitor
-Exec=sh -lc 'exec "$HOME/.config/hypr/scripts/quickshell_bar_flip.sh"'
+Exec=sh -lc "exec ~/.config/hypr/scripts/quickshell_bar_flip.sh"
 Icon=view-refresh
 Terminal=false
 Categories=Utility;

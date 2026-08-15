@@ -1,5 +1,7 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash
 set -euo pipefail
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin
 
 # usb_refresh_fixer.sh
 #
@@ -27,7 +29,9 @@ set -euo pipefail
 # Refresh all mapped devices:
 #   ./usb_refresh_fixer.sh
 
+PRIVILEGED_HELPER="/usr/local/libexec/awtarchy/usb-refresh-fixer"
 CONFIG_DIR="/etc/usb_refresh_fixer"
+RUNTIME_DIR="/run/awtarchy/usb-refresh"
 RESET_DELAY_SECONDS=2
 POST_PORT_REBIND_WAIT_SECONDS=2
 POST_CONTROLLER_REBIND_WAIT_SECONDS=3
@@ -38,8 +42,6 @@ AUDIO_STABLE_POLLS=5
 
 SELF_PATH="$(readlink -f "$0")"
 RUN_USER="${SUDO_USER:-${USER:-$(id -un)}}"
-SUDOERS_FILE="/etc/sudoers.d/usb_refresh_fixer-${RUN_USER}"
-ACTIVE_LOCK_FILE="/tmp/usb_refresh_fixer.${RUN_USER}.active"
 
 log() { printf '[usb_refresh_fixer] %s\n' "$*" >&2; }
 die() { log "ERROR: $*"; exit 1; }
@@ -52,6 +54,12 @@ readf() {
 
 validate_id() {
     [[ "$1" =~ ^[0-9a-fA-F]{4}:[0-9a-fA-F]{4}$ ]] || die "invalid USB ID: $1"
+}
+
+validate_mapping_name() {
+    local name="$1"
+    [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] \
+        || die "invalid mapping name: $name"
 }
 
 get_run_user_uid() {
@@ -68,7 +76,7 @@ user_session_cmd() {
     home="$(get_run_user_home)" || return 1
     [[ -S "/run/user/$uid/bus" ]] || return 1
 
-    sudo -u "$RUN_USER" env \
+    /usr/bin/runuser -u "$RUN_USER" -- env \
         XDG_RUNTIME_DIR="/run/user/$uid" \
         DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
         HOME="$home" \
@@ -76,60 +84,45 @@ user_session_cmd() {
         "$@"
 }
 
-ensure_root() {
-    if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
-        return 0
+enter_privileged_helper() {
+    if [[ "$SELF_PATH" != "$PRIVILEGED_HELPER" ]]; then
+        [[ -x "$PRIVILEGED_HELPER" ]] \
+            || die "root-owned helper is missing; run the Awtarchy installer once to repair it"
+        if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
+            exec "$PRIVILEGED_HELPER" "$@"
+        elif [[ -t 0 || -t 1 ]]; then
+            exec /usr/bin/sudo "$PRIVILEGED_HELPER" "$@"
+        else
+            exec /usr/bin/sudo -n "$PRIVILEGED_HELPER" "$@" \
+                || die "USB refresh authorization is missing; run the Awtarchy installer once"
+        fi
     fi
 
-    if [[ -t 0 || -t 1 ]]; then
-        exec sudo "$SELF_PATH" "$@"
-    else
-        exec sudo -n "$SELF_PATH" "$@" || die "run this manually once first so it can install its sudoers rule"
-    fi
-}
-
-install_self_sudoers() {
-    [[ ${EUID:-$(id -u)} -eq 0 ]] || die "install_self_sudoers requires root"
-    [[ "$RUN_USER" != "root" ]] || return 0
-
-    local rule
-    local tmp
-    rule="${RUN_USER} ALL=(root) NOPASSWD: ${SELF_PATH}"
-
-    if [[ -r "$SUDOERS_FILE" ]] && grep -Fxq "$rule" "$SUDOERS_FILE"; then
-        return 0
-    fi
-
-    tmp="$(mktemp)"
-    printf '%s\n' "$rule" > "$tmp"
-    chmod 0440 "$tmp"
-    visudo -cf "$tmp" >/dev/null
-    install -Dm440 "$tmp" "$SUDOERS_FILE"
-    rm -f "$tmp"
-
-    log "installed sudoers rule for ${RUN_USER}"
-}
-
-refresh_lock_begin() {
-    printf '%s\n' "$$" > "$ACTIVE_LOCK_FILE"
-}
-
-refresh_lock_end() {
-    local cur=""
-    [[ -e "$ACTIVE_LOCK_FILE" ]] || return 0
-    cur="$(cat "$ACTIVE_LOCK_FILE" 2>/dev/null || true)"
-    if [[ "$cur" == "$$" ]]; then
-        rm -f "$ACTIVE_LOCK_FILE"
-    fi
+    [[ ${EUID:-$(id -u)} -eq 0 ]] || die "the root-owned USB helper must run as root"
 }
 
 run_with_refresh_lock() {
-    refresh_lock_begin
-    trap 'refresh_lock_end' EXIT INT TERM HUP
-    "$@"
-    local rc=$?
-    refresh_lock_end
+    local uid lock_file active_file lock_fd rc=0
+
+    uid="$(get_run_user_uid)" || die "could not resolve user: $RUN_USER"
+    install -d -m 0755 -o root -g root /run/awtarchy "$RUNTIME_DIR"
+    [[ ! -L /run/awtarchy && ! -L "$RUNTIME_DIR" ]] \
+        || die "USB refresh runtime directory must not be a symbolic link"
+
+    lock_file="${RUNTIME_DIR}/${uid}.lock"
+    active_file="${RUNTIME_DIR}/${uid}.active"
+    exec {lock_fd}>"$lock_file"
+    chmod 0644 "$lock_file"
+    flock -x "$lock_fd"
+    printf '%s\n' "$$" >"$active_file"
+    chmod 0644 "$active_file"
+    trap 'rm -f -- "$active_file"' EXIT INT TERM HUP
+
+    "$@" || rc=$?
+
+    rm -f -- "$active_file"
     trap - EXIT INT TERM HUP
+    exec {lock_fd}>&-
     return "$rc"
 }
 
@@ -200,32 +193,91 @@ write_config() {
     local usb_port_path="$3"
     local host_controller_bdf="$4"
 
-    install -d -m 0755 "$CONFIG_DIR"
+    local destination="${CONFIG_DIR}/${name}.conf" temporary=""
 
-    cat > "${CONFIG_DIR}/${name}.conf" <<EOF
-EXPECTED_ID=$(printf '%q' "$expected_id")
-USB_PORT_PATH=$(printf '%q' "$usb_port_path")
-HOST_CONTROLLER_BDF=$(printf '%q' "$host_controller_bdf")
-RESET_DELAY_SECONDS=$(printf '%q' "$RESET_DELAY_SECONDS")
-EOF
+    validate_mapping_name "$name"
+    validate_id "$expected_id"
+    [[ "$usb_port_path" =~ ^(usb[0-9]+|[0-9]+-[0-9]+([.][0-9]+)*)$ ]] \
+        || die "invalid USB port path: $usb_port_path"
+    [[ "$host_controller_bdf" =~ ^[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]$ ]] \
+        || die "invalid host controller BDF: $host_controller_bdf"
 
-    chmod 0644 "${CONFIG_DIR}/${name}.conf"
+    install -d -m 0755 -o root -g root "$CONFIG_DIR"
+    [[ ! -L "$CONFIG_DIR" ]] || die "USB mapping directory must not be a symbolic link"
+    temporary="$(mktemp "${CONFIG_DIR}/.${name}.conf.XXXXXX")"
+    {
+        printf 'EXPECTED_ID=%s\n' "${expected_id,,}"
+        printf 'USB_PORT_PATH=%s\n' "$usb_port_path"
+        printf 'HOST_CONTROLLER_BDF=%s\n' "${host_controller_bdf,,}"
+        printf 'RESET_DELAY_SECONDS=%s\n' "$RESET_DELAY_SECONDS"
+    } >"$temporary"
+    chmod 0644 "$temporary"
+    chown root:root "$temporary"
+    mv -Tf -- "$temporary" "$destination"
 }
 
 load_config() {
     local name="$1"
     local cfg="${CONFIG_DIR}/${name}.conf"
+    local line key value mode owner
+    local expected_seen=0 port_seen=0 controller_seen=0 delay_seen=0
 
-    [[ -r "$cfg" ]] || die "missing config: $cfg"
+    validate_mapping_name "$name"
+    [[ -f "$cfg" && ! -L "$cfg" && -r "$cfg" ]] || die "missing or unsafe config: $cfg"
+    owner="$(stat -c %u -- "$cfg")" || die "could not inspect config owner: $cfg"
+    mode="$(stat -c %a -- "$cfg")" || die "could not inspect config mode: $cfg"
+    [[ "$owner" == 0 ]] || die "USB config must be owned by root: $cfg"
+    (( (8#$mode & 8#022) == 0 )) || die "USB config must not be group/world writable: $cfg"
 
-    # shellcheck disable=SC1090
-    source "$cfg"
+    EXPECTED_ID=""
+    USB_PORT_PATH=""
+    HOST_CONTROLLER_BDF=""
+    RESET_DELAY_SECONDS=""
 
-    : "${EXPECTED_ID:?missing EXPECTED_ID}"
-    : "${USB_PORT_PATH:?missing USB_PORT_PATH}"
-    : "${HOST_CONTROLLER_BDF:?missing HOST_CONTROLLER_BDF}"
-    : "${RESET_DELAY_SECONDS:?missing RESET_DELAY_SECONDS}"
-    [[ "$RESET_DELAY_SECONDS" =~ ^[0-9]+$ ]] || die "RESET_DELAY_SECONDS invalid in $cfg"
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+        [[ -n "$line" && "$line" != \#* ]] || continue
+        [[ "$line" == *=* ]] || die "invalid USB config line in $cfg"
+        key="${line%%=*}"
+        value="${line#*=}"
+        case "$key" in
+            EXPECTED_ID)
+                (( expected_seen == 0 )) || die "duplicate EXPECTED_ID in $cfg"
+                EXPECTED_ID="$value"
+                expected_seen=1
+                ;;
+            USB_PORT_PATH)
+                (( port_seen == 0 )) || die "duplicate USB_PORT_PATH in $cfg"
+                USB_PORT_PATH="$value"
+                port_seen=1
+                ;;
+            HOST_CONTROLLER_BDF)
+                (( controller_seen == 0 )) || die "duplicate HOST_CONTROLLER_BDF in $cfg"
+                HOST_CONTROLLER_BDF="$value"
+                controller_seen=1
+                ;;
+            RESET_DELAY_SECONDS)
+                (( delay_seen == 0 )) || die "duplicate RESET_DELAY_SECONDS in $cfg"
+                RESET_DELAY_SECONDS="$value"
+                delay_seen=1
+                ;;
+            *)
+                die "unexpected USB config key in $cfg: $key"
+                ;;
+        esac
+    done <"$cfg"
+
+    (( expected_seen && port_seen && controller_seen && delay_seen )) \
+        || die "USB config is missing required values: $cfg"
+    validate_id "$EXPECTED_ID"
+    [[ "$USB_PORT_PATH" =~ ^(usb[0-9]+|[0-9]+-[0-9]+([.][0-9]+)*)$ ]] \
+        || die "USB_PORT_PATH invalid in $cfg"
+    [[ "$HOST_CONTROLLER_BDF" =~ ^[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]$ ]] \
+        || die "HOST_CONTROLLER_BDF invalid in $cfg"
+    [[ "$RESET_DELAY_SECONDS" =~ ^[0-9]+$ ]] \
+        || die "RESET_DELAY_SECONDS invalid in $cfg"
+    (( RESET_DELAY_SECONDS <= 60 )) \
+        || die "RESET_DELAY_SECONDS is too large in $cfg"
 }
 
 rebind_usb_port() {
@@ -258,7 +310,7 @@ rebind_usb_controller() {
 }
 
 audio_prereqs_ok() {
-    command -v sudo >/dev/null 2>&1 || return 1
+    [[ -x /usr/bin/runuser ]] || return 1
     command -v wpctl >/dev/null 2>&1 || return 1
     command -v pw-dump >/dev/null 2>&1 || return 1
     command -v jq >/dev/null 2>&1 || return 1
@@ -396,6 +448,7 @@ cmd_map() {
     local usb_port_path host_controller_bdf
 
     validate_id "$id"
+    validate_mapping_name "$name"
 
     usb_port_path="$(find_device_sysfs_by_id "$id")" || die "device $id is not currently detected. map it while it is working."
     host_controller_bdf="$(find_controller_bdf_from_path "$usb_port_path")" || die "could not resolve PCI controller for $usb_port_path"
@@ -445,7 +498,7 @@ cmd_audio_default() {
     local end
 
     load_config "$name"
-    wait_for_audio_prereqs || die "audio restore prerequisites missing after waiting: need sudo, wpctl, pw-dump, jq, and a live user session bus"
+    wait_for_audio_prereqs || die "audio restore prerequisites missing after waiting: need runuser, wpctl, pw-dump, jq, and a live user session bus"
 
     end=$(( $(date +%s) + AUDIO_WAIT_SECS ))
     while (( $(date +%s) < end )); do
@@ -496,7 +549,7 @@ cmd_audio_default() {
 cmd_refresh_audio() {
     local name="$1"
     cmd_refresh "$name"
-    wait_for_audio_prereqs || die "audio prerequisites missing after refresh: need sudo, wpctl, pw-dump, jq, and a live user session bus"
+    wait_for_audio_prereqs || die "audio prerequisites missing after refresh: need runuser, wpctl, pw-dump, jq, and a live user session bus"
     wait_for_mapped_sink_id "$name" >/dev/null || die "mapped audio sink did not appear after refresh: $name"
     log "mapped audio sink is present after refresh: $name"
 }
@@ -542,10 +595,13 @@ EOF
 }
 
 main() {
-    ensure_root "$@"
-    install_self_sudoers
+    if [[ $# -eq 0 ]]; then
+        set -- refresh-all
+    fi
 
-    case "${1:-refresh-all}" in
+    enter_privileged_helper "$@"
+
+    case "$1" in
         map)
             [[ $# -eq 3 ]] || { usage; exit 1; }
             cmd_map "$2" "$3"
@@ -572,14 +628,12 @@ main() {
             run_with_refresh_lock cmd_refresh_all
             ;;
         *)
-            if [[ $# -eq 0 ]]; then
-                run_with_refresh_lock cmd_refresh_all
-            else
-                usage
-                exit 1
-            fi
+            usage
+            exit 1
             ;;
     esac
 }
 
-main "$@"
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+    main "$@"
+fi

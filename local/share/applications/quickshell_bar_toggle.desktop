@@ -5,7 +5,7 @@
 Type=Application
 Name=Quickshell Bar toggle (focused display)
 Comment=Toggle Quickshell Bar on the currently focused monitor
-Exec=sh -lc 'exec "$HOME/.config/hypr/scripts/quickshell_bar_toggle.sh"'
+Exec=sh -lc "exec ~/.config/hypr/scripts/quickshell_bar_toggle.sh"
 Icon=preferences-desktop-display
 Terminal=false
 Categories=Utility;

@@ -13,7 +13,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           fetch-depth: 0
       - name: Install validation tools
@@ -24,6 +24,7 @@ jobs:
           bash -n awtarchy-install.sh
           bash -n local/bin/awtarchy
           grep -Fq 'exec "${TARGET_HOME}/.local/bin/awtarchy" "$@"' local/bin/awtarchy
+          bash -n local/libexec/awtarchy/scxctl-helper
           bash -n local/share/awtarchy/awtarchy-runtime.sh
           bash -n config/hypr/scripts/awtarchy-tips-tui.sh
           bash -n config/hypr/scripts/ddc_brightness.sh
@@ -32,6 +33,7 @@ jobs:
           bash -n config/hypr/scripts/hypridle_action.sh
           bash -n config/hypr/scripts/hypridle_restart.sh
           bash -n config/hypr/scripts/hyprsunset_ctl.sh
+          bash -n config/hypr/scripts/gif_capture.sh
           bash -n config/hypr/scripts/quickshell.sh
           bash -n config/hypr/scripts/quickshell_application_state.sh
           bash -n config/hypr/scripts/quickshell_bar_restore.sh
@@ -42,11 +44,14 @@ jobs:
           bash -n config/hypr/scripts/quickshell_sensitive_capture.sh
           bash -n config/hypr/scripts/quickshell_theme_apply.sh
           bash -n config/hypr/scripts/quickshell_wireguard.sh
+          bash -n config/hypr/scripts/usb_refresh_fixer.sh
           bash -n config/hypr/scripts/restore_brightness.sh
           bash -n config/hypr/scripts/screenshot_area.sh
           bash -n config/hypr/scripts/screenshot_display.sh
           bash -n config/hypr/scripts/screenshot_fullscreen.sh
+          bash -n config/hypr/scripts/toggle_resize_if_ok.sh
           bash -n tests/test-awtarchy-command.sh
+          bash -n tests/test-awtarchy-git-mode.sh
           bash -n tests/test-awtarchy-command-shim.sh
           bash -n tests/test-bar-wheel-input.sh
           bash -n tests/test-ddc-brightness-watcher.sh
@@ -59,20 +64,25 @@ jobs:
           bash -n tests/test-quickshell-capture-privacy.sh
           bash -n tests/test-quickshell-production-readiness.sh
           bash -n tests/test-quickshell-updater-migration.sh
+          bash -n tests/test-security-boundaries.sh
           bash -n tests/test-quickshell-theme-legacy-micro.sh
           bash -n tests/test-troubleshoot-command.sh
+          bash -n tests/test-usb-refresh-security.sh
           bash -n tests/test-quickshell-resume-recovery.sh
+          python3 -m py_compile local/libexec/awtarchy/wireguard-helper
           test -x config/hypr/scripts/quickshell_sensitive_capture.sh
       - name: ShellCheck command code
         run: |
           shellcheck \
             awtarchy-install.sh \
             local/bin/awtarchy \
+            local/libexec/awtarchy/scxctl-helper \
             config/hypr/scripts/ddc_brightness.sh \
             config/hypr/scripts/dim_display.sh \
             config/hypr/scripts/hypr-ddc-brightness.sh \
             config/hypr/scripts/hypridle_restart.sh \
             config/hypr/scripts/hyprsunset_ctl.sh \
+            config/hypr/scripts/gif_capture.sh \
             config/hypr/scripts/quickshell_bar_restore.sh \
             config/hypr/scripts/quickshell_launcher_position.sh \
             config/hypr/scripts/quickshell_power_profile_setup.sh \
@@ -80,10 +90,13 @@ jobs:
             config/hypr/scripts/quickshell_runtime_rules.sh \
             config/hypr/scripts/quickshell_sensitive_capture.sh \
             config/hypr/scripts/quickshell_wireguard.sh \
+            config/hypr/scripts/usb_refresh_fixer.sh \
             config/hypr/scripts/restore_brightness.sh \
             config/hypr/scripts/screenshot_area.sh \
             config/hypr/scripts/screenshot_display.sh \
             config/hypr/scripts/screenshot_fullscreen.sh \
+            config/hypr/scripts/toggle_resize_if_ok.sh \
+            tests/test-awtarchy-git-mode.sh \
             tests/test-awtarchy-command-shim.sh \
             tests/test-bar-wheel-input.sh \
             tests/test-ddc-brightness-watcher.sh \
@@ -95,11 +108,19 @@ jobs:
             tests/test-lua-validation.sh \
             tests/test-quickshell-capture-privacy.sh \
             tests/test-quickshell-updater-migration.sh \
+            tests/test-security-boundaries.sh \
             tests/test-quickshell-theme-legacy-micro.sh \
             tests/test-troubleshoot-command.sh \
+            tests/test-usb-refresh-security.sh \
             tests/test-quickshell-resume-recovery.sh
           shellcheck -e SC2015 config/hypr/scripts/quickshell_theme_apply.sh
           shellcheck -e SC2016 tests/test-awtarchy-command.sh
+      - name: Quickshell desktop entry validation
+        run: |
+          desktop-file-validate \
+            local/share/applications/quickshell_bar_flip.desktop \
+            local/share/applications/quickshell_bar_rotate.desktop \
+            local/share/applications/quickshell_bar_toggle.desktop
       - name: Command and updater integration tests
         run: |
           no_sudo_bin="$(mktemp -d)"
@@ -107,6 +128,7 @@ jobs:
           chmod 0755 "${no_sudo_bin}/sudo"
           PATH="${no_sudo_bin}:$PATH" bash tests/test-awtarchy-command.sh
           rm -rf -- "$no_sudo_bin"
+          bash tests/test-awtarchy-git-mode.sh
           bash tests/test-awtarchy-command-shim.sh
           bash tests/test-bar-wheel-input.sh
           bash tests/test-ddc-brightness-watcher.sh
@@ -119,6 +141,8 @@ jobs:
           bash tests/test-quickshell-capture-privacy.sh
           bash tests/test-quickshell-production-readiness.sh
           bash tests/test-quickshell-updater-migration.sh
+          bash tests/test-security-boundaries.sh
           bash tests/test-quickshell-theme-legacy-micro.sh
           bash tests/test-troubleshoot-command.sh
+          bash tests/test-usb-refresh-security.sh
           bash tests/test-quickshell-resume-recovery.sh

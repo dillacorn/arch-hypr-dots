@@ -11,7 +11,7 @@ WAIT_AUDIO_SECS="${WAIT_AUDIO_SECS:-20}"
 AUDIO_POLL_SECS="${AUDIO_POLL_SECS:-0.10}"
 QUIET_POLLS="${QUIET_POLLS:-2}"
 SOUND_FILE="${SOUND_FILE:-$HOME/.config/hypr/sounds/awtarchy-login.mp3}"
-USB_REFRESH_LOCK_FILE="${USB_REFRESH_LOCK_FILE:-/tmp/usb_refresh_fixer.$(id -un).active}"
+USB_REFRESH_LOCK_FILE="${USB_REFRESH_LOCK_FILE:-/run/awtarchy/usb-refresh/$(id -u).active}"
 SCRIPT_LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/quickshell_ready_sound.lock"
 
 have() { command -v "$1" >/dev/null 2>&1; }

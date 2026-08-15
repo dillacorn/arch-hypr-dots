@@ -2,15 +2,15 @@ name: Anti-Spam PR Labeler
 
 on: [pull_request]
 
+permissions:
+  pull-requests: write
+
 jobs:
   label-spam-prs:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout
-      uses: actions/checkout@v2
-
     - name: Label Potential Spam PRs
-      uses: PraiseXI/AntiSpamPRLabeler@v1.2.0
+      uses: PraiseXI/AntiSpamPRLabeler@6dceeed42338b61e9d2957a124f170efee7aaf7a # v1.2.0
       with:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
         max-changes-for-label: '2' # Flag PRs with 2 or fewer changes

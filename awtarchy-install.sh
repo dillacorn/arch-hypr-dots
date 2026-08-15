@@ -10,12 +10,15 @@ umask 022
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 RUNTIME_SOURCE="${SCRIPT_DIR}/local/share/awtarchy/awtarchy-runtime.sh"
 LAUNCHER_SOURCE="${SCRIPT_DIR}/local/bin/awtarchy"
-QUICKSHELL_LAUNCHER_SOURCE="${SCRIPT_DIR}/local/bin/awtarchy-quickshell"
+USB_HELPER_SOURCE="${SCRIPT_DIR}/config/hypr/scripts/usb_refresh_fixer.sh"
+WIREGUARD_HELPER_SOURCE="${SCRIPT_DIR}/local/libexec/awtarchy/wireguard-helper"
+SCXCTL_HELPER_SOURCE="${SCRIPT_DIR}/local/libexec/awtarchy/scxctl-helper"
 SYSTEM_BIN_DIR="${AWTARCHY_SYSTEM_BIN_DIR:-/usr/local/bin}"
+SYSTEM_LIBEXEC_DIR="/usr/local/libexec/awtarchy"
+SUDOERS_DIR="/etc/sudoers.d"
 TARGET_USER=""
 TARGET_HOME=""
 REINSTALL=0
-QUICKSHELL_COMMAND_ONLY=0
 DRY_RUN_REQUESTED=0
 ARGS=()
 
@@ -24,7 +27,6 @@ usage() {
 Usage:
   sudo ./awtarchy-install.sh
   sudo ./awtarchy-install.sh --no-reboot
-  sudo ./awtarchy-install.sh --quickshell-command
   ./awtarchy-install.sh --dry-run
   sudo ./awtarchy-install.sh --reinstall
   ./awtarchy-install.sh --help
@@ -36,8 +38,6 @@ Existing legacy installations are migrated to the new command without rerunning
 package installation or replacing managed configs.
 
 Options:
-  --quickshell-command
-                 Install only the temporary awtarchy-quickshell testing command
   --reinstall    Run the complete installer even when Awtarchy is already installed
 EOF_USAGE
 }
@@ -68,6 +68,25 @@ resolve_target() {
   }
 }
 
+run_as_target() {
+  if [[ ${EUID} -eq 0 && $TARGET_USER != root ]]; then
+    runuser -u "$TARGET_USER" -- "$@"
+  else
+    "$@"
+  fi
+}
+
+configure_test_system_root() {
+  local test_root="${AWTARCHY_TEST_SYSTEM_ROOT:-}"
+  [[ -n $test_root ]] || return 0
+  [[ ${EUID} -eq 0 && $test_root == /tmp/* && $test_root != /tmp ]] || {
+    printf 'ERROR: AWTARCHY_TEST_SYSTEM_ROOT is restricted to a root-run /tmp test directory.\n' >&2
+    exit 1
+  }
+  SYSTEM_LIBEXEC_DIR="${test_root}/usr/local/libexec/awtarchy"
+  SUDOERS_DIR="${test_root}/etc/sudoers.d"
+}
+
 source_git() {
   local -a command=(git -C "$SCRIPT_DIR" "$@")
 
@@ -86,10 +105,7 @@ source_git() {
 
 ensure_vpn_directory() {
   local vpn_dir="${TARGET_HOME}/vpn"
-  install -d -m 0700 "$vpn_dir"
-  if [[ ${EUID} -eq 0 ]]; then
-    chown "$TARGET_USER:$TARGET_USER" "$vpn_dir"
-  fi
+  run_as_target install -d -m 0700 "$vpn_dir"
 }
 
 state_value() {
@@ -120,24 +136,26 @@ legacy_install_exists() {
   return 1
 }
 
-is_quickshell_testing_source() {
-  local source_name="${SCRIPT_DIR##*/}" branch=""
-  [[ ${AWTARCHY_INSTALL_BRANCH:-} == quickshell-conversion-testing ]] && return 0
-  [[ ${AWTARCHY_TESTING_COMMIT:-} =~ ^[0-9a-fA-F]{40}$ ]] && return 0
+source_branch() {
+  local branch=""
   if command -v git >/dev/null 2>&1 \
     && source_git rev-parse --is-inside-work-tree >/dev/null 2>&1;
   then
     branch="$(source_git branch --show-current 2>/dev/null || true)"
-    [[ $branch == quickshell-conversion-testing ]] && return 0
+    [[ -n $branch ]] && printf '%s\n' "$branch"
   fi
-  [[ $source_name == awtarchy-quickshell-conversion-testing ]] && return 0
-  return 1
+}
+
+is_unreleased_git_source() {
+  local branch=""
+  branch="$(source_branch)"
+  [[ -n $branch && $branch != main ]]
 }
 
 source_release_tag() {
   local source_name="${SCRIPT_DIR##*/}" tag=""
 
-  if is_quickshell_testing_source; then
+  if is_unreleased_git_source; then
     printf '%s\n' unreleased
     return 0
   fi
@@ -171,11 +189,6 @@ source_release_tag() {
 }
 
 source_revision() {
-  if [[ ${AWTARCHY_TESTING_COMMIT:-} =~ ^[0-9a-fA-F]{40}$ ]]; then
-    printf '%s\n' "${AWTARCHY_TESTING_COMMIT,,}"
-    return 0
-  fi
-
   if command -v git >/dev/null 2>&1 \
     && source_git rev-parse --is-inside-work-tree >/dev/null 2>&1;
   then
@@ -206,12 +219,17 @@ legacy_config_tag() {
 
 write_version_file() {
   local destination="$1" tag="$2" revision="${3:-}" timestamp_key="$4"
+  local destination_dir temporary
+  destination_dir="$(dirname -- "$destination")"
+  run_as_target install -d -m 0755 -- "$destination_dir"
+  temporary="$(run_as_target mktemp --tmpdir="$destination_dir" '.version.tmp.XXXXXX')"
   {
     printf 'tag=%s\n' "$tag"
     [[ -n $revision ]] && printf 'revision=%s\n' "$revision"
     printf '%s=%s\n' "$timestamp_key" "$(date -Iseconds)"
-  } >"$destination"
-  chmod 0644 "$destination"
+  } | run_as_target tee "$temporary" >/dev/null
+  run_as_target chmod 0644 "$temporary"
+  run_as_target mv -Tf -- "$temporary" "$destination"
 }
 
 install_system_launcher() {
@@ -242,6 +260,44 @@ install_system_launcher() {
 
 set -Eeuo pipefail
 
+if [[ ${EUID} -eq 0 ]]; then
+  target_user="${SUDO_USER:-}"
+  passwd_entry=""
+  account=""
+  uid=""
+  target_home=""
+
+  [[ -n $target_user && $target_user != root ]] || {
+    printf 'ERROR: Refusing to run a user-local Awtarchy command as root.\n' >&2
+    exit 1
+  }
+  passwd_entry="$(/usr/bin/getent passwd "$target_user" || true)"
+  IFS=: read -r account _ uid _ _ target_home _ <<<"$passwd_entry"
+  [[ $account == "$target_user" \
+    && $account =~ ^[A-Za-z_][A-Za-z0-9_.-]*\$?$ \
+    && $uid =~ ^[0-9]+$ \
+    && $uid -ne 0 \
+    && $target_home == /* \
+    && $target_home != / \
+    && -d $target_home ]] || {
+    printf 'ERROR: Could not validate the invoking user before running Awtarchy.\n' >&2
+    exit 1
+  }
+
+  target="${target_home}/.local/bin/awtarchy"
+  if [[ -x $target && $target != "${BASH_SOURCE[0]}" ]]; then
+    exec /usr/bin/runuser -u "$account" -- /usr/bin/env \
+      -u SUDO_COMMAND -u SUDO_USER -u SUDO_UID -u SUDO_GID \
+      -u XDG_CONFIG_HOME -u XDG_DATA_HOME -u XDG_STATE_HOME -u XDG_CACHE_HOME \
+      HOME="$target_home" USER="$account" LOGNAME="$account" \
+      PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin \
+      "$target" "$@"
+  fi
+
+  printf 'ERROR: Awtarchy is not installed for %s: %s\n' "$account" "$target" >&2
+  exit 127
+fi
+
 target="${HOME}/.local/bin/awtarchy"
 
 if [[ -x $target && $target != "${BASH_SOURCE[0]}" ]]; then
@@ -259,124 +315,84 @@ EOF_SHIM
   mv -Tf -- "$temporary" "$destination"
 }
 
-install_system_quickshell_launcher() {
-  [[ ${AWTARCHY_SKIP_SYSTEM_SHIM:-0} == 1 ]] && return 0
+install_usb_refresh_helper() {
+  local destination="${SYSTEM_LIBEXEC_DIR}/usb-refresh-fixer"
+  local wireguard_destination="${SYSTEM_LIBEXEC_DIR}/wireguard-helper"
+  local scxctl_destination="${SYSTEM_LIBEXEC_DIR}/scxctl-helper"
+  local sudoers_file="${SUDOERS_DIR}/awtarchy-usb-refresh-${TARGET_USER}"
+  local legacy_sudoers_file="${SUDOERS_DIR}/usb_refresh_fixer-${TARGET_USER}"
+  local temporary="" rule=""
+  local helper_command="/usr/local/libexec/awtarchy/usb-refresh-fixer"
 
-  local destination="${SYSTEM_BIN_DIR}/awtarchy-quickshell"
-  local marker='# Awtarchy Quickshell testing user-local command shim'
-  local temporary=""
-
-  if [[ ${EUID} -ne 0 && -z ${AWTARCHY_SYSTEM_BIN_DIR:-} ]]; then
-    printf 'WARNING: Could not install the awtarchy-quickshell system shim without sudo.\n' >&2
-    printf 'Ensure %s is included in PATH.\n' "${TARGET_HOME}/.local/bin" >&2
+  [[ $TARGET_USER != root ]] || return 0
+  [[ ${EUID} -eq 0 ]] || {
+    printf 'WARNING: USB refresh helper requires a root-run installer.\n' >&2
     return 0
-  fi
+  }
+  [[ $TARGET_USER =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] || {
+    printf 'ERROR: Refusing unsafe target username for USB refresh policy: %s\n' "$TARGET_USER" >&2
+    exit 1
+  }
+  [[ -f $USB_HELPER_SOURCE && ! -L $USB_HELPER_SOURCE ]] || {
+    printf 'ERROR: Missing or unsafe USB refresh helper source: %s\n' "$USB_HELPER_SOURCE" >&2
+    exit 1
+  }
+  bash -n "$USB_HELPER_SOURCE" || {
+    printf 'ERROR: USB refresh helper failed Bash syntax validation.\n' >&2
+    exit 1
+  }
+  [[ -f $WIREGUARD_HELPER_SOURCE && ! -L $WIREGUARD_HELPER_SOURCE ]] || {
+    printf 'ERROR: Missing or unsafe WireGuard helper source: %s\n' "$WIREGUARD_HELPER_SOURCE" >&2
+    exit 1
+  }
+  python3 - "$WIREGUARD_HELPER_SOURCE" <<'PY' || {
+from pathlib import Path
+import sys
+compile(Path(sys.argv[1]).read_text(encoding="utf-8"), sys.argv[1], "exec")
+PY
+    printf 'ERROR: WireGuard helper failed Python syntax validation.\n' >&2
+    exit 1
+  }
+  [[ -f $SCXCTL_HELPER_SOURCE && ! -L $SCXCTL_HELPER_SOURCE ]] || {
+    printf 'ERROR: Missing or unsafe scxctl helper source: %s\n' "$SCXCTL_HELPER_SOURCE" >&2
+    exit 1
+  }
+  [[ $(head -n1 -- "$SCXCTL_HELPER_SOURCE") == '#!/usr/bin/bash' ]] || {
+    printf 'ERROR: scxctl helper must use the fixed /usr/bin/bash interpreter.\n' >&2
+    exit 1
+  }
+  bash -n "$SCXCTL_HELPER_SOURCE" || {
+    printf 'ERROR: scxctl helper failed Bash syntax validation.\n' >&2
+    exit 1
+  }
 
-  if [[ -e $destination || -L $destination ]]; then
-    if ! grep -Fq "$marker" "$destination" 2>/dev/null; then
-      printf 'WARNING: Refusing to replace an existing unrelated command: %s\n' \
-        "$destination" >&2
-      printf 'Ensure %s is included in PATH.\n' "${TARGET_HOME}/.local/bin" >&2
-      return 0
-    fi
-  fi
-
-  install -d -m 0755 "$SYSTEM_BIN_DIR"
-  temporary="$(mktemp "${SYSTEM_BIN_DIR}/.awtarchy-quickshell.tmp.XXXXXX")"
-  cat >"$temporary" <<'EOF_SHIM'
-#!/usr/bin/env bash
-# Awtarchy Quickshell testing user-local command shim
-
-set -Eeuo pipefail
-
-target="${HOME}/.local/bin/awtarchy-quickshell"
-
-if [[ -x $target && $target != "${BASH_SOURCE[0]}" ]]; then
-  exec "$target" "$@"
-fi
-
-printf 'ERROR: awtarchy-quickshell is not installed for %s: %s\n' \
-  "${USER:-current user}" "$target" >&2
-exit 127
-EOF_SHIM
-  chmod 0755 "$temporary"
-  if [[ ${EUID} -eq 0 ]]; then
-    chown root:root "$temporary"
-  fi
+  install -d -m 0755 -o root -g root "$SYSTEM_LIBEXEC_DIR" "$SUDOERS_DIR"
+  [[ ! -L $SYSTEM_LIBEXEC_DIR && ! -L $SUDOERS_DIR ]] || {
+    printf 'ERROR: USB refresh system directories must not be symbolic links.\n' >&2
+    exit 1
+  }
+  temporary="$(mktemp "${SYSTEM_LIBEXEC_DIR}/.usb-refresh-fixer.XXXXXX")"
+  install -m 0755 -o root -g root "$USB_HELPER_SOURCE" "$temporary"
   mv -Tf -- "$temporary" "$destination"
-}
+  temporary="$(mktemp "${SYSTEM_LIBEXEC_DIR}/.wireguard-helper.XXXXXX")"
+  install -m 0755 -o root -g root "$WIREGUARD_HELPER_SOURCE" "$temporary"
+  mv -Tf -- "$temporary" "$wireguard_destination"
+  temporary="$(mktemp "${SYSTEM_LIBEXEC_DIR}/.scxctl-helper.XXXXXX")"
+  install -m 0755 -o root -g root "$SCXCTL_HELPER_SOURCE" "$temporary"
+  mv -Tf -- "$temporary" "$scxctl_destination"
 
-repair_quickshell_command_ownership() {
-  [[ ${EUID} -eq 0 ]] || return 0
-
-  local path
-  for path in \
-    "${TARGET_HOME}/.local/bin" \
-    "${TARGET_HOME}/.local/bin/awtarchy-quickshell" \
-    "${TARGET_HOME}/.local/share/awtarchy-quickshell" \
-    "${TARGET_HOME}/.local/share/awtarchy-quickshell/awtarchy-runtime.sh" \
-    "${TARGET_HOME}/.local/state/awtarchy-quickshell" \
-    "${TARGET_HOME}/.local/state/awtarchy-quickshell/command-version"
-  do
-    [[ -e $path || -L $path ]] || continue
-    chown -h "${TARGET_USER}:${TARGET_USER}" "$path"
-  done
-}
-
-install_quickshell_testing_command() {
-  local bin_dir="${TARGET_HOME}/.local/bin"
-  local data_dir="${TARGET_HOME}/.local/share/awtarchy-quickshell"
-  local state_dir="${TARGET_HOME}/.local/state/awtarchy-quickshell"
-  local command_version="${state_dir}/command-version"
-  local revision
-
-  is_quickshell_testing_source || {
-    printf 'ERROR: awtarchy-quickshell can only be installed from quickshell-conversion-testing.\n' >&2
+  rule="${TARGET_USER} ALL=(root) NOPASSWD: ${helper_command} refresh *, ${helper_command} refresh-audio *, ${helper_command} refresh-audio-default *, ${helper_command} audio-default *, ${helper_command} refresh-all"
+  temporary="$(mktemp "${SUDOERS_DIR}/.awtarchy-usb-refresh.XXXXXX")"
+  printf '%s\n' "$rule" >"$temporary"
+  chmod 0440 "$temporary"
+  chown root:root "$temporary"
+  visudo -cf "$temporary" >/dev/null || {
+    rm -f -- "$temporary"
+    printf 'ERROR: Generated USB refresh sudoers policy is invalid.\n' >&2
     exit 1
   }
-  [[ -f $QUICKSHELL_LAUNCHER_SOURCE ]] || {
-    printf 'ERROR: Missing testing command: %s\n' "$QUICKSHELL_LAUNCHER_SOURCE" >&2
-    exit 1
-  }
-  bash -n "$RUNTIME_SOURCE" || {
-    printf 'ERROR: Quickshell testing runtime failed Bash syntax validation.\n' >&2
-    exit 1
-  }
-  bash -n "$QUICKSHELL_LAUNCHER_SOURCE" || {
-    printf 'ERROR: awtarchy-quickshell failed Bash syntax validation.\n' >&2
-    exit 1
-  }
-
-  revision="$(source_revision)"
-  [[ $revision =~ ^[0-9a-fA-F]{40}$ ]] || {
-    printf 'ERROR: Could not resolve the exact quickshell-conversion-testing commit.\n' >&2
-    exit 1
-  }
-  revision="${revision,,}"
-
-  install -d -m 0755 "$bin_dir" "$data_dir" "$state_dir"
-  install -m 0755 "$QUICKSHELL_LAUNCHER_SOURCE" \
-    "${bin_dir}/awtarchy-quickshell"
-  install -m 0755 "$RUNTIME_SOURCE" "${data_dir}/awtarchy-runtime.sh"
-  write_version_file "$command_version" quickshell-conversion-testing \
-    "$revision" installed_at
-  repair_quickshell_command_ownership
-
-  if [[ ${AWTARCHY_QUIET_TEST_COMMAND_INSTALL:-0} == 1 ]]; then
-    return 0
-  fi
-
-  cat <<EOF_MESSAGE
-Installed the temporary Quickshell testing command at commit:
-
-  ${revision}
-
-The stable awtarchy launcher, runtime, and command-version state were not changed.
-
-  awtarchy-quickshell review
-  awtarchy-quickshell update
-  awtarchy-quickshell version
-EOF_MESSAGE
+  mv -Tf -- "$temporary" "$sudoers_file"
+  rm -f -- "$legacy_sudoers_file"
 }
 
 repair_target_ownership() {
@@ -413,20 +429,21 @@ refresh_existing_command() {
     exit 1
   }
 
-  install -d -m 0755 "$bin_dir" "$data_dir" "$state_dir"
-  install -m 0755 "$LAUNCHER_SOURCE" "${bin_dir}/awtarchy"
-  install -m 0755 "$RUNTIME_SOURCE" "${data_dir}/awtarchy-runtime.sh"
+  run_as_target install -d -m 0755 "$bin_dir" "$data_dir" "$state_dir"
+  run_as_target install -m 0755 "$LAUNCHER_SOURCE" "${bin_dir}/awtarchy"
+  run_as_target install -m 0755 "$RUNTIME_SOURCE" "${data_dir}/awtarchy-runtime.sh"
 
   command_tag="$(source_release_tag)"
   revision="$(source_revision)"
   write_version_file "$command_version" "$command_tag" "$revision" installed_at
   repair_target_ownership
 
-  if is_quickshell_testing_source; then
-    printf '%s\n' "Installed the unreleased Quickshell conversion runtime without replacing it from stable."
+  if is_unreleased_git_source; then
+    printf 'Installed the unreleased Awtarchy branch runtime from %s without replacing it from main.\n' \
+      "$(source_branch)"
   else
     printf '%s\n' "Verifying the Awtarchy command against the current main updater..."
-    if ! env -u XDG_DATA_HOME -u XDG_STATE_HOME \
+    if ! run_as_target env -u XDG_DATA_HOME -u XDG_STATE_HOME \
       HOME="$TARGET_HOME" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
       "${bin_dir}/awtarchy" self-update
     then
@@ -438,28 +455,30 @@ refresh_existing_command() {
 }
 
 show_existing_install_message() {
-  if is_quickshell_testing_source; then
-    local testing_commit
+  if is_unreleased_git_source; then
+    local testing_branch testing_commit
+    testing_branch="$(source_branch)"
     testing_commit="$(source_revision)"
-    [[ "$testing_commit" =~ ^[0-9a-fA-F]{40}$ ]] \
-      || testing_commit="<full quickshell-conversion-testing commit SHA>"
+    [[ "$testing_commit" =~ ^[0-9a-fA-F]{40}$ ]] || testing_commit=unknown
 
     cat <<EOF_MESSAGE
 Awtarchy is already installed for ${TARGET_USER}.
 
-The installed launcher/runtime were refreshed from this installer. For this
-unreleased Quickshell branch, the runtime is intentionally not replaced by the
-latest stable GitHub release. No packages or managed configs were changed.
+The installed launcher/runtime were refreshed from this unreleased source:
+
+  ${testing_branch}@${testing_commit}
+
+No packages or managed configs were changed.
 
   awtarchy                 Open the maintenance menu
-  awtarchy review --testing-commit ${testing_commit}
-  awtarchy update --testing-commit ${testing_commit}
-  awtarchy version         Show installed and latest releases
+  awtarchy git             Select and test an unreleased remote branch
+  awtarchy git review --branch ${testing_branch} --commit ${testing_commit}
+  awtarchy version         Show updater, release, and Git-testing state
 
-Do not run awtarchy self-update during branch testing. That explicitly returns
-the installed command/runtime to the latest stable release.
+Stable update/reset/review operations still refresh the command from main and
+use published config releases.
 
-To intentionally run the complete Quickshell conversion installer:
+To intentionally run the complete installer from this source:
 
   sudo ./awtarchy-install.sh --reinstall
 EOF_MESSAGE
@@ -515,9 +534,9 @@ migrate_legacy_install() {
     exit 1
   }
 
-  install -d -m 0755 "$bin_dir" "$data_dir" "$state_dir"
-  install -m 0755 "$LAUNCHER_SOURCE" "${bin_dir}/awtarchy"
-  install -m 0755 "$RUNTIME_SOURCE" "${data_dir}/awtarchy-runtime.sh"
+  run_as_target install -d -m 0755 "$bin_dir" "$data_dir" "$state_dir"
+  run_as_target install -m 0755 "$LAUNCHER_SOURCE" "${bin_dir}/awtarchy"
+  run_as_target install -m 0755 "$RUNTIME_SOURCE" "${data_dir}/awtarchy-runtime.sh"
 
   command_tag="$(source_release_tag)"
   revision="$(source_revision)"
@@ -565,16 +584,12 @@ while (( $# )); do
       REINSTALL=1
       shift
       ;;
-    --quickshell-command)
-      QUICKSHELL_COMMAND_ONLY=1
-      shift
-      ;;
     --dry-run|--test)
       DRY_RUN_REQUESTED=1
       ARGS+=("$1")
       shift
       ;;
-    update|reset|review|clean-backups|version|check-update|self-update|update-reset-backup|update-backup-cleaner)
+    update|reset|review|git|clean-backups|version|check-update|self-update|update-reset-backup|update-backup-cleaner)
       printf 'ERROR: %s is a maintenance command. Run it through: awtarchy %s\n' "$1" "$1" >&2
       exit 2
       ;;
@@ -587,28 +602,12 @@ done
 
 validate_runtime_source
 resolve_target
-
-if (( REINSTALL == 0 && QUICKSHELL_COMMAND_ONLY == 0 )) \
-  && is_quickshell_testing_source \
-  && { installed_command_exists || legacy_install_exists; };
-then
-  QUICKSHELL_COMMAND_ONLY=1
-fi
-
-if (( QUICKSHELL_COMMAND_ONLY == 1 )); then
-  if (( DRY_RUN_REQUESTED == 1 )); then
-    printf 'awtarchy-quickshell would be installed for %s. No files were changed because --dry-run was used.\n' \
-      "$TARGET_USER"
-  else
-    install_system_quickshell_launcher
-    install_quickshell_testing_command
-  fi
-  exit 0
-fi
+configure_test_system_root
 
 if (( DRY_RUN_REQUESTED == 0 )); then
   ensure_vpn_directory
   install_system_launcher
+  install_usb_refresh_helper
 fi
 
 if (( REINSTALL == 0 )); then
@@ -634,7 +633,7 @@ if (( REINSTALL == 0 )); then
 fi
 
 install_env=("AWTARCHY_REPO_DIR=$SCRIPT_DIR")
-if is_quickshell_testing_source; then
+if is_unreleased_git_source; then
   install_env+=("AWTARCHY_SKIP_SELF_UPDATE=1")
 fi
 
