@@ -1,0 +1,57 @@
+name: Adapt scxctl helper updater test harness
+
+on:
+  push:
+    branches: [scxctl-helper-update-testing]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          fetch-depth: 0
+      - name: Patch test-only host mutation guard
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          runtime = Path('local/share/awtarchy/awtarchy-runtime.sh')
+          text = runtime.read_text()
+          old = '  repair_scxctl_update_helper "$repo_dir"\n  ensure_quickshell_update_prerequisites\n'
+          new = '  if [[ ${AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR:-0} != 1 ]]; then\n    repair_scxctl_update_helper "$repo_dir"\n  fi\n  ensure_quickshell_update_prerequisites\n'
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif new not in text:
+              raise SystemExit('runtime helper call anchor missing')
+          runtime.write_text(text)
+
+          migration = Path('tests/test-quickshell-updater-migration.sh')
+          text = migration.read_text()
+          anchor = '  "AWTARCHY_TEST_SKIP_CURSOR_REFRESH=1"\n'
+          addition = anchor + '  "AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR=1"\n'
+          if 'AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR=1' not in text:
+              if anchor not in text:
+                  raise SystemExit('migration test env anchor missing')
+              text = text.replace(anchor, addition, 1)
+          migration.write_text(text)
+          PY
+
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n tests/test-quickshell-updater-migration.sh
+          bash tests/test-scxctl-helper-update.sh
+          bash tests/test-quickshell-updater-migration.sh
+          git diff --check
+
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add local/share/awtarchy/awtarchy-runtime.sh tests/test-quickshell-updater-migration.sh
+          git commit -m "Keep updater migration tests host-safe"
+          git push origin HEAD:scxctl-helper-update-testing
