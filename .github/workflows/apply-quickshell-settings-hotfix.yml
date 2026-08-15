@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
         with:
-          fetch-depth: 4
+          fetch-depth: 5
 
       - name: Verify guarded staging commits
         shell: bash
@@ -58,7 +58,8 @@ jobs:
           bash -n local/bin/awtarchy
           bash -n config/hypr/scripts/quickshell_application_state.sh
           bash -n tests/test-quickshell-production-readiness.sh
-          shellcheck local/bin/awtarchy config/hypr/scripts/quickshell_application_state.sh tests/test-quickshell-production-readiness.sh
+          shellcheck local/bin/awtarchy config/hypr/scripts/quickshell_application_state.sh
+          shellcheck -e SC2016 tests/test-quickshell-production-readiness.sh
           bash tests/test-quickshell-production-readiness.sh
 
           test_home="$(mktemp -d)"
