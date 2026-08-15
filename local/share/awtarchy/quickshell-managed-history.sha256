@@ -511,3 +511,6 @@ c4d050771af97a956f4886af0b79923cf87818b97eb4165bd276a8e9ae7d98b3	.config/quicksh
 
 # Quickshell stalled-shutdown SIGTERM recovery.
 482258dd28d2fbf836063e74b07c84a7736db51708a00b6e0b0e9933a07e0166	.config/hypr/scripts/quickshell.sh
+
+# Direct SIGTERM Quickshell updater shutdown.
+030d1b128eff01bc3af202463a82e61dc576140c6ac4072d09dcc872d1fa4648	.config/hypr/scripts/quickshell.sh

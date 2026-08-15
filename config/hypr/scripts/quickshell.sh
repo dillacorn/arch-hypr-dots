@@ -157,20 +157,10 @@ stop_shell() {
     mapfile -t pids < <(instance_pids)
     (( ${#pids[@]} > 0 )) || return 0
 
-    # Quickshell's kill command is an IPC shutdown request. Target each exact
-    # old PID, then wait for those processes to really exit before starting a
-    # replacement. IPC can disappear slightly before Qt/Wayland teardown is
-    # complete, and starting the new instance in that gap can race the old one.
-    for pid in "${pids[@]}"; do
-        qs kill --pid "$pid" >/dev/null 2>&1 || true
-    done
-
-    wait_for_pids_stop "${pids[@]}" && return 0
-
-    # Quickshell's IPC shutdown can occasionally stall during Qt teardown.
-    # Use SIGTERM as recovery because Quickshell does not register SIGTERM
-    # with its crash reporter. Avoid SIGKILL, which presents a crash dialog.
-    printf 'quickshell.sh: graceful shutdown stalled for PID(s): %s; using SIGTERM fallback.\n' "${pids[*]}" >&2
+    # Do not use Quickshell's IPC teardown here. On some Qt/Quickshell builds
+    # it can crash while destructing the old shell and launch the crash reporter.
+    # SIGTERM is not registered by Quickshell's crash handler, so terminate the
+    # exact old Awtarchy instance directly and wait for it to disappear.
     for pid in "${pids[@]}"; do
         [[ "$(basename "$(readlink -f "/proc/${pid}/exe" 2>/dev/null || true)")" == "quickshell" ]] || continue
         kill -TERM -- "$pid" 2>/dev/null || true

@@ -218,7 +218,7 @@ assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/QuickSettings.qml" 'Aud
 assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/AudioLimitState.qml" 'readonly property int minimumPercent: 100'
 assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/AudioLimitState.qml" 'const rounded = Math.round(numeric);'
 assert_not_contains "${REPO_ROOT}/config/quickshell/awtarchy/AudioLimitState.qml" 'Math.round(numeric / stepPercent)'
-assert_contains "${REPO_ROOT}/config/hypr/scripts/quickshell.sh" 'qs kill --pid "$pid"'
+assert_not_contains "${REPO_ROOT}/config/hypr/scripts/quickshell.sh" 'qs kill --pid "$pid"'
 assert_contains "${REPO_ROOT}/config/hypr/scripts/quickshell.sh" 'kill -TERM -- "$pid"'
 assert_not_contains "${REPO_ROOT}/config/hypr/scripts/quickshell.sh" 'kill -KILL -- "$pid"'
 assert_contains "${REPO_ROOT}/config/hypr/scripts/quickshell.sh" 'qs -c "$CONFIG_NAME" list --json'
