@@ -8,6 +8,7 @@ umask 022
 
 REPO_OWNER="dillacorn"
 REPO_NAME="awtarchy"
+UPDATER_BRANCH="main"
 TARGET_USER=""
 TARGET_HOME=""
 DATA_HOME=""
@@ -16,10 +17,42 @@ INSTALL_DIR=""
 RUNTIME=""
 COMMAND_VERSION_FILE=""
 CONFIG_VERSION_FILE=""
+GIT_TEST_STATE_FILE=""
 
 log()  { printf '%s\n' "$*"; }
 die()  { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
+
+drop_launcher_privileges() {
+  local target_user="${SUDO_USER:-}" passwd_entry=""
+  local account="" uid="" home=""
+  local launcher_path=""
+  local -a passwd_fields=()
+
+  [[ ${EUID} -ne 0 ]] && return 0
+  [[ -n $target_user && $target_user != root ]] || return 0
+
+  passwd_entry="$(/usr/bin/getent passwd "$target_user" || true)"
+  IFS=: read -r -a passwd_fields <<<"$passwd_entry"
+  account="${passwd_fields[0]:-}"
+  uid="${passwd_fields[2]:-}"
+  home="${passwd_fields[5]:-}"
+  [[ $account == "$target_user" && $uid =~ ^[0-9]+$ && $uid -ne 0 ]] \
+    || die "Could not validate the invoking user before dropping privileges."
+  [[ $home == /* && -d $home ]] \
+    || die "Could not validate the invoking user's home directory."
+  launcher_path="$(/usr/bin/readlink -f -- "$0")"
+  [[ -n $launcher_path && -f $launcher_path ]] \
+    || die "Could not resolve the Awtarchy launcher before dropping privileges."
+
+  exec /usr/bin/runuser -u "$target_user" -- /usr/bin/env \
+    -u SUDO_USER -u SUDO_UID -u SUDO_GID \
+    -u XDG_CONFIG_HOME -u XDG_DATA_HOME -u XDG_STATE_HOME -u XDG_CACHE_HOME \
+    -u XDG_RUNTIME_DIR -u DBUS_SESSION_BUS_ADDRESS \
+    HOME="$home" USER="$target_user" LOGNAME="$target_user" \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin \
+    "$launcher_path" "$@"
+}
 
 init_target() {
   if [[ ${EUID} -eq 0 && -n ${SUDO_USER:-} && ${SUDO_USER} != root ]]; then
@@ -39,6 +72,16 @@ init_target() {
   RUNTIME="${INSTALL_DIR}/awtarchy-runtime.sh"
   COMMAND_VERSION_FILE="${STATE_HOME}/awtarchy/command-version"
   CONFIG_VERSION_FILE="${STATE_HOME}/awtarchy/config-version"
+  GIT_TEST_STATE_FILE="${STATE_HOME}/awtarchy/git-testing"
+}
+
+ensure_vpn_directory() {
+  local vpn_dir="${TARGET_HOME}/vpn"
+  if [[ ${EUID} -eq 0 && $TARGET_USER != root ]]; then
+    runuser -u "$TARGET_USER" -- install -d -m 0700 -- "$vpn_dir"
+  else
+    install -d -m 0700 -- "$vpn_dir"
+  fi
 }
 
 state_value() {
@@ -47,10 +90,14 @@ state_value() {
   sed -n "s/^${key}=//p" "$file" | head -n1
 }
 
-installed_command_tag() {
-  local tag=""
-  tag="$(state_value tag "$COMMAND_VERSION_FILE" 2>/dev/null || true)"
-  [[ -n $tag ]] && printf '%s\n' "$tag" || printf '%s\n' unknown
+installed_updater_commit() {
+  local revision=""
+  revision="$(state_value revision "$COMMAND_VERSION_FILE" 2>/dev/null || true)"
+  if [[ $revision =~ ^[0-9a-fA-F]{40}$ ]]; then
+    printf '%s\n' "${revision,,}"
+  else
+    printf '%s\n' unknown
+  fi
 }
 
 installed_config_tag() {
@@ -63,14 +110,31 @@ installed_config_tag() {
 }
 
 curl_args() {
+  local mode="${1:-api}"
   CURL_ARGS=(
-    -fsSL
+    -fL
+    --show-error
     --connect-timeout 5
-    --max-time 10
     --retry 1
     -H "Accept: application/vnd.github+json"
     -H "User-Agent: awtarchy-command"
   )
+  case "$mode" in
+    api)
+      CURL_ARGS+=(--silent --max-time 10)
+      ;;
+    download)
+      CURL_ARGS+=(
+        --max-time 300
+        --retry 2
+        --retry-delay 1
+        --speed-limit 1024
+        --speed-time 30
+        --progress-bar
+      )
+      ;;
+    *) die "Unknown curl mode: ${mode}" ;;
+  esac
   if [[ -n ${GITHUB_TOKEN:-} ]]; then
     CURL_ARGS+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
   fi
@@ -79,7 +143,7 @@ curl_args() {
 latest_release_tag() {
   have curl || return 1
   have python3 || return 1
-  curl_args
+  curl_args api
   local json=""
   json="$(curl "${CURL_ARGS[@]}" "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest")" || return 1
   python3 - "$json" <<'PY'
@@ -98,11 +162,327 @@ print(tag)
 PY
 }
 
-urlencode_tag() {
+requested_config_tag() {
+  local tag=""
+  while (( $# > 0 )); do
+    case "$1" in
+      --tag)
+        shift
+        (( $# > 0 )) || die "--tag requires a value."
+        tag="$1"
+        ;;
+    esac
+    shift
+  done
+
+  if [[ -n $tag ]]; then
+    printf '%s\n' "$tag"
+    return 0
+  fi
+
+  latest_release_tag || die "Could not determine the latest Awtarchy config release."
+}
+
+parse_github_git_object() {
+  python3 - "$1" <<'PY'
+import json
+import re
+import sys
+
+try:
+    payload = json.loads(sys.argv[1])
+    obj = payload["object"]
+    kind = str(obj["type"]).strip()
+    revision = str(obj["sha"]).strip().lower()
+except (IndexError, KeyError, TypeError, json.JSONDecodeError):
+    raise SystemExit(1)
+if kind not in {"commit", "tag"} or not re.fullmatch(r"[0-9a-f]{40}", revision):
+    raise SystemExit(1)
+print(kind)
+print(revision)
+PY
+}
+
+resolve_published_release_tag_commit() {
+  local tag="$1" tag_enc="" release_json="" object_json=""
+  local kind="" revision="" depth=0
+  local -a object_fields=()
+  local -A seen=()
+
+  have curl || return 1
+  have python3 || return 1
+  tag_enc="$(urlencode_ref "$tag")" || return 1
+  curl_args api
+  release_json="$(curl "${CURL_ARGS[@]}" \
+    "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/tags/${tag_enc}")" \
+    || return 1
+  python3 - "$release_json" "$tag" <<'PY' || return 1
+import json
+import sys
+
+try:
+    payload = json.loads(sys.argv[1])
+except (IndexError, json.JSONDecodeError):
+    raise SystemExit(1)
+if (
+    str(payload.get("tag_name") or "") != sys.argv[2]
+    or payload.get("draft") is not False
+    or not str(payload.get("published_at") or "").strip()
+):
+    raise SystemExit(1)
+PY
+
+  object_json="$(curl "${CURL_ARGS[@]}" \
+    "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/git/ref/tags/${tag_enc}")" \
+    || return 1
+  mapfile -t object_fields < <(parse_github_git_object "$object_json")
+  (( ${#object_fields[@]} == 2 )) || return 1
+  kind="${object_fields[0]}"
+  revision="${object_fields[1]}"
+
+  while (( depth < 8 )); do
+    case "$kind" in
+      commit)
+        printf '%s\n' "$revision"
+        return 0
+        ;;
+      tag)
+        [[ -z ${seen[$revision]:-} ]] || return 1
+        seen[$revision]=1
+        object_json="$(curl "${CURL_ARGS[@]}" \
+          "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/git/tags/${revision}")" \
+          || return 1
+        object_fields=()
+        mapfile -t object_fields < <(parse_github_git_object "$object_json")
+        (( ${#object_fields[@]} == 2 )) || return 1
+        kind="${object_fields[0]}"
+        revision="${object_fields[1]}"
+        ;;
+      *) return 1 ;;
+    esac
+    (( depth += 1 ))
+  done
+  return 1
+}
+
+commit_has_quickshell_payload() {
+  local revision="$1"
+  [[ $revision =~ ^[0-9a-f]{40}$ ]] || return 1
+  have curl || return 1
+  curl_args api
+  curl "${CURL_ARGS[@]}" \
+    --get \
+    --data-urlencode "ref=${revision}" \
+    --output /dev/null \
+    "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/local/share/awtarchy/quickshell-managed-history.sha256" \
+    2>/dev/null
+}
+
+release_has_quickshell_payload() {
+  local tag="$1" revision=""
+  revision="$(resolve_published_release_tag_commit "$tag")" || return 2
+  commit_has_quickshell_payload "$revision"
+}
+
+config_release_ready_or_noop() {
+  local tag installed rc=0
+  tag="$(requested_config_tag "$@")" || rc=$?
+  (( rc == 0 )) || return "$rc"
+
+  if release_has_quickshell_payload "$tag"; then
+    return 0
+  else
+    rc=$?
+  fi
+
+  (( rc != 2 )) \
+    || die "Config target ${tag} is not an exact published Awtarchy release tag. Use 'awtarchy git' for branch or commit testing."
+
+  installed="$(installed_config_tag)"
+  if [[ $installed == "$tag" ]]; then
+    log "Config release ${tag} predates the Quickshell migration and is already installed. No managed files changed."
+    return 1
+  fi
+
+  die "Config release ${tag} predates the Quickshell migration. No managed files were changed; publish or select a Quickshell-capable release before updating."
+}
+
+config_is_git_testing() {
+  local installed=""
+  installed="$(installed_config_tag)"
+  [[ $installed =~ ^.+@[0-9a-fA-F]{40}$ ]]
+}
+
+require_git_compatible_main() {
+  local remote="$1"
+  commit_has_quickshell_payload "$remote" \
+    || die "Current main does not contain the Quickshell-capable updater required by active Git-testing state. No command or config files were changed."
+}
+
+protect_git_state_before_updater_refresh() {
+  local remote=""
+  config_is_git_testing || return 0
+
+  # An updater from a pre-Quickshell main does not understand integrated Git
+  # state. Verify the selected stable target before allowing self-refresh.
+  config_release_ready_or_noop "$@"
+  remote="$(updater_branch_head)" \
+    || die "Could not determine the current main updater before leaving Git-testing state."
+  require_git_compatible_main "$remote"
+}
+
+self_update_safely() {
+  local remote=""
+  if config_is_git_testing; then
+    remote="$(updater_branch_head)" \
+      || die "Could not determine the current main updater before refreshing active Git-testing state."
+    require_git_compatible_main "$remote"
+    self_update "$remote"
+  else
+    self_update
+  fi
+}
+
+updater_branch_head() {
+  have curl || return 1
+  have python3 || return 1
+  curl_args api
+
+  local json=""
+  json="$(curl "${CURL_ARGS[@]}" \
+    "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/commits/${UPDATER_BRANCH}")" \
+    || return 1
+
+  python3 - "$json" <<'PY'
+import json
+import re
+import sys
+
+try:
+    payload = json.loads(sys.argv[1])
+except (IndexError, json.JSONDecodeError):
+    raise SystemExit(1)
+
+revision = str(payload.get("sha") or "").strip().lower()
+if not re.fullmatch(r"[0-9a-f]{40}", revision):
+    raise SystemExit(1)
+print(revision)
+PY
+}
+
+urlencode_ref() {
+  have python3 || return 1
   python3 - "$1" <<'PY'
 import sys
 from urllib.parse import quote
-print(quote(sys.argv[1], safe="-._~"))
+
+print(quote(sys.argv[1], safe=""))
+PY
+}
+
+github_api() {
+  local url="$1"
+  have curl || return 1
+  curl_args api
+  curl "${CURL_ARGS[@]}" "$url"
+}
+
+remote_git_branches() {
+  have python3 || return 1
+
+  local page=1 json="" parsed=""
+  local -a page_branches=() all_branches=()
+  while true; do
+    json="$(github_api \
+      "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/branches?per_page=100&page=${page}")" \
+      || return 1
+    parsed="$(python3 - "$json" <<'PY'
+import json
+import re
+import sys
+
+try:
+    payload = json.loads(sys.argv[1])
+except (IndexError, json.JSONDecodeError):
+    raise SystemExit(1)
+if not isinstance(payload, list):
+    raise SystemExit(1)
+
+for item in payload:
+    if not isinstance(item, dict):
+        raise SystemExit(1)
+    name = item.get("name")
+    revision = (item.get("commit") or {}).get("sha")
+    if not isinstance(name, str) or not name or "\n" in name or "\t" in name:
+        raise SystemExit(1)
+    if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-fA-F]{40}", revision):
+        raise SystemExit(1)
+    print(name)
+PY
+)" || return 1
+
+    page_branches=()
+    if [[ -n $parsed ]]; then
+      mapfile -t page_branches <<<"$parsed"
+      all_branches+=("${page_branches[@]}")
+    fi
+    (( ${#page_branches[@]} == 100 )) || break
+    ((page++)) || true
+  done
+
+  (( ${#all_branches[@]} > 0 )) || return 1
+  printf '%s\n' "${all_branches[@]}" | LC_ALL=C sort -u
+}
+
+remote_git_branch_head() {
+  local branch="$1" encoded="" json=""
+  have python3 || return 1
+  encoded="$(urlencode_ref "$branch")" || return 1
+  json="$(github_api \
+    "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/branches/${encoded}")" \
+    || return 1
+
+  python3 - "$json" "$branch" <<'PY'
+import json
+import re
+import sys
+
+try:
+    payload = json.loads(sys.argv[1])
+except (IndexError, json.JSONDecodeError):
+    raise SystemExit(1)
+
+expected = sys.argv[2]
+name = str(payload.get("name") or "")
+revision = str((payload.get("commit") or {}).get("sha") or "").lower()
+if name != expected or not re.fullmatch(r"[0-9a-f]{40}", revision):
+    raise SystemExit(1)
+print(revision)
+PY
+}
+
+git_commit_belongs_to_branch() {
+  local commit="$1" branch_head="$2" json=""
+  [[ $commit == "$branch_head" ]] && return 0
+  have python3 || return 1
+
+  json="$(github_api \
+    "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/compare/${commit}...${branch_head}")" \
+    || return 1
+  python3 - "$json" "$commit" <<'PY'
+import json
+import sys
+
+try:
+    payload = json.loads(sys.argv[1])
+except (IndexError, json.JSONDecodeError):
+    raise SystemExit(1)
+
+requested = sys.argv[2].lower()
+status = str(payload.get("status") or "")
+merge_base = str((payload.get("merge_base_commit") or {}).get("sha") or "").lower()
+if status not in {"ahead", "identical"} or merge_base != requested:
+    raise SystemExit(1)
 PY
 }
 
@@ -146,13 +526,13 @@ atomic_install() {
 }
 
 write_command_version() {
-  local tag="$1" revision="${2:-}" tmp dir
+  local revision="$1" tmp dir
   dir="$(dirname "$COMMAND_VERSION_FILE")"
   mkdir -p -- "$dir"
   tmp="$(mktemp --tmpdir="$dir" '.command-version.tmp.XXXXXX')"
   {
-    printf 'tag=%s\n' "$tag"
-    [[ -n $revision ]] && printf 'revision=%s\n' "$revision"
+    printf 'tag=%s\n' "$UPDATER_BRANCH"
+    printf 'revision=%s\n' "$revision"
     printf 'updated_at=%s\n' "$(date -Iseconds)"
   } >"$tmp"
   chmod 0644 "$tmp"
@@ -163,29 +543,45 @@ write_command_version() {
 }
 
 self_update() {
-  local tag="${1:-}" tmp archive encoded top repo_dir new_runtime new_launcher revision=""
+  local commit="${1:-}" installed tmp archive top repo_dir new_runtime new_launcher
+
   have curl || die "curl is required for self-update."
   have tar || die "tar is required for self-update."
   have python3 || die "python3 is required for self-update."
-  have sha256sum || die "sha256sum is required for self-update."
 
-  [[ -n $tag ]] || tag="$(latest_release_tag)" || die "Could not determine the latest Awtarchy release."
-  encoded="$(urlencode_tag "$tag")"
+  [[ -n $commit ]] || commit="$(updater_branch_head)" \
+    || die "Could not resolve the current ${UPDATER_BRANCH} updater head."
+  [[ $commit =~ ^[0-9a-fA-F]{40}$ ]] \
+    || die "Updater branch returned an invalid commit SHA."
+  commit="${commit,,}"
+
+  installed="$(installed_updater_commit)"
+  if [[ $installed == "$commit" ]]; then
+    log "Awtarchy updater is already current at ${UPDATER_BRANCH}@${commit}."
+    return 0
+  fi
+
   tmp="$(mktemp -d)"
   archive="${tmp}/awtarchy.tar.gz"
 
-  curl_args
-  log "Downloading Awtarchy ${tag}..."
-  if ! curl "${CURL_ARGS[@]}" -L -o "$archive" \
-    "https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/tags/${encoded}.tar.gz"; then
+  curl_args download
+  log "Downloading Awtarchy updater ${UPDATER_BRANCH}@${commit} (stalled transfers abort after 30 seconds)..."
+  if ! curl "${CURL_ARGS[@]}" -o "$archive" \
+    "https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/${commit}.tar.gz";
+  then
     rm -rf -- "$tmp"
-    die "Failed to download release ${tag}."
+    die "Failed to download updater commit ${commit}."
   fi
 
   top="$(archive_topdir "$archive")" || {
     rm -rf -- "$tmp"
-    die "Release archive validation failed."
+    die "Updater archive validation failed."
   }
+  [[ $top == "${REPO_NAME}-${commit}" ]] || {
+    rm -rf -- "$tmp"
+    die "Updater archive does not match commit ${commit}."
+  }
+
   tar -xzf "$archive" -C "$tmp"
   repo_dir="${tmp}/${top}"
   new_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
@@ -193,11 +589,11 @@ self_update() {
 
   [[ -f $new_runtime ]] || {
     rm -rf -- "$tmp"
-    die "Release ${tag} does not contain the Awtarchy runtime."
+    die "Updater commit ${commit} does not contain the Awtarchy runtime."
   }
   [[ -f $new_launcher ]] || {
     rm -rf -- "$tmp"
-    die "Release ${tag} does not contain the Awtarchy command."
+    die "Updater commit ${commit} does not contain the Awtarchy command."
   }
   bash -n "$new_runtime" || {
     rm -rf -- "$tmp"
@@ -207,60 +603,94 @@ self_update() {
     rm -rf -- "$tmp"
     die "Downloaded Awtarchy command failed Bash syntax validation."
   }
-
-  revision="$(sha256sum "$new_runtime" | awk '{print $1}')"
   atomic_install "$new_runtime" "$RUNTIME" 0755
   atomic_install "$new_launcher" "${TARGET_HOME}/.local/bin/awtarchy" 0755
-  write_command_version "$tag" "$revision"
+  write_command_version "$commit"
   rm -rf -- "$tmp"
 
-  log "Awtarchy command updated to ${tag}."
+  log "Awtarchy updater refreshed to ${UPDATER_BRANCH}@${commit}."
+}
+
+ensure_latest_updater() {
+  [[ ${AWTARCHY_SKIP_UPDATE_CHECK:-0} == 1 ]] && return 0
+
+  local installed remote
+  installed="$(installed_updater_commit)"
+  remote="$(updater_branch_head)" \
+    || die "Could not determine the latest Awtarchy updater from ${UPDATER_BRANCH}."
+
+  if [[ $installed != "$remote" ]]; then
+    self_update "$remote"
+    exec "${TARGET_HOME}/.local/bin/awtarchy" "$@"
+  fi
 }
 
 print_version_status() {
-  local installed latest="" status="Unknown" config
-  installed="$(installed_command_tag)"
+  local installed remote="" updater_status="Remote main unavailable"
+  local config latest="" config_status="Latest release unavailable"
+  local git_status="inactive" git_branch="" git_revision="" stable_predecessor=""
+
+  installed="$(installed_updater_commit)"
   config="$(installed_config_tag)"
-  if latest="$(latest_release_tag 2>/dev/null)"; then
-    if [[ $installed == "$latest" ]]; then
-      status="Up to date"
-    elif [[ $installed == unknown || $installed == unreleased ]]; then
-      status="Local or untracked command build"
+
+  if [[ -r $GIT_TEST_STATE_FILE ]]; then
+    git_branch="$(state_value branch "$GIT_TEST_STATE_FILE" 2>/dev/null || true)"
+    git_revision="$(state_value revision "$GIT_TEST_STATE_FILE" 2>/dev/null || true)"
+    stable_predecessor="$(state_value stable_release "$GIT_TEST_STATE_FILE" 2>/dev/null || true)"
+  fi
+  if [[ -n $git_branch && $git_revision =~ ^[0-9a-fA-F]{40}$ ]]; then
+    git_revision="${git_revision,,}"
+    if [[ $config == "${git_branch}@${git_revision}" ]]; then
+      git_status="active"
     else
-      status="Update available"
+      git_branch=""
+      git_revision=""
+      stable_predecessor=""
     fi
-  else
-    status="Latest release unavailable"
+  fi
+  if [[ $git_status != active && $config =~ ^(.+)@([0-9a-fA-F]{40})$ ]]; then
+    git_status="active"
+    git_branch="${BASH_REMATCH[1]}"
+    git_revision="${BASH_REMATCH[2],,}"
+    stable_predecessor="${stable_predecessor:-unknown}"
   fi
 
-  printf 'Command release:   %s\n' "$installed"
-  printf 'Config release:    %s\n' "$config"
-  printf 'Latest release:    %s\n' "${latest:-unavailable}"
-  printf 'Command status:    %s\n' "$status"
-}
-
-maybe_offer_update() {
-  [[ ${AWTARCHY_SKIP_UPDATE_CHECK:-0} == 1 ]] && return 0
-  local installed latest answer=""
-  installed="$(installed_command_tag)"
-  latest="$(latest_release_tag 2>/dev/null || true)"
-  [[ -n $latest ]] || return 0
-
-  if [[ $installed == "$latest" ]]; then
-    return 0
-  fi
-  if [[ $installed == unknown || $installed == unreleased ]]; then
-    return 0
+  if remote="$(updater_branch_head 2>/dev/null)"; then
+    if [[ $installed == "$remote" ]]; then
+      updater_status="Up to date"
+    elif [[ $installed == unknown ]]; then
+      updater_status="Updater state is untracked or from the legacy release-based updater"
+    else
+      updater_status="Updater refresh available"
+    fi
   fi
 
-  printf 'Awtarchy command update available: %s -> %s\n' "$installed" "$latest"
-  [[ -t 0 && -t 1 && -r /dev/tty && -w /dev/tty ]] || return 0
-  printf 'Update the Awtarchy command now? [Y/n] ' >/dev/tty
-  IFS= read -r answer </dev/tty || true
-  case "$answer" in
-    n|N|no|NO) return 0 ;;
-    *) self_update "$latest" ;;
-  esac
+  if latest="$(latest_release_tag 2>/dev/null)"; then
+    if [[ $config == "$latest" ]]; then
+      config_status="Up to date"
+    elif [[ $config == unknown || $config == unreleased ]]; then
+      config_status="Local or untracked config build"
+    else
+      config_status="Config update available"
+    fi
+  fi
+  if [[ $git_status == active ]]; then
+    config_status="Git testing state; awtarchy update returns to a Quickshell-capable release"
+  fi
+
+  printf 'Updater branch:     %s\n' "$UPDATER_BRANCH"
+  printf 'Updater commit:     %s\n' "$installed"
+  printf 'Remote main head:   %s\n' "${remote:-unavailable}"
+  printf 'Updater status:     %s\n' "$updater_status"
+  printf 'Config release:     %s\n' "$config"
+  printf 'Latest release:     %s\n' "${latest:-unavailable}"
+  printf 'Config status:      %s\n' "$config_status"
+  printf 'Git testing:        %s\n' "$git_status"
+  if [[ $git_status == active ]]; then
+    printf 'Git branch:         %s\n' "$git_branch"
+    printf 'Git revision:       %s\n' "$git_revision"
+    printf 'Stable predecessor: %s\n' "${stable_predecessor:-unknown}"
+  fi
 }
 
 require_runtime() {
@@ -335,15 +765,152 @@ pause_menu() {
   read_key >/dev/null || true
 }
 
+reject_stable_testing_overrides() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --testing-branch|--testing-branch=*|--testing-commit|--testing-commit=*)
+        die "Git testing must use awtarchy git with a selected remote branch."
+        ;;
+    esac
+  done
+}
+
+run_git_operation() {
+  local action="$1" branch="$2" revision="$3"
+  shift 3
+  local arg
+  local -a runtime_args=(update-reset-backup)
+
+  for arg in "$@"; do
+    case "$arg" in
+      --tag|--tag=*|--testing-branch|--testing-branch=*|--testing-commit|--testing-commit=*|--mode|--mode=*|--review-only)
+        die "${arg%%=*} is selected by awtarchy git ${action}."
+        ;;
+    esac
+  done
+
+  case "$action" in
+    review)
+      runtime_args+=(--mode preserve --review-only)
+      ;;
+    update)
+      runtime_args+=(--mode preserve)
+      ;;
+    reset)
+      runtime_args+=(--mode clean)
+      ;;
+    *)
+      die "Unknown git-testing action: ${action}"
+      ;;
+  esac
+  runtime_args+=(--testing-branch "$branch" --testing-commit "$revision")
+  runtime_args+=("$@")
+
+  printf 'Selected remote branch: %s\n' "$branch"
+  printf 'Exact revision: %s\n' "$revision"
+  printf 'Git testing action: %s\n' "$action"
+  run_runtime "${runtime_args[@]}"
+}
+
+git_cli() {
+  local action="${1:-}" branch="" requested_commit="" branch_head="" revision=""
+  local -a runtime_options=()
+  [[ -n $action ]] || die "awtarchy git requires review, update, or reset in noninteractive use."
+  case "$action" in
+    review|update|reset) shift ;;
+    *) die "Unknown git-testing action: ${action}. Use review, update, or reset." ;;
+  esac
+
+  while (( $# > 0 )); do
+    case "$1" in
+      --branch)
+        shift
+        (( $# > 0 )) || die "--branch requires a remote branch name."
+        branch="$1"
+        ;;
+      --branch=*)
+        branch="${1#*=}"
+        ;;
+      --commit)
+        shift
+        (( $# > 0 )) || die "--commit requires a full 40-character commit SHA."
+        requested_commit="$1"
+        ;;
+      --commit=*)
+        requested_commit="${1#*=}"
+        ;;
+      *)
+        runtime_options+=("$1")
+        ;;
+    esac
+    shift
+  done
+
+  [[ -n $branch ]] || die "Git testing requires --branch so the remote source is explicit."
+  [[ $branch != *$'\n'* && $branch != *$'\r'* && $branch != *$'\t'* ]] \
+    || die "Remote branch name contains unsupported control characters."
+  if [[ -n $requested_commit ]]; then
+    [[ $requested_commit =~ ^[0-9a-fA-F]{40}$ ]] \
+      || die "--commit requires a full 40-character commit SHA."
+    requested_commit="${requested_commit,,}"
+  fi
+
+  branch_head="$(remote_git_branch_head "$branch")" \
+    || die "Could not resolve remote Awtarchy branch: ${branch}"
+  if [[ -n $requested_commit ]]; then
+    git_commit_belongs_to_branch "$requested_commit" "$branch_head" \
+      || die "Commit ${requested_commit} does not belong to selected branch ${branch}."
+    revision="$requested_commit"
+  else
+    revision="$branch_head"
+  fi
+
+  run_git_operation "$action" "$branch" "$revision" "${runtime_options[@]}"
+}
+
+git_menu() {
+  [[ -t 0 && -t 1 && -r /dev/tty && -w /dev/tty ]] \
+    || die "The Awtarchy Git testing menu requires an interactive terminal."
+
+  local branch_output="" choice="" branch="" revision="" action=""
+  local -a branches=()
+  branch_output="$(remote_git_branches)" \
+    || die "Could not retrieve remote Awtarchy branches."
+  mapfile -t branches <<<"$branch_output"
+  (( ${#branches[@]} > 0 )) || die "No remote Awtarchy branches were returned."
+
+  choice="$(single_select_menu "Awtarchy Git Testing: Select Remote Branch" 0 \
+    "${branches[@]}")" || return 0
+  branch="${branches[choice]}"
+  revision="$(remote_git_branch_head "$branch")" \
+    || die "Could not resolve remote Awtarchy branch: ${branch}"
+
+  printf 'Selected remote branch: %s\n' "$branch"
+  printf 'Exact revision: %s\n' "$revision"
+  choice="$(single_select_menu \
+    "Git Testing: ${branch}@${revision}" 0 \
+    "Review changes without applying" \
+    "Update and preserve personal modifications" \
+    "Reset managed configs to Git defaults" \
+    "Cancel")" || return 0
+  case "$choice" in
+    0) action=review ;;
+    1) action=update ;;
+    2) action=reset ;;
+    *) return 0 ;;
+  esac
+  run_git_operation "$action" "$branch" "$revision"
+}
+
 maintenance_menu() {
   [[ -t 0 && -t 1 && -r /dev/tty && -w /dev/tty ]] || die "The Awtarchy menu requires an interactive terminal."
-  maybe_offer_update
 
   local choice rc
   while true; do
     choice="$(single_select_menu "Awtarchy Maintenance" 0 \
-      "Update Awtarchy command" \
-      "Update configs (preserve personal modifications)" \
+      "Refresh Awtarchy updater from main" \
+      "Update configs (merge personal modifications)" \
       "Reset configs (clean-slate managed files)" \
       "Review config changes without applying" \
       "Clean Awtarchy backup files" \
@@ -352,21 +919,33 @@ maintenance_menu() {
 
     case "$choice" in
       0)
-        self_update
-        pause_menu
+        self_update_safely
+        exec "${TARGET_HOME}/.local/bin/awtarchy"
         ;;
       1)
-        run_runtime update-reset-backup --mode preserve || rc=$?
+        protect_git_state_before_updater_refresh
+        ensure_latest_updater update
+        if config_release_ready_or_noop; then
+          run_runtime update-reset-backup --mode preserve || rc=$?
+        fi
         pause_menu
         [[ -z ${rc:-} ]] || return "$rc"
         ;;
       2)
-        run_runtime update-reset-backup --mode clean || rc=$?
+        protect_git_state_before_updater_refresh
+        ensure_latest_updater reset
+        if config_release_ready_or_noop; then
+          run_runtime update-reset-backup --mode clean || rc=$?
+        fi
         pause_menu
         [[ -z ${rc:-} ]] || return "$rc"
         ;;
       3)
-        run_runtime update-reset-backup --mode preserve --review-only || rc=$?
+        protect_git_state_before_updater_refresh
+        ensure_latest_updater review
+        if config_release_ready_or_noop; then
+          run_runtime update-reset-backup --mode preserve --review-only || rc=$?
+        fi
         pause_menu
         [[ -z ${rc:-} ]] || return "$rc"
         ;;
@@ -393,80 +972,115 @@ Usage:
   awtarchy update [--tag <tag>] [update options]
   awtarchy reset [--tag <tag>] [update options]
   awtarchy review [--tag <tag>]
+  awtarchy git
+  awtarchy git review --branch <branch> [--commit <40-character-sha>]
+  awtarchy git update --branch <branch> [--commit <40-character-sha>] [update options]
+  awtarchy git reset --branch <branch> [--commit <40-character-sha>] [update options]
   awtarchy clean-backups [options]
+  awtarchy troubleshoot
   awtarchy version
   awtarchy check-update
-  awtarchy self-update [--tag <tag>]
+  awtarchy self-update
+  awtarchy help
+
+The updater always refreshes from the current `main` branch head.
+Managed configs update only from the latest published release or an exact
+published release selected with --tag.
+
+Git testing is explicit. The selected Awtarchy remote branch is resolved to an
+exact revision, and an exact --commit is accepted only when it belongs to that
+branch. After a Quickshell-capable release is published, run awtarchy update to
+return configs to the published release stream.
 
 Installation is handled only by awtarchy-install.sh.
 EOF
 }
 
 main() {
+  drop_launcher_privileges "$@"
   init_target
 
   case "${1:-}" in
+    troubleshoot)
+      shift
+      (( $# == 0 )) || die "troubleshoot does not accept options."
+      require_runtime
+      AWTARCHY_TROUBLESHOOT_COMMAND=awtarchy exec bash "$RUNTIME" troubleshoot
+      ;;
     version)
       print_version_status
+      return 0
       ;;
     check-update)
       print_version_status
-      local installed latest
-      installed="$(installed_command_tag)"
-      latest="$(latest_release_tag 2>/dev/null || true)"
-      if [[ -n $latest && $installed != unknown && $installed != unreleased && $installed != "$latest" ]]; then
+      local installed remote=""
+      installed="$(installed_updater_commit)"
+      remote="$(updater_branch_head 2>/dev/null || true)"
+      if [[ -n $remote && $installed != "$remote" ]]; then
         return 10
       fi
+      return 0
       ;;
+    help|-h|--help)
+      usage
+      return 0
+      ;;
+  esac
+
+  ensure_vpn_directory
+
+  case "${1:-}" in
     self-update)
       shift
-      local tag=""
-      while (( $# )); do
-        case "$1" in
-          --tag)
-            tag="${2:-}"
-            [[ -n $tag ]] || die "--tag requires a release tag."
-            shift 2
-            ;;
-          -h|--help)
-            usage
-            return 0
-            ;;
-          *) die "Unknown self-update option: $1" ;;
-        esac
-      done
-      self_update "$tag"
+      (( $# == 0 )) || die "self-update does not accept options; the updater source is always ${UPDATER_BRANCH}."
+      self_update_safely
       ;;
     update)
+      reject_stable_testing_overrides "$@"
+      protect_git_state_before_updater_refresh "$@"
+      ensure_latest_updater "$@"
       shift
-      maybe_offer_update
+      config_release_ready_or_noop "$@" || return 0
       exec_runtime update-reset-backup --mode preserve "$@"
       ;;
     reset)
+      reject_stable_testing_overrides "$@"
+      protect_git_state_before_updater_refresh "$@"
+      ensure_latest_updater "$@"
       shift
-      maybe_offer_update
+      config_release_ready_or_noop "$@" || return 0
       exec_runtime update-reset-backup --mode clean "$@"
       ;;
     review)
+      reject_stable_testing_overrides "$@"
+      protect_git_state_before_updater_refresh "$@"
+      ensure_latest_updater "$@"
       shift
-      maybe_offer_update
+      config_release_ready_or_noop "$@" || return 0
       exec_runtime update-reset-backup --mode preserve --review-only "$@"
       ;;
     clean-backups|update-backup-cleaner|backup-cleaner)
       shift
-      maybe_offer_update
       exec_runtime clean-backups "$@"
       ;;
     update-reset-backup)
+      reject_stable_testing_overrides "$@"
+      protect_git_state_before_updater_refresh "$@"
+      ensure_latest_updater "$@"
       shift
-      maybe_offer_update
+      config_release_ready_or_noop "$@" || return 0
       exec_runtime update-reset-backup "$@"
+      ;;
+    git)
+      shift
+      if (( $# == 0 )); then
+        git_menu
+      else
+        git_cli "$@"
+      fi
       ;;
     install|dry-run|dryrun|test)
       die "Installation is handled by awtarchy-install.sh, not the awtarchy maintenance command."
-      ;;
-    help|-h|--help)
-      usage
       ;;
     "")
       maintenance_menu

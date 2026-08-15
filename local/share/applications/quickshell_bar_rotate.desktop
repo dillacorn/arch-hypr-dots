@@ -1,0 +1,11 @@
+# github.com/dillacorn/awtarchy
+# ~/.local/share/applications/quickshell_bar_rotate.desktop
+
+[Desktop Entry]
+Type=Application
+Name=Quickshell Bar rotate (focused display)
+Comment=Rotate Quickshell Bar between horizontal and vertical on the currently focused monitor
+Exec=sh -lc "exec ~/.config/hypr/scripts/quickshell_bar_rotate.sh"
+Icon=object-rotate-right
+Terminal=false
+Categories=Utility;

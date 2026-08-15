@@ -30,7 +30,7 @@ Comment[th]=โปรแกรมสำหรับจัดการและ�
 Comment[tr]=Steam üzerinden oyun oynama ve düzenleme uygulaması
 Comment[uk]=Програма для керування іграми та запуску ігор у Steam
 Comment[vi]=Ứng dụng để quản lý và chơi trò chơi trên Steam
-Exec=/bin/sh -c 'command -v steam >/dev/null 2>&1 || { hyprctl notify 3 5000 "rgb(ff5555)" "Steam is not installed."; exit 1; }; pgrep -x steam >/dev/null && exit 0; /usr/bin/steam --disable-gpu "$@" & ALLOW_WAIT=1 "$HOME/.config/hypr/scripts/splitratio_steam.sh" &' _ %U
+Exec=/bin/bash -lc 'bash $HOME/.config/hypr/scripts/steam_launcher.sh $@' _ %U
 Icon=steam
 Terminal=false
 Type=Application

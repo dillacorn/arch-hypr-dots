@@ -10,7 +10,12 @@ umask 022
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 RUNTIME_SOURCE="${SCRIPT_DIR}/local/share/awtarchy/awtarchy-runtime.sh"
 LAUNCHER_SOURCE="${SCRIPT_DIR}/local/bin/awtarchy"
+USB_HELPER_SOURCE="${SCRIPT_DIR}/config/hypr/scripts/usb_refresh_fixer.sh"
+WIREGUARD_HELPER_SOURCE="${SCRIPT_DIR}/local/libexec/awtarchy/wireguard-helper"
+SCXCTL_HELPER_SOURCE="${SCRIPT_DIR}/local/libexec/awtarchy/scxctl-helper"
 SYSTEM_BIN_DIR="${AWTARCHY_SYSTEM_BIN_DIR:-/usr/local/bin}"
+SYSTEM_LIBEXEC_DIR="/usr/local/libexec/awtarchy"
+SUDOERS_DIR="/etc/sudoers.d"
 TARGET_USER=""
 TARGET_HOME=""
 REINSTALL=0
@@ -37,6 +42,13 @@ Options:
 EOF_USAGE
 }
 
+validate_runtime_source() {
+  bash -n "$RUNTIME_SOURCE" || {
+    printf 'ERROR: Awtarchy runtime failed Bash syntax validation.\n' >&2
+    exit 1
+  }
+}
+
 resolve_target() {
   if [[ ${EUID} -eq 0 && -n ${SUDO_USER:-} && ${SUDO_USER} != root ]]; then
     TARGET_USER="$SUDO_USER"
@@ -54,6 +66,46 @@ resolve_target() {
     printf 'ERROR: Could not determine the home directory for %s.\n' "$TARGET_USER" >&2
     exit 1
   }
+}
+
+run_as_target() {
+  if [[ ${EUID} -eq 0 && $TARGET_USER != root ]]; then
+    runuser -u "$TARGET_USER" -- "$@"
+  else
+    "$@"
+  fi
+}
+
+configure_test_system_root() {
+  local test_root="${AWTARCHY_TEST_SYSTEM_ROOT:-}"
+  [[ -n $test_root ]] || return 0
+  [[ ${EUID} -eq 0 && $test_root == /tmp/* && $test_root != /tmp ]] || {
+    printf 'ERROR: AWTARCHY_TEST_SYSTEM_ROOT is restricted to a root-run /tmp test directory.\n' >&2
+    exit 1
+  }
+  SYSTEM_LIBEXEC_DIR="${test_root}/usr/local/libexec/awtarchy"
+  SUDOERS_DIR="${test_root}/etc/sudoers.d"
+}
+
+source_git() {
+  local -a command=(git -C "$SCRIPT_DIR" "$@")
+
+  if [[ ${EUID} -eq 0 && -n ${TARGET_USER:-} && $TARGET_USER != root ]]; then
+    if command -v runuser >/dev/null 2>&1; then
+      runuser -u "$TARGET_USER" -- "${command[@]}"
+    elif command -v sudo >/dev/null 2>&1; then
+      sudo -u "$TARGET_USER" -H -- "${command[@]}"
+    else
+      return 1
+    fi
+  else
+    "${command[@]}"
+  fi
+}
+
+ensure_vpn_directory() {
+  local vpn_dir="${TARGET_HOME}/vpn"
+  run_as_target install -d -m 0700 "$vpn_dir"
 }
 
 state_value() {
@@ -84,8 +136,29 @@ legacy_install_exists() {
   return 1
 }
 
+source_branch() {
+  local branch=""
+  if command -v git >/dev/null 2>&1 \
+    && source_git rev-parse --is-inside-work-tree >/dev/null 2>&1;
+  then
+    branch="$(source_git branch --show-current 2>/dev/null || true)"
+    [[ -n $branch ]] && printf '%s\n' "$branch"
+  fi
+}
+
+is_unreleased_git_source() {
+  local branch=""
+  branch="$(source_branch)"
+  [[ -n $branch && $branch != main ]]
+}
+
 source_release_tag() {
   local source_name="${SCRIPT_DIR##*/}" tag=""
+
+  if is_unreleased_git_source; then
+    printf '%s\n' unreleased
+    return 0
+  fi
 
   if [[ -n ${AWTARCHY_INSTALL_TAG:-} ]]; then
     printf '%s\n' "$AWTARCHY_INSTALL_TAG"
@@ -101,9 +174,9 @@ source_release_tag() {
   fi
 
   if command -v git >/dev/null 2>&1 \
-    && git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1;
+    && source_git rev-parse --is-inside-work-tree >/dev/null 2>&1;
   then
-    tag="$(git -C "$SCRIPT_DIR" tag --points-at HEAD 2>/dev/null \
+    tag="$(source_git tag --points-at HEAD 2>/dev/null \
       | grep -E '^v[0-9]+([.][0-9]+)*([._+-].*)?$' \
       | head -n1 || true)"
     [[ -n $tag ]] && {
@@ -117,9 +190,9 @@ source_release_tag() {
 
 source_revision() {
   if command -v git >/dev/null 2>&1 \
-    && git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1;
+    && source_git rev-parse --is-inside-work-tree >/dev/null 2>&1;
   then
-    git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || true
+    source_git rev-parse HEAD 2>/dev/null || true
     return 0
   fi
 
@@ -146,12 +219,17 @@ legacy_config_tag() {
 
 write_version_file() {
   local destination="$1" tag="$2" revision="${3:-}" timestamp_key="$4"
+  local destination_dir temporary
+  destination_dir="$(dirname -- "$destination")"
+  run_as_target install -d -m 0755 -- "$destination_dir"
+  temporary="$(run_as_target mktemp --tmpdir="$destination_dir" '.version.tmp.XXXXXX')"
   {
     printf 'tag=%s\n' "$tag"
     [[ -n $revision ]] && printf 'revision=%s\n' "$revision"
     printf '%s=%s\n' "$timestamp_key" "$(date -Iseconds)"
-  } >"$destination"
-  chmod 0644 "$destination"
+  } | run_as_target tee "$temporary" >/dev/null
+  run_as_target chmod 0644 "$temporary"
+  run_as_target mv -Tf -- "$temporary" "$destination"
 }
 
 install_system_launcher() {
@@ -182,6 +260,44 @@ install_system_launcher() {
 
 set -Eeuo pipefail
 
+if [[ ${EUID} -eq 0 ]]; then
+  target_user="${SUDO_USER:-}"
+  passwd_entry=""
+  account=""
+  uid=""
+  target_home=""
+
+  [[ -n $target_user && $target_user != root ]] || {
+    printf 'ERROR: Refusing to run a user-local Awtarchy command as root.\n' >&2
+    exit 1
+  }
+  passwd_entry="$(/usr/bin/getent passwd "$target_user" || true)"
+  IFS=: read -r account _ uid _ _ target_home _ <<<"$passwd_entry"
+  [[ $account == "$target_user" \
+    && $account =~ ^[A-Za-z_][A-Za-z0-9_.-]*\$?$ \
+    && $uid =~ ^[0-9]+$ \
+    && $uid -ne 0 \
+    && $target_home == /* \
+    && $target_home != / \
+    && -d $target_home ]] || {
+    printf 'ERROR: Could not validate the invoking user before running Awtarchy.\n' >&2
+    exit 1
+  }
+
+  target="${target_home}/.local/bin/awtarchy"
+  if [[ -x $target && $target != "${BASH_SOURCE[0]}" ]]; then
+    exec /usr/bin/runuser -u "$account" -- /usr/bin/env \
+      -u SUDO_COMMAND -u SUDO_USER -u SUDO_UID -u SUDO_GID \
+      -u XDG_CONFIG_HOME -u XDG_DATA_HOME -u XDG_STATE_HOME -u XDG_CACHE_HOME \
+      HOME="$target_home" USER="$account" LOGNAME="$account" \
+      PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin \
+      "$target" "$@"
+  fi
+
+  printf 'ERROR: Awtarchy is not installed for %s: %s\n' "$account" "$target" >&2
+  exit 127
+fi
+
 target="${HOME}/.local/bin/awtarchy"
 
 if [[ -x $target && $target != "${BASH_SOURCE[0]}" ]]; then
@@ -197,6 +313,86 @@ EOF_SHIM
     chown root:root "$temporary"
   fi
   mv -Tf -- "$temporary" "$destination"
+}
+
+install_usb_refresh_helper() {
+  local destination="${SYSTEM_LIBEXEC_DIR}/usb-refresh-fixer"
+  local wireguard_destination="${SYSTEM_LIBEXEC_DIR}/wireguard-helper"
+  local scxctl_destination="${SYSTEM_LIBEXEC_DIR}/scxctl-helper"
+  local sudoers_file="${SUDOERS_DIR}/awtarchy-usb-refresh-${TARGET_USER}"
+  local legacy_sudoers_file="${SUDOERS_DIR}/usb_refresh_fixer-${TARGET_USER}"
+  local temporary="" rule=""
+  local helper_command="/usr/local/libexec/awtarchy/usb-refresh-fixer"
+
+  [[ $TARGET_USER != root ]] || return 0
+  [[ ${EUID} -eq 0 ]] || {
+    printf 'WARNING: USB refresh helper requires a root-run installer.\n' >&2
+    return 0
+  }
+  [[ $TARGET_USER =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] || {
+    printf 'ERROR: Refusing unsafe target username for USB refresh policy: %s\n' "$TARGET_USER" >&2
+    exit 1
+  }
+  [[ -f $USB_HELPER_SOURCE && ! -L $USB_HELPER_SOURCE ]] || {
+    printf 'ERROR: Missing or unsafe USB refresh helper source: %s\n' "$USB_HELPER_SOURCE" >&2
+    exit 1
+  }
+  bash -n "$USB_HELPER_SOURCE" || {
+    printf 'ERROR: USB refresh helper failed Bash syntax validation.\n' >&2
+    exit 1
+  }
+  [[ -f $WIREGUARD_HELPER_SOURCE && ! -L $WIREGUARD_HELPER_SOURCE ]] || {
+    printf 'ERROR: Missing or unsafe WireGuard helper source: %s\n' "$WIREGUARD_HELPER_SOURCE" >&2
+    exit 1
+  }
+  python3 - "$WIREGUARD_HELPER_SOURCE" <<'PY' || {
+from pathlib import Path
+import sys
+compile(Path(sys.argv[1]).read_text(encoding="utf-8"), sys.argv[1], "exec")
+PY
+    printf 'ERROR: WireGuard helper failed Python syntax validation.\n' >&2
+    exit 1
+  }
+  [[ -f $SCXCTL_HELPER_SOURCE && ! -L $SCXCTL_HELPER_SOURCE ]] || {
+    printf 'ERROR: Missing or unsafe scxctl helper source: %s\n' "$SCXCTL_HELPER_SOURCE" >&2
+    exit 1
+  }
+  [[ $(head -n1 -- "$SCXCTL_HELPER_SOURCE") == '#!/usr/bin/bash' ]] || {
+    printf 'ERROR: scxctl helper must use the fixed /usr/bin/bash interpreter.\n' >&2
+    exit 1
+  }
+  bash -n "$SCXCTL_HELPER_SOURCE" || {
+    printf 'ERROR: scxctl helper failed Bash syntax validation.\n' >&2
+    exit 1
+  }
+
+  install -d -m 0755 -o root -g root "$SYSTEM_LIBEXEC_DIR" "$SUDOERS_DIR"
+  [[ ! -L $SYSTEM_LIBEXEC_DIR && ! -L $SUDOERS_DIR ]] || {
+    printf 'ERROR: USB refresh system directories must not be symbolic links.\n' >&2
+    exit 1
+  }
+  temporary="$(mktemp "${SYSTEM_LIBEXEC_DIR}/.usb-refresh-fixer.XXXXXX")"
+  install -m 0755 -o root -g root "$USB_HELPER_SOURCE" "$temporary"
+  mv -Tf -- "$temporary" "$destination"
+  temporary="$(mktemp "${SYSTEM_LIBEXEC_DIR}/.wireguard-helper.XXXXXX")"
+  install -m 0755 -o root -g root "$WIREGUARD_HELPER_SOURCE" "$temporary"
+  mv -Tf -- "$temporary" "$wireguard_destination"
+  temporary="$(mktemp "${SYSTEM_LIBEXEC_DIR}/.scxctl-helper.XXXXXX")"
+  install -m 0755 -o root -g root "$SCXCTL_HELPER_SOURCE" "$temporary"
+  mv -Tf -- "$temporary" "$scxctl_destination"
+
+  rule="${TARGET_USER} ALL=(root) NOPASSWD: ${helper_command} refresh *, ${helper_command} refresh-audio *, ${helper_command} refresh-audio-default *, ${helper_command} audio-default *, ${helper_command} refresh-all"
+  temporary="$(mktemp "${SUDOERS_DIR}/.awtarchy-usb-refresh.XXXXXX")"
+  printf '%s\n' "$rule" >"$temporary"
+  chmod 0440 "$temporary"
+  chown root:root "$temporary"
+  visudo -cf "$temporary" >/dev/null || {
+    rm -f -- "$temporary"
+    printf 'ERROR: Generated USB refresh sudoers policy is invalid.\n' >&2
+    exit 1
+  }
+  mv -Tf -- "$temporary" "$sudoers_file"
+  rm -f -- "$legacy_sudoers_file"
 }
 
 repair_target_ownership() {
@@ -225,51 +421,82 @@ refresh_existing_command() {
   local command_tag revision
 
   bash -n "$RUNTIME_SOURCE" || {
-    printf 'ERROR: Awtarchy runtime failed Bash syntax validation.
-' >&2
+    printf 'ERROR: Awtarchy runtime failed Bash syntax validation.\n' >&2
     exit 1
   }
   bash -n "$LAUNCHER_SOURCE" || {
-    printf 'ERROR: Awtarchy command failed Bash syntax validation.
-' >&2
+    printf 'ERROR: Awtarchy command failed Bash syntax validation.\n' >&2
     exit 1
   }
 
-  install -d -m 0755 "$bin_dir" "$data_dir" "$state_dir"
-  install -m 0755 "$LAUNCHER_SOURCE" "${bin_dir}/awtarchy"
-  install -m 0755 "$RUNTIME_SOURCE" "${data_dir}/awtarchy-runtime.sh"
+  run_as_target install -d -m 0755 "$bin_dir" "$data_dir" "$state_dir"
+  run_as_target install -m 0755 "$LAUNCHER_SOURCE" "${bin_dir}/awtarchy"
+  run_as_target install -m 0755 "$RUNTIME_SOURCE" "${data_dir}/awtarchy-runtime.sh"
 
   command_tag="$(source_release_tag)"
   revision="$(source_revision)"
   write_version_file "$command_version" "$command_tag" "$revision" installed_at
   repair_target_ownership
 
-  printf '%s
-' "Verifying the Awtarchy command against GitHub's latest release..."
-  if ! env -u XDG_DATA_HOME -u XDG_STATE_HOME     HOME="$TARGET_HOME" USER="$TARGET_USER" LOGNAME="$TARGET_USER"     "${bin_dir}/awtarchy" self-update
-  then
-    printf '%s
-' "ERROR: Could not verify the Awtarchy command against GitHub's latest release." >&2
-    exit 1
+  if is_unreleased_git_source; then
+    printf 'Installed the unreleased Awtarchy branch runtime from %s without replacing it from main.\n' \
+      "$(source_branch)"
+  else
+    printf '%s\n' "Verifying the Awtarchy command against the current main updater..."
+    if ! run_as_target env -u XDG_DATA_HOME -u XDG_STATE_HOME \
+      HOME="$TARGET_HOME" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
+      "${bin_dir}/awtarchy" self-update
+    then
+      printf '%s\n' "ERROR: Could not verify the Awtarchy command against the current main updater." >&2
+      exit 1
+    fi
+    repair_target_ownership
   fi
-  repair_target_ownership
 }
 
 show_existing_install_message() {
+  if is_unreleased_git_source; then
+    local testing_branch testing_commit
+    testing_branch="$(source_branch)"
+    testing_commit="$(source_revision)"
+    [[ "$testing_commit" =~ ^[0-9a-fA-F]{40}$ ]] || testing_commit=unknown
+
+    cat <<EOF_MESSAGE
+Awtarchy is already installed for ${TARGET_USER}.
+
+The installed launcher/runtime were refreshed from this unreleased source:
+
+  ${testing_branch}@${testing_commit}
+
+No packages or managed configs were changed.
+
+  awtarchy                 Open the maintenance menu
+  awtarchy git             Select and test an unreleased remote branch
+  awtarchy git review --branch ${testing_branch} --commit ${testing_commit}
+  awtarchy version         Show updater, release, and Git-testing state
+
+Stable update/reset/review operations still refresh the command from main and
+use published config releases.
+
+To intentionally run the complete installer from this source:
+
+  sudo ./awtarchy-install.sh --reinstall
+EOF_MESSAGE
+    return 0
+  fi
+
   cat <<EOF_MESSAGE
 Awtarchy is already installed for ${TARGET_USER}.
 
-The installed launcher and runtime were replaced from this installer, then
-verified against GitHub's latest release. No packages or managed configs
-were changed.
+The installed launcher/runtime were refreshed from the current main updater.
+No packages or managed configs were changed.
 
   awtarchy                 Open the maintenance menu
-  awtarchy self-update     Update the Awtarchy command
-  awtarchy update          Update configs and preserve personal changes
-  awtarchy reset           Reset managed configs to release defaults
-  awtarchy version         Show installed and latest releases
+  awtarchy review          Review the latest release without applying it
+  awtarchy update          Update from the latest release
+  awtarchy version         Show updater and config release status
 
-To intentionally run the complete installer again:
+To intentionally rerun the complete installer:
 
   sudo ./awtarchy-install.sh --reinstall
 EOF_MESSAGE
@@ -307,9 +534,9 @@ migrate_legacy_install() {
     exit 1
   }
 
-  install -d -m 0755 "$bin_dir" "$data_dir" "$state_dir"
-  install -m 0755 "$LAUNCHER_SOURCE" "${bin_dir}/awtarchy"
-  install -m 0755 "$RUNTIME_SOURCE" "${data_dir}/awtarchy-runtime.sh"
+  run_as_target install -d -m 0755 "$bin_dir" "$data_dir" "$state_dir"
+  run_as_target install -m 0755 "$LAUNCHER_SOURCE" "${bin_dir}/awtarchy"
+  run_as_target install -m 0755 "$RUNTIME_SOURCE" "${data_dir}/awtarchy-runtime.sh"
 
   command_tag="$(source_release_tag)"
   revision="$(source_revision)"
@@ -330,13 +557,8 @@ Installed the new maintenance command:
 
   ${bin_dir}/awtarchy
 
-No packages or managed configs were changed. Future maintenance now uses:
-
-  awtarchy                 Open the maintenance menu
-  awtarchy self-update     Update the Awtarchy command
-  awtarchy update          Update configs and preserve personal changes
-  awtarchy reset           Reset managed configs to release defaults
-  awtarchy version         Show installed and latest releases
+No packages or managed configs were changed. Use --reinstall when you are ready
+to apply the actual Quickshell conversion.
 EOF_MESSAGE
 }
 
@@ -367,7 +589,7 @@ while (( $# )); do
       ARGS+=("$1")
       shift
       ;;
-    update|reset|review|clean-backups|version|check-update|self-update|update-reset-backup|update-backup-cleaner)
+    update|reset|review|git|clean-backups|version|check-update|self-update|update-reset-backup|update-backup-cleaner)
       printf 'ERROR: %s is a maintenance command. Run it through: awtarchy %s\n' "$1" "$1" >&2
       exit 2
       ;;
@@ -378,10 +600,14 @@ while (( $# )); do
   esac
 done
 
+validate_runtime_source
 resolve_target
+configure_test_system_root
 
 if (( DRY_RUN_REQUESTED == 0 )); then
+  ensure_vpn_directory
   install_system_launcher
+  install_usb_refresh_helper
 fi
 
 if (( REINSTALL == 0 )); then
@@ -406,4 +632,13 @@ if (( REINSTALL == 0 )); then
   fi
 fi
 
-exec env AWTARCHY_REPO_DIR="$SCRIPT_DIR" bash "$RUNTIME_SOURCE" install "${ARGS[@]}"
+install_env=("AWTARCHY_REPO_DIR=$SCRIPT_DIR")
+if is_unreleased_git_source; then
+  install_env+=("AWTARCHY_SKIP_SELF_UPDATE=1")
+fi
+
+set +e
+env "${install_env[@]}" bash "$RUNTIME_SOURCE" install "${ARGS[@]}"
+status=$?
+set -e
+exit "$status"

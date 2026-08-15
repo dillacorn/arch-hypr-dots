@@ -108,13 +108,10 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("gnome-keyring-daemon --start --password-store=secrets")
 
     -- hl.exec_cmd("~/.config/hypr/scripts/last_to_load_recorder.sh &")
-    hl.exec_cmd("~/.config/hypr/scripts/waybar.sh start &")
-    hl.exec_cmd("~/.config/hypr/scripts/waybar_ready_sound.sh &")
+    hl.exec_cmd("~/.config/hypr/scripts/quickshell.sh start &")
+    hl.exec_cmd("~/.config/hypr/scripts/quickshell_ready_sound.sh &")
 
     hl.exec_cmd("hyprsunset &")
-    hl.exec_cmd("mako &")
-    hl.exec_cmd("nm-applet &")
-    hl.exec_cmd("blueman-applet &")
     hl.exec_cmd("nwg-look -a &")
     hl.exec_cmd("hypridle -c ~/.config/hypr/hypridle.conf &")
     hl.exec_cmd("~/.config/hypr/scripts/hyprpm-auto-reload.sh &")
@@ -348,6 +345,18 @@ if hl.plugin and hl.plugin.hyprbars and hl.plugin.hyprbars.add_button then
     end
 end
 
+-- Quickshell application launcher: bar-aware floating search window.
+hl.window_rule({
+    name = "awtarchy-quickshell-launcher",
+    match = { title = "Awtarchy Application Search" },
+    float = true,
+    border_size = 0,
+    rounding = 0,
+    decorate = false,
+    no_shadow = true,
+    no_follow_mouse = true,
+})
+
 -- ───────────────────────────────────────────────────────────────────────────────
 -- INPUT
 -- ───────────────────────────────────────────────────────────────────────────────
@@ -515,9 +524,9 @@ local calculator = "speedcrunch"
 local yazi = "alacritty -e yazi"
 
 -- App/menu launchers
-local app_launcher = "~/.config/hypr/scripts/fuzzel_toggle.sh"
-local wlogout = "~/.config/hypr/scripts/wlogout_toggle.sh"
-local hypr_quicksettings = "~/.config/hypr/scripts/launch_handler.sh hypr_quicksettings \"alacritty --class hypr_quicksettings -e bash ~/.config/hypr/scripts/hypr_quicksettings.sh --ui\""
+local app_launcher = "~/.config/hypr/scripts/quickshell_launcher.sh"
+local power_menu = "~/.config/hypr/scripts/quickshell_power_menu.sh"
+local hypr_quicksettings = "~/.config/hypr/scripts/quickshell_quick_settings_toggle.sh"
 local awtarchy_tips_tui = "~/.config/hypr/scripts/launch_handler.sh awtarchy-tips-tui \"alacritty --class awtarchy-tips-tui -e ~/.config/hypr/scripts/awtarchy-tips-tui.sh\""
 
 -- Audio
@@ -529,11 +538,11 @@ local play_pause = "~/.config/hypr/scripts/play_pause.sh"
 
 -- Bars / UI toggles
 local hyprbars_toggle = "~/.config/hypr/scripts/hyprbars_toggle.sh"
-local waybar_toggle = "~/.config/hypr/scripts/waybar_toggle.sh"
-local waybar_flip = "~/.config/hypr/scripts/waybar_flip.sh"
-local waybar_rotate = "~/.config/hypr/scripts/waybar_rotate.sh"
+local bar_toggle = "~/.config/hypr/scripts/quickshell_bar_toggle.sh"
+local bar_flip = "~/.config/hypr/scripts/quickshell_bar_flip.sh"
+local bar_rotate = "~/.config/hypr/scripts/quickshell_bar_rotate.sh"
 local toggle_animations = "~/.config/hypr/scripts/toggle_animations.sh"
-local mako_dismiss = "~/.config/hypr/scripts/mako_dismiss.sh"
+local notification_dismiss = "~/.config/hypr/scripts/quickshell_notification_dismiss.sh"
 
 -- Themes / wallpaper
 local wallpicker = "~/.config/hypr/scripts/launch_handler.sh wallpicker \"alacritty --class wallpicker -e awtwall --resume\""
@@ -544,7 +553,7 @@ local screenshot_select = "env XDG_ACTIVATION_TOKEN=$XDG_ACTIVATION_TOKEN ~/.con
 local screenshot_full = "~/.config/hypr/scripts/screenshot_fullscreen.sh"
 local screenshot_display = "~/.config/hypr/scripts/screenshot_display.sh"
 local gif_capture = "~/.config/hypr/scripts/gif_capture.sh"
-local clipboard_history = "~/.config/hypr/scripts/cliphist-fuzzel.sh"
+local clipboard_history = "~/.config/hypr/scripts/quickshell_clipboard_toggle.sh"
 local qr_scan = "~/.config/hypr/scripts/qr_scan.sh"
 
 -- Utilities
@@ -557,11 +566,11 @@ local hyprsunset_ctl = "~/.config/hypr/scripts/hyprsunset_ctl.sh"
 
 -- Terminal tools
 local maccel = "~/.config/hypr/scripts/launch_handler.sh maccel \"alacritty --class maccel -e maccel\""
-local smtty = "~/.config/hypr/scripts/launch_handler.sh smtty \"alacritty --class smtty -e smtty\""
+local smtty = "~/.config/hypr/scripts/launch_handler.sh smtty \"~/.config/hypr/scripts/default_terminal.sh --class smtty -- smtty\""
 local btop = "~/.config/hypr/scripts/launch_handler.sh btop \"alacritty --class btop -e btop\""
 
 -- Complex one-off
-local smtty_O = "sh -lc 'if hyprctl clients | grep -q \"class: smtty-O\"; then hyprctl dispatch closewindow class:smtty-O; else alacritty --class smtty-O -e sh -lc '\"'\"'smtty -O; printf \"\\n[smtty -O finished]\\nPress ENTER to close...\"; read -r _'\"'\"'; fi'"
+local smtty_O = "~/.config/hypr/scripts/launch_handler.sh smtty-O \"~/.config/hypr/scripts/default_terminal.sh --class smtty-O --hold -- smtty -O\""
 
 -- Submap references (Toggle on)  [write name to file on entry]
 local function _submap_on_cmd(name)
@@ -650,7 +659,7 @@ end
 hl.bind("ALT + V", hl.dsp.exec_cmd(wiremix), {})
 hl.bind("SUPER + V", hl.dsp.exec_cmd(wiremix), {})
 
--- Mako dismiss
+-- Notification dismiss
 for _, key in ipairs({
     "ALT + SPACE",
     "ALT + CTRL + SPACE",
@@ -658,7 +667,7 @@ for _, key in ipairs({
     "ALT + CTRL + SHIFT + SPACE",
     "SUPER + SPACE",
 }) do
-    hl.bind(key, hl.dsp.exec_cmd(mako_dismiss), {})
+    hl.bind(key, hl.dsp.exec_cmd(notification_dismiss), {})
 end
 
 -- Terminal utilities (smtty)
@@ -670,9 +679,9 @@ hl.bind("SUPER + ALT + K", hl.dsp.exec_cmd("smtty -k"), {})
 -- UI / compositor toggles
 for _, bind in ipairs({
     { "SUPER + ALT + T", hyprbars_toggle },
-    { "SUPER + ALT + B", waybar_rotate },
-    { "SUPER + ALT + CTRL + B", waybar_toggle },
-    { "SUPER + CTRL + B", waybar_flip },
+    { "SUPER + ALT + B", bar_rotate },
+    { "SUPER + ALT + CTRL + B", bar_toggle },
+    { "SUPER + CTRL + B", bar_flip },
     { "SUPER + A", toggle_animations },
 }) do
     hl.bind(bind[1], hl.dsp.exec_cmd(bind[2]), {})
@@ -691,7 +700,7 @@ hl.bind("SUPER + E", hl.dsp.exec_cmd("pcmanfm-qt"), {})
 hl.bind("SUPER + SHIFT + E", hl.dsp.exec_cmd(yazi), {})
 hl.bind("SUPER + L", hl.dsp.exec_cmd("hyprlock"), {})
 hl.bind("SUPER + I", hl.dsp.exec_cmd(hyprpicker), {})
-hl.bind("SUPER + P", hl.dsp.exec_cmd(wlogout), {})
+hl.bind("SUPER + P", hl.dsp.exec_cmd(power_menu), {})
 
 -- Themes / wallpaper
 for _, bind in ipairs({
@@ -815,10 +824,11 @@ hl.bind("ALT + mouse:273", hl.dsp.window.resize(), { mouse = true })
 hl.bind("SUPER + mouse:272", hl.dsp.window.drag(), { mouse = true })
 hl.bind("SUPER + mouse:273", hl.dsp.window.resize(), { mouse = true })
 
--- Digital vibrance quick adjust (SUPER+ALT+[] & SUPER+ALT+\)
+-- Digital vibrance quick adjust (SUPER+ALT+[] & SUPER+ALT+\; SUPER+ALT+CTRL+V toggle)
 hl.bind("SUPER + ALT + bracketright", hl.dsp.exec_cmd(vibrance_shader .. " up"), {})
 hl.bind("SUPER + ALT + bracketleft", hl.dsp.exec_cmd(vibrance_shader .. " down"), {})
 hl.bind("SUPER + ALT + backslash", hl.dsp.exec_cmd(vibrance_shader .. " toggle"), {})
+hl.bind("SUPER + ALT + CTRL + V", hl.dsp.exec_cmd(vibrance_shader .. " toggle"), {})
 
 -- Workspace mixing script (SUPER+ALT+CTRL numbers)
 for _, bind in ipairs(workspace_keys) do
@@ -892,7 +902,7 @@ hl.define_submap("noalt", function()
     hl.bind("ALT + V", hl.dsp.exec_cmd(wiremix), {})
     hl.bind("SUPER + V", hl.dsp.exec_cmd(wiremix), {})
 
-    -- Mako dismiss in "noalt"
+    -- Notification dismiss in "noalt"
     for _, key in ipairs({
         "ALT + SPACE",
         "ALT + CTRL + SPACE",
@@ -900,7 +910,7 @@ hl.define_submap("noalt", function()
         "ALT + CTRL + SHIFT + SPACE",
         "SUPER + SPACE",
     }) do
-        hl.bind(key, hl.dsp.exec_cmd(mako_dismiss), {})
+        hl.bind(key, hl.dsp.exec_cmd(notification_dismiss), {})
     end
 
     -- Terminal utilities (smtty) in "noalt"
@@ -912,9 +922,9 @@ hl.define_submap("noalt", function()
     -- UI / compositor toggles in "noalt"
     for _, bind in ipairs({
         { "SUPER + ALT + T", hyprbars_toggle },
-        { "SUPER + ALT + B", waybar_rotate },
-        { "SUPER + ALT + CTRL + B", waybar_toggle },
-        { "SUPER + CTRL + B", waybar_flip },
+        { "SUPER + ALT + B", bar_rotate },
+        { "SUPER + ALT + CTRL + B", bar_toggle },
+        { "SUPER + CTRL + B", bar_flip },
         { "SUPER + A", toggle_animations },
     }) do
         hl.bind(bind[1], hl.dsp.exec_cmd(bind[2]), {})
@@ -933,7 +943,7 @@ hl.define_submap("noalt", function()
     hl.bind("SUPER + SHIFT + E", hl.dsp.exec_cmd(yazi), {})
     hl.bind("SUPER + L", hl.dsp.exec_cmd("hyprlock"), {})
     hl.bind("SUPER + I", hl.dsp.exec_cmd(hyprpicker), {})
-    hl.bind("SUPER + P", hl.dsp.exec_cmd(wlogout), {})
+    hl.bind("SUPER + P", hl.dsp.exec_cmd(power_menu), {})
 
     -- Themes / wallpaper
     for _, bind in ipairs({
@@ -1021,10 +1031,11 @@ hl.define_submap("noalt", function()
     hl.bind("SUPER + mouse:272", hl.dsp.window.drag(), { mouse = true })
     hl.bind("SUPER + mouse:273", hl.dsp.window.resize(), { mouse = true })
 
-    -- Digital vibrance quick adjust (SUPER+ALT+[] & SUPER+ALT+\)
+    -- Digital vibrance quick adjust (SUPER+ALT+[] & SUPER+ALT+\; SUPER+ALT+CTRL+V toggle)
     hl.bind("SUPER + ALT + bracketright", hl.dsp.exec_cmd(vibrance_shader .. " up"), {})
     hl.bind("SUPER + ALT + bracketleft", hl.dsp.exec_cmd(vibrance_shader .. " down"), {})
     hl.bind("SUPER + ALT + backslash", hl.dsp.exec_cmd(vibrance_shader .. " toggle"), {})
+    hl.bind("SUPER + ALT + CTRL + V", hl.dsp.exec_cmd(vibrance_shader .. " toggle"), {})
 
     -- Workspace mixing script (SUPER+ALT+CTRL numbers)
     for _, bind in ipairs(workspace_keys) do
@@ -1112,7 +1123,7 @@ hl.define_submap("vm", function()
         { "SUPER + ALT + D", hl.dsp.exec_cmd(screenshot_display), {} },
         { "SUPER + ALT + G", hl.dsp.exec_cmd(gif_capture), {} },
         { "SUPER + ALT + RETURN", hl.dsp.exec_cmd(terminal), {} },
-        { "SUPER + ALT + SPACE", hl.dsp.exec_cmd(mako_dismiss), { repeating = true } },
+        { "SUPER + ALT + SPACE", hl.dsp.exec_cmd(notification_dismiss), { repeating = true } },
         { "SUPER + ALT + mouse:272", hl.dsp.window.drag(), { mouse = true } },
         { "SUPER + ALT + mouse:273", hl.dsp.window.resize(), { mouse = true } },
         { "SUPER + ALT + mouse:274", hl.dsp.window.float({ action = "toggle" }), {} },
@@ -1244,13 +1255,6 @@ hl.window_rule({ match = { class = "^(wallpicker)$" }, float = true })
 hl.window_rule({ match = { class = "^(wallpicker)$" }, size = { "(monitor_w*0.85)", "(monitor_h*0.90)" } })
 hl.window_rule({ match = { class = "^(wallpicker)$" }, center = true })
 
-hl.window_rule({ match = { class = "^(nm-connection-editor)$" }, float = true })
-hl.window_rule({ match = { class = "^(nm-connection-editor)$" }, size = { "(monitor_w*0.45)", "(monitor_h*0.45)" } })
-hl.window_rule({ match = { class = "^(nm-connection-editor)$" }, center = true })
-
-hl.window_rule({ match = { class = "^(blueman-manager)$" }, float = true })
-hl.window_rule({ match = { class = "^(blueman-manager)$" }, size = { "(monitor_w*0.45)", "(monitor_h*0.45)" } })
-hl.window_rule({ match = { class = "^(blueman-manager)$" }, center = true })
 
 hl.window_rule({ match = { class = "^(net\\.davidotek\\.pupgui2)$" }, float = true })
 hl.window_rule({ match = { class = "^(net\\.davidotek\\.pupgui2)$" }, size = { "(monitor_w*0.45)", "(monitor_h*0.45)" } })

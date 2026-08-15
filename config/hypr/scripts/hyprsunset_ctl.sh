@@ -19,7 +19,8 @@ BASE_K=6500
 # Used only when there is no prior saved state.
 DEFAULT_ON_OFFSET=-1500
 
-STEP=500
+# Fine enough to tune visually without making large jumps between clicks.
+STEP=250
 
 notify() {
   local msg="$1"

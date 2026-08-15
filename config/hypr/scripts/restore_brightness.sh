@@ -27,7 +27,7 @@ log() {
 
 # Do nothing unless this idle cycle actually dimmed the monitor.
 if [[ ! -f "$DIM_MARKER" ]]; then
-    log "brightness restore skipped: no DDC dim marker"
+    log "brightness restore skipped: no dim marker"
     exit 0
 fi
 
@@ -46,16 +46,16 @@ if [[ ! "$BRIGHTNESS" =~ ^[0-9]+$ ]] ||
 fi
 
 if [[ ! -x "$BRIGHTNESS_SCRIPT" ]]; then
-    log "DDC brightness restore failed: brightness controller unavailable"
+    log "brightness restore failed: controller unavailable"
     exit 1
 fi
 
-# The controller performs the DDC write and publishes the restored cached value.
+# The controller writes through the selected backlight or DDC backend.
 if HYPR_DDC_NOTIFY=0 "$BRIGHTNESS_SCRIPT" set "$BRIGHTNESS" >/dev/null 2>&1; then
     rm -f "$DIM_MARKER"
-    log "DDC brightness restored: ${BRIGHTNESS}"
+    log "brightness restored: ${BRIGHTNESS}"
     exit 0
 fi
 
-log "DDC brightness restore failed; marker retained"
+log "brightness restore failed; marker retained"
 exit 1

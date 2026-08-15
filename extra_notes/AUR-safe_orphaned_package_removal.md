@@ -19,7 +19,7 @@ yay -Qtdq
 Run this command in your terminal:
 
 ```sh
-orphans=$(yay -Qtdq | grep -v -E "^(grub|linux|linux-lts|linux-zen|linux-tkg|linux-firmware|systemd|bash|coreutils|glibc|filesystem|util-linux|pacman|binutils|sudo|e2fsprogs|shadow|iproute2|inetutils|netctl|networkmanager|dhcpcd|nss|openssl|gnutls|ca-certificates|libx11|libxcb|xf86-input-libinput|xcb|xorg-server|xorg-xinit|mesa|wayland|wayland-protocols|kbd|mkinitcpio|nano|vim|vi|less|man-db|man-pages|base|base-devel|dbus|udev|zstd|pcre2|gcc-libs|libxkbcommon|seatd|pam|elogind|xdg-utils|xdg-desktop-portal|pipewire|wireplumber|hyprland|swaybg|xdg-desktop-portal-hyprland|accountsservice)$");
+orphans=$(yay -Qtdq | grep -v -E "^(grub|linux.*|systemd|bash|coreutils|glibc|filesystem|util-linux|pacman|binutils|sudo|e2fsprogs|shadow|iproute2|inetutils|netctl|networkmanager|dhcpcd|nss|openssl|gnutls|ca-certificates|libx11|libxcb|xf86-input-libinput|xcb|xorg-server|xorg-xinit|mesa|wayland|wayland-protocols|kbd|mkinitcpio|nano|vim|vi|less|man-db|man-pages|base|base-devel|dbus|udev|zstd|pcre2|gcc-libs|libxkbcommon|seatd|pam|elogind|xdg-utils|xdg-desktop-portal|pipewire|wireplumber|hyprland|swaybg|xdg-desktop-portal-hyprland|accountsservice)$");
 
 if [ -z "$orphans" ]; then
   echo "No orphaned AUR packages found";

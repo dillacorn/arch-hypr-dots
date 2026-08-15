@@ -9,7 +9,7 @@ CACHE="${XDG_CACHE_HOME:-$HOME/.cache}"
 uid="$(id -u)"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${uid}}"
 
-INHIBITOR_SH="${INHIBITOR_SH:-${CONF}/waybar/scripts/idle_inhibitor_global.sh}"
+INHIBITOR_SH="${INHIBITOR_SH:-${CONF}/hypr/scripts/idle_inhibitor_global.sh}"
 BRIGHTNESS_SCRIPT="${HYPR_BRIGHTNESS_SCRIPT:-${CONF}/hypr/scripts/hypr-ddc-brightness.sh}"
 LOG_FILE="${HYPRIDLE_ACTION_LOG:-${CACHE}/hypridle/actions.log}"
 BR_FILE="${RUNTIME_DIR}/hypridle-brightness-level"
@@ -27,14 +27,14 @@ log() {
 
 if [[ -x "$INHIBITOR_SH" ]] && "$INHIBITOR_SH" is-active >/dev/null 2>&1; then
     rm -f "$DIM_MARKER"
-    log "blocked DDC dim: idle inhibitor active"
+    log "blocked brightness dim: idle inhibitor active"
     exit 0
 fi
 
 rm -f "$DIM_MARKER"
 
 if [[ ! -x "$BRIGHTNESS_SCRIPT" ]]; then
-    log "DDC dim failed: brightness controller unavailable"
+    log "brightness dim failed: controller unavailable"
     exit 1
 fi
 
@@ -52,13 +52,13 @@ if [[ "$saved_brightness" =~ ^[0-9]+$ ]] &&
     printf '%s\n' "$saved_brightness" >"$BR_FILE"
 fi
 
-# The controller performs the DDC write and publishes the new cached value.
+# The controller writes through the selected backlight or DDC backend.
 if HYPR_DDC_NOTIFY=0 "$BRIGHTNESS_SCRIPT" set 20 >/dev/null 2>&1; then
     printf 'dimmed\n' >"$DIM_MARKER"
-    log "DDC dim applied: brightness 20"
+    log "brightness dim applied: 20"
     exit 0
 fi
 
 rm -f "$DIM_MARKER"
-log "DDC dim failed"
+log "brightness dim failed"
 exit 1

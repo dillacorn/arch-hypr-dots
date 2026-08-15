@@ -8,10 +8,92 @@
 # - Always notify Waybar (signal RTMIN+12) so custom/submap updates
 
 set -euo pipefail
+umask 077
 
 SELF="$(readlink -f "$0")"
-STATE_FILE="/tmp/hypr-resize.state"
-WATCH_PID_FILE="/tmp/hypr-resize.wpid"
+
+die() {
+  printf 'toggle_resize_if_ok: %s\n' "$*" >&2
+  exit 1
+}
+
+init_private_runtime() {
+  local base owner mode
+
+  base="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+  [[ $base == /* && -d $base && ! -L $base ]] \
+    || die 'XDG runtime directory is missing or unsafe'
+  owner="$(stat -c %u -- "$base" 2>/dev/null)" \
+    || die 'could not inspect XDG runtime directory owner'
+  mode="$(stat -c %a -- "$base" 2>/dev/null)" \
+    || die 'could not inspect XDG runtime directory mode'
+  [[ $owner == "$(id -u)" && $mode =~ ^[0-7]{3,4}$ ]] \
+    || die 'XDG runtime directory ownership or mode is unsafe'
+  (( (8#$mode & 8#077) == 0 )) \
+    || die 'XDG runtime directory must not be accessible by other users'
+
+  RUNTIME_STATE_DIR="${base}/awtarchy"
+  [[ ! -L $RUNTIME_STATE_DIR ]] \
+    || die 'Awtarchy runtime directory must not be a symbolic link'
+  install -d -m 0700 -- "$RUNTIME_STATE_DIR" \
+    || die 'could not create Awtarchy runtime directory'
+  owner="$(stat -c %u -- "$RUNTIME_STATE_DIR" 2>/dev/null)" \
+    || die 'could not inspect Awtarchy runtime directory owner'
+  [[ $owner == "$(id -u)" ]] || die 'Awtarchy runtime directory has the wrong owner'
+  chmod 0700 -- "$RUNTIME_STATE_DIR" \
+    || die 'could not secure Awtarchy runtime directory'
+}
+
+process_start_time() {
+  local pid="$1" proc_stat
+  local -a stat_fields=()
+
+  [[ $pid =~ ^[0-9]+$ && $pid -gt 1 ]] || return 1
+  IFS= read -r proc_stat <"/proc/${pid}/stat" || return 1
+  proc_stat="${proc_stat##*) }"
+  IFS=' ' read -r -a stat_fields <<<"$proc_stat"
+  (( ${#stat_fields[@]} >= 20 )) || return 1
+  printf '%s\n' "${stat_fields[19]}"
+}
+
+write_pid_record() {
+  local file="$1" pid="$2" started temporary
+
+  started="$(process_start_time "$pid")" || return 1
+  temporary="$(mktemp "${RUNTIME_STATE_DIR}/.pid.XXXXXX")" || return 1
+  printf '%s %s\n' "$pid" "$started" >"$temporary"
+  chmod 0600 -- "$temporary"
+  mv -Tf -- "$temporary" "$file"
+}
+
+read_pid_record() {
+  local file="$1" pid started extra actual owner mode
+
+  [[ -f $file && ! -L $file ]] || return 1
+  owner="$(stat -c %u -- "$file" 2>/dev/null)" || return 1
+  mode="$(stat -c %a -- "$file" 2>/dev/null)" || return 1
+  [[ $owner == "$(id -u)" && $mode =~ ^[0-7]{3,4}$ ]] || return 1
+  (( (8#$mode & 8#077) == 0 )) || return 1
+  IFS=' ' read -r pid started extra <"$file" || return 1
+  [[ $pid =~ ^[0-9]+$ && $pid -gt 1 && $started =~ ^[0-9]+$ && -z ${extra:-} ]] \
+    || return 1
+  actual="$(process_start_time "$pid")" || return 1
+  [[ $actual == "$started" ]] || return 1
+  printf '%s\n' "$pid"
+}
+
+write_state_file() {
+  local workspace="$1" temporary
+
+  temporary="$(mktemp "${RUNTIME_STATE_DIR}/.resize-state.XXXXXX")" || return 1
+  printf '%s\n' "$workspace" >"$temporary"
+  chmod 0600 -- "$temporary"
+  mv -Tf -- "$temporary" "$STATE_FILE"
+}
+
+init_private_runtime
+STATE_FILE="${RUNTIME_STATE_DIR}/hypr-resize.state"
+WATCH_PID_FILE="${RUNTIME_STATE_DIR}/hypr-resize.wpid"
 
 notify_waybar() {
   # Tell Waybar to refresh custom/submap ("signal": 12)
@@ -21,13 +103,12 @@ notify_waybar() {
 reset_mode() {
   hyprctl dispatch submap reset >/dev/null 2>&1 || true
 
-  if [[ -f "$WATCH_PID_FILE" ]]; then
-    pid="$(cat "$WATCH_PID_FILE" 2>/dev/null || echo)"
-    [[ -n "${pid:-}" ]] && kill "$pid" >/dev/null 2>&1 || true
-    rm -f "$WATCH_PID_FILE"
+  if pid="$(read_pid_record "$WATCH_PID_FILE")"; then
+    kill "$pid" >/dev/null 2>&1 || true
   fi
+  rm -f -- "$WATCH_PID_FILE"
 
-  rm -f "$STATE_FILE"
+  rm -f -- "$STATE_FILE"
 
   notify_waybar
 }
@@ -67,7 +148,10 @@ count="$(hyprctl -j clients | jq --argjson ws "$ws_id" '[.[] | select(.workspace
 hyprctl dispatch submap resize >/dev/null 2>&1 || true
 
 # Record current workspace
-printf '%s\n' "$ws_id" > "$STATE_FILE"
+write_state_file "$ws_id" || {
+  reset_mode
+  die 'could not record resize state safely'
+}
 
 # Spawn watcher: exit resize if workspace changes
 (
@@ -80,6 +164,12 @@ printf '%s\n' "$ws_id" > "$STATE_FILE"
     fi
     sleep 0.2
   done
-) & echo $! > "$WATCH_PID_FILE"
+) &
+watch_pid=$!
+write_pid_record "$WATCH_PID_FILE" "$watch_pid" || {
+  kill "$watch_pid" >/dev/null 2>&1 || true
+  reset_mode
+  die 'could not record resize watcher state safely'
+}
 
 notify_waybar

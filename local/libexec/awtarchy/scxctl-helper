@@ -1,0 +1,54 @@
+#!/usr/bin/bash
+set -Eeuo pipefail
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin
+SCXCTL="/usr/bin/scxctl"
+
+die() {
+  printf 'scxctl-helper: %s\n' "$*" >&2
+  exit 2
+}
+
+validate_scheduler() {
+  case "$1" in
+    beerland|bpfland|cosmos|flash|lavd|p2dq|tickless|rustland|rusty) ;;
+    *) die "unsupported scheduler: $1" ;;
+  esac
+}
+
+validate_scheduler_args() {
+  local args="$1"
+
+  [[ -n $args && ${#args} -le 4096 ]] \
+    || die 'scheduler arguments must contain 1 to 4096 characters'
+  [[ $args != *$'\n'* && $args != *$'\r'* && $args != *$'\t'* ]] \
+    || die 'scheduler arguments contain unsupported control characters'
+}
+
+main() {
+  [[ -x $SCXCTL ]] \
+    || die "trusted scxctl executable is missing: $SCXCTL"
+
+  case "${1:-}" in
+    list|get|stop)
+      (( $# == 1 )) || die "${1} does not accept additional arguments"
+      ;;
+    start|switch)
+      (( $# == 3 || $# == 5 )) \
+        || die "${1} requires --sched NAME and optional --args VALUE"
+      [[ ${2:-} == --sched ]] || die "${1} requires --sched NAME"
+      validate_scheduler "${3:-}"
+      if (( $# == 5 )); then
+        [[ ${4:-} == --args ]] || die 'only --args VALUE may follow the scheduler'
+        validate_scheduler_args "${5:-}"
+      fi
+      ;;
+    *)
+      die "unsupported operation: ${1:-<empty>}"
+      ;;
+  esac
+
+  exec "$SCXCTL" "$@"
+}
+
+main "$@"
