@@ -1,0 +1,38 @@
+name: Repair Bluetooth managed history
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event.head_commit.message == 'Temporarily automate Bluetooth history correction'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Correct exact managed-history entry and remove repair workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('local/share/awtarchy/quickshell-managed-history.sha256')
+          old = 'c01abd1ebec58b46338d3cb390902a61d3c2f4e77a74e2f95358d37aabb0303\t.config/quickshell/awtarchy/BluetoothPowerState.qml'
+          new = 'c01abd1ebec58b46338d3cb390902a61d3c2f4e77a74e2f95358d37aabb0303a\t.config/quickshell/awtarchy/BluetoothPowerState.qml'
+          text = path.read_text(encoding='utf-8')
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one BluetoothPowerState managed-history entry')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          rm -- .github/workflows/repair-bluetooth-history.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- local/share/awtarchy/quickshell-managed-history.sha256 .github/workflows/repair-bluetooth-history.yml
+          git commit -m 'Correct Bluetooth managed stock hash'
+          git push origin HEAD:main
