@@ -16,11 +16,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install test dependency
+        run: sudo apt-get update && sudo apt-get install -y lua5.4
+
       - name: Verify guarded staging commit
         shell: bash
         run: |
           set -euo pipefail
-          expected=5e40a44a4aa99df9d43c662a1ffe671df1b4a1c8
+          expected=32f28035e166162ad48b1693829e2456bda35bf7
           actual="$(git rev-parse HEAD^)"
           [[ "$actual" == "$expected" ]] || exit 1
 
