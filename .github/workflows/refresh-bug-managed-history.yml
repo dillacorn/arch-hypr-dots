@@ -17,12 +17,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install migration-test dependency
+        run: sudo apt-get update && sudo apt-get install -y lua5.4
+
       - name: Refresh managed hashes and remove workflow
         shell: bash
         run: |
           set -euo pipefail
 
-          expected_parent="108d8c37e80388f88ec6d04c44be4bc5b900852c"
+          expected_parent="6e3fda91ee137226cf2f2270ac8768a7abc1e971"
           [[ "$(git rev-parse HEAD^)" == "$expected_parent" ]] || {
             echo "bug-testing moved before managed-history refresh" >&2
             exit 1
