@@ -20,6 +20,10 @@ jobs:
           fetch-depth: 0
           token: ${{ github.token }}
 
+      - name: Install migration test dependency
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y lua5.4
+
       - name: Add regression test first
         shell: bash
         run: |
