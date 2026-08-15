@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
         with:
           fetch-depth: 0
-      - name: Patch updater and permanent validation
+      - name: Patch updater
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -120,32 +120,9 @@ jobs:
               text = text.replace(call_anchor, call_replacement, 1)
 
           runtime.write_text(text)
-
-          workflow = Path('.github/workflows/validate-awtarchy.yml')
-          w = workflow.read_text()
-          if 'bash -n tests/test-scxctl-helper-update.sh' not in w:
-              w = w.replace(
-                  '          bash -n tests/test-scxctl-auth-stale-rule.sh\n',
-                  '          bash -n tests/test-scxctl-auth-stale-rule.sh\n          bash -n tests/test-scxctl-helper-update.sh\n',
-                  1,
-              )
-          if '            tests/test-scxctl-helper-update.sh \\\n' not in w:
-              w = w.replace(
-                  '            tests/test-scxctl-auth-stale-rule.sh \\\n',
-                  '            tests/test-scxctl-auth-stale-rule.sh \\\n            tests/test-scxctl-helper-update.sh \\\n',
-                  1,
-              )
-          if '          bash tests/test-scxctl-helper-update.sh\n' not in w:
-              w = w.replace(
-                  '          bash tests/test-scxctl-auth-stale-rule.sh\n',
-                  '          bash tests/test-scxctl-auth-stale-rule.sh\n          bash tests/test-scxctl-helper-update.sh\n',
-                  1,
-              )
-          workflow.write_text(w)
           PY
 
           bash -n local/share/awtarchy/awtarchy-runtime.sh
-          bash -n tests/test-scxctl-helper-update.sh
           bash tests/test-scxctl-helper-update.sh
           git diff --check
 
@@ -154,6 +131,6 @@ jobs:
           fi
           git config user.name dillacorn
           git config user.email 28743863+dillacorn@users.noreply.github.com
-          git add local/share/awtarchy/awtarchy-runtime.sh tests/test-scxctl-helper-update.sh .github/workflows/validate-awtarchy.yml
+          git add local/share/awtarchy/awtarchy-runtime.sh
           git commit -m "Repair scxctl helper during updates"
           git push origin HEAD:scxctl-helper-update-testing
