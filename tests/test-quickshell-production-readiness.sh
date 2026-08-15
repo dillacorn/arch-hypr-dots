@@ -215,9 +215,42 @@ assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/QuickSettings.qml" 'tex
 assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/QuickSettings.qml" 'property int outputVolumeHoverPercent: -1'
 assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/QuickSettings.qml" 'function outputLimitForPosition(x, width)'
 assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/QuickSettings.qml" 'AudioLimitState.setLimit(root.outputVolumeHoverPercent)'
-assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/Bar.qml" '"wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@"'
-assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/Bar.qml" '"--limit", String(AudioLimitState.limitPercent / 100)'
-assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/AudioLimitState.qml" 'String(limitPercent) + "%"'
+assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/Bar.qml" 'configHome + "/hypr/scripts/quickshell_volume.sh"'
+assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/Bar.qml" 'String(AudioLimitState.limitPercent)'
+assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/AudioLimitState.qml" 'Quickshell.execDetached([volumeScript, "set", String(limitPercent)])'
+assert_contains "${REPO_ROOT}/config/hypr/scripts/quickshell_volume.sh" 'pw-cli s "$device_id" Route'
+assert_contains "${REPO_ROOT}/config/hypr/scripts/quickshell_volume.sh" 'channelVolumes: [ ${channel_values} ]'
+assert_not_contains "${REPO_ROOT}/config/quickshell/awtarchy/Bar.qml" '"wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@"'
+
+volume_test_bin="${TMPD}/volume-route-bin"
+volume_test_log="${TMPD}/volume-route.log"
+mkdir -p "$volume_test_bin"
+cat >"${volume_test_bin}/wpctl" <<'EOF_WPCTL'
+#!/usr/bin/env bash
+if [[ ${1:-} == inspect ]]; then
+  cat <<'EOF_INSPECT'
+id 60, type PipeWire:Interface:Node
+    * device.id = "42"
+    * card.profile.device = "7"
+EOF_INSPECT
+  exit 0
+fi
+printf 'unexpected wpctl fallback: %s\n' "$*" >&2
+exit 90
+EOF_WPCTL
+cat >"${volume_test_bin}/pw-dump" <<'EOF_PWDUMP'
+#!/usr/bin/env bash
+cat <<'EOF_JSON'
+[{"id":42,"info":{"params":{"Route":[{"index":3,"device":7,"props":{"mute":false,"channelVolumes":[1.0,1.0]}}]}}}]
+EOF_JSON
+EOF_PWDUMP
+cat >"${volume_test_bin}/pw-cli" <<'EOF_PWCLI'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${AWTARCHY_VOLUME_TEST_LOG:?}"
+EOF_PWCLI
+chmod +x "${volume_test_bin}/wpctl" "${volume_test_bin}/pw-dump" "${volume_test_bin}/pw-cli"
+PATH="${volume_test_bin}:$PATH" AWTARCHY_VOLUME_TEST_LOG="$volume_test_log"   bash "${REPO_ROOT}/config/hypr/scripts/quickshell_volume.sh" up 125
+grep -Fq 'Route { index: 3, device: 7, props: { channelVolumes: [ 1.157625000, 1.157625000 ]'   "$volume_test_log" || fail 'Route-aware bar volume did not write 105% through the device route'
 assert_not_contains "${REPO_ROOT}/config/quickshell/awtarchy/FlyoutSettings.qml" 'text: "Maximum output volume"'
 assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/Notifications.qml" 'Maximum simultaneous popups · Global'
 assert_not_contains "${REPO_ROOT}/config/quickshell/awtarchy/Notifications.qml" 'persisted.popupLimit'

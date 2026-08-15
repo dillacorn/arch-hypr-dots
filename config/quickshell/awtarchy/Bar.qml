@@ -52,6 +52,7 @@ PanelWindow {
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string ddcScript: configHome + "/hypr/scripts/ddc_brightness.sh"
     readonly property string wiremixScript: configHome + "/hypr/scripts/wiremix-toggle.sh"
+    readonly property string volumeScript: configHome + "/hypr/scripts/quickshell_volume.sh"
     readonly property string mouseSubmapScript: configHome + "/hypr/scripts/toggle_mouse_submap.sh"
 
     function focusWorkspace(selector) {
@@ -185,12 +186,10 @@ PanelWindow {
     function adjustAudio(delta) {
         if (delta === 0)
             return;
-        const stepPercent = Math.max(1, Math.round(Math.abs(delta) * 100));
-        const direction = delta > 0 ? "+" : "-";
         Quickshell.execDetached([
-            "wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@",
-            String(stepPercent) + "%" + direction,
-            "--limit", String(AudioLimitState.limitPercent / 100)
+            volumeScript,
+            delta > 0 ? "up" : "down",
+            String(AudioLimitState.limitPercent)
         ]);
     }
 

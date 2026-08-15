@@ -11,6 +11,7 @@ Singleton {
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
         || (Quickshell.env("HOME") + "/.config")
     readonly property string configPath: configHome + "/wiremix/wiremix.toml"
+    readonly property string volumeScript: configHome + "/hypr/scripts/quickshell_volume.sh"
     readonly property int minimumPercent: 10
     readonly property int maximumPercent: 200
     readonly property int stepPercent: 5
@@ -42,12 +43,8 @@ Singleton {
     function clampCurrentOutput() {
         const sink = Pipewire.defaultAudioSink;
         const maximum = limitPercent / 100;
-        if (sink && sink.audio && sink.audio.volume > maximum) {
-            Quickshell.execDetached([
-                "wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@",
-                String(limitPercent) + "%"
-            ]);
-        }
+        if (sink && sink.audio && sink.audio.volume > maximum)
+            Quickshell.execDetached([volumeScript, "set", String(limitPercent)]);
     }
 
     function setLimit(value) {
