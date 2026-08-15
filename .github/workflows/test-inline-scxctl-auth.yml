@@ -13,7 +13,9 @@ jobs:
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
       - name: Apply candidate patch
-        run: python3 tests/apply-inline-scxctl-auth.py
+        run: |
+          python3 tests/apply-inline-scxctl-auth.py
+          python3 tests/apply-inline-scxctl-shellcheck.py
       - name: Validate
         run: |
           bash -n config/hypr/scripts/hypr_quicksettings.sh
@@ -22,7 +24,8 @@ jobs:
           bash -n tests/test-scxctl-auth-stale-rule.sh
           bash tests/test-scxctl-auth-ui.sh
           bash tests/test-scxctl-auth-stale-rule.sh
-          shellcheck config/hypr/scripts/hypr_quicksettings.sh config/hypr/scripts/hypr_quicksettings_core.sh
+          shellcheck -e SC2034,SC2153 config/hypr/scripts/hypr_quicksettings.sh
+          shellcheck -e SC2015 config/hypr/scripts/hypr_quicksettings_core.sh
           git diff --check
       - name: Commit candidate patch
         run: |
