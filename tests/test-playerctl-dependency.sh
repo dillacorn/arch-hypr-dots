@@ -15,7 +15,7 @@ grep -Fq 'pacman_install_one playerctl || die "Failed to install required media-
 grep -Fq 'local -a required=(quickshell upower playerctl) missing=()' "$RUNTIME" \
   || fail 'normal updates do not guarantee playerctl'
 
-grep -Fq 'hyprland quickshell upower playerctl \' "$RUNTIME" \
+grep -Fq "hyprland quickshell upower playerctl \\" "$RUNTIME" \
   || fail 'troubleshoot output does not report playerctl'
 
 printf 'PASS: playerctl is required by install/update paths and visible to troubleshooting.\n'
