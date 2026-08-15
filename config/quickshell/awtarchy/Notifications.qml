@@ -76,7 +76,7 @@ Singleton {
     readonly property bool captureAllowed: captureAllowedOverride >= 0
         ? captureAllowedOverride === 1 : BarState.captureAllowedFor("notifications")
     readonly property int effectivePopupLimit: Math.max(1, Math.min(20,
-        popupLimitOverride >= 0 ? popupLimitOverride : popupLimitForMonitor(activeMonitorName)))
+        popupLimitOverride >= 0 ? popupLimitOverride : BarState.notificationPopupLimit()))
     readonly property bool settingsDirty: savedView.width !== livePanelWidth
         || savedView.height !== livePanelHeight
         || savedView.textScale !== effectiveTextScale
@@ -106,7 +106,7 @@ Singleton {
     function popupIconScale() { return viewForScreen(popupWindow.screen).iconScale; }
 
     function popupLimitForMonitor(name) {
-        return BarState.notificationViewFor(String(name || "")).popupLimit;
+        return BarState.notificationPopupLimit();
     }
 
     function clampWidth(value) {
@@ -347,7 +347,7 @@ Singleton {
         textScaleOverride = persisted.textScale;
         iconScaleOverride = persisted.iconScale;
         captureAllowedOverride = BarState.captureAllowedFor("notifications") ? 1 : 0;
-        popupLimitOverride = persisted.popupLimit;
+        popupLimitOverride = BarState.notificationPopupLimit();
         savedView = ({
             width: panelWidthOverride,
             height: panelHeightOverride,
@@ -401,8 +401,10 @@ Singleton {
             "save-flyout", "notifications", activeMonitorName,
             String(livePanelWidth), String(livePanelHeight),
             String(effectiveTextScale), String(effectiveIconScale),
-            captureAllowed ? "true" : "false",
-            String(effectivePopupLimit)
+            captureAllowed ? "true" : "false"
+        ]);
+        queueStateCommand([
+            "set-notification-popup-limit", String(effectivePopupLimit)
         ]);
         panelWidthOverride = livePanelWidth;
         panelHeightOverride = livePanelHeight;
@@ -430,7 +432,7 @@ Singleton {
         privacyRemapPending = wasCaptureAllowed;
         queueStateCommand(["reset-flyout", "notifications", activeMonitorName]);
         queueStateCommand([
-            "set-notification-popup-limit", activeMonitorName,
+            "set-notification-popup-limit",
             String(BarState.defaultNotificationPopupLimit)
         ]);
         settingsMessage = "Notification defaults restored for " + activeMonitorName;
@@ -445,11 +447,6 @@ Singleton {
             String(effectiveTextScale), String(effectiveIconScale),
             ...targets
         ]);
-        for (const target of targets) {
-            queueStateCommand([
-                "set-notification-popup-limit", String(target), String(effectivePopupLimit)
-            ]);
-        }
         settingsMessage = "Copied Notification settings to " + targets.length
             + (targets.length === 1 ? " display" : " displays");
     }
@@ -948,7 +945,7 @@ Singleton {
 
                         Text {
                             Layout.fillWidth: true
-                            text: "Maximum simultaneous popups · " + root.activeMonitorName
+                            text: "Maximum simultaneous popups · Global"
                             color: Theme.foreground
                             font.family: Theme.fontFamily
                             font.pixelSize: 10

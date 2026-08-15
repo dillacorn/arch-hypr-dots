@@ -443,18 +443,8 @@ Singleton {
     }
 
     function notificationViewFor(name) {
-        const view = flyoutViewFor("notification_views", name,
+        return flyoutViewFor("notification_views", name,
             referenceNotificationWidth, referenceNotificationHeight);
-        const d = data();
-        const views = d.notification_views && typeof d.notification_views === "object"
-            ? d.notification_views : ({});
-        const raw = views[name] && typeof views[name] === "object"
-            && !Array.isArray(views[name]) ? views[name] : ({});
-        const popupLimit = Number(raw.popup_limit);
-        return Object.assign({}, view, {
-            popupLimit: Number.isFinite(popupLimit) && popupLimit >= 1 && popupLimit <= 20
-                ? Math.round(popupLimit) : notificationPopupLimit()
-        });
     }
 
     function quickSettingsViewFor(name) {

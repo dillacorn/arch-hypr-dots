@@ -303,32 +303,41 @@ save_flyout() {
         --argjson popup_limit "$popup_limit_json" \
         --argjson save_version "$SAVE_VERSION" '
         .[$view_key] = (if (.[$view_key] | type) == "object" then .[$view_key] else {} end)
-        | .[$view_key][$monitor] = ({
+        | .[$view_key][$monitor] = {
             width:$width,
             height:$height,
             text_scale:$text_scale,
             icon_scale:$icon_scale,
             saved:true,
             save_version:$save_version
-        } + (if $popup_limit == null then {} else {popup_limit:$popup_limit} end))
+        }
         | .capture_allowed = (if (.capture_allowed | type) == "object" then .capture_allowed else {} end)
         | .capture_allowed[$surface_key] = $capture
+        | if $popup_limit == null then . else
+            .notification_popup_limit = $popup_limit
+            | .notification_popup_limit_save_version = $save_version
+            | .notification_views = ((if (.notification_views | type) == "object"
+                then .notification_views else {} end)
+                | with_entries(.value = (if (.value | type) == "object"
+                    then (.value | del(.popup_limit)) else .value end)))
+          end
     ' "$STATE_FILE" >"$TMP_FILE"
     commit_tmp
 }
 
 set_notification_popup_limit() {
-    local monitor="$1" popup_limit="$2"
-    [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
+    local popup_limit="$1"
     validate_int_range "$popup_limit" 1 20 'notification popup limit'
     new_tmp
     jq \
-        --arg monitor "$monitor" \
-        --argjson popup_limit "$popup_limit" '
-        .notification_views = (if (.notification_views | type) == "object"
+        --argjson popup_limit "$popup_limit" \
+        --argjson save_version "$SAVE_VERSION" '
+        .notification_popup_limit = $popup_limit
+        | .notification_popup_limit_save_version = $save_version
+        | .notification_views = ((if (.notification_views | type) == "object"
             then .notification_views else {} end)
-        | .notification_views[$monitor] = ((if (.notification_views[$monitor] | type) == "object"
-            then .notification_views[$monitor] else {} end) + {popup_limit:$popup_limit})
+            | with_entries(.value = (if (.value | type) == "object"
+                then (.value | del(.popup_limit)) else .value end)))
     ' "$STATE_FILE" >"$TMP_FILE"
     commit_tmp
 }
@@ -384,6 +393,12 @@ reset_flyout() {
         | del(.[$view_key][$monitor])
         | .capture_allowed = (if (.capture_allowed | type) == "object" then .capture_allowed else {} end)
         | .capture_allowed[$surface_key] = false
+        | if $view_key == "notification_views" then
+            del(.notification_popup_limit, .notification_popup_limit_save_version)
+            | .notification_views = (.notification_views
+                | with_entries(.value = (if (.value | type) == "object"
+                    then (.value | del(.popup_limit)) else .value end)))
+          else . end
     ' "$STATE_FILE" >"$TMP_FILE"
     commit_tmp
 }
@@ -548,8 +563,8 @@ case "$cmd" in
         save_flyout "$2" "$3" "$4" "$5" "$6" "$7" "$8" "${9:-}"
         ;;
     set-notification-popup-limit)
-        [[ -n ${2:-} && -n ${3:-} ]] || exit 2
-        set_notification_popup_limit "$2" "$3"
+        [[ -n ${2:-} ]] || exit 2
+        set_notification_popup_limit "$2"
         ;;
     copy-flyout)
         [[ -n ${2:-} && -n ${3:-} && -n ${4:-} && -n ${5:-} && -n ${6:-} && -n ${7:-} ]] || exit 2
@@ -590,7 +605,7 @@ case "$cmd" in
         reset_defaults
         ;;
     *)
-        printf 'usage: %s {save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-notification-popup-limit <MON> <1-20>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
+        printf 'usage: %s {save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-notification-popup-limit <1-20>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
         exit 2
         ;;
 esac

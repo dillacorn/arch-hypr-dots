@@ -898,6 +898,92 @@ Singleton {
                             }
                         }
 
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: outputVolumeContent.implicitHeight + 16
+                            color: Theme.popupButton
+                            border.width: 1
+                            border.color: Theme.active
+
+                            ColumnLayout {
+                                id: outputVolumeContent
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                spacing: 6
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "Maximum output volume"
+                                        color: Theme.foreground
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: root.scaledText(12)
+                                        font.bold: true
+                                    }
+
+                                    Text {
+                                        text: AudioLimitState.limitPercent + "%"
+                                        color: Theme.foreground
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: root.scaledText(10)
+                                    }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 6
+
+                                    SettingsButton {
+                                        label: "−5"
+                                        available: AudioLimitState.limitPercent > AudioLimitState.minimumPercent
+                                        textSize: root.scaledText(10)
+                                        onClicked: AudioLimitState.setLimit(
+                                            AudioLimitState.limitPercent - AudioLimitState.stepPercent)
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 24
+                                        color: Theme.active
+                                        border.width: 0
+
+                                        Rectangle {
+                                            width: parent.width * AudioLimitState.limitPercent
+                                                / AudioLimitState.maximumPercent
+                                            height: parent.height
+                                            color: Theme.focus
+                                        }
+                                    }
+
+                                    SettingsButton {
+                                        label: "+5"
+                                        available: AudioLimitState.limitPercent < AudioLimitState.maximumPercent
+                                        textSize: root.scaledText(10)
+                                        onClicked: AudioLimitState.setLimit(
+                                            AudioLimitState.limitPercent + AudioLimitState.stepPercent)
+                                    }
+
+                                    SettingsButton {
+                                        label: "100%"
+                                        available: AudioLimitState.limitPercent !== 100
+                                        textSize: root.scaledText(9)
+                                        onClicked: AudioLimitState.setLimit(100)
+                                    }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "Global limit for Wiremix and bar volume scrolling · range 10–200%"
+                                    color: Theme.muted
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: root.scaledText(8)
+                                    wrapMode: Text.Wrap
+                                }
+                            }
+                        }
+
                         PowerModeCard {
                             active: quickSettingsWindow.visible
                             textScale: root.effectiveTextScale
