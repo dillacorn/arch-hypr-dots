@@ -1,0 +1,94 @@
+name: Test Quickshell shutdown recovery
+
+on:
+  push:
+    paths:
+      - ".github/workflows/tmp-quickshell-shutdown-fix.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: tmp-quickshell-shutdown-fix-20260815
+          fetch-depth: 0
+
+      - name: Patch stalled shutdown fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          manager_path = Path("config/hypr/scripts/quickshell.sh")
+          manager = manager_path.read_text()
+
+          old = '''stop_shell() {\n    local pid local_quickshell_alive\n'''
+          new = '''stop_shell() {\n    local pid\n'''
+          if manager.count(old) != 1:
+              raise SystemExit("unexpected stop_shell local declaration")
+          manager = manager.replace(old, new, 1)
+
+          old = '''    wait_for_pids_stop "${pids[@]}" && return 0\n\n    # Quickshell 0.3.x can crash or hang while tearing down Qt shortcuts after\n    # accepting the IPC shutdown request. Do not leave the updater wedged on\n    # that old process. Only force-kill PIDs that still resolve to quickshell.\n    printf 'quickshell.sh: graceful shutdown stalled for PID(s): %s; forcing old Quickshell process to stop.\\n' "${pids[*]}" >&2\n    for pid in "${pids[@]}"; do\n        [[ "$(basename "$(readlink -f "/proc/${pid}/exe" 2>/dev/null || true)")" == "quickshell" ]] || continue\n        kill -KILL -- "$pid" 2>/dev/null || true\n    done\n\n    for _ in {1..40}; do\n        local_quickshell_alive=0\n        for pid in "${pids[@]}"; do\n            [[ "$(basename "$(readlink -f "/proc/${pid}/exe" 2>/dev/null || true)")" == "quickshell" ]] || continue\n            local_quickshell_alive=1\n            break\n        done\n        (( local_quickshell_alive == 0 )) && return 0\n        sleep 0.05\n    done\n\n    printf 'quickshell.sh: Quickshell shutdown did not finish for PID(s): %s\\n' "${pids[*]}" >&2\n    return 1\n'''
+          new = '''    wait_for_pids_stop "${pids[@]}" && return 0\n\n    # Quickshell's IPC shutdown can occasionally stall during Qt teardown.\n    # SIGTERM is intentionally used as the recovery signal: Quickshell does\n    # not register SIGTERM with its crash reporter, unlike SIGKILL-style hard\n    # termination which can leave the updater presenting a crash experience.\n    printf 'quickshell.sh: graceful shutdown stalled for PID(s): %s; using SIGTERM fallback.\\n' "${pids[*]}" >&2\n    for pid in "${pids[@]}"; do\n        [[ "$(basename "$(readlink -f "/proc/${pid}/exe" 2>/dev/null || true)")" == "quickshell" ]] || continue\n        kill -TERM -- "$pid" 2>/dev/null || true\n    done\n\n    wait_for_pids_stop "${pids[@]}" && return 0\n\n    printf 'quickshell.sh: Quickshell shutdown did not finish after SIGTERM for PID(s): %s\\n' "${pids[*]}" >&2\n    return 1\n'''
+          if manager.count(old) != 1:
+              raise SystemExit("unexpected Quickshell shutdown fallback block")
+          manager = manager.replace(old, new, 1)
+          manager_path.write_text(manager)
+
+          readiness_path = Path("tests/test-quickshell-production-readiness.sh")
+          readiness = readiness_path.read_text()
+          old = '''assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/QuickSettings.qml" 'AudioLimitState.setLimit(root.outputVolumeHoverPercent)'\n'''
+          # Keep unrelated anchors untouched; patch the shutdown assertions directly.
+          shutdown_old = '''assert_contains "${REPO_ROOT}/config/hypr/scripts/quickshell.sh" 'qs kill --pid "$pid"'\nassert_contains "${REPO_ROOT}/config/hypr/scripts/quickshell.sh" 'qs -c "$CONFIG_NAME" list --json'\n'''
+          shutdown_new = '''assert_contains "${REPO_ROOT}/config/hypr/scripts/quickshell.sh" 'qs kill --pid "$pid"'\nassert_contains "${REPO_ROOT}/config/hypr/scripts/quickshell.sh" 'kill -TERM -- "$pid"'\nassert_not_contains "${REPO_ROOT}/config/hypr/scripts/quickshell.sh" 'kill -KILL -- "$pid"'\nassert_contains "${REPO_ROOT}/config/hypr/scripts/quickshell.sh" 'qs -c "$CONFIG_NAME" list --json'\n'''
+          if readiness.count(shutdown_old) != 1:
+              raise SystemExit("unexpected production-readiness shutdown assertions")
+          readiness = readiness.replace(shutdown_old, shutdown_new, 1)
+          readiness_path.write_text(readiness)
+
+          bluetooth_path = Path("tests/test-bluetooth-state-persistence.sh")
+          bluetooth = bluetooth_path.read_text()
+          old = '''grep -Fq 'kill -KILL -- "$pid"' "$MANAGER"\n'''
+          new = '''grep -Fq 'kill -TERM -- "$pid"' "$MANAGER"\nif grep -Fq 'kill -KILL -- "$pid"' "$MANAGER"; then\n    printf '%s\\n' 'Quickshell updater still contains the crash-producing SIGKILL fallback.' >&2\n    exit 1\nfi\n'''
+          if bluetooth.count(old) != 1:
+              raise SystemExit("unexpected Bluetooth shutdown assertion")
+          bluetooth = bluetooth.replace(old, new, 1)
+          bluetooth_path.write_text(bluetooth)
+          PY
+
+          manifest="local/share/awtarchy/quickshell-managed-history.sha256"
+          hash="$(sha256sum config/hypr/scripts/quickshell.sh | awk '{print $1}')"
+          managed='.config/hypr/scripts/quickshell.sh'
+          if ! grep -Fqx "${hash}"$'\t'"${managed}" "$manifest"; then
+              printf '\n# Quickshell stalled-shutdown SIGTERM recovery.\n%s\t%s\n' "$hash" "$managed" >>"$manifest"
+          fi
+
+      - name: Verify focused change
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n config/hypr/scripts/quickshell.sh
+          bash -n tests/test-quickshell-production-readiness.sh
+          bash -n tests/test-bluetooth-state-persistence.sh
+          shellcheck config/hypr/scripts/quickshell.sh tests/test-quickshell-production-readiness.sh tests/test-bluetooth-state-persistence.sh
+          bash tests/test-quickshell-production-readiness.sh
+          bash tests/test-bluetooth-state-persistence.sh
+          git diff --check
+
+      - name: Commit tested source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add config/hypr/scripts/quickshell.sh \
+                  tests/test-quickshell-production-readiness.sh \
+                  tests/test-bluetooth-state-persistence.sh \
+                  local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m "Avoid Quickshell crash dialog during updates"
+          git push origin HEAD:tmp-quickshell-shutdown-fix-20260815
