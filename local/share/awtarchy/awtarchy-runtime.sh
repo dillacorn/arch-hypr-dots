@@ -7054,7 +7054,9 @@ main() {
   select_update_mode
   log "Selected update mode: ${UPDATE_MODE}"
 
-  repair_scxctl_update_helper "$repo_dir"
+  if [[ ${AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR:-0} != 1 ]]; then
+    repair_scxctl_update_helper "$repo_dir"
+  fi
   ensure_quickshell_update_prerequisites
   snapshot_quickshell_update_legacy_paths
 
