@@ -363,6 +363,57 @@ Item {
                     elide: Text.ElideRight
                 }
             }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 26
+                spacing: 5
+
+                Text {
+                    Layout.preferredWidth: 78
+                    text: "Max volume"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                }
+                SettingsButton {
+                    label: "−"
+                    available: AudioLimitState.limitPercent > AudioLimitState.minimumPercent
+                    textSize: 11
+                    onClicked: AudioLimitState.setLimit(
+                        AudioLimitState.limitPercent - AudioLimitState.stepPercent)
+                }
+                Text {
+                    Layout.preferredWidth: 72
+                    text: AudioLimitState.limitPercent + "%"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                    horizontalAlignment: Text.AlignHCenter
+                }
+                SettingsButton {
+                    label: "+"
+                    available: AudioLimitState.limitPercent < AudioLimitState.maximumPercent
+                    textSize: 11
+                    onClicked: AudioLimitState.setLimit(
+                        AudioLimitState.limitPercent + AudioLimitState.stepPercent)
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: "Global · Wiremix + bar scroll"
+                    color: Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 9
+                    horizontalAlignment: Text.AlignRight
+                    elide: Text.ElideRight
+                }
+                SettingsButton {
+                    label: "100%"
+                    available: AudioLimitState.limitPercent !== 100
+                    textSize: 9
+                    onClicked: AudioLimitState.setLimit(100)
+                }
+            }
         }
     }
 }

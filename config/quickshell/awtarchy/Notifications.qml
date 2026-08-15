@@ -15,6 +15,7 @@ Singleton {
     property bool mutePopups: false
     readonly property bool dnd: mutePopups
     property var popupNotifications: []
+    property var popupLimitsByMonitor: ({})
     property int historyRevision: 0
     property string placement: "center"
     property bool settingsOpen: false
@@ -42,6 +43,7 @@ Singleton {
     readonly property string cacheHome: Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string mutePath: cacheHome + "/awtarchy/quickshell-dnd"
+    readonly property string popupLimitPath: Quickshell.statePath("notification-popup-limits.json")
     readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
     readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_flyout_position.sh"
@@ -76,7 +78,7 @@ Singleton {
     readonly property bool captureAllowed: captureAllowedOverride >= 0
         ? captureAllowedOverride === 1 : BarState.captureAllowedFor("notifications")
     readonly property int effectivePopupLimit: Math.max(1, Math.min(20,
-        popupLimitOverride >= 0 ? popupLimitOverride : BarState.notificationPopupLimit()))
+        popupLimitOverride >= 0 ? popupLimitOverride : popupLimitForMonitor(activeMonitorName)))
     readonly property bool settingsDirty: savedView.width !== livePanelWidth
         || savedView.height !== livePanelHeight
         || savedView.textScale !== effectiveTextScale
@@ -104,6 +106,63 @@ Singleton {
 
     function popupTextScale() { return viewForScreen(popupWindow.screen).textScale; }
     function popupIconScale() { return viewForScreen(popupWindow.screen).iconScale; }
+
+    function popupLimitForMonitor(name) {
+        const value = Number((popupLimitsByMonitor || ({}))[String(name || "")]);
+        if (Number.isFinite(value) && value >= 1 && value <= 20)
+            return Math.round(value);
+        return BarState.notificationPopupLimit();
+    }
+
+    function loadPopupLimits(text) {
+        const next = {};
+        try {
+            const parsed = JSON.parse(String(text || "{}"));
+            const monitors = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+                && parsed.monitors && typeof parsed.monitors === "object"
+                && !Array.isArray(parsed.monitors) ? parsed.monitors : ({});
+            for (const name of Object.keys(monitors)) {
+                const value = Number(monitors[name]);
+                if (name.length > 0 && Number.isFinite(value) && value >= 1 && value <= 20)
+                    next[name] = Math.round(value);
+            }
+        } catch (error) {
+            console.warn("Awtarchy notification popup-limit state is invalid:", error);
+        }
+        popupLimitsByMonitor = next;
+    }
+
+    function writePopupLimits() {
+        popupLimitFile.setText(JSON.stringify({
+            version: 1,
+            monitors: popupLimitsByMonitor
+        }) + "\n");
+    }
+
+    function setPopupLimitForMonitor(name, value) {
+        const monitor = String(name || "");
+        const numeric = Number(value);
+        if (monitor.length === 0 || !Number.isFinite(numeric))
+            return;
+        const next = Object.assign({}, popupLimitsByMonitor);
+        next[monitor] = Math.max(1, Math.min(20, Math.round(numeric)));
+        popupLimitsByMonitor = next;
+        writePopupLimits();
+    }
+
+    function copyPopupLimitToMonitors(targets, value) {
+        if (!targets || targets.length === 0)
+            return;
+        const next = Object.assign({}, popupLimitsByMonitor);
+        const limit = Math.max(1, Math.min(20, Math.round(Number(value))));
+        for (const target of targets) {
+            const name = String(target || "");
+            if (name.length > 0)
+                next[name] = limit;
+        }
+        popupLimitsByMonitor = next;
+        writePopupLimits();
+    }
 
     function clampWidth(value) {
         return Math.max(minimumPanelWidth, Math.min(maximumPanelWidth, Math.round(value)));
@@ -241,9 +300,12 @@ Singleton {
     }
 
     function enqueuePopup(notification) {
+        const monitor = popupWindow.screen && popupWindow.screen.name
+            ? String(popupWindow.screen.name) : "";
+        const limit = popupLimitForMonitor(monitor);
         const next = [notification, ...popupNotifications.filter(item => item !== notification)];
-        const overflow = next.slice(effectivePopupLimit);
-        popupNotifications = next.slice(0, effectivePopupLimit);
+        const overflow = next.slice(limit);
+        popupNotifications = next.slice(0, limit);
         for (const item of overflow) {
             if (isTransientNotification(item))
                 item.expire();
@@ -340,7 +402,7 @@ Singleton {
         textScaleOverride = persisted.textScale;
         iconScaleOverride = persisted.iconScale;
         captureAllowedOverride = BarState.captureAllowedFor("notifications") ? 1 : 0;
-        popupLimitOverride = BarState.notificationPopupLimit();
+        popupLimitOverride = popupLimitForMonitor(targetScreen.name);
         savedView = ({
             width: panelWidthOverride,
             height: panelHeightOverride,
@@ -390,12 +452,12 @@ Singleton {
     function saveDisplaySettings() {
         if (activeMonitorName.length === 0)
             return;
+        setPopupLimitForMonitor(activeMonitorName, effectivePopupLimit);
         queueStateCommand([
             "save-flyout", "notifications", activeMonitorName,
             String(livePanelWidth), String(livePanelHeight),
             String(effectiveTextScale), String(effectiveIconScale),
-            captureAllowed ? "true" : "false",
-            String(effectivePopupLimit)
+            captureAllowed ? "true" : "false"
         ]);
         panelWidthOverride = livePanelWidth;
         panelHeightOverride = livePanelHeight;
@@ -411,6 +473,7 @@ Singleton {
         iconScaleOverride = 100;
         captureAllowedOverride = 0;
         popupLimitOverride = BarState.defaultNotificationPopupLimit;
+        setPopupLimitForMonitor(activeMonitorName, BarState.defaultNotificationPopupLimit);
         applyWindowSize(BarState.defaultNotificationWidth, BarState.defaultNotificationHeight);
         savedView = ({
             width: panelWidthOverride,
@@ -428,6 +491,7 @@ Singleton {
     function copyDisplaySettings(targets) {
         if (!targets || targets.length === 0)
             return;
+        copyPopupLimitToMonitors(targets, effectivePopupLimit);
         queueStateCommand([
             "copy-flyout", "notifications",
             String(livePanelWidth), String(livePanelHeight),
@@ -552,6 +616,16 @@ Singleton {
             if (root.mutePopups)
                 root.hideAllPopups();
         }
+        onFileChanged: reload()
+    }
+
+    FileView {
+        id: popupLimitFile
+        path: root.popupLimitPath
+        blockLoading: false
+        watchChanges: true
+        printErrors: false
+        onLoaded: root.loadPopupLimits(text())
         onFileChanged: reload()
     }
 
@@ -932,10 +1006,11 @@ Singleton {
 
                         Text {
                             Layout.fillWidth: true
-                            text: "Maximum simultaneous popups"
+                            text: "Maximum simultaneous popups · " + root.activeMonitorName
                             color: Theme.foreground
                             font.family: Theme.fontFamily
                             font.pixelSize: 10
+                            elide: Text.ElideRight
                         }
 
                         Rectangle {

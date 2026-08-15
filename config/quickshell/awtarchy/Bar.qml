@@ -25,6 +25,9 @@ PanelWindow {
     readonly property real iconScale: BarState.iconScaleFor(monitorName)
     readonly property int smallIconSize: Math.max(8, Math.min(barSize - 6, Math.round(14 * iconScale)))
     readonly property int verticalItemSize: Math.max(28, smallIconSize + 8)
+    readonly property bool microphoneMuted: Pipewire.defaultAudioSource
+        && Pipewire.defaultAudioSource.audio
+        && Pipewire.defaultAudioSource.audio.muted
 
     property string brightnessText: ""
     property string brightnessTooltip: "Brightness unavailable"
@@ -183,7 +186,8 @@ PanelWindow {
         const sink = Pipewire.defaultAudioSink;
         if (!sink || !sink.audio)
             return;
-        sink.audio.volume = Math.max(0, Math.min(1, sink.audio.volume + delta));
+        sink.audio.volume = Math.max(0, Math.min(
+            AudioLimitState.limitPercent / 100, sink.audio.volume + delta));
     }
 
     function calendarText(date) {
@@ -213,7 +217,7 @@ PanelWindow {
     }
 
     PwObjectTracker {
-        objects: [Pipewire.defaultAudioSink]
+        objects: [Pipewire.defaultAudioSink, Pipewire.defaultAudioSource]
     }
 
     Process {
@@ -257,9 +261,6 @@ PanelWindow {
         onTriggered: bar.wsDrawerOpen = false
     }
 
-    // Give every button the owning bar's live monitor settings. Relying on
-    // Window.window inside BarButton left font glyphs at the default size and
-    // their button boxes at 28px when the PanelWindow itself was resized.
     component BarControl: BarButton {
         monitorName: bar.monitorName
         iconScale: bar.iconScale
@@ -676,10 +677,17 @@ PanelWindow {
             }
 
             BarControl {
+                visible: bar.microphoneMuted
+                label: ""
+                foreground: Theme.critical
+                tooltip: "Default microphone is muted"
+            }
+
+            BarControl {
                 readonly property int vol: Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio ? Math.round(Pipewire.defaultAudioSink.audio.volume * 100) : 0
                 label: bar.audioIcon(vol) + " " + (Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio && Pipewire.defaultAudioSink.audio.muted ? "mute" : vol)
                 foreground: Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio && Pipewire.defaultAudioSink.audio.muted ? Theme.muted : Theme.foreground
-                tooltip: "Audio volume"
+                tooltip: "Audio volume · max " + AudioLimitState.limitPercent + "%"
                 onClicked: bar.toggleAudioMute()
                 onRightClicked: Quickshell.execDetached([bar.wiremixScript])
                 onWheelUp: bar.adjustAudio(0.05)
@@ -886,11 +894,19 @@ PanelWindow {
             }
 
             BarControl {
+                visible: bar.microphoneMuted
+                vertical: true; fixedWidth: bar.barSize
+                label: ""
+                foreground: Theme.critical
+                tooltip: "Default microphone is muted"
+            }
+
+            BarControl {
                 vertical: true; fixedWidth: bar.barSize
                 readonly property int vol: Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio ? Math.round(Pipewire.defaultAudioSink.audio.volume * 100) : 0
                 label: bar.audioIcon(vol) + "\n" + (Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio && Pipewire.defaultAudioSink.audio.muted ? "mute" : vol)
                 foreground: Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio && Pipewire.defaultAudioSink.audio.muted ? Theme.muted : Theme.foreground
-                tooltip: "Audio volume"
+                tooltip: "Audio volume · max " + AudioLimitState.limitPercent + "%"
                 onClicked: bar.toggleAudioMute()
                 onRightClicked: Quickshell.execDetached([bar.wiremixScript])
                 onWheelUp: bar.adjustAudio(0.05)
