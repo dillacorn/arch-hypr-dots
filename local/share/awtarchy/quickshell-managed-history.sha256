@@ -508,3 +508,6 @@ c179b7868657b2d44258ecd0909be230b40169cbf41d830762ae6e0181341b0a	.config/hypr/sc
 35a9525f02a0bb55e4c401a83d8c8ef4da0c77a9448598a2561d203057054635	.config/hypr/scripts/quickshell_bluetooth_state.sh
 0124c721ccd3e11fc674a0c88ac69e5908901bfc3151abdd92bde13b6e72a767	.config/hypr/scripts/quickshell.sh
 c4d050771af97a956f4886af0b79923cf87818b97eb4165bd276a8e9ae7d98b3	.config/quickshell/awtarchy/BluetoothMenu.qml
+
+# Quickshell stalled-shutdown SIGTERM recovery.
+482258dd28d2fbf836063e74b07c84a7736db51708a00b6e0b0e9933a07e0166	.config/hypr/scripts/quickshell.sh

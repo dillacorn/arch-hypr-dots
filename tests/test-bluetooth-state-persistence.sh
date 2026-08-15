@@ -52,6 +52,10 @@ if grep -Fq 'current.enabled = nextEnabled;' "$MENU"; then
     exit 1
 fi
 # shellcheck disable=SC2016
-grep -Fq 'kill -KILL -- "$pid"' "$MANAGER"
+grep -Fq 'kill -TERM -- "$pid"' "$MANAGER"
+if grep -Fq 'kill -KILL -- "$pid"' "$MANAGER"; then
+    printf '%s\n' 'Quickshell updater still contains SIGKILL fallback.' >&2
+    exit 1
+fi
 
 printf '%s\n' 'Bluetooth persistence regression test: PASS'
