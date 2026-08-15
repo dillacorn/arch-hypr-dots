@@ -1,0 +1,57 @@
+name: Publish Awtarchy v3.0.0 Quickshell
+
+on:
+  push:
+    paths:
+      - .github/workflows/publish-v3-release.yml
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          fetch-depth: 2
+
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          release_sha="87a4cfcb45f66e8dd0ec0cfd73f3fc03a5f4c560"
+          [[ "$(git rev-parse HEAD^)" == "$release_sha" ]] || {
+            echo "main moved before release workflow staging" >&2
+            exit 1
+          }
+
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v3.0.0" >/dev/null 2>&1; then
+            echo "v3.0.0 release already exists" >&2
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --tags origin refs/tags/v3.0.0 >/dev/null 2>&1; then
+            echo "v3.0.0 tag already exists" >&2
+            exit 1
+          fi
+
+          jq -n \
+            --arg tag_name "v3.0.0" \
+            --arg target_commitish "$release_sha" \
+            --arg name "Awtarchy v3.0.0 Quickshell" \
+            --rawfile body RELEASE_NOTES.md \
+            '{
+              tag_name: $tag_name,
+              target_commitish: $target_commitish,
+              name: $name,
+              body: $body,
+              draft: false,
+              prerelease: false,
+              make_latest: "true"
+            }' > release.json
+
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/releases" --input release.json
