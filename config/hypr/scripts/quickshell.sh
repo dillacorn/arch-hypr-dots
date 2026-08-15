@@ -10,6 +10,7 @@ CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 STATE_DIR="${CACHE_HOME}/awtarchy"
 STATE_FILE="${STATE_DIR}/quickshell-state.json"
 STATE_LOCK_FILE="${STATE_FILE}.lock"
+START_LOCK_FILE="${STATE_DIR}/quickshell-start.lock"
 LEGACY_STATE_FILE="${CACHE_HOME}/waybar/state.json"
 LOG_FILE="${STATE_DIR}/quickshell.log"
 
@@ -51,6 +52,7 @@ need flock
 remove_legacy_quicksettings_desktop
 mkdir -p "$STATE_DIR"
 [[ -e "$STATE_DIR/quickshell-dnd" ]] || printf '0\n' >"$STATE_DIR/quickshell-dnd"
+exec 7>"$START_LOCK_FILE"
 exec 8>"$STATE_LOCK_FILE"
 
 ensure_state() {
@@ -120,6 +122,11 @@ wait_for_pids_stop() {
 start_shell() {
     local stable_pings=0
 
+    # Multiple login/startup paths can legitimately ask for Quickshell at the
+    # same time. Serialize the readiness check and launch so they cannot create
+    # duplicate Awtarchy instances before IPC becomes available.
+    flock -x 7
+
     # start/restart do not otherwise need to hold the shared state lock while
     # Quickshell constructs QML. Lock only the state normalization itself so a
     # launcher/flyout state writer can never lose an update.
@@ -127,8 +134,12 @@ start_shell() {
     ensure_state
     flock -u 8
 
-    is_running && return 0
-    nohup qs -c "$CONFIG_NAME" 8>&- >>"$LOG_FILE" 2>&1 &
+    if is_running; then
+        flock -u 7
+        return 0
+    fi
+
+    nohup qs -c "$CONFIG_NAME" 7>&- 8>&- >>"$LOG_FILE" 2>&1 &
     disown 2>/dev/null || true
 
     # A configuration can expose control IPC briefly and still fail during
@@ -138,6 +149,7 @@ start_shell() {
         if is_running; then
             ((stable_pings += 1))
             if (( stable_pings >= 5 )); then
+                flock -u 7
                 return 0
             fi
         else
@@ -146,6 +158,7 @@ start_shell() {
         sleep 0.05
     done
 
+    flock -u 7
     printf 'quickshell.sh: Quickshell did not become ready; see %s\n' "$LOG_FILE" >&2
     return 1
 }
@@ -421,8 +434,8 @@ USAGE
 cmd="${1:-}"
 case "$cmd" in
     start|restart)
-        # start_shell takes the lock only around state normalization and releases
-        # it before Quickshell construction to avoid blocking QML-owned writers.
+        # start_shell takes the state lock only around normalization and uses a
+        # separate startup lock while Quickshell becomes ready.
         ;;
     stop|status|list-monitors|focused-monitor|""|-h|--help|help)
         ;;
