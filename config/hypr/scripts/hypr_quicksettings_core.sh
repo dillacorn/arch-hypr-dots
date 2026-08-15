@@ -399,7 +399,16 @@ sudoers_included() {
 }
 
 ensure_scxctl_nopasswd_rule() {
+  local auth_mode="${1:-tty}" force_repair="${2:-0}"
   local user sudoers_name sudoers_target tmpfile
+
+  case "$auth_mode" in
+    tty|stdin) ;;
+    *)
+      MSG='sched-ext: invalid authorization mode'
+      return 2
+      ;;
+  esac
 
   if ! scxctl_helper_is_safe; then
     MSG='sched-ext: trusted helper missing; rerun the Awtarchy installer'
@@ -407,7 +416,7 @@ ensure_scxctl_nopasswd_rule() {
   fi
   (( EUID == 0 )) && return 0
 
-  if sudo_can_run_scxctl_noninteractive; then
+  if (( force_repair == 0 )) && sudo_can_run_scxctl_noninteractive; then
     return 0
   fi
 
@@ -424,14 +433,26 @@ ensure_scxctl_nopasswd_rule() {
   sudoers_name="90-hypr-quicksettings-scxctl-${user}"
   sudoers_target="/etc/sudoers.d/${sudoers_name}"
 
-  printf '\033[2J\033[H'
-  printf '%s\n\n' "$TITLE"
-  printf 'sched-ext needs one sudo prompt to authorize the restricted Awtarchy scheduler helper.\n\n'
-
-  if ! sudo -v; then
-    MSG='sched-ext: sudo auth failed'
-    return 1
-  fi
+  case "$auth_mode" in
+    tty)
+      printf '\033[2J\033[H'
+      printf '%s\n\n' "$TITLE"
+      printf 'sched-ext needs one sudo prompt to authorize the restricted Awtarchy scheduler helper.\n\n'
+      if ! sudo -v; then
+        MSG='sched-ext: sudo auth failed'
+        return 1
+      fi
+      ;;
+    stdin)
+      # Never let a cached sudo timestamp make a stale rule look authorized.
+      # The password is supplied by Quickshell over this process stdin only.
+      sudo -k
+      if ! sudo -S -p '' -v 2>/dev/null; then
+        MSG='sched-ext: sudo authentication failed'
+        return 1
+      fi
+      ;;
+  esac
 
   if ! sudoers_included; then
     MSG='sched-ext: /etc/sudoers.d not included'
@@ -484,7 +505,7 @@ scxctl_run_quiet() {
     return $?
   fi
 
-  if sudo_can_run_scxctl_noninteractive || ensure_scxctl_nopasswd_rule; then
+  if sudo_can_run_scxctl_noninteractive || ensure_scxctl_nopasswd_rule tty 0; then
     run_quiet sudo -n "$SCXCTL_HELPER" "$@"
     return $?
   fi

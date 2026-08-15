@@ -246,21 +246,18 @@ machine_brightness_percent() {
   brightness_quiet set "$target"
 }
 
-machine_scheduler_authorize() {
-  if (( EUID != 0 )) && [[ ! -t 0 ]]; then
-    printf 'sched-ext authorization requires an interactive terminal\n' >&2
+machine_scheduler_authorize_stdin() {
+  if (( EUID != 0 )) && [[ -t 0 ]]; then
+    printf 'sched-ext authorization must be submitted from Quick Settings\n' >&2
     return 4
   fi
 
-  if ! ensure_scxctl_nopasswd_rule; then
+  if ! ensure_scxctl_nopasswd_rule stdin 1; then
     printf '%s\n' "${MSG:-sched-ext authorization failed}" >&2
     return 1
   fi
 
   printf '%s\n' "${MSG:-sched-ext authorization complete}"
-  if have_cmd qs; then
-    qs -c awtarchy ipc call quicksettings refresh >/dev/null 2>&1 || true
-  fi
 }
 
 machine_scheduler_start() {
@@ -370,8 +367,8 @@ case "${1:-}" in
     shift
     machine_status "${1:-}" "${2:-}"
     ;;
-  --authorize-scheduler)
-    machine_scheduler_authorize
+  --authorize-scheduler-stdin)
+    machine_scheduler_authorize_stdin
     ;;
   --action)
     shift
