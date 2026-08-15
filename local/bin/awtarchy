@@ -787,7 +787,7 @@ reconcile_quickshell_ui_after_update() {
   printf '\nThese stale UI files can hide new Awtarchy controls even when the update succeeds.\n' >&2
   printf 'Your personalized hyprland.lua is NOT part of this repair.\n\n' >&2
 
-  if [[ ! -r /dev/tty || ! -w /dev/tty ]]; then
+  if [[ ! -t 0 || ! -t 1 || ! -r /dev/tty || ! -w /dev/tty ]]; then
     printf 'WARN: No interactive terminal is available; keeping all local Quickshell UI files unchanged.\n' >&2
     return 0
   fi
