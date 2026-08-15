@@ -1,0 +1,426 @@
+#!/usr/bin/env python3
+from pathlib import Path
+
+
+def read(path):
+    return Path(path).read_text(encoding="utf-8")
+
+
+def write(path, text):
+    Path(path).write_text(text, encoding="utf-8")
+
+
+def replace_once(text, old, new, label):
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f"{label}: expected one match, found {count}")
+    return text.replace(old, new, 1)
+
+
+# Move the global output-volume limit out of the nested Bar Appearance section
+# and expose it directly in Quick Settings settings.
+path = "config/quickshell/awtarchy/BarSettingsSection.qml"
+text = read(path)
+old = '''
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 26
+                spacing: 5
+
+                Text {
+                    Layout.preferredWidth: 78
+                    text: "Max volume"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                }
+                SettingsButton {
+                    label: "−"
+                    available: AudioLimitState.limitPercent > AudioLimitState.minimumPercent
+                    textSize: 11
+                    onClicked: AudioLimitState.setLimit(
+                        AudioLimitState.limitPercent - AudioLimitState.stepPercent)
+                }
+                Text {
+                    Layout.preferredWidth: 72
+                    text: AudioLimitState.limitPercent + "%"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                    horizontalAlignment: Text.AlignHCenter
+                }
+                SettingsButton {
+                    label: "+"
+                    available: AudioLimitState.limitPercent < AudioLimitState.maximumPercent
+                    textSize: 11
+                    onClicked: AudioLimitState.setLimit(
+                        AudioLimitState.limitPercent + AudioLimitState.stepPercent)
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: "Global · Wiremix + bar scroll"
+                    color: Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 9
+                    horizontalAlignment: Text.AlignRight
+                    elide: Text.ElideRight
+                }
+                SettingsButton {
+                    label: "100%"
+                    available: AudioLimitState.limitPercent !== 100
+                    textSize: 9
+                    onClicked: AudioLimitState.setLimit(100)
+                }
+            }
+'''
+text = replace_once(text, old, "\n", "remove nested max-volume row")
+write(path, text)
+
+path = "config/quickshell/awtarchy/FlyoutSettings.qml"
+text = read(path)
+text = replace_once(
+    text,
+    '''    implicitHeight: copyOpen ? 104
+        : 139 + (surfaceLabel === "Quick Settings" ? barSection.implicitHeight + 6 : 0)
+''',
+    '''    implicitHeight: copyOpen ? 104
+        : 139 + (surfaceLabel === "Quick Settings"
+            ? volumeLimitRow.implicitHeight + barSection.implicitHeight + 9 : 0)
+''',
+    "Quick Settings settings height",
+)
+marker = '''        BarSettingsSection {
+            id: barSection
+'''
+volume_row = '''        RowLayout {
+            id: volumeLimitRow
+            Layout.fillWidth: true
+            Layout.preferredHeight: 28
+            spacing: 6
+            visible: !root.copyOpen && root.surfaceLabel === "Quick Settings"
+
+            Text {
+                Layout.fillWidth: true
+                text: "Maximum output volume"
+                color: Theme.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: 11
+            }
+
+            SettingsButton {
+                label: "−"
+                available: AudioLimitState.limitPercent > AudioLimitState.minimumPercent
+                textSize: 11
+                onClicked: AudioLimitState.setLimit(
+                    AudioLimitState.limitPercent - AudioLimitState.stepPercent)
+            }
+
+            Text {
+                Layout.preferredWidth: 46
+                text: AudioLimitState.limitPercent + "%"
+                color: Theme.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: 10
+                horizontalAlignment: Text.AlignHCenter
+            }
+
+            SettingsButton {
+                label: "+"
+                available: AudioLimitState.limitPercent < AudioLimitState.maximumPercent
+                textSize: 11
+                onClicked: AudioLimitState.setLimit(
+                    AudioLimitState.limitPercent + AudioLimitState.stepPercent)
+            }
+
+            Text {
+                text: "Wiremix + bar scroll"
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: 9
+            }
+
+            SettingsButton {
+                label: "Reset"
+                available: AudioLimitState.limitPercent !== 100
+                textSize: 9
+                onClicked: AudioLimitState.setLimit(100)
+            }
+        }
+
+'''
+text = replace_once(text, marker, volume_row + marker, "visible max-volume row")
+write(path, text)
+
+# Put the popup limit directly in notification_views[monitor]. Historical
+# global state is retained only as a fallback for monitors not explicitly saved.
+path = "config/quickshell/awtarchy/BarState.qml"
+text = read(path)
+old = '''    function notificationViewFor(name) {
+        return flyoutViewFor("notification_views", name,
+            referenceNotificationWidth, referenceNotificationHeight);
+    }
+
+    function notificationPopupLimit() {
+        const d = data();
+        if (Number(d.notification_popup_limit_save_version || 0) < explicitSaveVersion)
+            return defaultNotificationPopupLimit;
+        const value = Number(d.notification_popup_limit);
+        if (!Number.isFinite(value))
+            return defaultNotificationPopupLimit;
+        return Math.max(1, Math.min(20, Math.round(value)));
+    }
+'''
+new = '''    function notificationPopupLimit() {
+        const d = data();
+        if (Number(d.notification_popup_limit_save_version || 0) < explicitSaveVersion)
+            return defaultNotificationPopupLimit;
+        const value = Number(d.notification_popup_limit);
+        if (!Number.isFinite(value))
+            return defaultNotificationPopupLimit;
+        return Math.max(1, Math.min(20, Math.round(value)));
+    }
+
+    function notificationViewFor(name) {
+        const view = flyoutViewFor("notification_views", name,
+            referenceNotificationWidth, referenceNotificationHeight);
+        const d = data();
+        const views = d.notification_views && typeof d.notification_views === "object"
+            ? d.notification_views : ({});
+        const raw = views[name] && typeof views[name] === "object"
+            && !Array.isArray(views[name]) ? views[name] : ({});
+        const popupLimit = Number(raw.popup_limit);
+        return Object.assign({}, view, {
+            popupLimit: Number.isFinite(popupLimit) && popupLimit >= 1 && popupLimit <= 20
+                ? Math.round(popupLimit) : notificationPopupLimit()
+        });
+    }
+'''
+text = replace_once(text, old, new, "per-monitor notification view")
+write(path, text)
+
+path = "config/hypr/scripts/quickshell_application_state.sh"
+text = read(path)
+old = '''        | .[$view_key][$monitor] = {
+            width:$width,
+            height:$height,
+            text_scale:$text_scale,
+            icon_scale:$icon_scale,
+            saved:true,
+            save_version:$save_version
+        }
+        | .capture_allowed = (if (.capture_allowed | type) == "object" then .capture_allowed else {} end)
+        | .capture_allowed[$surface_key] = $capture
+        | if $popup_limit == null then . else
+            .notification_popup_limit = $popup_limit
+            | .notification_popup_limit_save_version = $save_version
+          end
+'''
+new = '''        | .[$view_key][$monitor] = ({
+            width:$width,
+            height:$height,
+            text_scale:$text_scale,
+            icon_scale:$icon_scale,
+            saved:true,
+            save_version:$save_version
+        } + (if $popup_limit == null then {} else {popup_limit:$popup_limit} end))
+        | .capture_allowed = (if (.capture_allowed | type) == "object" then .capture_allowed else {} end)
+        | .capture_allowed[$surface_key] = $capture
+'''
+text = replace_once(text, old, new, "save per-monitor popup limit")
+
+marker = '''copy_flyout() {
+'''
+setter = '''set_notification_popup_limit() {
+    local monitor="$1" popup_limit="$2"
+    [[ -n "$monitor" ]] || { printf 'monitor is required\\n' >&2; exit 2; }
+    validate_int_range "$popup_limit" 1 20 'notification popup limit'
+    new_tmp
+    jq \\
+        --arg monitor "$monitor" \\
+        --argjson popup_limit "$popup_limit" '
+        .notification_views = (if (.notification_views | type) == "object"
+            then .notification_views else {} end)
+        | .notification_views[$monitor] = ((if (.notification_views[$monitor] | type) == "object"
+            then .notification_views[$monitor] else {} end) + {popup_limit:$popup_limit})
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
+'''
+text = replace_once(text, marker, setter + marker, "popup-limit state setter")
+
+old = '''        | .capture_allowed = (if (.capture_allowed | type) == "object" then .capture_allowed else {} end)
+        | .capture_allowed[$surface_key] = false
+        | if $view_key == "notification_views" then
+            del(.notification_popup_limit, .notification_popup_limit_save_version)
+          else . end
+'''
+new = '''        | .capture_allowed = (if (.capture_allowed | type) == "object" then .capture_allowed else {} end)
+        | .capture_allowed[$surface_key] = false
+'''
+text = replace_once(text, old, new, "preserve legacy popup fallback")
+
+dispatch = '''    copy-flyout)
+        [[ -n ${2:-} && -n ${3:-} && -n ${4:-} && -n ${5:-} && -n ${6:-} && -n ${7:-} ]] || exit 2
+'''
+replacement = '''    set-notification-popup-limit)
+        [[ -n ${2:-} && -n ${3:-} ]] || exit 2
+        set_notification_popup_limit "$2" "$3"
+        ;;
+''' + dispatch
+text = replace_once(text, dispatch, replacement, "popup-limit command dispatch")
+text = replace_once(
+    text,
+    'copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...',
+    'set-notification-popup-limit <MON> <1-20>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...',
+    "popup-limit usage",
+)
+write(path, text)
+
+path = "config/quickshell/awtarchy/Notifications.qml"
+text = read(path)
+text = replace_once(text, '    property var popupLimitsByMonitor: ({})\n', '', "remove popup sidecar property")
+text = replace_once(
+    text,
+    '    readonly property string popupLimitPath: Quickshell.statePath("notification-popup-limits.json")\n',
+    '',
+    "remove popup sidecar path",
+)
+
+start = text.index('    function popupLimitForMonitor(name) {')
+end = text.index('    function clampWidth(value) {', start)
+text = text[:start] + '''    function popupLimitForMonitor(name) {
+        return BarState.notificationViewFor(String(name || "")).popupLimit;
+    }
+
+''' + text[end:]
+
+text = replace_once(
+    text,
+    '        popupLimitOverride = popupLimitForMonitor(targetScreen.name);\n',
+    '        popupLimitOverride = persisted.popupLimit;\n',
+    "load per-monitor popup limit",
+)
+text = replace_once(
+    text,
+    '        setPopupLimitForMonitor(activeMonitorName, effectivePopupLimit);\n',
+    '',
+    "remove sidecar save",
+)
+text = replace_once(
+    text,
+    '''            String(effectiveTextScale), String(effectiveIconScale),
+            captureAllowed ? "true" : "false"
+        ]);
+''',
+    '''            String(effectiveTextScale), String(effectiveIconScale),
+            captureAllowed ? "true" : "false",
+            String(effectivePopupLimit)
+        ]);
+''',
+    "persist popup limit with notification view",
+)
+text = replace_once(
+    text,
+    '        setPopupLimitForMonitor(activeMonitorName, BarState.defaultNotificationPopupLimit);\n',
+    '',
+    "remove sidecar reset",
+)
+text = replace_once(
+    text,
+    '        queueStateCommand(["reset-flyout", "notifications", activeMonitorName]);\n',
+    '''        queueStateCommand(["reset-flyout", "notifications", activeMonitorName]);
+        queueStateCommand([
+            "set-notification-popup-limit", activeMonitorName,
+            String(BarState.defaultNotificationPopupLimit)
+        ]);
+''',
+    "reset per-monitor popup limit",
+)
+text = replace_once(
+    text,
+    '        copyPopupLimitToMonitors(targets, effectivePopupLimit);\n',
+    '',
+    "remove sidecar copy",
+)
+copy_tail = '''            String(effectiveTextScale), String(effectiveIconScale),
+            ...targets
+        ]);
+        settingsMessage = "Copied Notification settings to " + targets.length
+'''
+copy_new = '''            String(effectiveTextScale), String(effectiveIconScale),
+            ...targets
+        ]);
+        for (const target of targets) {
+            queueStateCommand([
+                "set-notification-popup-limit", String(target), String(effectivePopupLimit)
+            ]);
+        }
+        settingsMessage = "Copied Notification settings to " + targets.length
+'''
+text = replace_once(text, copy_tail, copy_new, "copy per-monitor popup limits")
+
+popup_file = '''    FileView {
+        id: popupLimitFile
+        path: root.popupLimitPath
+        blockLoading: false
+        watchChanges: true
+        printErrors: false
+        onLoaded: root.loadPopupLimits(text())
+        onFileChanged: reload()
+    }
+
+'''
+text = replace_once(text, popup_file, '', "remove popup sidecar file")
+write(path, text)
+
+# Make the post-update stale-UI choice explain what "keep local" really means
+# and default to installing the current UI with backups.
+path = "local/bin/awtarchy"
+text = read(path)
+old = '''  printf '  1. Keep all local UI files\\n' >/dev/tty
+  printf '  2. Use current Awtarchy versions for all files above and create backups\\n' >/dev/tty
+  printf '  3. Review each file individually\\n' >/dev/tty
+  printf 'Choose [1]: ' >/dev/tty
+  IFS= read -r choice </dev/tty || choice=1
+'''
+new = '''  printf '  1. Keep my modified UI code and skip these Awtarchy UI updates\\n' >/dev/tty
+  printf '  2. Update to current Awtarchy UI files and create backups (recommended)\\n' >/dev/tty
+  printf '  3. Review each file individually\\n' >/dev/tty
+  printf 'Choose [2]: ' >/dev/tty
+  IFS= read -r choice </dev/tty || choice=2
+  [[ -n $choice ]] || choice=2
+'''
+text = replace_once(text, old, new, "stale UI prompt wording")
+text = replace_once(
+    text,
+    "      printf 'Kept local Quickshell UI files.\\n'\n",
+    "      printf 'Kept modified local Quickshell UI code; current Awtarchy UI updates were skipped.\\n'\n",
+    "stale UI keep-local result",
+)
+write(path, text)
+
+# Permanent static regression checks.
+path = "tests/test-quickshell-production-readiness.sh"
+text = read(path)
+anchor = '''assert_contains "$APP_STATE" 'flock -x'
+
+printf 'PASS: Quickshell production readiness regressions\\n'
+'''
+checks = '''assert_contains "$APP_STATE" 'set-notification-popup-limit'
+assert_contains "$APP_STATE" '{popup_limit:$popup_limit}'
+assert_not_contains "$APP_STATE" '.notification_popup_limit = $popup_limit'
+assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/FlyoutSettings.qml" 'text: "Maximum output volume"'
+assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/Notifications.qml" 'persisted.popupLimit'
+assert_not_contains "${REPO_ROOT}/config/quickshell/awtarchy/Notifications.qml" 'notification-popup-limits.json'
+assert_contains "$LAUNCHER" 'Update to current Awtarchy UI files and create backups (recommended)'
+
+printf 'PASS: Quickshell production readiness regressions\\n'
+'''
+text = replace_once(
+    text,
+    anchor,
+    'assert_contains "$APP_STATE" \'flock -x\'\n\n' + checks,
+    "settings regression assertions",
+)
+write(path, text)
