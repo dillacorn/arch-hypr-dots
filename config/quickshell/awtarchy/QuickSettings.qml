@@ -1505,7 +1505,7 @@ Singleton {
                                         onClicked: root.openSchedulerAuthorization()
                                     }
                                     SettingsButton {
-                                        label: "Start / Switch"
+                                        label: "Apply"
                                         available: Boolean(root.schedulerStatus.available)
                                             && Boolean(root.schedulerStatus.authorized)
                                             && root.selectedSchedulerName.length > 0
