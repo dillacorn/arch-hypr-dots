@@ -736,6 +736,12 @@ exec_runtime() {
   exec bash "$RUNTIME" "$@"
 }
 
+reconcile_quickshell_ui_after_update() {
+  local helper="${TARGET_HOME}/.config/hypr/scripts/awtarchy_quickshell_ui_reconcile.sh"
+  [[ -f "$helper" && ! -L "$helper" ]] || return 0
+  bash "$helper"
+}
+
 clear_screen() {
   if have clear; then
     clear >/dev/tty 2>/dev/null || clear
@@ -840,6 +846,9 @@ run_git_operation() {
   printf 'Exact revision: %s\n' "$revision"
   printf 'Git testing action: %s\n' "$action"
   run_runtime "${runtime_args[@]}"
+  if [[ "$action" == update ]]; then
+    reconcile_quickshell_ui_after_update
+  fi
 }
 
 git_cli() {
@@ -956,6 +965,9 @@ maintenance_menu() {
         ensure_latest_updater update
         if config_release_ready_or_noop; then
           run_runtime update-reset-backup --mode preserve || rc=$?
+          if [[ -z ${rc:-} ]]; then
+            reconcile_quickshell_ui_after_update
+          fi
         fi
         pause_menu
         [[ -z ${rc:-} ]] || return "$rc"
@@ -1071,7 +1083,8 @@ main() {
       ensure_latest_updater "$@"
       shift
       config_release_ready_or_noop "$@" || return 0
-      exec_runtime update-reset-backup --mode preserve "$@"
+      run_runtime update-reset-backup --mode preserve "$@"
+      reconcile_quickshell_ui_after_update
       ;;
     reset)
       reject_stable_testing_overrides "$@"
