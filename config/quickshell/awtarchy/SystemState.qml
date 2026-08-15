@@ -62,16 +62,32 @@ Singleton {
 
     Process {
         id: metricsProcess
-        command: ["sh", "-lc", "grep -E '^cpu([0-9]+)? ' /proc/stat; awk '/^MemTotal:/{t=$2}/^MemAvailable:/{a=$2}END{if(t>0)printf \"MEM %d\\n\",100*(t-a)/t}' /proc/meminfo; if [ -x '" + root.systemTempScript + "' ]; then '" + root.systemTempScript + "'; elif [ -x '" + root.cpuTempScript + "' ]; then printf 'CPU_TEMP '; '" + root.cpuTempScript + "'; printf 'GPU_TEMP N/A\\n'; else printf 'CPU_TEMP ?°\\nGPU_TEMP N/A\\n'; fi"]
+        command: ["sh", "-c", "grep -E '^cpu([0-9]+)? ' /proc/stat; awk '/^MemTotal:/{t=$2}/^MemAvailable:/{a=$2}END{if(t>0)printf \"MEM %d\\n\",100*(t-a)/t}' /proc/meminfo"]
         stdout: StdioCollector {
             onStreamFinished: root.parseMetrics(text)
         }
     }
 
     Process {
+        id: primaryTemperatureProcess
+        command: ["sh", "-c", "if [ -x '" + root.systemTempScript + "' ]; then '" + root.systemTempScript + "' --primary; elif [ -x '" + root.cpuTempScript + "' ]; then printf 'CPU_TEMP '; '" + root.cpuTempScript + "'; printf 'GPU_TEMP N/A\\n'; else printf 'CPU_TEMP ?°\\nGPU_TEMP N/A\\n'; fi"]
+        stdout: StdioCollector {
+            onStreamFinished: root.parsePrimaryTemperatures(text)
+        }
+    }
+
+    Process {
+        id: secondaryTemperatureProcess
+        command: ["sh", "-c", "if [ -x '" + root.systemTempScript + "' ]; then '" + root.systemTempScript + "' --secondary; fi"]
+        stdout: StdioCollector {
+            onStreamFinished: root.parseSecondaryTemperatures(text)
+        }
+    }
+
+    Process {
         id: memoryTopologyProcess
         running: true
-        command: ["sh", "-lc", "if [ -x '" + root.memoryTopologyScript + "' ]; then '" + root.memoryTopologyScript + "'; else printf 'MEMORY_SLOTS\\t?\\t?\\t?\\tunavailable\\n'; fi"]
+        command: ["sh", "-c", "if [ -x '" + root.memoryTopologyScript + "' ]; then '" + root.memoryTopologyScript + "'; else printf 'MEMORY_SLOTS\\t?\\t?\\t?\\tunavailable\\n'; fi"]
         stdout: StdioCollector {
             onStreamFinished: root.parseMemoryTopology(text)
         }
@@ -79,7 +95,7 @@ Singleton {
 
     Process {
         id: idleStatusProcess
-        command: ["sh", "-lc", "if [ -x '" + root.idleScript + "' ]; then '" + root.idleScript + "'; fi"]
+        command: ["sh", "-c", "if [ -x '" + root.idleScript + "' ]; then '" + root.idleScript + "'; fi"]
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -105,6 +121,28 @@ Singleton {
                 metricsProcess.running = true;
             if (!idleStatusProcess.running)
                 idleStatusProcess.running = true;
+        }
+    }
+
+    Timer {
+        interval: 4000
+        repeat: true
+        running: true
+        triggeredOnStart: true
+        onTriggered: {
+            if (!primaryTemperatureProcess.running)
+                primaryTemperatureProcess.running = true;
+        }
+    }
+
+    Timer {
+        interval: 10000
+        repeat: true
+        running: true
+        triggeredOnStart: true
+        onTriggered: {
+            if (!secondaryTemperatureProcess.running)
+                secondaryTemperatureProcess.running = true;
         }
     }
 
@@ -169,8 +207,6 @@ Singleton {
         const newCoreTotals = Object.assign({}, previousCoreTotals);
         const newCoreIdles = Object.assign({}, previousCoreIdles);
         const newCoreUsage = Object.assign({}, coreUsage);
-        const newDriveTemps = [];
-        const newOtherTemps = [];
 
         for (let i = 0; i < lines.length; ++i) {
             const line = lines[i];
@@ -203,30 +239,53 @@ Singleton {
                 const value = Number(line.slice(4));
                 if (!Number.isNaN(value))
                     root.memoryUsage = Math.max(0, Math.min(100, Math.round(value)));
-            } else if (line.startsWith("CPU_TEMP ")) {
-                root.cpuTemp = line.slice(9).trim();
-            } else if (line.startsWith("GPU_TEMP ")) {
-                root.gpuTemp = line.slice(9).trim();
-            } else if (line.startsWith("TEMP\t")) {
-                const parts = line.split("\t");
-                if (parts.length < 4)
-                    continue;
-                const entry = ({
-                    label: parts[2].trim(),
-                    value: parts.slice(3).join("\t").trim()
-                });
-                if (!entry.label || !entry.value)
-                    continue;
-                if (parts[1] === "Drive")
-                    newDriveTemps.push(entry);
-                else if (parts[1] === "Other")
-                    newOtherTemps.push(entry);
             }
         }
 
         root.previousCoreTotals = newCoreTotals;
         root.previousCoreIdles = newCoreIdles;
         root.coreUsage = newCoreUsage;
+    }
+
+    function parsePrimaryTemperatures(text) {
+        const lines = String(text || "").split("\n").filter(line => line.length > 0);
+
+        for (let i = 0; i < lines.length; ++i) {
+            const line = lines[i];
+            if (line.startsWith("CPU_TEMP "))
+                root.cpuTemp = line.slice(9).trim();
+            else if (line.startsWith("GPU_TEMP "))
+                root.gpuTemp = line.slice(9).trim();
+        }
+    }
+
+    function parseSecondaryTemperatures(text) {
+        const lines = String(text || "").split("\n").filter(line => line.length > 0);
+        const newDriveTemps = [];
+        const newOtherTemps = [];
+
+        for (let i = 0; i < lines.length; ++i) {
+            const line = lines[i];
+            if (!line.startsWith("TEMP\t"))
+                continue;
+
+            const parts = line.split("\t");
+            if (parts.length < 4)
+                continue;
+
+            const entry = ({
+                label: parts[2].trim(),
+                value: parts.slice(3).join("\t").trim()
+            });
+            if (!entry.label || !entry.value)
+                continue;
+
+            if (parts[1] === "Drive")
+                newDriveTemps.push(entry);
+            else if (parts[1] === "Other")
+                newOtherTemps.push(entry);
+        }
+
         root.driveTemps = newDriveTemps;
         root.otherTemps = newOtherTemps;
     }
