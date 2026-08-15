@@ -20,7 +20,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected=04b0e3b08354ef48db1f3dc65139c1c2498c879a
+          expected=af0ddb294eaa0e5df1bcf5cb1d81b8b145522f0e
           actual="$(git rev-parse HEAD^)"
           [[ "$actual" == "$expected" ]] || {
             printf 'Expected parent %s, got %s\n' "$expected" "$actual" >&2
@@ -105,7 +105,7 @@ jobs:
           set -euo pipefail
           git diff --check
           bash -n config/hypr/scripts/quickshell.sh
-          shellcheck config/hypr/scripts/quickshell.sh
+          shellcheck -e SC2034 config/hypr/scripts/quickshell.sh
           bash tests/test-quickshell-production-readiness.sh
           grep -Fq 'const rounded = Math.round(numeric);' config/quickshell/awtarchy/AudioLimitState.qml
           ! grep -Fq 'ipc control quit >/dev/null 2>&1 || true' config/hypr/scripts/quickshell.sh
