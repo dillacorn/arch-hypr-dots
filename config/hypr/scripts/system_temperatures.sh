@@ -139,6 +139,7 @@ emit_cpu_details() {
 }
 
 emit_gpu() {
+  local include_details="${1:-1}"
   local d name input c label chip best='' count=0
   shopt -s nullglob
 
@@ -146,19 +147,23 @@ emit_gpu() {
     name="$(hwmon_name "$d" 2>/dev/null || true)"
     [[ -n "$name" ]] || continue
     is_gpu_hwmon "$d" "$name" || continue
-    chip="$(friendly_chip_name "$name")"
+
+    chip=''
+    if [[ "$include_details" == '1' ]]; then
+      chip="$(friendly_chip_name "$name")"
+    fi
 
     for input in "$d"/temp*_input; do
       c="$(read_temp_c "$input" 2>/dev/null || true)"
       [[ -n "$c" ]] || continue
-      label="$(sensor_label "$input")"
-      [[ "$label" == temp[0-9]* ]] && label="$chip"
 
       if [[ -z "$best" ]] || (( c > best )); then
         best="$c"
       fi
 
-      if (( count < 6 )); then
+      if [[ "$include_details" == '1' ]] && (( count < 6 )); then
+        label="$(sensor_label "$input")"
+        [[ "$label" == temp[0-9]* ]] && label="$chip"
         printf 'TEMP\tGPU\t%s\t%s°\n' "$label" "$c"
         count=$((count + 1))
       fi
@@ -287,16 +292,30 @@ debug_hwmon() {
 }
 
 main() {
-  if [[ "${1:-}" == '--debug' ]]; then
-    debug_hwmon
-    return
-  fi
-
-  emit_primary_cpu
-  emit_cpu_details
-  emit_gpu
-  emit_drives
-  emit_other_hwmon
+  case "${1:-}" in
+    --debug)
+      debug_hwmon
+      ;;
+    --primary)
+      emit_primary_cpu
+      emit_gpu 0
+      ;;
+    --secondary)
+      emit_drives
+      emit_other_hwmon
+      ;;
+    '')
+      emit_primary_cpu
+      emit_cpu_details
+      emit_gpu 1
+      emit_drives
+      emit_other_hwmon
+      ;;
+    *)
+      printf 'Usage: %s [--primary|--secondary|--debug]\n' "${0##*/}" >&2
+      return 2
+      ;;
+  esac
 }
 
 main "$@"
