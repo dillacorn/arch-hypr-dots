@@ -1,0 +1,104 @@
+name: Fix legacy active-theme baseline
+
+on:
+  push:
+    branches: [baseline-bug-testing]
+    paths:
+      - .github/workflows/fix-legacy-active-theme-baseline.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          fetch-depth: 0
+
+      - name: Install test dependencies
+        run: sudo apt-get update && sudo apt-get install -y lua5.4 shellcheck
+
+      - name: Patch legacy baseline handling and regression test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          runtime = Path("local/share/awtarchy/awtarchy-runtime.sh")
+          text = runtime.read_text(encoding="utf-8")
+          old = '''old_paths = set()
+          if manifest.is_file():
+              for line in manifest.read_text().splitlines():
+                  rel = line.strip()
+                  if not rel:
+                      continue
+                  if not valid_rel(rel):
+                      raise SystemExit(f"unsafe managed baseline path: {rel}")
+                  old_paths.add(rel)
+          '''
+          new = '''old_paths = set()
+          legacy_nonmanaged_baseline_paths = {
+              ".local/state/awtarchy/active-theme",
+          }
+          if manifest.is_file():
+              for line in manifest.read_text().splitlines():
+                  rel = line.strip()
+                  if not rel:
+                      continue
+                  if rel in legacy_nonmanaged_baseline_paths:
+                      continue
+                  if not valid_rel(rel):
+                      raise SystemExit(f"unsafe managed baseline path: {rel}")
+                  old_paths.add(rel)
+          '''
+          if text.count(old) != 1:
+              raise SystemExit("runtime baseline block changed unexpectedly")
+          runtime.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          test = Path("tests/test-quickshell-updater-migration.sh")
+          text = test.read_text(encoding="utf-8")
+          marker = "printf 'Quickshell updater migration tests passed.\\n'\n"
+          block = r'''# A historical Awtarchy baseline could accidentally record the active-theme
+          # state file as managed content. It is updater state, not a managed user file.
+          stale_baseline_rel=".local/state/awtarchy/active-theme"
+          mkdir -p -- \
+            "$production_home/.local/state/awtarchy/baseline/home/.local/state/awtarchy"
+          cp -- "$production_home/.local/state/awtarchy/active-theme" \
+            "$production_home/.local/state/awtarchy/baseline/home/$stale_baseline_rel"
+          printf '%s\n' "$stale_baseline_rel" \
+            >>"$production_home/.local/state/awtarchy/baseline/manifest.paths"
+
+          env "${production_env[@]}" "$production_home/.local/bin/awtarchy" update \
+            >"${TMP}/production-stale-baseline-update.out" 2>&1
+
+          ! grep -Fxq "$stale_baseline_rel" \
+            "$production_home/.local/state/awtarchy/baseline/manifest.paths" \
+            || fail "stale active-theme state remained in the refreshed baseline manifest"
+          assert_absent \
+            "$production_home/.local/state/awtarchy/baseline/home/$stale_baseline_rel"
+
+          '''
+          if text.count(marker) != 1:
+              raise SystemExit("test completion marker changed unexpectedly")
+          test.write_text(text.replace(marker, block + marker, 1), encoding="utf-8")
+          PY
+
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n tests/test-quickshell-updater-migration.sh
+          shellcheck local/share/awtarchy/awtarchy-runtime.sh
+          bash tests/test-quickshell-updater-migration.sh
+          bash tests/test-security-boundaries.sh
+
+      - name: Commit tested fix and remove helper workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/fix-legacy-active-theme-baseline.yml
+          git add local/share/awtarchy/awtarchy-runtime.sh tests/test-quickshell-updater-migration.sh
+          git commit -m 'Handle legacy active-theme baselines'
+          git push origin HEAD:baseline-bug-testing
