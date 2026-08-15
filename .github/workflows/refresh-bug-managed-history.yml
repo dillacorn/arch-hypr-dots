@@ -22,7 +22,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          expected_parent="296bea3db998d8d0a90630a773ffd9b3e4cc9647"
+          expected_parent="108d8c37e80388f88ec6d04c44be4bc5b900852c"
           [[ "$(git rev-parse HEAD^)" == "$expected_parent" ]] || {
             echo "bug-testing moved before managed-history refresh" >&2
             exit 1
@@ -33,16 +33,17 @@ jobs:
 
           while IFS='|' read -r src managed; do
             hash="$(sha256sum "$src" | awk '{print $1}')"
-            if ! grep -Fqx "${hash}	${managed}" "$manifest"; then
+            line="${hash}"$'\t'"${managed}"
+            if ! grep -Fqx "$line" "$manifest"; then
               printf '%s\t%s\n' "$hash" "$managed" >>"$manifest"
             fi
           done <<'EOF'
-config/hypr/scripts/memory_topology.sh|.config/hypr/scripts/memory_topology.sh
-config/hypr/scripts/quickshell.sh|.config/hypr/scripts/quickshell.sh
-config/hypr/scripts/system_temperatures.sh|.config/hypr/scripts/system_temperatures.sh
-config/quickshell/awtarchy/Bar.qml|.config/quickshell/awtarchy/Bar.qml
-config/quickshell/awtarchy/SystemState.qml|.config/quickshell/awtarchy/SystemState.qml
-EOF
+          config/hypr/scripts/memory_topology.sh|.config/hypr/scripts/memory_topology.sh
+          config/hypr/scripts/quickshell.sh|.config/hypr/scripts/quickshell.sh
+          config/hypr/scripts/system_temperatures.sh|.config/hypr/scripts/system_temperatures.sh
+          config/quickshell/awtarchy/Bar.qml|.config/quickshell/awtarchy/Bar.qml
+          config/quickshell/awtarchy/SystemState.qml|.config/quickshell/awtarchy/SystemState.qml
+          EOF
 
           bash tests/test-quickshell-updater-migration.sh
 
