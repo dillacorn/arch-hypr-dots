@@ -1,0 +1,54 @@
+name: Refresh bug-testing managed history
+
+on:
+  push:
+    branches: [bug-testing]
+    paths:
+      - .github/workflows/refresh-bug-managed-history.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          fetch-depth: 0
+
+      - name: Refresh managed hashes and remove workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          expected_parent="296bea3db998d8d0a90630a773ffd9b3e4cc9647"
+          [[ "$(git rev-parse HEAD^)" == "$expected_parent" ]] || {
+            echo "bug-testing moved before managed-history refresh" >&2
+            exit 1
+          }
+
+          manifest="local/share/awtarchy/quickshell-managed-history.sha256"
+          printf '\n# Post-v3.0.0 bug-fix managed hashes.\n' >>"$manifest"
+
+          while IFS='|' read -r src managed; do
+            hash="$(sha256sum "$src" | awk '{print $1}')"
+            if ! grep -Fqx "${hash}	${managed}" "$manifest"; then
+              printf '%s\t%s\n' "$hash" "$managed" >>"$manifest"
+            fi
+          done <<'EOF'
+config/hypr/scripts/memory_topology.sh|.config/hypr/scripts/memory_topology.sh
+config/hypr/scripts/quickshell.sh|.config/hypr/scripts/quickshell.sh
+config/hypr/scripts/system_temperatures.sh|.config/hypr/scripts/system_temperatures.sh
+config/quickshell/awtarchy/Bar.qml|.config/quickshell/awtarchy/Bar.qml
+config/quickshell/awtarchy/SystemState.qml|.config/quickshell/awtarchy/SystemState.qml
+EOF
+
+          bash tests/test-quickshell-updater-migration.sh
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/refresh-bug-managed-history.yml
+          git add "$manifest"
+          git commit -m 'Refresh managed hashes for bug fixes'
+          git push origin HEAD:bug-testing
