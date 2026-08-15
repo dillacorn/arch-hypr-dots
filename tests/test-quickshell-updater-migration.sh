@@ -1412,4 +1412,23 @@ for pkg in waybar waybar-git fuzzel wlogout mako wofi network-manager-applet blu
   assert_no_package "$production_packages" "$pkg"
 done
 
+# A historical Awtarchy baseline could accidentally record the active-theme
+# state file as managed content. It is updater state, not a managed user file.
+stale_baseline_rel=".local/state/awtarchy/active-theme"
+mkdir -p -- \
+  "$production_home/.local/state/awtarchy/baseline/home/.local/state/awtarchy"
+cp -- "$production_home/.local/state/awtarchy/active-theme" \
+  "$production_home/.local/state/awtarchy/baseline/home/$stale_baseline_rel"
+printf '%s\n' "$stale_baseline_rel" \
+  >>"$production_home/.local/state/awtarchy/baseline/manifest.paths"
+
+env "${production_env[@]}" "$production_home/.local/bin/awtarchy" update \
+  >"${TMP}/production-stale-baseline-update.out" 2>&1
+
+! grep -Fxq "$stale_baseline_rel" \
+  "$production_home/.local/state/awtarchy/baseline/manifest.paths" \
+  || fail "stale active-theme state remained in the refreshed baseline manifest"
+assert_absent \
+  "$production_home/.local/state/awtarchy/baseline/home/$stale_baseline_rel"
+
 printf 'Quickshell updater migration tests passed.\n'
