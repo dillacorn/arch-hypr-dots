@@ -736,10 +736,99 @@ exec_runtime() {
   exec bash "$RUNTIME" "$@"
 }
 
+replace_quickshell_ui_from_baseline() {
+  local rel="$1" baseline_root="$2" stamp="$3"
+  local baseline="${baseline_root}/${rel}"
+  local live="${TARGET_HOME}/${rel}"
+  local backup="${live}.backup.${stamp}" tmp=""
+
+  [[ -f "$baseline" && ! -L "$baseline" ]] || return 0
+  mkdir -p -- "$(dirname -- "$live")"
+  if [[ -e "$live" || -L "$live" ]]; then
+    cp -a -- "$live" "$backup"
+    printf 'Backup: %s\n' "$backup"
+  fi
+  tmp="$(mktemp --tmpdir="$(dirname -- "$live")" '.awtarchy-ui.tmp.XXXXXX')"
+  install -m "$(stat -c '%a' "$baseline")" -- "$baseline" "$tmp"
+  mv -Tf -- "$tmp" "$live"
+  printf 'Updated: %s\n' "$rel"
+}
+
 reconcile_quickshell_ui_after_update() {
-  local helper="${TARGET_HOME}/.config/hypr/scripts/awtarchy_quickshell_ui_reconcile.sh"
-  [[ -f "$helper" && ! -L "$helper" ]] || return 0
-  bash "$helper"
+  local baseline_root="${STATE_HOME}/awtarchy/baseline/home"
+  local stamp="$(date +%Y%m%d-%H%M%S)" rel="" baseline="" live=""
+  local choice="" per_file="" replaced=0
+  local -a ui_files=(
+    ".config/quickshell/awtarchy/AudioLimitState.qml"
+    ".config/quickshell/awtarchy/Bar.qml"
+    ".config/quickshell/awtarchy/BarSettingsSection.qml"
+    ".config/quickshell/awtarchy/CaptureEyeButton.qml"
+    ".config/quickshell/awtarchy/FlyoutSettings.qml"
+    ".config/quickshell/awtarchy/Launcher.qml"
+    ".config/quickshell/awtarchy/Notifications.qml"
+    ".config/quickshell/awtarchy/QuickSettings.qml"
+  )
+  local -a differences=()
+
+  [[ -d "$baseline_root" ]] || return 0
+  for rel in "${ui_files[@]}"; do
+    baseline="${baseline_root}/${rel}"
+    live="${TARGET_HOME}/${rel}"
+    [[ -f "$baseline" && ! -L "$baseline" ]] || continue
+    if [[ ! -f "$live" || -L "$live" ]] || ! cmp -s -- "$baseline" "$live"; then
+      differences+=("$rel")
+    fi
+  done
+  (( ${#differences[@]} > 0 )) || return 0
+
+  printf '\nAwtarchy preserved local Quickshell UI files that differ from the current managed version:\n' >&2
+  printf '  %s\n' "${differences[@]}" >&2
+  printf '\nThese stale UI files can hide new Awtarchy controls even when the update succeeds.\n' >&2
+  printf 'Your personalized hyprland.lua is NOT part of this repair.\n\n' >&2
+
+  if [[ ! -r /dev/tty || ! -w /dev/tty ]]; then
+    printf 'WARN: No interactive terminal is available; keeping all local Quickshell UI files unchanged.\n' >&2
+    return 0
+  fi
+
+  printf '  1. Keep all local UI files\n' >/dev/tty
+  printf '  2. Use current Awtarchy versions for all files above and create backups\n' >/dev/tty
+  printf '  3. Review each file individually\n' >/dev/tty
+  printf 'Choose [1]: ' >/dev/tty
+  IFS= read -r choice </dev/tty || choice=1
+
+  case "$choice" in
+    2)
+      for rel in "${differences[@]}"; do
+        replace_quickshell_ui_from_baseline "$rel" "$baseline_root" "$stamp"
+        replaced=1
+      done
+      ;;
+    3)
+      for rel in "${differences[@]}"; do
+        printf '\n%s\n' "$rel" >/dev/tty
+        printf '  1. Keep local\n' >/dev/tty
+        printf '  2. Use current Awtarchy version and create backup\n' >/dev/tty
+        printf 'Choose [1]: ' >/dev/tty
+        IFS= read -r per_file </dev/tty || per_file=1
+        if [[ "$per_file" == 2 ]]; then
+          replace_quickshell_ui_from_baseline "$rel" "$baseline_root" "$stamp"
+          replaced=1
+        fi
+      done
+      ;;
+    *)
+      printf 'Kept local Quickshell UI files.\n'
+      return 0
+      ;;
+  esac
+
+  if (( replaced == 1 )); then
+    local manager="${TARGET_HOME}/.config/hypr/scripts/quickshell.sh"
+    if [[ -f "$manager" && ! -L "$manager" ]]; then
+      bash "$manager" restart || warn=''
+    fi
+  fi
 }
 
 clear_screen() {
