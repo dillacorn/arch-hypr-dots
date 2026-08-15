@@ -1,0 +1,79 @@
+name: Update Quickshell restart test
+
+on:
+  push:
+    paths:
+      - .github/workflows/update-quickshell-restart-test.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          fetch-depth: 2
+
+      - name: Verify guarded staging commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=fbf8e78ee7ce644587395dfd7d978239bfd6db7c
+          actual="$(git rev-parse HEAD^)"
+          [[ "$actual" == "$expected" ]] || exit 1
+
+      - name: Verify old fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq "if [[ \$* == *' kill' ]]; then" tests/test-quickshell-updater-migration.sh
+          grep -Fq 'Quickshell manager did not force a stalled instance to stop' tests/test-quickshell-updater-migration.sh
+          ! grep -Fq "list --json" tests/test-quickshell-updater-migration.sh
+
+      - name: Update fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("tests/test-quickshell-updater-migration.sh")
+          text = path.read_text(encoding="utf-8")
+
+          marker = '''if [[ $* == *'ipc call control ping'* ]]; then\n  [[ -f $state ]] || exit 1\n  printf '%s\\n' ok\n  exit 0\nfi\n'''
+          replacement = '''if [[ $* == *' list --json'* ]]; then\n  if [[ -f $state ]]; then\n    printf '[{"pid":%d}]\\n' "$$"\n  else\n    printf '[]\\n'\n  fi\n  exit 0\nfi\nif [[ $* == *'ipc call control ping'* ]]; then\n  [[ -f $state ]] || exit 1\n  printf '%s\\n' ok\n  exit 0\nfi\n'''
+          if text.count(marker) != 1:
+              raise SystemExit("fake qs ping marker mismatch")
+          text = text.replace(marker, replacement, 1)
+
+          old = '''if [[ $* == *' kill' ]]; then\n  printf '%s\\n' "$*" >>"${AWTARCHY_TEST_QS_KILL_LOG:?}"\n  rm -f -- "$state"\n  exit 0\nfi\n'''
+          new = '''if [[ ${1:-} == kill || $* == *' kill '* || $* == *' kill' ]]; then\n  printf '%s\\n' "$*" >>"${AWTARCHY_TEST_QS_KILL_LOG:?}"\n  rm -f -- "$state"\n  exit 0\nfi\n'''
+          if text.count(old) != 1:
+              raise SystemExit("fake qs kill block mismatch")
+          text = text.replace(old, new, 1)
+
+          old = '''grep -Fxq -- '-c awtarchy kill' "${TMP}/qs-kill.log" \\\n  || fail "Quickshell manager did not force a stalled instance to stop"\n'''
+          new = '''grep -Eq '^kill --pid [0-9]+$' "${TMP}/qs-kill.log" \\\n  || fail "Quickshell manager did not request shutdown for the exact running PID"\n'''
+          if text.count(old) != 1:
+              raise SystemExit("old Quickshell kill assertion mismatch")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+
+      - name: Validate updated integration test
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          bash -n tests/test-quickshell-updater-migration.sh
+          bash tests/test-quickshell-updater-migration.sh
+
+      - name: Commit test update
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add tests/test-quickshell-updater-migration.sh
+          git commit -m 'Update Quickshell restart regression test'
+          git push origin HEAD:main
