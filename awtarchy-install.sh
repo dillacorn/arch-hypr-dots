@@ -34,11 +34,13 @@ Usage:
 This script only installs Awtarchy. After installation, use the `awtarchy`
 command for updates, config resets, review mode, version checks, and backup cleanup.
 
-Existing legacy installations are migrated to the new command without rerunning
-package installation or replacing managed configs.
+On an existing Awtarchy install, running this script WITHOUT --reinstall only
+repairs/refreshes the awtarchy command and runtime. It does not reinstall
+packages or replace managed configs.
 
 Options:
-  --reinstall    Run the complete installer even when Awtarchy is already installed
+  --reinstall    FULL AWTARCHY REINSTALL: rerun package installation and managed
+                 config installation. This is NOT command/runtime repair.
 EOF_USAGE
 }
 
@@ -478,9 +480,12 @@ No packages or managed configs were changed.
 Stable update/reset/review operations still refresh the command from main and
 use published config releases.
 
-To intentionally run the complete installer from this source:
+Command/runtime repair uses this script WITHOUT --reinstall:
 
-  sudo ./awtarchy-install.sh --reinstall
+  sudo ./awtarchy-install.sh
+
+WARNING: --reinstall means a FULL AWTARCHY REINSTALL. It reruns package and
+managed-config installation. It is not needed to repair or refresh the command.
 EOF_MESSAGE
     return 0
   fi
@@ -496,9 +501,12 @@ No packages or managed configs were changed.
   awtarchy update          Update from the latest release
   awtarchy version         Show updater and config release status
 
-To intentionally rerun the complete installer:
+Command/runtime repair uses this script WITHOUT --reinstall:
 
-  sudo ./awtarchy-install.sh --reinstall
+  sudo ./awtarchy-install.sh
+
+WARNING: --reinstall means a FULL AWTARCHY REINSTALL. It reruns package and
+managed-config installation. It is not needed to repair or refresh the command.
 EOF_MESSAGE
 }
 
@@ -514,6 +522,9 @@ new maintenance command without changing packages or managed configs:
 Future updates will then use:
 
   awtarchy
+
+Do not add --reinstall for command migration. --reinstall performs the full
+Awtarchy package and managed-config installation.
 EOF_MESSAGE
 }
 
@@ -557,9 +568,44 @@ Installed the new maintenance command:
 
   ${bin_dir}/awtarchy
 
-No packages or managed configs were changed. Use --reinstall when you are ready
-to apply the actual Quickshell conversion.
+No packages or managed configs were changed.
+
+Do NOT use --reinstall to repair the command. --reinstall performs a FULL
+Awtarchy package and managed-config installation.
 EOF_MESSAGE
+}
+
+confirm_full_reinstall() {
+  (( REINSTALL == 1 && DRY_RUN_REQUESTED == 0 )) || return 0
+
+  cat >&2 <<'EOF_WARNING'
+
+WARNING: FULL AWTARCHY REINSTALL REQUESTED
+
+--reinstall does NOT reinstall only the awtarchy command.
+It reruns the complete Awtarchy installer, including package handling and
+managed configuration installation.
+
+For command/runtime repair on an existing install, cancel this and run:
+  sudo ./awtarchy-install.sh
+EOF_WARNING
+
+  if [[ ${AWTARCHY_CONFIRM_FULL_REINSTALL:-0} == 1 ]]; then
+    return 0
+  fi
+
+  [[ -r /dev/tty && -w /dev/tty ]] || {
+    printf 'ERROR: Full reinstall requires interactive confirmation or AWTARCHY_CONFIRM_FULL_REINSTALL=1.\n' >&2
+    exit 2
+  }
+
+  printf '\nType FULL REINSTALL to continue: ' >/dev/tty
+  local answer=""
+  IFS= read -r answer </dev/tty || true
+  if [[ "$answer" != "FULL REINSTALL" ]]; then
+    printf 'Full Awtarchy reinstall canceled.\n' >&2
+    exit 2
+  fi
 }
 
 [[ -f $RUNTIME_SOURCE ]] || {
@@ -603,6 +649,7 @@ done
 validate_runtime_source
 resolve_target
 configure_test_system_root
+confirm_full_reinstall
 
 if (( DRY_RUN_REQUESTED == 0 )); then
   ensure_vpn_directory
