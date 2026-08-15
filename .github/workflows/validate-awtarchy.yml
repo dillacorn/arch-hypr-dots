@@ -71,6 +71,7 @@ jobs:
           bash -n tests/test-quickshell-updater-migration.sh
           bash -n tests/test-scxctl-auth-ui.sh
           bash -n tests/test-scxctl-auth-stale-rule.sh
+          bash -n tests/test-scxctl-helper-update.sh
           bash -n tests/test-security-boundaries.sh
           bash -n tests/test-quickshell-theme-legacy-micro.sh
           bash -n tests/test-troubleshoot-command.sh
@@ -121,6 +122,7 @@ jobs:
             tests/test-quickshell-updater-migration.sh \
             tests/test-scxctl-auth-ui.sh \
             tests/test-scxctl-auth-stale-rule.sh \
+            tests/test-scxctl-helper-update.sh \
             tests/test-security-boundaries.sh \
             tests/test-quickshell-theme-legacy-micro.sh \
             tests/test-troubleshoot-command.sh \
@@ -161,6 +163,7 @@ jobs:
           bash tests/test-quickshell-updater-migration.sh
           bash tests/test-scxctl-auth-ui.sh
           bash tests/test-scxctl-auth-stale-rule.sh
+          bash tests/test-scxctl-helper-update.sh
           bash tests/test-security-boundaries.sh
           bash tests/test-quickshell-theme-legacy-micro.sh
           bash tests/test-troubleshoot-command.sh
