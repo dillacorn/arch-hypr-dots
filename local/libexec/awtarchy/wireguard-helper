@@ -1,0 +1,174 @@
+#!/usr/bin/python3
+"""Root-owned WireGuard profile snapshot helper for Awtarchy."""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import pwd
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+
+
+WG_QUICK = "/usr/bin/wg-quick"
+RUNTIME_DIR = Path("/run/awtarchy/wireguard")
+PROFILE_RE = re.compile(r"[A-Za-z0-9_=+.-]{1,15}\Z")
+HOOK_KEYS = frozenset({"preup", "postup", "predown", "postdown"})
+MAX_PROFILE_BYTES = 1024 * 1024
+
+
+class ProfileError(RuntimeError):
+    pass
+
+
+def contains_command_hook(text: str) -> bool:
+    """Match directive keys using wg-quick's comment and equals handling."""
+
+    for line in text.splitlines():
+        uncommented = line.split("#", 1)[0]
+        key = uncommented.split("=", 1)[0].strip().casefold()
+        if key in HOOK_KEYS:
+            return True
+    return False
+
+
+def validate_profile_name(name: str) -> None:
+    if not PROFILE_RE.fullmatch(name):
+        raise ProfileError(f"invalid WireGuard profile name: {name}")
+
+
+def _safe_directory(fd: int, expected_owner: int, label: str, *, allow_root: bool = False) -> None:
+    info = os.fstat(fd)
+    owners = {expected_owner, 0} if allow_root else {expected_owner}
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid not in owners:
+        raise ProfileError(f"{label} has an unsafe owner or type")
+    if info.st_mode & 0o022:
+        raise ProfileError(f"{label} must not be group/world writable")
+
+
+def read_profile_snapshot(home: str, uid: int, name: str) -> bytes:
+    """Open home/vpn/name.conf without following symlinks and return validated bytes."""
+
+    validate_profile_name(name)
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+    home_fd = os.open(home, flags | os.O_DIRECTORY)
+    try:
+        _safe_directory(home_fd, uid, "user home", allow_root=True)
+        vpn_fd = os.open("vpn", flags | os.O_DIRECTORY, dir_fd=home_fd)
+        try:
+            _safe_directory(vpn_fd, uid, "VPN directory")
+            profile_fd = os.open(f"{name}.conf", flags, dir_fd=vpn_fd)
+            try:
+                info = os.fstat(profile_fd)
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != uid:
+                    raise ProfileError("WireGuard profile has an unsafe owner or type")
+                if info.st_mode & 0o022:
+                    raise ProfileError("WireGuard profile must not be group/world writable")
+                if info.st_size > MAX_PROFILE_BYTES:
+                    raise ProfileError("WireGuard profile exceeds the size limit")
+                chunks: list[bytes] = []
+                remaining = MAX_PROFILE_BYTES + 1
+                while remaining:
+                    chunk = os.read(profile_fd, min(65536, remaining))
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    remaining -= len(chunk)
+                data = b"".join(chunks)
+                if len(data) > MAX_PROFILE_BYTES:
+                    raise ProfileError("WireGuard profile exceeds the size limit")
+            finally:
+                os.close(profile_fd)
+        finally:
+            os.close(vpn_fd)
+    finally:
+        os.close(home_fd)
+
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ProfileError("WireGuard profile is not valid UTF-8 text") from exc
+    if "\x00" in text:
+        raise ProfileError("WireGuard profile contains a NUL byte")
+    if contains_command_hook(text):
+        raise ProfileError(
+            "WireGuard profile contains PreUp/PostUp/PreDown/PostDown hooks; "
+            "Awtarchy refuses to run imported commands as root"
+        )
+    return data
+
+
+def invoking_user() -> tuple[int, str]:
+    raw_uid = os.environ.get("PKEXEC_UID") or os.environ.get("SUDO_UID") or ""
+    if not raw_uid.isdecimal():
+        raise ProfileError("could not identify the non-root user requesting WireGuard")
+    uid = int(raw_uid)
+    if uid == 0:
+        raise ProfileError("WireGuard helper requires a non-root invoking user")
+    try:
+        entry = pwd.getpwuid(uid)
+    except KeyError as exc:
+        raise ProfileError("invoking user no longer exists") from exc
+    return uid, entry.pw_dir
+
+
+def ensure_runtime_dir() -> None:
+    Path("/run/awtarchy").mkdir(mode=0o755, exist_ok=True)
+    RUNTIME_DIR.mkdir(mode=0o700, exist_ok=True)
+    for path, expected_mode in ((Path("/run/awtarchy"), 0o755), (RUNTIME_DIR, 0o700)):
+        info = path.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise ProfileError(f"unsafe privileged runtime directory: {path}")
+        os.chmod(path, expected_mode)
+
+
+def run_wg_quick(action: str, name: str) -> int:
+    if os.geteuid() != 0:
+        raise ProfileError("WireGuard helper must run as root")
+    if action not in {"up", "down"}:
+        raise ProfileError(f"invalid WireGuard action: {action}")
+    if not os.path.isfile(WG_QUICK) or os.path.islink(WG_QUICK) or not os.access(WG_QUICK, os.X_OK):
+        raise ProfileError(f"trusted wg-quick executable is unavailable: {WG_QUICK}")
+
+    uid, home = invoking_user()
+    profile = read_profile_snapshot(home, uid, name)
+    ensure_runtime_dir()
+    work = Path(tempfile.mkdtemp(prefix=f"{uid}-", dir=RUNTIME_DIR))
+    os.chmod(work, 0o700)
+    snapshot = work / f"{name}.conf"
+    try:
+        fd = os.open(snapshot, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, 0o600)
+        try:
+            view = memoryview(profile)
+            while view:
+                written = os.write(fd, view)
+                view = view[written:]
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        result = subprocess.run(
+            [WG_QUICK, action, str(snapshot)],
+            check=False,
+            env={"PATH": "/usr/bin:/usr/sbin", "LANG": "C", "LC_ALL": "C"},
+        )
+        return result.returncode
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 3:
+        raise ProfileError("usage: wireguard-helper {up|down} PROFILE")
+    return run_wg_quick(argv[1], argv[2])
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main(sys.argv))
+    except ProfileError as exc:
+        print(f"wireguard-helper: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc

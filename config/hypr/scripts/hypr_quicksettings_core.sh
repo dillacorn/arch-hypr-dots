@@ -11,6 +11,7 @@ HYPR_CONF="${HYPRLAND_CONF:-${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hyprland.conf
 VIBRANCE_SHADER="${VIBRANCE_SHADER_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/hypr/shaders/vibrance}"
 AWTWALL_CMD="${HYPR_AWTWALL_CMD:-awtwall}"
 LAUNCH_HANDLER="${HYPR_LAUNCH_HANDLER:-${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/launch_handler.sh}"
+SCXCTL_HELPER="/usr/local/libexec/awtarchy/scxctl-helper"
 SUBMAP_STATE_FILE="${HYPR_SUBMAP_STATE_FILE:-/tmp/hypr-submap}"
 
 BRIGHTNESS_STEP="${HYPR_BRIGHTNESS_STEP:-5}"
@@ -369,10 +370,24 @@ have_pkg_any() {
   return 1
 }
 
+scxctl_helper_is_safe() {
+  local owner mode
+
+  [[ -f $SCXCTL_HELPER && ! -L $SCXCTL_HELPER && -x $SCXCTL_HELPER ]] || return 1
+  owner="$(stat -c %u -- "$SCXCTL_HELPER" 2>/dev/null)" || return 1
+  mode="$(stat -c %a -- "$SCXCTL_HELPER" 2>/dev/null)" || return 1
+  [[ $owner == 0 && $mode =~ ^[0-7]{3,4}$ ]] || return 1
+  (( (8#$mode & 8#022) == 0 ))
+}
+
 sudo_can_run_scxctl_noninteractive() {
-  (( EUID == 0 )) && return 0
+  scxctl_helper_is_safe || return 1
+  if (( EUID == 0 )); then
+    "$SCXCTL_HELPER" list >/dev/null 2>&1
+    return $?
+  fi
   have_cmd sudo || return 1
-  sudo -n /usr/bin/scxctl list >/dev/null 2>&1
+  sudo -n "$SCXCTL_HELPER" list >/dev/null 2>&1
 }
 
 sudoers_included() {
@@ -386,6 +401,10 @@ sudoers_included() {
 ensure_scxctl_nopasswd_rule() {
   local user sudoers_name sudoers_target tmpfile
 
+  if ! scxctl_helper_is_safe; then
+    MSG='sched-ext: trusted helper missing; rerun the Awtarchy installer'
+    return 1
+  fi
   (( EUID == 0 )) && return 0
 
   if sudo_can_run_scxctl_noninteractive; then
@@ -398,12 +417,16 @@ ensure_scxctl_nopasswd_rule() {
   fi
 
   user="$(id -un)"
+  [[ "$user" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] || {
+    MSG='sched-ext: unsafe username for sudoers policy'
+    return 1
+  }
   sudoers_name="90-hypr-quicksettings-scxctl-${user}"
   sudoers_target="/etc/sudoers.d/${sudoers_name}"
 
   printf '\033[2J\033[H'
   printf '%s\n\n' "$TITLE"
-  printf 'sched-ext needs one sudo prompt to allow passwordless scxctl later.\n\n'
+  printf 'sched-ext needs one sudo prompt to authorize the restricted Awtarchy scheduler helper.\n\n'
 
   if ! sudo -v; then
     MSG='sched-ext: sudo auth failed'
@@ -419,40 +442,53 @@ ensure_scxctl_nopasswd_rule() {
     return 1
   fi
 
-  tmpfile="$(mktemp)"
-  printf '%s ALL=(root) NOPASSWD: /usr/bin/scxctl\n' "$user" > "$tmpfile"
+  tmpfile="$(sudo mktemp "/etc/sudoers.d/.${sudoers_name}.XXXXXX")" || {
+    MSG='sched-ext: failed to create root-owned sudoers staging file'
+    return 1
+  }
+  if ! printf '%s ALL=(root) NOPASSWD: %s\n' "$user" "$SCXCTL_HELPER" \
+      | sudo tee "$tmpfile" >/dev/null \
+      || ! sudo chown root:root "$tmpfile" \
+      || ! sudo chmod 0440 "$tmpfile";
+  then
+    sudo rm -f -- "$tmpfile" || true
+    MSG='sched-ext: failed to stage sudoers rule'
+    return 1
+  fi
 
-  if ! visudo -c -f "$tmpfile" >/dev/null 2>&1; then
-    rm -f "$tmpfile"
+  if ! sudo visudo -c -f "$tmpfile" >/dev/null 2>&1; then
+    sudo rm -f -- "$tmpfile" || true
     MSG='sched-ext: sudoers validation failed'
     return 1
   fi
 
-  if ! sudo install -m 440 "$tmpfile" "$sudoers_target"; then
-    rm -f "$tmpfile"
+  if ! sudo mv -Tf -- "$tmpfile" "$sudoers_target"; then
+    sudo rm -f -- "$tmpfile" || true
     MSG='sched-ext: failed to install sudoers rule'
     return 1
   fi
-
-  rm -f "$tmpfile"
 
   if ! sudo_can_run_scxctl_noninteractive; then
     MSG='sched-ext: sudoers rule installed but unusable'
     return 1
   fi
 
-  MSG='sched-ext: scxctl sudo setup complete'
+  MSG='sched-ext: restricted scheduler helper setup complete'
   return 0
 }
 
 scxctl_run_quiet() {
+  scxctl_helper_is_safe || {
+    MSG='sched-ext: trusted helper missing; rerun the Awtarchy installer'
+    return 1
+  }
   if (( EUID == 0 )); then
-    run_quiet /usr/bin/scxctl "$@"
+    run_quiet "$SCXCTL_HELPER" "$@"
     return $?
   fi
 
   if sudo_can_run_scxctl_noninteractive || ensure_scxctl_nopasswd_rule; then
-    run_quiet sudo -n /usr/bin/scxctl "$@"
+    run_quiet sudo -n "$SCXCTL_HELPER" "$@"
     return $?
   fi
 
@@ -462,8 +498,9 @@ scxctl_run_quiet() {
 scxctl_run_capture() {
   local out rc=0
 
+  scxctl_helper_is_safe || return 1
   if (( EUID == 0 )); then
-    out="$(run_capture /usr/bin/scxctl "$@")" || rc=$?
+    out="$(run_capture "$SCXCTL_HELPER" "$@")" || rc=$?
     printf '%s' "$out"
     return "$rc"
   fi
@@ -472,7 +509,7 @@ scxctl_run_capture() {
     return 1
   fi
 
-  out="$(run_capture sudo -n /usr/bin/scxctl "$@")" || rc=$?
+  out="$(run_capture sudo -n "$SCXCTL_HELPER" "$@")" || rc=$?
   printf '%s' "$out"
   return "$rc"
 }

@@ -29,6 +29,7 @@ assert_contains() {
 for rel in \
   local/bin/awtarchy-quickshell \
   QUICKSHELL_CONVERSION.md \
+  config/hypr/scripts/quickshell_flyout_state_collect.py \
   config/hypr/scripts/quickshell_flyout_handoff_test.py \
   config/hypr/scripts/quickshell_flyout_warp_guard_test.py \
   tests/test-awtarchy-quickshell-isolation.sh
@@ -40,6 +41,7 @@ INSTALLER="${REPO_ROOT}/awtarchy-install.sh"
 WORKFLOW="${REPO_ROOT}/.github/workflows/validate-awtarchy.yml"
 LAUNCHER="${REPO_ROOT}/local/bin/awtarchy"
 WIREGUARD="${REPO_ROOT}/config/hypr/scripts/quickshell_wireguard.sh"
+WIREGUARD_PRIVILEGED="${REPO_ROOT}/local/libexec/awtarchy/wireguard-helper"
 SHELL_MANAGER="${REPO_ROOT}/config/hypr/scripts/quickshell.sh"
 APP_STATE="${REPO_ROOT}/config/hypr/scripts/quickshell_application_state.sh"
 
@@ -97,6 +99,12 @@ case " $* " in
   *'/releases/latest'*)
     printf '%s\n' '{"tag_name":"v2.0.0-1"}'
     ;;
+  *'/releases/tags/v2.0.0-1'*)
+    printf '%s\n' '{"tag_name":"v2.0.0-1","draft":false,"published_at":"2026-01-01T00:00:00Z"}'
+    ;;
+  *'/git/ref/tags/v2.0.0-1'*)
+    printf '%s\n' '{"object":{"type":"commit","sha":"1111111111111111111111111111111111111111"}}'
+    ;;
   *'quickshell-managed-history.sha256'*)
     exit 22
     ;;
@@ -114,7 +122,8 @@ grep -Fq 'predates the Quickshell migration and is already installed' "${TMPD}/p
 
 # User-provided WireGuard profiles must not inject root command hooks, and the
 # elevated executable must be the trusted Arch wireguard-tools path.
-assert_contains "$WIREGUARD" 'WG_QUICK="/usr/bin/wg-quick"'
+assert_contains "$WIREGUARD" 'WIREGUARD_HELPER="/usr/local/libexec/awtarchy/wireguard-helper"'
+assert_contains "$WIREGUARD_PRIVILEGED" 'WG_QUICK = "/usr/bin/wg-quick"'
 assert_not_contains "$WIREGUARD" 'command -v wg-quick'
 
 VPN_DIR="${TMPD}/vpn"
@@ -136,6 +145,20 @@ fi
 grep -Eqi 'hook|PreUp|PostUp|PreDown|PostDown' "${TMPD}/wg.err" \
   || fail 'WireGuard hook rejection did not explain the unsafe profile'
 
+cat >"${VPN_DIR}/hidden-hook.conf" <<'EOF_COMMENT_PROFILE'
+[Interface]
+PrivateKey = test
+PostUp # imported profile = /bin/sh -c 'touch /tmp/awtarchy-wireguard-hook-ran'
+EOF_COMMENT_PROFILE
+if AWTARCHY_VPN_DIR="$VPN_DIR" HOME="$HOME_DIR" \
+  bash "$WIREGUARD" up hidden-hook \
+  >"${TMPD}/wg-comment.out" 2>"${TMPD}/wg-comment.err";
+then
+  fail 'WireGuard profile containing a comment-obfuscated privileged hook was accepted'
+fi
+grep -Eqi 'hook|PreUp|PostUp|PreDown|PostDown' "${TMPD}/wg-comment.err" \
+  || fail 'comment-obfuscated WireGuard hook rejection was not explained'
+
 cat >"${VPN_DIR}/safe-target.conf" <<'EOF_SAFE_PROFILE'
 [Interface]
 PrivateKey = test
@@ -154,7 +177,25 @@ grep -Eqi 'symbolic link|symlink' "${TMPD}/wg-link.err" \
 
 cp -- "${VPN_DIR}/safe-target.conf" "${VPN_DIR}/unreadable.conf"
 chmod 000 "${VPN_DIR}/unreadable.conf"
-if AWTARCHY_VPN_DIR="$VPN_DIR" HOME="$HOME_DIR" bash "$WIREGUARD" up unreadable >"${TMPD}/wg-read.out" 2>"${TMPD}/wg-read.err"; then
+wireguard_read_command=(
+  env
+  "AWTARCHY_VPN_DIR=$VPN_DIR"
+  "HOME=$HOME_DIR"
+  bash "$WIREGUARD" up unreadable
+)
+if [[ ${EUID} -eq 0 ]]; then
+  command -v capsh >/dev/null 2>&1 \
+    || fail 'capsh is required to verify unreadable WireGuard profiles as root'
+  wireguard_read_command=(
+    env
+    "AWTARCHY_VPN_DIR=$VPN_DIR"
+    "HOME=$HOME_DIR"
+    "AWTARCHY_WIREGUARD_TEST_SCRIPT=$WIREGUARD"
+    capsh --drop=cap_dac_override -- -c
+    'exec bash "$AWTARCHY_WIREGUARD_TEST_SCRIPT" up unreadable'
+  )
+fi
+if "${wireguard_read_command[@]}" >"${TMPD}/wg-read.out" 2>"${TMPD}/wg-read.err"; then
   fail 'Unreadable WireGuard profile was accepted'
 fi
 grep -Eqi 'read|inspect' "${TMPD}/wg-read.err" \

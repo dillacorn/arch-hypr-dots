@@ -38,7 +38,14 @@ EOF
 cp "$home/.config/hypr/hyprland.lua" "$home/.local/state/awtarchy/baseline/home/.config/hypr/hyprland.lua"
 printf '%s\n' '.config/hypr/hyprland.lua' >"$home/.local/state/awtarchy/baseline/manifest.paths"
 printf '%s\n' 'tag=v2.0.0-1' >"$home/.local/state/awtarchy/baseline/metadata"
-printf '%s\n' 'tag=quickshell-conversion-testing@test' >"$home/.local/state/awtarchy/config-version"
+printf '%s\n' 'tag=feature/testing@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
+  >"$home/.local/state/awtarchy/config-version"
+cat >"$home/.local/state/awtarchy/git-testing" <<'EOF'
+branch=feature/testing
+revision=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+stable_release=v2.0.0-1
+tested_at=2000-01-01T00:00:00Z
+EOF
 printf '%s\n' '[awtarchy-update] fixture update log' >"$home/.local/state/awtarchy/logs/update-20260813-000000.log"
 printf '%s\n' '{"enabled":true,"monitors":{}}' >"$home/.cache/awtarchy/quickshell-state.json"
 printf '%s\n' 'fixture quickshell log' >"$home/.cache/awtarchy/quickshell.log"
@@ -117,6 +124,12 @@ grep -Fq 'fixture awtarchy quickshell journal line' "$out" || fail 'missing jour
 grep -Fq 'No configuration, packages, services, or shell processes were changed by this command.' "$out" \
   || fail 'missing read-only statement'
 grep -Fq 'command=awtarchy' "$out" || fail 'production command label missing'
+! grep -Fq 'awtarchy-quickshell=' "$out" \
+  || fail 'troubleshoot still reports the retired testing command'
+! grep -Fq '.local/share/awtarchy-quickshell' "$out" \
+  || fail 'troubleshoot still reports the retired testing runtime'
+grep -Fq "$home/.local/state/awtarchy/git-testing" "$out" \
+  || fail 'troubleshoot did not report integrated git-testing state'
 
 compgen -G "$home/.local/state/awtarchy/logs/troubleshoot-*.log" >/dev/null \
   || fail 'troubleshoot report was not saved'

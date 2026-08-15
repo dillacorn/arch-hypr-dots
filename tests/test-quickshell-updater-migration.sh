@@ -7,12 +7,20 @@ STABLE_LAUNCHER="${ROOT}/local/bin/awtarchy"
 RUNTIME="${ROOT}/local/share/awtarchy/awtarchy-runtime.sh"
 MANAGED_HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
 TEST_COMMIT="1111111111111111111111111111111111111111"
+TEST_BRANCH="quickshell-conversion-testing"
 TEST_MAIN_COMMIT="3333333333333333333333333333333333333333"
 TEST_RELEASE_TAG="v9.9.9"
+TEST_RELEASE_COMMIT="4444444444444444444444444444444444444444"
+TEST_RELEASE_TAG_OBJECT="5555555555555555555555555555555555555555"
+PREVIOUS_RELEASE_COMMIT="$(git -C "$ROOT" rev-list -n 1 v2.0.0-1)"
 DESKTOP_STALE_SYSTEM_STATE_SHA="f96522fad74218f14c40f1a05902e8d41b6d3f929f9f8750040f5600eb45258c"
 TMP="$(mktemp -d)"
 
 cleanup() {
+  if [[ ${AWTARCHY_TEST_KEEP_TMP:-0} == 1 ]]; then
+    printf 'DEBUG: retained updater fixture: %s\n' "$TMP" >&2
+    return 0
+  fi
   if [[ -s ${TMP}/hypridle.pid ]]; then
     kill "$(<"${TMP}/hypridle.pid")" >/dev/null 2>&1 || true
   fi
@@ -77,6 +85,7 @@ RETIRED_FILES=(
   .config/hypr/scripts/cliphist-wofi.sh
   .config/hypr/scripts/fuzzel_toggle.sh
   .config/hypr/scripts/mako_dismiss.sh
+  .config/hypr/scripts/quickshell_flyout_state_collect.py
   .config/hypr/scripts/waybar.sh
   .config/hypr/scripts/waybar_flip.sh
   .config/hypr/scripts/waybar_ready_sound.sh
@@ -157,14 +166,22 @@ url=""
 progress=0
 speed_limit=""
 speed_time=""
+data_ref=""
 while (( $# )); do
   case "$1" in
     -o)
       out="$2"
       shift 2
       ;;
-    -H|--connect-timeout|--max-time|--retry|--retry-delay)
+    -H|--connect-timeout|--max-time|--retry|--retry-delay|--output)
       shift 2
+      ;;
+    --data-urlencode)
+      data_ref="${2#ref=}"
+      shift 2
+      ;;
+    --get|--silent|--show-error|-f|-L|-fL)
+      shift
       ;;
     --progress-bar)
       progress=1
@@ -189,22 +206,87 @@ while (( $# )); do
 done
 printf '%s\n' "$url" >>"${AWTARCHY_TEST_CURL_LOG:?}"
 if [[ $url == *'/contents/local/share/awtarchy/quickshell-managed-history.sha256' ]]; then
-  [[ -n ${AWTARCHY_TEST_RELEASE_TAG:-} ]] || exit 42
-  exit 0
+  if [[ -n ${AWTARCHY_TEST_RELEASE_COMMIT:-} \
+    && $data_ref == "${AWTARCHY_TEST_RELEASE_COMMIT}" ]];
+  then
+    exit 0
+  fi
+  if [[ -n ${AWTARCHY_TEST_MAIN_COMMIT:-} \
+    && $data_ref == "${AWTARCHY_TEST_MAIN_COMMIT}" ]];
+  then
+    exit 0
+  fi
+  exit 42
 fi
 if [[ $url == *'/releases/latest' ]]; then
   printf '{"tag_name":"%s"}\n' "${AWTARCHY_TEST_LATEST_TAG:-v2.0.0-1}"
   exit 0
 fi
-if [[ $url == 'https://api.github.com/repos/dillacorn/awtarchy/commits/quickshell-conversion-testing' ]]; then
-  printf '{"sha":"%s"}\n' "${AWTARCHY_TEST_COMMIT:?}"
+if [[ $url == 'https://api.github.com/repos/dillacorn/awtarchy/releases/tags/v2.0.0-1' ]]; then
+  printf '%s\n' '{"tag_name":"v2.0.0-1","draft":false,"published_at":"2026-01-01T00:00:00Z"}'
+  exit 0
+fi
+if [[ $url == 'https://api.github.com/repos/dillacorn/awtarchy/git/ref/tags/v2.0.0-1' ]]; then
+  printf '{"object":{"type":"commit","sha":"%s"}}\n' \
+    "${AWTARCHY_TEST_PREVIOUS_COMMIT:?}"
+  exit 0
+fi
+if [[ -n ${AWTARCHY_TEST_RELEASE_TAG:-} \
+  && $url == "https://api.github.com/repos/dillacorn/awtarchy/releases/tags/${AWTARCHY_TEST_RELEASE_TAG}" ]];
+then
+  printf '{"tag_name":"%s","draft":false,"published_at":"2026-01-01T00:00:00Z"}\n' \
+    "${AWTARCHY_TEST_RELEASE_TAG}"
+  exit 0
+fi
+if [[ -n ${AWTARCHY_TEST_RELEASE_TAG:-} \
+  && $url == "https://api.github.com/repos/dillacorn/awtarchy/git/ref/tags/${AWTARCHY_TEST_RELEASE_TAG}" ]];
+then
+  if [[ ${AWTARCHY_TEST_RELEASE_REF_TYPE:-commit} == tag ]]; then
+    printf '{"object":{"type":"tag","sha":"%s"}}\n' \
+      "${AWTARCHY_TEST_RELEASE_TAG_OBJECT:?}"
+  else
+    printf '{"object":{"type":"commit","sha":"%s"}}\n' \
+      "${AWTARCHY_TEST_RELEASE_COMMIT:?}"
+  fi
+  exit 0
+fi
+if [[ -n ${AWTARCHY_TEST_RELEASE_TAG_OBJECT:-} \
+  && $url == "https://api.github.com/repos/dillacorn/awtarchy/git/tags/${AWTARCHY_TEST_RELEASE_TAG_OBJECT}" ]];
+then
+  printf '{"object":{"type":"commit","sha":"%s"}}\n' \
+    "${AWTARCHY_TEST_RELEASE_COMMIT:?}"
+  exit 0
+fi
+if [[ $url == 'https://api.github.com/repos/dillacorn/awtarchy/branches/quickshell-conversion-testing' ]]; then
+  printf '{"name":"quickshell-conversion-testing","commit":{"sha":"%s"}}\n' \
+    "${AWTARCHY_TEST_BRANCH_HEAD:-${AWTARCHY_TEST_COMMIT:?}}"
+  exit 0
+fi
+if [[ $url == *'/compare/'*'...'* ]]; then
+  requested="${url#*/compare/}"
+  requested="${requested%%...*}"
+  if [[ ${AWTARCHY_TEST_COMMIT_MEMBER:-0} == 1 ]]; then
+    printf '{"status":"ahead","merge_base_commit":{"sha":"%s"}}\n' "$requested"
+  else
+    printf '%s\n' '{"status":"diverged","merge_base_commit":{"sha":"0000000000000000000000000000000000000000"}}'
+  fi
   exit 0
 fi
 if [[ $url == 'https://api.github.com/repos/dillacorn/awtarchy/commits/main' ]]; then
   printf '{"sha":"%s"}\n' "${AWTARCHY_TEST_MAIN_COMMIT:?}"
   exit 0
 fi
-if [[ $url == 'https://github.com/dillacorn/awtarchy/archive/refs/tags/v2.0.0-1.tar.gz' ]]; then
+if [[ $url == 'https://api.github.com/repos/dillacorn/awtarchy/commits/v2.0.0-1' ]]; then
+  printf '{"sha":"%s"}\n' "${AWTARCHY_TEST_PREVIOUS_COMMIT:?}"
+  exit 0
+fi
+if [[ -n ${AWTARCHY_TEST_RELEASE_TAG:-} \
+  && $url == "https://api.github.com/repos/dillacorn/awtarchy/commits/${AWTARCHY_TEST_RELEASE_TAG}" ]];
+then
+  printf '{"sha":"%s"}\n' "${AWTARCHY_TEST_RELEASE_COMMIT:?}"
+  exit 0
+fi
+if [[ $url == "https://github.com/dillacorn/awtarchy/archive/${AWTARCHY_TEST_PREVIOUS_COMMIT:?}.tar.gz" ]]; then
   [[ -n $out ]] || exit 43
   (( progress == 1 )) || exit 44
   [[ $speed_limit == 1024 ]] || exit 45
@@ -213,7 +295,7 @@ if [[ $url == 'https://github.com/dillacorn/awtarchy/archive/refs/tags/v2.0.0-1.
   exit 0
 fi
 if [[ -n ${AWTARCHY_TEST_RELEASE_TAG:-} \
-  && $url == "https://github.com/dillacorn/awtarchy/archive/refs/tags/${AWTARCHY_TEST_RELEASE_TAG}.tar.gz" ]];
+  && $url == "https://github.com/dillacorn/awtarchy/archive/${AWTARCHY_TEST_RELEASE_COMMIT:?}.tar.gz" ]];
 then
   [[ -n $out ]] || exit 43
   (( progress == 1 )) || exit 44
@@ -413,6 +495,21 @@ mkdir -p "$archive_root"
 tar --exclude=.git -C "$ROOT" -cf - . | tar -C "$archive_root" -xf -
 tar -czf "${TMP}/testing-commit.tar.gz" -C "$archive_parent" "$(basename "$archive_root")"
 
+# Review must treat candidate helper scripts as untrusted data. A testing
+# commit can carry a theme helper, but merely reviewing that commit must never
+# execute it on the user's machine.
+review_parent="${TMP}/review-archive"
+review_root="${review_parent}/awtarchy-${TEST_COMMIT}"
+mkdir -p "$review_parent"
+cp -a -- "$archive_root" "$review_root"
+cat >"${review_root}/config/hypr/scripts/quickshell_theme_apply.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+: >"${AWTARCHY_TEST_UNTRUSTED_THEME_MARKER:?}"
+EOF
+chmod 0755 "${review_root}/config/hypr/scripts/quickshell_theme_apply.sh"
+tar -czf "${TMP}/review-commit.tar.gz" -C "$review_parent" "$(basename "$review_root")"
+
 main_parent="${TMP}/main-archive"
 main_root="${main_parent}/awtarchy-${TEST_MAIN_COMMIT}"
 mkdir -p "$main_parent"
@@ -420,17 +517,17 @@ cp -a -- "$archive_root" "$main_root"
 tar -czf "${TMP}/main.tar.gz" -C "$main_parent" "$(basename "$main_root")"
 
 release_parent="${TMP}/release-archive"
-release_root="${release_parent}/awtarchy-${TEST_RELEASE_TAG#v}"
+release_root="${release_parent}/awtarchy-${TEST_RELEASE_COMMIT}"
 mkdir -p "$release_parent"
 cp -a -- "$archive_root" "$release_root"
 tar -czf "${TMP}/release.tar.gz" -C "$release_parent" "$(basename "$release_root")"
 
 previous_parent="${TMP}/previous-archive"
-previous_root="${previous_parent}/awtarchy-2.0.0-1"
+previous_root="${previous_parent}/awtarchy-${PREVIOUS_RELEASE_COMMIT}"
 mkdir -p "$previous_parent"
 git -C "$ROOT" archive \
   --format=tar.gz \
-  --prefix='awtarchy-2.0.0-1/' \
+  --prefix="awtarchy-${PREVIOUS_RELEASE_COMMIT}/" \
   --output="${TMP}/previous-release.tar.gz" \
   v2.0.0-1
 tar -xzf "${TMP}/previous-release.tar.gz" -C "$previous_parent"
@@ -484,6 +581,8 @@ EOF
   printf '\n%s\n' '-- personal Hyprland customization survives migration' \
     >>"$home/.config/hypr/hyprland.lua"
   printf '\n%s\n' 'custom laptop waybar' >>"$home/.config/waybar/config"
+  printf '%s\n' '# retired branch-specific flyout state collector' \
+    >"$home/.config/hypr/scripts/quickshell_flyout_state_collect.py"
 
   for rel in "${RETIRED_DIRS[@]}" "${RETIRED_FILES[@]}"; do
     [[ -e "${home}/${rel}" || -L "${home}/${rel}" ]] || continue
@@ -543,12 +642,16 @@ done < <(
     find "$ROOT/config/hypr/scripts" -maxdepth 1 -type f \
       \( -name 'quickshell*' -o -name 'ddc_brightness.sh' -o -name 'hypr-ddc-brightness.sh' \) \
       -print
+    find "$ROOT/local/share/applications" -maxdepth 1 -type f \
+      -name 'quickshell_bar_*.desktop' -print
   } | LC_ALL=C sort -u
 )
 bash -n "$installed_runtime"
 bash -n "$installed_launcher"
 grep -Fq -- '--testing-commit' "$installed_runtime" \
   || fail "production runtime did not retain pinned-commit migration support"
+grep -Fq -- '--testing-branch' "$installed_runtime" \
+  || fail "production runtime did not retain selected-branch migration support"
 grep -Fq 'ensure_quickshell_update_prerequisites' "$installed_runtime" \
   || fail "production runtime did not receive updater migration prerequisites"
 grep -Fq 'start_quickshell_update_shell' "$installed_runtime" \
@@ -623,6 +726,7 @@ update_env=(
   "AWTARCHY_TEST_TARGET_HOME=$home"
   "AWTARCHY_TEST_ARCHIVE=${TMP}/testing-commit.tar.gz"
   "AWTARCHY_TEST_PREVIOUS_ARCHIVE=${TMP}/previous-release.tar.gz"
+  "AWTARCHY_TEST_PREVIOUS_COMMIT=$PREVIOUS_RELEASE_COMMIT"
   "AWTARCHY_TEST_COMMIT=$TEST_COMMIT"
   "AWTARCHY_TEST_CURL_LOG=${TMP}/curl.log"
   "AWTARCHY_TEST_PACKAGE_STATE=$package_state"
@@ -652,8 +756,43 @@ update_env=(
 
 hypr_hash_before="$(sha256sum "$home/.config/hypr/hyprland.lua" | awk '{print $1}')"
 packages_hash_before="$(sha256sum "$package_state" | awk '{print $1}')"
-env "${update_env[@]}" "$installed_launcher" review --testing-commit "$TEST_COMMIT" \
-  >"${TMP}/review.out" 2>&1
+
+# The runtime is independently executable. It must enforce the same selected
+# branch ancestry check as the public awtarchy git launcher before downloading
+# or applying the requested commit.
+DIRECT_BAD_COMMIT="2222222222222222222222222222222222222222"
+: >"${TMP}/direct-runtime-curl.log"
+if env \
+    "${update_env[@]}" \
+    "AWTARCHY_TEST_CURL_LOG=${TMP}/direct-runtime-curl.log" \
+    "AWTARCHY_TEST_BRANCH_HEAD=$TEST_COMMIT" \
+    AWTARCHY_TEST_COMMIT_MEMBER=0 \
+    bash "$RUNTIME" update-reset-backup \
+      --testing-branch "$TEST_BRANCH" \
+      --testing-commit "$DIRECT_BAD_COMMIT" \
+      --mode preserve --review-only \
+      >"${TMP}/direct-runtime.out" 2>&1;
+then
+  fail 'direct runtime accepted a commit outside the claimed remote branch'
+fi
+grep -Fq "Commit ${DIRECT_BAD_COMMIT} does not belong to selected branch ${TEST_BRANCH}." \
+  "${TMP}/direct-runtime.out" \
+  || fail 'direct runtime did not explain its branch-membership rejection'
+! grep -Fq "archive/${DIRECT_BAD_COMMIT}.tar.gz" "${TMP}/direct-runtime-curl.log" \
+  || fail 'direct runtime downloaded a commit before branch-membership validation'
+
+if ! env \
+    "${update_env[@]}" \
+    "AWTARCHY_TEST_ARCHIVE=${TMP}/review-commit.tar.gz" \
+    "AWTARCHY_TEST_UNTRUSTED_THEME_MARKER=${TMP}/untrusted-theme-executed" \
+    "$installed_launcher" git review \
+    --branch "$TEST_BRANCH" --commit "$TEST_COMMIT" \
+    >"${TMP}/review.out" 2>&1;
+then
+  cat "${TMP}/review.out" >&2
+  fail "Git review failed before completing its non-mutating checks"
+fi
+assert_absent "${TMP}/untrusted-theme-executed"
 [[ $hypr_hash_before == "$(sha256sum "$home/.config/hypr/hyprland.lua" | awk '{print $1}')" ]] \
   || fail "review-only changed the live Hyprland config"
 [[ $packages_hash_before == "$(sha256sum "$package_state" | awk '{print $1}')" ]] \
@@ -663,8 +802,10 @@ grep -Fq 'Review-only mode complete. No files were changed.' "${TMP}/review.out"
 grep -Fq 'Reconstructing previous generated baseline from release: v2.0.0-1' \
   "${TMP}/review.out" \
   || fail "updater did not reconstruct the previous baseline from config-version"
+assert_absent "$home/.local/state/awtarchy/git-testing"
 
-env "${update_env[@]}" "$installed_launcher" update --testing-commit "$TEST_COMMIT" \
+env "${update_env[@]}" "$installed_launcher" git update \
+  --branch "$TEST_BRANCH" --commit "$TEST_COMMIT" \
   >"${TMP}/update.out" 2>&1
 
 grep -Fq -- \
@@ -707,6 +848,15 @@ grep -Fxq -- '-c awtarchy kill' "${TMP}/qs-kill.log" \
 grep -Fxq "tag=quickshell-conversion-testing@${TEST_COMMIT}" \
   "$home/.local/state/awtarchy/config-version" \
   || fail "config version did not record the exact testing commit"
+grep -Fxq "branch=${TEST_BRANCH}" \
+  "$home/.local/state/awtarchy/git-testing" \
+  || fail "git-testing state did not record the selected branch"
+grep -Fxq "revision=${TEST_COMMIT}" \
+  "$home/.local/state/awtarchy/git-testing" \
+  || fail "git-testing state did not record the exact revision"
+grep -Fxq 'stable_release=v2.0.0-1' \
+  "$home/.local/state/awtarchy/git-testing" \
+  || fail "git-testing state did not preserve the preceding stable release"
 grep -Fxq "https://github.com/dillacorn/awtarchy/archive/${TEST_COMMIT}.tar.gz" \
   "${TMP}/curl.log" \
   || fail "updater did not download the exact pinned commit"
@@ -762,8 +912,12 @@ env \
   "AWTARCHY_TEST_TARGET_HOME=$beta_home" \
   "AWTARCHY_TEST_LATEST_TAG=$TEST_RELEASE_TAG" \
   "AWTARCHY_TEST_RELEASE_TAG=$TEST_RELEASE_TAG" \
+  "AWTARCHY_TEST_RELEASE_COMMIT=$TEST_RELEASE_COMMIT" \
+  "AWTARCHY_TEST_RELEASE_TAG_OBJECT=$TEST_RELEASE_TAG_OBJECT" \
+  "AWTARCHY_TEST_RELEASE_REF_TYPE=tag" \
   "AWTARCHY_TEST_RELEASE_ARCHIVE=${TMP}/release.tar.gz" \
   "AWTARCHY_TEST_PREVIOUS_ARCHIVE=${TMP}/previous-release.tar.gz" \
+  "AWTARCHY_TEST_PREVIOUS_COMMIT=$PREVIOUS_RELEASE_COMMIT" \
   "AWTARCHY_TEST_MAIN_COMMIT=$TEST_MAIN_COMMIT" \
   "AWTARCHY_TEST_MAIN_ARCHIVE=${TMP}/main.tar.gz" \
   "AWTARCHY_TEST_COMMIT=$TEST_COMMIT" \
@@ -784,6 +938,7 @@ grep -Fq "Awtarchy updater refreshed to main@${TEST_MAIN_COMMIT}." \
 grep -Fxq "tag=${TEST_RELEASE_TAG}" \
   "$beta_home/.local/state/awtarchy/config-version" \
   || fail "release handoff did not adopt the stable release tag"
+assert_absent "$beta_home/.local/state/awtarchy/git-testing"
 grep -Fxq "tag=${TEST_RELEASE_TAG}" \
   "$beta_home/.local/state/awtarchy/baseline/metadata" \
   || fail "release handoff did not replace the testing baseline label"
@@ -801,7 +956,7 @@ assert_package "$beta_packages" upower
 grep -Fxq "https://github.com/dillacorn/awtarchy/archive/${TEST_MAIN_COMMIT}.tar.gz" \
   "${TMP}/beta-to-release-curl.log" \
   || fail "release handoff did not pin the normal command to main"
-grep -Fxq "https://github.com/dillacorn/awtarchy/archive/refs/tags/${TEST_RELEASE_TAG}.tar.gz" \
+grep -Fxq "https://github.com/dillacorn/awtarchy/archive/${TEST_RELEASE_COMMIT}.tar.gz" \
   "${TMP}/beta-to-release-curl.log" \
   || fail "release handoff did not download the stable release"
 
@@ -818,7 +973,8 @@ env \
   "${update_env[@]}" \
   "HOME=$poisoned_home" \
   "AWTARCHY_TEST_TARGET_HOME=$poisoned_home" \
-  "$poisoned_home/.local/bin/awtarchy" update --testing-commit "$TEST_COMMIT" \
+  "$poisoned_home/.local/bin/awtarchy" git update \
+  --branch "$TEST_BRANCH" --commit "$TEST_COMMIT" \
   >"${TMP}/poisoned-update.out" 2>&1
 
 grep -Fq 'Live Hyprland still references the retired Awtarchy shell; reconstructing the previous stable baseline before migration.' \
@@ -876,7 +1032,8 @@ LC_ALL=C sort -u -o "$managed_packages" "$managed_packages"
 env \
   "${update_env[@]}" \
   "AWTARCHY_QUICKSHELL_MANAGED_HISTORY=$repair_history" \
-  "$installed_launcher" update --testing-commit "$TEST_COMMIT" \
+  "$installed_launcher" git update \
+  --branch "$TEST_BRANCH" --commit "$TEST_COMMIT" \
   >"${TMP}/repair-update.out" 2>&1
 
 cmp -s "$stale_system_state" "$ROOT/config/quickshell/awtarchy/SystemState.qml" \
@@ -922,7 +1079,8 @@ env \
   "AWTARCHY_MANAGED_PACKAGES_FILE=$conflict_keep_managed" \
   "AWTARCHY_TEST_HYPRIDLE_STATE=${TMP}/conflict-keep-hypridle.state" \
   "HYPRLAND_INSTANCE_SIGNATURE=" \
-  "$conflict_keep_home/.local/bin/awtarchy" update --testing-commit "$TEST_COMMIT" \
+  "$conflict_keep_home/.local/bin/awtarchy" git update \
+  --branch "$TEST_BRANCH" --commit "$TEST_COMMIT" \
   --conflict-policy keep-local \
   >"${TMP}/conflict-keep.out" 2>&1
 grep -Fq "$launcher_local_line" \
@@ -954,7 +1112,8 @@ env \
   "AWTARCHY_MANAGED_PACKAGES_FILE=$conflict_release_managed" \
   "AWTARCHY_TEST_HYPRIDLE_STATE=${TMP}/conflict-release-hypridle.state" \
   "HYPRLAND_INSTANCE_SIGNATURE=" \
-  "$conflict_release_home/.local/bin/awtarchy" update --testing-commit "$TEST_COMMIT" \
+  "$conflict_release_home/.local/bin/awtarchy" git update \
+  --branch "$TEST_BRANCH" --commit "$TEST_COMMIT" \
   --conflict-policy use-release \
   >"${TMP}/conflict-release.out" 2>&1
 grep -Fq "$launcher_release_line" \
@@ -989,7 +1148,7 @@ replace_once \
   "$launcher_local_line"
 script_bin="$(command -v script)" \
   || fail "util-linux script is required for the interactive conflict test"
-prompt_command="$conflict_prompt_home/.local/bin/awtarchy update --testing-commit $TEST_COMMIT"
+prompt_command="$conflict_prompt_home/.local/bin/awtarchy git update --branch $TEST_BRANCH --commit $TEST_COMMIT"
 set +e
 printf 'q2\n' | env \
   "${update_env[@]}" \
@@ -1051,7 +1210,8 @@ env \
   "AWTARCHY_MANAGED_PACKAGES_FILE=$conflict_abort_managed" \
   "AWTARCHY_TEST_HYPRIDLE_STATE=${TMP}/conflict-abort-hypridle.state" \
   "HYPRLAND_INSTANCE_SIGNATURE=" \
-  "$conflict_abort_home/.local/bin/awtarchy" update --testing-commit "$TEST_COMMIT" \
+  "$conflict_abort_home/.local/bin/awtarchy" git update \
+  --branch "$TEST_BRANCH" --commit "$TEST_COMMIT" \
   >"${TMP}/conflict-abort.out" 2>&1
 conflict_abort_rc=$?
 set -e
@@ -1097,6 +1257,7 @@ failure_env=(
   "AWTARCHY_TEST_TARGET_HOME=$failure_home"
   "AWTARCHY_TEST_ARCHIVE=${TMP}/testing-commit.tar.gz"
   "AWTARCHY_TEST_PREVIOUS_ARCHIVE=${TMP}/previous-release.tar.gz"
+  "AWTARCHY_TEST_PREVIOUS_COMMIT=$PREVIOUS_RELEASE_COMMIT"
   "AWTARCHY_TEST_COMMIT=$TEST_COMMIT"
   "AWTARCHY_TEST_CURL_LOG=${TMP}/failure-curl.log"
   "AWTARCHY_TEST_PACKAGE_STATE=$failure_packages"
@@ -1112,7 +1273,8 @@ failure_env=(
 )
 
 set +e
-env "${failure_env[@]}" "$failure_home/.local/bin/awtarchy" update --testing-commit "$TEST_COMMIT" \
+env "${failure_env[@]}" "$failure_home/.local/bin/awtarchy" git update \
+  --branch "$TEST_BRANCH" --commit "$TEST_COMMIT" \
   >"${TMP}/failure-update.out" 2>&1
 failure_rc=$?
 set -e
@@ -1178,8 +1340,12 @@ production_env=(
   "AWTARCHY_TEST_TARGET_HOME=$production_home"
   "AWTARCHY_TEST_LATEST_TAG=$TEST_RELEASE_TAG"
   "AWTARCHY_TEST_RELEASE_TAG=$TEST_RELEASE_TAG"
+  "AWTARCHY_TEST_RELEASE_COMMIT=$TEST_RELEASE_COMMIT"
+  "AWTARCHY_TEST_RELEASE_TAG_OBJECT=$TEST_RELEASE_TAG_OBJECT"
+  "AWTARCHY_TEST_RELEASE_REF_TYPE=tag"
   "AWTARCHY_TEST_RELEASE_ARCHIVE=${TMP}/release.tar.gz"
   "AWTARCHY_TEST_PREVIOUS_ARCHIVE=${TMP}/previous-release.tar.gz"
+  "AWTARCHY_TEST_PREVIOUS_COMMIT=$PREVIOUS_RELEASE_COMMIT"
   "AWTARCHY_TEST_MAIN_COMMIT=$TEST_MAIN_COMMIT"
   "AWTARCHY_TEST_MAIN_ARCHIVE=${TMP}/main.tar.gz"
   "AWTARCHY_TEST_COMMIT=$TEST_COMMIT"
@@ -1209,13 +1375,17 @@ grep -Fxq "revision=${TEST_MAIN_COMMIT}" \
 grep -Fxq "tag=${TEST_RELEASE_TAG}" \
   "$production_home/.local/state/awtarchy/config-version" \
   || fail "production update did not record the latest release tag"
+grep -Fxq \
+  "https://api.github.com/repos/dillacorn/awtarchy/git/tags/${TEST_RELEASE_TAG_OBJECT}" \
+  "${TMP}/production-curl.log" \
+  || fail "production updater did not dereference the annotated release tag"
 grep -Fxq "tag=${TEST_RELEASE_TAG}" \
   "$production_home/.local/state/awtarchy/baseline/metadata" \
   || fail "production baseline did not record the latest release tag"
 grep -Fxq "https://github.com/dillacorn/awtarchy/archive/${TEST_MAIN_COMMIT}.tar.gz" \
   "${TMP}/production-curl.log" \
   || fail "production command did not download the exact main updater commit"
-grep -Fxq "https://github.com/dillacorn/awtarchy/archive/refs/tags/${TEST_RELEASE_TAG}.tar.gz" \
+grep -Fxq "https://github.com/dillacorn/awtarchy/archive/${TEST_RELEASE_COMMIT}.tar.gz" \
   "${TMP}/production-curl.log" \
   || fail "production updater did not download the latest release archive"
 cmp -s "$production_home/.local/bin/awtarchy" "$main_root/local/bin/awtarchy" \

@@ -82,16 +82,8 @@ AUR_SELECTED=()
 FLATPAK_SELECTED_IDS=()
 FLATPAK_SELECTED_NAMES=()
 
-TMP_SUDOERS=""
-AUR_SUDOERS_FILE=""
-
 cleanup_install_temp() {
-  if [[ -n "${TMP_SUDOERS:-}" ]]; then
-    rm -f -- "${TMP_SUDOERS}" 2>/dev/null || true
-  fi
-  if [[ -n "${AUR_SUDOERS_FILE:-}" ]]; then
-    rm -f -- "${AUR_SUDOERS_FILE}" 2>/dev/null || true
-  fi
+  :
 }
 trap cleanup_install_temp EXIT
 
@@ -175,11 +167,8 @@ run_as_target() {
 
 create_directory() {
   local dir="$1"
-  if [[ ! -d "$dir" ]]; then
-    retry_command mkdir -p "$dir" || die "Failed to create directory: $dir"
-  fi
-  retry_command chown "${TARGET_USER}:${TARGET_USER}" "$dir"
-  retry_command chmod 755 "$dir"
+  retry_command run_as_target install -d -m 0755 -- "$dir" \
+    || die "Failed to create target-user directory: $dir"
 }
 
 pacman_install_one() {
@@ -2175,30 +2164,13 @@ install_arch_repo_apps_stage() {
   if pacman -Qi bluez >/dev/null 2>&1; then systemctl enable --now bluetooth.service || true; fi
 }
 
-remove_temp_sudoers_for_aur() {
-  if [[ -n "${AUR_SUDOERS_FILE:-}" ]]; then
-    rm -f -- "$AUR_SUDOERS_FILE"
-    AUR_SUDOERS_FILE=""
+ensure_aur_sudo_access() {
+  command -v sudo >/dev/null 2>&1 \
+    || die "sudo is required for AUR Guard's verified package transactions."
+  log "Confirming the target user's normal sudo authorization for AUR Guard..."
+  if ! run_as_target sudo -v; then
+    die "AUR installation requires the target user's normal sudo authorization."
   fi
-}
-
-create_temp_sudoers_for_aur() {
-  remove_temp_sudoers_for_aur
-
-  TMP_SUDOERS="$(mktemp /tmp/awtarchy-aur-sudoers.XXXXXX)"
-  AUR_SUDOERS_FILE="/etc/sudoers.d/awtarchy_aur_${TARGET_USER}_$$"
-  printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$TARGET_USER" > "$TMP_SUDOERS"
-
-  if ! visudo -c -f "$TMP_SUDOERS" >/dev/null 2>&1; then
-    rm -f -- "$TMP_SUDOERS"
-    TMP_SUDOERS=""
-    AUR_SUDOERS_FILE=""
-    die "Generated sudoers file is invalid."
-  fi
-
-  install -m 0440 "$TMP_SUDOERS" "$AUR_SUDOERS_FILE"
-  rm -f -- "$TMP_SUDOERS"
-  TMP_SUDOERS=""
 }
 
 ensure_aur_guard_requirements() {
@@ -2318,29 +2290,28 @@ install_obs_pipewire_audio_capture_user_plugin() {
     warn "Could not query latest OBS PipeWire audio capture release. Falling back to 1.2.1 archive."
   fi
 
-  tmp_dir="$(mktemp -d /tmp/awtarchy-obs-pipewire-audio.XXXXXX)"
+  tmp_dir="$(run_as_target mktemp -d /tmp/awtarchy-obs-pipewire-audio.XXXXXX)"
   archive="${tmp_dir}/linux-pipewire-audio.tar.gz"
 
-  curl -fL --retry 3 --retry-delay 2 -o "$archive" "$release_url"
+  run_as_target curl -fL --retry 3 --retry-delay 2 -o "$archive" "$release_url"
 
   if tar -tzf "$archive" | grep -qE '(^/|(^|/)\.\.(/|$))'; then
-    rm -rf -- "$tmp_dir"
+    run_as_target rm -rf -- "$tmp_dir"
     die "OBS PipeWire audio capture archive contains unsafe paths."
   fi
 
   if ! tar -tzf "$archive" | grep -q '^linux-pipewire-audio/'; then
-    rm -rf -- "$tmp_dir"
+    run_as_target rm -rf -- "$tmp_dir"
     die "OBS PipeWire audio capture archive has unexpected layout."
   fi
 
-  rm -rf -- "$plugin_root"
-  install -d -m 0755 -o "$TARGET_USER" -g "$TARGET_USER" "$plugin_dir"
+  run_as_target rm -rf -- "$plugin_root"
+  run_as_target install -d -m 0755 "$plugin_dir"
 
-  tar -xzf "$archive" -C "$plugin_dir"
-  chown -R "$TARGET_USER:$TARGET_USER" "$plugin_root"
-  chmod -R u+rwX,go+rX "$plugin_root"
+  run_as_target tar -xzf "$archive" -C "$plugin_dir"
+  run_as_target chmod -R u+rwX,go+rX "$plugin_root"
 
-  rm -rf -- "$tmp_dir"
+  run_as_target rm -rf -- "$tmp_dir"
 
   if ! obs_pipewire_audio_capture_user_plugin_installed; then
     die "OBS PipeWire audio capture fallback install did not produce the expected plugin file."
@@ -2374,7 +2345,7 @@ install_aur_repo_apps_stage() {
   (( INSTALL_AUR == 1 )) || { warn "Skipping AUR application install."; return 0; }
 
   ensure_aur_guard_requirements
-  create_temp_sudoers_for_aur
+  ensure_aur_sudo_access
   ensure_yay
 
   if (( ${#AUR_SELECTED[@]} == 0 )); then
@@ -2423,8 +2394,6 @@ install_aur_repo_apps_stage() {
       warn "UFW is not installed. Skipping Moonlight firewall configuration."
     fi
   fi
-
-  remove_temp_sudoers_for_aur
 }
 
 flatpak_effective_scope_install() {
@@ -2465,11 +2434,13 @@ install_flatpak_apps_stage() {
     for shell_rc in .bashrc .zshrc; do
       rc_path="${HOME_DIR}/${shell_rc}"
       if [[ -f "$rc_path" ]] && ! grep -Fxq "$alias_line" "$rc_path"; then
-        {
-          printf '\n# Automatically apply --user flag for Flatpak on non-Btrfs or user-scope systems\n'
-          printf '%s\n' "$alias_line"
-        } >> "$rc_path"
-        chown "${TARGET_USER}:${TARGET_USER}" "$rc_path"
+        # shellcheck disable=SC2016 # Variables intentionally expand in the target-user shell.
+        run_as_target bash -c '
+          {
+            printf "\n# Automatically apply --user flag for Flatpak on non-Btrfs or user-scope systems\n"
+            printf "%s\n" "$2"
+          } >>"$1"
+        ' awtarchy-flatpak-alias "$rc_path" "$alias_line"
       fi
     done
   fi
@@ -2529,8 +2500,7 @@ install_flatpak_apps_stage() {
 
 install_alacritty_themes_stage() {
   local target_dir="${HOME_DIR}/.config/alacritty"
-  mkdir -p "$target_dir"
-  chown "${TARGET_USER}:${TARGET_USER}" "$target_dir"
+  run_as_target install -d -m 0755 "$target_dir"
 
   if [[ -d "$target_dir/themes" ]]; then
     log "Alacritty themes directory exists. Checking for updates..."
@@ -2561,29 +2531,24 @@ install_micro_themes_stage() {
   local color_dir="${micro_dir}/colorschemes"
   local settings_json="${micro_dir}/settings.json"
   local tmp1 tmp2 have_jq=0
-  tmp1="$(mktemp -d)"
-  tmp2="$(mktemp -d)"
+  tmp1="$(run_as_target mktemp -d)"
+  tmp2="$(run_as_target mktemp -d)"
   trap 'rm -rf "${tmp1:-}" "${tmp2:-}" 2>/dev/null || true; cleanup_install_temp' EXIT
   have jq && have_jq=1
 
   log "Cloning Micro theme sources..."
-  git clone --depth=1 "$repo_url1" "$tmp1" >/dev/null
-  git clone --depth=1 "$repo_url2" "$tmp2" >/dev/null
+  run_as_target git clone --depth=1 "$repo_url1" "$tmp1" >/dev/null
+  run_as_target git clone --depth=1 "$repo_url2" "$tmp2" >/dev/null
 
-  install -d -m 0755 "$color_dir"
-  compgen -G "${tmp1}/themes/*.micro" >/dev/null && cp -f "${tmp1}/themes/"*.micro "$color_dir/"
-  compgen -G "${tmp2}/runtime/colorschemes/*.micro" >/dev/null && cp -f "${tmp2}/runtime/colorschemes/"*.micro "$color_dir/"
-  chown -R "${TARGET_USER}:${TARGET_USER}" "$config_root"
+  run_as_target install -d -m 0755 "$color_dir"
+  compgen -G "${tmp1}/themes/*.micro" >/dev/null && run_as_target cp -f "${tmp1}/themes/"*.micro "$color_dir/"
+  compgen -G "${tmp2}/runtime/colorschemes/*.micro" >/dev/null && run_as_target cp -f "${tmp2}/runtime/colorschemes/"*.micro "$color_dir/"
 
-  install -d -m 0755 "$micro_dir"
-  cat > "${settings_json}.tmp" <<JSON
-{
-  "colorscheme": "${target_colorscheme}"
-}
-JSON
+  run_as_target install -d -m 0755 "$micro_dir"
+  printf '{\n  "colorscheme": "%s"\n}\n' "$target_colorscheme" \
+    | run_as_target tee "${settings_json}.tmp" >/dev/null
   (( have_jq == 1 )) && jq -e . "${settings_json}.tmp" >/dev/null
-  mv -f "${settings_json}.tmp" "$settings_json"
-  chown "${TARGET_USER}:${TARGET_USER}" "$settings_json"
+  run_as_target mv -f "${settings_json}.tmp" "$settings_json"
 
   [[ -f "$settings_json" ]] || die "Failed to create ${settings_json}"
   if [[ ! -f "${color_dir}/${target_colorscheme}.micro" ]]; then
@@ -2694,7 +2659,7 @@ install_awtarchy_command_stage() {
   local config_version_file="${state_dir}/config-version"
   local runtime_src="${REPO_DIR}/local/share/awtarchy/awtarchy-runtime.sh"
   local launcher_src="${REPO_DIR}/local/bin/awtarchy"
-  local tag="" revision=""
+  local tag="" revision="" version_tmp=""
 
   [[ -f "$runtime_src" ]] || die "Missing Awtarchy runtime: ${runtime_src}"
   [[ -f "$launcher_src" ]] || die "Missing Awtarchy command: ${launcher_src}"
@@ -2705,28 +2670,27 @@ install_awtarchy_command_stage() {
   create_directory "$bin_dir"
   create_directory "$state_dir"
 
-  retry_command install -m 0755 "$runtime_src" "${install_dir}/awtarchy-runtime.sh"
-  retry_command install -m 0755 "$launcher_src" "${bin_dir}/awtarchy"
-  retry_command chown "${TARGET_USER}:${TARGET_USER}" \
-    "${install_dir}/awtarchy-runtime.sh" "${bin_dir}/awtarchy"
+  retry_command run_as_target install -m 0755 "$runtime_src" "${install_dir}/awtarchy-runtime.sh"
+  retry_command run_as_target install -m 0755 "$launcher_src" "${bin_dir}/awtarchy"
 
   tag="$(detect_installed_release_tag)"
   if have git && git -C "$REPO_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     revision="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || true)"
   fi
 
+  version_tmp="$(mktemp)"
   {
     printf 'tag=%s\n' "$tag"
     [[ -n "$revision" ]] && printf 'revision=%s\n' "$revision"
     printf 'installed_at=%s\n' "$(date -Iseconds)"
-  } >"$command_version_file"
-  cp -- "$command_version_file" "$config_version_file"
-  chown "${TARGET_USER}:${TARGET_USER}" "$command_version_file" "$config_version_file"
-  chmod 0644 "$command_version_file" "$config_version_file"
+  } >"$version_tmp"
+  retry_command run_as_target install -m 0644 "$version_tmp" "$command_version_file"
+  retry_command run_as_target install -m 0644 "$version_tmp" "$config_version_file"
+  rm -f -- "$version_tmp"
 
   if [[ "${AWTARCHY_SKIP_SELF_UPDATE:-0}" != "1" ]]; then
     log "Verifying the installed Awtarchy command against the current main updater..."
-    if ! env -u XDG_DATA_HOME -u XDG_STATE_HOME \
+    if ! run_as_target env -u XDG_DATA_HOME -u XDG_STATE_HOME \
       HOME="$HOME_DIR" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
       "${bin_dir}/awtarchy" self-update
     then
@@ -2741,8 +2705,7 @@ install_awtarchy_command_stage() {
 
 copy_awtarchy_configs_stage() {
   log "Copying Awtarchy configuration files..."
-  mkdir -p "${HOME_DIR}/.config"
-  chown "${TARGET_USER}:${TARGET_USER}" "${HOME_DIR}/.config"
+  create_directory "${HOME_DIR}/.config"
 
   local config_file
   for config_file in bashrc bash_profile; do
@@ -2753,20 +2716,18 @@ copy_awtarchy_configs_stage() {
       if [[ "$config_file" == "bashrc" && "$OVERWRITE_BASHRC" != "1" ]]; then warn "Keeping existing ${dest}"; continue; fi
       if [[ "$config_file" == "bash_profile" && "$OVERWRITE_BASH_PROFILE" != "1" ]]; then warn "Keeping existing ${dest}"; continue; fi
     fi
-    retry_command cp "$src" "$dest"
+    retry_command run_as_target cp -- "$src" "$dest"
     if findmnt -n -o FSTYPE / | grep -qi btrfs; then
-      sed -i '/alias flatpak=.flatpak --user./ s/^/#/' "$dest" || true
+      run_as_target sed -i '/alias flatpak=.flatpak --user./ s/^/#/' "$dest" || true
     fi
-    retry_command chown "${TARGET_USER}:${TARGET_USER}" "$dest"
-    retry_command chmod 644 "$dest"
+    retry_command run_as_target chmod 0644 "$dest"
   done
 
   local -a config_dirs=(hypr quickshell alacritty gtk-3.0 Kvantum SpeedCrunch fastfetch pcmanfm-qt yazi xdg-desktop-portal qt5ct qt6ct lsfg-vk wiremix cava micro ddcutil)
   local dir
   for dir in "${config_dirs[@]}"; do
     if [[ -d "${REPO_DIR}/config/${dir}" ]]; then
-      retry_command cp -r "${REPO_DIR}/config/${dir}" "${HOME_DIR}/.config/" || exit 1
-      retry_command chown -R "${TARGET_USER}:${TARGET_USER}" "${HOME_DIR}/.config/${dir}"
+      retry_command run_as_target cp -r -- "${REPO_DIR}/config/${dir}" "${HOME_DIR}/.config/" || exit 1
     else
       warn "Missing config/${dir}; skipping."
     fi
@@ -2776,42 +2737,34 @@ copy_awtarchy_configs_stage() {
   create_directory "${HOME_DIR}/.local/share/SpeedCrunch"
   create_directory "${HOME_DIR}/.local/share/SpeedCrunch/color-schemes"
 
-  [[ -f "${REPO_DIR}/Xresources" ]] && retry_command cp "${REPO_DIR}/Xresources" "${HOME_DIR}/.Xresources"
-  [[ -f "${REPO_DIR}/config/mimeapps.list" ]] && retry_command cp "${REPO_DIR}/config/mimeapps.list" "${HOME_DIR}/.config/"
-  [[ -f "${REPO_DIR}/config/gamemode.ini" ]] && retry_command cp "${REPO_DIR}/config/gamemode.ini" "${HOME_DIR}/.config/"
-  [[ -f "${REPO_DIR}/local/share/nwg-look/gsettings" ]] && retry_command cp "${REPO_DIR}/local/share/nwg-look/gsettings" "${HOME_DIR}/.local/share/nwg-look/"
+  [[ -f "${REPO_DIR}/Xresources" ]] && retry_command run_as_target cp -- "${REPO_DIR}/Xresources" "${HOME_DIR}/.Xresources"
+  [[ -f "${REPO_DIR}/config/mimeapps.list" ]] && retry_command run_as_target cp -- "${REPO_DIR}/config/mimeapps.list" "${HOME_DIR}/.config/"
+  [[ -f "${REPO_DIR}/config/gamemode.ini" ]] && retry_command run_as_target cp -- "${REPO_DIR}/config/gamemode.ini" "${HOME_DIR}/.config/"
+  [[ -f "${REPO_DIR}/local/share/nwg-look/gsettings" ]] && retry_command run_as_target cp -- "${REPO_DIR}/local/share/nwg-look/gsettings" "${HOME_DIR}/.local/share/nwg-look/"
 
-  chown "${TARGET_USER}:${TARGET_USER}" \
-    "${HOME_DIR}/.Xresources" \
-    "${HOME_DIR}/.config/mimeapps.list" \
-    "${HOME_DIR}/.config/gamemode.ini" \
-    "${HOME_DIR}/.local/share/nwg-look/gsettings" 2>/dev/null || true
-  chmod 644 \
+  run_as_target chmod 0644 \
     "${HOME_DIR}/.Xresources" \
     "${HOME_DIR}/.config/mimeapps.list" \
     "${HOME_DIR}/.config/gamemode.ini" \
     "${HOME_DIR}/.local/share/nwg-look/gsettings" 2>/dev/null || true
 
   if compgen -G "${REPO_DIR}/local/share/SpeedCrunch/color-schemes/*.json" >/dev/null; then
-    retry_command cp "${REPO_DIR}/local/share/SpeedCrunch/color-schemes/"*.json "${HOME_DIR}/.local/share/SpeedCrunch/color-schemes/"
-    retry_command chown -R "${TARGET_USER}:${TARGET_USER}" "${HOME_DIR}/.local/share/SpeedCrunch"
-    chmod 644 "${HOME_DIR}/.local/share/SpeedCrunch/color-schemes/"*.json || true
+    retry_command run_as_target cp "${REPO_DIR}/local/share/SpeedCrunch/color-schemes/"*.json "${HOME_DIR}/.local/share/SpeedCrunch/color-schemes/"
+    run_as_target chmod 0644 "${HOME_DIR}/.local/share/SpeedCrunch/color-schemes/"*.json || true
   fi
 
   create_directory "${HOME_DIR}/.local/share/applications"
   if [[ -d "${REPO_DIR}/local/share/applications" ]]; then
-    retry_command cp -r "${REPO_DIR}/local/share/applications/." "${HOME_DIR}/.local/share/applications"
-    retry_command chown -R "${TARGET_USER}:${TARGET_USER}" "${HOME_DIR}/.local/share/applications"
-    find "${HOME_DIR}/.local/share/applications" -type d -exec chmod 755 {} +
-    find "${HOME_DIR}/.local/share/applications" -type f -exec chmod 644 {} +
+    retry_command run_as_target cp -r "${REPO_DIR}/local/share/applications/." "${HOME_DIR}/.local/share/applications"
+    run_as_target find "${HOME_DIR}/.local/share/applications" -type d -exec chmod 0755 {} +
+    run_as_target find "${HOME_DIR}/.local/share/applications" -type f -exec chmod 0644 {} +
   fi
 
   create_directory "${HOME_DIR}/.local/share/icons/ComixCursors-White"
   if [[ -d /usr/share/icons/ComixCursors-White ]]; then
-    retry_command cp -r /usr/share/icons/ComixCursors-White/. "${HOME_DIR}/.local/share/icons/ComixCursors-White/"
-    retry_command chown -R "${TARGET_USER}:${TARGET_USER}" "${HOME_DIR}/.local/share/icons/ComixCursors-White"
-    find "${HOME_DIR}/.local/share/icons/ComixCursors-White" -type d -exec chmod 755 {} +
-    find "${HOME_DIR}/.local/share/icons/ComixCursors-White" -type f -exec chmod 644 {} +
+    retry_command run_as_target cp -r /usr/share/icons/ComixCursors-White/. "${HOME_DIR}/.local/share/icons/ComixCursors-White/"
+    run_as_target find "${HOME_DIR}/.local/share/icons/ComixCursors-White" -type d -exec chmod 0755 {} +
+    run_as_target find "${HOME_DIR}/.local/share/icons/ComixCursors-White" -type f -exec chmod 0644 {} +
   fi
 
   install -d -m 755 /usr/share/icons/default
@@ -2831,29 +2784,20 @@ EOF
   local wallpaper
   for wallpaper in "${wallpapers[@]}"; do
     [[ -f "${REPO_DIR}/${wallpaper}" ]] || { warn "Missing ${wallpaper}; skipping."; continue; }
-    retry_command cp "${REPO_DIR}/${wallpaper}" "${HOME_DIR}/Pictures/wallpapers/"
-    chown "${TARGET_USER}:${TARGET_USER}" "${HOME_DIR}/Pictures/wallpapers/${wallpaper}"
-    chmod 644 "${HOME_DIR}/Pictures/wallpapers/${wallpaper}"
+    retry_command run_as_target cp -- "${REPO_DIR}/${wallpaper}" "${HOME_DIR}/Pictures/wallpapers/"
+    run_as_target chmod 0644 "${HOME_DIR}/Pictures/wallpapers/${wallpaper}"
   done
 
-  find "${HOME_DIR}/.config" -type d -exec chmod 755 {} + 2>/dev/null || true
-  find "${HOME_DIR}/.config" -type f -exec chmod 644 {} + 2>/dev/null || true
+  for dir in "${config_dirs[@]}"; do
+    [[ -d "${HOME_DIR}/.config/${dir}" ]] || continue
+    run_as_target find "${HOME_DIR}/.config/${dir}" -type d -exec chmod 0755 {} + 2>/dev/null || true
+    run_as_target find "${HOME_DIR}/.config/${dir}" -type f -exec chmod 0644 {} + 2>/dev/null || true
+  done
   if [[ -d "${HOME_DIR}/.config/hypr/scripts" ]]; then
-    find "${HOME_DIR}/.config/hypr/scripts" -type f -exec chmod +x {} + 2>/dev/null || true
+    run_as_target find "${HOME_DIR}/.config/hypr/scripts" -type f -exec chmod +x {} + 2>/dev/null || true
   fi
   if [[ -d "${HOME_DIR}/.config/hypr/themes" ]]; then
-    find "${HOME_DIR}/.config/hypr/themes" -type f -exec chmod +x {} + 2>/dev/null || true
-  fi
-}
-
-repair_home_ownership_stage() {
-  log "Repairing ownership under ${HOME_DIR}..."
-  retry_command chown "${TARGET_USER}:${TARGET_USER}" "$HOME_DIR"
-  find "$HOME_DIR" -mindepth 1 ! -user "$TARGET_USER" -exec chown -h "${TARGET_USER}:${TARGET_USER}" {} + 2>/dev/null || true
-  if [[ -d "${HOME_DIR}/.ssh" ]]; then
-    retry_command chown -R "${TARGET_USER}:${TARGET_USER}" "${HOME_DIR}/.ssh"
-    chmod 700 "${HOME_DIR}/.ssh"
-    find "${HOME_DIR}/.ssh" -type f -exec chmod 600 {} +
+    run_as_target find "${HOME_DIR}/.config/hypr/themes" -type f -exec chmod +x {} + 2>/dev/null || true
   fi
 }
 
@@ -2898,9 +2842,9 @@ remove_legacy_shell_packages_stage() {
   fi
 
   if (( cleanup_ok == 1 )); then
-    install -d -m 0755 "$(dirname "$marker")"
-    : >"$marker"
-    chown "${TARGET_USER}:${TARGET_USER}" "$marker" 2>/dev/null || true
+    run_as_target install -d -m 0755 "$(dirname "$marker")"
+    run_as_target touch "$marker"
+    run_as_target chmod 0644 "$marker"
   fi
 }
 
@@ -2910,7 +2854,7 @@ remove_legacy_shell_path_stage() {
 
   for candidate in "$dest" "${dest}.backup" "${dest}.backup."*; do
     [[ -e "$candidate" || -L "$candidate" ]] || continue
-    rm -rf -- "$candidate"
+    run_as_target rm -rf -- "$candidate"
   done
 }
 
@@ -3009,7 +2953,6 @@ run_install() {
   remove_legacy_shell_files_stage
   install_awtarchy_command_stage
   remove_legacy_shell_packages_stage
-  repair_home_ownership_stage
 
   ok "Setup complete. Rebooting now."
   if (( NO_REBOOT == 1 )) || [[ "${AWTARCHY_NO_REBOOT:-0}" == "1" ]]; then
@@ -4236,6 +4179,7 @@ BASELINE_HOME=""
 MANIFEST_FILE=""
 HARDWARE_FILE=""
 ACTIVE_THEME_FILE=""
+GIT_TESTING_FILE=""
 AUDIT_LOG=""
 UPDATE_MODE=""
 CONFLICT_POLICY="prompt"
@@ -4243,7 +4187,9 @@ MERGE_CONFLICT_RESOLUTION=""
 REVIEW_ONLY=0
 ASSUME_YES=0
 TAG_OVERRIDE=""
+TESTING_BRANCH=""
 TESTING_COMMIT=""
+RESOLVED_RELEASE_COMMIT=""
 BACKUPS=()
 CHANGED=()
 PRESERVED=()
@@ -4254,6 +4200,7 @@ ROLLBACK_PATHS=()
 MOUSE_ENABLED=0
 GPU_DETECTION_RELIABLE=0
 TMPD=""
+TARGET_STAGE_HOME=""
 
 cleanup_update() {
   if (( MOUSE_ENABLED == 1 )); then
@@ -4328,6 +4275,7 @@ init_target_user() {
   MANIFEST_FILE="${STATE_DIR}/baseline/manifest.paths"
   HARDWARE_FILE="${STATE_DIR}/hardware-state"
   ACTIVE_THEME_FILE="${STATE_DIR}/active-theme"
+  GIT_TESTING_FILE="${STATE_DIR}/git-testing"
   mkdir -p -- "${STATE_DIR}/logs"
   AUDIT_LOG="${STATE_DIR}/logs/update-$(stamp).log"
   if [[ "${EUID}" -eq 0 ]]; then
@@ -4348,6 +4296,15 @@ parse_args() {
         [[ "$TESTING_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]] \
           || die "--testing-commit requires a full 40-character commit SHA"
         TESTING_COMMIT="${TESTING_COMMIT,,}"
+        shift 2
+        ;;
+      --testing-branch)
+        TESTING_BRANCH="${2:-}"
+        [[ -n "$TESTING_BRANCH" ]] || die "--testing-branch requires a remote branch name"
+        [[ $TESTING_BRANCH != *$'\n'* \
+          && $TESTING_BRANCH != *$'\r'* \
+          && $TESTING_BRANCH != *$'\t'* ]] \
+          || die "--testing-branch contains unsupported control characters"
         shift 2
         ;;
       --mode)
@@ -4378,7 +4335,8 @@ Usage:
 
 Options:
   --tag <tag>              Update from an exact GitHub release tag
-  --testing-commit <sha>   Test configs from an exact GitHub commit
+  --testing-branch <name>  Selected Awtarchy remote branch for Git testing
+  --testing-commit <sha>   Exact commit verified against --testing-branch
   --mode preserve|clean    Select update mode without the menu
   --conflict-policy <mode> Resolve merge conflicts with prompt, keep-local,
                            use-release, or abort (default: prompt)
@@ -4395,6 +4353,10 @@ EOF
 
   [[ -z "$TAG_OVERRIDE" || -z "$TESTING_COMMIT" ]] \
     || die "--tag and --testing-commit cannot be used together"
+  if [[ -n "$TESTING_BRANCH" || -n "$TESTING_COMMIT" ]]; then
+    [[ -n "$TESTING_BRANCH" && -n "$TESTING_COMMIT" ]] \
+      || die "--testing-branch and --testing-commit must be used together"
+  fi
 }
 
 curl_headers() {
@@ -4433,23 +4395,149 @@ urlencode_path_segment() {
   python3 - "$1" <<'PY'
 import sys
 from urllib.parse import quote
-print(quote(sys.argv[1], safe="/-._~"))
+print(quote(sys.argv[1], safe="-._~"))
 PY
 }
 
-download_release_tarball() {
-  local tag="$1" out="$2" max_time="${3:-300}" tag_enc
-  tag_enc="$(urlencode_path_segment "$tag")"
+resolve_remote_testing_branch_head() {
+  local branch="$1" branch_enc="" branch_json=""
 
-  curl "${CURL_ARGS[@]}" \
-    --progress-bar \
-    --connect-timeout 10 \
-    --max-time "$max_time" \
-    --retry 1 \
-    --speed-limit 1024 \
-    --speed-time 30 \
-    -o "$out" \
-    "https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/tags/${tag_enc}.tar.gz"
+  branch_enc="$(urlencode_path_segment "$branch")" || return 1
+  branch_json="$(curl "${CURL_ARGS[@]}" --silent --connect-timeout 10 --max-time 20 \
+    -H 'Accept: application/vnd.github+json' \
+    "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/branches/${branch_enc}")" \
+    || return 1
+  python3 - "$branch_json" "$branch" <<'PY'
+import json
+import re
+import sys
+
+try:
+    payload = json.loads(sys.argv[1])
+except (IndexError, json.JSONDecodeError):
+    raise SystemExit(1)
+
+expected = sys.argv[2]
+name = str(payload.get("name") or "")
+revision = str((payload.get("commit") or {}).get("sha") or "").lower()
+if name != expected or not re.fullmatch(r"[0-9a-f]{40}", revision):
+    raise SystemExit(1)
+print(revision)
+PY
+}
+
+testing_commit_belongs_to_branch() {
+  local commit="$1" branch_head="$2" compare_json=""
+
+  [[ $commit == "$branch_head" ]] && return 0
+  compare_json="$(curl "${CURL_ARGS[@]}" --silent --connect-timeout 10 --max-time 20 \
+    -H 'Accept: application/vnd.github+json' \
+    "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/compare/${commit}...${branch_head}")" \
+    || return 1
+  python3 - "$compare_json" "$commit" <<'PY'
+import json
+import sys
+
+try:
+    payload = json.loads(sys.argv[1])
+except (IndexError, json.JSONDecodeError):
+    raise SystemExit(1)
+
+requested = sys.argv[2].lower()
+status = str(payload.get("status") or "")
+merge_base = str((payload.get("merge_base_commit") or {}).get("sha") or "").lower()
+if status not in {"ahead", "identical"} or merge_base != requested:
+    raise SystemExit(1)
+PY
+}
+
+parse_github_git_object() {
+  python3 - "$1" <<'PY'
+import json
+import re
+import sys
+
+try:
+    payload = json.loads(sys.argv[1])
+    obj = payload["object"]
+    kind = str(obj["type"]).strip()
+    revision = str(obj["sha"]).strip().lower()
+except (IndexError, KeyError, TypeError, json.JSONDecodeError):
+    raise SystemExit(1)
+if kind not in {"commit", "tag"} or not re.fullmatch(r"[0-9a-f]{40}", revision):
+    raise SystemExit(1)
+print(kind)
+print(revision)
+PY
+}
+
+resolve_release_tag_commit() {
+  local tag="$1" tag_enc="" release_json="" object_json=""
+  local kind="" revision="" depth=0
+  local -a object_fields=()
+  local -A seen=()
+
+  tag_enc="$(urlencode_path_segment "$tag")" || return 1
+  release_json="$(curl "${CURL_ARGS[@]}" --silent --connect-timeout 10 --max-time 20 \
+    -H 'Accept: application/vnd.github+json' \
+    "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/tags/${tag_enc}")" \
+    || return 1
+  python3 - "$release_json" "$tag" <<'PY' || return 1
+import json
+import sys
+
+try:
+    payload = json.loads(sys.argv[1])
+except (IndexError, json.JSONDecodeError):
+    raise SystemExit(1)
+if (
+    str(payload.get("tag_name") or "") != sys.argv[2]
+    or payload.get("draft") is not False
+    or not str(payload.get("published_at") or "").strip()
+):
+    raise SystemExit(1)
+PY
+
+  object_json="$(curl "${CURL_ARGS[@]}" --silent --connect-timeout 10 --max-time 20 \
+    -H 'Accept: application/vnd.github+json' \
+    "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/git/ref/tags/${tag_enc}")" \
+    || return 1
+  mapfile -t object_fields < <(parse_github_git_object "$object_json")
+  (( ${#object_fields[@]} == 2 )) || return 1
+  kind="${object_fields[0]}"
+  revision="${object_fields[1]}"
+
+  while (( depth < 8 )); do
+    case "$kind" in
+      commit)
+        printf '%s\n' "$revision"
+        return 0
+        ;;
+      tag)
+        [[ -z ${seen[$revision]:-} ]] || return 1
+        seen[$revision]=1
+        object_json="$(curl "${CURL_ARGS[@]}" --silent --connect-timeout 10 --max-time 20 \
+          -H 'Accept: application/vnd.github+json' \
+          "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/git/tags/${revision}")" \
+          || return 1
+        object_fields=()
+        mapfile -t object_fields < <(parse_github_git_object "$object_json")
+        (( ${#object_fields[@]} == 2 )) || return 1
+        kind="${object_fields[0]}"
+        revision="${object_fields[1]}"
+        ;;
+      *) return 1 ;;
+    esac
+    (( depth += 1 ))
+  done
+  return 1
+}
+
+download_release_tarball() {
+  local tag="$1" out="$2" max_time="${3:-300}" commit
+  commit="$(resolve_release_tag_commit "$tag")" || return 1
+  RESOLVED_RELEASE_COMMIT="$commit"
+  download_testing_commit_tarball "$commit" "$out" "$max_time"
 }
 
 download_testing_commit_tarball() {
@@ -4466,19 +4554,56 @@ download_testing_commit_tarball() {
     -o "$out" \
     "https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/${commit}.tar.gz"
 }
-tar_topdir() {
-  python3 - "$1" <<'PY'
-import sys, tarfile
+validate_source_archive() {
+  local archive="$1" expected_top="${2:-}"
+  python3 - "$archive" "$expected_top" <<'PY'
+from pathlib import PurePosixPath
+import sys
+import tarfile
+
+MAX_MEMBERS = 100000
+MAX_UNPACKED_BYTES = 2 * 1024 * 1024 * 1024
+
 try:
     with tarfile.open(sys.argv[1], "r:gz") as archive:
-        first = next((name for name in archive.getnames() if name), "")
+        members = archive.getmembers()
 except (OSError, tarfile.TarError):
     raise SystemExit(1)
-top = first.split("/", 1)[0]
-if not top:
+
+if not members or len(members) > MAX_MEMBERS:
     raise SystemExit(1)
+expected = sys.argv[2]
+top = ""
+seen = set()
+unpacked = 0
+for member in members:
+    name = member.name.rstrip("/")
+    if not name or any(c in name for c in "\n\r\t\0\\"):
+        raise SystemExit("unsafe archive path")
+    path = PurePosixPath(name)
+    if path.is_absolute() or any(part in {"", ".", ".."} for part in name.split("/")):
+        raise SystemExit("unsafe archive path")
+    if not (member.isfile() or member.isdir()):
+        raise SystemExit("unsupported archive entry")
+    normalized = path.as_posix()
+    if normalized in seen:
+        raise SystemExit("duplicate archive entry")
+    seen.add(normalized)
+    unpacked += member.size
+    if unpacked > MAX_UNPACKED_BYTES:
+        raise SystemExit("archive exceeds unpacked size limit")
+    if not top:
+        top = path.parts[0]
+    elif path.parts[0] != top:
+        raise SystemExit("archive has multiple top-level paths")
+if expected and top != expected:
+    raise SystemExit("archive root does not match immutable revision")
 print(top)
 PY
+}
+
+tar_topdir() {
+  validate_source_archive "$@"
 }
 
 has_controlling_tty() {
@@ -4603,15 +4728,159 @@ infer_active_theme() {
 }
 
 
-run_awtarchy_target_theme() {
-  local repo_dir="$1" theme_script="$2" theme="$3"
-  local quickshell_helper="${repo_dir}/config/hypr/scripts/quickshell_theme_apply.sh"
+render_theme_target() {
+  local theme_file="$1" target_home="$2" theme="$3"
+  python3 - "$theme_file" "$target_home" "$theme" <<'PY'
+from pathlib import Path
+import json
+import re
+import sys
 
-  if [[ -f "$quickshell_helper" ]]; then
-    bash "$quickshell_helper" "$theme"
-  else
-    bash "$theme_script"
-  fi
+theme_path = Path(sys.argv[1])
+home = Path(sys.argv[2])
+theme_name = sys.argv[3]
+
+if theme_path.stat().st_size > 131072:
+    raise SystemExit("theme data exceeds the safety limit")
+
+allowed = {
+    "NEW_ACTIVE_BORDER", "NEW_INACTIVE_BORDER",
+    "QS_BACKGROUND", "QS_HOVER", "QS_FOCUS", "QS_ACTIVE",
+    "QS_URGENT", "QS_CHARGING", "QS_CRITICAL", "QS_FOREGROUND",
+    "QS_DARK", "QS_MUTED", "MICRO_COLORSCHEME", "ALACRITTY_THEME",
+    "SPEEDCRUNCH_COLORSCHEME",
+    # Read-only compatibility keys from pre-Quickshell Awtarchy themes.
+    "W_BG", "W_COLOR", "W_CUSTOM_HOVER_BG", "W_FOCUS_BG",
+    "W_ACTIVE_BG", "W_URGENT_BG", "W_BATT_CHARGING_BG",
+    "W_BATT_CRITICAL_BG", "W_ACTIVE_COLOR", "W_MUTED",
+}
+values = {}
+text = theme_path.read_text(encoding="utf-8", errors="replace")
+for raw in text.splitlines():
+    if len(raw) > 4096:
+        raise SystemExit("theme data contains an oversized line")
+    match = re.match(r"^([A-Z_][A-Z0-9_]*)=(.*)$", raw.strip())
+    if not match or match.group(1) not in allowed:
+        continue
+    key, value = match.groups()
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        value = value[1:-1]
+    values.setdefault(key, value)
+
+def first(*keys, default):
+    for key in keys:
+        value = values.get(key, "").strip()
+        if value:
+            return value
+    return default
+
+def color(*keys, default, border=False):
+    value = first(*keys, default=default)
+    pattern = r"[0-9A-Fa-f]{8}" if border else r"#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?"
+    if not re.fullmatch(pattern, value):
+        raise SystemExit(f"invalid theme color for {keys[0]}")
+    return value
+
+def safe_name(value, label, suffix=None):
+    if not value or len(value) > 128 or any(c in value for c in "/\\\n\r\t\0"):
+        raise SystemExit(f"invalid {label}")
+    if suffix and not value.endswith(suffix):
+        raise SystemExit(f"invalid {label}")
+    return value
+
+active_border = color("NEW_ACTIVE_BORDER", default="a0a0a0ff", border=True)
+inactive_border = color("NEW_INACTIVE_BORDER", default="4b4b4bff", border=True)
+palette = {
+    "background": color("QS_BACKGROUND", "W_BG", default="#353535"),
+    "hover": color("QS_HOVER", "W_CUSTOM_HOVER_BG", default="#404040"),
+    "focus": color("QS_FOCUS", "W_FOCUS_BG", default="#4a4a4a"),
+    "active": color("QS_ACTIVE", "W_ACTIVE_BG", default="#2b2b2b"),
+    "urgent": color("QS_URGENT", "W_URGENT_BG", default="#ff5555"),
+    "charging": color("QS_CHARGING", "W_BATT_CHARGING_BG", default="#6a9955"),
+    "critical": color("QS_CRITICAL", "W_BATT_CRITICAL_BG", default="#ff5555"),
+    "foreground": color("QS_FOREGROUND", "W_COLOR", default="#d0d0d0"),
+    "dark": color("QS_DARK", "W_ACTIVE_COLOR", default="#1a1a1a"),
+    "muted": color("QS_MUTED", "W_MUTED", default="#404040"),
+}
+
+micro = values.get("MICRO_COLORSCHEME", "").strip()
+if not micro:
+    match = re.search(r'"colorscheme"\s*:\s*"([^"]+)"', text)
+    micro = match.group(1).strip() if match else "geany"
+micro = safe_name(micro, "Micro colorscheme")
+
+alacritty = values.get("ALACRITTY_THEME", "").strip()
+if not alacritty:
+    match = re.search(r'themes/themes/([^"\'|]+\.toml)', text)
+    alacritty = match.group(1).strip() if match else "wombat.toml"
+alacritty = safe_name(alacritty, "Alacritty theme", ".toml")
+
+speedcrunch = values.get("SPEEDCRUNCH_COLORSCHEME", "").strip()
+if not speedcrunch:
+    match = re.search(r'Display\\ColorSchemeName=([^|\'"\n]+)', text)
+    speedcrunch = match.group(1).strip() if match else theme_name
+speedcrunch = safe_name(speedcrunch, "SpeedCrunch colorscheme")
+
+hypr_lua = home / ".config/hypr/hyprland.lua"
+hypr_conf = home / ".config/hypr/hyprland.conf"
+if hypr_lua.is_file():
+    content = hypr_lua.read_text(encoding="utf-8")
+    for key, value in {
+        "active_border": f"rgba({active_border})",
+        "inactive_border": f"rgba({inactive_border})",
+    }.items():
+        pattern = re.compile(
+            r'(^[ \t]*(?!--)[^\n]*?\b' + re.escape(key)
+            + r'\s*=\s*)"[^"\\]*(?:\\.[^"\\]*)*"',
+            re.MULTILINE,
+        )
+        content, count = pattern.subn(lambda m, v=value: m.group(1) + json.dumps(v), content)
+        if count == 0:
+            raise SystemExit(f"did not find Hyprland Lua key: {key}")
+    hypr_lua.write_text(content, encoding="utf-8")
+elif hypr_conf.is_file():
+    content = hypr_conf.read_text(encoding="utf-8")
+    content = re.sub(r"(?m)^ *col\.active_border *= *.*$", f"col.active_border = rgba({active_border})", content)
+    content = re.sub(r"(?m)^ *col\.inactive_border *= *.*$", f"col.inactive_border = rgba({inactive_border})", content)
+    hypr_conf.write_text(content, encoding="utf-8")
+
+micro_settings = home / ".config/micro/settings.json"
+if micro_settings.is_file():
+    content = micro_settings.read_text(encoding="utf-8")
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        data = json.loads(re.sub(r",(\s*[}\]])", r"\1", content))
+    data["colorscheme"] = micro
+    micro_settings.write_text(json.dumps(data, indent=4) + "\n", encoding="utf-8")
+
+alacritty_conf = home / ".config/alacritty/alacritty.toml"
+if alacritty_conf.is_file():
+    content = alacritty_conf.read_text(encoding="utf-8")
+    content, count = re.subn(
+        r'~/.config/alacritty/themes/themes/[^"\n]+\.toml',
+        f"~/.config/alacritty/themes/themes/{alacritty}",
+        content,
+    )
+    if count:
+        alacritty_conf.write_text(content, encoding="utf-8")
+
+speed_ini = home / ".config/SpeedCrunch/SpeedCrunch.ini"
+if speed_ini.is_file():
+    content = speed_ini.read_text(encoding="utf-8")
+    content, count = re.subn(
+        r"(?m)^Display\\ColorSchemeName=.*$",
+        lambda _match: f"Display\\ColorSchemeName={speedcrunch}",
+        content,
+    )
+    if count:
+        speed_ini.write_text(content, encoding="utf-8")
+
+theme_json = home / ".config/quickshell/awtarchy/theme.json"
+theme_json.parent.mkdir(parents=True, exist_ok=True)
+theme_json.write_text(json.dumps(palette, indent=2) + "\n", encoding="utf-8")
+PY
 }
 
 apply_theme_to_target() {
@@ -4623,13 +4892,8 @@ apply_theme_to_target() {
     return 1
   }
 
-  local stub_dir="${TMPD}/theme-stubs"
   local support_manifest="${TMPD}/theme-support.paths"
-  mkdir -p -- "$stub_dir"
   : >"$support_manifest"
-  printf '#!/usr/bin/env bash\nexit 0\n' >"${stub_dir}/hyprctl"
-  printf '#!/usr/bin/env bash\nexit 0\n' >"${stub_dir}/makoctl"
-  chmod +x "${stub_dir}/hyprctl" "${stub_dir}/makoctl"
 
   # Theme scripts may touch application-owned files that are not stored in the
   # repository. Seed throwaway staging copies so target generation can run,
@@ -4653,10 +4917,7 @@ EOF
 
   log "Generating release target with theme: ${theme}"
   local rc=0 support_rel=""
-  HOME="$target_home" \
-  XDG_CONFIG_HOME="${target_home}/.config" \
-  PATH="${stub_dir}:${PATH}" \
-  run_awtarchy_target_theme "$repo_dir" "$theme_script" "$theme" >/dev/null || rc=$?
+  render_theme_target "$theme_script" "$target_home" "$theme" >/dev/null || rc=$?
 
   while IFS= read -r support_rel; do
     [[ -n "$support_rel" ]] || continue
@@ -5182,11 +5443,15 @@ bootstrap_previous_baseline() {
     old_tag="$(sed -n 's/^tag=//p' "$version_file" 2>/dev/null | head -n1 || true)"
     [[ -n "$old_tag" ]] || continue
     case "$old_tag" in
-      unknown|unreleased|quickshell-conversion-testing@*)
+      unknown|unreleased)
         old_tag=""
         continue
         ;;
     esac
+    if [[ $old_tag =~ ^.+@[0-9a-fA-F]{40}$ ]]; then
+      old_tag=""
+      continue
+    fi
     old_updated_at="$(
       sed -n -E 's/^(updated_at|installed_at|migrated_at|generated_at)=//p' \
         "$version_file" 2>/dev/null | head -n1 || true
@@ -5440,12 +5705,77 @@ augment_baseline_from_local_git_history() {
   log "Recovered ${recovered} missing baseline file(s) by matching installed content to local Git history."
 }
 
+validate_managed_relative_path() {
+  local rel="$1"
+  [[ -n $rel && $rel != /* \
+    && $rel != *$'\n'* && $rel != *$'\r'* && $rel != *$'\t'* \
+    && $rel != *$'\\'* \
+    && "/$rel/" != *'/../'* && "/$rel/" != *'/./'* && "/$rel/" != *'//'* ]] \
+    || return 1
+
+  case "$rel" in
+    .bashrc|.bash_profile|.Xresources|.config/mimeapps.list|.config/gamemode.ini)
+      return 0
+      ;;
+    .config/hypr/*|.config/quickshell/*|.config/alacritty/*|.config/gtk-3.0/*|\
+    .config/Kvantum/*|.config/SpeedCrunch/*|.config/fastfetch/*|\
+    .config/pcmanfm-qt/*|.config/yazi/*|.config/xdg-desktop-portal/*|\
+    .config/qt5ct/*|.config/qt6ct/*|.config/lsfg-vk/*|.config/wiremix/*|\
+    .config/cava/*|.config/micro/*|.config/ddcutil/*|\
+    .config/waybar/*|.config/fuzzel/*|.config/mako/*|.config/wlogout/*|.config/wofi/*|\
+    .local/share/nwg-look/*|.local/share/SpeedCrunch/*|.local/share/applications/*|\
+    Pictures/wallpapers/awtarchy_geology.png)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+validate_plan_row() {
+  local class="$1" rel="$2" local_file="$3" target_file="$4" baseline_file="$5"
+  case "$class" in
+    NEW|OUTDATED|USER|LEGACY|BOTH|REMOVED|ORPHANED) ;;
+    *) return 1 ;;
+  esac
+  validate_managed_relative_path "$rel" || return 1
+  [[ $local_file == "${HOME_DIR}/${rel}" \
+    && $target_file == "${TARGET_STAGE_HOME}/${rel}" \
+    && $baseline_file == "${BASELINE_HOME}/${rel}" ]]
+}
+
 build_plan() {
   local target_home="$1" plan_file="$2"
   python3 - "$HOME_DIR" "$target_home" "$BASELINE_HOME" "$MANIFEST_FILE" "$plan_file" <<'PY'
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import os, stat, sys
 home, target, baseline, manifest, out = map(Path, sys.argv[1:])
+
+CONFIG_ROOTS = {
+    "hypr", "quickshell", "alacritty", "gtk-3.0", "Kvantum",
+    "SpeedCrunch", "fastfetch", "pcmanfm-qt", "yazi",
+    "xdg-desktop-portal", "qt5ct", "qt6ct", "lsfg-vk", "wiremix",
+    "cava", "micro", "ddcutil", "waybar", "fuzzel", "mako",
+    "wlogout", "wofi",
+}
+
+def valid_rel(raw):
+    if not raw or raw.startswith("/") or "\\" in raw or any(c in raw for c in "\n\r\t\0"):
+        return False
+    path = PurePosixPath(raw)
+    if any(part in {"", ".", ".."} for part in raw.split("/")):
+        return False
+    parts = path.parts
+    if raw in {".bashrc", ".bash_profile", ".Xresources", ".config/mimeapps.list", ".config/gamemode.ini"}:
+        return True
+    if len(parts) >= 3 and parts[0] == ".config" and parts[1] in CONFIG_ROOTS:
+        return True
+    if len(parts) >= 4 and parts[:3] in {
+        (".local", "share", "nwg-look"),
+        (".local", "share", "SpeedCrunch"),
+        (".local", "share", "applications"),
+    }:
+        return True
+    return raw == "Pictures/wallpapers/awtarchy_geology.png"
 
 def paths(root):
     if not root.exists():
@@ -5453,7 +5783,10 @@ def paths(root):
     found = set()
     for p in root.rglob("*"):
         if p.is_file() or p.is_symlink():
-            found.add(p.relative_to(root).as_posix())
+            rel = p.relative_to(root).as_posix()
+            if not valid_rel(rel):
+                raise SystemExit(f"unsafe managed target path: {rel}")
+            found.add(rel)
     return found
 
 def identity(path):
@@ -5467,7 +5800,13 @@ def identity(path):
 new_paths = paths(target)
 old_paths = set()
 if manifest.is_file():
-    old_paths = {line.strip() for line in manifest.read_text().splitlines() if line.strip()}
+    for line in manifest.read_text().splitlines():
+        rel = line.strip()
+        if not rel:
+            continue
+        if not valid_rel(rel):
+            raise SystemExit(f"unsafe managed baseline path: {rel}")
+        old_paths.add(rel)
 all_paths = sorted(new_paths | old_paths)
 rows = []
 for rel in all_paths:
@@ -5568,6 +5907,8 @@ review_plan() {
   local class rel local_file target_file baseline_file
   while IFS=$'\t' read -r class rel local_file target_file baseline_file; do
     [[ -n "$class" ]] || continue
+    validate_plan_row "$class" "$rel" "$local_file" "$target_file" "$baseline_file" \
+      || die "Refusing unsafe managed-file review row: ${rel:-<empty>}"
     classes+=("$class")
     rels+=("$rel")
     locals+=("$local_file")
@@ -5829,6 +6170,8 @@ apply_plan() {
   local class rel local_file target_file baseline_file merge_tmp
   while IFS=$'\t' read -r class rel local_file target_file baseline_file; do
     [[ -n "$class" ]] || continue
+    validate_plan_row "$class" "$rel" "$local_file" "$target_file" "$baseline_file" \
+      || { FAILED+=("${rel:-unsafe-plan-row}"); rollback_changes; return 1; }
     case "$class" in
       NEW|OUTDATED)
         install_live_file "$rel" "$target_file" "$local_file" 0 || return 1
@@ -5974,6 +6317,54 @@ write_version_stamp() {
     printf 'updated_at=%s\n' "$(ts)"
   } >"$dest"
   [[ "${EUID}" -eq 0 ]] && chown "${TARGET_USER}:${TARGET_USER}" "$dest" 2>/dev/null || true
+}
+
+stable_release_before_git_test() {
+  local value="" file=""
+  value="$(state_value stable_release "$GIT_TESTING_FILE" 2>/dev/null || true)"
+  if [[ -n $value ]]; then
+    printf '%s\n' "$value"
+    return 0
+  fi
+
+  for file in \
+    "${STATE_DIR}/config-version" \
+    "${STATE_DIR}/baseline/metadata"
+  do
+    value="$(state_value tag "$file" 2>/dev/null || true)"
+    [[ -n $value ]] || continue
+    case "$value" in
+      unknown|unreleased) continue ;;
+    esac
+    if [[ $value =~ ^.+@[0-9a-fA-F]{40}$ ]]; then
+      continue
+    fi
+    printf '%s\n' "$value"
+    return 0
+  done
+  printf '%s\n' unknown
+}
+
+write_git_testing_state() {
+  local branch="$1" revision="$2" stable_release="$3" dir="" tmp=""
+  dir="$(dirname "$GIT_TESTING_FILE")"
+  mkdir -p -- "$dir"
+  tmp="$(mktemp --tmpdir="$dir" '.git-testing.tmp.XXXXXX')"
+  {
+    printf 'branch=%s\n' "$branch"
+    printf 'revision=%s\n' "$revision"
+    printf 'stable_release=%s\n' "$stable_release"
+    printf 'tested_at=%s\n' "$(ts)"
+  } >"$tmp"
+  chmod 0644 "$tmp"
+  if [[ "${EUID}" -eq 0 ]]; then
+    chown "${TARGET_USER}:${TARGET_USER}" "$tmp" 2>/dev/null || true
+  fi
+  mv -Tf -- "$tmp" "$GIT_TESTING_FILE"
+}
+
+clear_git_testing_state() {
+  rm -f -- "$GIT_TESTING_FILE"
 }
 
 write_audit() {
@@ -6196,6 +6587,7 @@ quickshell_update_legacy_paths() {
     .config/hypr/scripts/cliphist-wofi.sh \
     .config/hypr/scripts/fuzzel_toggle.sh \
     .config/hypr/scripts/mako_dismiss.sh \
+    .config/hypr/scripts/quickshell_flyout_state_collect.py \
     .config/hypr/scripts/waybar.sh \
     .config/hypr/scripts/waybar_flip.sh \
     .config/hypr/scripts/waybar_ready_sound.sh \
@@ -6369,7 +6761,30 @@ remove_quickshell_update_legacy_packages() {
   [[ "${EUID}" -eq 0 ]] && chown "${TARGET_USER}:${TARGET_USER}" "$marker" 2>/dev/null || true
 }
 
+drop_update_privileges() {
+  [[ ${EUID} -eq 0 ]] || return 0
+
+  local target="${SUDO_USER:-${AWTARCHY_TEST_TARGET_USER:-}}" target_home=""
+  if [[ ${AWTARCHY_TEST_TARGET_USER:-} == root \
+    && ${AWTARCHY_TEST_TARGET_HOME:-} == /tmp/* \
+    && -n ${AWTARCHY_TEST_ARCHIVE:-} ]]; then
+    return 0
+  fi
+  [[ -n $target && $target != root ]] \
+    || die "Do not run Awtarchy config maintenance as root. Run awtarchy as your normal user."
+  target_home="$(getent passwd "$target" 2>/dev/null | cut -d: -f6 || true)"
+  [[ -n $target_home && -d $target_home ]] \
+    || die "Could not resolve the invoking user's home before dropping root privileges."
+  command -v runuser >/dev/null 2>&1 \
+    || die "runuser is required to drop root privileges for config maintenance."
+
+  exec runuser -u "$target" -- env \
+    HOME="$target_home" USER="$target" LOGNAME="$target" \
+    bash "${BASH_SOURCE[0]}" update-reset-backup "$@"
+}
+
 main() {
+  drop_update_privileges "$@"
   parse_args "$@" || return 0
   need_cmd curl
   need_cmd tar
@@ -6385,39 +6800,50 @@ main() {
   curl_headers
 
   TMPD="$(mktemp -d)"
-  local tag="$TAG_OVERRIDE" source_label="" source_revision=""
+  local tag="$TAG_OVERRIDE" source_label="" source_revision="" stable_predecessor=""
+  local testing_branch_head=""
   if [[ -n "$TESTING_COMMIT" ]]; then
+    testing_branch_head="$(resolve_remote_testing_branch_head "$TESTING_BRANCH")" \
+      || die "Could not resolve remote Awtarchy branch: ${TESTING_BRANCH}"
+    testing_commit_belongs_to_branch "$TESTING_COMMIT" "$testing_branch_head" \
+      || die "Commit ${TESTING_COMMIT} does not belong to selected branch ${TESTING_BRANCH}."
     source_revision="$TESTING_COMMIT"
-    source_label="quickshell-conversion-testing@${TESTING_COMMIT}"
+    source_label="${TESTING_BRANCH}@${TESTING_COMMIT}"
+    stable_predecessor="$(stable_release_before_git_test)"
   else
     [[ -n "$tag" ]] || tag="$(fetch_latest_release_tag)"
     source_label="$tag"
   fi
   log "Target user: ${TARGET_USER}"
   if [[ -n "$source_revision" ]]; then
-    log "Testing commit: ${source_revision}"
+    log "Git testing branch: ${TESTING_BRANCH}"
+    log "Resolved branch head: ${testing_branch_head}"
+    log "Git testing commit: ${source_revision}"
+    log "Stable predecessor: ${stable_predecessor}"
   else
     log "Release tag: ${tag}"
   fi
 
-  local tgz="${TMPD}/awtarchy.tgz" top repo_dir target_home plan_file active_theme=""
+  local tgz="${TMPD}/awtarchy.tgz" top archive_revision expected_top repo_dir target_home plan_file active_theme=""
   log "Downloading source archive for ${source_label} (stalled transfers abort after 30 seconds)..."
   if [[ -n "$source_revision" ]]; then
     download_testing_commit_tarball "$source_revision" "$tgz" \
       || die "Failed to download testing commit ${source_revision}"
+    archive_revision="$source_revision"
   else
     download_release_tarball "$tag" "$tgz" \
       || die "Failed to download release tarball for ${tag}"
+    archive_revision="$RESOLVED_RELEASE_COMMIT"
   fi
-  top="$(tar_topdir "$tgz")" || die "Could not read the source archive for ${source_label}"
-  if [[ -n "$source_revision" && "$top" != "${REPO_NAME}-${source_revision}" ]]; then
-    die "Testing archive does not match the requested commit ${source_revision}"
-  fi
+  expected_top="${REPO_NAME}-${archive_revision}"
+  top="$(validate_source_archive "$tgz" "$expected_top")" \
+    || die "Source archive does not match immutable revision ${archive_revision}"
   tar -xzf "$tgz" -C "$TMPD"
   repo_dir="${TMPD}/${top}"
   [[ -d "$repo_dir" ]] || die "Extracted repo directory is missing"
 
   target_home="${TMPD}/target-home"
+  TARGET_STAGE_HOME="$target_home"
   build_target_home "$repo_dir" "$target_home"
 
   active_theme="$(infer_active_theme "$repo_dir" || true)"
@@ -6483,7 +6909,13 @@ main() {
   commit_baseline "$target_home" "$source_label" "$active_theme"
   write_hardware_state
   [[ -n "$active_theme" ]] && printf '%s\n' "$active_theme" >"$ACTIVE_THEME_FILE"
-  write_version_stamp "$source_label"
+  if [[ -n "$source_revision" ]]; then
+    write_version_stamp "$source_label"
+    write_git_testing_state "$TESTING_BRANCH" "$source_revision" "$stable_predecessor"
+  else
+    clear_git_testing_state
+    write_version_stamp "$source_label"
+  fi
   write_audit "$source_label" "$active_theme"
   [[ "${EUID}" -eq 0 ]] && chown -R "${TARGET_USER}:${TARGET_USER}" "$STATE_DIR" 2>/dev/null || true
   command -v hyprctl >/dev/null 2>&1 && run_target hyprctl reload >/dev/null 2>&1 || true
@@ -7054,15 +7486,10 @@ done
 }
 
 troubleshoot_main() {
-  local command_name="${AWTARCHY_TROUBLESHOOT_COMMAND:-awtarchy}"
+  local command_name="awtarchy"
   local target_user="" target_home="" state_root="" log_dir="" report="" timestamp=""
   local hypr_file="" baseline_hypr="" binds_json="" clients_json="" path="" pkg="" unit="" f=""
   local -a recent_logs=()
-
-  case "$command_name" in
-    awtarchy|awtarchy-quickshell) ;;
-    *) command_name="awtarchy" ;;
-  esac
 
   if [[ "${EUID}" -eq 0 && -n "${SUDO_USER:-}" && "${SUDO_USER}" != root ]]; then
     target_user="$SUDO_USER"
@@ -7078,11 +7505,7 @@ troubleshoot_main() {
     || die "Could not determine the user home directory for troubleshooting."
 
   state_root="${target_home}/.local/state"
-  if [[ "$command_name" == "awtarchy-quickshell" ]]; then
-    log_dir="${state_root}/awtarchy-quickshell/logs"
-  else
-    log_dir="${state_root}/awtarchy/logs"
-  fi
+  log_dir="${state_root}/awtarchy/logs"
   timestamp="$(date +%Y%m%d-%H%M%S)"
   umask 077
   mkdir -p -- "$log_dir"
@@ -7152,15 +7575,13 @@ troubleshoot_main() {
     diag_timeout lspci -nn 2>&1 | grep -Ei 'VGA compatible controller|3D controller|Display controller|2D controller' || true
 
     diag_section "COMMANDS AND LOCAL VERSION STATE"
-    for f in awtarchy awtarchy-quickshell; do
-      path="$(command -v "$f" 2>/dev/null || true)"
-      printf '%s=%s\n' "$f" "${path:-MISSING}"
-      [[ -n "$path" ]] && diag_hash "$path"
-    done
+    path="$(command -v awtarchy 2>/dev/null || true)"
+    printf 'awtarchy=%s\n' "${path:-MISSING}"
+    [[ -n "$path" ]] && diag_hash "$path"
     for f in \
       "${state_root}/awtarchy/command-version" \
-      "${state_root}/awtarchy-quickshell/command-version" \
       "${state_root}/awtarchy/config-version" \
+      "${state_root}/awtarchy/git-testing" \
       "${state_root}/awtarchy/hardware-state" \
       "${state_root}/awtarchy/active-theme"
     do
@@ -7169,7 +7590,6 @@ troubleshoot_main() {
     done
     printf '\n--- installed runtimes ---\n'
     diag_hash "${target_home}/.local/share/awtarchy/awtarchy-runtime.sh"
-    diag_hash "${target_home}/.local/share/awtarchy-quickshell/awtarchy-runtime.sh"
     printf '\n--- managed package ledger ---\n'
     if [[ -r /var/lib/awtarchy/managed-packages ]]; then
       cat /var/lib/awtarchy/managed-packages
@@ -7382,7 +7802,6 @@ troubleshoot_main() {
     mapfile -t recent_logs < <(
       find \
         "${state_root}/awtarchy/logs" \
-        "${state_root}/awtarchy-quickshell/logs" \
         -maxdepth 1 -type f -name 'update-*.log' -printf '%T@ %p\n' 2>/dev/null \
         | sort -nr | head -n 5 | cut -d' ' -f2-
     )

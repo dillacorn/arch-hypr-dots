@@ -66,18 +66,108 @@ existing_output="$(
 )"
 assert_executable "$existing_bin/awtarchy"
 assert_contains "$existing_bin/awtarchy" '# Awtarchy user-local command shim'
+assert_contains "$existing_bin/awtarchy" '/usr/bin/getent'
+assert_contains "$existing_bin/awtarchy" '/usr/bin/runuser'
 grep -Fq 'Awtarchy is already installed' <<<"$existing_output" \
   || fail 'installer did not retain existing-install detection'
 
-shim_output="$(
-  env -i \
-    HOME="$existing_home" \
-    USER="$(id -un)" \
-    PATH="$existing_bin:/usr/bin:/bin" \
-      awtarchy version
-)"
+# The root-owned shim must drop privileges before it opens a user-writable
+# launcher. Use a rewritten test fixture so this boundary is exercised without
+# requiring a real sudo-capable account on the test host.
+shim_fixture="${TMP}/awtarchy-root-shim"
+shim_fakebin="${TMP}/shim-fakebin"
+shim_user_home="${TMP}/shim-user-home"
+shim_runuser_log="${TMP}/shim-runuser.log"
+shim_root_marker="${TMP}/shim-user-launcher-ran-as-root"
+mkdir -p "$shim_fakebin" "$shim_user_home/.local/bin"
+# shellcheck disable=SC2016
+sed \
+  -e "s|/usr/bin/getent|${shim_fakebin}/getent|g" \
+  -e "s|/usr/bin/runuser|${shim_fakebin}/runuser|g" \
+  -e 's/${EUID} -eq 0/${AWTARCHY_TEST_EUID:-${EUID}} -eq 0/g' \
+  "$existing_bin/awtarchy" >"$shim_fixture"
+chmod 0755 "$shim_fixture"
+cat >"$shim_fakebin/getent" <<EOF_GETENT
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ \${1:-} == passwd && \${2:-} == awtarchytest ]]; then
+  printf '%s:x:1000:1000:Awtarchy test:%s:/bin/bash\n' awtarchytest '$shim_user_home'
+  exit 0
+fi
+exit 2
+EOF_GETENT
+cat >"$shim_fakebin/runuser" <<'EOF_RUNUSER'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$@" >"${AWTARCHY_TEST_RUNUSER_LOG:?}"
+EOF_RUNUSER
+cat >"$shim_user_home/.local/bin/awtarchy" <<EOF_UNTRUSTED
+#!/usr/bin/env bash
+printf '%s\n' root >'$shim_root_marker'
+EOF_UNTRUSTED
+chmod 0755 \
+  "$shim_fakebin/getent" \
+  "$shim_fakebin/runuser" \
+  "$shim_user_home/.local/bin/awtarchy"
+env \
+  HOME="$shim_user_home" \
+  USER=root \
+  SUDO_USER=awtarchytest \
+  AWTARCHY_TEST_EUID=0 \
+  AWTARCHY_TEST_RUNUSER_LOG="$shim_runuser_log" \
+  "$shim_fixture" version
+[[ ! -e $shim_root_marker ]] \
+  || fail 'root-owned system shim executed the user-writable launcher before dropping privileges'
+grep -Fxq -- '-u' "$shim_runuser_log" \
+  || fail 'root-owned system shim did not invoke runuser'
+grep -Fxq -- 'awtarchytest' "$shim_runuser_log" \
+  || fail 'root-owned system shim did not select the validated SUDO_USER'
+grep -Fxq -- "$shim_user_home/.local/bin/awtarchy" "$shim_runuser_log" \
+  || fail 'root-owned system shim did not pass the validated user launcher to runuser'
+grep -Fxq -- 'version' "$shim_runuser_log" \
+  || fail 'root-owned system shim did not preserve launcher arguments'
+
+if [[ ${EUID} -eq 0 ]]; then
+  set +e
+  shim_output="$(
+    env -i \
+      HOME="$existing_home" \
+      USER=root \
+      PATH="$existing_bin:/usr/bin:/bin" \
+        awtarchy version 2>&1
+  )"
+  shim_rc=$?
+  set -e
+  (( shim_rc != 0 )) \
+    || fail 'system shim accepted a root invocation without a non-root SUDO_USER'
+  grep -Fq 'Refusing to run a user-local Awtarchy command as root' <<<"$shim_output" \
+    || fail 'root-only system shim failure did not explain the privilege boundary'
+
+  nonroot_shim="${TMP}/awtarchy-nonroot-shim"
+  # shellcheck disable=SC2016
+  sed \
+    -e 's/${EUID} -eq 0/${AWTARCHY_TEST_EUID:-${EUID}} -eq 0/g' \
+    "$existing_bin/awtarchy" >"$nonroot_shim"
+  chmod 0755 "$nonroot_shim"
+  shim_output="$(
+    env -i \
+      HOME="$existing_home" \
+      USER="$(id -un)" \
+      PATH="$existing_bin:/usr/bin:/bin" \
+      AWTARCHY_TEST_EUID=1000 \
+        "$nonroot_shim" version
+  )"
+else
+  shim_output="$(
+    env -i \
+      HOME="$existing_home" \
+      USER="$(id -un)" \
+      PATH="$existing_bin:/usr/bin:/bin" \
+        awtarchy version
+  )"
+fi
 grep -Fq 'Awtarchy local launcher reached: version' <<<"$shim_output" \
-  || fail 'system shim did not dispatch to the user-local command'
+  || fail 'system shim did not dispatch a non-root call to the user-local command'
 
 shim_hash_before="$(sha256sum "$existing_bin/awtarchy" | awk '{print $1}')"
 HOME="$existing_home" \

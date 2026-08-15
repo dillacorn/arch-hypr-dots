@@ -24,7 +24,7 @@ pronounced: **aw-tar-chee**
 
 awtarchy targets users who prefer TTY login, direct shell interaction, and manual control over their system. It assumes comfort with the command line and basic Arch Linux maintenance.
 
-Awtarchy-authored code and configuration is licensed under MIT unless otherwise noted. Third-party material retains its respective copyright and license. See `THIRD_PARTY_NOTICES.md` for redistributed or adapted third-party material that warrants attribution.
+Awtarchy-authored code and configuration is licensed under MIT unless otherwise noted. Third-party material retains its respective copyright and license. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for redistributed or adapted third-party material that warrants attribution.
 
 ---
 
@@ -82,7 +82,7 @@ awtarchy clean-backups   Review and clean Awtarchy backup files
 awtarchy help            Show the full command list
 ```
 
-`awtarchy update`, `reset`, and `review` remain release-based. The launcher/runtime can refresh from `main` independently so updater fixes do not require a config release.
+`awtarchy update`, `reset`, and `review` remain release-based; `--tag` accepts only an exact published release tag. The launcher/runtime can refresh from `main` independently so updater fixes do not require a config release.
 
 `awtarchy git` is an explicit unreleased-testing mode. It shows the selected remote branch and exact commit and keeps git-testing state separate from stable release state.
 
