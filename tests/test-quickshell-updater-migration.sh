@@ -411,6 +411,14 @@ state="${AWTARCHY_TEST_QS_STATE:?}"
 if [[ -e /proc/$$/fd/9 ]]; then
   : >"${AWTARCHY_TEST_QS_FD_LEAK_FILE:?}"
 fi
+if [[ $* == *' list --json'* ]]; then
+  if [[ -f $state ]]; then
+    printf '[{"pid":%d}]\n' "$$"
+  else
+    printf '[]\n'
+  fi
+  exit 0
+fi
 if [[ $* == *'ipc call control ping'* ]]; then
   [[ -f $state ]] || exit 1
   printf '%s\n' ok
@@ -422,7 +430,7 @@ if [[ $* == *'ipc call control quit'* ]]; then
   fi
   exit 0
 fi
-if [[ $* == *' kill' ]]; then
+if [[ ${1:-} == kill || $* == *' kill '* || $* == *' kill' ]]; then
   printf '%s\n' "$*" >>"${AWTARCHY_TEST_QS_KILL_LOG:?}"
   rm -f -- "$state"
   exit 0
@@ -843,8 +851,8 @@ grep -Fxq -- "-c ${home}/.config/hypr/hypridle.conf" "${TMP}/hypridle.args" \
   || fail "Hypridle restart did not restore the idle-hidden bar state"
 grep -Fq 'Restarting Hypridle to load updated idle callbacks...' "${TMP}/update.out" \
   || fail "updater did not report the Hypridle callback refresh"
-grep -Fxq -- '-c awtarchy kill' "${TMP}/qs-kill.log" \
-  || fail "Quickshell manager did not force a stalled instance to stop"
+grep -Eq '^kill --pid [0-9]+$' "${TMP}/qs-kill.log" \
+  || fail "Quickshell manager did not request shutdown for the exact running PID"
 grep -Fxq "tag=quickshell-conversion-testing@${TEST_COMMIT}" \
   "$home/.local/state/awtarchy/config-version" \
   || fail "config version did not record the exact testing commit"
