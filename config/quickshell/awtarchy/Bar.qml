@@ -519,8 +519,6 @@ PanelWindow {
     Item {
         id: horizontalLayout
         anchors.fill: parent
-        anchors.leftMargin: 6
-        anchors.rightMargin: 6
         visible: !bar.vertical
 
         readonly property real titleMargin: 8
