@@ -246,6 +246,20 @@ machine_brightness_percent() {
   brightness_quiet set "$target"
 }
 
+machine_scheduler_authorize_stdin() {
+  if (( EUID != 0 )) && [[ -t 0 ]]; then
+    printf 'sched-ext authorization must be submitted from Quick Settings\n' >&2
+    return 4
+  fi
+
+  if ! ensure_scxctl_nopasswd_rule stdin 1; then
+    printf '%s\n' "${MSG:-sched-ext authorization failed}" >&2
+    return 1
+  fi
+
+  printf '%s\n' "${MSG:-sched-ext authorization complete}"
+}
+
 machine_scheduler_start() {
   local scheduler="$1"
   valid_scheduler "$scheduler" || return 2
@@ -352,6 +366,9 @@ case "${1:-}" in
   --status-json)
     shift
     machine_status "${1:-}" "${2:-}"
+    ;;
+  --authorize-scheduler-stdin)
+    machine_scheduler_authorize_stdin
     ;;
   --action)
     shift

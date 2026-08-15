@@ -22,6 +22,10 @@ Singleton {
     property bool schedulerEditorOpen: false
     property string schedulerArgsDraft: ""
     property bool schedulerArgsDirty: false
+    property bool schedulerAuthOpen: false
+    property bool schedulerAuthBusy: false
+    property string schedulerAuthError: ""
+    property string schedulerAuthPendingPassword: ""
     property int brightnessHoverPercent: -1
     property int outputVolumeHoverPercent: -1
     property bool settingsOpen: false
@@ -306,6 +310,43 @@ Singleton {
         close();
     }
 
+    function openSchedulerAuthorization() {
+        if (schedulerAuthBusy)
+            return;
+        schedulerAuthOpen = true;
+        schedulerAuthError = "";
+        actionError = "";
+        actionMessage = "sched-ext authorization required";
+        Qt.callLater(() => schedulerPasswordInput.forceActiveFocus());
+    }
+
+    function cancelSchedulerAuthorization() {
+        if (schedulerAuthBusy)
+            return;
+        schedulerAuthOpen = false;
+        schedulerAuthError = "";
+        schedulerAuthPendingPassword = "";
+        schedulerPasswordInput.text = "";
+    }
+
+    function submitSchedulerAuthorization() {
+        if (schedulerAuthBusy)
+            return;
+        if (schedulerPasswordInput.text.length === 0) {
+            schedulerAuthError = "Enter your sudo password";
+            schedulerPasswordInput.forceActiveFocus();
+            return;
+        }
+
+        schedulerAuthPendingPassword = schedulerPasswordInput.text;
+        schedulerPasswordInput.text = "";
+        schedulerAuthError = "";
+        actionError = "";
+        schedulerAuthBusy = true;
+        actionMessage = "Authorizing sched-ext…";
+        schedulerAuthRunner.exec([backend, "--authorize-scheduler-stdin"]);
+    }
+
     function openThemeMenu() {
         ThemePicker.openForScreen(activeScreen);
     }
@@ -489,6 +530,10 @@ Singleton {
         settingsPanel.resetCopySelection();
         settingsMessage = "";
         schedulerEditorOpen = false;
+        if (!schedulerAuthBusy)
+            cancelSchedulerAuthorization();
+        else
+            schedulerPasswordInput.text = "";
         brightnessHoverPercent = -1;
     }
 
@@ -577,6 +622,42 @@ Singleton {
                 root.actionMessage = "Updated";
             root.refreshStatus();
             Qt.callLater(() => root.runNextAction());
+        }
+    }
+
+    Process {
+        id: schedulerAuthRunner
+        stdinEnabled: true
+        stderr: StdioCollector {
+            onStreamFinished: {
+                const errorText = text.trim();
+                if (errorText.length > 0)
+                    root.schedulerAuthError = errorText.split("\n")[0];
+            }
+        }
+        onStarted: {
+            // sudo may request up to three attempts. Extra blank responses make
+            // a wrong password fail promptly instead of leaving a hidden process
+            // blocked waiting for another line of input.
+            schedulerAuthRunner.write(root.schedulerAuthPendingPassword + "\n\n\n");
+            root.schedulerAuthPendingPassword = "";
+        }
+        onExited: (exitCode, exitStatus) => {
+            root.schedulerAuthPendingPassword = "";
+            root.schedulerAuthBusy = false;
+            if (exitCode === 0) {
+                root.schedulerAuthOpen = false;
+                root.schedulerAuthError = "";
+                root.actionMessage = "sched-ext authorization complete";
+                root.refreshStatus();
+                return;
+            }
+
+            if (root.schedulerAuthError.length === 0)
+                root.schedulerAuthError = "sched-ext authorization failed";
+            root.actionMessage = root.schedulerAuthError;
+            if (quickSettingsWindow.visible)
+                Qt.callLater(() => schedulerPasswordInput.forceActiveFocus());
         }
     }
 
@@ -1416,8 +1497,17 @@ Singleton {
                                         onClicked: root.schedulerEditorOpen = !root.schedulerEditorOpen
                                     }
                                     SettingsButton {
+                                        label: "Authorize"
+                                        visible: Boolean(root.schedulerStatus.available)
+                                            && !Boolean(root.schedulerStatus.authorized)
+                                        available: visible
+                                        textSize: root.scaledText(9)
+                                        onClicked: root.openSchedulerAuthorization()
+                                    }
+                                    SettingsButton {
                                         label: "Start / Switch"
                                         available: Boolean(root.schedulerStatus.available)
+                                            && Boolean(root.schedulerStatus.authorized)
                                             && root.selectedSchedulerName.length > 0
                                         textSize: root.scaledText(9)
                                         onClicked: root.queueAction([
@@ -1427,6 +1517,7 @@ Singleton {
                                     SettingsButton {
                                         label: "Stop"
                                         available: Boolean(root.schedulerStatus.enabled)
+                                            && Boolean(root.schedulerStatus.authorized)
                                         textSize: root.scaledText(9)
                                         onClicked: root.queueAction(["scheduler-stop"], "Stopping sched-ext…")
                                     }
@@ -1437,11 +1528,85 @@ Singleton {
                                     visible: !root.schedulerStatus.available || !root.schedulerStatus.authorized
                                     text: !root.schedulerStatus.available
                                         ? "scxctl is unavailable"
-                                        : "Starting sched-ext needs the existing one-time scxctl authorization"
+                                        : "Authorize once to let Quick Settings start, switch, and stop sched-ext"
                                     color: Theme.muted
                                     font.family: Theme.fontFamily
                                     font.pixelSize: root.scaledText(9)
                                     wrapMode: Text.Wrap
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    visible: root.schedulerAuthOpen
+                                        && Boolean(root.schedulerStatus.available)
+                                        && !Boolean(root.schedulerStatus.authorized)
+                                    spacing: 5
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: root.schedulerAuthError.length > 0
+                                            ? root.schedulerAuthError
+                                            : "Enter your sudo password to authorize the restricted scheduler helper"
+                                        color: root.schedulerAuthError.length > 0 ? Theme.urgent : Theme.muted
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: root.scaledText(9)
+                                        wrapMode: Text.Wrap
+                                    }
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
+
+                                        Text {
+                                            text: "Password"
+                                            color: Theme.foreground
+                                            font.family: Theme.fontFamily
+                                            font.pixelSize: root.scaledText(9)
+                                        }
+
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 30
+                                            color: Theme.active
+                                            border.width: 1
+                                            border.color: schedulerPasswordInput.activeFocus
+                                                ? Theme.focus : Theme.muted
+
+                                            TextInput {
+                                                id: schedulerPasswordInput
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 7
+                                                anchors.rightMargin: 7
+                                                enabled: !root.schedulerAuthBusy
+                                                echoMode: TextInput.Password
+                                                color: Theme.foreground
+                                                selectionColor: Theme.focus
+                                                selectedTextColor: Theme.foreground
+                                                font.family: Theme.fontFamily
+                                                font.pixelSize: root.scaledText(9)
+                                                verticalAlignment: TextInput.AlignVCenter
+                                                clip: true
+                                                selectByMouse: true
+                                                onAccepted: root.submitSchedulerAuthorization()
+                                                Keys.onEscapePressed: root.cancelSchedulerAuthorization()
+                                            }
+                                        }
+
+                                        SettingsButton {
+                                            label: root.schedulerAuthBusy ? "Authorizing…" : "Authorize"
+                                            available: !root.schedulerAuthBusy
+                                                && schedulerPasswordInput.text.length > 0
+                                            textSize: root.scaledText(9)
+                                            onClicked: root.submitSchedulerAuthorization()
+                                        }
+
+                                        SettingsButton {
+                                            label: "Cancel"
+                                            available: !root.schedulerAuthBusy
+                                            textSize: root.scaledText(9)
+                                            onClicked: root.cancelSchedulerAuthorization()
+                                        }
+                                    }
                                 }
 
                                 Flow {

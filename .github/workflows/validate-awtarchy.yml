@@ -30,6 +30,8 @@ jobs:
           bash -n config/hypr/scripts/ddc_brightness.sh
           bash -n config/hypr/scripts/dim_display.sh
           bash -n config/hypr/scripts/hypr-ddc-brightness.sh
+          bash -n config/hypr/scripts/hypr_quicksettings.sh
+          bash -n config/hypr/scripts/hypr_quicksettings_core.sh
           bash -n config/hypr/scripts/hypridle_action.sh
           bash -n config/hypr/scripts/hypridle_restart.sh
           bash -n config/hypr/scripts/hyprsunset_ctl.sh
@@ -67,6 +69,8 @@ jobs:
           bash -n tests/test-quickshell-capture-privacy.sh
           bash -n tests/test-quickshell-production-readiness.sh
           bash -n tests/test-quickshell-updater-migration.sh
+          bash -n tests/test-scxctl-auth-ui.sh
+          bash -n tests/test-scxctl-auth-stale-rule.sh
           bash -n tests/test-security-boundaries.sh
           bash -n tests/test-quickshell-theme-legacy-micro.sh
           bash -n tests/test-troubleshoot-command.sh
@@ -115,11 +119,15 @@ jobs:
             tests/test-playerctl-dependency.sh \
             tests/test-quickshell-capture-privacy.sh \
             tests/test-quickshell-updater-migration.sh \
+            tests/test-scxctl-auth-ui.sh \
+            tests/test-scxctl-auth-stale-rule.sh \
             tests/test-security-boundaries.sh \
             tests/test-quickshell-theme-legacy-micro.sh \
             tests/test-troubleshoot-command.sh \
             tests/test-usb-refresh-security.sh \
             tests/test-quickshell-resume-recovery.sh
+          shellcheck -e SC2034,SC2153 config/hypr/scripts/hypr_quicksettings.sh
+          shellcheck -e SC2015 config/hypr/scripts/hypr_quicksettings_core.sh
           shellcheck -e SC2015 config/hypr/scripts/quickshell_theme_apply.sh
           shellcheck -e SC2016 tests/test-awtarchy-command.sh
       - name: Quickshell desktop entry validation
@@ -151,6 +159,8 @@ jobs:
           bash tests/test-quickshell-production-readiness.sh
           python3 tests/test-config-noise-comparison.py
           bash tests/test-quickshell-updater-migration.sh
+          bash tests/test-scxctl-auth-ui.sh
+          bash tests/test-scxctl-auth-stale-rule.sh
           bash tests/test-security-boundaries.sh
           bash tests/test-quickshell-theme-legacy-micro.sh
           bash tests/test-troubleshoot-command.sh
