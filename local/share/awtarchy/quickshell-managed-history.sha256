@@ -505,5 +505,5 @@ c068c6a892f95ffe9ce4b6aa45d0fcd56365ff68772892734ce3ea7dd7811c2a	.config/quicksh
 c179b7868657b2d44258ecd0909be230b40169cbf41d830762ae6e0181341b0a	.config/hypr/scripts/quickshell.sh
 
 # 2026-08-15 Bluetooth power-choice persistence
-c01abd1ebec58b46338d3cb390902a61d3c2f4e77a74e2f95358d37aabb0303	.config/quickshell/awtarchy/BluetoothPowerState.qml
+c01abd1ebec58b46338d3cb390902a61d3c2f4e77a74e2f95358d37aabb0303a	.config/quickshell/awtarchy/BluetoothPowerState.qml
 ed7ae94d07b27aeb981b615f75ceb7c7a824faf131d193755b1ede0174b702c5	.config/quickshell/awtarchy/shell.qml
