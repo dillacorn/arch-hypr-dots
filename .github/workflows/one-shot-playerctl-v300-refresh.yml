@@ -1,0 +1,148 @@
+name: One-shot playerctl v3.0.0 refresh
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/one-shot-playerctl-v300-refresh.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-validate-refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Add regression test first
+        shell: bash
+        run: |
+          cat > tests/test-playerctl-dependency.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+
+          ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+          RUNTIME="${ROOT}/local/share/awtarchy/awtarchy-runtime.sh"
+
+          fail() {
+            printf 'FAIL: %s\n' "$*" >&2
+            exit 1
+          }
+
+          grep -Fq 'pacman_install_one playerctl || die "Failed to install required media-control dependency: playerctl"' "$RUNTIME" \
+            || fail 'fresh installs do not guarantee playerctl'
+
+          grep -Fq 'local -a required=(quickshell upower playerctl) missing=()' "$RUNTIME" \
+            || fail 'normal updates do not guarantee playerctl'
+
+          grep -Fq 'hyprland quickshell upower playerctl \' "$RUNTIME" \
+            || fail 'troubleshoot output does not report playerctl'
+
+          printf 'PASS: playerctl is required by install/update paths and visible to troubleshooting.\n'
+          EOF
+          chmod 0755 tests/test-playerctl-dependency.sh
+
+          if bash tests/test-playerctl-dependency.sh; then
+            echo 'Regression test unexpectedly passed before the fix.' >&2
+            exit 1
+          fi
+
+      - name: Patch playerctl dependency
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("local/share/awtarchy/awtarchy-runtime.sh")
+          text = path.read_text(encoding="utf-8")
+
+          replacements = [
+              (
+                  '  retry_command pacman -S --needed --noconfirm git ipcalc dos2unix reflector xcursor-comix || exit 1\n',
+                  '  retry_command pacman -S --needed --noconfirm git ipcalc dos2unix reflector xcursor-comix || exit 1\n'
+                  '  pacman_install_one playerctl || die "Failed to install required media-control dependency: playerctl"\n',
+              ),
+              (
+                  '  local -a required=(quickshell upower) missing=()\n',
+                  '  local -a required=(quickshell upower playerctl) missing=()\n',
+              ),
+              (
+                  '        hyprland quickshell upower \\\n',
+                  '        hyprland quickshell upower playerctl \\\n',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one match, found {count}: {old!r}")
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Validate dependency fix
+        shell: bash
+        run: |
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash tests/test-playerctl-dependency.sh
+          bash tests/test-quickshell-updater-migration.sh
+          git diff --check
+
+      - name: Commit fix to main
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/one-shot-playerctl-v300-refresh.yml
+          git add local/share/awtarchy/awtarchy-runtime.sh tests/test-playerctl-dependency.sh
+          git commit -m 'Require playerctl for media idle inhibition'
+          git push origin HEAD:main
+          printf 'NEW_SHA=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Refresh existing v3.0.0 release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag -f v3.0.0 "$NEW_SHA"
+          git push origin +refs/tags/v3.0.0
+
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          sha = os.environ["NEW_SHA"]
+          release_id = "370945153"
+          bullet = (
+              "- Fixed video playback idle inhibition by making `playerctl` a required "
+              "Awtarchy dependency for fresh installs and normal updates, restoring "
+              "MPRIS playback detection for browsers such as Firefox/YouTube."
+          )
+
+          release = json.loads(
+              subprocess.check_output(
+                  ["gh", "api", f"repos/{repo}/releases/{release_id}"],
+                  text=True,
+              )
+          )
+          body = release.get("body") or ""
+          if bullet not in body:
+              body = body.rstrip() + "\n" + bullet + "\n"
+
+          payload = json.dumps({"target_commitish": sha, "body": body})
+          subprocess.run(
+              ["gh", "api", "--method", "PATCH", f"repos/{repo}/releases/{release_id}", "--input", "-"],
+              input=payload,
+              text=True,
+              check=True,
+          )
+          PY
