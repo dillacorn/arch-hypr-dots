@@ -42,8 +42,12 @@ Singleton {
     function clampCurrentOutput() {
         const sink = Pipewire.defaultAudioSink;
         const maximum = limitPercent / 100;
-        if (sink && sink.audio && sink.audio.volume > maximum)
-            sink.audio.volume = maximum;
+        if (sink && sink.audio && sink.audio.volume > maximum) {
+            Quickshell.execDetached([
+                "wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@",
+                String(limitPercent) + "%"
+            ]);
+        }
     }
 
     function setLimit(value) {

@@ -23,6 +23,7 @@ Singleton {
     property string schedulerArgsDraft: ""
     property bool schedulerArgsDirty: false
     property int brightnessHoverPercent: -1
+    property int outputVolumeHoverPercent: -1
     property bool settingsOpen: false
     property int panelWidthOverride: -1
     property int panelHeightOverride: -1
@@ -128,6 +129,15 @@ Singleton {
 
     function clampHeight(value) {
         return Math.max(minimumPanelHeight, Math.min(maximumPanelHeight, Math.round(value)));
+    }
+
+    function outputLimitForPosition(x, width) {
+        if (width <= 0)
+            return AudioLimitState.limitPercent;
+        const ratio = Math.max(0, Math.min(1, x / width));
+        const raw = AudioLimitState.minimumPercent
+            + ratio * (AudioLimitState.maximumPercent - AudioLimitState.minimumPercent);
+        return AudioLimitState.normalized(raw);
     }
 
     function applyWindowSize(width, height) {
@@ -944,16 +954,59 @@ Singleton {
                                     }
 
                                     Rectangle {
+                                        id: outputVolumeTrack
                                         Layout.fillWidth: true
                                         Layout.preferredHeight: 24
                                         color: Theme.active
                                         border.width: 0
 
                                         Rectangle {
-                                            width: parent.width * AudioLimitState.limitPercent
-                                                / AudioLimitState.maximumPercent
+                                            width: parent.width
+                                                * (AudioLimitState.limitPercent - AudioLimitState.minimumPercent)
+                                                / (AudioLimitState.maximumPercent - AudioLimitState.minimumPercent)
                                             height: parent.height
                                             color: Theme.focus
+                                        }
+
+                                        Rectangle {
+                                            visible: root.outputVolumeHoverPercent >= 0
+                                            width: 46
+                                            height: 21
+                                            x: {
+                                                const ratio = (root.outputVolumeHoverPercent
+                                                    - AudioLimitState.minimumPercent)
+                                                    / (AudioLimitState.maximumPercent
+                                                        - AudioLimitState.minimumPercent);
+                                                return Math.max(0, Math.min(parent.width - width,
+                                                    parent.width * ratio - width / 2));
+                                            }
+                                            y: -25
+                                            color: Theme.background
+                                            border.width: 1
+                                            border.color: Theme.focus
+                                            z: 4
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: root.outputVolumeHoverPercent + "%"
+                                                color: Theme.foreground
+                                                font.family: Theme.fontFamily
+                                                font.pixelSize: root.scaledText(9)
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onPositionChanged: mouse => root.outputVolumeHoverPercent
+                                                = root.outputLimitForPosition(mouse.x, width)
+                                            onExited: root.outputVolumeHoverPercent = -1
+                                            onPressed: mouse => {
+                                                root.outputVolumeHoverPercent
+                                                    = root.outputLimitForPosition(mouse.x, width);
+                                                AudioLimitState.setLimit(root.outputVolumeHoverPercent);
+                                            }
                                         }
                                     }
 
@@ -975,7 +1028,7 @@ Singleton {
 
                                 Text {
                                     Layout.fillWidth: true
-                                    text: "Global limit for Wiremix and bar volume scrolling · range 10–200%"
+                                    text: "Global limit for Wiremix and bar volume scrolling · click bar to set · range 10–200%"
                                     color: Theme.muted
                                     font.family: Theme.fontFamily
                                     font.pixelSize: root.scaledText(8)

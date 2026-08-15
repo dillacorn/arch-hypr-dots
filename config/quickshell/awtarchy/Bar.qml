@@ -183,11 +183,15 @@ PanelWindow {
     }
 
     function adjustAudio(delta) {
-        const sink = Pipewire.defaultAudioSink;
-        if (!sink || !sink.audio)
+        if (delta === 0)
             return;
-        sink.audio.volume = Math.max(0, Math.min(
-            AudioLimitState.limitPercent / 100, sink.audio.volume + delta));
+        const stepPercent = Math.max(1, Math.round(Math.abs(delta) * 100));
+        const direction = delta > 0 ? "+" : "-";
+        Quickshell.execDetached([
+            "wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@",
+            String(stepPercent) + "%" + direction,
+            "--limit", String(AudioLimitState.limitPercent / 100)
+        ]);
     }
 
     function calendarText(date) {
