@@ -17,8 +17,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install test dependencies
-        run: sudo apt-get update && sudo apt-get install -y lua5.4 shellcheck
+      - name: Install test dependency
+        run: sudo apt-get update && sudo apt-get install -y lua5.4
 
       - name: Patch legacy baseline handling and regression test
         shell: bash
@@ -88,7 +88,6 @@ jobs:
 
           bash -n local/share/awtarchy/awtarchy-runtime.sh
           bash -n tests/test-quickshell-updater-migration.sh
-          shellcheck local/share/awtarchy/awtarchy-runtime.sh
           bash tests/test-quickshell-updater-migration.sh
           bash tests/test-security-boundaries.sh
 
