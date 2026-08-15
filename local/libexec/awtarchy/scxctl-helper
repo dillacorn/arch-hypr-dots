@@ -48,6 +48,10 @@ main() {
       ;;
   esac
 
+  if [[ ${1:-} == start || ${1:-} == switch ]] && (( $# == 5 )); then
+    exec "$SCXCTL" "$1" --sched "$3" "--args=$5"
+  fi
+
   exec "$SCXCTL" "$@"
 }
 
