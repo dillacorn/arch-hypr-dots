@@ -36,7 +36,7 @@ state_file="$XDG_STATE_HOME/awtarchy/bluetooth-state"
 grep -Fxq 'disabled' "$state_file"
 grep -Fxq 'unblock bluetooth' "$RFKILL_LOG"
 grep -Fxq 'power off' "$BLUETOOTHCTL_LOG"
-if grep -Fq 'block bluetooth' "$RFKILL_LOG"; then
+if grep -Fxq 'block bluetooth' "$RFKILL_LOG"; then
     printf '%s\n' 'Disabling Bluetooth still rfkill-blocks the controller and can hide the HCI device.' >&2
     exit 1
 fi
