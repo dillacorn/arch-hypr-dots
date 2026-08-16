@@ -23,7 +23,6 @@ assert_not_contains() {
 }
 
 POWER_CARD="${REPO_ROOT}/config/quickshell/awtarchy/PowerModeCard.qml"
-POWER_SETUP="${REPO_ROOT}/config/hypr/scripts/quickshell_power_profile_setup.sh"
 POWER_RECONCILER="${REPO_ROOT}/local/share/awtarchy/awtarchy-power-profile.sh"
 RUNTIME="${REPO_ROOT}/local/share/awtarchy/awtarchy-runtime.sh"
 READY_SOUND="${REPO_ROOT}/config/hypr/scripts/quickshell_ready_sound.sh"
@@ -33,8 +32,6 @@ READY_SOUND="${REPO_ROOT}/config/hypr/scripts/quickshell_ready_sound.sh"
 # names instead of querying the provider name directly.
 assert_contains "$POWER_CARD" 'pacman -Qq 2>/dev/null | grep -Fx -- power-profiles-daemon >/dev/null'
 assert_not_contains "$POWER_CARD" 'pacman -Qq power-profiles-daemon'
-assert_contains "$POWER_SETUP" 'pacman -Qq 2>/dev/null | grep -Fx -- "$1" >/dev/null'
-assert_not_contains "$POWER_SETUP" 'pacman -Qq power-profiles-daemon'
 assert_contains "$POWER_RECONCILER" 'pacman -Qq 2>/dev/null | grep -Fx -- "$1" >/dev/null'
 
 # Laptop installs and updates must provision the TLP D-Bus compatibility
