@@ -8,7 +8,7 @@ STATE_DIR="${STATE_HOME}/awtarchy"
 STATE_FILE="${STATE_DIR}/bluetooth-state"
 
 usage() {
-    printf 'usage: quickshell_bluetooth_state.sh set <enabled|disabled> | prepare | restore | status\n' >&2
+    printf 'usage: quickshell_bluetooth_state.sh set <enabled|disabled> | restore | status\n' >&2
     exit 2
 }
 
@@ -19,9 +19,45 @@ need_rfkill() {
     }
 }
 
+need_bluetoothctl() {
+    command -v bluetoothctl >/dev/null 2>&1 || {
+        printf 'quickshell_bluetooth_state.sh: bluetoothctl is required\n' >&2
+        return 127
+    }
+}
+
 unblock_controller() {
     need_rfkill
     rfkill unblock bluetooth
+}
+
+wait_for_controller() {
+    local _
+    for _ in {1..20}; do
+        compgen -G '/sys/class/bluetooth/hci*' >/dev/null && return 0
+        sleep 0.1
+    done
+    return 1
+}
+
+set_adapter_power() {
+    local state="$1"
+    need_bluetoothctl
+    wait_for_controller || return 0
+    case "$state" in
+        enabled) timeout 5 bluetoothctl power on >/dev/null ;;
+        disabled) timeout 5 bluetoothctl power off >/dev/null ;;
+        *) return 2 ;;
+    esac
+}
+
+apply_state() {
+    local state="$1"
+    # Never use rfkill to represent the normal disabled state. Some adapters
+    # disappear from /sys/class/bluetooth while software-blocked, which makes
+    # BlueZ and Quickshell incorrectly conclude that no Bluetooth hardware exists.
+    unblock_controller
+    set_adapter_power "$state"
 }
 
 save_state() {
@@ -51,16 +87,7 @@ case "$command_name" in
         [[ "$state" == "enabled" || "$state" == "disabled" ]] || usage
         [[ $# -eq 2 ]] || usage
         save_state "$state"
-        if [[ "$state" == "enabled" ]]; then
-            unblock_controller
-        fi
-        ;;
-    prepare)
-        [[ $# -eq 1 ]] || usage
-        # Always clear a stale software rfkill block before Quickshell starts.
-        # Some adapters disappear from /sys/class/bluetooth while blocked, which
-        # otherwise makes BlueZ and Quickshell treat the machine as Bluetooth-less.
-        unblock_controller
+        apply_state "$state"
         ;;
     restore)
         [[ $# -eq 1 ]] || usage
@@ -70,11 +97,7 @@ case "$command_name" in
             exit 0
         fi
         case "$state" in
-            enabled|disabled)
-                # Keep the HCI controller enumerated. The QML layer applies the
-                # remembered enabled/disabled state through the BlueZ adapter.
-                unblock_controller || true
-                ;;
+            enabled|disabled) apply_state "$state" || true ;;
             unset) ;;
         esac
         ;;
