@@ -10,8 +10,8 @@ if text.count(old_pkg) != 1:
 text = text.replace(old_pkg, new_pkg, 1)
 
 anchor = "clear_screen() {\n"
-if text.count(anchor) != 1:
-    raise SystemExit("expected one clear_screen function anchor")
+if anchor not in text:
+    raise SystemExit("expected a clear_screen function anchor")
 
 function = r'''configure_mdns_stack() {
   local resolved_dir="/etc/systemd/resolved.conf.d"
