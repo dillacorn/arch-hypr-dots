@@ -1,0 +1,75 @@
+name: Clean Hyprland plugin state sync formatting
+
+on:
+  push:
+    branches:
+      - hyprland-plugin-state-sync
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: hyprland-plugin-state-sync
+      - name: Clean formatting
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          helper = Path('local/libexec/awtarchy/scxctl-helper')
+          text = helper.read_text()
+          text = text.replace("| /usr/bin/awk '''\n", "| /usr/bin/awk '\n", 1)
+          text = text.replace("\n  '''\n}\n\nhyprbars_loaded()", "\n  '\n}\n\nhyprbars_loaded()", 1)
+          helper.write_text(text)
+
+          quick = Path('config/quickshell/awtarchy/QuickSettings.qml')
+          text = quick.read_text()
+          old = '''              TitleBarsCard {
+                  active: quickSettingsWindow.visible
+                  textScale: root.effectiveTextScale
+                  iconScale: root.effectiveIconScale
+              }
+          }
+
+          ListScrollBar {'''
+          new = '''                        TitleBarsCard {
+                            active: quickSettingsWindow.visible
+                            textScale: root.effectiveTextScale
+                            iconScale: root.effectiveIconScale
+                        }
+                    }
+
+                    ListScrollBar {'''
+          if text.count(old) != 1:
+              raise SystemExit(f'QuickSettings formatting target count: {text.count(old)}')
+          quick.write_text(text.replace(old, new, 1))
+          PY
+
+          manifest='local/share/awtarchy/quickshell-managed-history.sha256'
+          for rel in \
+            .config/quickshell/awtarchy/QuickSettings.qml
+          do
+            src="config/${rel#.config/}"
+            hash="$(sha256sum "$src" | awk '{print $1}')"
+            row="${hash}"$'\t'"${rel}"
+            grep -Fqx -- "$row" "$manifest" || printf '%s\n' "$row" >>"$manifest"
+          done
+
+          bash -n local/libexec/awtarchy/scxctl-helper
+          bash tests/test-hyprbars-quicksettings.sh
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            local/libexec/awtarchy/scxctl-helper \
+            config/quickshell/awtarchy/QuickSettings.qml \
+            local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'style: clean Hyprland plugin state sync'
+          git push origin HEAD:hyprland-plugin-state-sync
