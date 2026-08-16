@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# This test intentionally matches literal shell source containing $ variables.
+# shellcheck disable=SC2016
+
 set -euo pipefail
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
