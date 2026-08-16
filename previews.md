@@ -1,15 +1,15 @@
-![cava-catppuccin+notify_screengaurd.png](https://github.com/dillacorn/ahtarchy/raw/main/previews/cava-catppuccin+notify_screengaurd.png)
+![cava-catppuccin+notify_screengaurd.png](https://github.com/dillacorn/awtarchy/raw/main/previews/cava-catppuccin+notify_screengaurd.png)
 
-![espresso-iron_forge](https://github.com/dillacorn/ahtarchy/raw/main/previews/espresso-iron_forge.png)
+![espresso-iron_forge](https://github.com/dillacorn/awtarchy/raw/main/previews/espresso-iron_forge.png)
 
-![maccel-gruvbox](https://github.com/dillacorn/ahtarchy/raw/main/previews/maccel-gruvbox.png)
+![maccel-gruvbox](https://github.com/dillacorn/awtarchy/raw/main/previews/maccel-gruvbox.png)
 
-![pcmanfm-awtarchy-gruvbox](https://github.com/dillacorn/ahtarchy/raw/main/previews/pcmanfm-awtarchy-gruvbox.png)
+![pcmanfm-awtarchy-gruvbox](https://github.com/dillacorn/awtarchy/raw/main/previews/pcmanfm-awtarchy-gruvbox.png)
 
-![pipboy](https://github.com/dillacorn/ahtarchy/raw/main/previews/pipboy.png)
+![pipboy](https://github.com/dillacorn/awtarchy/raw/main/previews/pipboy.png)
 
-![screen_gaurd-catppuccin](https://github.com/dillacorn/ahtarchy/raw/main/previews/screen_gaurd-catppuccin.png)
+![screen_gaurd-catppuccin](https://github.com/dillacorn/awtarchy/raw/main/previews/screen_gaurd-catppuccin.png)
 
-![wiremix-waybar_bottom](https://github.com/dillacorn/ahtarchy/raw/main/previews/wiremix-waybar_bottom.png)
+![wiremix-waybar_bottom](https://github.com/dillacorn/awtarchy/raw/main/previews/wiremix-waybar_bottom.png)
 
-![wlogout](https://github.com/dillacorn/ahtarchy/raw/main/previews/wlogout.png)
+![wlogout](https://github.com/dillacorn/awtarchy/raw/main/previews/wlogout.png)
