@@ -112,10 +112,10 @@ Rectangle {
     Process {
         id: backendProbe
         command: [
-            "bash", "-lc",
-            "if pacman -Qq 2>/dev/null | grep -Fx -- tlp >/dev/null && pacman -Qq 2>/dev/null | grep -Fx -- power-profiles-daemon >/dev/null; then printf conflict; "
+            "/usr/bin/bash", "-c",
+            "if /usr/bin/pacman -Qq 2>/dev/null | /usr/bin/grep -Fx -- tlp >/dev/null && /usr/bin/pacman -Qq 2>/dev/null | /usr/bin/grep -Fx -- power-profiles-daemon >/dev/null; then printf conflict; "
                 + "elif /usr/bin/busctl --system get-property org.freedesktop.UPower.PowerProfiles /org/freedesktop/UPower/PowerProfiles org.freedesktop.UPower.PowerProfiles ActiveProfile >/dev/null 2>&1; then "
-                + "if pacman -Qq 2>/dev/null | grep -Fx -- tlp >/dev/null; then printf tlp-pd; else printf power-profiles-daemon; fi; fi"
+                + "if /usr/bin/pacman -Qq 2>/dev/null | /usr/bin/grep -Fx -- tlp >/dev/null; then printf tlp-pd; else printf power-profiles-daemon; fi; fi"
         ]
         running: true
         stdout: StdioCollector {
