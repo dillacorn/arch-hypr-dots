@@ -527,3 +527,6 @@ fa38264f7c01a5463d86f4e031269f501767c46b13113063013f313ae62c7349	.config/hypr/sc
 f403fe909968438d7fb382bc866302d6e8478644b6fddf9340772beb9661be05	.config/quickshell/awtarchy/PowerModeCard.qml
 ae114864b02b45d1bd63147c302fa036133543cbea349ff85e823b5fe58a2193	.config/hypr/scripts/quickshell_power_profile_setup.sh
 635dba16401c5b30a77765a7c88e29ff0b709773267429edddc7118c3f580584	.config/hypr/scripts/quickshell_ready_sound.sh
+
+# 2026-08-15 sched-ext Apply label managed hash.
+dd3eaf9426c23e3b12aaab76297d04ded0afcc39505d1cf2ce2f744a0d4720cf	.config/quickshell/awtarchy/QuickSettings.qml
