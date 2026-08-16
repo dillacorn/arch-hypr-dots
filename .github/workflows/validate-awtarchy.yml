@@ -16,138 +16,15 @@ jobs:
           ref: keyring-pam-cleanup
           fetch-depth: 0
 
-      - name: Apply exact Stage 2B production patch
+      - name: Correct Stage 2B production patch
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          hypr = Path("config/hypr/hyprland.lua")
-          text = hypr.read_text(encoding="utf-8")
-          manual_start = '    hl.exec_cmd("gnome-keyring-daemon --start --components=secrets")\n'
-          if manual_start in text:
-              text = text.replace(manual_start, "", 1)
-              hypr.write_text(text, encoding="utf-8")
-          elif "gnome-keyring-daemon --start" in text:
-              raise SystemExit("hyprland.lua contains an unexpected manual GNOME Keyring start")
+          path = Path("local/share/awtarchy/awtarchy-runtime.sh")
+          text = path.read_text(encoding="utf-8")
 
-          runtime_path = Path("local/share/awtarchy/awtarchy-runtime.sh")
-          runtime = runtime_path.read_text(encoding="utf-8")
-
-          cleanup = r'''cleanup_legacy_keyring_pam_stage() {
-            local repo_dir="${1:-${REPO_DIR:-}}"
-            local transformer="${repo_dir}/local/share/awtarchy/keyring-pam-cleanup.py"
-            local pam_dir="${AWTARCHY_PAM_DIR:-/etc/pam.d}"
-            local login_file="${pam_dir}/login"
-            local ly_file="${pam_dir}/ly"
-            local backup_file="${login_file}.awtarchy-backup"
-            local cleaned="" rc=0 mode="" owner="" group=""
-
-            if [[ -n "${AWTARCHY_PAM_DIR:-}" && "$pam_dir" != /tmp/* ]]; then
-              die "AWTARCHY_PAM_DIR test override must stay under /tmp."
-            fi
-            [[ -f "$login_file" && ! -L "$login_file" ]] || return 0
-            [[ -f "$ly_file" && ! -L "$ly_file" ]] || return 0
-            grep -Fq 'pam_gnome_keyring.so' "$ly_file" || return 0
-            [[ -f "$transformer" && ! -L "$transformer" ]] || {
-              warn "GNOME Keyring PAM cleanup helper is missing; leaving PAM unchanged."
-              return 0
-            }
-            have python3 || {
-              warn "python3 is unavailable; leaving legacy GNOME Keyring PAM state unchanged."
-              return 0
-            }
-
-            cleaned="$(mktemp)"
-            if python3 "$transformer" "$login_file" "$cleaned"; then
-              rc=0
-            else
-              rc=$?
-            fi
-            if (( rc == 3 )); then
-              rm -f -- "$cleaned"
-              return 0
-            fi
-            if (( rc != 0 )); then
-              rm -f -- "$cleaned"
-              warn "Could not validate legacy GNOME Keyring PAM state; leaving PAM unchanged."
-              return 0
-            fi
-
-            mode="$(stat -c '%a' -- "$login_file" 2>/dev/null || true)"
-            owner="$(stat -c '%u' -- "$login_file" 2>/dev/null || true)"
-            group="$(stat -c '%g' -- "$login_file" 2>/dev/null || true)"
-            if [[ ! "$mode" =~ ^[0-7]{3,4}$ || ! "$owner" =~ ^[0-9]+$ || ! "$group" =~ ^[0-9]+$ ]]; then
-              rm -f -- "$cleaned"
-              warn "Could not preserve /etc/pam.d/login metadata; leaving PAM unchanged."
-              return 0
-            fi
-
-            if [[ -n "${AWTARCHY_PAM_DIR:-}" || "${EUID}" -eq 0 ]]; then
-              if [[ -L "$login_file" ]]; then
-                rm -f -- "$cleaned"
-                warn "Refusing symbolic-link PAM login file: ${login_file}"
-                return 0
-              fi
-              if [[ ! -e "$backup_file" ]]; then
-                cp -a -- "$login_file" "$backup_file" || {
-                  rm -f -- "$cleaned"
-                  warn "Could not back up ${login_file}; leaving PAM unchanged."
-                  return 0
-                }
-              fi
-              install -m "$mode" -o "$owner" -g "$group" -- "$cleaned" "$login_file" || {
-                rm -f -- "$cleaned"
-                warn "Could not remove legacy GNOME Keyring PAM duplication."
-                return 0
-              }
-            else
-              have sudo || {
-                rm -f -- "$cleaned"
-                warn "sudo is unavailable; legacy GNOME Keyring PAM duplication was not removed."
-                return 0
-              }
-              if ! sudo -v; then
-                rm -f -- "$cleaned"
-                warn "sudo authentication failed; legacy GNOME Keyring PAM duplication was not removed."
-                return 0
-              fi
-              if sudo test -L "$login_file" || sudo test -L "$backup_file"; then
-                rm -f -- "$cleaned"
-                warn "Refusing symbolic-link GNOME Keyring PAM cleanup path."
-                return 0
-              fi
-              if ! sudo test -e "$backup_file"; then
-                if ! sudo cp -a -- "$login_file" "$backup_file"; then
-                  rm -f -- "$cleaned"
-                  warn "Could not back up ${login_file}; leaving PAM unchanged."
-                  return 0
-                fi
-              fi
-              if ! sudo install -m "$mode" -o "$owner" -g "$group" -- "$cleaned" "$login_file"; then
-                rm -f -- "$cleaned"
-                warn "Could not remove legacy GNOME Keyring PAM duplication."
-                return 0
-              fi
-            fi
-
-            rm -f -- "$cleaned"
-            log "Removed duplicate Awtarchy GNOME Keyring hooks from ${login_file}; Ly owns keyring PAM integration."
-          }
-
-          '''
-          cleanup = "\n".join(line[10:] if line.startswith("          ") else line for line in cleanup.splitlines()) + "\n"
-
-          function_marker = "enable_keyring_pam_stage() {\n"
-          if "cleanup_legacy_keyring_pam_stage() {" not in runtime:
-              if runtime.count(function_marker) != 1:
-                  raise SystemExit(f"expected one enable_keyring_pam_stage marker, found {runtime.count(function_marker)}")
-              runtime = runtime.replace(function_marker, cleanup + function_marker, 1)
-
-          old_enable_start = '''enable_keyring_pam_stage() {
-            (( ENABLE_KEYRING_PAM == 1 )) || { warn "Skipping GNOME Keyring PAM change."; return 0; }
-          '''
-          old_enable_start = "\n".join(line[10:] if line.startswith("          ") else line for line in old_enable_start.splitlines()) + "\n"
-          new_enable_start = '''enable_keyring_pam_stage() {
+          old_enable = '''enable_keyring_pam_stage() {
             if (( INSTALL_LY == 1 )); then
               cleanup_legacy_keyring_pam_stage "$REPO_DIR"
               log "Ly provides GNOME Keyring PAM integration; skipping duplicate /etc/pam.d/login hooks."
@@ -155,44 +32,68 @@ jobs:
             fi
             (( ENABLE_KEYRING_PAM == 1 )) || { warn "Skipping GNOME Keyring PAM change."; return 0; }
           '''
-          new_enable_start = "\n".join(line[10:] if line.startswith("          ") else line for line in new_enable_start.splitlines()) + "\n"
-          if old_enable_start in runtime:
-              runtime = runtime.replace(old_enable_start, new_enable_start, 1)
-          elif new_enable_start not in runtime:
-              raise SystemExit("could not locate enable_keyring_pam_stage start")
+          old_enable = "\n".join(line[10:] if line.startswith("          ") else line for line in old_enable.splitlines()) + "\n"
+          new_enable = '''enable_keyring_pam_stage() {
+            if (( INSTALL_LY == 1 )); then
+              log "Ly provides GNOME Keyring PAM integration; skipping duplicate /etc/pam.d/login hooks."
+              return 0
+            fi
+            (( ENABLE_KEYRING_PAM == 1 )) || { warn "Skipping GNOME Keyring PAM change."; return 0; }
+          '''
+          new_enable = "\n".join(line[10:] if line.startswith("          ") else line for line in new_enable.splitlines()) + "\n"
+          if old_enable in text:
+              text = text.replace(old_enable, new_enable, 1)
+          elif new_enable not in text:
+              raise SystemExit("could not normalize Ly keyring install branch")
 
-          update_anchor = '    repair_scxctl_update_helper "$repo_dir"\n'
-          anchor_pos = runtime.find(update_anchor)
-          if anchor_pos < 0:
-              raise SystemExit("could not locate update helper reconciliation")
-          prerequisite = "  ensure_quickshell_update_prerequisites\n"
-          prerequisite_pos = runtime.find(prerequisite, anchor_pos)
-          if prerequisite_pos < 0:
-              raise SystemExit("could not locate update prerequisite call after helper reconciliation")
-          update_cleanup = '''  if (( REVIEW_ONLY == 0 )); then
+          old_sequence = '''  install_micro_themes_stage
+            enable_keyring_pam_stage
+            install_ly_stage
+            copy_awtarchy_configs_stage
+          '''
+          old_sequence = "\n".join(line[10:] if line.startswith("          ") else line for line in old_sequence.splitlines()) + "\n"
+          new_sequence = '''  install_micro_themes_stage
+            enable_keyring_pam_stage
+            install_ly_stage
+            if (( INSTALL_LY == 1 )); then
+              cleanup_legacy_keyring_pam_stage "$REPO_DIR"
+            fi
+            copy_awtarchy_configs_stage
+          '''
+          new_sequence = "\n".join(line[10:] if line.startswith("          ") else line for line in new_sequence.splitlines()) + "\n"
+          if old_sequence in text:
+              text = text.replace(old_sequence, new_sequence, 1)
+          elif new_sequence not in text:
+              raise SystemExit("could not locate fresh-install stage sequence")
+
+          malformed = '''  if (( REVIEW_ONLY == 0 )); then
             cleanup_legacy_keyring_pam_stage "$repo_dir"
           fi
           '''
-          update_cleanup = "\n".join(line[10:] if line.startswith("          ") else line for line in update_cleanup.splitlines()) + "\n"
-          region = runtime[anchor_pos:prerequisite_pos]
-          if 'cleanup_legacy_keyring_pam_stage "$repo_dir"' not in region:
-              runtime = runtime[:prerequisite_pos] + update_cleanup + runtime[prerequisite_pos:]
+          malformed = "\n".join(line[10:] if line.startswith("          ") else line for line in malformed.splitlines()) + "\n"
+          correct = '  if (( REVIEW_ONLY == 0 )); then\n    cleanup_legacy_keyring_pam_stage "$repo_dir"\n  fi\n'
+          # The first branch patch lost indentation on the body/end lines.
+          bad = '  if (( REVIEW_ONLY == 0 )); then\n  cleanup_legacy_keyring_pam_stage "$repo_dir"\nfi\n'
+          if bad in text:
+              text = text.replace(bad, correct, 1)
+          elif correct not in text:
+              raise SystemExit("could not normalize update cleanup indentation")
 
-          runtime_path.write_text(runtime, encoding="utf-8")
+          path.write_text(text, encoding="utf-8")
           PY
 
           bash -n local/share/awtarchy/awtarchy-runtime.sh
           python3 tests/test-keyring-pam-cleanup.py
           git diff --check
 
-      - name: Commit production patch to test branch
+      - name: Commit corrected production patch
         run: |
           if git diff --quiet; then
-            echo 'Stage 2B production patch is already applied.'
+            echo 'Stage 2B production patch ordering is already correct.'
             exit 0
           fi
           git config user.name dillacorn
           git config user.email 28743863+dillacorn@users.noreply.github.com
-          git add config/hypr/hyprland.lua local/share/awtarchy/awtarchy-runtime.sh
-          git commit -m 'fix: clean duplicate GNOME Keyring startup'
+          git add local/share/awtarchy/awtarchy-runtime.sh
+          git commit -m 'fix: clean keyring PAM after Ly install'
           git push origin HEAD:keyring-pam-cleanup
