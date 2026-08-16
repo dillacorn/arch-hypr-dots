@@ -533,3 +533,6 @@ dd3eaf9426c23e3b12aaab76297d04ded0afcc39505d1cf2ce2f744a0d4720cf	.config/quicksh
 
 # 2026-08-16 Bluetooth power-state persistence fix.
 f6192e1b29a8e4d5156c001bdecdcfe19402a21eb309da93658d17f886e19b35	.config/hypr/scripts/quickshell_bluetooth_state.sh
+
+# 2026-08-16 Power Mode, title-bar, and network runtime fixes.
+708658656ab4672d010f49b54de099200d1ab6b42bebb822ec2e01d80fa81df3	.config/hypr/scripts/hyprbars_toggle.sh
