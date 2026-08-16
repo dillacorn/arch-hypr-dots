@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Persist only Bluetooth choices made through Awtarchy's Bluetooth UI.
+# Persist Bluetooth choices without rfkill-hiding adapters from Quickshell/BlueZ.
 
 set -euo pipefail
 
@@ -8,7 +8,7 @@ STATE_DIR="${STATE_HOME}/awtarchy"
 STATE_FILE="${STATE_DIR}/bluetooth-state"
 
 usage() {
-    printf 'usage: quickshell_bluetooth_state.sh set <enabled|disabled> | restore | status\n' >&2
+    printf 'usage: quickshell_bluetooth_state.sh set <enabled|disabled> | prepare | restore | status\n' >&2
     exit 2
 }
 
@@ -19,12 +19,9 @@ need_rfkill() {
     }
 }
 
-apply_state() {
-    case "$1" in
-        enabled) rfkill unblock bluetooth ;;
-        disabled) rfkill block bluetooth ;;
-        *) return 2 ;;
-    esac
+unblock_controller() {
+    need_rfkill
+    rfkill unblock bluetooth
 }
 
 save_state() {
@@ -36,35 +33,54 @@ save_state() {
     mv -f -- "$tmp" "$STATE_FILE"
 }
 
+read_state() {
+    local state="unset"
+    if [[ -r "$STATE_FILE" ]]; then
+        IFS= read -r state <"$STATE_FILE" || state="unset"
+    fi
+    case "$state" in
+        enabled|disabled|unset) printf '%s\n' "$state" ;;
+        *) return 1 ;;
+    esac
+}
+
 command_name="${1:-}"
 case "$command_name" in
     set)
         state="${2:-}"
         [[ "$state" == "enabled" || "$state" == "disabled" ]] || usage
         [[ $# -eq 2 ]] || usage
-        need_rfkill
         save_state "$state"
-        apply_state "$state"
+        if [[ "$state" == "enabled" ]]; then
+            unblock_controller
+        fi
+        ;;
+    prepare)
+        [[ $# -eq 1 ]] || usage
+        # Always clear a stale software rfkill block before Quickshell starts.
+        # Some adapters disappear from /sys/class/bluetooth while blocked, which
+        # otherwise makes BlueZ and Quickshell treat the machine as Bluetooth-less.
+        unblock_controller
         ;;
     restore)
         [[ $# -eq 1 ]] || usage
         [[ -r "$STATE_FILE" ]] || exit 0
-        IFS= read -r state <"$STATE_FILE" || state=""
+        if ! state="$(read_state)"; then
+            printf 'quickshell_bluetooth_state.sh: ignoring invalid saved state\n' >&2
+            exit 0
+        fi
         case "$state" in
-            enabled|disabled) ;;
-            *)
-                printf 'quickshell_bluetooth_state.sh: ignoring invalid saved state\n' >&2
-                exit 0
+            enabled|disabled)
+                # Keep the HCI controller enumerated. The QML layer applies the
+                # remembered enabled/disabled state through the BlueZ adapter.
+                unblock_controller || true
                 ;;
+            unset) ;;
         esac
-        need_rfkill || exit 0
-        apply_state "$state" || true
         ;;
     status)
         [[ $# -eq 1 ]] || usage
-        if [[ -r "$STATE_FILE" ]]; then
-            cat -- "$STATE_FILE"
-        else
+        if ! read_state; then
             printf 'unset\n'
         fi
         ;;
