@@ -4,77 +4,99 @@
 # Safer hyprbars toggle.
 # - Enabling can be applied immediately with hyprpm reload.
 # - Disabling is staged for next Hyprland restart to avoid hot-unloading hyprbars and crashing Hyprland.
+# - Routine status/toggle operations are unprivileged. hyprpm itself handles any
+#   authentication it needs during the one-time repository/header setup path.
 
 set -euo pipefail
 
 TERM_CLASS="hyprbars"
 TERM_TITLE="hyprbars"
-
-ALACRITTY="$(command -v alacritty || true)"
-HYPRPM_BIN="$(command -v hyprpm || true)"
-
-[[ -n "$ALACRITTY" ]] || { printf 'hyprbars-toggle: alacritty not found\n' >&2; exit 1; }
-[[ -n "$HYPRPM_BIN" ]] || { printf 'hyprbars-toggle: hyprpm not found\n' >&2; exit 1; }
-
-RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"
-LOCKFILE="${RUNTIME_DIR}/hyprbars-toggle.lockfile"
-
-if command -v flock >/dev/null 2>&1; then
-  exec 9>"$LOCKFILE"
-  flock -n 9 || exit 0
-fi
-
-TMP="${RUNTIME_DIR}/hyprbars-toggle.$$.$RANDOM.sh"
-
-cat >"$TMP" <<'BASH'
-#!/usr/bin/env bash
-set -euo pipefail
-
 PLUGIN="hyprbars"
 REPO_URL="https://github.com/hyprwm/hyprland-plugins"
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"
+LOCKFILE="${RUNTIME_DIR}/hyprbars-toggle.lockfile"
+SCRIPT_PATH="$(readlink -f -- "$0" 2>/dev/null || printf '%s' "$0")"
 
-HYPRPM_BIN="$(command -v hyprpm)"
+HYPRPM_BIN="$(command -v hyprpm || true)"
 HYPRCTL_BIN="$(command -v hyprctl || true)"
-SUDO_BIN="$(command -v sudo || true)"
 
-cleanup() {
-  [[ -n "${SUDO_KEEPALIVE_PID:-}" ]] && kill "${SUDO_KEEPALIVE_PID}" 2>/dev/null || true
-  rm -f "$0" 2>/dev/null || true
-}
-trap cleanup EXIT
-
-pause_exit() {
-  printf '\nPress ENTER to close...'
-  read -r _ || true
+require_hyprpm() {
+  [[ -n "$HYPRPM_BIN" ]] || {
+    printf 'hyprbars-toggle: hyprpm not found\n' >&2
+    return 127
+  }
 }
 
-if [[ -z "$SUDO_BIN" ]]; then
-  printf 'ERROR: sudo not found. hyprpm requires sudo.\n' >&2
-  pause_exit
-  exit 1
-fi
-
-"$SUDO_BIN" -v
-
-(
-  while true; do
-    "$SUDO_BIN" -n true 2>/dev/null || true
-    sleep 60
-  done
-) &
-SUDO_KEEPALIVE_PID="$!"
+acquire_lock() {
+  command -v flock >/dev/null 2>&1 || return 0
+  exec 9>"$LOCKFILE"
+  flock -n 9
+}
 
 have_hyprbars_in_hyprpm() {
-  "$HYPRPM_BIN" list 2>/dev/null | grep -qiE '(^|[^a-zA-Z0-9_])hyprbars([^a-zA-Z0-9_]|$)'
+  require_hyprpm
+  "$HYPRPM_BIN" list 2>/dev/null \
+    | grep -qiE '(^|[^a-zA-Z0-9_])hyprbars([^a-zA-Z0-9_]|$)'
 }
 
 repo_already_added() {
-  "$HYPRPM_BIN" list 2>/dev/null | grep -qiE '(Repository[[:space:]]+hyprland-plugins:|hyprwm/hyprland-plugins|https://github.com/hyprwm/hyprland-plugins)'
+  require_hyprpm
+  "$HYPRPM_BIN" list 2>/dev/null \
+    | grep -qiE '(Repository[[:space:]]+hyprland-plugins:|hyprwm/hyprland-plugins|https://github.com/hyprwm/hyprland-plugins)'
 }
 
 hyprbars_loaded() {
   [[ -n "$HYPRCTL_BIN" ]] || return 1
-  "$HYPRCTL_BIN" plugin list 2>/dev/null | grep -qiE '(^|[^a-zA-Z0-9_])hyprbars([^a-zA-Z0-9_]|$)'
+  "$HYPRCTL_BIN" plugin list 2>/dev/null \
+    | grep -qiE '(^|[^a-zA-Z0-9_])hyprbars([^a-zA-Z0-9_]|$)'
+}
+
+reload_hyprbars() {
+  require_hyprpm
+  "$HYPRPM_BIN" reload
+  if [[ -n "$HYPRCTL_BIN" ]]; then
+    "$HYPRCTL_BIN" reload >/dev/null 2>&1 || true
+  fi
+}
+
+machine_status() {
+  require_hyprpm || {
+    printf '%s\n' 'unavailable'
+    return 0
+  }
+
+  if hyprbars_loaded; then
+    printf '%s\n' 'enabled'
+  elif have_hyprbars_in_hyprpm; then
+    printf '%s\n' 'disabled'
+  else
+    printf '%s\n' 'unavailable'
+  fi
+}
+
+machine_toggle() {
+  require_hyprpm
+  acquire_lock || return 0
+
+  if hyprbars_loaded; then
+    "$HYPRPM_BIN" disable "$PLUGIN"
+    printf '%s\n' 'disabled-pending'
+    return 0
+  fi
+
+  if ! have_hyprbars_in_hyprpm; then
+    printf 'hyprbars-toggle: setup required; run the interactive toggle once\n' >&2
+    return 3
+  fi
+
+  "$HYPRPM_BIN" enable "$PLUGIN"
+  reload_hyprbars
+  printf '%s\n' 'enabled'
+}
+
+pause_exit() {
+  printf '\nPress ENTER to close...'
+  read -r _ || true
 }
 
 install_official_plugins_repo() {
@@ -93,6 +115,8 @@ install_official_plugins_repo() {
     *) printf 'Cancelled. No changes made.\n'; pause_exit; exit 0 ;;
   esac
 
+  # Do not pre-authenticate with sudo here. hyprpm requests elevation only when
+  # its header/update work actually needs it, instead of every title-bar toggle.
   "$HYPRPM_BIN" update
 
   if ! "$HYPRPM_BIN" add "$REPO_URL"; then
@@ -106,61 +130,83 @@ install_official_plugins_repo() {
   fi
 }
 
-printf '\nChecking hyprbars...\n\n'
+interactive_main() {
+  require_hyprpm || { pause_exit; exit 1; }
 
-if hyprbars_loaded; then
-  printf 'hyprbars is currently loaded.\n'
-  printf 'Not hot-unloading it. Hot-unloading hyprbars can crash Hyprland.\n\n'
-  printf 'This will run:\n'
-  printf '  hyprpm disable hyprbars\n\n'
-  printf 'It will take effect after you log out and back in.\n\n'
+  printf '\nChecking hyprbars...\n\n'
 
-  local_ans=""
-  read -r -p "Disable hyprbars for next session? [y/N] " local_ans
-  case "${local_ans,,}" in
-    y|yes) ;;
-    *) printf 'Cancelled. No changes made.\n'; pause_exit; exit 0 ;;
-  esac
+  if hyprbars_loaded; then
+    printf 'hyprbars is currently loaded.\n'
+    printf 'Not hot-unloading it. Hot-unloading hyprbars can crash Hyprland.\n\n'
+    printf 'This will run:\n'
+    printf '  hyprpm disable hyprbars\n\n'
+    printf 'It will take effect after you log out and back in.\n\n'
 
-  "$HYPRPM_BIN" disable "$PLUGIN"
+    local ans=""
+    read -r -p "Disable hyprbars for next session? [y/N] " ans
+    case "${ans,,}" in
+      y|yes) ;;
+      *) printf 'Cancelled. No changes made.\n'; pause_exit; exit 0 ;;
+    esac
 
-  printf '\nHyprbars disabled for next session.\n'
-  printf 'Log out and back in. Do not run hyprpm reload to hot-unload it.\n'
+    "$HYPRPM_BIN" disable "$PLUGIN"
 
+    printf '\nHyprbars disabled for next session.\n'
+    printf 'Log out and back in. Do not run hyprpm reload to hot-unload it.\n'
+    pause_exit
+    exit 0
+  fi
+
+  printf 'hyprbars is not currently loaded.\n'
+
+  if ! have_hyprbars_in_hyprpm; then
+    install_official_plugins_repo
+  fi
+
+  printf '\nhyprpm enable %s\n' "$PLUGIN"
+  "$HYPRPM_BIN" enable "$PLUGIN"
+
+  printf '\nhyprpm reload\n'
+  reload_hyprbars
+
+  if [[ -n "$HYPRCTL_BIN" ]]; then
+    printf '\nLoaded plugins:\n\n'
+    "$HYPRCTL_BIN" plugin list 2>/dev/null || true
+
+    printf '\nConfig errors:\n\n'
+    "$HYPRCTL_BIN" configerrors || true
+  fi
+
+  printf '\nHyprbars enabled.\n'
   pause_exit
-  exit 0
-fi
+}
 
-printf 'hyprbars is not currently loaded.\n'
-
-if ! have_hyprbars_in_hyprpm; then
-  install_official_plugins_repo
-fi
-
-printf '\nhyprpm enable %s\n' "$PLUGIN"
-"$HYPRPM_BIN" enable "$PLUGIN"
-
-printf '\nhyprpm reload\n'
-"$HYPRPM_BIN" reload
-
-if [[ -n "$HYPRCTL_BIN" ]]; then
-  printf '\nhyprctl reload\n'
-  "$HYPRCTL_BIN" reload || true
-
-  printf '\nLoaded plugins:\n\n'
-  "$HYPRCTL_BIN" plugin list 2>/dev/null || true
-
-  printf '\nConfig errors:\n\n'
-  "$HYPRCTL_BIN" configerrors || true
-fi
-
-printf '\nHyprbars enabled.\n'
-pause_exit
-BASH
-
-chmod +x "$TMP"
-
-exec "$ALACRITTY" \
-  --class "${TERM_CLASS},${TERM_CLASS}" \
-  -T "${TERM_TITLE}" \
-  -e bash --noprofile --norc "$TMP"
+case "${1:-}" in
+  --status)
+    [[ $# -eq 1 ]] || { printf 'hyprbars-toggle: --status takes no arguments\n' >&2; exit 2; }
+    machine_status
+    ;;
+  --toggle)
+    [[ $# -eq 1 ]] || { printf 'hyprbars-toggle: --toggle takes no arguments\n' >&2; exit 2; }
+    machine_toggle
+    ;;
+  --interactive)
+    [[ $# -eq 1 ]] || { printf 'hyprbars-toggle: --interactive takes no arguments\n' >&2; exit 2; }
+    interactive_main
+    ;;
+  "")
+    [[ $# -eq 0 ]] || exit 2
+    ALACRITTY="$(command -v alacritty || true)"
+    [[ -n "$ALACRITTY" ]] || { printf 'hyprbars-toggle: alacritty not found\n' >&2; exit 1; }
+    require_hyprpm
+    acquire_lock || exit 0
+    exec "$ALACRITTY" \
+      --class "${TERM_CLASS},${TERM_CLASS}" \
+      -T "$TERM_TITLE" \
+      -e bash --noprofile --norc "$SCRIPT_PATH" --interactive
+    ;;
+  *)
+    printf 'usage: hyprbars_toggle.sh [--status|--toggle]\n' >&2
+    exit 2
+    ;;
+esac
