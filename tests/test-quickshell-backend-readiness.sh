@@ -30,8 +30,10 @@ READY_SOUND="${REPO_ROOT}/config/hypr/scripts/quickshell_ready_sound.sh"
 # pacman can resolve a queried virtual provider such as power-profiles-daemon
 # to tlp-pd. Backend conflict detection must inspect literal installed package
 # names instead of querying the provider name directly.
-assert_contains "$POWER_CARD" 'pacman -Qq 2>/dev/null | grep -Fx -- power-profiles-daemon >/dev/null'
+assert_contains "$POWER_CARD" '/usr/bin/pacman -Qq 2>/dev/null | /usr/bin/grep -Fx -- power-profiles-daemon >/dev/null'
 assert_not_contains "$POWER_CARD" 'pacman -Qq power-profiles-daemon'
+assert_contains "$POWER_CARD" '"/usr/bin/bash", "-c"'
+assert_not_contains "$POWER_CARD" '"bash", "-lc"'
 assert_contains "$POWER_RECONCILER" 'pacman -Qq 2>/dev/null | grep -Fx -- "$1" >/dev/null'
 
 # Laptop installs and updates must provision the TLP D-Bus compatibility
