@@ -113,7 +113,7 @@ contains "${ROOT}/awtarchy-install.sh" 'SCXCTL_HELPER_SOURCE=' \
 contains "${ROOT}/local/share/awtarchy/awtarchy-runtime.sh" 'repair_scxctl_update_helper()' \
   'updater no longer repairs the trusted helper'
 
-contains "$HISTORY" $'708658656ab4672d010f49b54de099200d1ab6b42bebbec2e01d80fa81df3\t.config/hypr/scripts/hyprbars_toggle.sh' \
+contains "$HISTORY" $'708658656ab4672d010f49b54de099200d1ab6b42bebb822ec2e01d80fa81df3\t.config/hypr/scripts/hyprbars_toggle.sh' \
   'managed history is missing the pre-fix hyprbars script hash'
 
 # Keep current stock hashes in managed history so future updates can recognize
