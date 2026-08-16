@@ -7,6 +7,10 @@ have() {
   command -v "$1" >/dev/null 2>&1
 }
 
+package_installed() {
+  pacman -Qq 2>/dev/null | grep -Fx -- "$1" >/dev/null
+}
+
 is_laptop() {
   if [[ -d /sys/class/power_supply ]] \
     && find /sys/class/power_supply -maxdepth 1 \( -type l -o -type d \) \
@@ -50,8 +54,8 @@ have pacman || {
   exit 1
 }
 
-if pacman -Qq tlp >/dev/null 2>&1; then
-  if pacman -Qq power-profiles-daemon >/dev/null 2>&1; then
+if package_installed tlp; then
+  if package_installed power-profiles-daemon; then
     if ! confirm_replace_ppd; then
       printf '\nNo changes were made. Resolve the TLP/PPD conflict before using Power Mode.\n' >&2
       pause

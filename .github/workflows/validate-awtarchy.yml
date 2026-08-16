@@ -26,6 +26,7 @@ jobs:
           grep -Fq 'exec "${TARGET_HOME}/.local/bin/awtarchy" "$@"' local/bin/awtarchy
           bash -n local/libexec/awtarchy/scxctl-helper
           bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n local/share/awtarchy/awtarchy-power-profile.sh
           bash -n config/hypr/scripts/awtarchy-tips-tui.sh
           bash -n config/hypr/scripts/ddc_brightness.sh
           bash -n config/hypr/scripts/dim_display.sh
@@ -41,6 +42,7 @@ jobs:
           bash -n config/hypr/scripts/quickshell_bar_restore.sh
           bash -n config/hypr/scripts/quickshell_launcher_position.sh
           bash -n config/hypr/scripts/quickshell_power_profile_setup.sh
+          bash -n config/hypr/scripts/quickshell_ready_sound.sh
           bash -n config/hypr/scripts/quickshell_resume_recover.sh
           bash -n config/hypr/scripts/quickshell_runtime_rules.sh
           bash -n config/hypr/scripts/quickshell_sensitive_capture.sh
@@ -66,6 +68,7 @@ jobs:
           bash -n tests/test-desktop-candidate-validation.sh
           bash -n tests/test-lua-validation.sh
           bash -n tests/test-playerctl-dependency.sh
+          bash -n tests/test-quickshell-backend-readiness.sh
           bash -n tests/test-quickshell-capture-privacy.sh
           bash -n tests/test-quickshell-production-readiness.sh
           bash -n tests/test-quickshell-updater-migration.sh
@@ -118,6 +121,7 @@ jobs:
             tests/test-desktop-candidate-validation.sh \
             tests/test-lua-validation.sh \
             tests/test-playerctl-dependency.sh \
+            tests/test-quickshell-backend-readiness.sh \
             tests/test-quickshell-capture-privacy.sh \
             tests/test-quickshell-updater-migration.sh \
             tests/test-scxctl-auth-ui.sh \
@@ -157,6 +161,7 @@ jobs:
           bash tests/test-desktop-candidate-validation.sh
           bash tests/test-lua-validation.sh
           bash tests/test-playerctl-dependency.sh
+          bash tests/test-quickshell-backend-readiness.sh
           bash tests/test-quickshell-capture-privacy.sh
           bash tests/test-quickshell-production-readiness.sh
           python3 tests/test-config-noise-comparison.py

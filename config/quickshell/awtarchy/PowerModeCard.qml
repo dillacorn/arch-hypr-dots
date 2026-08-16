@@ -75,7 +75,7 @@ Rectangle {
         id: backendProbe
         command: [
             "bash", "-lc",
-            "if pacman -Qq tlp >/dev/null 2>&1 && pacman -Qq power-profiles-daemon >/dev/null 2>&1; then printf conflict; "
+            "if pacman -Qq 2>/dev/null | grep -Fx -- tlp >/dev/null && pacman -Qq 2>/dev/null | grep -Fx -- power-profiles-daemon >/dev/null; then printf conflict; "
                 + "elif command -v tlpctl >/dev/null 2>&1 && tlpctl get >/dev/null 2>&1; then printf tlpctl; "
                 + "elif command -v powerprofilesctl >/dev/null 2>&1 && powerprofilesctl get >/dev/null 2>&1; then printf powerprofilesctl; fi"
         ]

@@ -38,7 +38,7 @@ run_root() {
 }
 
 package_installed() {
-  pacman -Qq "$1" >/dev/null 2>&1
+  pacman -Qq 2>/dev/null | grep -Fx -- "$1" >/dev/null
 }
 
 managed_package() {

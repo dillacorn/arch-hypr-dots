@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 # Compatibility name retained for Hyprland autostart.
-# Wait for Awtarchy Quickshell, optional USB audio refresh, then play login sound.
+# Wait for Awtarchy Quickshell, recover an early NetworkManager startup race,
+# optionally wait for USB audio refresh, then play the login sound.
 
 set -euo pipefail
 
 WAIT_SHELL_SECS="${WAIT_SHELL_SECS:-30}"
 SHELL_POLL_SECS="${SHELL_POLL_SECS:-0.05}"
+NETWORK_WAIT_SECS="${NETWORK_WAIT_SECS:-15}"
 REFRESH_DETECT_WINDOW_SECS="${REFRESH_DETECT_WINDOW_SECS:-8}"
 WAIT_AUDIO_SECS="${WAIT_AUDIO_SECS:-20}"
 AUDIO_POLL_SECS="${AUDIO_POLL_SECS:-0.10}"
 QUIET_POLLS="${QUIET_POLLS:-2}"
 SOUND_FILE="${SOUND_FILE:-$HOME/.config/hypr/sounds/awtarchy-login.mp3}"
+QUICKSHELL_MANAGER="${QUICKSHELL_MANAGER:-$HOME/.config/hypr/scripts/quickshell.sh}"
 USB_REFRESH_LOCK_FILE="${USB_REFRESH_LOCK_FILE:-/run/awtarchy/usb-refresh/$(id -u).active}"
 SCRIPT_LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/quickshell_ready_sound.lock"
 
@@ -25,6 +28,25 @@ wait_for_shell() {
     end=$(( $(date +%s) + WAIT_SHELL_SECS ))
     while (( $(date +%s) < end )); do
         shell_ready && return 0
+        sleep "$SHELL_POLL_SECS"
+    done
+    return 1
+}
+
+network_manager_installed() {
+    have systemctl && systemctl cat --no-pager NetworkManager.service >/dev/null 2>&1
+}
+
+network_manager_active() {
+    have systemctl && systemctl is-active --quiet NetworkManager.service
+}
+
+wait_for_network_manager() {
+    local end
+    network_manager_installed || return 1
+    end=$(( $(date +%s) + NETWORK_WAIT_SECS ))
+    while (( $(date +%s) < end )); do
+        network_manager_active && return 0
         sleep "$SHELL_POLL_SECS"
     done
     return 1
@@ -97,6 +119,19 @@ if have flock; then
     flock -n 9 || exit 0
 fi
 
+network_backend_may_need_restart=0
+if network_manager_installed && ! network_manager_active; then
+    network_backend_may_need_restart=1
+fi
+
 wait_for_shell || exit 0
+
+if (( network_backend_may_need_restart == 1 )); then
+    if wait_for_network_manager && [[ -x "$QUICKSHELL_MANAGER" ]]; then
+        "$QUICKSHELL_MANAGER" restart >/dev/null 2>&1 || exit 0
+        wait_for_shell || exit 0
+    fi
+fi
+
 wait_for_optional_refresh_cycle || exit 0
 play_with_retry || exit 0
