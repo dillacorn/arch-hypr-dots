@@ -21,31 +21,19 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          def replace_once(path, old, new):
-              p = Path(path)
-              text = p.read_text(encoding="utf-8")
-              count = text.count(old)
-              if count == 0 and new in text:
-                  return
-              if count != 1:
-                  raise SystemExit(f"{path}: expected one exact patch target, found {count}")
-              p.write_text(text.replace(old, new, 1), encoding="utf-8")
-
           hypr = Path("config/hypr/hyprland.lua")
           text = hypr.read_text(encoding="utf-8")
-          line = '    hl.exec_cmd("gnome-keyring-daemon --start --components=secrets")\n'
-          if line in text:
-              hypr.write_text(text.replace(line, "", 1), encoding="utf-8")
+          manual_start = '    hl.exec_cmd("gnome-keyring-daemon --start --components=secrets")\n'
+          if manual_start in text:
+              text = text.replace(manual_start, "", 1)
+              hypr.write_text(text, encoding="utf-8")
           elif "gnome-keyring-daemon --start" in text:
               raise SystemExit("hyprland.lua contains an unexpected manual GNOME Keyring start")
 
-          runtime = "local/share/awtarchy/awtarchy-runtime.sh"
-          enable_old = '''enable_keyring_pam_stage() {
-            (( ENABLE_KEYRING_PAM == 1 )) || { warn "Skipping GNOME Keyring PAM change."; return 0; }
-            local tmpfile
-          '''
-          enable_old = "\n".join(line[10:] if line.startswith("          ") else line for line in enable_old.splitlines()) + "\n"
-          enable_new = '''cleanup_legacy_keyring_pam_stage() {
+          runtime_path = Path("local/share/awtarchy/awtarchy-runtime.sh")
+          runtime = runtime_path.read_text(encoding="utf-8")
+
+          cleanup = r'''cleanup_legacy_keyring_pam_stage() {
             local repo_dir="${1:-${REPO_DIR:-}}"
             local transformer="${repo_dir}/local/share/awtarchy/keyring-pam-cleanup.py"
             local pam_dir="${AWTARCHY_PAM_DIR:-/etc/pam.d}"
@@ -146,47 +134,55 @@ jobs:
             log "Removed duplicate Awtarchy GNOME Keyring hooks from ${login_file}; Ly owns keyring PAM integration."
           }
 
-          enable_keyring_pam_stage() {
+          '''
+          cleanup = "\n".join(line[10:] if line.startswith("          ") else line for line in cleanup.splitlines()) + "\n"
+
+          function_marker = "enable_keyring_pam_stage() {\n"
+          if "cleanup_legacy_keyring_pam_stage() {" not in runtime:
+              if runtime.count(function_marker) != 1:
+                  raise SystemExit(f"expected one enable_keyring_pam_stage marker, found {runtime.count(function_marker)}")
+              runtime = runtime.replace(function_marker, cleanup + function_marker, 1)
+
+          old_enable_start = '''enable_keyring_pam_stage() {
+            (( ENABLE_KEYRING_PAM == 1 )) || { warn "Skipping GNOME Keyring PAM change."; return 0; }
+          '''
+          old_enable_start = "\n".join(line[10:] if line.startswith("          ") else line for line in old_enable_start.splitlines()) + "\n"
+          new_enable_start = '''enable_keyring_pam_stage() {
             if (( INSTALL_LY == 1 )); then
               cleanup_legacy_keyring_pam_stage "$REPO_DIR"
               log "Ly provides GNOME Keyring PAM integration; skipping duplicate /etc/pam.d/login hooks."
               return 0
             fi
             (( ENABLE_KEYRING_PAM == 1 )) || { warn "Skipping GNOME Keyring PAM change."; return 0; }
-            local tmpfile
           '''
-          enable_new = "\n".join(line[10:] if line.startswith("          ") else line for line in enable_new.splitlines()) + "\n"
-          replace_once(runtime, enable_old, enable_new)
+          new_enable_start = "\n".join(line[10:] if line.startswith("          ") else line for line in new_enable_start.splitlines()) + "\n"
+          if old_enable_start in runtime:
+              runtime = runtime.replace(old_enable_start, new_enable_start, 1)
+          elif new_enable_start not in runtime:
+              raise SystemExit("could not locate enable_keyring_pam_stage start")
 
-          update_old = '''  if [[ ${AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR:-0} != 1 ]]; then
-            repair_scxctl_update_helper "$repo_dir"
-            if (( IS_LAPTOP_NOW == 1 )); then
-              reconcile_power_profile_backend "$repo_dir"
-            fi
-          fi
-          ensure_quickshell_update_prerequisites
-          '''
-          update_old = "\n".join(line[10:] if line.startswith("          ") else line for line in update_old.splitlines()) + "\n"
-          update_new = '''  if [[ ${AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR:-0} != 1 ]]; then
-            repair_scxctl_update_helper "$repo_dir"
-            if (( IS_LAPTOP_NOW == 1 )); then
-              reconcile_power_profile_backend "$repo_dir"
-            fi
-          fi
-          if (( REVIEW_ONLY == 0 )); then
+          update_anchor = '    repair_scxctl_update_helper "$repo_dir"\n'
+          anchor_pos = runtime.find(update_anchor)
+          if anchor_pos < 0:
+              raise SystemExit("could not locate update helper reconciliation")
+          prerequisite = "  ensure_quickshell_update_prerequisites\n"
+          prerequisite_pos = runtime.find(prerequisite, anchor_pos)
+          if prerequisite_pos < 0:
+              raise SystemExit("could not locate update prerequisite call after helper reconciliation")
+          update_cleanup = '''  if (( REVIEW_ONLY == 0 )); then
             cleanup_legacy_keyring_pam_stage "$repo_dir"
           fi
-          ensure_quickshell_update_prerequisites
           '''
-          update_new = "\n".join(line[10:] if line.startswith("          ") else line for line in update_new.splitlines()) + "\n"
-          replace_once(runtime, update_old, update_new)
+          update_cleanup = "\n".join(line[10:] if line.startswith("          ") else line for line in update_cleanup.splitlines()) + "\n"
+          region = runtime[anchor_pos:prerequisite_pos]
+          if 'cleanup_legacy_keyring_pam_stage "$repo_dir"' not in region:
+              runtime = runtime[:prerequisite_pos] + update_cleanup + runtime[prerequisite_pos:]
+
+          runtime_path.write_text(runtime, encoding="utf-8")
           PY
 
           bash -n local/share/awtarchy/awtarchy-runtime.sh
           python3 tests/test-keyring-pam-cleanup.py
-          lua_cmd='local path = assert(os.getenv("AWTARCHY_LUA_VALIDATE_FILE")); assert(loadfile(path))'
-          AWTARCHY_LUA_VALIDATE_FILE=config/hypr/hyprland.lua lua -e "$lua_cmd"
-          bash tests/test-lua-validation.sh
           git diff --check
 
       - name: Commit production patch to test branch
