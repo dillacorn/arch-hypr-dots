@@ -78,19 +78,21 @@ jobs:
           '''
           replace_once(old_install_sequence, new_install_sequence, "fresh install power reconciliation")
 
-          old_update_sequence = '''  if [[ ${AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR:-0} != 1 ]]; then
-                repair_scxctl_update_helper "$repo_dir"
-              fi
-              ensure_quickshell_update_prerequisites
-          '''
-          new_update_sequence = '''  if [[ ${AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR:-0} != 1 ]]; then
-                repair_scxctl_update_helper "$repo_dir"
-                if (( IS_LAPTOP_NOW == 1 )); then
-                  reconcile_power_profile_backend "$repo_dir"
-                fi
-              fi
-              ensure_quickshell_update_prerequisites
-          '''
+          old_update_sequence = (
+              '  if [[ ${AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR:-0} != 1 ]]; then\n'
+              '    repair_scxctl_update_helper "$repo_dir"\n'
+              '  fi\n'
+              '  ensure_quickshell_update_prerequisites\n'
+          )
+          new_update_sequence = (
+              '  if [[ ${AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR:-0} != 1 ]]; then\n'
+              '    repair_scxctl_update_helper "$repo_dir"\n'
+              '    if (( IS_LAPTOP_NOW == 1 )); then\n'
+              '      reconcile_power_profile_backend "$repo_dir"\n'
+              '    fi\n'
+              '  fi\n'
+              '  ensure_quickshell_update_prerequisites\n'
+          )
           replace_once(old_update_sequence, new_update_sequence, "updater power reconciliation")
 
           runtime_path.write_text(runtime, encoding="utf-8")
