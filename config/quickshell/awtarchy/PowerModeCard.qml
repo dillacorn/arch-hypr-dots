@@ -4,7 +4,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Services.UPower
 
-Rectangle {
+ColumnLayout {
     id: root
 
     property bool active: false
@@ -26,12 +26,8 @@ Rectangle {
         || backendCommand === "power-profiles-daemon"
     readonly property bool conflictDetected: backendCommand === "conflict"
 
-    visible: isLaptop
     Layout.fillWidth: true
-    Layout.preferredHeight: visible ? content.implicitHeight + 16 : 0
-    color: Theme.popupButton
-    border.width: 1
-    border.color: Theme.active
+    spacing: 8
 
     function scaledText(baseSize) {
         return Math.max(8, Math.round(baseSize * textScale / 100));
@@ -56,7 +52,7 @@ Rectangle {
     }
 
     function probeBackend() {
-        if (!backendProbe.running)
+        if (isLaptop && !backendProbe.running)
             backendProbe.running = true;
     }
 
@@ -105,7 +101,7 @@ Rectangle {
     }
 
     onActiveChanged: {
-        if (active)
+        if (active && isLaptop)
             probeBackend();
     }
 
@@ -117,7 +113,7 @@ Rectangle {
                 + "elif /usr/bin/busctl --system get-property org.freedesktop.UPower.PowerProfiles /org/freedesktop/UPower/PowerProfiles org.freedesktop.UPower.PowerProfiles ActiveProfile >/dev/null 2>&1; then "
                 + "if /usr/bin/pacman -Qq 2>/dev/null | /usr/bin/grep -Fx -- tlp >/dev/null; then printf tlp-pd; else printf power-profiles-daemon; fi; fi"
         ]
-        running: true
+        running: root.isLaptop
         stdout: StdioCollector {
             onStreamFinished: root.backendCommand = text.trim()
         }
@@ -162,170 +158,186 @@ Rectangle {
     Timer {
         interval: 30000
         repeat: true
-        running: root.active && !root.setupAuthBusy
+        running: root.active && root.isLaptop && !root.setupAuthBusy
         onTriggered: root.probeBackend()
     }
 
-    ColumnLayout {
-        id: content
-        anchors.fill: parent
-        anchors.margins: 8
-        spacing: 6
-
-        RowLayout {
-            Layout.fillWidth: true
-
-            Text {
-                Layout.fillWidth: true
-                text: root.backendReady
-                    ? "Power Mode · " + root.profileLabel(PowerProfiles.profile)
-                    : "Power Mode"
-                color: Theme.foreground
-                font.family: Theme.fontFamily
-                font.pixelSize: root.scaledText(12)
-                font.bold: true
-                elide: Text.ElideRight
-            }
-
-            Text {
-                text: root.backendLabel()
-                color: Theme.muted
-                font.family: Theme.fontFamily
-                font.pixelSize: root.scaledText(8)
-            }
-        }
-
-        Flow {
-            Layout.fillWidth: true
-            Layout.preferredHeight: childrenRect.height
-            visible: root.backendReady
-            spacing: 5
-
-            Repeater {
-                model: PowerProfiles.hasPerformanceProfile
-                    ? [
-                        { label: "Power Saver", value: PowerProfile.PowerSaver },
-                        { label: "Balanced", value: PowerProfile.Balanced },
-                        { label: "Performance", value: PowerProfile.Performance }
-                    ]
-                    : [
-                        { label: "Power Saver", value: PowerProfile.PowerSaver },
-                        { label: "Balanced", value: PowerProfile.Balanced }
-                    ]
-
-                SettingsButton {
-                    required property var modelData
-                    label: String(modelData.label)
-                    active: PowerProfiles.profile === modelData.value
-                    textSize: root.scaledText(9)
-                    onClicked: PowerProfiles.profile = modelData.value
-                }
-            }
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            visible: !root.backendReady && !root.setupAuthOpen
-            spacing: 8
-
-            Text {
-                Layout.fillWidth: true
-                text: root.conflictDetected
-                    ? "TLP and power-profiles-daemon are both installed. Resolve the conflict before switching profiles."
-                    : "No Power Profiles D-Bus backend is available. Awtarchy uses TLP's tlp-pd backend on laptops."
-                color: Theme.muted
-                font.family: Theme.fontFamily
-                font.pixelSize: root.scaledText(8)
-                wrapMode: Text.Wrap
-            }
-
-            SettingsButton {
-                label: root.conflictDetected ? "Resolve" : "Set Up"
-                textSize: root.scaledText(9)
-                enabled: !root.setupAuthBusy
-                onClicked: root.openSetupAuthorization()
-            }
-        }
+    Rectangle {
+        id: powerCard
+        visible: root.isLaptop
+        Layout.fillWidth: true
+        Layout.preferredHeight: visible ? content.implicitHeight + 16 : 0
+        color: Theme.popupButton
+        border.width: 1
+        border.color: Theme.active
 
         ColumnLayout {
-            Layout.fillWidth: true
-            visible: !root.backendReady && root.setupAuthOpen
-            spacing: 5
+            id: content
+            anchors.fill: parent
+            anchors.margins: 8
+            spacing: 6
 
-            Text {
+            RowLayout {
                 Layout.fillWidth: true
-                text: root.setupAuthMessage
-                visible: text.length > 0
-                color: Theme.muted
-                font.family: Theme.fontFamily
-                font.pixelSize: root.scaledText(8)
-                wrapMode: Text.Wrap
+
+                Text {
+                    Layout.fillWidth: true
+                    text: root.backendReady
+                        ? "Power Mode · " + root.profileLabel(PowerProfiles.profile)
+                        : "Power Mode"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: root.scaledText(12)
+                    font.bold: true
+                    elide: Text.ElideRight
+                }
+
+                Text {
+                    text: root.backendLabel()
+                    color: Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: root.scaledText(8)
+                }
             }
 
-            Rectangle {
+            Flow {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 30
-                color: Theme.active
-                border.width: 1
-                border.color: setupPasswordInput.activeFocus ? Theme.focus : Theme.subtleHover
+                Layout.preferredHeight: childrenRect.height
+                visible: root.backendReady
+                spacing: 5
 
-                TextInput {
-                    id: setupPasswordInput
-                    anchors.fill: parent
-                    anchors.leftMargin: 8
-                    anchors.rightMargin: 8
-                    verticalAlignment: TextInput.AlignVCenter
-                    color: Theme.foreground
-                    selectionColor: Theme.focus
-                    selectedTextColor: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: root.scaledText(9)
-                    echoMode: TextInput.Password
-                    enabled: !root.setupAuthBusy
-                    clip: true
-                    onAccepted: root.submitSetupAuthorization()
+                Repeater {
+                    model: PowerProfiles.hasPerformanceProfile
+                        ? [
+                            { label: "Power Saver", value: PowerProfile.PowerSaver },
+                            { label: "Balanced", value: PowerProfile.Balanced },
+                            { label: "Performance", value: PowerProfile.Performance }
+                        ]
+                        : [
+                            { label: "Power Saver", value: PowerProfile.PowerSaver },
+                            { label: "Balanced", value: PowerProfile.Balanced }
+                        ]
+
+                    SettingsButton {
+                        required property var modelData
+                        label: String(modelData.label)
+                        active: PowerProfiles.profile === modelData.value
+                        textSize: root.scaledText(9)
+                        onClicked: PowerProfiles.profile = modelData.value
+                    }
                 }
             }
 
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 6
+                visible: !root.backendReady && !root.setupAuthOpen
+                spacing: 8
 
                 Text {
                     Layout.fillWidth: true
-                    text: root.setupAuthError
+                    text: root.conflictDetected
+                        ? "TLP and power-profiles-daemon are both installed. Resolve the conflict before switching profiles."
+                        : "No Power Profiles D-Bus backend is available. Awtarchy uses TLP's tlp-pd backend on laptops."
+                    color: Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: root.scaledText(8)
+                    wrapMode: Text.Wrap
+                }
+
+                SettingsButton {
+                    label: root.conflictDetected ? "Resolve" : "Set Up"
+                    textSize: root.scaledText(9)
+                    enabled: !root.setupAuthBusy
+                    onClicked: root.openSetupAuthorization()
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                visible: !root.backendReady && root.setupAuthOpen
+                spacing: 5
+
+                Text {
+                    Layout.fillWidth: true
+                    text: root.setupAuthMessage
                     visible: text.length > 0
                     color: Theme.muted
                     font.family: Theme.fontFamily
                     font.pixelSize: root.scaledText(8)
-                    elide: Text.ElideRight
+                    wrapMode: Text.Wrap
                 }
 
-                SettingsButton {
-                    label: "Cancel"
-                    textSize: root.scaledText(9)
-                    enabled: !root.setupAuthBusy
-                    onClicked: root.cancelSetupAuthorization()
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 30
+                    color: Theme.active
+                    border.width: 1
+                    border.color: setupPasswordInput.activeFocus ? Theme.focus : Theme.subtleHover
+
+                    TextInput {
+                        id: setupPasswordInput
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        verticalAlignment: TextInput.AlignVCenter
+                        color: Theme.foreground
+                        selectionColor: Theme.focus
+                        selectedTextColor: Theme.foreground
+                        font.family: Theme.fontFamily
+                        font.pixelSize: root.scaledText(9)
+                        echoMode: TextInput.Password
+                        enabled: !root.setupAuthBusy
+                        clip: true
+                        onAccepted: root.submitSetupAuthorization()
+                    }
                 }
 
-                SettingsButton {
-                    label: root.setupAuthBusy ? "Working…" : "Authorize"
-                    textSize: root.scaledText(9)
-                    enabled: !root.setupAuthBusy
-                    onClicked: root.submitSetupAuthorization()
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.setupAuthError
+                        visible: text.length > 0
+                        color: Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: root.scaledText(8)
+                        elide: Text.ElideRight
+                    }
+
+                    SettingsButton {
+                        label: "Cancel"
+                        textSize: root.scaledText(9)
+                        enabled: !root.setupAuthBusy
+                        onClicked: root.cancelSetupAuthorization()
+                    }
+
+                    SettingsButton {
+                        label: root.setupAuthBusy ? "Working…" : "Authorize"
+                        textSize: root.scaledText(9)
+                        enabled: !root.setupAuthBusy
+                        onClicked: root.submitSetupAuthorization()
+                    }
                 }
             }
-        }
 
-        Text {
-            Layout.fillWidth: true
-            visible: root.backendReady
-                && PowerProfiles.degradationReason !== PerformanceDegradationReason.None
-            text: "Performance mode is currently degraded by the system."
-            color: Theme.muted
-            font.family: Theme.fontFamily
-            font.pixelSize: root.scaledText(8)
-            wrapMode: Text.Wrap
+            Text {
+                Layout.fillWidth: true
+                visible: root.backendReady
+                    && PowerProfiles.degradationReason !== PerformanceDegradationReason.None
+                text: "Performance mode is currently degraded by the system."
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: root.scaledText(8)
+                wrapMode: Text.Wrap
+            }
         }
+    }
+
+    TitleBarsCard {
+        active: root.active
+        textScale: root.textScale
+        iconScale: root.iconScale
     }
 }
