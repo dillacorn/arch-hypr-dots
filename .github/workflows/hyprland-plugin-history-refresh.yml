@@ -1,0 +1,33 @@
+name: Refresh Hyprland plugin managed history
+
+on:
+  push:
+    branches:
+      - hyprland-plugin-auth-feedback-fix
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: hyprland-plugin-auth-feedback-fix
+      - name: Append managed hash
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          manifest='local/share/awtarchy/quickshell-managed-history.sha256'
+          row=$'664e69c6aa5da7651b409a27f7b11db75d73ccd5a8649c7e539077eb608dafce\t.config/quickshell/awtarchy/TitleBarsCard.qml'
+          grep -Fqx -- "$row" "$manifest" || printf '%s\n' "$row" >>"$manifest"
+          git diff --check
+          if git diff --quiet -- "$manifest"; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$manifest"
+          git commit -m 'chore: refresh Hyprland plugin managed history'
+          git push origin HEAD:hyprland-plugin-auth-feedback-fix
