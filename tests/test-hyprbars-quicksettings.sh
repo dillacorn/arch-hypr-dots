@@ -76,7 +76,7 @@ contains "$TITLE_CARD" 'stdinEnabled: true' \
   'Title Bars sudo authorization does not use process stdin'
 contains "$TITLE_CARD" '["/usr/bin/sudo", "-S", "-p", "", "-v"]' \
   'Title Bars does not validate sudo through the fixed inline command'
-contains "$TITLE_CARD" 'authRunner.write(root.pendingPassword + "\\n\\n\\n")' \
+contains "$TITLE_CARD" 'authRunner.write(root.pendingPassword + "\n\n\n")' \
   'Title Bars password is not written to sudo stdin'
 contains "$TITLE_CARD" '[root.hyprbarsScript, "--setup-enable"]' \
   'Title Bars setup does not call the fixed noninteractive setup mode'
