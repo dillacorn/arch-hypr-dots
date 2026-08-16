@@ -6,6 +6,7 @@ SCXCTL="/usr/bin/scxctl"
 HYPRPM="/usr/bin/hyprpm"
 HYPRCTL="/usr/bin/hyprctl"
 SUDO="/usr/bin/sudo"
+PYTHON="/usr/bin/python3"
 HYPRBARS_PLUGIN="hyprbars"
 HYPRBARS_REPO="https://github.com/hyprwm/hyprland-plugins"
 
@@ -38,6 +39,7 @@ hyprbars_require_user() {
 hyprbars_require_tools() {
   [[ -x $HYPRPM ]] || die "trusted hyprpm executable is missing: $HYPRPM"
   [[ -x $SUDO ]] || die "trusted sudo executable is missing: $SUDO"
+  [[ -x $PYTHON ]] || die "trusted Python executable is missing: $PYTHON"
 }
 
 hyprbars_have_plugin() {
@@ -53,12 +55,6 @@ hyprbars_enabled() {
     | /usr/bin/grep -qiE 'enabled:[[:space:]]*true'
 }
 
-hyprbars_repo_added() {
-  [[ -x $HYPRPM ]] || return 1
-  "$HYPRPM" list 2>/dev/null \
-    | /usr/bin/grep -qiE '(Repository[[:space:]]+hyprland-plugins:|hyprwm/hyprland-plugins|https://github.com/hyprwm/hyprland-plugins)'
-}
-
 hyprbars_loaded() {
   [[ -x $HYPRCTL ]] || return 1
   "$HYPRCTL" plugin list 2>/dev/null \
@@ -71,83 +67,267 @@ hyprbars_lock() {
   /usr/bin/flock -n 9 || die 'another hyprbars operation is already running'
 }
 
-hyprbars_authorize() {
-  local password="$1"
-  [[ -n $password ]] || die 'sudo password is required'
-  printf '%s\n\n\n' "$password" | "$SUDO" -S -p "" -v >/dev/null
-}
+hyprbars_run_pty() {
+  local operation="$1"
+  local python_code
+  python_code="$(/usr/bin/cat <<'PY'
+import os
+import pty
+import re
+import select
+import signal
+import subprocess
+import sys
+import time
 
-hyprbars_hyprpm() {
-  local password="$1"
-  shift
-  hyprbars_authorize "$password"
-  "$HYPRPM" "$@"
+operation, hyprpm, hyprctl, plugin, repo = sys.argv[1:]
+password = sys.stdin.readline()
+if not password:
+    print("AWTARCHY_ERROR\tNo sudo password was received on stdin.", flush=True)
+    raise SystemExit(2)
+password = password.rstrip("\r\n")
+if not password:
+    print("AWTARCHY_ERROR\tEnter your sudo password and try again.", flush=True)
+    raise SystemExit(2)
+
+ansi_re = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+prompt_re = re.compile(r"(?i)(?:\[sudo\]\s*)?password for [^:\r\n]+:\s*$")
+
+
+def clean(text):
+    text = ansi_re.sub("", text)
+    text = text.replace(password, "<redacted>")
+    return text.replace("\x00", "")
+
+
+def emit(kind, message):
+    message = clean(message).replace("\r", " ").replace("\n", " ").strip()
+    if message:
+        print(f"AWTARCHY_{kind}\t{message[:320]}", flush=True)
+
+
+def stage_from_output(text, emitted):
+    low = text.lower()
+    stages = (
+        ("cloning", "Downloading Hyprland plugin sources…"),
+        ("configuring hyprland", "Preparing Hyprland plugin headers…"),
+        ("installing sources", "Installing Hyprland plugin headers…"),
+        ("building plugin", "Building official Hyprland plugins…"),
+        ("installing repository", "Installing the official Hyprland plugin repository…"),
+        ("ensuring plugin load state", "Loading Title Bars into Hyprland…"),
+    )
+    for needle, message in stages:
+        if needle in low and message not in emitted:
+            emitted.add(message)
+            emit("STAGE", message)
+
+
+def useful_error(output, fallback):
+    lines = []
+    for raw in clean(output).replace("\r", "\n").splitlines():
+        line = " ".join(raw.split())
+        if line and line not in lines:
+            lines.append(line)
+    for line in reversed(lines):
+        low = line.lower()
+        if any(word in low for word in ("error", "failed", "missing", "mismatch", "could not", "not found", "out of date", "outdated")):
+            return line[-300:]
+    return fallback
+
+
+def run_hyprpm(args, initial_stage, allow_confirm=False):
+    emit("STAGE", initial_stage)
+    pid, fd = pty.fork()
+    if pid == 0:
+        try:
+            os.execve(hyprpm, [hyprpm, *args], os.environ.copy())
+        except Exception:
+            os._exit(127)
+
+    output = ""
+    rolling = ""
+    emitted = set()
+    confirmation_sent = False
+    auth_failed = False
+    deadline = time.monotonic() + 900
+
+    try:
+        while True:
+            if time.monotonic() >= deadline:
+                emit("ERROR", "Hyprland plugin setup timed out. Run hyprpm manually for the full output.")
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                return 124, output
+
+            readable, _, _ = select.select([fd], [], [], 0.25)
+            if not readable:
+                continue
+            try:
+                data = os.read(fd, 4096)
+            except OSError:
+                break
+            if not data:
+                break
+
+            chunk = clean(data.decode("utf-8", errors="replace"))
+            output = (output + chunk)[-65536:]
+            rolling = (rolling + chunk)[-4096:]
+            stage_from_output(rolling, emitted)
+
+            if "Sorry, try again." in rolling:
+                auth_failed = True
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                break
+
+            if prompt_re.search(rolling):
+                os.write(fd, (password + "\n").encode("utf-8"))
+                rolling = ""
+                continue
+
+            if allow_confirm and not confirmation_sent and (
+                "Are you sure? [Y/n]" in rolling or "Are you sure? [y/N]" in rolling
+            ):
+                os.write(fd, b"y\n")
+                confirmation_sent = True
+                rolling = ""
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+    try:
+        _, status = os.waitpid(pid, 0)
+        code = os.waitstatus_to_exitcode(status)
+    except ChildProcessError:
+        code = 1
+
+    if auth_failed:
+        emit("ERROR", "Authentication failed: sudo rejected the password.")
+        return 77, output
+    if code != 0:
+        emit("ERROR", useful_error(output, f"hyprpm {' '.join(args)} failed with exit code {code}."))
+    return code, output
+
+
+def list_state():
+    result = subprocess.run([hyprpm, "list"], capture_output=True, text=True, check=False)
+    return clean((result.stdout or "") + "\n" + (result.stderr or ""))
+
+
+def have_plugin(text):
+    return re.search(r"(?i)(^|[^A-Za-z0-9_])hyprbars([^A-Za-z0-9_]|$)", text) is not None
+
+
+def repo_added(text):
+    low = text.lower()
+    return "repository hyprland-plugins:" in low or "hyprwm/hyprland-plugins" in low or repo.lower() in low
+
+
+def reload_plugin():
+    emit("STAGE", "Reloading Hyprland plugin state…")
+    result = subprocess.run([hyprpm, "reload"], capture_output=True, text=True, check=False)
+    output = clean((result.stdout or "") + "\n" + (result.stderr or ""))
+    if result.returncode != 0:
+        emit("ERROR", useful_error(output, "hyprpm reload failed."))
+        return result.returncode
+    if os.path.isfile(hyprctl) and os.access(hyprctl, os.X_OK):
+        subprocess.run([hyprctl, "reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    return 0
+
+
+emit("STAGE", "Checking Hyprland plugin state…")
+state = list_state()
+
+if operation == "enable":
+    if not have_plugin(state):
+        code, _ = run_hyprpm(
+            ["update"],
+            "Updating Hyprland plugin headers (this can take a while on first setup)…",
+        )
+        if code != 0:
+            raise SystemExit(code)
+
+        state = list_state()
+        if not repo_added(state):
+            code, _ = run_hyprpm(
+                ["add", repo],
+                "Adding and building the official Hyprland plugin repository…",
+                allow_confirm=True,
+            )
+            if code != 0:
+                raise SystemExit(code)
+
+        state = list_state()
+        if not have_plugin(state):
+            emit("ERROR", "The official plugin repository finished, but hyprbars was not found.")
+            raise SystemExit(4)
+
+    code, output = run_hyprpm(["enable", plugin], "Enabling Title Bars (hyprbars)…")
+    if code != 0 and ("headers are not up-to-date" in output.lower() or "headers version" in output.lower()):
+        code, _ = run_hyprpm(
+            ["update"],
+            "Refreshing Hyprland plugin headers before enabling Title Bars…",
+        )
+        if code == 0:
+            code, _ = run_hyprpm(["enable", plugin], "Enabling Title Bars (hyprbars)…")
+    if code != 0:
+        raise SystemExit(code)
+    if reload_plugin() != 0:
+        raise SystemExit(5)
+    emit("RESULT", "enabled")
+    raise SystemExit(0)
+
+if operation == "disable":
+    if not have_plugin(state):
+        emit("ERROR", "Title Bars (hyprbars) is not installed.")
+        raise SystemExit(3)
+    code, _ = run_hyprpm(["disable", plugin], "Disabling Title Bars (hyprbars)…")
+    if code != 0:
+        raise SystemExit(code)
+    loaded = False
+    if os.path.isfile(hyprctl) and os.access(hyprctl, os.X_OK):
+        result = subprocess.run([hyprctl, "plugin", "list"], capture_output=True, text=True, check=False)
+        loaded = re.search(r"(?i)(^|[^A-Za-z0-9_])hyprbars([^A-Za-z0-9_]|$)", result.stdout or "") is not None
+    emit("RESULT", "disabled-pending" if loaded else "disabled")
+    raise SystemExit(0)
+
+emit("ERROR", f"Unsupported Hyprland plugin operation: {operation}")
+raise SystemExit(2)
+PY
+)"
+
+  "$PYTHON" -c "$python_code" "$operation" "$HYPRPM" "$HYPRCTL" "$HYPRBARS_PLUGIN" "$HYPRBARS_REPO"
 }
 
 hyprbars_status() {
   hyprbars_require_user
   if [[ ! -x $HYPRPM ]] || ! hyprbars_have_plugin; then
-    printf '%s\n' unavailable
+    printf '%s\n' 'unavailable'
   elif hyprbars_enabled; then
-    printf '%s\n' enabled
+    printf '%s\n' 'enabled'
   else
-    printf '%s\n' disabled
+    printf '%s\n' 'disabled'
   fi
 }
 
 hyprbars_enable() {
-  local password=""
   hyprbars_require_user
   hyprbars_require_tools
   hyprbars_lock
-  IFS= read -r password || die 'sudo password is required on stdin'
-  [[ -n $password ]] || die 'sudo password is required on stdin'
-
-  if ! hyprbars_have_plugin; then
-    # hyprpm drops its sudo timestamp after each privileged command. Re-seed
-    # the timestamp from the same transient stdin password before every command
-    # that hyprpm may elevate internally.
-    hyprbars_hyprpm "$password" update
-
-    if ! hyprbars_have_plugin && ! hyprbars_repo_added; then
-      hyprbars_authorize "$password"
-      printf 'y\n' | "$HYPRPM" add "$HYPRBARS_REPO"
-    fi
-  fi
-
-  hyprbars_have_plugin \
-    || die 'hyprbars is unavailable after updating the official plugin repository'
-
-  hyprbars_hyprpm "$password" enable "$HYPRBARS_PLUGIN"
-  unset password
-
-  "$HYPRPM" reload
-  if [[ -x $HYPRCTL ]]; then
-    "$HYPRCTL" reload >/dev/null 2>&1 || true
-  fi
-  printf '%s\n' enabled
+  hyprbars_run_pty enable
 }
 
 hyprbars_disable() {
-  local password=""
   hyprbars_require_user
   hyprbars_require_tools
   hyprbars_lock
-  IFS= read -r password || die 'sudo password is required on stdin'
-  [[ -n $password ]] || die 'sudo password is required on stdin'
-
-  hyprbars_have_plugin || die 'hyprbars is not installed'
-  hyprbars_hyprpm "$password" disable "$HYPRBARS_PLUGIN"
-  unset password
-
-  # Keep the established Awtarchy safety contract: never explicitly reload a
-  # loaded hyprbars instance while disabling. If it remains loaded, report that
-  # the persisted disabled state takes effect at the next login.
-  if hyprbars_loaded; then
-    printf '%s\n' disabled-pending
-  else
-    printf '%s\n' disabled
-  fi
+  hyprbars_run_pty disable
 }
 
 main() {
