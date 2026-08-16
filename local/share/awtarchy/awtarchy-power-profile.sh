@@ -54,7 +54,11 @@ record_managed() {
   local tmp pkg
   (( $# )) || return 0
   tmp="$(mktemp)"
-  [[ -r $MANAGED_FILE ]] && cat "$MANAGED_FILE" >"$tmp" || : >"$tmp"
+  if [[ -r $MANAGED_FILE ]]; then
+    cat "$MANAGED_FILE" >"$tmp"
+  else
+    : >"$tmp"
+  fi
   for pkg in "$@"; do
     package_installed "$pkg" && printf '%s\n' "$pkg" >>"$tmp"
   done
