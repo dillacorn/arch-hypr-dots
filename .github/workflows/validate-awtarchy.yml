@@ -86,7 +86,9 @@ jobs:
           bash -n tests/test-usb-refresh-security.sh
           bash -n tests/test-quickshell-resume-recovery.sh
           python3 -m py_compile local/libexec/awtarchy/wireguard-helper
+          python3 -m py_compile local/share/awtarchy/keyring-pam-cleanup.py
           python3 -m py_compile tests/test-config-noise-comparison.py
+          python3 -m py_compile tests/test-keyring-pam-cleanup.py
           test -x config/hypr/scripts/quickshell_sensitive_capture.sh
       - name: ShellCheck command code
         run: |
@@ -170,6 +172,7 @@ jobs:
           bash tests/test-flyout-toggle-debounce.sh
           bash tests/test-launcher-keyboard-focus.sh
           bash tests/test-desktop-candidate-validation.sh
+          python3 tests/test-keyring-pam-cleanup.py
           bash tests/test-lua-validation.sh
           bash tests/test-playerctl-dependency.sh
           bash tests/test-power-profile-helper-update.sh

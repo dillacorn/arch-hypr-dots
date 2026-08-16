@@ -2564,7 +2564,112 @@ install_micro_themes_stage() {
   fi
 }
 
+cleanup_legacy_keyring_pam_stage() {
+  local repo_dir="${1:-${REPO_DIR:-}}"
+  local transformer="${repo_dir}/local/share/awtarchy/keyring-pam-cleanup.py"
+  local pam_dir="${AWTARCHY_PAM_DIR:-/etc/pam.d}"
+  local login_file="${pam_dir}/login"
+  local ly_file="${pam_dir}/ly"
+  local backup_file="${login_file}.awtarchy-backup"
+  local cleaned="" rc=0 mode="" owner="" group=""
+
+  if [[ -n "${AWTARCHY_PAM_DIR:-}" && "$pam_dir" != /tmp/* ]]; then
+    die "AWTARCHY_PAM_DIR test override must stay under /tmp."
+  fi
+  [[ -f "$login_file" && ! -L "$login_file" ]] || return 0
+  [[ -f "$ly_file" && ! -L "$ly_file" ]] || return 0
+  grep -Fq 'pam_gnome_keyring.so' "$ly_file" || return 0
+  [[ -f "$transformer" && ! -L "$transformer" ]] || {
+    warn "GNOME Keyring PAM cleanup helper is missing; leaving PAM unchanged."
+    return 0
+  }
+  have python3 || {
+    warn "python3 is unavailable; leaving legacy GNOME Keyring PAM state unchanged."
+    return 0
+  }
+
+  cleaned="$(mktemp)"
+  if python3 "$transformer" "$login_file" "$cleaned"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  if (( rc == 3 )); then
+    rm -f -- "$cleaned"
+    return 0
+  fi
+  if (( rc != 0 )); then
+    rm -f -- "$cleaned"
+    warn "Could not validate legacy GNOME Keyring PAM state; leaving PAM unchanged."
+    return 0
+  fi
+
+  mode="$(stat -c '%a' -- "$login_file" 2>/dev/null || true)"
+  owner="$(stat -c '%u' -- "$login_file" 2>/dev/null || true)"
+  group="$(stat -c '%g' -- "$login_file" 2>/dev/null || true)"
+  if [[ ! "$mode" =~ ^[0-7]{3,4}$ || ! "$owner" =~ ^[0-9]+$ || ! "$group" =~ ^[0-9]+$ ]]; then
+    rm -f -- "$cleaned"
+    warn "Could not preserve /etc/pam.d/login metadata; leaving PAM unchanged."
+    return 0
+  fi
+
+  if [[ -n "${AWTARCHY_PAM_DIR:-}" || "${EUID}" -eq 0 ]]; then
+    if [[ -L "$login_file" ]]; then
+      rm -f -- "$cleaned"
+      warn "Refusing symbolic-link PAM login file: ${login_file}"
+      return 0
+    fi
+    if [[ ! -e "$backup_file" ]]; then
+      cp -a -- "$login_file" "$backup_file" || {
+        rm -f -- "$cleaned"
+        warn "Could not back up ${login_file}; leaving PAM unchanged."
+        return 0
+      }
+    fi
+    install -m "$mode" -o "$owner" -g "$group" -- "$cleaned" "$login_file" || {
+      rm -f -- "$cleaned"
+      warn "Could not remove legacy GNOME Keyring PAM duplication."
+      return 0
+    }
+  else
+    have sudo || {
+      rm -f -- "$cleaned"
+      warn "sudo is unavailable; legacy GNOME Keyring PAM duplication was not removed."
+      return 0
+    }
+    if ! sudo -v; then
+      rm -f -- "$cleaned"
+      warn "sudo authentication failed; legacy GNOME Keyring PAM duplication was not removed."
+      return 0
+    fi
+    if sudo test -L "$login_file" || sudo test -L "$backup_file"; then
+      rm -f -- "$cleaned"
+      warn "Refusing symbolic-link GNOME Keyring PAM cleanup path."
+      return 0
+    fi
+    if ! sudo test -e "$backup_file"; then
+      if ! sudo cp -a -- "$login_file" "$backup_file"; then
+        rm -f -- "$cleaned"
+        warn "Could not back up ${login_file}; leaving PAM unchanged."
+        return 0
+      fi
+    fi
+    if ! sudo install -m "$mode" -o "$owner" -g "$group" -- "$cleaned" "$login_file"; then
+      rm -f -- "$cleaned"
+      warn "Could not remove legacy GNOME Keyring PAM duplication."
+      return 0
+    fi
+  fi
+
+  rm -f -- "$cleaned"
+  log "Removed duplicate Awtarchy GNOME Keyring hooks from ${login_file}; Ly owns keyring PAM integration."
+}
+
 enable_keyring_pam_stage() {
+  if (( INSTALL_LY == 1 )); then
+    log "Ly provides GNOME Keyring PAM integration; skipping duplicate /etc/pam.d/login hooks."
+    return 0
+  fi
   (( ENABLE_KEYRING_PAM == 1 )) || { warn "Skipping GNOME Keyring PAM change."; return 0; }
   local tmpfile
   tmpfile="$(mktemp)"
@@ -2960,6 +3065,9 @@ run_install() {
   install_micro_themes_stage
   enable_keyring_pam_stage
   install_ly_stage
+  if (( INSTALL_LY == 1 )); then
+    cleanup_legacy_keyring_pam_stage "$REPO_DIR"
+  fi
   copy_awtarchy_configs_stage
   remove_legacy_shell_files_stage
   install_awtarchy_command_stage
@@ -7069,6 +7177,9 @@ main() {
     if (( IS_LAPTOP_NOW == 1 )); then
       reconcile_power_profile_backend "$repo_dir"
     fi
+  fi
+  if (( REVIEW_ONLY == 0 )); then
+    cleanup_legacy_keyring_pam_stage "$repo_dir"
   fi
   ensure_quickshell_update_prerequisites
   snapshot_quickshell_update_legacy_paths

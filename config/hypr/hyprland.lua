@@ -105,7 +105,6 @@ hl.on("hyprland.start", function()
 
     hl.exec_cmd("sh -lc '$HOME/.config/hypr/scripts/portal_fixup.sh'")
     hl.exec_cmd("/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1")
-    hl.exec_cmd("gnome-keyring-daemon --start --components=secrets")
 
     -- hl.exec_cmd("~/.config/hypr/scripts/last_to_load_recorder.sh &")
     hl.exec_cmd("~/.config/hypr/scripts/quickshell.sh start &")
