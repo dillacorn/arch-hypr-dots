@@ -1,0 +1,32 @@
+name: Runtime Bugfix TDD
+
+on:
+  push:
+    branches: [quickshell-runtime-bugfixes]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Run new regression tests
+        shell: bash
+        run: |
+          set +e
+          failures=0
+          for test_file in \
+            tests/test-power-profile-inline-auth.sh \
+            tests/test-power-profile-helper-update.sh \
+            tests/test-quickshell-backend-readiness.sh \
+            tests/test-hyprbars-quicksettings.sh \
+            tests/test-network-bar-state.sh
+          do
+            printf '\n=== %s ===\n' "$test_file"
+            bash "$test_file" || failures=$((failures + 1))
+          done
+          exit "$failures"
