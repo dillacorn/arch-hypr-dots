@@ -99,15 +99,16 @@ resolve_tlp_conflict() {
 
 main() {
   [[ $# -eq 1 ]] || fail 'exactly one action is required'
-  (( EUID == 0 )) || fail 'must run as root'
-  [[ -x "$PACMAN" && -x "$SYSTEMCTL" && -x /usr/bin/grep ]] \
-    || fail 'required system tools are unavailable'
-  is_laptop || fail 'Power Mode setup is only supported on laptop hardware'
 
   case "$1" in
     setup|resolve-tlp-conflict) ;;
     *) fail "unsupported action: $1" ;;
   esac
+
+  (( EUID == 0 )) || fail 'must run as root'
+  [[ -x "$PACMAN" && -x "$SYSTEMCTL" && -x /usr/bin/grep ]] \
+    || fail 'required system tools are unavailable'
+  is_laptop || fail 'Power Mode setup is only supported on laptop hardware'
 
   case "$1" in
     setup) setup_backend ;;
