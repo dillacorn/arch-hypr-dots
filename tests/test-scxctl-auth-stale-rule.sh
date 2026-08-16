@@ -12,10 +12,10 @@ fail() {
 
 function_body() {
   local file="$1" name="$2"
-  awk -v start="^${name}\\(\\) \\{$" '
-    $0 ~ start { active=1 }
+  awk -v signature="${name}() {" '
+    $0 == signature { active=1 }
     active { print }
-    active && /^}$/ { exit }
+    active && $0 == "}" { exit }
   ' "$file"
 }
 
