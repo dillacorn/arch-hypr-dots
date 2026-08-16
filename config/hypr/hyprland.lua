@@ -763,8 +763,8 @@ for _, bind in ipairs(movement_keys) do
     local key = bind[1]
     local direction = bind[2]
 
-    hl.bind("ALT + SHIFT + " .. key, hl.dsp.window.move({ direction = direction, }), {})
-    hl.bind("SUPER + SHIFT + " .. key, hl.dsp.window.move({ direction = direction, }), {})
+    hl.bind("ALT + SHIFT + " .. key, hl.dsp.window.move({ direction = direction }), {})
+    hl.bind("SUPER + SHIFT + " .. key, hl.dsp.window.move({ direction = direction }), {})
 end
 
 -- Send current workspace to monitor (ALT/SUPER+CTRL+SHIFT arrows + brackets)
@@ -993,7 +993,7 @@ hl.define_submap("noalt", function()
 
     -- Window move in "noalt" (SUPER+SHIFT arrows + hjkl)
     for _, bind in ipairs(movement_keys) do
-        hl.bind("SUPER + SHIFT + " .. bind[1], hl.dsp.window.move({ direction = bind[2], }), {})
+        hl.bind("SUPER + SHIFT + " .. bind[1], hl.dsp.window.move({ direction = bind[2] }), {})
     end
 
     -- Send current workspace to monitor in "noalt" (SUPER+CTRL+SHIFT arrows + brackets)
@@ -1028,8 +1028,8 @@ hl.define_submap("noalt", function()
     end
 
     -- Mouse in "noalt" (SUPER mouse-left/right / hold)
-    hl.bind("SUPER + mouse:272", hl.dsp.window.drag(), { mouse = true })
-    hl.bind("SUPER + mouse:273", hl.dsp.window.resize(), { mouse = true })
+hl.bind("SUPER + mouse:272", hl.dsp.window.drag(), { mouse = true })
+hl.bind("SUPER + mouse:273", hl.dsp.window.resize(), { mouse = true })
 
     -- Digital vibrance quick adjust (SUPER+ALT+[] & SUPER+ALT+\; SUPER+ALT+CTRL+V toggle)
     hl.bind("SUPER + ALT + bracketright", hl.dsp.exec_cmd(vibrance_shader .. " up"), {})
@@ -1083,7 +1083,7 @@ end)
 -- ───────────────────────────────────────────────────────────────────────────────
 
 hl.define_submap("mouse", function()
-    -- Submap references in "mouse" (toggle off)  [empty file on exit]
+    -- Submap references in "mouse" (Toggle off)  [empty file on exit]
     local mouse_off = _submap_off_cmd("mouse")
 
     -- Resize (MOUSE-left/right / hold)
@@ -1315,6 +1315,4 @@ hl.layer_rule({ match = { namespace = "^(notifications|swaync.*)$" }, no_screen_
 
 -- Steam Splitratio Script
 -- Set split ratio between Steam and Friends List (runs once at startup with a timeout of 300s)
--- READ SCRIPT:        cat ~/.config/hypr/scripts/splitratio_steam.sh
--- .desktop override:  Exec=sh -lc 'pgrep -x steam >/dev/null && exit 0; /usr/bin/steam --disable-gpu "$@" & ALLOW_WAIT=1 "$HOME/.config/hypr/scripts/splitratio_steam.sh" &' _ %U
--- Check file:         cat ~/.local/share/applications/steam.desktop
+-- READ SCRIPT:        cat ~/.local/share/applications/steam.desktop
