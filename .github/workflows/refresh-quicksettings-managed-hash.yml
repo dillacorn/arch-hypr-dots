@@ -1,0 +1,48 @@
+name: Refresh Quick Settings managed hash
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/refresh-quicksettings-managed-hash.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+
+      - name: Refresh managed hash and remove helper workflow
+        shell: bash
+        env:
+          EXPECTED_BASE: 8896b4726e8a2a0832c92ca39c00c1174f2d6b3e
+        run: |
+          set -euo pipefail
+
+          git fetch origin main --force
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_BASE"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+
+          source_file='config/quickshell/awtarchy/QuickSettings.qml'
+          managed_path='.config/quickshell/awtarchy/QuickSettings.qml'
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          current_hash="$(sha256sum "$source_file" | awk '{print $1}')"
+          record="${current_hash}"$'\t'"${managed_path}"
+
+          if ! grep -Fqx -- "$record" "$history"; then
+            printf '\n# 2026-08-15 sched-ext Apply label managed hash.\n%s\n' "$record" >>"$history"
+          fi
+
+          git rm .github/workflows/refresh-quicksettings-managed-hash.yml
+          git add "$history"
+          git diff --check
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Refresh Quick Settings managed hash'
+          git push origin HEAD:main
