@@ -6,6 +6,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="${ROOT}/config/hypr/scripts/hyprbars_toggle.sh"
 BAR_SETTINGS="${ROOT}/config/quickshell/awtarchy/BarSettingsSection.qml"
 HYPR_LUA="${ROOT}/config/hypr/hyprland.lua"
+HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -54,5 +55,10 @@ contains "$BAR_SETTINGS" 'text: "Title Bars"' \
   'Quick Settings has no Title Bars control'
 absent "$BAR_SETTINGS" 'sudo' \
   'Quick Settings directly invokes sudo for title-bar control'
+
+# Current-main users must have the old shipped script recognized as a managed
+# file so an update replaces it instead of preserving the sudo-preauth version.
+contains "$HISTORY" $'708658656ab4672d010f49b54de099200d1ab6b42bebb822ec2e01d80fa81df3\t.config/hypr/scripts/hyprbars_toggle.sh' \
+  'managed history is missing the pre-fix hyprbars script hash'
 
 printf '%s\n' 'PASS: title-bar bind and Quick Settings share a routine no-sudo hyprbars toggle path.'
