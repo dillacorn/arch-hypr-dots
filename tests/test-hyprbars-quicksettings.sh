@@ -4,6 +4,7 @@ set -Eeuo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="${ROOT}/config/hypr/scripts/hyprbars_toggle.sh"
+TRUSTED_HELPER="${ROOT}/local/libexec/awtarchy/scxctl-helper"
 QUICK_SETTINGS="${ROOT}/config/quickshell/awtarchy/QuickSettings.qml"
 POWER_CARD="${ROOT}/config/quickshell/awtarchy/PowerModeCard.qml"
 TITLE_CARD="${ROOT}/config/quickshell/awtarchy/TitleBarsCard.qml"
@@ -11,53 +12,23 @@ BAR_SETTINGS="${ROOT}/config/quickshell/awtarchy/BarSettingsSection.qml"
 HYPR_LUA="${ROOT}/config/hypr/hyprland.lua"
 HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
 
-fail() {
-  printf 'FAIL: %s\n' "$*" >&2
-  exit 1
-}
-
-contains() {
-  local file="$1" needle="$2" message="$3"
-  grep -Fq -- "$needle" "$file" || fail "$message"
-}
-
-absent() {
-  local file="$1" needle="$2" message="$3"
-  ! grep -Fq -- "$needle" "$file" || fail "$message"
-}
+fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
+contains() { grep -Fq -- "$2" "$1" || fail "$3"; }
+absent() { ! grep -Fq -- "$2" "$1" || fail "$3"; }
 
 [[ -f "$TITLE_CARD" ]] || fail 'main Quick Settings Title Bars card is missing'
 
-# Preserve the established keyboard workflow and behavior owner.
+# Preserve the existing keyboard workflow and hot-unload safety.
 contains "$HYPR_LUA" '{ "SUPER + ALT + T", hyprbars_toggle },' \
   'existing SUPER+ALT+T hyprbars bind changed or disappeared'
-contains "$SCRIPT" 'hyprpm disable' \
-  'hyprbars disable behavior disappeared'
-contains "$SCRIPT" 'hyprpm reload' \
-  'hyprbars enable/reload behavior disappeared'
+contains "$SCRIPT" 'hyprpm disable' 'hyprbars disable behavior disappeared'
+contains "$SCRIPT" 'hyprpm reload' 'hyprbars enable/reload behavior disappeared'
 contains "$SCRIPT" 'Hot-unloading hyprbars can crash Hyprland.' \
   'hyprbars hot-unload safety behavior disappeared'
+absent "$SCRIPT" 'sudo -v' 'keyboard hyprbars script performs unconditional sudo pre-authentication'
 
-# Routine toggling must remain unprivileged. First-time setup gets a separate
-# fixed machine-safe mode after Quick Settings validates sudo inline.
-absent "$SCRIPT" 'sudo -v' \
-  'hyprbars script performs unconditional sudo pre-authentication'
-contains "$SCRIPT" '--status' \
-  'hyprbars script has no machine-readable status mode'
-contains "$SCRIPT" '--toggle' \
-  'hyprbars script has no nonterminal toggle mode'
-contains "$SCRIPT" '--setup-enable' \
-  'hyprbars script has no noninteractive first-time setup mode'
-contains "$SCRIPT" '"$HYPRPM_BIN" update' \
-  'first-time setup no longer refreshes Hyprland plugin headers'
-contains "$SCRIPT" '"$HYPRPM_BIN" add "$REPO_URL"' \
-  'first-time setup no longer adds the official plugins repository'
-contains "$SCRIPT" '"$HYPRPM_BIN" enable "$PLUGIN"' \
-  'first-time setup no longer enables hyprbars'
-
-# Title Bars belongs in the main Quick Settings content path, not behind the
-# display appearance gear panel. PowerModeCard is already a direct child of the
-# main Quick Settings list, so it may compose the always-visible Title Bars card.
+# Title Bars belongs directly in the Quick Settings content path, not in the
+# Bar Appearance gear panel.
 contains "$QUICK_SETTINGS" 'PowerModeCard {' \
   'Quick Settings main list no longer contains the Power/Title Bars card host'
 contains "$POWER_CARD" 'TitleBarsCard {' \
@@ -67,29 +38,57 @@ absent "$BAR_SETTINGS" 'text: "Title Bars"' \
 absent "$BAR_SETTINGS" 'hyprbarsScript' \
   'Bar Appearance settings still owns the hyprbars workflow'
 
-# First-time setup must request the password inline, masked, and pass it only
-# over stdin to sudo validation. The plugin setup itself then runs unprivileged
-# through the fixed hyprbars machine mode.
+# Quick Settings must use the already root-owned Awtarchy helper, never the
+# user-writable ~/.config script, for operations performed after password entry.
+contains "$TITLE_CARD" 'readonly property string trustedHelper: "/usr/local/libexec/awtarchy/scxctl-helper"' \
+  'Title Bars does not use the fixed root-owned trusted helper'
+absent "$TITLE_CARD" 'hyprbars_toggle.sh' \
+  'Title Bars still executes the user-writable hyprbars script'
 contains "$TITLE_CARD" 'echoMode: TextInput.Password' \
   'Title Bars password entry is not masked'
 contains "$TITLE_CARD" 'stdinEnabled: true' \
-  'Title Bars sudo authorization does not use process stdin'
-contains "$TITLE_CARD" '["/usr/bin/sudo", "-S", "-p", "", "-v"]' \
-  'Title Bars does not validate sudo through the fixed inline command'
-contains "$TITLE_CARD" 'authRunner.write(root.pendingPassword + "\n\n\n")' \
-  'Title Bars password is not written to sudo stdin'
-contains "$TITLE_CARD" '[root.hyprbarsScript, "--setup-enable"]' \
-  'Title Bars setup does not call the fixed noninteractive setup mode'
-contains "$TITLE_CARD" '[root.hyprbarsScript, "--toggle"]' \
-  'Title Bars normal toggle does not use the existing script'
-contains "$TITLE_CARD" '[root.hyprbarsScript, "--status"]' \
-  'Title Bars status does not use the existing script'
-absent "$TITLE_CARD" 'Quickshell.execDetached([root.hyprbarsScript])' \
-  'Title Bars still launches the old terminal setup path'
+  'Title Bars action process does not accept password over stdin'
+contains "$TITLE_CARD" 'actionRunner.write(root.pendingPassword + "\n")' \
+  'Title Bars password is not sent only through helper stdin'
+contains "$TITLE_CARD" '[root.trustedHelper, "hyprbars-status"]' \
+  'Title Bars status does not use the trusted helper'
+contains "$TITLE_CARD" '[root.trustedHelper, root.pendingAction]' \
+  'Title Bars actions do not use the trusted helper'
+absent "$TITLE_CARD" '"/usr/bin/sudo"' \
+  'Title Bars QML should not cache sudo before handing control to another executable'
 
-# Current-main users must have the old shipped script recognized as a managed
-# file so an update replaces it instead of preserving the prior implementation.
+# The root-owned helper must expose only fixed hyprbars operations, use fixed
+# binaries/repository, reject root execution for the user-session plugin path,
+# and re-authorize internally before each hyprpm operation because hyprpm drops
+# its sudo timestamp after privileged header/state work.
+contains "$TRUSTED_HELPER" 'HYPRPM="/usr/bin/hyprpm"' \
+  'trusted helper does not pin hyprpm to /usr/bin'
+contains "$TRUSTED_HELPER" 'SUDO="/usr/bin/sudo"' \
+  'trusted helper does not pin sudo to /usr/bin'
+contains "$TRUSTED_HELPER" 'HYPRBARS_REPO="https://github.com/hyprwm/hyprland-plugins"' \
+  'trusted helper does not pin the official plugin repository'
+contains "$TRUSTED_HELPER" 'hyprbars-status)' \
+  'trusted helper lacks hyprbars-status'
+contains "$TRUSTED_HELPER" 'hyprbars-enable)' \
+  'trusted helper lacks hyprbars-enable'
+contains "$TRUSTED_HELPER" 'hyprbars-disable)' \
+  'trusted helper lacks hyprbars-disable'
+contains "$TRUSTED_HELPER" '(( EUID != 0 )) || die' \
+  'trusted helper does not reject root execution for hyprbars operations'
+contains "$TRUSTED_HELPER" 'IFS= read -r password' \
+  'trusted helper does not receive the password from stdin'
+contains "$TRUSTED_HELPER" '"$SUDO" -S -p "" -v' \
+  'trusted helper does not perform fixed sudo validation'
+absent "$TRUSTED_HELPER" 'NOPASSWD' \
+  'trusted helper must not add passwordless sudo behavior'
+
+# Existing install and update paths already deploy scxctl-helper root-owned.
+contains "${ROOT}/awtarchy-install.sh" 'SCXCTL_HELPER_SOURCE=' \
+  'installer no longer provisions the trusted helper'
+contains "${ROOT}/local/share/awtarchy/awtarchy-runtime.sh" 'repair_scxctl_update_helper()' \
+  'updater no longer repairs the trusted helper'
+
 contains "$HISTORY" $'708658656ab4672d010f49b54de099200d1ab6b42bebb822ec2e01d80fa81df3\t.config/hypr/scripts/hyprbars_toggle.sh' \
   'managed history is missing the pre-fix hyprbars script hash'
 
-printf '%s\n' 'PASS: Title Bars is a main Quick Settings toggle with inline first-time authorization.'
+printf '%s\n' 'PASS: Title Bars is a main Quick Settings toggle using inline auth through the root-owned helper.'
