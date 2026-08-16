@@ -1,0 +1,38 @@
+name: Refresh title bar managed history
+
+on:
+  push:
+    branches:
+      - titlebars-quicksettings-fix
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: titlebars-quicksettings-fix
+      - name: Append managed hashes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          manifest='local/share/awtarchy/quickshell-managed-history.sha256'
+          rows=(
+            $'8472125fdc0049c400168a77f5550bd249e315cd0dd4c06c3d6a74cf7e7ad288\t.config/quickshell/awtarchy/PowerModeCard.qml'
+            $'084a6d99e8ef4ded652de2dfd6d94c296aefd897034f5d562d9eecd72e0d0bea\t.config/quickshell/awtarchy/TitleBarsCard.qml'
+          )
+          for row in "${rows[@]}"; do
+            grep -Fqx -- "$row" "$manifest" || printf '%s\n' "$row" >>"$manifest"
+          done
+          git diff --check
+          if git diff --quiet -- "$manifest"; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$manifest"
+          git commit -m 'chore: refresh title bar managed history'
+          git push origin HEAD:titlebars-quicksettings-fix
