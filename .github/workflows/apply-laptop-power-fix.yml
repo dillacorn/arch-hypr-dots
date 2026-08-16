@@ -1,5 +1,6 @@
 name: Apply laptop power backend fix
 
+# Temporary guarded workflow used only on laptop-power-backend-fix.
 on:
   push:
     branches:
