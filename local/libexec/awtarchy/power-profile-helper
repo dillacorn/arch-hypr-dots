@@ -22,7 +22,7 @@ is_laptop() {
     [[ -e "$battery" ]] && return 0
   done
 
-  case "$(cat /sys/class/dmi/id/chassis_type 2>/dev/null || true)" in
+  case "$(/usr/bin/cat /sys/class/dmi/id/chassis_type 2>/dev/null || true)" in
     8|9|10|14|30|31|32) return 0 ;;
     *) return 1 ;;
   esac
@@ -35,7 +35,7 @@ record_managed() {
   /usr/bin/install -d -m 0755 /var/lib/awtarchy
   tmp="$(/usr/bin/mktemp /var/lib/awtarchy/managed-packages.XXXXXX)"
   if [[ -r "$MANAGED_FILE" ]]; then
-    cat "$MANAGED_FILE" >"$tmp"
+    /usr/bin/cat "$MANAGED_FILE" >"$tmp"
   fi
   for package in "$@"; do
     package_installed "$package" && printf '%s\n' "$package" >>"$tmp"
@@ -106,7 +106,7 @@ main() {
   esac
 
   (( EUID == 0 )) || fail 'must run as root'
-  [[ -x "$PACMAN" && -x "$SYSTEMCTL" && -x /usr/bin/grep ]] \
+  [[ -x "$PACMAN" && -x "$SYSTEMCTL" && -x /usr/bin/grep && -x /usr/bin/cat ]] \
     || fail 'required system tools are unavailable'
   is_laptop || fail 'Power Mode setup is only supported on laptop hardware'
 
