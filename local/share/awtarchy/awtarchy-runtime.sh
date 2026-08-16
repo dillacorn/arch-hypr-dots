@@ -5296,6 +5296,19 @@ managed_packages_file() {
   printf '%s\n' '/var/lib/awtarchy/managed-packages'
 }
 
+run_update_root() {
+  if [[ "${EUID}" -eq 0 ]]; then
+    "$@"
+    return
+  fi
+
+  have sudo || {
+    warn "sudo is required for hardware system reconciliation."
+    return 1
+  }
+  sudo -- "$@"
+}
+
 managed_package_recorded() {
   local package="$1" manifest
   manifest="$(managed_packages_file)"
@@ -5304,19 +5317,15 @@ managed_package_recorded() {
 
 remove_managed_packages_matching() {
   local label="$1" regex="$2"
-  [[ "${EUID}" -eq 0 ]] || {
-    warn "${label} cleanup requires sudo/root; no packages were removed."
-    return 0
-  }
+  local manifest tmp pkg
+  local -a pkgs=()
 
-  local manifest
   manifest="$(managed_packages_file)"
   [[ -r "$manifest" ]] || {
     warn "No Awtarchy package ownership manifest exists; refusing automatic ${label} package removal."
     return 0
   }
 
-  local -a pkgs=()
   while IFS= read -r pkg; do
     [[ -n "$pkg" ]] || continue
     [[ "$pkg" =~ $regex ]] || continue
@@ -5327,28 +5336,43 @@ remove_managed_packages_matching() {
   printf '%s\n' "${label} packages installed by Awtarchy:" >&2
   printf '  %s\n' "${pkgs[@]}" >&2
   ask_yes_no "Remove these obsolete ${label} packages?" || return 0
-  pacman -Rns --noconfirm "${pkgs[@]}"
-  local tmp
+
+  run_update_root /usr/bin/pacman -Rns --noconfirm "${pkgs[@]}"
+
   tmp="$(mktemp)"
   grep -Fvx -f <(printf '%s\n' "${pkgs[@]}") "$manifest" >"$tmp" || true
-  install -m 0644 "$tmp" "$manifest"
+  if ! run_update_root /usr/bin/install -m 0644 "$tmp" "$manifest"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
   rm -f -- "$tmp"
 }
 
-
 record_managed_packages() {
-  [[ "${EUID}" -eq 0 ]] || return 0
-  local manifest package
+  local manifest package tmp
   manifest="$(managed_packages_file)"
-  install -d -m 0755 "$(dirname "$manifest")"
-  touch "$manifest"
+  tmp="$(mktemp)"
+
+  if [[ -r "$manifest" ]]; then
+    cat -- "$manifest" >"$tmp"
+  else
+    : >"$tmp"
+  fi
+
   for package in "$@"; do
     [[ -n "$package" ]] || continue
     pacman -Qq "$package" >/dev/null 2>&1 || continue
-    grep -Fxq "$package" "$manifest" || printf '%s\n' "$package" >>"$manifest"
+    grep -Fxq "$package" "$tmp" || printf '%s\n' "$package" >>"$tmp"
   done
-  LC_ALL=C sort -u -o "$manifest" "$manifest"
-  chmod 0644 "$manifest"
+  LC_ALL=C sort -u -o "$tmp" "$tmp"
+
+  if ! run_update_root /usr/bin/install -d -m 0755 "$(dirname "$manifest")" \
+    || ! run_update_root /usr/bin/install -m 0644 "$tmp" "$manifest";
+  then
+    rm -f -- "$tmp"
+    return 1
+  fi
+  rm -f -- "$tmp"
 }
 
 install_managed_pacman_packages() {
@@ -5357,10 +5381,6 @@ install_managed_pacman_packages() {
   local -a requested=("$@") missing=()
   local package
 
-  [[ "${EUID}" -eq 0 ]] || {
-    warn "${label} installation requires sudo/root."
-    return 0
-  }
   command -v pacman >/dev/null 2>&1 || return 0
 
   for package in "${requested[@]}"; do
@@ -5371,7 +5391,7 @@ install_managed_pacman_packages() {
   printf '%s\n' "Required ${label} packages are missing:" >&2
   printf '  %s\n' "${missing[@]}" >&2
   ask_yes_no "Install the missing ${label} packages?" || return 0
-  pacman -S --needed --noconfirm "${missing[@]}"
+  run_update_root /usr/bin/pacman -S --needed --noconfirm "${missing[@]}"
   record_managed_packages "${missing[@]}"
 }
 
@@ -5391,10 +5411,6 @@ nvidia_stack_installed() {
 }
 
 ensure_current_hardware_packages() {
-  [[ "${EUID}" -eq 0 ]] || {
-    warn "Hardware package reconciliation requires sudo/root."
-    return 0
-  }
   command -v pacman >/dev/null 2>&1 || return 0
 
   local -a common=(mesa libglvnd vulkan-icd-loader)
@@ -5426,14 +5442,14 @@ ensure_current_hardware_packages() {
     pacman -Qq tlp >/dev/null 2>&1 || tlp_was_missing=1
     install_managed_pacman_packages "laptop power-management" tlp
     if (( tlp_was_missing == 1 )) && pacman -Qq tlp >/dev/null 2>&1; then
-      systemctl enable --now tlp.service || true
+      run_update_root /usr/bin/systemctl enable --now tlp.service || true
     fi
 
     if [[ "$CPU_VENDOR" == "intel" ]]; then
       pacman -Qq thermald >/dev/null 2>&1 || thermald_was_missing=1
       install_managed_pacman_packages "Intel laptop thermald" thermald
       if (( thermald_was_missing == 1 )) && pacman -Qq thermald >/dev/null 2>&1; then
-        systemctl enable --now thermald.service || true
+        run_update_root /usr/bin/systemctl enable --now thermald.service || true
       fi
     fi
   fi
@@ -5486,63 +5502,99 @@ PY
 }
 
 remove_exact_nvidia_files() {
-  [[ "${EUID}" -eq 0 ]] || return 0
   local file normalized
   for file in /etc/modprobe.d/nvidia-drm.conf /etc/modprobe.d/blacklist-nouveau.conf; do
-    [[ -f "$file" ]] || continue
-    normalized="$(sed '/^[[:space:]]*$/d' "$file" | sed 's/[[:space:]]*$//')"
+    [[ -e "$file" ]] || continue
+    if [[ -L "$file" ]]; then
+      warn "Leaving symbolic-link NVIDIA system file untouched: $file"
+      continue
+    fi
+    normalized="$(run_update_root /usr/bin/cat -- "$file" 2>/dev/null | sed '/^[[:space:]]*$/d' | sed 's/[[:space:]]*$//')" || continue
     case "$file:$normalized" in
-      "/etc/modprobe.d/nvidia-drm.conf:options nvidia_drm modeset=1") rm -f -- "$file" ;;
-      "/etc/modprobe.d/blacklist-nouveau.conf:"$'blacklist nouveau\noptions nouveau modeset=0') rm -f -- "$file" ;;
-      *) warn "Leaving modified NVIDIA system file untouched: $file" ;;
+      "/etc/modprobe.d/nvidia-drm.conf:options nvidia_drm modeset=1")
+        run_update_root /usr/bin/rm -f -- "$file"
+        ;;
+      "/etc/modprobe.d/blacklist-nouveau.conf:"$'blacklist nouveau\noptions nouveau modeset=0')
+        run_update_root /usr/bin/rm -f -- "$file"
+        ;;
+      *)
+        warn "Leaving modified NVIDIA system file untouched: $file"
+        ;;
     esac
   done
 }
 
 remove_nvidia_boot_entries() {
-  [[ "${EUID}" -eq 0 ]] || return 0
-  local changed=0 file tmp
+  local changed=0 file tmp mode backup source_tmp
   local -a files=()
-  [[ -d /boot/loader/entries ]] && while IFS= read -r -d '' file; do files+=("$file"); done < <(find /boot/loader/entries -maxdepth 1 -type f -name '*.conf' -print0)
+
+  if run_update_root /usr/bin/test -d /boot/loader/entries; then
+    while IFS= read -r -d '' file; do
+      files+=("$file")
+    done < <(run_update_root /usr/bin/find /boot/loader/entries -maxdepth 1 -type f -name '*.conf' -print0 2>/dev/null || true)
+  fi
+
   for file in /etc/default/grub /boot/limine/limine.conf /boot/limine.conf /boot/EFI/limine/limine.conf /boot/limine/limine.cfg /boot/limine.cfg; do
-    [[ -f "$file" ]] && files+=("$file")
+    run_update_root /usr/bin/test -f "$file" && files+=("$file")
   done
 
   for file in "${files[@]}"; do
-    grep -Eq 'nvidia[-_]drm\.modeset=1' "$file" || continue
-    cp -a -- "$file" "${file}.backup.$(stamp)"
+    run_update_root /usr/bin/test ! -L "$file" || {
+      warn "Leaving symbolic-link bootloader file untouched: $file"
+      continue
+    }
+    run_update_root /usr/bin/grep -Eq 'nvidia[-_]drm\.modeset=1' "$file" || continue
+
     tmp="$(mktemp)"
-    sed -E 's/(^|[[:space:]])nvidia[-_]drm\.modeset=1([[:space:]]|$)/ /g; s/[[:space:]]+/ /g; s/ =/=/g; s/[[:space:]]+$//' "$file" >"$tmp"
-    install -m "$(stat -c '%a' "$file")" "$tmp" "$file"
+    run_update_root /usr/bin/cat -- "$file" \
+      | sed -E 's/(^|[[:space:]])nvidia[-_]drm\.modeset=1([[:space:]]|$)/ /g; s/[[:space:]]+/ /g; s/ =/=/g; s/[[:space:]]+$//' \
+      >"$tmp"
+    mode="$(run_update_root /usr/bin/stat -c '%a' -- "$file")"
+    backup="${file}.backup.$(stamp)"
+    run_update_root /usr/bin/cp -a -- "$file" "$backup"
+    run_update_root /usr/bin/install -m "$mode" "$tmp" "$file"
     rm -f -- "$tmp"
     changed=1
   done
 
-  if [[ -f /etc/mkinitcpio.conf ]] && grep -Eq 'MODULES=.*nvidia' /etc/mkinitcpio.conf; then
-    cp -a -- /etc/mkinitcpio.conf "/etc/mkinitcpio.conf.backup.$(stamp)"
-    python3 - /etc/mkinitcpio.conf <<'PY'
+  if run_update_root /usr/bin/test -f /etc/mkinitcpio.conf \
+    && run_update_root /usr/bin/test ! -L /etc/mkinitcpio.conf \
+    && run_update_root /usr/bin/grep -Eq 'MODULES=.*nvidia' /etc/mkinitcpio.conf;
+  then
+    source_tmp="$(mktemp)"
+    tmp="$(mktemp)"
+    run_update_root /usr/bin/cat -- /etc/mkinitcpio.conf >"$source_tmp"
+    python3 - "$source_tmp" "$tmp" <<'PY'
 from pathlib import Path
 import re, sys
-path = Path(sys.argv[1])
+source = Path(sys.argv[1])
+out_path = Path(sys.argv[2])
 remove = {"nvidia", "nvidia_modeset", "nvidia_uvm", "nvidia_drm"}
 out = []
-for line in path.read_text().splitlines():
+for line in source.read_text().splitlines():
     m = re.match(r'^(\s*MODULES=\()(.*)(\)\s*)$', line)
     if m:
         words = [w for w in m.group(2).split() if w not in remove]
         line = m.group(1) + " ".join(words) + m.group(3)
     out.append(line)
-path.write_text("\n".join(out) + "\n")
+out_path.write_text("\n".join(out) + "\n")
 PY
+    mode="$(run_update_root /usr/bin/stat -c '%a' -- /etc/mkinitcpio.conf)"
+    backup="/etc/mkinitcpio.conf.backup.$(stamp)"
+    run_update_root /usr/bin/cp -a -- /etc/mkinitcpio.conf "$backup"
+    run_update_root /usr/bin/install -m "$mode" "$tmp" /etc/mkinitcpio.conf
+    rm -f -- "$source_tmp" "$tmp"
     changed=1
   fi
 
   if (( changed == 1 )); then
-    command -v grub-mkconfig >/dev/null 2>&1 && [[ -f /boot/grub/grub.cfg ]] && grub-mkconfig -o /boot/grub/grub.cfg || true
+    if command -v grub-mkconfig >/dev/null 2>&1 && run_update_root /usr/bin/test -f /boot/grub/grub.cfg; then
+      run_update_root /usr/bin/grub-mkconfig -o /boot/grub/grub.cfg || true
+    fi
     if command -v mkinitcpio >/dev/null 2>&1; then
-      mkinitcpio -P
+      run_update_root /usr/bin/mkinitcpio -P
     elif command -v dracut >/dev/null 2>&1; then
-      dracut --regenerate-all --force
+      run_update_root /usr/bin/dracut --regenerate-all --force
     fi
   fi
 }
@@ -5591,8 +5643,8 @@ hardware_reconcile() {
 
   if [[ "$prev_cpu" == "intel" && "$CPU_VENDOR" != "intel" && "$CPU_VENDOR" != "unknown" ]]; then
     if managed_package_recorded thermald; then
-      if [[ "${EUID}" -eq 0 ]] && systemctl is-enabled thermald.service >/dev/null 2>&1; then
-        systemctl disable --now thermald.service || true
+      if systemctl is-enabled thermald.service >/dev/null 2>&1; then
+        run_update_root /usr/bin/systemctl disable --now thermald.service || true
       fi
       remove_managed_packages_matching "Intel CPU thermald" '^thermald$'
     else
@@ -5602,8 +5654,8 @@ hardware_reconcile() {
 
   if [[ "$prev_laptop" == "1" && "$IS_LAPTOP_NOW" == "0" ]]; then
     if managed_package_recorded tlp; then
-      if [[ "${EUID}" -eq 0 ]] && systemctl is-enabled tlp.service >/dev/null 2>&1; then
-        systemctl disable --now tlp.service || true
+      if systemctl is-enabled tlp.service >/dev/null 2>&1; then
+        run_update_root /usr/bin/systemctl disable --now tlp.service || true
       fi
     fi
     remove_managed_packages_matching "laptop power-management" '^(tlp|tlpui)$'
