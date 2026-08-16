@@ -9,7 +9,7 @@ umask 022
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../../.." && pwd -P)"
 MANAGED_FILE="${AWTARCHY_MANAGED_PACKAGES_FILE:-/var/lib/awtarchy/managed-packages}"
-POWER_PROFILE_HELPER_SOURCE="${AWTARCHY_POWER_PROFILE_HELPER_SOURCE:-${REPO_ROOT}/local/libexec/awtarchy/power-profile-helper}"
+POWER_PROFILE_HELPER_SOURCE="${REPO_ROOT}/local/libexec/awtarchy/power-profile-helper"
 POWER_PROFILE_HELPER_DESTINATION="/usr/local/libexec/awtarchy/power-profile-helper"
 
 log()  { printf '[awtarchy-power] %s\n' "$*"; }
@@ -74,19 +74,24 @@ forget_managed() {
 }
 
 power_profile_helper_is_current() {
-  local owner mode destination_dir
+  local owner mode destination_dir dir_owner dir_mode
   destination_dir="$(dirname -- "$POWER_PROFILE_HELPER_DESTINATION")"
 
   [[ -f $POWER_PROFILE_HELPER_SOURCE && ! -L $POWER_PROFILE_HELPER_SOURCE ]] || return 1
+  [[ -d $destination_dir && ! -L $destination_dir ]] || return 1
   [[ -f $POWER_PROFILE_HELPER_DESTINATION && ! -L $POWER_PROFILE_HELPER_DESTINATION \
     && -x $POWER_PROFILE_HELPER_DESTINATION ]] || return 1
-  [[ ! -L $destination_dir ]] || return 1
 
-  owner="$(stat -c %u -- "$POWER_PROFILE_HELPER_DESTINATION" 2>/dev/null)" || return 1
-  mode="$(stat -c %a -- "$POWER_PROFILE_HELPER_DESTINATION" 2>/dev/null)" || return 1
+  dir_owner="$(/usr/bin/stat -c %u -- "$destination_dir" 2>/dev/null)" || return 1
+  dir_mode="$(/usr/bin/stat -c %a -- "$destination_dir" 2>/dev/null)" || return 1
+  [[ $dir_owner == 0 && $dir_mode =~ ^[0-7]{3,4}$ ]] || return 1
+  (( (8#$dir_mode & 8#022) == 0 )) || return 1
+
+  owner="$(/usr/bin/stat -c %u -- "$POWER_PROFILE_HELPER_DESTINATION" 2>/dev/null)" || return 1
+  mode="$(/usr/bin/stat -c %a -- "$POWER_PROFILE_HELPER_DESTINATION" 2>/dev/null)" || return 1
   [[ $owner == 0 && $mode =~ ^[0-7]{3,4}$ ]] || return 1
   (( (8#$mode & 8#022) == 0 )) || return 1
-  cmp -s -- "$POWER_PROFILE_HELPER_SOURCE" "$POWER_PROFILE_HELPER_DESTINATION"
+  /usr/bin/cmp -s -- "$POWER_PROFILE_HELPER_SOURCE" "$POWER_PROFILE_HELPER_DESTINATION"
 }
 
 install_power_profile_helper() {
@@ -95,7 +100,7 @@ install_power_profile_helper() {
 
   [[ -f $POWER_PROFILE_HELPER_SOURCE && ! -L $POWER_PROFILE_HELPER_SOURCE ]] \
     || die "Trusted Power Mode helper source is missing: $POWER_PROFILE_HELPER_SOURCE"
-  [[ $(head -n1 -- "$POWER_PROFILE_HELPER_SOURCE") == '#!/usr/bin/bash' ]] \
+  [[ $(/usr/bin/head -n1 -- "$POWER_PROFILE_HELPER_SOURCE") == '#!/usr/bin/bash' ]] \
     || die "Trusted Power Mode helper must use /usr/bin/bash."
   /usr/bin/bash -n "$POWER_PROFILE_HELPER_SOURCE" \
     || die "Trusted Power Mode helper failed Bash syntax validation."
