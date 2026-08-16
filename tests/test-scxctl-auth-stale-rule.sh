@@ -46,6 +46,7 @@ stop_body="$(function_body "$BACKEND" machine_scheduler_stop)"
 
 [[ "$capture_body" == *'get|list)'* ]] \
   || fail 'passive scxctl get/list reads are not separated from privileged operations'
+# shellcheck disable=SC2016
 [[ "$capture_body" == *'run_capture "$SCXCTL_HELPER" "$@"'* ]] \
   || fail 'passive scxctl reads do not call the trusted helper directly'
 [[ "$status_body" == *'scxctl_auth_state_cached'* ]] \
