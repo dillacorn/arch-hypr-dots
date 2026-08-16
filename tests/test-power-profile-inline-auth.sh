@@ -5,6 +5,8 @@ set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 QML="${ROOT}/config/quickshell/awtarchy/PowerModeCard.qml"
 HELPER="${ROOT}/local/libexec/awtarchy/power-profile-helper"
+LEGACY_SETUP="${ROOT}/config/hypr/scripts/quickshell_power_profile_setup.sh"
+HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -24,6 +26,10 @@ assert_not_contains() {
 [[ -f "$HELPER" ]] || fail 'trusted Power Mode helper is missing'
 [[ $(head -n1 -- "$HELPER") == '#!/usr/bin/bash' ]] \
   || fail 'Power Mode helper does not use fixed /usr/bin/bash interpreter'
+[[ ! -e "$LEGACY_SETUP" && ! -L "$LEGACY_SETUP" ]] \
+  || fail 'terminal-based Power Mode setup script still ships'
+assert_contains "$HISTORY" $'ae114864b02b45d1bd63147c302fa036133543cbea349ff85e823b5fe58a2193\t.config/hypr/scripts/quickshell_power_profile_setup.sh' \
+  'managed history is missing the retired terminal setup script hash'
 
 assert_contains "$QML" 'property bool setupAuthOpen: false' \
   'Power Mode card has no inline authorization state'
@@ -68,10 +74,10 @@ assert_not_contains "$HELPER" 'bash -c' \
 assert_not_contains "$HELPER" 'sh -c' \
   'Power Mode helper contains arbitrary sh -c execution'
 
-if "$HELPER" setup extra >/dev/null 2>&1; then
+if /usr/bin/bash "$HELPER" setup extra >/dev/null 2>&1; then
   fail 'Power Mode helper accepted extra arguments'
 fi
-if "$HELPER" arbitrary-action >/dev/null 2>&1; then
+if /usr/bin/bash "$HELPER" arbitrary-action >/dev/null 2>&1; then
   fail 'Power Mode helper accepted an unknown action'
 fi
 
