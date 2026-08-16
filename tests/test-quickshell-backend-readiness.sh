@@ -43,4 +43,4 @@ assert_contains "$READY_SOUND" 'if network_manager_installed && ! network_manage
 assert_contains "$READY_SOUND" 'network_backend_may_need_restart=1'
 assert_contains "$READY_SOUND" '"$QUICKSHELL_MANAGER" restart >/dev/null 2>&1 || exit 0'
 
-printf 'Quickshell backend readiness regression tests passed.\n'
+printf 'Quickshell power/network backend readiness regression tests passed.\n'
