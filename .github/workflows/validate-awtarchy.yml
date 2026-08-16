@@ -67,7 +67,10 @@ jobs:
           bash -n tests/test-launcher-keyboard-focus.sh
           bash -n tests/test-desktop-candidate-validation.sh
           bash -n tests/test-lua-validation.sh
+          bash -n tests/test-network-bar-state.sh
           bash -n tests/test-playerctl-dependency.sh
+          bash -n tests/test-power-profile-helper-update.sh
+          bash -n tests/test-power-profile-inline-auth.sh
           bash -n tests/test-quickshell-backend-readiness.sh
           bash -n tests/test-quickshell-capture-privacy.sh
           bash -n tests/test-quickshell-production-readiness.sh
@@ -120,7 +123,10 @@ jobs:
             tests/test-launcher-keyboard-focus.sh \
             tests/test-desktop-candidate-validation.sh \
             tests/test-lua-validation.sh \
+            tests/test-network-bar-state.sh \
             tests/test-playerctl-dependency.sh \
+            tests/test-power-profile-helper-update.sh \
+            tests/test-power-profile-inline-auth.sh \
             tests/test-quickshell-backend-readiness.sh \
             tests/test-quickshell-capture-privacy.sh \
             tests/test-quickshell-updater-migration.sh \
@@ -160,7 +166,10 @@ jobs:
           bash tests/test-launcher-keyboard-focus.sh
           bash tests/test-desktop-candidate-validation.sh
           bash tests/test-lua-validation.sh
+          bash tests/test-network-bar-state.sh
           bash tests/test-playerctl-dependency.sh
+          bash tests/test-power-profile-helper-update.sh
+          bash tests/test-power-profile-inline-auth.sh
           bash tests/test-quickshell-backend-readiness.sh
           bash tests/test-quickshell-capture-privacy.sh
           bash tests/test-quickshell-production-readiness.sh
