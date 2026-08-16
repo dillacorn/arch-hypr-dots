@@ -91,4 +91,25 @@ contains "${ROOT}/local/share/awtarchy/awtarchy-runtime.sh" 'repair_scxctl_updat
 contains "$HISTORY" $'708658656ab4672d010f49b54de099200d1ab6b42bebb822ec2e01d80fa81df3\t.config/hypr/scripts/hyprbars_toggle.sh' \
   'managed history is missing the pre-fix hyprbars script hash'
 
+# Keep current stock hashes in managed history so future updates can recognize
+# this release's files as Awtarchy-owned instead of preserving them as user edits.
+missing_history=0
+for rel in \
+  .config/quickshell/awtarchy/PowerModeCard.qml \
+  .config/quickshell/awtarchy/BarSettingsSection.qml \
+  .config/quickshell/awtarchy/TitleBarsCard.qml \
+  .config/hypr/scripts/hyprbars_toggle.sh
+do
+  source_file="${ROOT}/${rel#.}"
+  if [[ $rel == .config/* ]]; then
+    source_file="${ROOT}/config/${rel#.config/}"
+  fi
+  digest="$(sha256sum "$source_file" | awk '{print $1}')"
+  if ! grep -Fq -- "$digest"$'\t'"$rel" "$HISTORY"; then
+    printf 'MISSING_MANAGED_HASH %s\t%s\n' "$digest" "$rel" >&2
+    missing_history=1
+  fi
+done
+(( missing_history == 0 )) || fail 'managed history is missing current Title Bars stock hashes'
+
 printf '%s\n' 'PASS: Title Bars is a main Quick Settings toggle using inline auth through the root-owned helper.'
