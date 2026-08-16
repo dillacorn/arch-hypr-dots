@@ -86,8 +86,10 @@ contains "$TRUSTED_HELPER" 'pty.fork()' \
   'trusted helper does not run hyprpm inside a PTY'
 contains "$TRUSTED_HELPER" 'password = sys.stdin.readline()' \
   'trusted helper does not receive the password from stdin'
-contains "$TRUSTED_HELPER" 'AWTARCHY_STAGE\\t' \
-  'trusted helper does not stream structured setup stages'
+contains "$TRUSTED_HELPER" 'print(f"AWTARCHY_{kind}\\t' \
+  'trusted helper does not stream structured setup records'
+contains "$TRUSTED_HELPER" 'emit("STAGE",' \
+  'trusted helper does not emit live setup stages'
 contains "$TRUSTED_HELPER" 'Sorry, try again.' \
   'trusted helper does not detect sudo password rejection'
 contains "$TRUSTED_HELPER" 'Authentication failed: sudo rejected the password.' \
@@ -111,7 +113,7 @@ contains "${ROOT}/awtarchy-install.sh" 'SCXCTL_HELPER_SOURCE=' \
 contains "${ROOT}/local/share/awtarchy/awtarchy-runtime.sh" 'repair_scxctl_update_helper()' \
   'updater no longer repairs the trusted helper'
 
-contains "$HISTORY" $'708658656ab4672d010f49b54de099200d1ab6b42bebb822ec2e01d80fa81df3\t.config/hypr/scripts/hyprbars_toggle.sh' \
+contains "$HISTORY" $'708658656ab4672d010f49b54de099200d1ab6b42bebbec2e01d80fa81df3\t.config/hypr/scripts/hyprbars_toggle.sh' \
   'managed history is missing the pre-fix hyprbars script hash'
 
 # Keep current stock hashes in managed history so future updates can recognize
