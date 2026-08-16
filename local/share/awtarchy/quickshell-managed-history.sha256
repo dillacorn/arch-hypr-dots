@@ -530,3 +530,6 @@ ae114864b02b45d1bd63147c302fa036133543cbea349ff85e823b5fe58a2193	.config/hypr/sc
 
 # 2026-08-15 sched-ext Apply label managed hash.
 dd3eaf9426c23e3b12aaab76297d04ded0afcc39505d1cf2ce2f744a0d4720cf	.config/quickshell/awtarchy/QuickSettings.qml
+
+# 2026-08-16 Bluetooth power-state persistence fix.
+f6192e1b29a8e4d5156c001bdecdcfe19402a21eb309da93658d17f886e19b35	.config/hypr/scripts/quickshell_bluetooth_state.sh
