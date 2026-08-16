@@ -2077,6 +2077,19 @@ prepare_base_install() {
   find "$REPO_DIR" -type f -exec dos2unix {} + 2>/dev/null || true
 }
 
+reconcile_power_profile_backend() {
+  local repo_dir="$1"
+  local reconciler="${repo_dir}/local/share/awtarchy/awtarchy-power-profile.sh"
+
+  [[ -f "$reconciler" && ! -L "$reconciler" ]] \
+    || die "Release is missing the power-profile reconciler: ${reconciler}"
+  /usr/bin/bash -n "$reconciler" \
+    || die "Release power-profile reconciler failed Bash syntax validation."
+
+  AWTARCHY_MANAGED_PACKAGES_FILE="${AWTARCHY_MANAGED_PACKAGES_FILE:-/var/lib/awtarchy/managed-packages}" \
+    /usr/bin/bash "$reconciler"
+}
+
 install_arch_repo_apps_stage() {
   (( INSTALL_ARCH == 1 )) || { warn "Skipping Arch repo application install."; return 0; }
 
@@ -2139,12 +2152,6 @@ install_arch_repo_apps_stage() {
       log "Setting up Intel laptop power management..."
       if pacman_install_one thermald; then
         systemctl enable --now thermald || true
-      fi
-    fi
-    if [[ "$IS_LAPTOP" == true ]]; then
-      log "Configuring laptop power savings..."
-      if pacman_install_one tlp; then
-        systemctl enable --now tlp || true
       fi
     fi
 
@@ -2939,6 +2946,9 @@ run_install() {
   fi
   prepare_base_install
   install_arch_repo_apps_stage
+  if [[ "$IS_LAPTOP" == true && "$IS_VM" == false ]]; then
+    reconcile_power_profile_backend "$REPO_DIR"
+  fi
   install_aur_repo_apps_stage
   install_flatpak_apps_stage
   install_alacritty_themes_stage
@@ -7056,6 +7066,9 @@ main() {
 
   if [[ ${AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR:-0} != 1 ]]; then
     repair_scxctl_update_helper "$repo_dir"
+    if (( IS_LAPTOP_NOW == 1 )); then
+      reconcile_power_profile_backend "$repo_dir"
+    fi
   fi
   ensure_quickshell_update_prerequisites
   snapshot_quickshell_update_legacy_paths
