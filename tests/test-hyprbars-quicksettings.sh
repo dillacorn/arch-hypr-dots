@@ -5,6 +5,7 @@ set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="${ROOT}/config/hypr/scripts/hyprbars_toggle.sh"
 QUICK_SETTINGS="${ROOT}/config/quickshell/awtarchy/QuickSettings.qml"
+POWER_CARD="${ROOT}/config/quickshell/awtarchy/PowerModeCard.qml"
 TITLE_CARD="${ROOT}/config/quickshell/awtarchy/TitleBarsCard.qml"
 BAR_SETTINGS="${ROOT}/config/quickshell/awtarchy/BarSettingsSection.qml"
 HYPR_LUA="${ROOT}/config/hypr/hyprland.lua"
@@ -54,10 +55,13 @@ contains "$SCRIPT" '"$HYPRPM_BIN" add "$REPO_URL"' \
 contains "$SCRIPT" '"$HYPRPM_BIN" enable "$PLUGIN"' \
   'first-time setup no longer enables hyprbars'
 
-# Title Bars belongs in the main Quick Settings list, not behind the display
-# appearance gear panel.
-contains "$QUICK_SETTINGS" 'TitleBarsCard {' \
-  'Quick Settings main list does not contain the Title Bars card'
+# Title Bars belongs in the main Quick Settings content path, not behind the
+# display appearance gear panel. PowerModeCard is already a direct child of the
+# main Quick Settings list, so it may compose the always-visible Title Bars card.
+contains "$QUICK_SETTINGS" 'PowerModeCard {' \
+  'Quick Settings main list no longer contains the Power/Title Bars card host'
+contains "$POWER_CARD" 'TitleBarsCard {' \
+  'main Quick Settings content path does not contain the Title Bars card'
 absent "$BAR_SETTINGS" 'text: "Title Bars"' \
   'duplicate Title Bars control is still hidden in Bar Appearance settings'
 absent "$BAR_SETTINGS" 'hyprbarsScript' \
