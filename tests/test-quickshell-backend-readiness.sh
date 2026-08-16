@@ -25,6 +25,7 @@ assert_not_contains() {
 POWER_CARD="${REPO_ROOT}/config/quickshell/awtarchy/PowerModeCard.qml"
 POWER_SETUP="${REPO_ROOT}/config/hypr/scripts/quickshell_power_profile_setup.sh"
 POWER_RECONCILER="${REPO_ROOT}/local/share/awtarchy/awtarchy-power-profile.sh"
+RUNTIME="${REPO_ROOT}/local/share/awtarchy/awtarchy-runtime.sh"
 READY_SOUND="${REPO_ROOT}/config/hypr/scripts/quickshell_ready_sound.sh"
 
 # pacman can resolve a queried virtual provider such as power-profiles-daemon
@@ -35,6 +36,15 @@ assert_not_contains "$POWER_CARD" 'pacman -Qq power-profiles-daemon'
 assert_contains "$POWER_SETUP" 'pacman -Qq 2>/dev/null | grep -Fx -- "$1" >/dev/null'
 assert_not_contains "$POWER_SETUP" 'pacman -Qq power-profiles-daemon'
 assert_contains "$POWER_RECONCILER" 'pacman -Qq 2>/dev/null | grep -Fx -- "$1" >/dev/null'
+
+# Laptop installs and updates must provision the TLP D-Bus compatibility
+# backend as a pair. Installing only tlp leaves Quickshell PowerProfiles with
+# no supported service even though TLP itself is installed.
+assert_contains "$POWER_RECONCILER" 'newly_managed+=(tlp)'
+assert_contains "$POWER_RECONCILER" 'newly_managed+=(tlp-pd)'
+assert_contains "$POWER_RECONCILER" 'systemctl enable --now tlp.service tlp-pd.service'
+assert_contains "$RUNTIME" 'reconcile_power_profile_backend "$REPO_DIR"'
+assert_contains "$RUNTIME" 'reconcile_power_profile_backend "$repo_dir"'
 
 # Quickshell 0.3 initializes its NetworkManager backend when the singleton is
 # constructed. If Hyprland launches the shell before NetworkManager is active,
