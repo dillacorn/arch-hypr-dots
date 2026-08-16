@@ -25,6 +25,7 @@ jobs:
           bash -n local/bin/awtarchy
           grep -Fq 'exec "${TARGET_HOME}/.local/bin/awtarchy" "$@"' local/bin/awtarchy
           bash -n local/libexec/awtarchy/scxctl-helper
+          bash -n local/libexec/awtarchy/power-profile-helper
           bash -n local/share/awtarchy/awtarchy-runtime.sh
           bash -n local/share/awtarchy/awtarchy-power-profile.sh
           bash -n config/hypr/scripts/awtarchy-tips-tui.sh
@@ -33,6 +34,7 @@ jobs:
           bash -n config/hypr/scripts/hypr-ddc-brightness.sh
           bash -n config/hypr/scripts/hypr_quicksettings.sh
           bash -n config/hypr/scripts/hypr_quicksettings_core.sh
+          bash -n config/hypr/scripts/hyprbars_toggle.sh
           bash -n config/hypr/scripts/hypridle_action.sh
           bash -n config/hypr/scripts/hypridle_restart.sh
           bash -n config/hypr/scripts/hyprsunset_ctl.sh
@@ -41,7 +43,6 @@ jobs:
           bash -n config/hypr/scripts/quickshell_application_state.sh
           bash -n config/hypr/scripts/quickshell_bar_restore.sh
           bash -n config/hypr/scripts/quickshell_launcher_position.sh
-          bash -n config/hypr/scripts/quickshell_power_profile_setup.sh
           bash -n config/hypr/scripts/quickshell_ready_sound.sh
           bash -n config/hypr/scripts/quickshell_resume_recover.sh
           bash -n config/hypr/scripts/quickshell_runtime_rules.sh
@@ -68,10 +69,14 @@ jobs:
           bash -n tests/test-desktop-candidate-validation.sh
           bash -n tests/test-lua-validation.sh
           bash -n tests/test-playerctl-dependency.sh
+          bash -n tests/test-power-profile-helper-update.sh
+          bash -n tests/test-power-profile-inline-auth.sh
           bash -n tests/test-quickshell-backend-readiness.sh
           bash -n tests/test-quickshell-capture-privacy.sh
           bash -n tests/test-quickshell-production-readiness.sh
           bash -n tests/test-quickshell-updater-migration.sh
+          bash -n tests/test-hyprbars-quicksettings.sh
+          bash -n tests/test-network-bar-state.sh
           bash -n tests/test-scxctl-auth-ui.sh
           bash -n tests/test-scxctl-auth-stale-rule.sh
           bash -n tests/test-scxctl-helper-update.sh
@@ -89,15 +94,17 @@ jobs:
             awtarchy-install.sh \
             local/bin/awtarchy \
             local/libexec/awtarchy/scxctl-helper \
+            local/libexec/awtarchy/power-profile-helper \
+            local/share/awtarchy/awtarchy-power-profile.sh \
             config/hypr/scripts/ddc_brightness.sh \
             config/hypr/scripts/dim_display.sh \
             config/hypr/scripts/hypr-ddc-brightness.sh \
+            config/hypr/scripts/hyprbars_toggle.sh \
             config/hypr/scripts/hypridle_restart.sh \
             config/hypr/scripts/hyprsunset_ctl.sh \
             config/hypr/scripts/gif_capture.sh \
             config/hypr/scripts/quickshell_bar_restore.sh \
             config/hypr/scripts/quickshell_launcher_position.sh \
-            config/hypr/scripts/quickshell_power_profile_setup.sh \
             config/hypr/scripts/quickshell_resume_recover.sh \
             config/hypr/scripts/quickshell_runtime_rules.sh \
             config/hypr/scripts/quickshell_sensitive_capture.sh \
@@ -121,9 +128,13 @@ jobs:
             tests/test-desktop-candidate-validation.sh \
             tests/test-lua-validation.sh \
             tests/test-playerctl-dependency.sh \
+            tests/test-power-profile-helper-update.sh \
+            tests/test-power-profile-inline-auth.sh \
             tests/test-quickshell-backend-readiness.sh \
             tests/test-quickshell-capture-privacy.sh \
             tests/test-quickshell-updater-migration.sh \
+            tests/test-hyprbars-quicksettings.sh \
+            tests/test-network-bar-state.sh \
             tests/test-scxctl-auth-ui.sh \
             tests/test-scxctl-auth-stale-rule.sh \
             tests/test-scxctl-helper-update.sh \
@@ -161,9 +172,13 @@ jobs:
           bash tests/test-desktop-candidate-validation.sh
           bash tests/test-lua-validation.sh
           bash tests/test-playerctl-dependency.sh
+          bash tests/test-power-profile-helper-update.sh
+          bash tests/test-power-profile-inline-auth.sh
           bash tests/test-quickshell-backend-readiness.sh
           bash tests/test-quickshell-capture-privacy.sh
           bash tests/test-quickshell-production-readiness.sh
+          bash tests/test-hyprbars-quicksettings.sh
+          bash tests/test-network-bar-state.sh
           python3 tests/test-config-noise-comparison.py
           bash tests/test-quickshell-updater-migration.sh
           bash tests/test-scxctl-auth-ui.sh

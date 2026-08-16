@@ -533,3 +533,12 @@ dd3eaf9426c23e3b12aaab76297d04ded0afcc39505d1cf2ce2f744a0d4720cf	.config/quicksh
 
 # 2026-08-16 Bluetooth power-state persistence fix.
 f6192e1b29a8e4d5156c001bdecdcfe19402a21eb309da93658d17f886e19b35	.config/hypr/scripts/quickshell_bluetooth_state.sh
+
+# 2026-08-16 Power Mode, title-bar, and network runtime fixes.
+708658656ab4672d010f49b54de099200d1ab6b42bebb822ec2e01d80fa81df3	.config/hypr/scripts/hyprbars_toggle.sh
+
+# 2026-08-16 Current stock hashes after runtime bug fixes.
+b1b771598642abf2d8fce5fa120a7958aa5b0093e0bce1866e4863249b92f894	.config/quickshell/awtarchy/PowerModeCard.qml
+ef99f5838909f496c532b23ceb6734e0f0f992d625fb21519bd2b6f610a7382d	.config/quickshell/awtarchy/BarSettingsSection.qml
+138ea9beb5ba20534f59d7d91b26939093e013698b1e8b057f9b5be5d9336acf	.config/quickshell/awtarchy/NetworkMenu.qml
+afffbcd3bfaef12b84b6e3800966da500c851566fcf7ab77174b60c3915f917a	.config/hypr/scripts/hyprbars_toggle.sh

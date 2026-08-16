@@ -1,0 +1,119 @@
+#!/usr/bin/bash
+set -Eeuo pipefail
+IFS=$'\n\t'
+umask 022
+
+PACMAN="/usr/bin/pacman"
+SYSTEMCTL="/usr/bin/systemctl"
+MANAGED_FILE="/var/lib/awtarchy/managed-packages"
+
+fail() {
+  printf 'power-profile-helper: %s\n' "$*" >&2
+  exit 2
+}
+
+package_installed() {
+  "$PACMAN" -Qq 2>/dev/null | /usr/bin/grep -Fx -- "$1" >/dev/null
+}
+
+is_laptop() {
+  local battery
+  for battery in /sys/class/power_supply/BAT*; do
+    [[ -e "$battery" ]] && return 0
+  done
+
+  case "$(/usr/bin/cat /sys/class/dmi/id/chassis_type 2>/dev/null || true)" in
+    8|9|10|14|30|31|32) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+record_managed() {
+  local package tmp
+  (( $# > 0 )) || return 0
+
+  /usr/bin/install -d -m 0755 /var/lib/awtarchy
+  tmp="$(/usr/bin/mktemp /var/lib/awtarchy/managed-packages.XXXXXX)"
+  if [[ -r "$MANAGED_FILE" ]]; then
+    /usr/bin/cat "$MANAGED_FILE" >"$tmp"
+  fi
+  for package in "$@"; do
+    package_installed "$package" && printf '%s\n' "$package" >>"$tmp"
+  done
+  LC_ALL=C /usr/bin/sort -u -o "$tmp" "$tmp"
+  /usr/bin/install -m 0644 -o root -g root "$tmp" "$MANAGED_FILE"
+  /usr/bin/rm -f -- "$tmp"
+}
+
+forget_managed() {
+  local package="$1" tmp
+  [[ -r "$MANAGED_FILE" ]] || return 0
+
+  tmp="$(/usr/bin/mktemp /var/lib/awtarchy/managed-packages.XXXXXX)"
+  /usr/bin/grep -Fxv -- "$package" "$MANAGED_FILE" >"$tmp" || true
+  /usr/bin/install -m 0644 -o root -g root "$tmp" "$MANAGED_FILE"
+  /usr/bin/rm -f -- "$tmp"
+}
+
+install_tlp_backend() {
+  local had_tlp=0 had_tlp_pd=0
+  package_installed tlp && had_tlp=1
+  package_installed tlp-pd && had_tlp_pd=1
+
+  "$PACMAN" -S --needed --noconfirm tlp tlp-pd
+  "$SYSTEMCTL" enable --now tlp.service tlp-pd.service
+
+  if (( had_tlp == 0 && had_tlp_pd == 0 )); then
+    record_managed tlp tlp-pd
+  elif (( had_tlp == 0 )); then
+    record_managed tlp
+  elif (( had_tlp_pd == 0 )); then
+    record_managed tlp-pd
+  fi
+}
+
+setup_backend() {
+  if package_installed tlp && package_installed power-profiles-daemon; then
+    fail 'TLP and power-profiles-daemon are both installed; use resolve-tlp-conflict'
+  fi
+
+  if package_installed power-profiles-daemon && ! package_installed tlp; then
+    "$SYSTEMCTL" enable --now power-profiles-daemon.service
+    return 0
+  fi
+
+  install_tlp_backend
+}
+
+resolve_tlp_conflict() {
+  package_installed tlp \
+    || fail 'resolve-tlp-conflict requires TLP to be installed'
+  package_installed power-profiles-daemon \
+    || fail 'resolve-tlp-conflict requires power-profiles-daemon to be installed'
+
+  "$SYSTEMCTL" disable --now power-profiles-daemon.service 2>/dev/null || true
+  "$PACMAN" -Rns --noconfirm power-profiles-daemon
+  forget_managed power-profiles-daemon
+  install_tlp_backend
+}
+
+main() {
+  [[ $# -eq 1 ]] || fail 'exactly one action is required'
+
+  case "$1" in
+    setup|resolve-tlp-conflict) ;;
+    *) fail "unsupported action: $1" ;;
+  esac
+
+  (( EUID == 0 )) || fail 'must run as root'
+  [[ -x "$PACMAN" && -x "$SYSTEMCTL" && -x /usr/bin/grep && -x /usr/bin/cat ]] \
+    || fail 'required system tools are unavailable'
+  is_laptop || fail 'Power Mode setup is only supported on laptop hardware'
+
+  case "$1" in
+    setup) setup_backend ;;
+    resolve-tlp-conflict) resolve_tlp_conflict ;;
+  esac
+}
+
+main "$@"

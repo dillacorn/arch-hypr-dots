@@ -42,7 +42,7 @@ Singleton {
     readonly property var wiredDevices: devicesOfType(DeviceType.Wired)
     readonly property var primaryWifiDevice: wifiDevices.length > 0 ? wifiDevices[0] : null
     readonly property var connectedWifiNetworks: wifiNetworks().filter(network => network.connected)
-    readonly property var connectedWiredDevices: wiredDevices.filter(device => device.connected)
+    readonly property var connectedWiredDevices: wiredDevices.filter(device => device && device.network && device.network.connected)
     readonly property bool wifiPresent: wifiDevices.length > 0
     readonly property bool wiredPresent: wiredDevices.length > 0
     readonly property bool available: wifiPresent || wiredPresent
@@ -131,26 +131,26 @@ Singleton {
     }
 
     function buildBarLabel() {
-        if (wiredConnected)
-            return "󰈀";
         if (wifiConnected)
             return wifiSignalIcon(connectedWifiNetworks[0]);
-        if (wiredPresent)
+        if (wiredConnected)
             return "󰈀";
         if (wifiPresent)
-            return "";
+            return "󰤯";
+        if (wiredPresent)
+            return "󰈂";
         return "";
     }
 
     function buildVerticalBarLabel() {
-        if (wiredConnected)
-            return "󰈀";
         if (wifiConnected)
             return wifiSignalIcon(connectedWifiNetworks[0]);
-        if (wiredPresent)
+        if (wiredConnected)
             return "󰈀";
         if (wifiPresent)
-            return "";
+            return "󰤯";
+        if (wiredPresent)
+            return "󰈂";
         return "";
     }
 
