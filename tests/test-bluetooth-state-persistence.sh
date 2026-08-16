@@ -27,11 +27,18 @@ state_file="$XDG_STATE_HOME/awtarchy/bluetooth-state"
 
 "$HELPER" set disabled
 grep -Fxq 'disabled' "$state_file"
-grep -Fxq 'block bluetooth' "$RFKILL_LOG"
+[[ ! -e "$RFKILL_LOG" || ! -s "$RFKILL_LOG" ]] || {
+    printf '%s\n' 'Disabling Bluetooth still rfkill-blocks the controller and can hide the HCI device.' >&2
+    exit 1
+}
+
+: >"$RFKILL_LOG"
+"$HELPER" prepare
+grep -Fxq 'unblock bluetooth' "$RFKILL_LOG"
 
 : >"$RFKILL_LOG"
 "$HELPER" restore
-grep -Fxq 'block bluetooth' "$RFKILL_LOG"
+grep -Fxq 'unblock bluetooth' "$RFKILL_LOG"
 
 : >"$RFKILL_LOG"
 "$HELPER" set enabled
@@ -43,14 +50,20 @@ printf 'invalid\n' >"$state_file"
 "$HELPER" restore
 [[ ! -s "$RFKILL_LOG" ]]
 
-grep -Fq 'bluetoothStateScript' "$MENU"
-grep -Fq 'bluetoothEnable.exec([bluetoothStateScript, "set", "enabled"]);' "$MENU"
-grep -Fq 'bluetoothDisable.exec([bluetoothStateScript, "set", "disabled"]);' "$MENU"
-grep -Fq 'Component.onCompleted: bluetoothRestore.exec([bluetoothStateScript, "restore"])' "$MENU"
-if grep -Fq 'current.enabled = nextEnabled;' "$MENU"; then
-    printf '%s\n' 'Legacy non-persistent Bluetooth toggle is still present.' >&2
+grep -Fq 'property string persistedBluetoothState: "unset"' "$MENU"
+grep -Fq 'readonly property bool stateKnown: persistedBluetoothState === "enabled"' "$MENU"
+grep -Fq 'readonly property bool available: adapter !== null || stateKnown' "$MENU"
+grep -Fq 'current.enabled = false;' "$MENU"
+grep -Fq 'current.enabled = true;' "$MENU"
+grep -Fq 'bluetoothStateReader.exec([bluetoothStateScript, "status"]);' "$MENU"
+if grep -Fq 'bluetoothDisable.exec([bluetoothStateScript, "set", "disabled"]);' "$MENU"; then
+    printf '%s\n' 'Bluetooth disable still delegates radio blocking to the persistence helper.' >&2
     exit 1
 fi
+
+grep -Fq 'BLUETOOTH_STATE_HELPER=' "$MANAGER"
+# shellcheck disable=SC2016
+grep -Fq '"$BLUETOOTH_STATE_HELPER" prepare' "$MANAGER"
 # shellcheck disable=SC2016
 grep -Fq 'kill -TERM -- "$pid"' "$MANAGER"
 if grep -Fq 'kill -KILL -- "$pid"' "$MANAGER"; then
@@ -58,4 +71,4 @@ if grep -Fq 'kill -KILL -- "$pid"' "$MANAGER"; then
     exit 1
 fi
 
-printf '%s\n' 'Bluetooth persistence regression test: PASS'
+printf '%s\n' 'Bluetooth persistence/self-lockout regression test: PASS'
