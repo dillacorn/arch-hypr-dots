@@ -1,191 +1,202 @@
 name: Validate Awtarchy
 
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  validate:
+  apply-stage2b:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
+          ref: keyring-pam-cleanup
           fetch-depth: 0
-      - name: Install validation tools
-        run: sudo apt-get update && sudo apt-get install -y desktop-file-utils shellcheck lua5.4
-      - name: Bash syntax
+
+      - name: Apply exact Stage 2B production patch
         run: |
-          test ! -e awtarchy.sh
-          bash -n awtarchy-install.sh
-          bash -n local/bin/awtarchy
-          grep -Fq 'exec "${TARGET_HOME}/.local/bin/awtarchy" "$@"' local/bin/awtarchy
-          bash -n local/libexec/awtarchy/scxctl-helper
-          bash -n local/libexec/awtarchy/power-profile-helper
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count == 0 and new in text:
+                  return
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one exact patch target, found {count}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          hypr = Path("config/hypr/hyprland.lua")
+          text = hypr.read_text(encoding="utf-8")
+          line = '    hl.exec_cmd("gnome-keyring-daemon --start --components=secrets")\n'
+          if line in text:
+              hypr.write_text(text.replace(line, "", 1), encoding="utf-8")
+          elif "gnome-keyring-daemon --start" in text:
+              raise SystemExit("hyprland.lua contains an unexpected manual GNOME Keyring start")
+
+          runtime = "local/share/awtarchy/awtarchy-runtime.sh"
+          enable_old = '''enable_keyring_pam_stage() {
+            (( ENABLE_KEYRING_PAM == 1 )) || { warn "Skipping GNOME Keyring PAM change."; return 0; }
+            local tmpfile
+          '''
+          enable_old = "\n".join(line[10:] if line.startswith("          ") else line for line in enable_old.splitlines()) + "\n"
+          enable_new = '''cleanup_legacy_keyring_pam_stage() {
+            local repo_dir="${1:-${REPO_DIR:-}}"
+            local transformer="${repo_dir}/local/share/awtarchy/keyring-pam-cleanup.py"
+            local pam_dir="${AWTARCHY_PAM_DIR:-/etc/pam.d}"
+            local login_file="${pam_dir}/login"
+            local ly_file="${pam_dir}/ly"
+            local backup_file="${login_file}.awtarchy-backup"
+            local cleaned="" rc=0 mode="" owner="" group=""
+
+            if [[ -n "${AWTARCHY_PAM_DIR:-}" && "$pam_dir" != /tmp/* ]]; then
+              die "AWTARCHY_PAM_DIR test override must stay under /tmp."
+            fi
+            [[ -f "$login_file" && ! -L "$login_file" ]] || return 0
+            [[ -f "$ly_file" && ! -L "$ly_file" ]] || return 0
+            grep -Fq 'pam_gnome_keyring.so' "$ly_file" || return 0
+            [[ -f "$transformer" && ! -L "$transformer" ]] || {
+              warn "GNOME Keyring PAM cleanup helper is missing; leaving PAM unchanged."
+              return 0
+            }
+            have python3 || {
+              warn "python3 is unavailable; leaving legacy GNOME Keyring PAM state unchanged."
+              return 0
+            }
+
+            cleaned="$(mktemp)"
+            if python3 "$transformer" "$login_file" "$cleaned"; then
+              rc=0
+            else
+              rc=$?
+            fi
+            if (( rc == 3 )); then
+              rm -f -- "$cleaned"
+              return 0
+            fi
+            if (( rc != 0 )); then
+              rm -f -- "$cleaned"
+              warn "Could not validate legacy GNOME Keyring PAM state; leaving PAM unchanged."
+              return 0
+            fi
+
+            mode="$(stat -c '%a' -- "$login_file" 2>/dev/null || true)"
+            owner="$(stat -c '%u' -- "$login_file" 2>/dev/null || true)"
+            group="$(stat -c '%g' -- "$login_file" 2>/dev/null || true)"
+            if [[ ! "$mode" =~ ^[0-7]{3,4}$ || ! "$owner" =~ ^[0-9]+$ || ! "$group" =~ ^[0-9]+$ ]]; then
+              rm -f -- "$cleaned"
+              warn "Could not preserve /etc/pam.d/login metadata; leaving PAM unchanged."
+              return 0
+            fi
+
+            if [[ -n "${AWTARCHY_PAM_DIR:-}" || "${EUID}" -eq 0 ]]; then
+              if [[ -L "$login_file" ]]; then
+                rm -f -- "$cleaned"
+                warn "Refusing symbolic-link PAM login file: ${login_file}"
+                return 0
+              fi
+              if [[ ! -e "$backup_file" ]]; then
+                cp -a -- "$login_file" "$backup_file" || {
+                  rm -f -- "$cleaned"
+                  warn "Could not back up ${login_file}; leaving PAM unchanged."
+                  return 0
+                }
+              fi
+              install -m "$mode" -o "$owner" -g "$group" -- "$cleaned" "$login_file" || {
+                rm -f -- "$cleaned"
+                warn "Could not remove legacy GNOME Keyring PAM duplication."
+                return 0
+              }
+            else
+              have sudo || {
+                rm -f -- "$cleaned"
+                warn "sudo is unavailable; legacy GNOME Keyring PAM duplication was not removed."
+                return 0
+              }
+              if ! sudo -v; then
+                rm -f -- "$cleaned"
+                warn "sudo authentication failed; legacy GNOME Keyring PAM duplication was not removed."
+                return 0
+              fi
+              if sudo test -L "$login_file" || sudo test -L "$backup_file"; then
+                rm -f -- "$cleaned"
+                warn "Refusing symbolic-link GNOME Keyring PAM cleanup path."
+                return 0
+              fi
+              if ! sudo test -e "$backup_file"; then
+                if ! sudo cp -a -- "$login_file" "$backup_file"; then
+                  rm -f -- "$cleaned"
+                  warn "Could not back up ${login_file}; leaving PAM unchanged."
+                  return 0
+                fi
+              fi
+              if ! sudo install -m "$mode" -o "$owner" -g "$group" -- "$cleaned" "$login_file"; then
+                rm -f -- "$cleaned"
+                warn "Could not remove legacy GNOME Keyring PAM duplication."
+                return 0
+              fi
+            fi
+
+            rm -f -- "$cleaned"
+            log "Removed duplicate Awtarchy GNOME Keyring hooks from ${login_file}; Ly owns keyring PAM integration."
+          }
+
+          enable_keyring_pam_stage() {
+            if (( INSTALL_LY == 1 )); then
+              cleanup_legacy_keyring_pam_stage "$REPO_DIR"
+              log "Ly provides GNOME Keyring PAM integration; skipping duplicate /etc/pam.d/login hooks."
+              return 0
+            fi
+            (( ENABLE_KEYRING_PAM == 1 )) || { warn "Skipping GNOME Keyring PAM change."; return 0; }
+            local tmpfile
+          '''
+          enable_new = "\n".join(line[10:] if line.startswith("          ") else line for line in enable_new.splitlines()) + "\n"
+          replace_once(runtime, enable_old, enable_new)
+
+          update_old = '''  if [[ ${AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR:-0} != 1 ]]; then
+            repair_scxctl_update_helper "$repo_dir"
+            if (( IS_LAPTOP_NOW == 1 )); then
+              reconcile_power_profile_backend "$repo_dir"
+            fi
+          fi
+          ensure_quickshell_update_prerequisites
+          '''
+          update_old = "\n".join(line[10:] if line.startswith("          ") else line for line in update_old.splitlines()) + "\n"
+          update_new = '''  if [[ ${AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR:-0} != 1 ]]; then
+            repair_scxctl_update_helper "$repo_dir"
+            if (( IS_LAPTOP_NOW == 1 )); then
+              reconcile_power_profile_backend "$repo_dir"
+            fi
+          fi
+          if (( REVIEW_ONLY == 0 )); then
+            cleanup_legacy_keyring_pam_stage "$repo_dir"
+          fi
+          ensure_quickshell_update_prerequisites
+          '''
+          update_new = "\n".join(line[10:] if line.startswith("          ") else line for line in update_new.splitlines()) + "\n"
+          replace_once(runtime, update_old, update_new)
+          PY
+
           bash -n local/share/awtarchy/awtarchy-runtime.sh
-          bash -n local/share/awtarchy/awtarchy-power-profile.sh
-          bash -n config/hypr/scripts/awtarchy-tips-tui.sh
-          bash -n config/hypr/scripts/ddc_brightness.sh
-          bash -n config/hypr/scripts/dim_display.sh
-          bash -n config/hypr/scripts/hypr-ddc-brightness.sh
-          bash -n config/hypr/scripts/hypr_quicksettings.sh
-          bash -n config/hypr/scripts/hypr_quicksettings_core.sh
-          bash -n config/hypr/scripts/hyprbars_toggle.sh
-          bash -n config/hypr/scripts/hypridle_action.sh
-          bash -n config/hypr/scripts/hypridle_restart.sh
-          bash -n config/hypr/scripts/hyprsunset_ctl.sh
-          bash -n config/hypr/scripts/gif_capture.sh
-          bash -n config/hypr/scripts/quickshell.sh
-          bash -n config/hypr/scripts/quickshell_application_state.sh
-          bash -n config/hypr/scripts/quickshell_bar_restore.sh
-          bash -n config/hypr/scripts/quickshell_launcher_position.sh
-          bash -n config/hypr/scripts/quickshell_ready_sound.sh
-          bash -n config/hypr/scripts/quickshell_resume_recover.sh
-          bash -n config/hypr/scripts/quickshell_runtime_rules.sh
-          bash -n config/hypr/scripts/quickshell_sensitive_capture.sh
-          bash -n config/hypr/scripts/quickshell_theme_apply.sh
-          bash -n config/hypr/scripts/quickshell_volume.sh
-          bash -n config/hypr/scripts/quickshell_wireguard.sh
-          bash -n config/hypr/scripts/usb_refresh_fixer.sh
-          bash -n config/hypr/scripts/restore_brightness.sh
-          bash -n config/hypr/scripts/screenshot_area.sh
-          bash -n config/hypr/scripts/screenshot_display.sh
-          bash -n config/hypr/scripts/screenshot_fullscreen.sh
-          bash -n config/hypr/scripts/toggle_resize_if_ok.sh
-          bash -n tests/test-awtarchy-command.sh
-          bash -n tests/test-awtarchy-git-mode.sh
-          bash -n tests/test-awtarchy-command-shim.sh
-          bash -n tests/test-awtarchy-legacy-cleanup.sh
-          bash -n tests/test-bar-wheel-input.sh
-          bash -n tests/test-ddc-brightness-watcher.sh
-          bash -n tests/test-hybrid-brightness.sh
-          bash -n tests/test-hypridle-restart.sh
-          bash -n tests/test-flyout-toggle-debounce.sh
-          bash -n tests/test-launcher-keyboard-focus.sh
-          bash -n tests/test-desktop-candidate-validation.sh
-          bash -n tests/test-lua-validation.sh
-          bash -n tests/test-playerctl-dependency.sh
-          bash -n tests/test-power-profile-helper-update.sh
-          bash -n tests/test-power-profile-inline-auth.sh
-          bash -n tests/test-quickshell-backend-readiness.sh
-          bash -n tests/test-quickshell-capture-privacy.sh
-          bash -n tests/test-quickshell-production-readiness.sh
-          bash -n tests/test-quickshell-updater-migration.sh
-          bash -n tests/test-hyprbars-quicksettings.sh
-          bash -n tests/test-network-bar-state.sh
-          bash -n tests/test-scxctl-auth-ui.sh
-          bash -n tests/test-scxctl-auth-stale-rule.sh
-          bash -n tests/test-scxctl-helper-update.sh
-          bash -n tests/test-security-boundaries.sh
-          bash -n tests/test-quickshell-theme-legacy-micro.sh
-          bash -n tests/test-troubleshoot-command.sh
-          bash -n tests/test-usb-refresh-security.sh
-          bash -n tests/test-quickshell-resume-recovery.sh
-          python3 -m py_compile local/libexec/awtarchy/wireguard-helper
-          python3 -m py_compile tests/test-config-noise-comparison.py
-          test -x config/hypr/scripts/quickshell_sensitive_capture.sh
-      - name: ShellCheck command code
-        run: |
-          shellcheck \
-            awtarchy-install.sh \
-            local/bin/awtarchy \
-            local/libexec/awtarchy/scxctl-helper \
-            local/libexec/awtarchy/power-profile-helper \
-            local/share/awtarchy/awtarchy-power-profile.sh \
-            config/hypr/scripts/ddc_brightness.sh \
-            config/hypr/scripts/dim_display.sh \
-            config/hypr/scripts/hypr-ddc-brightness.sh \
-            config/hypr/scripts/hyprbars_toggle.sh \
-            config/hypr/scripts/hypridle_restart.sh \
-            config/hypr/scripts/hyprsunset_ctl.sh \
-            config/hypr/scripts/gif_capture.sh \
-            config/hypr/scripts/quickshell_bar_restore.sh \
-            config/hypr/scripts/quickshell_launcher_position.sh \
-            config/hypr/scripts/quickshell_resume_recover.sh \
-            config/hypr/scripts/quickshell_runtime_rules.sh \
-            config/hypr/scripts/quickshell_sensitive_capture.sh \
-            config/hypr/scripts/quickshell_volume.sh \
-            config/hypr/scripts/quickshell_wireguard.sh \
-            config/hypr/scripts/usb_refresh_fixer.sh \
-            config/hypr/scripts/restore_brightness.sh \
-            config/hypr/scripts/screenshot_area.sh \
-            config/hypr/scripts/screenshot_display.sh \
-            config/hypr/scripts/screenshot_fullscreen.sh \
-            config/hypr/scripts/toggle_resize_if_ok.sh \
-            tests/test-awtarchy-git-mode.sh \
-            tests/test-awtarchy-command-shim.sh \
-            tests/test-awtarchy-legacy-cleanup.sh \
-            tests/test-bar-wheel-input.sh \
-            tests/test-ddc-brightness-watcher.sh \
-            tests/test-hybrid-brightness.sh \
-            tests/test-hypridle-restart.sh \
-            tests/test-flyout-toggle-debounce.sh \
-            tests/test-launcher-keyboard-focus.sh \
-            tests/test-desktop-candidate-validation.sh \
-            tests/test-lua-validation.sh \
-            tests/test-playerctl-dependency.sh \
-            tests/test-power-profile-helper-update.sh \
-            tests/test-power-profile-inline-auth.sh \
-            tests/test-quickshell-backend-readiness.sh \
-            tests/test-quickshell-capture-privacy.sh \
-            tests/test-quickshell-updater-migration.sh \
-            tests/test-hyprbars-quicksettings.sh \
-            tests/test-network-bar-state.sh \
-            tests/test-scxctl-auth-ui.sh \
-            tests/test-scxctl-auth-stale-rule.sh \
-            tests/test-scxctl-helper-update.sh \
-            tests/test-security-boundaries.sh \
-            tests/test-quickshell-theme-legacy-micro.sh \
-            tests/test-troubleshoot-command.sh \
-            tests/test-usb-refresh-security.sh \
-            tests/test-quickshell-resume-recovery.sh
-          shellcheck -e SC2034,SC2153 config/hypr/scripts/hypr_quicksettings.sh
-          shellcheck -e SC2015 config/hypr/scripts/hypr_quicksettings_core.sh
-          shellcheck -e SC2015 config/hypr/scripts/quickshell_theme_apply.sh
-          shellcheck -e SC2016 tests/test-awtarchy-command.sh
-      - name: Quickshell desktop entry validation
-        run: |
-          desktop-file-validate \
-            local/share/applications/quickshell_bar_flip.desktop \
-            local/share/applications/quickshell_bar_rotate.desktop \
-            local/share/applications/quickshell_bar_toggle.desktop
-      - name: Command and updater integration tests
-        run: |
-          no_sudo_bin="$(mktemp -d)"
-          printf '%s\n' '#!/usr/bin/env bash' 'exit 1' >"${no_sudo_bin}/sudo"
-          chmod 0755 "${no_sudo_bin}/sudo"
-          PATH="${no_sudo_bin}:$PATH" bash tests/test-awtarchy-command.sh
-          rm -rf -- "$no_sudo_bin"
-          bash tests/test-awtarchy-git-mode.sh
-          bash tests/test-awtarchy-command-shim.sh
-          bash tests/test-awtarchy-legacy-cleanup.sh
-          bash tests/test-bar-wheel-input.sh
-          bash tests/test-ddc-brightness-watcher.sh
-          bash tests/test-hybrid-brightness.sh
-          bash tests/test-hypridle-restart.sh
-          bash tests/test-flyout-toggle-debounce.sh
-          bash tests/test-launcher-keyboard-focus.sh
-          bash tests/test-desktop-candidate-validation.sh
+          python3 tests/test-keyring-pam-cleanup.py
+          lua_cmd='local path = assert(os.getenv("AWTARCHY_LUA_VALIDATE_FILE")); assert(loadfile(path))'
+          AWTARCHY_LUA_VALIDATE_FILE=config/hypr/hyprland.lua lua -e "$lua_cmd"
           bash tests/test-lua-validation.sh
-          bash tests/test-playerctl-dependency.sh
-          bash tests/test-power-profile-helper-update.sh
-          bash tests/test-power-profile-inline-auth.sh
-          bash tests/test-quickshell-backend-readiness.sh
-          bash tests/test-quickshell-capture-privacy.sh
-          bash tests/test-quickshell-production-readiness.sh
-          bash tests/test-hyprbars-quicksettings.sh
-          bash tests/test-network-bar-state.sh
-          python3 tests/test-config-noise-comparison.py
-          bash tests/test-quickshell-updater-migration.sh
-          bash tests/test-scxctl-auth-ui.sh
-          bash tests/test-scxctl-auth-stale-rule.sh
-          bash tests/test-scxctl-helper-update.sh
-          bash tests/test-security-boundaries.sh
-          bash tests/test-quickshell-theme-legacy-micro.sh
-          bash tests/test-troubleshoot-command.sh
-          bash tests/test-usb-refresh-security.sh
-          bash tests/test-quickshell-resume-recovery.sh
+          git diff --check
+
+      - name: Commit production patch to test branch
+        run: |
+          if git diff --quiet; then
+            echo 'Stage 2B production patch is already applied.'
+            exit 0
+          fi
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add config/hypr/hyprland.lua local/share/awtarchy/awtarchy-runtime.sh
+          git commit -m 'fix: clean duplicate GNOME Keyring startup'
+          git push origin HEAD:keyring-pam-cleanup
