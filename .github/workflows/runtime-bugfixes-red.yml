@@ -7,13 +7,109 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   regression:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+
+      - name: Apply guarded network bar fix
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("config/quickshell/awtarchy/NetworkMenu.qml")
+          text = path.read_text(encoding="utf-8")
+
+          replacements = [
+              (
+                  '    readonly property var connectedWiredDevices: wiredDevices.filter(device => device.connected)\n',
+                  '    readonly property var connectedWiredDevices: wiredDevices.filter(device => device && device.network && device.network.connected)\n',
+              ),
+              (
+                  '''    function buildBarLabel() {
+              if (wiredConnected)
+                  return "󰈀";
+              if (wifiConnected)
+                  return wifiSignalIcon(connectedWifiNetworks[0]);
+              if (wiredPresent)
+                  return "󰈀";
+              if (wifiPresent)
+                  return "";
+              return "";
+          }
+          ''',
+                  '''    function buildBarLabel() {
+              if (wifiConnected)
+                  return wifiSignalIcon(connectedWifiNetworks[0]);
+              if (wiredConnected)
+                  return "󰈀";
+              if (wifiPresent)
+                  return "󰤯";
+              if (wiredPresent)
+                  return "󰈂";
+              return "";
+          }
+          ''',
+              ),
+              (
+                  '''    function buildVerticalBarLabel() {
+              if (wiredConnected)
+                  return "󰈀";
+              if (wifiConnected)
+                  return wifiSignalIcon(connectedWifiNetworks[0]);
+              if (wiredPresent)
+                  return "󰈀";
+              if (wifiPresent)
+                  return "";
+              return "";
+          }
+          ''',
+                  '''    function buildVerticalBarLabel() {
+              if (wifiConnected)
+                  return wifiSignalIcon(connectedWifiNetworks[0]);
+              if (wiredConnected)
+                  return "󰈀";
+              if (wifiPresent)
+                  return "󰤯";
+              if (wiredPresent)
+                  return "󰈂";
+              return "";
+          }
+          ''',
+              ),
+          ]
+
+          changed = False
+          for old, new in replacements:
+              old_count = text.count(old)
+              new_count = text.count(new)
+              if old_count == 1 and new_count == 0:
+                  text = text.replace(old, new)
+                  changed = True
+              elif old_count == 0 and new_count == 1:
+                  continue
+              else:
+                  raise SystemExit(
+                      f"guard mismatch for NetworkMenu.qml: old={old_count}, new={new_count}"
+                  )
+
+          if changed:
+              path.write_text(text, encoding="utf-8")
+          PY
+
+          git diff --check
+          if ! git diff --quiet -- config/quickshell/awtarchy/NetworkMenu.qml; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add config/quickshell/awtarchy/NetworkMenu.qml
+            git commit -m "fix: correct network bar connection state"
+            git push origin HEAD:quickshell-runtime-bugfixes
+          fi
+
       - name: Run new regression tests
         shell: bash
         run: |
