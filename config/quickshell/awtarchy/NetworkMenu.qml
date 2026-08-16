@@ -131,28 +131,28 @@ Singleton {
     }
 
     function buildBarLabel() {
-    if (wifiConnected)
-        return wifiSignalIcon(connectedWifiNetworks[0]);
-    if (wiredConnected)
-        return "󰈀";
-    if (wifiPresent)
-        return "󰤯";
-    if (wiredPresent)
-        return "󰈂";
-    return "";
-}
+        if (wifiConnected)
+            return wifiSignalIcon(connectedWifiNetworks[0]);
+        if (wiredConnected)
+            return "󰈀";
+        if (wifiPresent)
+            return "󰤯";
+        if (wiredPresent)
+            return "󰈂";
+        return "";
+    }
 
     function buildVerticalBarLabel() {
-    if (wifiConnected)
-        return wifiSignalIcon(connectedWifiNetworks[0]);
-    if (wiredConnected)
-        return "󰈀";
-    if (wifiPresent)
-        return "󰤯";
-    if (wiredPresent)
-        return "󰈂";
-    return "";
-}
+        if (wifiConnected)
+            return wifiSignalIcon(connectedWifiNetworks[0]);
+        if (wiredConnected)
+            return "󰈀";
+        if (wifiPresent)
+            return "󰤯";
+        if (wiredPresent)
+            return "󰈂";
+        return "";
+    }
 
     function wiredConnectionName(device) {
         if (!device)
