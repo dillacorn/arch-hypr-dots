@@ -16,6 +16,14 @@ jobs:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
         with:
           ref: hyprland-plugin-state-sync
+      - name: Verify regression is red
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if bash tests/test-hyprbars-quicksettings.sh; then
+            echo 'Regression test unexpectedly passed before implementation.' >&2
+            exit 1
+          fi
       - name: Apply patch
         shell: bash
         run: |
@@ -79,7 +87,6 @@ jobs:
             '\''
           }
           ''')
-
           replace_one(helper, '''hyprbars_status() {
             hyprbars_require_user
             if [[ ! -x $HYPRPM ]] || ! hyprbars_have_plugin; then
@@ -125,12 +132,9 @@ jobs:
           ''')
 
           script = 'config/hypr/scripts/hyprbars_toggle.sh'
-          replace_one(script, '''REPO_URL="https://github.com/hyprwm/hyprland-plugins"
-          RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"
-          ''', '''REPO_URL="https://github.com/hyprwm/hyprland-plugins"
-          TRUSTED_HELPER="/usr/local/libexec/awtarchy/scxctl-helper"
-          RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"
-          ''')
+          replace_one(script,
+              'REPO_URL="https://github.com/hyprwm/hyprland-plugins"\nRUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"\n',
+              'REPO_URL="https://github.com/hyprwm/hyprland-plugins"\nTRUSTED_HELPER="/usr/local/libexec/awtarchy/scxctl-helper"\nRUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"\n')
           replace_one(script, '''machine_status() {
             require_hyprpm || {
               printf '%s\\n' 'unavailable'
@@ -173,59 +177,42 @@ jobs:
           ''')
 
           title = 'config/quickshell/awtarchy/TitleBarsCard.qml'
-          replace_one(title, '''        if (hyprbarsState === "disabled")
-              return "Disabled";
-          if (hyprbarsState === "unavailable")
-          ''', '''        if (hyprbarsState === "disabled")
-              return "Disabled";
-          if (hyprbarsState === "disabled-pending")
-              return "On now · Off next login";
-          if (hyprbarsState === "unavailable")
-          ''')
-          replace_one(title, '''        if (hyprbarsState === "disabled" || hyprbarsState === "unavailable")
-              return "Enable";
-          ''', '''        if (hyprbarsState === "disabled" || hyprbarsState === "disabled-pending"
-                || hyprbarsState === "unavailable")
-              return "Enable";
-          ''')
-          replace_one(title, '''                root.hyprbarsState = state === "enabled" || state === "disabled"
-                    || state === "unavailable" ? state : "unavailable";
-          ''', '''                root.hyprbarsState = state === "enabled" || state === "disabled" || state === "disabled-pending"
-                    || state === "unavailable" ? state : "unavailable";
-          ''')
-          replace_one(title, '''                if (root.actionOutput === "disabled-pending") {
-                    root.hyprbarsState = "disabled";
-                    root.message = "Disabled for next login; the loaded plugin was not force-unloaded.";
-          ''', '''                if (root.actionOutput === "disabled-pending") {
-                    root.hyprbarsState = "disabled-pending";
-                    root.message = "Title Bars are still active now and are configured to turn off next login.";
-          ''')
-          replace_one(title, '''                    : (root.hyprbarsState === "unavailable"
-                        ? "Enable once to install and activate the official Hyprland Title Bars plugin."
-                        : "Managed through Hyprland's plugin manager. Disabling avoids a forced hot-unload when the plugin remains loaded."))
-          ''', '''                    : (root.hyprbarsState === "unavailable"
-                        ? "Enable once to install and activate the official Hyprland Title Bars plugin."
-                        : (root.hyprbarsState === "disabled-pending"
-                            ? "Title Bars are loaded in this session, but hyprpm is configured to leave them off next login."
-                            : "Managed through Hyprland's plugin manager and synchronized with SUPER+ALT+T.")))
-          ''')
+          replace_one(title,
+              '        if (hyprbarsState === "unavailable")\n            return "Not set up";',
+              '        if (hyprbarsState === "disabled-pending")\n            return "On now · Off next login";\n        if (hyprbarsState === "unavailable")\n            return "Not set up";')
+          replace_one(title,
+              '        if (hyprbarsState === "disabled" || hyprbarsState === "unavailable")\n            return "Enable";',
+              '        if (hyprbarsState === "disabled" || hyprbarsState === "disabled-pending"\n                || hyprbarsState === "unavailable")\n            return "Enable";')
+          replace_one(title,
+              '                root.hyprbarsState = state === "enabled" || state === "disabled"\n                    || state === "unavailable" ? state : "unavailable";',
+              '                root.hyprbarsState = state === "enabled" || state === "disabled" || state === "disabled-pending"\n                    || state === "unavailable" ? state : "unavailable";')
+          replace_one(title,
+              '                    root.hyprbarsState = "disabled";\n                    root.message = "Disabled for next login; the loaded plugin was not force-unloaded.";',
+              '                    root.hyprbarsState = "disabled-pending";\n                    root.message = "Title Bars are still active now and are configured to turn off next login.";')
+          replace_one(title,
+              '                        : "Managed through Hyprland\'s plugin manager. Disabling avoids a forced hot-unload when the plugin remains loaded."))',
+              '                        : (root.hyprbarsState === "disabled-pending"\n                            ? "Title Bars are loaded in this session, but hyprpm is configured to leave them off next login."\n                            : "Managed through Hyprland\'s plugin manager and synchronized with SUPER+ALT+T.")))')
 
           power = 'config/quickshell/awtarchy/PowerModeCard.qml'
           replace_one(power, '''
-              TitleBarsCard {
-                  active: root.active
-                  textScale: root.textScale
-                  iconScale: root.iconScale
-              }
+            TitleBarsCard {
+                active: root.active
+                textScale: root.textScale
+                iconScale: root.iconScale
+            }
           ''', '\n')
 
-          quick = 'config/quickshell/awtarchy/QuickSettings.qml'
-          replace_one(quick, '''                        }
-                      }
-
-                      ListScrollBar {
-                          id: contentScrollBar
-          ''', '''                        }
+          quick = Path('config/quickshell/awtarchy/QuickSettings.qml')
+          text = quick.read_text()
+          marker = 'text: "Disable Num Lock at session start"'
+          marker_pos = text.find(marker)
+          if marker_pos < 0:
+              raise SystemExit('QuickSettings.qml: Num Lock card marker not found')
+          close_pattern = '                        }\n                    }\n\n                    ListScrollBar {'
+          close_pos = text.find(close_pattern, marker_pos)
+          if close_pos < 0:
+              raise SystemExit('QuickSettings.qml: settings column end not found after Num Lock card')
+          replacement = '''                        }
 
                         TitleBarsCard {
                             active: quickSettingsWindow.visible
@@ -234,9 +221,9 @@ jobs:
                         }
                     }
 
-                    ListScrollBar {
-                        id: contentScrollBar
-          ''')
+                    ListScrollBar {'''
+          text = text[:close_pos] + replacement + text[close_pos + len(close_pattern):]
+          quick.write_text(text)
           PY
 
           manifest='local/share/awtarchy/quickshell-managed-history.sha256'
@@ -252,6 +239,9 @@ jobs:
             grep -Fqx -- "$row" "$manifest" || printf '%s\n' "$row" >>"$manifest"
           done
 
+          bash -n local/libexec/awtarchy/scxctl-helper
+          bash -n config/hypr/scripts/hyprbars_toggle.sh
+          bash tests/test-hyprbars-quicksettings.sh
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -262,6 +252,5 @@ jobs:
             config/hypr/scripts/hyprbars_toggle.sh \
             local/libexec/awtarchy/scxctl-helper \
             local/share/awtarchy/quickshell-managed-history.sha256
-          git commit -m 'fix: synchronize Hyprland plugin state' \
-            || exit 0
+          git commit -m 'fix: synchronize Hyprland plugin state'
           git push origin HEAD:hyprland-plugin-state-sync
