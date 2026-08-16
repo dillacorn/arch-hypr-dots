@@ -1028,8 +1028,8 @@ hl.define_submap("noalt", function()
     end
 
     -- Mouse in "noalt" (SUPER mouse-left/right / hold)
-hl.bind("SUPER + mouse:272", hl.dsp.window.drag(), { mouse = true })
-hl.bind("SUPER + mouse:273", hl.dsp.window.resize(), { mouse = true })
+    hl.bind("SUPER + mouse:272", hl.dsp.window.drag(), { mouse = true })
+    hl.bind("SUPER + mouse:273", hl.dsp.window.resize(), { mouse = true })
 
     -- Digital vibrance quick adjust (SUPER+ALT+[] & SUPER+ALT+\; SUPER+ALT+CTRL+V toggle)
     hl.bind("SUPER + ALT + bracketright", hl.dsp.exec_cmd(vibrance_shader .. " up"), {})
@@ -1315,4 +1315,6 @@ hl.layer_rule({ match = { namespace = "^(notifications|swaync.*)$" }, no_screen_
 
 -- Steam Splitratio Script
 -- Set split ratio between Steam and Friends List (runs once at startup with a timeout of 300s)
--- READ SCRIPT:        cat ~/.local/share/applications/steam.desktop
+-- READ SCRIPT:        cat ~/.config/hypr/scripts/splitratio_steam.sh
+-- .desktop override:  Exec=sh -lc 'pgrep -x steam >/dev/null && exit 0; /usr/bin/steam --disable-gpu "$@" & ALLOW_WAIT=1 "$HOME/.config/hypr/scripts/splitratio_steam.sh" &' _ %U
+-- Check file:         cat ~/.local/share/applications/steam.desktop
