@@ -3,6 +3,12 @@ set -Eeuo pipefail
 
 PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin
 SCXCTL="/usr/bin/scxctl"
+HYPRPM="/usr/bin/hyprpm"
+HYPRCTL="/usr/bin/hyprctl"
+SUDO="/usr/bin/sudo"
+HYPRBARS_PLUGIN="hyprbars"
+HYPRBARS_REPO="https://github.com/hyprwm/hyprland-plugins"
+
 
 die() {
   printf 'scxctl-helper: %s\n' "$*" >&2
@@ -25,7 +31,144 @@ validate_scheduler_args() {
     || die 'scheduler arguments contain unsupported control characters'
 }
 
+hyprbars_require_user() {
+  (( EUID != 0 )) || die 'hyprbars operations must run as the desktop user'
+}
+
+hyprbars_require_tools() {
+  [[ -x $HYPRPM ]] || die "trusted hyprpm executable is missing: $HYPRPM"
+  [[ -x $SUDO ]] || die "trusted sudo executable is missing: $SUDO"
+}
+
+hyprbars_have_plugin() {
+  [[ -x $HYPRPM ]] || return 1
+  "$HYPRPM" list 2>/dev/null \
+    | /usr/bin/grep -qiE '(^|[^a-zA-Z0-9_])hyprbars([^a-zA-Z0-9_]|$)'
+}
+
+hyprbars_enabled() {
+  [[ -x $HYPRPM ]] || return 1
+  "$HYPRPM" list 2>/dev/null \
+    | /usr/bin/grep -iEA1 '(^|[^a-zA-Z0-9_])hyprbars([^a-zA-Z0-9_]|$)' \
+    | /usr/bin/grep -qiE 'enabled:[[:space:]]*true'
+}
+
+hyprbars_repo_added() {
+  [[ -x $HYPRPM ]] || return 1
+  "$HYPRPM" list 2>/dev/null \
+    | /usr/bin/grep -qiE '(Repository[[:space:]]+hyprland-plugins:|hyprwm/hyprland-plugins|https://github.com/hyprwm/hyprland-plugins)'
+}
+
+hyprbars_loaded() {
+  [[ -x $HYPRCTL ]] || return 1
+  "$HYPRCTL" plugin list 2>/dev/null \
+    | /usr/bin/grep -qiE '(^|[^a-zA-Z0-9_])hyprbars([^a-zA-Z0-9_]|$)'
+}
+
+hyprbars_lock() {
+  local runtime_dir="${XDG_RUNTIME_DIR:-/tmp}"
+  exec 9>"${runtime_dir}/awtarchy-hyprbars.lock"
+  /usr/bin/flock -n 9 || die 'another hyprbars operation is already running'
+}
+
+hyprbars_authorize() {
+  local password="$1"
+  [[ -n $password ]] || die 'sudo password is required'
+  printf '%s\n\n\n' "$password" | "$SUDO" -S -p "" -v >/dev/null
+}
+
+hyprbars_hyprpm() {
+  local password="$1"
+  shift
+  hyprbars_authorize "$password"
+  "$HYPRPM" "$@"
+}
+
+hyprbars_status() {
+  hyprbars_require_user
+  if [[ ! -x $HYPRPM ]] || ! hyprbars_have_plugin; then
+    printf '%s\n' unavailable
+  elif hyprbars_enabled; then
+    printf '%s\n' enabled
+  else
+    printf '%s\n' disabled
+  fi
+}
+
+hyprbars_enable() {
+  local password=""
+  hyprbars_require_user
+  hyprbars_require_tools
+  hyprbars_lock
+  IFS= read -r password || die 'sudo password is required on stdin'
+  [[ -n $password ]] || die 'sudo password is required on stdin'
+
+  if ! hyprbars_have_plugin; then
+    # hyprpm drops its sudo timestamp after each privileged command. Re-seed
+    # the timestamp from the same transient stdin password before every command
+    # that hyprpm may elevate internally.
+    hyprbars_hyprpm "$password" update
+
+    if ! hyprbars_have_plugin && ! hyprbars_repo_added; then
+      hyprbars_authorize "$password"
+      printf 'y\n' | "$HYPRPM" add "$HYPRBARS_REPO"
+    fi
+  fi
+
+  hyprbars_have_plugin \
+    || die 'hyprbars is unavailable after updating the official plugin repository'
+
+  hyprbars_hyprpm "$password" enable "$HYPRBARS_PLUGIN"
+  unset password
+
+  "$HYPRPM" reload
+  if [[ -x $HYPRCTL ]]; then
+    "$HYPRCTL" reload >/dev/null 2>&1 || true
+  fi
+  printf '%s\n' enabled
+}
+
+hyprbars_disable() {
+  local password=""
+  hyprbars_require_user
+  hyprbars_require_tools
+  hyprbars_lock
+  IFS= read -r password || die 'sudo password is required on stdin'
+  [[ -n $password ]] || die 'sudo password is required on stdin'
+
+  hyprbars_have_plugin || die 'hyprbars is not installed'
+  hyprbars_hyprpm "$password" disable "$HYPRBARS_PLUGIN"
+  unset password
+
+  # Keep the established Awtarchy safety contract: never explicitly reload a
+  # loaded hyprbars instance while disabling. If it remains loaded, report that
+  # the persisted disabled state takes effect at the next login.
+  if hyprbars_loaded; then
+    printf '%s\n' disabled-pending
+  else
+    printf '%s\n' disabled
+  fi
+}
+
 main() {
+  case "${1:-}" in
+    hyprbars-status)
+      (( $# == 1 )) || die 'hyprbars-status does not accept additional arguments'
+      hyprbars_status
+      return
+      ;;
+    hyprbars-enable)
+      (( $# == 1 )) || die 'hyprbars-enable does not accept additional arguments'
+      hyprbars_enable
+      return
+      ;;
+    hyprbars-disable)
+      (( $# == 1 )) || die 'hyprbars-disable does not accept additional arguments'
+      hyprbars_disable
+      return
+      ;;
+  esac
+
   [[ -x $SCXCTL ]] \
     || die "trusted scxctl executable is missing: $SCXCTL"
 
