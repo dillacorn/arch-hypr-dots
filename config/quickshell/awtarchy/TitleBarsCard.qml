@@ -10,18 +10,15 @@ Rectangle {
     property int textScale: 100
     property int iconScale: 100
     property string hyprbarsState: "checking"
-    property string toggleOutput: ""
+    property string actionOutput: ""
     property string message: ""
     property string errorMessage: ""
     property bool authOpen: false
-    property bool authBusy: false
+    property string pendingAction: ""
     property string pendingPassword: ""
 
-    readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
-        || (Quickshell.env("HOME") + "/.config")
-    readonly property string hyprbarsScript: configHome + "/hypr/scripts/hyprbars_toggle.sh"
-    readonly property bool operationBusy: statusRunner.running || toggleRunner.running
-        || authRunner.running || setupRunner.running
+    readonly property string trustedHelper: "/usr/local/libexec/awtarchy/scxctl-helper"
+    readonly property bool operationBusy: statusRunner.running || actionRunner.running
 
     Layout.fillWidth: true
     Layout.preferredHeight: content.implicitHeight + 16
@@ -46,40 +43,33 @@ Rectangle {
     function buttonLabel() {
         if (hyprbarsState === "enabled")
             return "Disable";
-        if (hyprbarsState === "disabled")
-            return "Enable";
-        if (hyprbarsState === "unavailable")
+        if (hyprbarsState === "disabled" || hyprbarsState === "unavailable")
             return "Enable";
         return "Checking…";
     }
 
     function probeStatus() {
-        if (!active || operationBusy)
+        if (!active || operationBusy || authOpen)
             return;
-        statusRunner.exec([root.hyprbarsScript, "--status"]);
+        statusRunner.exec([root.trustedHelper, "hyprbars-status"]);
     }
 
-    function toggleTitleBars() {
+    function requestToggle() {
         if (operationBusy)
             return;
 
         errorMessage = "";
         message = "";
-
-        if (hyprbarsState === "unavailable") {
-            authOpen = true;
-            Qt.callLater(() => passwordInput.forceActiveFocus());
-            return;
-        }
-
-        toggleOutput = "";
-        message = "Updating title bars…";
-        toggleRunner.exec([root.hyprbarsScript, "--toggle"]);
+        pendingAction = hyprbarsState === "enabled"
+            ? "hyprbars-disable" : "hyprbars-enable";
+        authOpen = true;
+        Qt.callLater(() => passwordInput.forceActiveFocus());
     }
 
     function cancelAuthorization() {
-        if (authBusy)
+        if (operationBusy)
             return;
+        pendingAction = "";
         pendingPassword = "";
         passwordInput.text = "";
         errorMessage = "";
@@ -88,8 +78,12 @@ Rectangle {
     }
 
     function submitAuthorization() {
-        if (authBusy)
+        if (operationBusy)
             return;
+        if (pendingAction !== "hyprbars-enable" && pendingAction !== "hyprbars-disable") {
+            errorMessage = "No title bar action is pending";
+            return;
+        }
         if (passwordInput.text.length === 0) {
             errorMessage = "Enter your sudo password";
             passwordInput.forceActiveFocus();
@@ -99,9 +93,11 @@ Rectangle {
         pendingPassword = passwordInput.text;
         passwordInput.text = "";
         errorMessage = "";
-        message = "Authorizing Hyprland plugin setup…";
-        authBusy = true;
-        authRunner.exec(["/usr/bin/sudo", "-S", "-p", "", "-v"]);
+        message = pendingAction === "hyprbars-enable"
+            ? "Setting up and enabling title bars…"
+            : "Disabling title bars…";
+        actionOutput = "";
+        actionRunner.exec([root.trustedHelper, root.pendingAction]);
     }
 
     onActiveChanged: {
@@ -125,46 +121,11 @@ Rectangle {
     }
 
     Process {
-        id: toggleRunner
-        stdout: StdioCollector {
-            onStreamFinished: root.toggleOutput = text.trim()
-        }
-        stderr: StdioCollector {
-            onStreamFinished: {
-                const errorText = text.trim();
-                if (errorText.length > 0)
-                    root.errorMessage = errorText.split("\n")[0];
-            }
-        }
-        onExited: (exitCode, exitStatus) => {
-            if (exitCode === 0) {
-                root.errorMessage = "";
-                if (root.toggleOutput === "disabled-pending")
-                    root.message = "Disabled for next login; not hot-unloaded.";
-                else if (root.toggleOutput === "disabled")
-                    root.message = "Title bars disabled.";
-                else
-                    root.message = "Title bars enabled.";
-                Qt.callLater(() => root.probeStatus());
-                return;
-            }
-
-            if (exitCode === 3) {
-                root.hyprbarsState = "unavailable";
-                root.message = "";
-                root.authOpen = true;
-                Qt.callLater(() => passwordInput.forceActiveFocus());
-            } else {
-                root.message = "";
-                if (root.errorMessage.length === 0)
-                    root.errorMessage = "Title bar update failed";
-            }
-        }
-    }
-
-    Process {
-        id: authRunner
+        id: actionRunner
         stdinEnabled: true
+        stdout: StdioCollector {
+            onStreamFinished: root.actionOutput = text.trim()
+        }
         stderr: StdioCollector {
             onStreamFinished: {
                 const errorText = text.trim();
@@ -173,52 +134,32 @@ Rectangle {
             }
         }
         onStarted: {
-            authRunner.write(root.pendingPassword + "\n\n\n");
+            actionRunner.write(root.pendingPassword + "\n");
             root.pendingPassword = "";
         }
         onExited: (exitCode, exitStatus) => {
             root.pendingPassword = "";
-            if (exitCode !== 0) {
-                root.authBusy = false;
-                root.message = "";
-                if (root.errorMessage.length === 0)
-                    root.errorMessage = "Authorization failed";
-                Qt.callLater(() => passwordInput.forceActiveFocus());
-                return;
-            }
-
-            root.errorMessage = "";
-            root.message = "Setting up and enabling Hyprland title bars…";
-            setupRunner.exec([root.hyprbarsScript, "--setup-enable"]);
-        }
-    }
-
-    Process {
-        id: setupRunner
-        stdout: StdioCollector {
-            onStreamFinished: root.toggleOutput = text.trim()
-        }
-        stderr: StdioCollector {
-            onStreamFinished: {
-                const errorText = text.trim();
-                if (errorText.length > 0)
-                    root.errorMessage = errorText.split("\n")[0];
-            }
-        }
-        onExited: (exitCode, exitStatus) => {
-            root.authBusy = false;
             if (exitCode === 0) {
                 root.authOpen = false;
                 root.errorMessage = "";
-                root.hyprbarsState = "enabled";
-                root.message = "Title bars enabled.";
-                Qt.callLater(() => root.probeStatus());
+                root.pendingAction = "";
+
+                if (root.actionOutput === "disabled-pending") {
+                    root.hyprbarsState = "disabled";
+                    root.message = "Disabled for next login; not hot-unloaded.";
+                } else if (root.actionOutput === "disabled") {
+                    root.hyprbarsState = "disabled";
+                    root.message = "Title bars disabled.";
+                } else {
+                    root.hyprbarsState = "enabled";
+                    root.message = "Title bars enabled.";
+                }
                 return;
             }
 
             root.message = "";
             if (root.errorMessage.length === 0)
-                root.errorMessage = "Title bar setup failed";
+                root.errorMessage = "Title bar update failed";
             Qt.callLater(() => passwordInput.forceActiveFocus());
         }
     }
@@ -226,7 +167,7 @@ Rectangle {
     Timer {
         interval: 3000
         repeat: true
-        running: root.active && !root.operationBusy
+        running: root.active && !root.operationBusy && !root.authOpen
         onTriggered: root.probeStatus()
     }
 
@@ -260,7 +201,7 @@ Rectangle {
                 active: root.hyprbarsState === "enabled"
                 textSize: root.scaledText(9)
                 enabled: root.hyprbarsState !== "checking" && !root.operationBusy
-                onClicked: root.toggleTitleBars()
+                onClicked: root.requestToggle()
             }
         }
 
@@ -271,7 +212,7 @@ Rectangle {
                 : (root.message.length > 0 ? root.message
                     : (root.hyprbarsState === "unavailable"
                         ? "Enable once to install and activate the official Hyprland hyprbars plugin."
-                        : "Disabling loaded title bars takes effect after the next login to avoid a Hyprland crash."))
+                        : "Changes use Hyprland's plugin manager. Disabling a loaded title bar is left staged for the next login."))
             color: root.errorMessage.length > 0 ? Theme.urgent : Theme.muted
             font.family: Theme.fontFamily
             font.pixelSize: root.scaledText(8)
@@ -288,7 +229,9 @@ Rectangle {
                 text: root.errorMessage.length > 0
                     ? root.errorMessage
                     : (root.message.length > 0 ? root.message
-                        : "Enter your sudo password to set up the official Hyprland plugins repository and enable title bars.")
+                        : (root.pendingAction === "hyprbars-disable"
+                            ? "Enter your sudo password to disable title bars."
+                            : "Enter your sudo password to set up the official Hyprland plugins repository if needed and enable title bars."))
                 color: root.errorMessage.length > 0 ? Theme.urgent : Theme.muted
                 font.family: Theme.fontFamily
                 font.pixelSize: root.scaledText(8)
@@ -314,7 +257,7 @@ Rectangle {
                     font.family: Theme.fontFamily
                     font.pixelSize: root.scaledText(9)
                     echoMode: TextInput.Password
-                    enabled: !root.authBusy
+                    enabled: !root.operationBusy
                     clip: true
                     onAccepted: root.submitAuthorization()
                     Keys.onEscapePressed: root.cancelAuthorization()
@@ -330,14 +273,14 @@ Rectangle {
                 SettingsButton {
                     label: "Cancel"
                     textSize: root.scaledText(9)
-                    enabled: !root.authBusy
+                    enabled: !root.operationBusy
                     onClicked: root.cancelAuthorization()
                 }
 
                 SettingsButton {
-                    label: root.authBusy ? "Working…" : "Authorize & Enable"
+                    label: root.operationBusy ? "Working…" : "Authorize"
                     textSize: root.scaledText(9)
-                    enabled: !root.authBusy
+                    enabled: !root.operationBusy
                     onClicked: root.submitAuthorization()
                 }
             }
