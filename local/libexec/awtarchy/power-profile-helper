@@ -5,7 +5,6 @@ umask 022
 
 PACMAN="/usr/bin/pacman"
 SYSTEMCTL="/usr/bin/systemctl"
-GREP="/usr/bin/grep"
 MANAGED_FILE="/var/lib/awtarchy/managed-packages"
 
 fail() {
@@ -14,7 +13,7 @@ fail() {
 }
 
 package_installed() {
-  "$PACMAN" -Qq 2>/dev/null | "$GREP" -Fx -- "$1" >/dev/null
+  "$PACMAN" -Qq 2>/dev/null | /usr/bin/grep -Fx -- "$1" >/dev/null
 }
 
 is_laptop() {
@@ -51,7 +50,7 @@ forget_managed() {
   [[ -r "$MANAGED_FILE" ]] || return 0
 
   tmp="$(/usr/bin/mktemp /var/lib/awtarchy/managed-packages.XXXXXX)"
-  "$GREP" -Fxv -- "$package" "$MANAGED_FILE" >"$tmp" || true
+  /usr/bin/grep -Fxv -- "$package" "$MANAGED_FILE" >"$tmp" || true
   /usr/bin/install -m 0644 -o root -g root "$tmp" "$MANAGED_FILE"
   /usr/bin/rm -f -- "$tmp"
 }
@@ -101,7 +100,7 @@ resolve_tlp_conflict() {
 main() {
   [[ $# -eq 1 ]] || fail 'exactly one action is required'
   (( EUID == 0 )) || fail 'must run as root'
-  [[ -x "$PACMAN" && -x "$SYSTEMCTL" && -x "$GREP" ]] \
+  [[ -x "$PACMAN" && -x "$SYSTEMCTL" && -x /usr/bin/grep ]] \
     || fail 'required system tools are unavailable'
   is_laptop || fail 'Power Mode setup is only supported on laptop hardware'
 
