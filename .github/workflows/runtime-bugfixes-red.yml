@@ -15,12 +15,11 @@ jobs:
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
 
-      - name: Apply guarded network bar fix
+      - name: Normalize network bar fix
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           path = Path("config/quickshell/awtarchy/NetworkMenu.qml")
           text = path.read_text(encoding="utf-8")
@@ -34,10 +33,16 @@ jobs:
           else:
               raise SystemExit("guard mismatch for connectedWiredDevices")
 
-          replacements = {
-              "buildBarLabel": '''    function buildBarLabel() {
+          start_marker = "    function buildBarLabel() {"
+          end_marker = "    function wiredConnectionName"
+          if text.count(start_marker) != 1 or text.count(end_marker) != 1:
+              raise SystemExit("guard mismatch for network bar function boundaries")
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+
+          replacement = '''    function buildBarLabel() {
               if (wifiConnected)
-                  return "__WIFI__";
+                  return wifiSignalIcon(connectedWifiNetworks[0]);
               if (wiredConnected)
                   return "󰈀";
               if (wifiPresent)
@@ -46,10 +51,10 @@ jobs:
                   return "󰈂";
               return "";
           }
-          ''',
-              "buildVerticalBarLabel": '''    function buildVerticalBarLabel() {
+
+          function buildVerticalBarLabel() {
               if (wifiConnected)
-                  return "__WIFI__";
+                  return wifiSignalIcon(connectedWifiNetworks[0]);
               if (wiredConnected)
                   return "󰈀";
               if (wifiPresent)
@@ -58,22 +63,18 @@ jobs:
                   return "󰈂";
               return "";
           }
-          ''',
-          }
 
-          for name, template in replacements.items():
-              replacement = template.replace('return "__WIFI__";', 'return wifiSignalIcon(connectedWifiNetworks[0]);')
-              pattern = re.compile(
-                  rf"^    function {name}\(\) \{{\n.*?^    \}}\n",
-                  re.MULTILINE | re.DOTALL,
-              )
-              matches = pattern.findall(text)
-              if len(matches) != 1:
-                  raise SystemExit(f"guard mismatch for {name}: matches={len(matches)}")
-              current = matches[0]
-              if current != replacement:
-                  text = pattern.sub(lambda _match, value=replacement: value, text, count=1)
+          '''
+          # The YAML literal indentation is stripped before Python sees this
+          # heredoc. Restore the QML's four-space member indentation explicitly.
+          normalized = "\n".join(
+              ("    " + line if line else line)
+              for line in replacement.splitlines()
+          ) + "\n"
+          # Avoid doubling the four spaces already present on function lines.
+          normalized = normalized.replace("        function ", "    function ")
 
+          text = text[:start] + normalized + text[end:]
           path.write_text(text, encoding="utf-8")
           PY
 
@@ -82,7 +83,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add config/quickshell/awtarchy/NetworkMenu.qml
-            git commit -m "fix: correct network bar connection state"
+            git commit -m "fix: normalize network bar state functions"
             git push origin HEAD:quickshell-runtime-bugfixes
           fi
 
