@@ -24,35 +24,33 @@ jobs:
             echo 'Regression test unexpectedly passed before implementation.' >&2
             exit 1
           fi
-      - name: Apply patch
+      - name: Apply and verify patch
         shell: bash
         run: |
           set -Eeuo pipefail
           python3 - <<'PY'
           from pathlib import Path
 
+          def replace_between(path, start, end, replacement):
+              p = Path(path)
+              text = p.read_text()
+              a = text.find(start)
+              if a < 0:
+                  raise SystemExit(f'{path}: start marker not found: {start!r}')
+              b = text.find(end, a + len(start))
+              if b < 0:
+                  raise SystemExit(f'{path}: end marker not found: {end!r}')
+              p.write_text(text[:a] + replacement + text[b:])
+
           def replace_one(path, old, new):
               p = Path(path)
               text = p.read_text()
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"{path}: expected exactly one replacement target, found {count}")
+              if text.count(old) != 1:
+                  raise SystemExit(f'{path}: expected one target for {old!r}, found {text.count(old)}')
               p.write_text(text.replace(old, new, 1))
 
           helper = 'local/libexec/awtarchy/scxctl-helper'
-          replace_one(helper, '''hyprbars_have_plugin() {
-            [[ -x $HYPRPM ]] || return 1
-            "$HYPRPM" list 2>/dev/null \\
-              | /usr/bin/grep -qiE '(^|[^a-zA-Z0-9_])hyprbars([^a-zA-Z0-9_]|$)'
-          }
-
-          hyprbars_enabled() {
-            [[ -x $HYPRPM ]] || return 1
-            "$HYPRPM" list 2>/dev/null \\
-              | /usr/bin/grep -iEA1 '(^|[^a-zA-Z0-9_])hyprbars([^a-zA-Z0-9_]|$)' \\
-              | /usr/bin/grep -qiE 'enabled:[[:space:]]*true'
-          }
-          ''', '''hyprbars_persistent_state() {
+          replace_between(helper, 'hyprbars_have_plugin() {', 'hyprbars_loaded() {', '''hyprbars_persistent_state() {
             [[ -x $HYPRPM ]] || {
               printf '%s\\n' 'unavailable'
               return 0
@@ -86,18 +84,9 @@ jobs:
               }
             '\''
           }
+
           ''')
-          replace_one(helper, '''hyprbars_status() {
-            hyprbars_require_user
-            if [[ ! -x $HYPRPM ]] || ! hyprbars_have_plugin; then
-              printf '%s\\n' 'unavailable'
-            elif hyprbars_enabled; then
-              printf '%s\\n' 'enabled'
-            else
-              printf '%s\\n' 'disabled'
-            fi
-          }
-          ''', '''hyprbars_status() {
+          replace_between(helper, 'hyprbars_status() {', 'hyprbars_enable() {', '''hyprbars_status() {
             local persisted=""
             hyprbars_require_user
             persisted="$(hyprbars_persistent_state)"
@@ -129,27 +118,14 @@ jobs:
                 ;;
             esac
           }
+
           ''')
 
           script = 'config/hypr/scripts/hyprbars_toggle.sh'
           replace_one(script,
-              'REPO_URL="https://github.com/hyprwm/hyprland-plugins"\nRUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"\n',
-              'REPO_URL="https://github.com/hyprwm/hyprland-plugins"\nTRUSTED_HELPER="/usr/local/libexec/awtarchy/scxctl-helper"\nRUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"\n')
-          replace_one(script, '''machine_status() {
-            require_hyprpm || {
-              printf '%s\\n' 'unavailable'
-              return 0
-            }
-
-            if ! have_hyprbars_in_hyprpm; then
-              printf '%s\\n' 'unavailable'
-            elif hyprbars_enabled_in_hyprpm; then
-              printf '%s\\n' 'enabled'
-            else
-              printf '%s\\n' 'disabled'
-            fi
-          }
-          ''', '''machine_status() {
+              'REPO_URL="https://github.com/hyprwm/hyprland-plugins"\n',
+              'REPO_URL="https://github.com/hyprwm/hyprland-plugins"\nTRUSTED_HELPER="/usr/local/libexec/awtarchy/scxctl-helper"\n')
+          replace_between(script, 'machine_status() {', 'machine_toggle() {', '''machine_status() {
             if [[ -x $TRUSTED_HELPER ]]; then
               "$TRUSTED_HELPER" hyprbars-status
               return
@@ -174,6 +150,7 @@ jobs:
               printf '%s\\n' 'disabled'
             fi
           }
+
           ''')
 
           title = 'config/quickshell/awtarchy/TitleBarsCard.qml'
@@ -193,19 +170,20 @@ jobs:
               '                        : "Managed through Hyprland\'s plugin manager. Disabling avoids a forced hot-unload when the plugin remains loaded."))',
               '                        : (root.hyprbarsState === "disabled-pending"\n                            ? "Title Bars are loaded in this session, but hyprpm is configured to leave them off next login."\n                            : "Managed through Hyprland\'s plugin manager and synchronized with SUPER+ALT+T.")))')
 
-          power = 'config/quickshell/awtarchy/PowerModeCard.qml'
-          replace_one(power, '''
-            TitleBarsCard {
-                active: root.active
-                textScale: root.textScale
-                iconScale: root.iconScale
-            }
-          ''', '\n')
+          power = Path('config/quickshell/awtarchy/PowerModeCard.qml')
+          text = power.read_text()
+          start = text.rfind('\n    TitleBarsCard {')
+          if start < 0:
+              raise SystemExit('PowerModeCard.qml: nested TitleBarsCard not found')
+          end = text.find('\n    }', start + 1)
+          if end < 0:
+              raise SystemExit('PowerModeCard.qml: nested TitleBarsCard end not found')
+          end += len('\n    }')
+          power.write_text(text[:start] + text[end:])
 
           quick = Path('config/quickshell/awtarchy/QuickSettings.qml')
           text = quick.read_text()
-          marker = 'text: "Disable Num Lock at session start"'
-          marker_pos = text.find(marker)
+          marker_pos = text.find('text: "Disable Num Lock at session start"')
           if marker_pos < 0:
               raise SystemExit('QuickSettings.qml: Num Lock card marker not found')
           close_pattern = '                        }\n                    }\n\n                    ListScrollBar {'
@@ -222,8 +200,7 @@ jobs:
                     }
 
                     ListScrollBar {'''
-          text = text[:close_pos] + replacement + text[close_pos + len(close_pattern):]
-          quick.write_text(text)
+          quick.write_text(text[:close_pos] + replacement + text[close_pos + len(close_pattern):])
           PY
 
           manifest='local/share/awtarchy/quickshell-managed-history.sha256'
@@ -243,6 +220,7 @@ jobs:
           bash -n config/hypr/scripts/hyprbars_toggle.sh
           bash tests/test-hyprbars-quicksettings.sh
           git diff --check
+
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
