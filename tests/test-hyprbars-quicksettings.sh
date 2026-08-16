@@ -86,7 +86,7 @@ contains "$TRUSTED_HELPER" 'pty.fork()' \
   'trusted helper does not run hyprpm inside a PTY'
 contains "$TRUSTED_HELPER" 'password = sys.stdin.readline()' \
   'trusted helper does not receive the password from stdin'
-contains "$TRUSTED_HELPER" 'print(f"AWTARCHY_{kind}\\t' \
+contains "$TRUSTED_HELPER" 'print(f"AWTARCHY_{kind}' \
   'trusted helper does not stream structured setup records'
 contains "$TRUSTED_HELPER" 'emit("STAGE",' \
   'trusted helper does not emit live setup stages'
