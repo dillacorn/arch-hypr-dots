@@ -105,7 +105,7 @@ hl.on("hyprland.start", function()
 
     hl.exec_cmd("sh -lc '$HOME/.config/hypr/scripts/portal_fixup.sh'")
     hl.exec_cmd("/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1")
-    hl.exec_cmd("gnome-keyring-daemon --start --password-store=secrets")
+    hl.exec_cmd("gnome-keyring-daemon --start --components=secrets")
 
     -- hl.exec_cmd("~/.config/hypr/scripts/last_to_load_recorder.sh &")
     hl.exec_cmd("~/.config/hypr/scripts/quickshell.sh start &")
@@ -763,8 +763,8 @@ for _, bind in ipairs(movement_keys) do
     local key = bind[1]
     local direction = bind[2]
 
-    hl.bind("ALT + SHIFT + " .. key, hl.dsp.window.move({ direction = direction }), {})
-    hl.bind("SUPER + SHIFT + " .. key, hl.dsp.window.move({ direction = direction }), {})
+    hl.bind("ALT + SHIFT + " .. key, hl.dsp.window.move({ direction = direction, }), {})
+    hl.bind("SUPER + SHIFT + " .. key, hl.dsp.window.move({ direction = direction, }), {})
 end
 
 -- Send current workspace to monitor (ALT/SUPER+CTRL+SHIFT arrows + brackets)
@@ -993,7 +993,7 @@ hl.define_submap("noalt", function()
 
     -- Window move in "noalt" (SUPER+SHIFT arrows + hjkl)
     for _, bind in ipairs(movement_keys) do
-        hl.bind("SUPER + SHIFT + " .. bind[1], hl.dsp.window.move({ direction = bind[2] }), {})
+        hl.bind("SUPER + SHIFT + " .. bind[1], hl.dsp.window.move({ direction = bind[2], }), {})
     end
 
     -- Send current workspace to monitor in "noalt" (SUPER+CTRL+SHIFT arrows + brackets)
@@ -1083,7 +1083,7 @@ end)
 -- ───────────────────────────────────────────────────────────────────────────────
 
 hl.define_submap("mouse", function()
-    -- Submap references in "mouse" (Toggle off)  [empty file on exit]
+    -- Submap references in "mouse" (toggle off)  [empty file on exit]
     local mouse_off = _submap_off_cmd("mouse")
 
     -- Resize (MOUSE-left/right / hold)
