@@ -68,6 +68,7 @@ jobs:
           bash -n tests/test-launcher-keyboard-focus.sh
           bash -n tests/test-desktop-candidate-validation.sh
           bash -n tests/test-lua-validation.sh
+          bash -n tests/test-mdns-stack.sh
           bash -n tests/test-playerctl-dependency.sh
           bash -n tests/test-power-profile-helper-update.sh
           bash -n tests/test-power-profile-inline-auth.sh
@@ -129,6 +130,7 @@ jobs:
             tests/test-launcher-keyboard-focus.sh \
             tests/test-desktop-candidate-validation.sh \
             tests/test-lua-validation.sh \
+            tests/test-mdns-stack.sh \
             tests/test-playerctl-dependency.sh \
             tests/test-power-profile-helper-update.sh \
             tests/test-power-profile-inline-auth.sh \
@@ -174,6 +176,7 @@ jobs:
           bash tests/test-desktop-candidate-validation.sh
           python3 tests/test-keyring-pam-cleanup.py
           bash tests/test-lua-validation.sh
+          bash tests/test-mdns-stack.sh
           bash tests/test-playerctl-dependency.sh
           bash tests/test-power-profile-helper-update.sh
           bash tests/test-power-profile-inline-auth.sh
