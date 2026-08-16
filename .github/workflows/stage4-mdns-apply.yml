@@ -1,0 +1,34 @@
+name: Apply Stage 4 mDNS Patch
+
+on:
+  push:
+    branches: [mdns-stack-fix]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.head_commit.message != 'fix: implement single mDNS stack'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: mdns-stack-fix
+          fetch-depth: 0
+
+      - name: Apply Stage 4 patch
+        run: |
+          python3 .github/stage4-mdns-patch.py
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash tests/test-mdns-stack.sh
+          git diff --check
+
+      - name: Commit Stage 4 patch
+        run: |
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add local/share/awtarchy/awtarchy-runtime.sh
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix: implement single mDNS stack'
+          git push origin HEAD:mdns-stack-fix
