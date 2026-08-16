@@ -19,6 +19,63 @@ BAR_SETTINGS_SCRIPT="${SCRIPT_DIR}/quickshell_bar_settings.sh"
 # shellcheck disable=SC1090
 source <(sed '/^main "\$@"$/d' "$CORE_SCRIPT")
 
+SCHED_EXT_AUTH_STATE_FILE="${STATE_DIR}/scxctl_authorized"
+
+scxctl_auth_state_cached() {
+  [[ -f "$SCHED_EXT_AUTH_STATE_FILE" && ! -L "$SCHED_EXT_AUTH_STATE_FILE" ]] \
+    && grep -Fxq 'authorized' "$SCHED_EXT_AUTH_STATE_FILE" 2>/dev/null
+}
+
+scxctl_auth_state_mark() {
+  local tmp="${SCHED_EXT_AUTH_STATE_FILE}.tmp.$$"
+
+  mkdir -p -- "$STATE_DIR" 2>/dev/null || return 1
+  (
+    umask 077
+    printf '%s\n' 'authorized' >"$tmp"
+  ) || {
+    rm -f -- "$tmp"
+    return 1
+  }
+  if ! mv -fT -- "$tmp" "$SCHED_EXT_AUTH_STATE_FILE"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+}
+
+scxctl_auth_state_clear() {
+  rm -f -- "$SCHED_EXT_AUTH_STATE_FILE" 2>/dev/null || true
+}
+
+# scxctl get/list are read-only D-Bus queries and do not require root. Keep
+# privileged scheduler mutations on the inherited restricted sudo helper path.
+scxctl_run_capture() {
+  local out rc=0
+
+  scxctl_helper_is_safe || return 1
+  case "${1:-}" in
+    get|list)
+      out="$(run_capture "$SCXCTL_HELPER" "$@")" || rc=$?
+      printf '%s' "$out"
+      return "$rc"
+      ;;
+  esac
+
+  if (( EUID == 0 )); then
+    out="$(run_capture "$SCXCTL_HELPER" "$@")" || rc=$?
+    printf '%s' "$out"
+    return "$rc"
+  fi
+
+  if ! sudo_can_run_scxctl_noninteractive; then
+    return 1
+  fi
+
+  out="$(run_capture sudo -n "$SCXCTL_HELPER" "$@")" || rc=$?
+  printf '%s' "$out"
+  return "$rc"
+}
+
 MENU_ITEMS=(
   "Brightness"
   "Display"
@@ -113,7 +170,7 @@ machine_status() {
   refresh_all
 
   scheduler_authorized=false
-  if (( EUID == 0 )) || sudo_can_run_scxctl_noninteractive; then
+  if (( EUID == 0 )) || scxctl_auth_state_cached; then
     scheduler_authorized=true
   fi
 
@@ -253,7 +310,13 @@ machine_scheduler_authorize_stdin() {
   fi
 
   if ! ensure_scxctl_nopasswd_rule stdin 1; then
+    scxctl_auth_state_clear
     printf '%s\n' "${MSG:-sched-ext authorization failed}" >&2
+    return 1
+  fi
+
+  if (( EUID != 0 )) && ! scxctl_auth_state_mark; then
+    printf 'sched-ext authorization succeeded but UI state could not be saved\n' >&2
     return 1
   fi
 
@@ -267,8 +330,12 @@ machine_scheduler_start() {
   refresh_sched_ext
   sched_ext_deps_ok || return 1
   if (( EUID != 0 )) && ! sudo_can_run_scxctl_noninteractive; then
+    scxctl_auth_state_clear
     printf 'sched-ext authorization has not been configured\n' >&2
     return 3
+  fi
+  if (( EUID != 0 )); then
+    scxctl_auth_state_mark || true
   fi
   sched_ext_switch_or_start "$scheduler"
 }
@@ -276,8 +343,12 @@ machine_scheduler_start() {
 machine_scheduler_stop() {
   refresh_sched_ext
   if (( EUID != 0 )) && ! sudo_can_run_scxctl_noninteractive; then
+    scxctl_auth_state_clear
     printf 'sched-ext authorization has not been configured\n' >&2
     return 3
+  fi
+  if (( EUID != 0 )); then
+    scxctl_auth_state_mark || true
   fi
   sched_ext_stop
 }
