@@ -86,7 +86,7 @@ machine_toggle() {
   acquire_lock || return 0
 
   if ! have_hyprbars_in_hyprpm; then
-    printf 'hyprbars-toggle: setup required; run --setup-enable first\n' >&2
+    printf 'hyprbars-toggle: setup required; run the interactive toggle once\n' >&2
     return 3
   fi
 
@@ -98,31 +98,6 @@ machine_toggle() {
       printf '%s\n' 'disabled'
     fi
     return 0
-  fi
-
-  "$HYPRPM_BIN" enable "$PLUGIN"
-  reload_hyprbars
-  printf '%s\n' 'enabled'
-}
-
-machine_setup_enable() {
-  require_hyprpm
-  acquire_lock || return 0
-
-  # Quick Settings validates sudo immediately before entering this path. Keep
-  # plugin ownership and state in the user session; hyprpm uses the cached sudo
-  # authorization only for the header/update work that actually requires root.
-  "$HYPRPM_BIN" update
-
-  if ! have_hyprbars_in_hyprpm; then
-    if ! repo_already_added; then
-      "$HYPRPM_BIN" add "$REPO_URL"
-    fi
-  fi
-
-  if ! have_hyprbars_in_hyprpm; then
-    printf 'hyprbars-toggle: hyprbars is unavailable after plugin setup\n' >&2
-    return 4
   fi
 
   "$HYPRPM_BIN" enable "$PLUGIN"
@@ -226,10 +201,6 @@ case "${1:-}" in
     [[ $# -eq 1 ]] || { printf 'hyprbars-toggle: --toggle takes no arguments\n' >&2; exit 2; }
     machine_toggle
     ;;
-  --setup-enable)
-    [[ $# -eq 1 ]] || { printf 'hyprbars-toggle: --setup-enable takes no arguments\n' >&2; exit 2; }
-    machine_setup_enable
-    ;;
   --interactive)
     [[ $# -eq 1 ]] || { printf 'hyprbars-toggle: --interactive takes no arguments\n' >&2; exit 2; }
     interactive_main
@@ -246,7 +217,7 @@ case "${1:-}" in
       -e bash --noprofile --norc "$SCRIPT_PATH" --interactive
     ;;
   *)
-    printf 'usage: hyprbars_toggle.sh [--status|--toggle|--setup-enable]\n' >&2
+    printf 'usage: hyprbars_toggle.sh [--status|--toggle]\n' >&2
     exit 2
     ;;
 esac
