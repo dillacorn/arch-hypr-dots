@@ -1,0 +1,213 @@
+name: Apply Keyring Cleanup Patch
+
+on:
+  push:
+    branches: [keyring-pam-cleanup]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: keyring-pam-cleanup
+          fetch-depth: 0
+      - name: Apply exact Stage 2B patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count == 0 and new in text:
+                  return
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one exact patch target, found {count}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          hypr = Path("config/hypr/hyprland.lua")
+          text = hypr.read_text(encoding="utf-8")
+          line = '    hl.exec_cmd("gnome-keyring-daemon --start --components=secrets")\n'
+          if line in text:
+              hypr.write_text(text.replace(line, "", 1), encoding="utf-8")
+          elif "gnome-keyring-daemon --start" in text:
+              raise SystemExit("hyprland.lua contains an unexpected manual GNOME Keyring start")
+
+          runtime = "local/share/awtarchy/awtarchy-runtime.sh"
+          enable_old = '''enable_keyring_pam_stage() {
+  (( ENABLE_KEYRING_PAM == 1 )) || { warn "Skipping GNOME Keyring PAM change."; return 0; }
+  local tmpfile
+'''
+          enable_new = '''cleanup_legacy_keyring_pam_stage() {
+  local repo_dir="${1:-${REPO_DIR:-}}"
+  local transformer="${repo_dir}/local/share/awtarchy/keyring-pam-cleanup.py"
+  local pam_dir="${AWTARCHY_PAM_DIR:-/etc/pam.d}"
+  local login_file="${pam_dir}/login"
+  local ly_file="${pam_dir}/ly"
+  local backup_file="${login_file}.awtarchy-backup"
+  local cleaned="" rc=0 mode="" owner="" group=""
+
+  if [[ -n "${AWTARCHY_PAM_DIR:-}" && "$pam_dir" != /tmp/* ]]; then
+    die "AWTARCHY_PAM_DIR test override must stay under /tmp."
+  fi
+  [[ -f "$login_file" && ! -L "$login_file" ]] || return 0
+  [[ -f "$ly_file" && ! -L "$ly_file" ]] || return 0
+  grep -Fq 'pam_gnome_keyring.so' "$ly_file" || return 0
+  [[ -f "$transformer" && ! -L "$transformer" ]] || {
+    warn "GNOME Keyring PAM cleanup helper is missing; leaving PAM unchanged."
+    return 0
+  }
+  have python3 || {
+    warn "python3 is unavailable; leaving legacy GNOME Keyring PAM state unchanged."
+    return 0
+  }
+
+  cleaned="$(mktemp)"
+  if python3 "$transformer" "$login_file" "$cleaned"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  if (( rc == 3 )); then
+    rm -f -- "$cleaned"
+    return 0
+  fi
+  if (( rc != 0 )); then
+    rm -f -- "$cleaned"
+    warn "Could not validate legacy GNOME Keyring PAM state; leaving PAM unchanged."
+    return 0
+  fi
+
+  mode="$(stat -c '%a' -- "$login_file" 2>/dev/null || true)"
+  owner="$(stat -c '%u' -- "$login_file" 2>/dev/null || true)"
+  group="$(stat -c '%g' -- "$login_file" 2>/dev/null || true)"
+  if [[ ! "$mode" =~ ^[0-7]{3,4}$ || ! "$owner" =~ ^[0-9]+$ || ! "$group" =~ ^[0-9]+$ ]]; then
+    rm -f -- "$cleaned"
+    warn "Could not preserve /etc/pam.d/login metadata; leaving PAM unchanged."
+    return 0
+  fi
+
+  if [[ -n "${AWTARCHY_PAM_DIR:-}" || "${EUID}" -eq 0 ]]; then
+    if [[ -L "$login_file" ]]; then
+      rm -f -- "$cleaned"
+      warn "Refusing symbolic-link PAM login file: ${login_file}"
+      return 0
+    fi
+    if [[ ! -e "$backup_file" ]]; then
+      cp -a -- "$login_file" "$backup_file" || {
+        rm -f -- "$cleaned"
+        warn "Could not back up ${login_file}; leaving PAM unchanged."
+        return 0
+      }
+    fi
+    install -m "$mode" -o "$owner" -g "$group" -- "$cleaned" "$login_file" || {
+      rm -f -- "$cleaned"
+      warn "Could not remove legacy GNOME Keyring PAM duplication."
+      return 0
+    }
+  else
+    have sudo || {
+      rm -f -- "$cleaned"
+      warn "sudo is unavailable; legacy GNOME Keyring PAM duplication was not removed."
+      return 0
+    }
+    if ! sudo -v; then
+      rm -f -- "$cleaned"
+      warn "sudo authentication failed; legacy GNOME Keyring PAM duplication was not removed."
+      return 0
+    fi
+    if sudo test -L "$login_file" || sudo test -L "$backup_file"; then
+      rm -f -- "$cleaned"
+      warn "Refusing symbolic-link GNOME Keyring PAM cleanup path."
+      return 0
+    fi
+    if ! sudo test -e "$backup_file"; then
+      if ! sudo cp -a -- "$login_file" "$backup_file"; then
+        rm -f -- "$cleaned"
+        warn "Could not back up ${login_file}; leaving PAM unchanged."
+        return 0
+      fi
+    fi
+    if ! sudo install -m "$mode" -o "$owner" -g "$group" -- "$cleaned" "$login_file"; then
+      rm -f -- "$cleaned"
+      warn "Could not remove legacy GNOME Keyring PAM duplication."
+      return 0
+    fi
+  fi
+
+  rm -f -- "$cleaned"
+  log "Removed duplicate Awtarchy GNOME Keyring hooks from ${login_file}; Ly owns keyring PAM integration."
+}
+
+enable_keyring_pam_stage() {
+  if (( INSTALL_LY == 1 )); then
+    cleanup_legacy_keyring_pam_stage "$REPO_DIR"
+    log "Ly provides GNOME Keyring PAM integration; skipping duplicate /etc/pam.d/login hooks."
+    return 0
+  fi
+  (( ENABLE_KEYRING_PAM == 1 )) || { warn "Skipping GNOME Keyring PAM change."; return 0; }
+  local tmpfile
+'''
+          replace_once(runtime, enable_old, enable_new)
+
+          update_old = '''  if [[ ${AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR:-0} != 1 ]]; then
+    repair_scxctl_update_helper "$repo_dir"
+    if (( IS_LAPTOP_NOW == 1 )); then
+      reconcile_power_profile_backend "$repo_dir"
+    fi
+  fi
+  ensure_quickshell_update_prerequisites
+'''
+          update_new = '''  if [[ ${AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR:-0} != 1 ]]; then
+    repair_scxctl_update_helper "$repo_dir"
+    if (( IS_LAPTOP_NOW == 1 )); then
+      reconcile_power_profile_backend "$repo_dir"
+    fi
+  fi
+  if (( REVIEW_ONLY == 0 )); then
+    cleanup_legacy_keyring_pam_stage "$repo_dir"
+  fi
+  ensure_quickshell_update_prerequisites
+'''
+          replace_once(runtime, update_old, update_new)
+
+          workflow = ".github/workflows/validate-awtarchy.yml"
+          compile_old = '''          python3 -m py_compile local/libexec/awtarchy/wireguard-helper
+          python3 -m py_compile tests/test-config-noise-comparison.py
+'''
+          compile_new = '''          python3 -m py_compile local/libexec/awtarchy/wireguard-helper
+          python3 -m py_compile local/share/awtarchy/keyring-pam-cleanup.py
+          python3 -m py_compile tests/test-config-noise-comparison.py
+          python3 -m py_compile tests/test-keyring-pam-cleanup.py
+'''
+          replace_once(workflow, compile_old, compile_new)
+
+          run_old = '''          bash tests/test-desktop-candidate-validation.sh
+          bash tests/test-lua-validation.sh
+'''
+          run_new = '''          bash tests/test-desktop-candidate-validation.sh
+          python3 tests/test-keyring-pam-cleanup.py
+          bash tests/test-lua-validation.sh
+'''
+          replace_once(workflow, run_old, run_new)
+          PY
+
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          lua -e 'assert(loadfile(arg[1]))' config/hypr/hyprland.lua
+          python3 tests/test-keyring-pam-cleanup.py
+          bash tests/test-lua-validation.sh
+
+          if git diff --quiet; then
+            exit 0
+          fi
+          git diff --check
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add config/hypr/hyprland.lua local/share/awtarchy/awtarchy-runtime.sh .github/workflows/validate-awtarchy.yml
+          git commit -m 'fix: clean duplicate GNOME Keyring startup'
+          git push origin HEAD:keyring-pam-cleanup
