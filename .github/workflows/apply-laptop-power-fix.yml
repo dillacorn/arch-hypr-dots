@@ -1,0 +1,133 @@
+name: Apply laptop power backend fix
+
+on:
+  push:
+    branches:
+      - laptop-power-backend-fix
+    paths:
+      - .github/workflows/apply-laptop-power-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.repository == 'dillacorn/awtarchy'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: laptop-power-backend-fix
+
+      - name: Apply guarded source changes
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import hashlib
+
+          runtime_path = Path("local/share/awtarchy/awtarchy-runtime.sh")
+          runtime = runtime_path.read_text(encoding="utf-8")
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global runtime
+              count = runtime.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one match, found {count}")
+              runtime = runtime.replace(old, new, 1)
+
+          wrapper_anchor = '''install_arch_repo_apps_stage() {
+          '''
+          wrapper = '''reconcile_power_profile_backend() {
+            local repo_dir="$1"
+            local reconciler="${repo_dir}/local/share/awtarchy/awtarchy-power-profile.sh"
+
+            [[ -f "$reconciler" && ! -L "$reconciler" ]] \\
+              || die "Release is missing the power-profile reconciler: ${reconciler}"
+            /usr/bin/bash -n "$reconciler" \\
+              || die "Release power-profile reconciler failed Bash syntax validation."
+
+            AWTARCHY_MANAGED_PACKAGES_FILE="${AWTARCHY_MANAGED_PACKAGES_FILE:-/var/lib/awtarchy/managed-packages}" \\
+              /usr/bin/bash "$reconciler"
+          }
+
+          install_arch_repo_apps_stage() {
+          '''
+          replace_once(wrapper_anchor, wrapper, "power reconciler wrapper")
+
+          old_install_tlp = '''    if [[ "$IS_LAPTOP" == true ]]; then
+                log "Configuring laptop power savings..."
+                if pacman_install_one tlp; then
+                  systemctl enable --now tlp || true
+                fi
+              fi
+          '''
+          replace_once(old_install_tlp, "", "legacy TLP-only installer block")
+
+          old_install_sequence = '''  prepare_base_install
+            install_arch_repo_apps_stage
+            install_aur_repo_apps_stage
+          '''
+          new_install_sequence = '''  prepare_base_install
+            install_arch_repo_apps_stage
+            if [[ "$IS_LAPTOP" == true && "$IS_VM" == false ]]; then
+              reconcile_power_profile_backend "$REPO_DIR"
+            fi
+            install_aur_repo_apps_stage
+          '''
+          replace_once(old_install_sequence, new_install_sequence, "fresh install power reconciliation")
+
+          old_update_sequence = '''  if [[ ${AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR:-0} != 1 ]]; then
+                repair_scxctl_update_helper "$repo_dir"
+              fi
+              ensure_quickshell_update_prerequisites
+          '''
+          new_update_sequence = '''  if [[ ${AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR:-0} != 1 ]]; then
+                repair_scxctl_update_helper "$repo_dir"
+                if (( IS_LAPTOP_NOW == 1 )); then
+                  reconcile_power_profile_backend "$repo_dir"
+                fi
+              fi
+              ensure_quickshell_update_prerequisites
+          '''
+          replace_once(old_update_sequence, new_update_sequence, "updater power reconciliation")
+
+          runtime_path.write_text(runtime, encoding="utf-8")
+
+          history_path = Path("local/share/awtarchy/quickshell-managed-history.sha256")
+          helper_path = Path("config/hypr/scripts/quickshell_bluetooth_state.sh")
+          helper_hash = hashlib.sha256(helper_path.read_bytes()).hexdigest()
+          entry = f"{helper_hash}\t.config/hypr/scripts/quickshell_bluetooth_state.sh"
+          history = history_path.read_text(encoding="utf-8")
+          if entry not in history.splitlines():
+              if not history.endswith("\n"):
+                  history += "\n"
+              history += (
+                  "\n# 2026-08-16 Bluetooth power-state persistence fix.\n"
+                  + entry
+                  + "\n"
+              )
+              history_path.write_text(history, encoding="utf-8")
+          PY
+
+      - name: Verify targeted regressions
+        shell: bash
+        run: |
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n local/share/awtarchy/awtarchy-power-profile.sh
+          bash tests/test-quickshell-backend-readiness.sh
+          bash tests/test-bluetooth-state-persistence.sh
+
+      - name: Commit guarded changes and remove temporary workflow
+        shell: bash
+        run: |
+          rm -f .github/workflows/apply-laptop-power-fix.yml
+          git config user.name "dillacorn"
+          git config user.email "28743863+dillacorn@users.noreply.github.com"
+          git add local/share/awtarchy/awtarchy-runtime.sh \
+                  local/share/awtarchy/quickshell-managed-history.sha256 \
+                  .github/workflows/apply-laptop-power-fix.yml
+          git diff --cached --check
+          git commit -m "Fix laptop power backend reconciliation"
+          git push origin HEAD:laptop-power-backend-fix
