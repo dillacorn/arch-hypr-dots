@@ -53,6 +53,7 @@ hardware_body="$(function_body hardware_reconcile)"
   || fail 'managed package installation still exits early for the normal-user updater'
 [[ "$remove_body" != *'cleanup requires sudo/root'* ]] \
   || fail 'managed package cleanup still exits early for the normal-user updater'
+# shellcheck disable=SC2016 # This test intentionally matches literal shell source.
 [[ "$record_body" != *'[[ "${EUID}" -eq 0 ]] || return 0'* ]] \
   || fail 'Awtarchy package ledger recording still silently skips normal-user updates'
 
@@ -60,8 +61,10 @@ hardware_body="$(function_body hardware_reconcile)"
   || fail 'missing hardware packages are not installed through narrow sudo elevation'
 [[ "$remove_body" == *'run_update_root /usr/bin/pacman -Rns --noconfirm'* ]] \
   || fail 'obsolete Awtarchy-owned hardware packages are not removed through narrow sudo elevation'
+# shellcheck disable=SC2016 # This test intentionally matches literal shell source.
 [[ "$record_body" == *'atomic_update_root_file_from_stdin 0644 0 0 "$manifest"'* ]] \
   || fail 'hardware package ownership ledger is not written through root-owned staging'
+# shellcheck disable=SC2016 # This test intentionally matches literal shell source.
 [[ "$remove_body" == *'atomic_update_root_file_from_stdin 0644 0 0 "$manifest"'* ]] \
   || fail 'hardware package ledger cleanup is not written through root-owned staging'
 
@@ -74,16 +77,22 @@ hardware_body="$(function_body hardware_reconcile)"
 [[ "$hardware_body" == *'run_update_root /usr/bin/systemctl disable --now tlp.service'* ]] \
   || fail 'obsolete TLP service cleanup is not elevated safely'
 
+# shellcheck disable=SC2016 # This test intentionally matches literal shell source.
 [[ "$exact_nvidia_body" != *'[[ "${EUID}" -eq 0 ]] || return 0'* ]] \
   || fail 'exact NVIDIA system-file cleanup still silently skips normal-user updates'
+# shellcheck disable=SC2016 # This test intentionally matches literal shell source.
 [[ "$exact_nvidia_body" == *'run_update_root /usr/bin/rm -f -- "$file"'* ]] \
   || fail 'exact NVIDIA system-file cleanup is not narrowly elevated'
+# shellcheck disable=SC2016 # This test intentionally matches literal shell source.
 [[ "$boot_nvidia_body" != *'[[ "${EUID}" -eq 0 ]] || return 0'* ]] \
   || fail 'NVIDIA boot cleanup still silently skips normal-user updates'
+# shellcheck disable=SC2016 # This test intentionally matches literal shell source.
 [[ "$boot_nvidia_body" == *'atomic_update_root_file_from_stdin "$mode" "$uid" "$gid" "$file"'* ]] \
   || fail 'NVIDIA boot-file updates do not use root-owned staging'
+# shellcheck disable=SC2016 # This test intentionally matches literal shell source.
 [[ "$boot_nvidia_body" == *'atomic_update_root_file_from_stdin "$mode" "$uid" "$gid" /etc/mkinitcpio.conf'* ]] \
   || fail 'mkinitcpio updates do not use root-owned staging'
+# shellcheck disable=SC2016 # This test intentionally matches literal shell source.
 [[ "$boot_nvidia_body" != *'run_update_root /usr/bin/install -m "$mode" "$tmp"'* ]] \
   || fail 'privileged NVIDIA cleanup still reads user-owned temporary files directly'
 
