@@ -14,16 +14,12 @@ Item {
     property string targetKey: "current"
     property var commandQueue: []
     property string message: ""
-    property string hyprbarsState: "checking"
-    property string hyprbarsToggleOutput: ""
-    property string hyprbarsMessage: ""
 
     signal themePickerRequested()
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
         || (Quickshell.env("HOME") + "/.config")
     readonly property string managerScript: configHome + "/hypr/scripts/quickshell.sh"
-    readonly property string hyprbarsScript: configHome + "/hypr/scripts/hyprbars_toggle.sh"
 
     implicitHeight: active ? controls.implicitHeight + 12 : 0
 
@@ -213,104 +209,12 @@ Item {
         enqueue("settextscale", next);
     }
 
-    function probeHyprbars() {
-        if (!active || hyprbarsStatus.running || hyprbarsToggle.running)
-            return;
-        hyprbarsStatus.exec([root.hyprbarsScript, "--status"]);
-    }
-
-    function hyprbarsStatusText() {
-        if (hyprbarsState === "enabled")
-            return "Enabled";
-        if (hyprbarsState === "disabled")
-            return "Disabled";
-        if (hyprbarsState === "unavailable")
-            return "Not set up";
-        return "Checking…";
-    }
-
-    function hyprbarsButtonLabel() {
-        if (hyprbarsState === "enabled")
-            return "Disable";
-        if (hyprbarsState === "disabled")
-            return "Enable";
-        if (hyprbarsState === "unavailable")
-            return "Set Up";
-        return "Checking…";
-    }
-
-    function toggleHyprbars() {
-        if (hyprbarsStatus.running || hyprbarsToggle.running)
-            return;
-        if (hyprbarsState === "unavailable") {
-            hyprbarsMessage = "Opened the existing Hyprland plugin setup.";
-            Quickshell.execDetached([root.hyprbarsScript]);
-            return;
-        }
-        hyprbarsToggleOutput = "";
-        hyprbarsMessage = "Updating title bars…";
-        hyprbarsToggle.exec([root.hyprbarsScript, "--toggle"]);
-    }
-
-    onActiveChanged: {
-        if (active)
-            Qt.callLater(() => root.probeHyprbars());
-    }
-
     Process {
         id: writer
         onExited: {
             BarState.refresh();
             root.runNextCommand();
         }
-    }
-
-    Process {
-        id: hyprbarsStatus
-        stdout: StdioCollector {
-            onStreamFinished: {
-                const state = text.trim();
-                root.hyprbarsState = state === "enabled" || state === "disabled"
-                    || state === "unavailable" ? state : "unavailable";
-            }
-        }
-        onExited: (exitCode, exitStatus) => {
-            if (exitCode !== 0)
-                root.hyprbarsState = "unavailable";
-        }
-    }
-
-    Process {
-        id: hyprbarsToggle
-        stdout: StdioCollector {
-            onStreamFinished: root.hyprbarsToggleOutput = text.trim()
-        }
-        onExited: (exitCode, exitStatus) => {
-            if (exitCode === 0) {
-                if (root.hyprbarsToggleOutput === "disabled-pending")
-                    root.hyprbarsMessage = "Disabled for next login; not hot-unloaded.";
-                else if (root.hyprbarsToggleOutput === "disabled")
-                    root.hyprbarsMessage = "Title bars disabled.";
-                else
-                    root.hyprbarsMessage = "Title bars enabled.";
-                Qt.callLater(() => root.probeHyprbars());
-                return;
-            }
-
-            if (exitCode === 3) {
-                root.hyprbarsState = "unavailable";
-                root.hyprbarsMessage = "Title bar setup is required.";
-            } else {
-                root.hyprbarsMessage = "Title bar update failed.";
-            }
-        }
-    }
-
-    Timer {
-        interval: 3000
-        repeat: true
-        running: root.active
-        onTriggered: root.probeHyprbars()
     }
 
     Rectangle {
@@ -459,49 +363,6 @@ Item {
                     elide: Text.ElideRight
                 }
             }
-
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 26
-                spacing: 5
-
-                Text {
-                    Layout.preferredWidth: 78
-                    text: "Title Bars"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 10
-                }
-
-                Text {
-                    Layout.preferredWidth: 84
-                    text: root.hyprbarsStatusText()
-                    color: Theme.muted
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 10
-                    horizontalAlignment: Text.AlignHCenter
-                }
-
-                SettingsButton {
-                    label: root.hyprbarsButtonLabel()
-                    textSize: 9
-                    enabled: root.hyprbarsState !== "checking"
-                        && !hyprbarsStatus.running && !hyprbarsToggle.running
-                    onClicked: root.toggleHyprbars()
-                }
-
-                Text {
-                    Layout.fillWidth: true
-                    visible: root.hyprbarsMessage.length > 0
-                    text: root.hyprbarsMessage
-                    color: Theme.muted
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 9
-                    horizontalAlignment: Text.AlignRight
-                    elide: Text.ElideRight
-                }
-            }
-
         }
     }
 }
