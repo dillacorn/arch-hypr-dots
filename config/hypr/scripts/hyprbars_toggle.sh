@@ -13,6 +13,7 @@ TERM_CLASS="hyprbars"
 TERM_TITLE="hyprbars"
 PLUGIN="hyprbars"
 REPO_URL="https://github.com/hyprwm/hyprland-plugins"
+TRUSTED_HELPER="/usr/local/libexec/awtarchy/scxctl-helper"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"
 LOCKFILE="${RUNTIME_DIR}/hyprbars-toggle.lockfile"
 SCRIPT_PATH="$(readlink -f -- "$0" 2>/dev/null || printf '%s' "$0")"
@@ -67,15 +68,26 @@ reload_hyprbars() {
 }
 
 machine_status() {
+  if [[ -x $TRUSTED_HELPER ]]; then
+    "$TRUSTED_HELPER" hyprbars-status
+    return
+  fi
+
   require_hyprpm || {
     printf '%s\n' 'unavailable'
     return 0
   }
 
   if ! have_hyprbars_in_hyprpm; then
-    printf '%s\n' 'unavailable'
+    if hyprbars_loaded; then
+      printf '%s\n' 'enabled'
+    else
+      printf '%s\n' 'unavailable'
+    fi
   elif hyprbars_enabled_in_hyprpm; then
     printf '%s\n' 'enabled'
+  elif hyprbars_loaded; then
+    printf '%s\n' 'disabled-pending'
   else
     printf '%s\n' 'disabled'
   fi

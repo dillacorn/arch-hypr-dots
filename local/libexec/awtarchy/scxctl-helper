@@ -42,17 +42,39 @@ hyprbars_require_tools() {
   [[ -x $PYTHON ]] || die "trusted Python executable is missing: $PYTHON"
 }
 
-hyprbars_have_plugin() {
-  [[ -x $HYPRPM ]] || return 1
-  "$HYPRPM" list 2>/dev/null \
-    | /usr/bin/grep -qiE '(^|[^a-zA-Z0-9_])hyprbars([^a-zA-Z0-9_]|$)'
-}
+hyprbars_persistent_state() {
+  [[ -x $HYPRPM ]] || {
+    printf '%s\n' 'unavailable'
+    return 0
+  }
 
-hyprbars_enabled() {
-  [[ -x $HYPRPM ]] || return 1
-  "$HYPRPM" list 2>/dev/null \
-    | /usr/bin/grep -iEA1 '(^|[^a-zA-Z0-9_])hyprbars([^a-zA-Z0-9_]|$)' \
-    | /usr/bin/grep -qiE 'enabled:[[:space:]]*true'
+  "$HYPRPM" list 2>/dev/null | /usr/bin/awk '''
+    BEGIN { seen = 0; emitted = 0 }
+    {
+      line = $0
+      gsub(/\033\[[0-9;?]*[ -\/]*[@-~]/, "", line)
+      if (line ~ /Plugin[[:space:]]+hyprbars([[:space:]]|$)/) {
+        seen = 1
+        next
+      }
+      if (seen && line ~ /enabled:[[:space:]]*true([[:space:]]|$)/) {
+        print "enabled"
+        emitted = 1
+        exit
+      }
+      if (seen && line ~ /enabled:/) {
+        print "disabled"
+        emitted = 1
+        exit
+      }
+      if (seen && line ~ /Plugin[[:space:]]+/)
+        exit
+    }
+    END {
+      if (!emitted)
+        print seen ? "unknown" : "unavailable"
+    }
+  '''
 }
 
 hyprbars_loaded() {
@@ -306,14 +328,36 @@ PY
 }
 
 hyprbars_status() {
+  local persisted=""
   hyprbars_require_user
-  if [[ ! -x $HYPRPM ]] || ! hyprbars_have_plugin; then
-    printf '%s\n' 'unavailable'
-  elif hyprbars_enabled; then
-    printf '%s\n' 'enabled'
-  else
-    printf '%s\n' 'disabled'
-  fi
+  persisted="$(hyprbars_persistent_state)"
+
+  case "$persisted" in
+    enabled)
+      printf '%s\n' 'enabled'
+      ;;
+    disabled)
+      if hyprbars_loaded; then
+        printf '%s\n' 'disabled-pending'
+      else
+        printf '%s\n' 'disabled'
+      fi
+      ;;
+    unavailable)
+      if hyprbars_loaded; then
+        printf '%s\n' 'enabled'
+      else
+        printf '%s\n' 'unavailable'
+      fi
+      ;;
+    *)
+      if hyprbars_loaded; then
+        printf '%s\n' 'enabled'
+      else
+        printf '%s\n' 'disabled'
+      fi
+      ;;
+  esac
 }
 
 hyprbars_enable() {

@@ -1784,9 +1784,15 @@ Singleton {
                                 }
                             }
                         }
-                    }
 
-                    ListScrollBar {
+              TitleBarsCard {
+                  active: quickSettingsWindow.visible
+                  textScale: root.effectiveTextScale
+                  iconScale: root.effectiveIconScale
+              }
+          }
+
+          ListScrollBar {
                         id: contentScrollBar
                         anchors.top: parent.top
                         anchors.bottom: parent.bottom
