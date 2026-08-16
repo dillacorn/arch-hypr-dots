@@ -6,6 +6,7 @@ set -euo pipefail
 STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 STATE_DIR="${STATE_HOME}/awtarchy"
 STATE_FILE="${STATE_DIR}/bluetooth-state"
+BLUETOOTH_CLASS_DIR="${AWTARCHY_BLUETOOTH_CLASS_DIR:-/sys/class/bluetooth}"
 
 usage() {
     printf 'usage: quickshell_bluetooth_state.sh set <enabled|disabled> | restore | status\n' >&2
@@ -34,7 +35,7 @@ unblock_controller() {
 wait_for_controller() {
     local _
     for _ in {1..20}; do
-        compgen -G '/sys/class/bluetooth/hci*' >/dev/null && return 0
+        compgen -G "${BLUETOOTH_CLASS_DIR}/hci*" >/dev/null && return 0
         sleep 0.1
     done
     return 1
