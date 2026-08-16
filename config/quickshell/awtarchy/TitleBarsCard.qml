@@ -59,9 +59,12 @@ Rectangle {
             return;
 
         errorMessage = "";
-        message = "";
+        actionOutput = "";
         pendingAction = hyprbarsState === "enabled"
             ? "hyprbars-disable" : "hyprbars-enable";
+        message = pendingAction === "hyprbars-enable" && hyprbarsState === "unavailable"
+            ? "First-time setup updates Hyprland plugin headers and builds the official plugin repository, so it can take a while."
+            : "Enter your sudo password to update the Hyprland plugin state.";
         authOpen = true;
         Qt.callLater(() => passwordInput.forceActiveFocus());
     }
@@ -81,7 +84,7 @@ Rectangle {
         if (operationBusy)
             return;
         if (pendingAction !== "hyprbars-enable" && pendingAction !== "hyprbars-disable") {
-            errorMessage = "No title bar action is pending";
+            errorMessage = "No Hyprland plugin action is pending";
             return;
         }
         if (passwordInput.text.length === 0) {
@@ -93,11 +96,35 @@ Rectangle {
         pendingPassword = passwordInput.text;
         passwordInput.text = "";
         errorMessage = "";
-        message = pendingAction === "hyprbars-enable"
-            ? "Setting up and enabling title bars…"
-            : "Disabling title bars…";
+        message = "Authenticating with sudo…";
         actionOutput = "";
         actionRunner.exec([root.trustedHelper, root.pendingAction]);
+    }
+
+    function handleActionLine(rawLine) {
+        const line = String(rawLine).trim();
+        if (line.length === 0)
+            return;
+
+        const stagePrefix = "AWTARCHY_STAGE\t";
+        const resultPrefix = "AWTARCHY_RESULT\t";
+        const errorPrefix = "AWTARCHY_ERROR\t";
+
+        if (line.startsWith(stagePrefix)) {
+            message = line.substring(stagePrefix.length);
+            return;
+        }
+        if (line.startsWith(resultPrefix)) {
+            actionOutput = line.substring(resultPrefix.length);
+            return;
+        }
+        if (line.startsWith(errorPrefix)) {
+            const detail = line.substring(errorPrefix.length);
+            if (detail.indexOf("Authentication failed") !== -1)
+                errorMessage = "Authentication failed. sudo rejected the password.";
+            else
+                errorMessage = detail;
+        }
     }
 
     onActiveChanged: {
@@ -123,14 +150,14 @@ Rectangle {
     Process {
         id: actionRunner
         stdinEnabled: true
-        stdout: StdioCollector {
-            onStreamFinished: root.actionOutput = text.trim()
+        stdout: SplitParser {
+            onRead: data => root.handleActionLine(data)
         }
-        stderr: StdioCollector {
-            onStreamFinished: {
-                const errorText = text.trim();
-                if (errorText.length > 0)
-                    root.errorMessage = errorText.split("\n")[0];
+        stderr: SplitParser {
+            onRead: data => {
+                const detail = String(data).trim();
+                if (detail.length > 0 && root.errorMessage.length === 0)
+                    root.errorMessage = detail;
             }
         }
         onStarted: {
@@ -146,20 +173,23 @@ Rectangle {
 
                 if (root.actionOutput === "disabled-pending") {
                     root.hyprbarsState = "disabled";
-                    root.message = "Disabled for next login; not hot-unloaded.";
+                    root.message = "Disabled for next login; the loaded plugin was not force-unloaded.";
                 } else if (root.actionOutput === "disabled") {
                     root.hyprbarsState = "disabled";
-                    root.message = "Title bars disabled.";
+                    root.message = "Title Bars disabled.";
                 } else {
                     root.hyprbarsState = "enabled";
-                    root.message = "Title bars enabled.";
+                    root.message = "Title Bars enabled.";
                 }
                 return;
             }
 
             root.message = "";
-            if (root.errorMessage.length === 0)
-                root.errorMessage = "Title bar update failed";
+            if (root.errorMessage.length === 0) {
+                root.errorMessage = exitCode === 77
+                    ? "Authentication failed. sudo rejected the password."
+                    : "Hyprland plugin update failed. No detailed error was returned.";
+            }
             Qt.callLater(() => passwordInput.forceActiveFocus());
         }
     }
@@ -179,14 +209,28 @@ Rectangle {
 
         RowLayout {
             Layout.fillWidth: true
+            spacing: 8
 
-            Text {
+            ColumnLayout {
                 Layout.fillWidth: true
-                text: "Title Bars"
-                color: Theme.foreground
-                font.family: Theme.fontFamily
-                font.pixelSize: root.scaledText(12)
-                font.bold: true
+                spacing: 1
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Hyprland Plugin"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: root.scaledText(12)
+                    font.bold: true
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Title Bars (hyprbars)"
+                    color: Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: root.scaledText(8)
+                }
             }
 
             Text {
@@ -211,8 +255,8 @@ Rectangle {
             text: root.errorMessage.length > 0 ? root.errorMessage
                 : (root.message.length > 0 ? root.message
                     : (root.hyprbarsState === "unavailable"
-                        ? "Enable once to install and activate the official Hyprland hyprbars plugin."
-                        : "Changes use Hyprland's plugin manager. Disabling a loaded title bar is left staged for the next login."))
+                        ? "Enable once to install and activate the official Hyprland Title Bars plugin."
+                        : "Managed through Hyprland's plugin manager. Disabling avoids a forced hot-unload when the plugin remains loaded."))
             color: root.errorMessage.length > 0 ? Theme.urgent : Theme.muted
             font.family: Theme.fontFamily
             font.pixelSize: root.scaledText(8)
@@ -228,11 +272,20 @@ Rectangle {
                 Layout.fillWidth: true
                 text: root.errorMessage.length > 0
                     ? root.errorMessage
-                    : (root.message.length > 0 ? root.message
-                        : (root.pendingAction === "hyprbars-disable"
-                            ? "Enter your sudo password to disable title bars."
-                            : "Enter your sudo password to set up the official Hyprland plugins repository if needed and enable title bars."))
+                    : root.message
                 color: root.errorMessage.length > 0 ? Theme.urgent : Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: root.scaledText(8)
+                wrapMode: Text.Wrap
+            }
+
+            Text {
+                Layout.fillWidth: true
+                visible: !root.operationBusy
+                    && root.pendingAction === "hyprbars-enable"
+                    && root.hyprbarsState === "unavailable"
+                text: "Updating Hyprland plugin headers and building the official plugin repository is normal on first setup and may take a while. Progress will appear here."
+                color: Theme.muted
                 font.family: Theme.fontFamily
                 font.pixelSize: root.scaledText(8)
                 wrapMode: Text.Wrap
@@ -241,6 +294,7 @@ Rectangle {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 30
+                visible: !root.operationBusy
                 color: Theme.active
                 border.width: 1
                 border.color: passwordInput.activeFocus ? Theme.focus : Theme.subtleHover
@@ -273,12 +327,13 @@ Rectangle {
                 SettingsButton {
                     label: "Cancel"
                     textSize: root.scaledText(9)
+                    visible: !root.operationBusy
                     enabled: !root.operationBusy
                     onClicked: root.cancelAuthorization()
                 }
 
                 SettingsButton {
-                    label: root.operationBusy ? "Working…" : "Authorize"
+                    label: root.operationBusy ? "Running…" : "Authorize"
                     textSize: root.scaledText(9)
                     enabled: !root.operationBusy
                     onClicked: root.submitAuthorization()
