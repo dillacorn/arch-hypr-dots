@@ -39,6 +39,13 @@ have_hyprbars_in_hyprpm() {
     | grep -qiE '(^|[^a-zA-Z0-9_])hyprbars([^a-zA-Z0-9_]|$)'
 }
 
+hyprbars_enabled_in_hyprpm() {
+  require_hyprpm
+  "$HYPRPM_BIN" list 2>/dev/null \
+    | grep -iEA1 '(^|[^a-zA-Z0-9_])hyprbars([^a-zA-Z0-9_]|$)' \
+    | grep -qiE 'enabled:[[:space:]]*true'
+}
+
 repo_already_added() {
   require_hyprpm
   "$HYPRPM_BIN" list 2>/dev/null \
@@ -65,12 +72,12 @@ machine_status() {
     return 0
   }
 
-  if hyprbars_loaded; then
-    printf '%s\n' 'enabled'
-  elif have_hyprbars_in_hyprpm; then
-    printf '%s\n' 'disabled'
-  else
+  if ! have_hyprbars_in_hyprpm; then
     printf '%s\n' 'unavailable'
+  elif hyprbars_enabled_in_hyprpm; then
+    printf '%s\n' 'enabled'
+  else
+    printf '%s\n' 'disabled'
   fi
 }
 
@@ -78,15 +85,19 @@ machine_toggle() {
   require_hyprpm
   acquire_lock || return 0
 
-  if hyprbars_loaded; then
-    "$HYPRPM_BIN" disable "$PLUGIN"
-    printf '%s\n' 'disabled-pending'
-    return 0
-  fi
-
   if ! have_hyprbars_in_hyprpm; then
     printf 'hyprbars-toggle: setup required; run the interactive toggle once\n' >&2
     return 3
+  fi
+
+  if hyprbars_enabled_in_hyprpm; then
+    "$HYPRPM_BIN" disable "$PLUGIN"
+    if hyprbars_loaded; then
+      printf '%s\n' 'disabled-pending'
+    else
+      printf '%s\n' 'disabled'
+    fi
+    return 0
   fi
 
   "$HYPRPM_BIN" enable "$PLUGIN"
