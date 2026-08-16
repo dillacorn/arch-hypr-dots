@@ -46,6 +46,21 @@ assert_contains "$POWER_RECONCILER" 'systemctl enable --now tlp.service tlp-pd.s
 assert_contains "$RUNTIME" 'reconcile_power_profile_backend "$REPO_DIR"'
 assert_contains "$RUNTIME" 'reconcile_power_profile_backend "$repo_dir"'
 
+# A successful tlpctl command only proves the tlp-pd CLI path works. The
+# Quickshell PowerProfiles singleton talks to the org.freedesktop D-Bus API,
+# so the card must probe that exact service/interface before exposing controls.
+assert_contains "$POWER_CARD" '/usr/bin/busctl'
+assert_contains "$POWER_CARD" 'org.freedesktop.UPower.PowerProfiles'
+assert_contains "$POWER_CARD" '/org/freedesktop/UPower/PowerProfiles'
+assert_contains "$POWER_CARD" 'ActiveProfile'
+assert_not_contains "$POWER_CARD" 'tlpctl get'
+
+# Quickshell only constructs the PowerProfiles D-Bus interface when the
+# singleton starts. In-session setup therefore needs a full shell restart after
+# the helper succeeds instead of merely re-running the CLI backend probe.
+assert_contains "$POWER_CARD" 'readonly property string quickshellManager:'
+assert_contains "$POWER_CARD" 'Quickshell.execDetached([root.quickshellManager, "restart"]);'
+
 # Quickshell 0.3 initializes its NetworkManager backend when the singleton is
 # constructed. If Hyprland launches the shell before NetworkManager is active,
 # the session must restart the shell once NetworkManager becomes ready.
