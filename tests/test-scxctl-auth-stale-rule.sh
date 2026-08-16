@@ -19,6 +19,16 @@ function_body() {
   ' "$file"
 }
 
+function_body_effective() {
+  local name="$1" body
+  body="$(function_body "$BACKEND" "$name")"
+  if [[ -n "$body" ]]; then
+    printf '%s' "$body"
+  else
+    function_body "$CORE" "$name"
+  fi
+}
+
 ! grep -Fq "sudo test -f \"\$sudoers_target\" && sudo_can_run_scxctl_noninteractive" "$CORE" \
   || fail 'authorization still trusts a cached sudo timestamp when a stale rule exists'
 
@@ -39,10 +49,11 @@ grep -Fq "printf '%s ALL=(root) NOPASSWD: %s\\n' \"\$user\" \"\$SCXCTL_HELPER\""
 ! grep -Fq 'NOPASSWD: /usr/bin/scxctl' "$CORE" \
   || fail 'authorization still grants passwordless access to the external scxctl CLI'
 
-capture_body="$(function_body "$CORE" scxctl_run_capture)"
+capture_body="$(function_body_effective scxctl_run_capture)"
 status_body="$(function_body "$BACKEND" machine_status)"
 start_body="$(function_body "$BACKEND" machine_scheduler_start)"
 stop_body="$(function_body "$BACKEND" machine_scheduler_stop)"
+combined="$(cat "$CORE" "$BACKEND")"
 
 [[ "$capture_body" == *'get|list)'* ]] \
   || fail 'passive scxctl get/list reads are not separated from privileged operations'
@@ -57,11 +68,11 @@ stop_body="$(function_body "$BACKEND" machine_scheduler_stop)"
   || fail 'scheduler start no longer enforces the restricted sudo helper'
 [[ "$stop_body" == *'sudo_can_run_scxctl_noninteractive'* ]] \
   || fail 'scheduler stop no longer enforces the restricted sudo helper'
-grep -Fq 'scxctl_auth_state_cached()' "$CORE" \
+[[ "$combined" == *'scxctl_auth_state_cached()'* ]] \
   || fail 'cached scheduler authorization state helper is missing'
-grep -Fq 'scxctl_auth_state_mark()' "$CORE" \
+[[ "$combined" == *'scxctl_auth_state_mark()'* ]] \
   || fail 'successful scheduler authorization is not persisted for passive status'
-grep -Fq 'scxctl_auth_state_clear()' "$CORE" \
+[[ "$combined" == *'scxctl_auth_state_clear()'* ]] \
   || fail 'stale scheduler authorization state cannot be cleared'
 
 printf '%s\n' 'PASS: sched-ext authorization stays restricted while passive status avoids sudo probes.'
