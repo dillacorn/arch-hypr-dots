@@ -2667,7 +2667,6 @@ cleanup_legacy_keyring_pam_stage() {
 
 enable_keyring_pam_stage() {
   if (( INSTALL_LY == 1 )); then
-    cleanup_legacy_keyring_pam_stage "$REPO_DIR"
     log "Ly provides GNOME Keyring PAM integration; skipping duplicate /etc/pam.d/login hooks."
     return 0
   fi
@@ -3066,6 +3065,9 @@ run_install() {
   install_micro_themes_stage
   enable_keyring_pam_stage
   install_ly_stage
+  if (( INSTALL_LY == 1 )); then
+    cleanup_legacy_keyring_pam_stage "$REPO_DIR"
+  fi
   copy_awtarchy_configs_stage
   remove_legacy_shell_files_stage
   install_awtarchy_command_stage
@@ -7177,8 +7179,8 @@ main() {
     fi
   fi
   if (( REVIEW_ONLY == 0 )); then
-  cleanup_legacy_keyring_pam_stage "$repo_dir"
-fi
+    cleanup_legacy_keyring_pam_stage "$repo_dir"
+  fi
   ensure_quickshell_update_prerequisites
   snapshot_quickshell_update_legacy_paths
 
