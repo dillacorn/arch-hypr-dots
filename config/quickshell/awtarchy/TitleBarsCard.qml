@@ -35,6 +35,8 @@ Rectangle {
             return "Enabled";
         if (hyprbarsState === "disabled")
             return "Disabled";
+        if (hyprbarsState === "disabled-pending")
+            return "On now · Off next login";
         if (hyprbarsState === "unavailable")
             return "Not set up";
         return "Checking…";
@@ -43,7 +45,8 @@ Rectangle {
     function buttonLabel() {
         if (hyprbarsState === "enabled")
             return "Disable";
-        if (hyprbarsState === "disabled" || hyprbarsState === "unavailable")
+        if (hyprbarsState === "disabled" || hyprbarsState === "disabled-pending"
+                || hyprbarsState === "unavailable")
             return "Enable";
         return "Checking…";
     }
@@ -137,7 +140,7 @@ Rectangle {
         stdout: StdioCollector {
             onStreamFinished: {
                 const state = text.trim();
-                root.hyprbarsState = state === "enabled" || state === "disabled"
+                root.hyprbarsState = state === "enabled" || state === "disabled" || state === "disabled-pending"
                     || state === "unavailable" ? state : "unavailable";
             }
         }
@@ -172,8 +175,8 @@ Rectangle {
                 root.pendingAction = "";
 
                 if (root.actionOutput === "disabled-pending") {
-                    root.hyprbarsState = "disabled";
-                    root.message = "Disabled for next login; the loaded plugin was not force-unloaded.";
+                    root.hyprbarsState = "disabled-pending";
+                    root.message = "Title Bars are still active now and are configured to turn off next login.";
                 } else if (root.actionOutput === "disabled") {
                     root.hyprbarsState = "disabled";
                     root.message = "Title Bars disabled.";
@@ -256,7 +259,9 @@ Rectangle {
                 : (root.message.length > 0 ? root.message
                     : (root.hyprbarsState === "unavailable"
                         ? "Enable once to install and activate the official Hyprland Title Bars plugin."
-                        : "Managed through Hyprland's plugin manager. Disabling avoids a forced hot-unload when the plugin remains loaded."))
+                        : (root.hyprbarsState === "disabled-pending"
+                            ? "Title Bars are loaded in this session, but hyprpm is configured to leave them off next login."
+                            : "Managed through Hyprland's plugin manager and synchronized with SUPER+ALT+T.")))
             color: root.errorMessage.length > 0 ? Theme.urgent : Theme.muted
             font.family: Theme.fontFamily
             font.pixelSize: root.scaledText(8)

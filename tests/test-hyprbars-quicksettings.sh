@@ -27,15 +27,20 @@ contains "$SCRIPT" 'Hot-unloading hyprbars can crash Hyprland.' \
   'hyprbars hot-unload safety behavior disappeared'
 absent "$SCRIPT" 'sudo -v' 'keyboard hyprbars script performs unconditional sudo pre-authentication'
 
-# The control belongs directly in Quick Settings, not the Bar Appearance gear panel.
-contains "$QUICK_SETTINGS" 'PowerModeCard {' \
-  'Quick Settings main list no longer contains the Power/Hyprland Plugin host'
-contains "$POWER_CARD" 'TitleBarsCard {' \
-  'main Quick Settings content path does not contain the Hyprland Plugin card'
+# The control belongs directly in Quick Settings immediately below the Num Lock
+# session-start toggle, not inside the Power Mode card or Bar Appearance settings.
+contains "$QUICK_SETTINGS" 'TitleBarsCard {' \
+  'Quick Settings main list does not contain the Hyprland Plugin card'
+absent "$POWER_CARD" 'TitleBarsCard {' \
+  'Hyprland Plugin card is still nested inside Power Mode'
 absent "$BAR_SETTINGS" 'text: "Title Bars"' \
   'duplicate Title Bars control is still hidden in Bar Appearance settings'
 absent "$BAR_SETTINGS" 'hyprbarsScript' \
   'Bar Appearance settings still owns the hyprbars workflow'
+numlock_line="$(grep -nF 'text: "Disable Num Lock at session start"' "$QUICK_SETTINGS" | head -n1 | cut -d: -f1)"
+plugin_line="$(grep -nF 'TitleBarsCard {' "$QUICK_SETTINGS" | head -n1 | cut -d: -f1)"
+[[ -n "$numlock_line" && -n "$plugin_line" && "$plugin_line" -gt "$numlock_line" ]] \
+  || fail 'Hyprland Plugin card is not below the Num Lock session-start control'
 
 # The UI must clearly identify this as a Hyprland plugin control, provide live
 # progress instead of a dead Working label, and keep password entry masked.
@@ -57,6 +62,10 @@ contains "$TITLE_CARD" 'Authentication failed' \
   'Hyprland Plugin UI does not expose a useful authentication failure'
 contains "$TITLE_CARD" 'Updating Hyprland plugin headers' \
   'Hyprland Plugin UI does not tell the user that plugin setup may take time'
+contains "$TITLE_CARD" 'hyprbarsState === "disabled-pending"' \
+  'Hyprland Plugin UI does not represent a loaded plugin with persisted disable state'
+contains "$TITLE_CARD" '"enabled" || state === "disabled" || state === "disabled-pending"' \
+  'Hyprland Plugin status reader drops the disabled-pending state'
 absent "$TITLE_CARD" 'label: root.operationBusy ? "Working…"' \
   'Hyprland Plugin UI still hides setup behind a generic Working label'
 
@@ -72,6 +81,23 @@ contains "$TITLE_CARD" '[root.trustedHelper, root.pendingAction]' \
   'Hyprland Plugin actions do not use the trusted helper'
 absent "$TITLE_CARD" '"/usr/bin/sudo"' \
   'Hyprland Plugin QML should not execute sudo directly'
+
+# Both the keyboard-side machine status and Quick Settings must converge on the
+# same trusted status implementation. The helper combines persisted hyprpm state
+# with current Hyprland load state and has a loaded-state fallback if list parsing
+# cannot determine the persisted value.
+contains "$SCRIPT" 'TRUSTED_HELPER="/usr/local/libexec/awtarchy/scxctl-helper"' \
+  'keyboard hyprbars script does not know the trusted shared status helper'
+contains "$SCRIPT" '"$TRUSTED_HELPER" hyprbars-status' \
+  'keyboard machine status does not use the same status source as Quick Settings'
+contains "$TRUSTED_HELPER" 'hyprbars_persistent_state()' \
+  'trusted helper lacks a canonical persisted hyprbars state parser'
+contains "$TRUSTED_HELPER" 'Plugin[[:space:]]+hyprbars' \
+  'trusted helper does not parse the hyprpm plugin record robustly'
+contains "$TRUSTED_HELPER" 'disabled-pending' \
+  'trusted helper does not expose persisted-disabled/runtime-loaded state'
+contains "$TRUSTED_HELPER" 'hyprbars_loaded' \
+  'trusted helper does not fall back to current Hyprland plugin load state'
 
 # hyprpm expects an interactive terminal for its own sudo cache/update flow.
 # The trusted helper must provide a PTY, wait for the real sudo password prompt,
@@ -120,6 +146,7 @@ contains "$HISTORY" $'708658656ab4672d010f49b54de099200d1ab6b42bebb822ec2e01d80f
 # this release's files as Awtarchy-owned instead of preserving them as user edits.
 missing_history=0
 for rel in \
+  .config/quickshell/awtarchy/QuickSettings.qml \
   .config/quickshell/awtarchy/PowerModeCard.qml \
   .config/quickshell/awtarchy/BarSettingsSection.qml \
   .config/quickshell/awtarchy/TitleBarsCard.qml \
@@ -137,4 +164,4 @@ do
 done
 (( missing_history == 0 )) || fail 'managed history is missing current Hyprland Plugin stock hashes'
 
-printf '%s\n' 'PASS: Hyprland Plugin title-bar control uses PTY-backed auth with live progress feedback.'
+printf '%s\n' 'PASS: Hyprland Plugin state is shared between keyboard and Quick Settings and placed below Num Lock.'

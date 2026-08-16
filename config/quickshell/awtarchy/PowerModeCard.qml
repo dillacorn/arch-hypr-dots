@@ -335,9 +335,4 @@ ColumnLayout {
         }
     }
 
-    TitleBarsCard {
-        active: root.active
-        textScale: root.textScale
-        iconScale: root.iconScale
-    }
 }
