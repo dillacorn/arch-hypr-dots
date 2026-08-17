@@ -1,0 +1,166 @@
+name: Apply Awtarchy Tips Link Fix
+
+on:
+  push:
+    branches: [tips-link-opening]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Apply focused patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          tips = Path('config/hypr/scripts/awtarchy-tips-tui.sh')
+          text = tips.read_text()
+
+          if 'extract_urls() {' in text:
+              raise SystemExit('Tips link patch is already present; refusing to apply twice.')
+
+          old = '''wrap_content() {
+              local width="$1"
+              fold -s -w "$width"
+          }
+
+          view_text() {
+          '''
+          new = '''wrap_content() {
+              local width="$1"
+              fold -s -w "$width"
+          }
+
+          extract_urls() {
+              local text="$1"
+              printf '%s\\n' "$text" \\
+                  | grep -Eo 'https?://[^[:space:]<>()]+' \\
+                  | sed -E 's/[.,;:!?]+$//' \\
+                  | awk '!seen[$0]++' \\
+                  || true
+          }
+
+          open_text_link() {
+              local text="$1" choice url
+              local -a urls=()
+
+              mapfile -t urls < <(extract_urls "$text")
+              (( ${#urls[@]} > 0 )) || return 0
+
+              if (( ${#urls[@]} == 1 )); then
+                  url="${urls[0]}"
+              else
+                  choice="$(menu_select "Open Link" urls "Select a URL to open")" || return 0
+                  url="${urls[$choice]}"
+              fi
+
+              if ! command -v xdg-open >/dev/null 2>&1; then
+                  view_text "Open Link" "xdg-open is unavailable. Install xdg-utils to open links from Awtarchy Tips."
+                  return 0
+              fi
+
+              xdg-open "$url" >/dev/null 2>&1 </dev/null &
+          }
+
+          view_text() {
+          '''
+          if old not in text:
+              raise SystemExit('wrap_content/view_text anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = '''    local offset=0 lines cols page total max_offset key i
+              local -a content=()
+
+              while true; do
+          '''
+          new = '''    local offset=0 lines cols page total max_offset key i
+              local -a content=() urls=()
+
+              mapfile -t urls < <(extract_urls "$text")
+
+              while true; do
+          '''
+          if old not in text:
+              raise SystemExit('view_text local anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = '''        printf '\\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  Esc/q = back%s\\n' "$C_DIM" "$C_RESET" >&3
+              key="$(read_key || true)"
+          '''
+          new = '''        if (( ${#urls[@]} > 0 )); then
+                  printf '\\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  o = open link  Esc/q = back%s\\n' "$C_DIM" "$C_RESET" >&3
+              else
+                  printf '\\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  Esc/q = back%s\\n' "$C_DIM" "$C_RESET" >&3
+              fi
+              key="$(read_key || true)"
+          '''
+          if old not in text:
+              raise SystemExit('view_text footer anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = '''                $'\\033[F'|$'\\033[4~'|G) offset=$max_offset ;;
+                      $'\\033'|q|Q|b|B) return 0 ;;
+          '''
+          new = '''                $'\\033[F'|$'\\033[4~'|G) offset=$max_offset ;;
+                      o|O) open_text_link "$text" ;;
+                      $'\\033'|q|Q|b|B) return 0 ;;
+          '''
+          if old not in text:
+              raise SystemExit('view_text key anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = '''case "${1:-}" in
+          '''
+          new = '''if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+              return 0
+          fi
+
+          case "${1:-}" in
+          '''
+          if old not in text:
+              raise SystemExit('main dispatch anchor not found')
+          text = text.replace(old, new, 1)
+          tips.write_text(text)
+
+          workflow = Path('.github/workflows/validate-awtarchy.yml')
+          wf = workflow.read_text()
+
+          replacements = [
+              (
+                  '          bash -n tests/test-awtarchy-legacy-cleanup.sh\n          bash -n tests/test-bar-wheel-input.sh\n',
+                  '          bash -n tests/test-awtarchy-legacy-cleanup.sh\n          bash -n tests/test-awtarchy-tips-links.sh\n          bash -n tests/test-bar-wheel-input.sh\n',
+              ),
+              (
+                  '            tests/test-awtarchy-legacy-cleanup.sh \\\n            tests/test-bar-wheel-input.sh \\\n',
+                  '            tests/test-awtarchy-legacy-cleanup.sh \\\n            tests/test-awtarchy-tips-links.sh \\\n            tests/test-bar-wheel-input.sh \\\n',
+              ),
+              (
+                  '          bash tests/test-awtarchy-legacy-cleanup.sh\n          bash tests/test-bar-wheel-input.sh\n',
+                  '          bash tests/test-awtarchy-legacy-cleanup.sh\n          bash tests/test-awtarchy-tips-links.sh\n          bash tests/test-bar-wheel-input.sh\n',
+              ),
+          ]
+          for old, new in replacements:
+              if old not in wf:
+                  raise SystemExit(f'validation workflow anchor not found: {old!r}')
+              wf = wf.replace(old, new, 1)
+          workflow.write_text(wf)
+          PY
+
+          bash -n config/hypr/scripts/awtarchy-tips-tui.sh
+          bash -n tests/test-awtarchy-tips-links.sh
+          bash tests/test-awtarchy-tips-links.sh
+          shellcheck config/hypr/scripts/awtarchy-tips-tui.sh tests/test-awtarchy-tips-links.sh
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add config/hypr/scripts/awtarchy-tips-tui.sh tests/test-awtarchy-tips-links.sh .github/workflows/validate-awtarchy.yml
+          git commit -m 'fix: open links from Awtarchy Tips'
+          git push origin HEAD:tips-link-opening
