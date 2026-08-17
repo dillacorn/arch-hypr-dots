@@ -281,10 +281,43 @@ wrap_content() {
     fold -s -w "$width"
 }
 
+extract_urls() {
+    local text="$1"
+    printf '%s\n' "$text" \
+        | grep -Eo 'https?://[^[:space:]<>()]+' \
+        | sed -E 's/[.,;:!?]+$//' \
+        | awk '!seen[$0]++' \
+        || true
+}
+
+open_text_link() {
+    local text="$1" choice url
+    local -a urls=()
+
+    mapfile -t urls < <(extract_urls "$text")
+    (( ${#urls[@]} > 0 )) || return 0
+
+    if (( ${#urls[@]} == 1 )); then
+        url="${urls[0]}"
+    else
+        choice="$(menu_select "Open Link" urls "Select a URL to open")" || return 0
+        url="${urls[$choice]}"
+    fi
+
+    if ! command -v xdg-open >/dev/null 2>&1; then
+        view_text "Open Link" "xdg-open is unavailable. Install xdg-utils to open links from Awtarchy Tips."
+        return 0
+    fi
+
+    xdg-open "$url" >/dev/null 2>&1 </dev/null &
+}
+
 view_text() {
     local title="$1" text="$2"
     local offset=0 lines cols page total max_offset key i
-    local -a content=()
+    local -a content=() urls=()
+
+    mapfile -t urls < <(extract_urls "$text")
 
     while true; do
         lines="$(term_lines)"
@@ -308,7 +341,11 @@ view_text() {
             printf '%s\n' "${content[$i]}" >&3
         done
 
+        if (( ${#urls[@]} > 0 )); then
+        printf '\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  o = open link  Esc/q = back%s\n' "$C_DIM" "$C_RESET" >&3
+    else
         printf '\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  Esc/q = back%s\n' "$C_DIM" "$C_RESET" >&3
+    fi
         key="$(read_key || true)"
 
         if parse_mouse_event "$key"; then
@@ -325,6 +362,7 @@ view_text() {
                 $'\033[6~'|' ') offset=$((offset + page)) ;;
                 $'\033[H'|$'\033[1~'|g) offset=0 ;;
                 $'\033[F'|$'\033[4~'|G) offset=$max_offset ;;
+                o|O) open_text_link "$text" ;;
                 $'\033'|q|Q|b|B) return 0 ;;
             esac
         fi
@@ -983,6 +1021,10 @@ spawn_terminal() {
     printf 'awtarchy-tips-tui: no supported terminal launcher found\n' >&2
     exit 1
 }
+
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    return 0
+fi
 
 case "${1:-}" in
     --autostart)
