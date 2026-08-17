@@ -27,24 +27,24 @@ jobs:
           if 'extract_urls() {' in text:
               raise SystemExit('Tips link patch is already present; refusing to apply twice.')
 
-          old = '''wrap_content() {
+          old = r'''wrap_content() {
               local width="$1"
               fold -s -w "$width"
           }
 
           view_text() {
           '''
-          new = '''wrap_content() {
+          new = r'''wrap_content() {
               local width="$1"
               fold -s -w "$width"
           }
 
           extract_urls() {
               local text="$1"
-              printf '%s\\n' "$text" \\
-                  | grep -Eo 'https?://[^[:space:]<>()]+' \\
-                  | sed -E 's/[.,;:!?]+$//' \\
-                  | awk '!seen[$0]++' \\
+              printf '%s\n' "$text" \
+                  | grep -Eo 'https?://[^[:space:]<>()]+' \
+                  | sed -E 's/[.,;:!?]+$//' \
+                  | awk '!seen[$0]++' \
                   || true
           }
 
@@ -76,12 +76,12 @@ jobs:
               raise SystemExit('wrap_content/view_text anchor not found')
           text = text.replace(old, new, 1)
 
-          old = '''    local offset=0 lines cols page total max_offset key i
+          old = r'''    local offset=0 lines cols page total max_offset key i
               local -a content=()
 
               while true; do
           '''
-          new = '''    local offset=0 lines cols page total max_offset key i
+          new = r'''    local offset=0 lines cols page total max_offset key i
               local -a content=() urls=()
 
               mapfile -t urls < <(extract_urls "$text")
@@ -92,13 +92,13 @@ jobs:
               raise SystemExit('view_text local anchor not found')
           text = text.replace(old, new, 1)
 
-          old = '''        printf '\\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  Esc/q = back%s\\n' "$C_DIM" "$C_RESET" >&3
+          old = r'''        printf '\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  Esc/q = back%s\n' "$C_DIM" "$C_RESET" >&3
               key="$(read_key || true)"
           '''
-          new = '''        if (( ${#urls[@]} > 0 )); then
-                  printf '\\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  o = open link  Esc/q = back%s\\n' "$C_DIM" "$C_RESET" >&3
+          new = r'''        if (( ${#urls[@]} > 0 )); then
+                  printf '\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  o = open link  Esc/q = back%s\n' "$C_DIM" "$C_RESET" >&3
               else
-                  printf '\\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  Esc/q = back%s\\n' "$C_DIM" "$C_RESET" >&3
+                  printf '\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  Esc/q = back%s\n' "$C_DIM" "$C_RESET" >&3
               fi
               key="$(read_key || true)"
           '''
@@ -106,19 +106,18 @@ jobs:
               raise SystemExit('view_text footer anchor not found')
           text = text.replace(old, new, 1)
 
-          old = '''                $'\\033[F'|$'\\033[4~'|G) offset=$max_offset ;;
-                      $'\\033'|q|Q|b|B) return 0 ;;
+          old = r'''                $'\033[F'|$'\033[4~'|G) offset=$max_offset ;;
+                      $'\033'|q|Q|b|B) return 0 ;;
           '''
-          new = '''                $'\\033[F'|$'\\033[4~'|G) offset=$max_offset ;;
+          new = r'''                $'\033[F'|$'\033[4~'|G) offset=$max_offset ;;
                       o|O) open_text_link "$text" ;;
-                      $'\\033'|q|Q|b|B) return 0 ;;
+                      $'\033'|q|Q|b|B) return 0 ;;
           '''
           if old not in text:
               raise SystemExit('view_text key anchor not found')
           text = text.replace(old, new, 1)
 
-          old = '''case "${1:-}" in
-          '''
+          old = 'case "${1:-}" in\n'
           new = '''if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
               return 0
           fi
@@ -131,27 +130,30 @@ jobs:
           tips.write_text(text)
 
           workflow = Path('.github/workflows/validate-awtarchy.yml')
-          wf = workflow.read_text()
+          lines = workflow.read_text().splitlines()
 
-          replacements = [
-              (
-                  '          bash -n tests/test-awtarchy-legacy-cleanup.sh\n          bash -n tests/test-bar-wheel-input.sh\n',
-                  '          bash -n tests/test-awtarchy-legacy-cleanup.sh\n          bash -n tests/test-awtarchy-tips-links.sh\n          bash -n tests/test-bar-wheel-input.sh\n',
-              ),
-              (
-                  '            tests/test-awtarchy-legacy-cleanup.sh \\\n            tests/test-bar-wheel-input.sh \\\n',
-                  '            tests/test-awtarchy-legacy-cleanup.sh \\\n            tests/test-awtarchy-tips-links.sh \\\n            tests/test-bar-wheel-input.sh \\\n',
-              ),
-              (
-                  '          bash tests/test-awtarchy-legacy-cleanup.sh\n          bash tests/test-bar-wheel-input.sh\n',
-                  '          bash tests/test-awtarchy-legacy-cleanup.sh\n          bash tests/test-awtarchy-tips-links.sh\n          bash tests/test-bar-wheel-input.sh\n',
-              ),
-          ]
-          for old, new in replacements:
-              if old not in wf:
-                  raise SystemExit(f'validation workflow anchor not found: {old!r}')
-              wf = wf.replace(old, new, 1)
-          workflow.write_text(wf)
+          def insert_after(anchor, new_line):
+              if new_line in lines:
+                  return
+              try:
+                  index = lines.index(anchor)
+              except ValueError:
+                  raise SystemExit(f'validation workflow anchor not found: {anchor!r}')
+              lines.insert(index + 1, new_line)
+
+          insert_after(
+              '          bash -n tests/test-awtarchy-legacy-cleanup.sh',
+              '          bash -n tests/test-awtarchy-tips-links.sh',
+          )
+          insert_after(
+              '            tests/test-awtarchy-legacy-cleanup.sh ' + '\\',
+              '            tests/test-awtarchy-tips-links.sh ' + '\\',
+          )
+          insert_after(
+              '          bash tests/test-awtarchy-legacy-cleanup.sh',
+              '          bash tests/test-awtarchy-tips-links.sh',
+          )
+          workflow.write_text('\n'.join(lines) + '\n')
           PY
 
           bash -n config/hypr/scripts/awtarchy-tips-tui.sh
