@@ -1,0 +1,58 @@
+name: Update v3.1.1 Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/update-v3-1-1-release.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Move v3.1.1 tag to tested main commit
+        env:
+          TARGET_SHA: 11dd97e2d8fb9b85f129aee8f8283683a3525bbe
+        run: |
+          set -euo pipefail
+          git tag -f v3.1.1 "$TARGET_SHA"
+          git push --force origin refs/tags/v3.1.1
+
+      - name: Add post-release refresh note
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: '371453751'
+          TARGET_SHA: 11dd97e2d8fb9b85f129aee8f8283683a3525bbe
+        run: |
+          set -euo pipefail
+          current_body="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" --jq '.body')"
+          marker='## Post-release refresh'
+
+          if ! grep -Fq "$marker" <<<"$current_body"; then
+            note=$(cat <<'EOF'
+
+## Post-release refresh
+
+- Improved Qt theme compatibility by removing global `QT_STYLE_OVERRIDE` and `QT_QUICK_CONTROLS_STYLE` forcing that could prevent optional Qt Quick applications from launching.
+- Kept Awtarchy's existing dark Qt widget theming through qt5ct/qt6ct and Kvantum while advertising the standard desktop `prefer-dark` appearance preference.
+- Ensured `hyprland-qt-support` is available for Hyprland Qt components without forcing its QML style onto unrelated applications.
+- This is a general Awtarchy theme-management improvement. EasyEffects is not installed or managed by Awtarchy; it was only used to expose the compatibility problem.
+
+The `v3.1.1` tag was refreshed to include this tested post-release fix.
+EOF
+)
+            gh api \
+              --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+              -f body="${current_body}${note}" \
+              -f target_commitish="$TARGET_SHA" >/dev/null
+          fi
