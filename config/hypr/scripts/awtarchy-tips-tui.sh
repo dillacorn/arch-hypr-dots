@@ -342,10 +342,10 @@ view_text() {
         done
 
         if (( ${#urls[@]} > 0 )); then
-        printf '\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  o = open link  Esc/q = back%s\n' "$C_DIM" "$C_RESET" >&3
-    else
-        printf '\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  Esc/q = back%s\n' "$C_DIM" "$C_RESET" >&3
-    fi
+            printf '\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  o = open link  Esc/q = back%s\n' "$C_DIM" "$C_RESET" >&3
+        else
+            printf '\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  Esc/q = back%s\n' "$C_DIM" "$C_RESET" >&3
+        fi
         key="$(read_key || true)"
 
         if parse_mouse_event "$key"; then
