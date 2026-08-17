@@ -12,10 +12,13 @@ fail() {
 grep -Fq 'pacman_install_one playerctl || die "Failed to install required media-control dependency: playerctl"' "$RUNTIME" \
   || fail 'fresh installs do not guarantee playerctl'
 
-grep -Fq 'local -a required=(quickshell upower playerctl) missing=()' "$RUNTIME" \
-  || fail 'normal updates do not guarantee playerctl'
+grep -Fq 'pacman_install_one hyprland-qt-support || die "Failed to install required Hyprland Qt style provider: hyprland-qt-support"' "$RUNTIME" \
+  || fail 'fresh installs do not guarantee hyprland-qt-support'
 
-grep -Fq "hyprland quickshell upower playerctl \\" "$RUNTIME" \
-  || fail 'troubleshoot output does not report playerctl'
+grep -Fq 'local -a required=(quickshell upower playerctl hyprland-qt-support) missing=()' "$RUNTIME" \
+  || fail 'normal updates do not guarantee playerctl and hyprland-qt-support'
 
-printf 'PASS: playerctl is required by install/update paths and visible to troubleshooting.\n'
+grep -Fq "hyprland hyprland-qt-support quickshell upower playerctl \\" "$RUNTIME" \
+  || fail 'troubleshoot output does not report required shell dependencies'
+
+printf 'PASS: playerctl and hyprland-qt-support are required by install/update paths and visible to troubleshooting.\n'

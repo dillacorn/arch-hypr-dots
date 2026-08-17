@@ -2202,6 +2202,7 @@ prepare_base_install() {
 
   retry_command pacman -S --needed --noconfirm git ipcalc dos2unix reflector xcursor-comix || exit 1
   pacman_install_one playerctl || die "Failed to install required media-control dependency: playerctl"
+  pacman_install_one hyprland-qt-support || die "Failed to install required Hyprland Qt style provider: hyprland-qt-support"
 
   if [[ ! -d "$REPO_DIR" ]]; then
     log "Cloning awtarchy repository to ${REPO_DIR}..."
@@ -7089,7 +7090,7 @@ ensure_quickshell_update_prerequisites() {
     || die "pacman is required for the Quickshell migration"
 
   local pkg
-  local -a required=(quickshell upower playerctl) missing=()
+  local -a required=(quickshell upower playerctl hyprland-qt-support) missing=()
   for pkg in "${required[@]}"; do
     pacman -Q "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
   done
@@ -8142,7 +8143,7 @@ troubleshoot_main() {
     diag_section "RELEVANT PACKAGES"
     if command -v pacman >/dev/null 2>&1; then
       for pkg in \
-        hyprland quickshell upower playerctl \
+        hyprland hyprland-qt-support quickshell upower playerctl \
         waybar waybar-git fuzzel wlogout mako wofi \
         network-manager-applet blueman \
         tlp tlp-pd power-profiles-daemon \

@@ -5,6 +5,8 @@ IFS=$'\n\t'
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 RUNTIME_SOURCE="${ROOT}/local/share/awtarchy/awtarchy-runtime.sh"
 HYPRLAND_CONFIG="${ROOT}/config/hypr/hyprland.lua"
+QT5CT_CONFIG="${ROOT}/config/qt5ct/qt5ct.conf"
+QT6CT_CONFIG="${ROOT}/config/qt6ct/qt6ct.conf"
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 
@@ -18,6 +20,17 @@ command -v lua >/dev/null 2>&1 || fail "lua is required for this test"
 if grep -Fq 'gnome-keyring-daemon --start' "$HYPRLAND_CONFIG"; then
   fail "Hyprland still starts GNOME Keyring manually instead of leaving startup to the login/session integration"
 fi
+
+if grep -Fq 'hl.env("QT_STYLE_OVERRIDE"' "$HYPRLAND_CONFIG"; then
+  fail "Hyprland globally forces QT_STYLE_OVERRIDE, which breaks Qt Quick/Kirigami applications"
+fi
+
+grep -Fq 'hl.env("QT_QUICK_CONTROLS_STYLE", "org.hyprland.style")' "$HYPRLAND_CONFIG" \
+  || fail "Hyprland Quick Controls style selection is missing"
+grep -Fq 'style=kvantum-dark' "$QT5CT_CONFIG" \
+  || fail "Qt5 configuration no longer selects the Awtarchy Kvantum style"
+grep -Fq 'style=kvantum-dark' "$QT6CT_CONFIG" \
+  || fail "Qt6 configuration no longer selects the Awtarchy Kvantum style"
 
 if grep -Fq "lua -e 'assert(loadfile(arg[1]))'" "$RUNTIME_SOURCE"; then
   fail "runtime still validates Lua through arg[1] and standard input"
