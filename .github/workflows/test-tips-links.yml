@@ -1,0 +1,17 @@
+name: Test Awtarchy Tips Links
+
+on:
+  push:
+    branches: [tips-link-opening]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Awtarchy Tips link behavior
+        run: bash tests/test-awtarchy-tips-links.sh
