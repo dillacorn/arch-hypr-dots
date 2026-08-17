@@ -38,18 +38,17 @@ jobs:
           marker='## Post-release refresh'
 
           if ! grep -Fq "$marker" <<<"$current_body"; then
-            note=$(cat <<'EOF'
+            printf -v note '%s\n' \
+              '' \
+              '## Post-release refresh' \
+              '' \
+              '- Improved Qt theme compatibility by removing global `QT_STYLE_OVERRIDE` and `QT_QUICK_CONTROLS_STYLE` forcing that could prevent optional Qt Quick applications from launching.' \
+              '- Kept Awtarchy’s existing dark Qt widget theming through qt5ct/qt6ct and Kvantum while advertising the standard desktop `prefer-dark` appearance preference.' \
+              '- Ensured `hyprland-qt-support` is available for Hyprland Qt components without forcing its QML style onto unrelated applications.' \
+              '- This is a general Awtarchy theme-management improvement. EasyEffects is not installed or managed by Awtarchy; it was only used to expose the compatibility problem.' \
+              '' \
+              'The `v3.1.1` tag was refreshed to include this tested post-release fix.'
 
-## Post-release refresh
-
-- Improved Qt theme compatibility by removing global `QT_STYLE_OVERRIDE` and `QT_QUICK_CONTROLS_STYLE` forcing that could prevent optional Qt Quick applications from launching.
-- Kept Awtarchy's existing dark Qt widget theming through qt5ct/qt6ct and Kvantum while advertising the standard desktop `prefer-dark` appearance preference.
-- Ensured `hyprland-qt-support` is available for Hyprland Qt components without forcing its QML style onto unrelated applications.
-- This is a general Awtarchy theme-management improvement. EasyEffects is not installed or managed by Awtarchy; it was only used to expose the compatibility problem.
-
-The `v3.1.1` tag was refreshed to include this tested post-release fix.
-EOF
-)
             gh api \
               --method PATCH \
               "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
