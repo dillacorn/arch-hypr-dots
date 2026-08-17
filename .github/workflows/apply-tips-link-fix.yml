@@ -92,16 +92,12 @@ jobs:
               raise SystemExit('view_text local anchor not found')
           text = text.replace(old, new, 1)
 
-          old = r'''        printf '\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  Esc/q = back%s\n' "$C_DIM" "$C_RESET" >&3
-              key="$(read_key || true)"
-          '''
+          old = r'''        printf '\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  Esc/q = back%s\n' "$C_DIM" "$C_RESET" >&3'''
           new = r'''        if (( ${#urls[@]} > 0 )); then
                   printf '\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  o = open link  Esc/q = back%s\n' "$C_DIM" "$C_RESET" >&3
               else
                   printf '\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  Esc/q = back%s\n' "$C_DIM" "$C_RESET" >&3
-              fi
-              key="$(read_key || true)"
-          '''
+              fi'''
           if old not in text:
               raise SystemExit('view_text footer anchor not found')
           text = text.replace(old, new, 1)
