@@ -20,24 +20,21 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path('config/hypr/scripts/awtarchy-tips-tui.sh')
-          text = path.read_text()
-          old = '''        if (( ${#urls[@]} > 0 )); then
-        printf '\\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  o = open link  Esc/q = back%s\\n' "$C_DIM" "$C_RESET" >&3
-    else
-        printf '\\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  Esc/q = back%s\\n' "$C_DIM" "$C_RESET" >&3
-    fi
-'''
-          new = '''        if (( ${#urls[@]} > 0 )); then
-            printf '\\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  o = open link  Esc/q = back%s\\n' "$C_DIM" "$C_RESET" >&3
-        else
-            printf '\\n%sUp/Down or wheel = scroll  PgUp/PgDn = page  Home/End = jump  Esc/q = back%s\\n' "$C_DIM" "$C_RESET" >&3
-        fi
-'''
-          if old not in text:
-              raise SystemExit('expected Tips footer formatting block not found')
-          path.write_text(text.replace(old, new, 1))
+          lines = path.read_text().splitlines()
+          target = 'if (( ${#urls[@]} > 0 )); then'
+          indexes = [i for i, line in enumerate(lines) if line.strip() == target]
+          if len(indexes) != 1:
+              raise SystemExit(f'expected one Tips footer block, found {len(indexes)}')
+          i = indexes[0]
+          if lines[i + 2].strip() != 'else' or lines[i + 4].strip() != 'fi':
+              raise SystemExit('unexpected Tips footer block shape')
+          lines[i] = '        ' + lines[i].lstrip()
+          lines[i + 1] = '            ' + lines[i + 1].lstrip()
+          lines[i + 2] = '        else'
+          lines[i + 3] = '            ' + lines[i + 3].lstrip()
+          lines[i + 4] = '        fi'
+          path.write_text('\n'.join(lines) + '\n')
           PY
 
           bash -n config/hypr/scripts/awtarchy-tips-tui.sh
