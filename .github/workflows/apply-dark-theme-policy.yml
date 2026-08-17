@@ -1,0 +1,119 @@
+name: Apply safe dark theme policy
+
+on:
+  push:
+    branches: [easyeffects-qt-fix]
+    paths:
+      - .github/workflows/apply-dark-theme-policy.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: easyeffects-qt-fix
+          fetch-depth: 0
+
+      - name: Add regression coverage and verify RED
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("tests/test-lua-validation.sh")
+          text = path.read_text()
+
+          old = 'QT6CT_CONFIG="${ROOT}/config/qt6ct/qt6ct.conf"\n'
+          new = old + 'PORTAL_FIXUP="${ROOT}/config/hypr/scripts/portal_fixup.sh"\n'
+          if text.count(old) != 1:
+              raise SystemExit("unexpected QT6CT_CONFIG anchor count")
+          text = text.replace(old, new, 1)
+
+          old = '''grep -Fq 'hl.env("QT_QUICK_CONTROLS_STYLE", "org.hyprland.style")' "$HYPRLAND_CONFIG" \\
+  || fail "Hyprland Quick Controls style selection is missing"
+'''
+          new = '''if grep -Fq 'hl.env("QT_QUICK_CONTROLS_STYLE"' "$HYPRLAND_CONFIG"; then
+  fail "Hyprland globally forces QT_QUICK_CONTROLS_STYLE, which can override application-supported Qt Quick styles"
+fi
+
+grep -Fq 'gsettings set org.gnome.desktop.interface color-scheme prefer-dark' "$PORTAL_FIXUP" \\
+  || fail "portal setup does not advertise the Awtarchy prefer-dark desktop color scheme"
+'''
+          if text.count(old) != 1:
+              raise SystemExit("unexpected QT_QUICK_CONTROLS_STYLE test anchor count")
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+          sudo apt-get update
+          sudo apt-get install -y lua5.4 shellcheck
+
+          set +e
+          red_output="$(bash tests/test-lua-validation.sh 2>&1)"
+          red_rc=$?
+          set -e
+          printf '%s\n' "$red_output"
+          test "$red_rc" -ne 0
+          grep -Fq 'globally forces QT_QUICK_CONTROLS_STYLE' <<<"$red_output"
+
+      - name: Apply minimal production fix and verify GREEN
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          hypr = Path("config/hypr/hyprland.lua")
+          text = hypr.read_text()
+          target = 'hl.env("QT_QUICK_CONTROLS_STYLE", "org.hyprland.style")\n'
+          if text.count(target) != 1:
+              raise SystemExit("expected exactly one global QT_QUICK_CONTROLS_STYLE assignment")
+          hypr.write_text(text.replace(target, "", 1))
+
+          portal = Path("config/hypr/scripts/portal_fixup.sh")
+          text = portal.read_text()
+          anchor = 'if command -v dbus-update-activation-environment >/dev/null 2>&1; then\n'
+          block = '''# Advertise Awtarchy's dark appearance preference through the desktop settings
+# interface instead of forcing application-specific toolkit style engines.
+if command -v gsettings >/dev/null 2>&1; then
+    if gsettings writable org.gnome.desktop.interface color-scheme 2>/dev/null | grep -qx 'true'; then
+        gsettings set org.gnome.desktop.interface color-scheme prefer-dark >/dev/null 2>&1 || true
+    fi
+fi
+
+'''
+          if text.count(anchor) != 1:
+              raise SystemExit("unexpected portal environment anchor count")
+          if block in text:
+              raise SystemExit("dark preference block already present")
+          portal.write_text(text.replace(anchor, block + anchor, 1))
+          PY
+
+          bash -n config/hypr/scripts/portal_fixup.sh
+          bash -n tests/test-lua-validation.sh
+          shellcheck config/hypr/scripts/portal_fixup.sh tests/test-lua-validation.sh
+          bash tests/test-lua-validation.sh
+          ! grep -Fq 'hl.env("QT_STYLE_OVERRIDE"' config/hypr/hyprland.lua
+          ! grep -Fq 'hl.env("QT_QUICK_CONTROLS_STYLE"' config/hypr/hyprland.lua
+          grep -Fq 'style=kvantum-dark' config/qt5ct/qt5ct.conf
+          grep -Fq 'style=kvantum-dark' config/qt6ct/qt6ct.conf
+          grep -Fq 'gsettings set org.gnome.desktop.interface color-scheme prefer-dark' config/hypr/scripts/portal_fixup.sh
+          git diff --check
+
+      - name: Commit tested fix and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "dillacorn"
+          git config user.email "28743863+dillacorn@users.noreply.github.com"
+          git rm .github/workflows/apply-dark-theme-policy.yml
+          git add config/hypr/hyprland.lua config/hypr/scripts/portal_fixup.sh tests/test-lua-validation.sh
+          git diff --cached --check
+          git commit -m "fix: advertise dark theme safely"
+          git push origin HEAD:easyeffects-qt-fix
