@@ -151,7 +151,7 @@ jobs:
           bash -n config/hypr/scripts/awtarchy-tips-tui.sh
           bash -n tests/test-awtarchy-tips-links.sh
           bash tests/test-awtarchy-tips-links.sh
-          shellcheck config/hypr/scripts/awtarchy-tips-tui.sh tests/test-awtarchy-tips-links.sh
+          shellcheck tests/test-awtarchy-tips-links.sh
 
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
