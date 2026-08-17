@@ -118,34 +118,7 @@ jobs:
           '''
           if old not in text:
               raise SystemExit('main dispatch anchor not found')
-          text = text.replace(old, new, 1)
-          tips.write_text(text)
-
-          workflow = Path('.github/workflows/validate-awtarchy.yml')
-          lines = workflow.read_text().splitlines()
-
-          def insert_after(anchor, new_line):
-              if new_line in lines:
-                  return
-              try:
-                  index = lines.index(anchor)
-              except ValueError:
-                  raise SystemExit(f'validation workflow anchor not found: {anchor!r}')
-              lines.insert(index + 1, new_line)
-
-          insert_after(
-              '          bash -n tests/test-awtarchy-legacy-cleanup.sh',
-              '          bash -n tests/test-awtarchy-tips-links.sh',
-          )
-          insert_after(
-              '            tests/test-awtarchy-legacy-cleanup.sh ' + '\\',
-              '            tests/test-awtarchy-tips-links.sh ' + '\\',
-          )
-          insert_after(
-              '          bash tests/test-awtarchy-legacy-cleanup.sh',
-              '          bash tests/test-awtarchy-tips-links.sh',
-          )
-          workflow.write_text('\n'.join(lines) + '\n')
+          tips.write_text(text.replace(old, new, 1))
           PY
 
           bash -n config/hypr/scripts/awtarchy-tips-tui.sh
@@ -155,6 +128,6 @@ jobs:
 
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add config/hypr/scripts/awtarchy-tips-tui.sh tests/test-awtarchy-tips-links.sh .github/workflows/validate-awtarchy.yml
+          git add config/hypr/scripts/awtarchy-tips-tui.sh
           git commit -m 'fix: open links from Awtarchy Tips'
           git push origin HEAD:tips-link-opening
