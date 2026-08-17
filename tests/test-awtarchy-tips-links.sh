@@ -11,6 +11,7 @@ fail() {
 }
 
 (
+    # shellcheck disable=SC1090
     source "$SCRIPT"
 
     sample=$'Docs: https://example.com/one.\nMarkdown: [two](https://example.com/two?x=1&y=2)\nAgain: https://example.com/one.'
@@ -23,6 +24,7 @@ fail() {
 
 grep -Fq 'o = open link' "$SCRIPT" || fail 'text viewer does not advertise the open-link action'
 grep -Fq 'o|O)' "$SCRIPT" || fail 'text viewer does not bind the open-link action'
+# shellcheck disable=SC2016
 grep -Fq 'xdg-open "$url"' "$SCRIPT" || fail 'links are not opened with xdg-open as a direct argument'
 
 if grep -Eq 'eval[^\n]*xdg-open|sh[[:space:]]+-c[^\n]*xdg-open' "$SCRIPT"; then
