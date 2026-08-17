@@ -102,13 +102,9 @@ jobs:
               raise SystemExit('view_text footer anchor not found')
           text = text.replace(old, new, 1)
 
-          old = r'''                $'\033[F'|$'\033[4~'|G) offset=$max_offset ;;
-                      $'\033'|q|Q|b|B) return 0 ;;
-          '''
-          new = r'''                $'\033[F'|$'\033[4~'|G) offset=$max_offset ;;
-                      o|O) open_text_link "$text" ;;
-                      $'\033'|q|Q|b|B) return 0 ;;
-          '''
+          old = r'''                $'\033'|q|Q|b|B) return 0 ;;'''
+          new = r'''                o|O) open_text_link "$text" ;;
+                          $'\033'|q|Q|b|B) return 0 ;;'''
           if old not in text:
               raise SystemExit('view_text key anchor not found')
           text = text.replace(old, new, 1)
