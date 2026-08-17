@@ -45,6 +45,14 @@ restart_if_present() {
     fi
 }
 
+# Advertise the Awtarchy dark appearance preference through desktop settings.
+# Applications remain free to use their own supported toolkit style.
+if command -v gsettings >/dev/null 2>&1; then
+    if gsettings writable org.gnome.desktop.interface color-scheme 2>/dev/null | grep -qx 'true'; then
+        gsettings set org.gnome.desktop.interface color-scheme prefer-dark >/dev/null 2>&1 || true
+    fi
+fi
+
 if command -v dbus-update-activation-environment >/dev/null 2>&1; then
     dbus-update-activation-environment --systemd \
         WAYLAND_DISPLAY \
