@@ -8,6 +8,7 @@ set -euo pipefail
 lock_dir="${XDG_RUNTIME_DIR:-/tmp}/awtarchy-locks"
 mkdir -p "$lock_dir"
 lock_file="$lock_dir/screenshot_capture.lock"
+RUNTIME_RULES="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/quickshell_runtime_rules.sh"
 
 OUTPUT_DIR="$HOME/Pictures/Screenshots"
 mkdir -p "$OUTPUT_DIR"
@@ -37,8 +38,6 @@ exec 8>&-
 attempt_tag="$(printf '%06d' "$ATTEMPT_ID")"
 DEBUG_LOG="$DEBUG_DIR/attempt-${attempt_tag}-$(date +%Y%m%d-%H%M%S)-$$.log"
 
-# Keep the newest 50 capture attempts. Filenames begin with a monotonically
-# increasing zero-padded attempt number, so reverse lexical order is newest first.
 mapfile -t debug_logs < <(
   find "$DEBUG_DIR" -maxdepth 1 -type f -name 'attempt-*.log' -printf '%f\n' 2>/dev/null \
     | sort -r
@@ -54,9 +53,7 @@ log_event() {
   shift || true
   printf '%s attempt=%s event=%s %s\n' \
     "$(date '+%Y-%m-%dT%H:%M:%S.%N%z')" \
-    "$ATTEMPT_ID" \
-    "$event" \
-    "$*" >>"$DEBUG_LOG"
+    "$ATTEMPT_ID" "$event" "$*" >>"$DEBUG_LOG"
 }
 
 cursor_snapshot() {
@@ -70,6 +67,7 @@ SLURP_ERR=""
 FREEZE_PID=""
 CURRENT_STAGE="startup"
 unlocked=0
+flyout_bind_suspended=0
 
 log_event "attempt-start" \
   "pid=$$ wayland_display=${WAYLAND_DISPLAY:-unset} hyprland_instance=${HYPRLAND_INSTANCE_SIGNATURE:-unset} cursor=$(cursor_snapshot)"
@@ -102,10 +100,40 @@ stop_freeze() {
   fi
 }
 
+suspend_flyout_outside_click() {
+  (( flyout_bind_suspended == 0 )) || return 0
+  command -v hyprctl >/dev/null 2>&1 || return 0
+  [[ -x "$RUNTIME_RULES" ]] || return 0
+
+  if hyprctl eval '
+if awtarchy_flyout_outside_click_bind_v1 ~= nil then
+    pcall(function() awtarchy_flyout_outside_click_bind_v1:remove() end)
+    awtarchy_flyout_outside_click_bind_v1 = nil
+end
+' >/dev/null 2>>"$DEBUG_LOG"; then
+    flyout_bind_suspended=1
+    log_event "flyout-outside-click-suspended"
+  else
+    log_event "flyout-outside-click-suspend-failed"
+  fi
+}
+
+restore_flyout_outside_click() {
+  (( flyout_bind_suspended == 1 )) || return 0
+  flyout_bind_suspended=0
+
+  if "$RUNTIME_RULES" >/dev/null 2>>"$DEBUG_LOG"; then
+    log_event "flyout-outside-click-restored"
+  else
+    log_event "flyout-outside-click-restore-failed"
+  fi
+}
+
 cleanup() {
   local exit_status=$?
   log_event "attempt-exit" "stage=$CURRENT_STAGE exit_status=$exit_status cursor=$(cursor_snapshot)"
   stop_freeze
+  restore_flyout_outside_click
   unlock_capture
   [[ -n "${SLURP_ERR:-}" ]] && rm -f -- "$SLURP_ERR"
   [[ -n "${TMPFILE:-}" ]] && rm -f -- "$TMPFILE"
@@ -113,10 +141,6 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-# Freeze the currently rendered frame before slurp can steal focus. This keeps
-# focus-sensitive Awtarchy flyouts visible in the image while the user selects
-# an area. Existing noscreenshare rules still decide whether a flyout is present
-# in the frozen screencopy.
 CURRENT_STAGE="hyprpicker"
 log_event "hyprpicker-start" "cursor=$(cursor_snapshot)"
 hyprpicker -r -z >/dev/null 2>>"$DEBUG_LOG" &
@@ -136,6 +160,7 @@ fi
 CURRENT_STAGE="slurp"
 TMP_DIR="${XDG_RUNTIME_DIR:-/tmp}"
 SLURP_ERR="$(mktemp "$TMP_DIR/awtarchy-slurp-XXXXXX.err")"
+suspend_flyout_outside_click
 log_event "slurp-start" "cursor=$(cursor_snapshot)"
 
 slurp_rc=0
@@ -144,6 +169,7 @@ if GEOM="$(slurp -b '#ffffff20' -c '#00000040' 9>&- 2>"$SLURP_ERR")"; then
 else
   slurp_rc=$?
 fi
+restore_flyout_outside_click
 
 if [[ -s "$SLURP_ERR" ]]; then
   while IFS= read -r line; do
@@ -175,7 +201,6 @@ log_event "clipboard-start"
 wl-copy --type image/png < "$TMPFILE" 9>&-
 log_event "clipboard-exit" "rc=0"
 
-# Release lock before satty so another capture can start immediately.
 unlock_capture
 
 CURRENT_STAGE="satty"
