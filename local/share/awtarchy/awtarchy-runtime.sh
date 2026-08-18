@@ -5441,7 +5441,7 @@ multilib_enabled_update() {
 
 nvidia_stack_installed() {
   command -v pacman >/dev/null 2>&1 || return 1
-  pacman -Qq 2>/dev/null | grep -Eq '^(nvidia|nvidia-open|nvidia-[0-9]{3}xx|linux-cachyos.*-nvidia)(-|$)|^nvidia-utils$'
+  pacman -Qq 2>/dev/null | grep -E '^(nvidia|nvidia-open|nvidia-[0-9]{3}xx|linux-cachyos.*-nvidia)(-|$)|^nvidia-utils$' >/dev/null
 }
 
 ensure_current_hardware_packages() {
