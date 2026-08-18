@@ -76,10 +76,7 @@ cat >"${tmp_dir}/pacman" <<'EOF'
 #!/usr/bin/env bash
 if [[ "${1:-}" == "-Qq" ]]; then
   printf '%s\n' nvidia-open-dkms
-  for ((i = 0; i < 50000; i++)); do
-    printf 'pkg-%06d\n' "$i"
-  done
-  exit 0
+  exec yes pkg
 fi
 exit 1
 EOF
@@ -90,7 +87,7 @@ chmod 0755 "${tmp_dir}/pacman"
   printf '%s\n' 'nvidia_stack_installed'
 } >"${tmp_dir}/test-nvidia-stack.sh"
 if ! PATH="${tmp_dir}:$PATH" bash "${tmp_dir}/test-nvidia-stack.sh"; then
-  fail 'NVIDIA stack detection fails when a recognized package appears before a long pacman package list'
+  fail 'NVIDIA stack detection fails when a recognized package is followed by additional pacman output under pipefail'
 fi
 
 [[ "$ensure_body" == *'run_update_root /usr/bin/systemctl enable --now tlp.service'* ]] \
