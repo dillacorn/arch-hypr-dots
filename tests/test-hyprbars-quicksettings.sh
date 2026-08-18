@@ -62,9 +62,17 @@ contains "$TITLE_CARD" 'Authentication failed' \
   'Hyprland Plugin UI does not expose a useful authentication failure'
 contains "$TITLE_CARD" 'Updating Hyprland plugin headers' \
   'Hyprland Plugin UI does not tell the user that plugin setup may take time'
+contains "$TITLE_CARD" 'hyprbarsState === "not-loaded"' \
+  'Hyprland Plugin UI does not represent persisted-enabled/runtime-not-loaded state'
+contains "$TITLE_CARD" 'return "Enabled · Not loaded";' \
+  'Hyprland Plugin UI does not label enabled-but-not-loaded state clearly'
+contains "$TITLE_CARD" 'return "Load";' \
+  'Hyprland Plugin UI does not offer a Load action for enabled-but-not-loaded state'
 contains "$TITLE_CARD" 'hyprbarsState === "disabled-pending"' \
   'Hyprland Plugin UI does not represent a loaded plugin with persisted disable state'
-contains "$TITLE_CARD" '"enabled" || state === "disabled" || state === "disabled-pending"' \
+contains "$TITLE_CARD" 'state === "enabled" || state === "not-loaded"' \
+  'Hyprland Plugin status reader drops the not-loaded state'
+contains "$TITLE_CARD" 'state === "disabled" || state === "disabled-pending"' \
   'Hyprland Plugin status reader drops the disabled-pending state'
 absent "$TITLE_CARD" 'label: root.operationBusy ? "Working…"' \
   'Hyprland Plugin UI still hides setup behind a generic Working label'
@@ -94,6 +102,8 @@ contains "$TRUSTED_HELPER" 'hyprbars_persistent_state()' \
   'trusted helper lacks a canonical persisted hyprbars state parser'
 contains "$TRUSTED_HELPER" 'Plugin[[:space:]]+hyprbars' \
   'trusted helper does not parse the hyprpm plugin record robustly'
+contains "$TRUSTED_HELPER" "printf '%s\\n' 'not-loaded'" \
+  'trusted helper does not expose persisted-enabled/runtime-not-loaded state'
 contains "$TRUSTED_HELPER" 'disabled-pending' \
   'trusted helper does not expose persisted-disabled/runtime-loaded state'
 contains "$TRUSTED_HELPER" 'hyprbars_loaded' \
@@ -163,5 +173,7 @@ do
   fi
 done
 (( missing_history == 0 )) || fail 'managed history is missing current Hyprland Plugin stock hashes'
+
+bash "${ROOT}/tests/test-hyprbars-runtime-state.sh"
 
 printf '%s\n' 'PASS: Hyprland Plugin state is shared between keyboard and Quick Settings and placed below Num Lock.'
