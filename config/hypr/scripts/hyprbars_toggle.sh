@@ -85,7 +85,11 @@ machine_status() {
       printf '%s\n' 'unavailable'
     fi
   elif hyprbars_enabled_in_hyprpm; then
-    printf '%s\n' 'enabled'
+    if hyprbars_loaded; then
+      printf '%s\n' 'enabled'
+    else
+      printf '%s\n' 'not-loaded'
+    fi
   elif hyprbars_loaded; then
     printf '%s\n' 'disabled-pending'
   else
