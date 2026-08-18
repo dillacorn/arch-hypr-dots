@@ -1,14 +1,17 @@
 name: Publish v3.1.2 Release
 
 on:
-  pull_request:
+  push:
+    branches:
+      - bug-testing
+    paths:
+      - .github/workflows/publish-v3-1-2-release.yml
 
 permissions:
   contents: write
 
 jobs:
   publish-release:
-    if: github.head_ref == 'bug-testing'
     runs-on: ubuntu-latest
     steps:
       - name: Publish v3.1.2
