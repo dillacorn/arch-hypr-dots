@@ -1,11 +1,7 @@
 name: Inspect v3.1.1 Release
 
 on:
-  push:
-    branches:
-      - bug-testing
-    paths:
-      - .github/workflows/inspect-v3-1-1-release.yml
+  pull_request:
 
 permissions:
   contents: read
