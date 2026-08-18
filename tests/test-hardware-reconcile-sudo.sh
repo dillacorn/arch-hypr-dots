@@ -76,7 +76,8 @@ cat >"${tmp_dir}/pacman" <<'EOF'
 #!/usr/bin/env bash
 if [[ "${1:-}" == "-Qq" ]]; then
   printf '%s\n' nvidia-open-dkms
-  exec yes pkg
+  dd if=/dev/zero bs=1M count=4 2>/dev/null | tr '\0' x
+  exit ${PIPESTATUS[1]}
 fi
 exit 1
 EOF
