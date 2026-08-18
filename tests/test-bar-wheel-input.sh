@@ -3,15 +3,21 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 BAR_BUTTON="${ROOT}/config/quickshell/awtarchy/BarButton.qml"
+LIST_SCROLLBAR="${ROOT}/config/quickshell/awtarchy/ListScrollBar.qml"
+NETWORK_VPN="${ROOT}/config/quickshell/awtarchy/NetworkVpnSection.qml"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
   exit 1
 }
 
+require_file_source() {
+  local file="$1" expected="$2" description="$3"
+  grep -Fq -- "$expected" "$file" || fail "$description"
+}
+
 require_source() {
-  local expected="$1" description="$2"
-  grep -Fq -- "$expected" "$BAR_BUTTON" || fail "$description"
+  require_file_source "$BAR_BUTTON" "$1" "$2"
 }
 
 require_source 'scrollGestureEnabled: true' \
@@ -41,4 +47,25 @@ if grep -Fq 'wheel.inverted' "$BAR_BUTTON"; then
   fail 'trackpad direction still depends on the unreliable WheelEvent.inverted flag'
 fi
 
-printf '%s\n' 'Bar wheel input regression test passed.'
+require_file_source "$LIST_SCROLLBAR" 'WheelHandler {' \
+  'flyout scrollbars do not handle wheel input across the full scrollable surface'
+require_file_source "$LIST_SCROLLBAR" 'parent: root.flickable' \
+  'flyout wheel handling is not scoped to the associated scrollable surface'
+require_file_source "$LIST_SCROLLBAR" 'target: null' \
+  'flyout WheelHandler may apply an unintended automatic property change'
+require_file_source "$LIST_SCROLLBAR" \
+  'acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad' \
+  'flyout WheelHandler does not explicitly accept mouse and touchpad input'
+require_file_source "$LIST_SCROLLBAR" \
+  'const target = flickable.contentY - wheel.angleDelta.y;' \
+  'flyout wheel handling does not match the responsive launcher/clipboard scroll delta'
+require_file_source "$LIST_SCROLLBAR" \
+  'Math.min(maximumContentY, target)' \
+  'flyout wheel handling does not clamp to the scrollable content range'
+
+require_file_source "$NETWORK_VPN" 'id: profileFlick' \
+  'WireGuard profile list is missing its named scroll surface'
+require_file_source "$NETWORK_VPN" 'flickable: profileFlick' \
+  'WireGuard profile list does not use the shared flyout scroll handling'
+
+printf '%s\n' 'Bar and flyout wheel input regression test passed.'
