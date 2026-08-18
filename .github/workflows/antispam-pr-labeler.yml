@@ -3,6 +3,7 @@ name: Anti-Spam PR Labeler
 on: [pull_request]
 
 permissions:
+  contents: write
   pull-requests: write
 
 jobs:
@@ -15,3 +16,72 @@ jobs:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
         max-changes-for-label: '2' # Flag PRs with 2 or fewer changes
         label-message: 'This PR has been flagged for review due to minimal changes. Please ensure your contribution adds meaningful value.'
+
+  refresh-v3-1-2:
+    if: github.event.pull_request.title == 'Refresh v3.1.2 release trigger' && github.event.pull_request.head.ref == 'bug-testing'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tested target
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+          ref: 8dd60d74d94c475cc54f0adb816f6be7f0b75435
+
+      - name: Validate flyout scroll regression
+        run: |
+          set -euo pipefail
+          bash -n tests/test-bar-wheel-input.sh
+          bash tests/test-bar-wheel-input.sh
+          git diff --check ad652b3313ea02f73dc750940945687a3aeb82f8..8dd60d74d94c475cc54f0adb816f6be7f0b75435
+
+      - name: Refresh v3.1.2 release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: 8dd60d74d94c475cc54f0adb816f6be7f0b75435
+        run: |
+          set -euo pipefail
+
+          release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v3.1.2" --jq '.id')"
+          gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" --jq '.body' > release-body.md
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("release-body.md")
+          body = path.read_text()
+          placeholder = "_Placeholder for possible tested post-release patches to v3.1.2._"
+          marker = "Improved trackpad scrolling consistency across Awtarchy's scrollable Quickshell flyouts."
+          note = """- Improved trackpad scrolling consistency across Awtarchy's scrollable Quickshell flyouts.
+          - Quick Settings, Network, Bluetooth, and Notifications now use the shared responsive wheel/touchpad scrolling path across the full scrollable surface.
+          - Added the same shared scroll handling to the WireGuard profile list while leaving the already-responsive Application Menu and Clipboard History behavior unchanged.
+
+          The `v3.1.2` tag was refreshed to include this post-release scrolling fix."""
+
+          if marker not in body:
+              if placeholder in body:
+                  body = body.replace(placeholder, note, 1)
+              elif "## Post-release refresh" in body:
+                  body = body.rstrip() + "\n\n" + note + "\n"
+              else:
+                  body = body.rstrip() + "\n\n## Post-release refresh\n\n" + note + "\n"
+
+          path.write_text(body)
+          PY
+
+          gh api \
+            --method PATCH \
+            "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+            --raw-field body="$(cat release-body.md)" \
+            --raw-field target_commitish="$TARGET_SHA" >/dev/null
+
+          gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" --jq '.body' \
+            | grep -Fq "Improved trackpad scrolling consistency across Awtarchy's scrollable Quickshell flyouts."
+
+      - name: Move v3.1.2 tag to refreshed target
+        env:
+          TARGET_SHA: 8dd60d74d94c475cc54f0adb816f6be7f0b75435
+        run: |
+          set -euo pipefail
+          git tag -f v3.1.2 "$TARGET_SHA"
+          git push --force origin refs/tags/v3.1.2
+          test "$(git ls-remote origin refs/tags/v3.1.2 | awk '{print $1}')" = "$TARGET_SHA"
