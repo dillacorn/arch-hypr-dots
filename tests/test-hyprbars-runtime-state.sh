@@ -77,7 +77,7 @@ helper_fixture="$TMPD/scxctl-helper"
 sed \
   -e "s|^HYPRPM=.*|HYPRPM=\"$fakebin/hyprpm\"|" \
   -e "s|^HYPRCTL=.*|HYPRCTL=\"$fakebin/hyprctl\"|" \
-  -e "s|^  (( EUID != 0 )) || die 'hyprbars operations must run as the desktop user'|  :|" \
+  -e "s@^  (( EUID != 0 )) || die 'hyprbars operations must run as the desktop user'@  :@" \
   "$HELPER" >"$helper_fixture"
 chmod 0755 "$helper_fixture"
 
