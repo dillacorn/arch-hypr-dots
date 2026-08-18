@@ -2,7 +2,7 @@ name: Publish v3.1.2 Release
 
 on:
   pull_request_target:
-    types: [reopened]
+    types: [synchronize]
 
 permissions:
   contents: write
