@@ -1,15 +1,15 @@
 name: Temporary NVIDIA detection fix
 
 on:
-  push:
-    branches:
-      - nvidia-detection-fix
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
   apply-fix:
+    if: github.head_ref == 'nvidia-detection-fix'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
