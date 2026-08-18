@@ -22,6 +22,21 @@ Item {
     visible: needed
     width: visible ? 13 : 0
 
+    function scrollByWheel(wheel) {
+        const target = flickable.contentY - wheel.angleDelta.y;
+        flickable.contentY = Math.max(minimumContentY,
+            Math.min(maximumContentY, target));
+        wheel.accepted = true;
+    }
+
+    WheelHandler {
+        parent: root.flickable
+        target: null
+        enabled: root.needed
+        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+        onWheel: wheel => root.scrollByWheel(wheel)
+    }
+
     Rectangle {
         id: track
         anchors.top: parent.top
@@ -91,13 +106,6 @@ Item {
             onPositionChanged: mouse => {
                 if (pressed)
                     setFromPointer(mouse.y);
-            }
-
-            onWheel: wheel => {
-                const target = root.flickable.contentY - wheel.angleDelta.y;
-                root.flickable.contentY = Math.max(root.minimumContentY,
-                    Math.min(root.maximumContentY, target));
-                wheel.accepted = true;
             }
         }
     }
