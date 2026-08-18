@@ -120,9 +120,9 @@ end
 
 restore_flyout_outside_click() {
   (( flyout_bind_suspended == 1 )) || return 0
-  flyout_bind_suspended=0
 
   if "$RUNTIME_RULES" >/dev/null 2>>"$DEBUG_LOG"; then
+    flyout_bind_suspended=0
     log_event "flyout-outside-click-restored"
   else
     log_event "flyout-outside-click-restore-failed"
