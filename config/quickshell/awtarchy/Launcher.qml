@@ -12,12 +12,15 @@ Singleton {
     id: root
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
+    readonly property string cacheHome: Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")
     readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
     readonly property string positionScript: configHome + "/hypr/scripts/quickshell_launcher_position.sh"
     readonly property string prepareScript: configHome + "/hypr/scripts/quickshell_flyout_prepare.sh"
     readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
+    readonly property string usageScript: configHome + "/hypr/scripts/quickshell_launcher_usage.sh"
     readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
     readonly property string animationStatePath: runtimeDir + "/hypr-animations-enabled"
+    readonly property string launcherUsagePath: cacheHome + "/awtarchy/launcher-usage.json"
     readonly property int minimumLauncherWidth: 420
     readonly property int minimumLauncherHeight: 360
     readonly property int screenEdgeMargin: 16
@@ -79,6 +82,7 @@ Singleton {
     property string settingsMessage: ""
     property bool privacyRemapPending: false
     property bool resetResizePending: false
+    property var launchCounts: ({})
 
     function focusedScreen() {
         const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
@@ -568,6 +572,31 @@ Singleton {
             .toLowerCase();
     }
 
+    function reloadLaunchCounts() {
+        const raw = launcherUsageFile.text().trim();
+        if (raw.length === 0) {
+            launchCounts = ({});
+            return;
+        }
+
+        try {
+            const parsed = JSON.parse(raw);
+            launchCounts = parsed && parsed.launches && typeof parsed.launches === "object"
+                ? parsed.launches : ({});
+        } catch (error) {
+            launchCounts = ({});
+        }
+    }
+
+    function launchCount(entry) {
+        const entryId = entry && entry.id ? String(entry.id) : "";
+        if (entryId.length === 0)
+            return 0;
+
+        const count = Number(launchCounts[entryId] || 0);
+        return isFinite(count) && count > 0 ? Math.floor(count) : 0;
+    }
+
     function fuzzyScore(haystack, query) {
         if (query.length === 0)
             return 0;
@@ -610,6 +639,10 @@ Singleton {
         apps.sort((a, b) => {
             if (a.score !== b.score)
                 return b.score - a.score;
+            const aCount = launchCount(a.entry);
+            const bCount = launchCount(b.entry);
+            if (aCount !== bCount)
+                return bCount - aCount;
             return String(a.entry.name || "").localeCompare(String(b.entry.name || ""));
         });
         return apps.map(item => item.entry).filter(entry => entry !== null && entry !== undefined);
@@ -618,6 +651,10 @@ Singleton {
     function launchEntry(entry) {
         if (!entry)
             return;
+
+        const entryId = String(entry.id || "");
+        if (entryId.length > 0)
+            usageRecorder.exec(["bash", usageScript, "record", entryId]);
 
         const workingDirectory = entry.workingDirectory || "";
         if (entry.runInTerminal) {
@@ -641,6 +678,22 @@ Singleton {
         watchChanges: true
         printErrors: false
         onFileChanged: reload()
+    }
+
+    FileView {
+        id: launcherUsageFile
+        path: root.launcherUsagePath
+        blockLoading: false
+        watchChanges: true
+        printErrors: false
+        onLoaded: root.reloadLaunchCounts()
+        onFileChanged: reload()
+        onLoadFailed: root.launchCounts = ({})
+    }
+
+    Process {
+        id: usageRecorder
+        onExited: launcherUsageFile.reload()
     }
 
     Process {
