@@ -1,15 +1,15 @@
 name: Publish v3.1.2 Release
 
 on:
-  issue_comment:
-    types: [created]
+  issues:
+    types: [opened]
 
 permissions:
   contents: write
 
 jobs:
   publish-release:
-    if: github.event.issue.pull_request && github.event.comment.body == '/publish-v3.1.2'
+    if: github.event.issue.title == 'PUBLISH V3.1.2 TEMP'
     runs-on: ubuntu-latest
     steps:
       - name: Publish v3.1.2
