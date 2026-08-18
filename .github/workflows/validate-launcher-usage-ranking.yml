@@ -1,0 +1,23 @@
+name: Validate Launcher Usage Ranking
+
+on:
+  push:
+    branches: [launcher-usage-ranking-testing]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck jq
+      - name: Validate launcher usage ranking
+        run: |
+          bash -n config/hypr/scripts/quickshell_launcher_usage.sh
+          bash -n tests/test-launcher-usage-ranking.sh
+          shellcheck config/hypr/scripts/quickshell_launcher_usage.sh tests/test-launcher-usage-ranking.sh
+          bash tests/test-launcher-usage-ranking.sh
