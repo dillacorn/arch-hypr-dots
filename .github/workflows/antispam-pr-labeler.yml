@@ -1,17 +1,85 @@
-name: Anti-Spam PR Labeler
+name: Publish v3.1.2 Release
 
-on: [pull_request]
+on:
+  issues:
+    types: [opened]
 
 permissions:
-  pull-requests: write
+  contents: write
 
 jobs:
-  label-spam-prs:
+  publish-release:
+    if: github.event.issue.title == 'PUBLISH V3.1.2 TEMP 2'
     runs-on: ubuntu-latest
     steps:
-    - name: Label Potential Spam PRs
-      uses: PraiseXI/AntiSpamPRLabeler@6dceeed42338b61e9d2957a124f170efee7aaf7a # v1.2.0
-      with:
-        repo-token: ${{ secrets.GITHUB_TOKEN }}
-        max-changes-for-label: '2' # Flag PRs with 2 or fewer changes
-        label-message: 'This PR has been flagged for review due to minimal changes. Please ensure your contribution adds meaningful value.'
+      - name: Publish v3.1.2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: c2ee0298de05cf85bb813330a78c3b3e98b982fe
+        run: |
+          set -euo pipefail
+
+          if gh release view v3.1.2 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'v3.1.2 release already exists; leaving it unchanged.'
+            exit 0
+          fi
+
+          cat >release-notes.md <<'EOF'
+# Awtarchy v3.1.2 Quickshell
+
+Awtarchy v3.1.2 is a patch release focused on Quickshell screenshot selection reliability and Hyprland plugin runtime-state handling following v3.1.1.
+
+## Fresh install
+
+Start from a minimal Arch Linux installation, then run:
+
+```bash
+sudo pacman -S git --noconfirm
+git clone https://github.com/dillacorn/awtarchy
+cd awtarchy
+sudo ./awtarchy-install.sh
+```
+
+Reboot after installation. Future maintenance is handled through:
+
+```bash
+awtarchy
+```
+
+## Existing Awtarchy users
+
+Update normally with:
+
+```bash
+awtarchy update
+```
+
+Older installations that do not yet have the current `awtarchy` command can refresh it first:
+
+```bash
+cd ~/awtarchy
+git pull --ff-only
+sudo ./awtarchy-install.sh
+awtarchy update
+```
+
+## Fixes
+
+- Fixed area screenshot drag selection while Awtarchy Quickshell flyouts are open. Screenshot selection now temporarily suspends the compositor-level outside-click dismissal bind while `slurp` owns the pointer, then restores normal flyout behavior after capture or cancellation.
+- Kept Quickshell flyouts open during screenshot selection without changing their existing capture-privacy rules.
+- Fixed the Hyprland Plugin card reporting `hyprbars` as fully enabled when it was enabled in `hyprpm` but not actually loaded by Hyprland.
+- Added an explicit `Enabled · Not loaded` state with a `Load` action so the UI reflects persisted and runtime plugin state separately.
+- Reconciled enabled Hyprland plugins once per new Hyprland session while preserving the existing protection against repeated live plugin reloads during an already-running session.
+
+This release target was validated through the Awtarchy CI suite, including Bash syntax, ShellCheck, desktop-entry validation, and updater/integration tests, after the screenshot and Hyprland plugin fixes.
+
+## Post-release refresh
+
+_Placeholder for possible tested post-release patches to v3.1.2._
+EOF
+
+          gh release create v3.1.2 \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$TARGET_SHA" \
+            --title 'Awtarchy v3.1.2 Quickshell' \
+            --notes-file release-notes.md
