@@ -334,7 +334,11 @@ hyprbars_status() {
 
   case "$persisted" in
     enabled)
-      printf '%s\n' 'enabled'
+      if hyprbars_loaded; then
+        printf '%s\n' 'enabled'
+      else
+        printf '%s\n' 'not-loaded'
+      fi
       ;;
     disabled)
       if hyprbars_loaded; then

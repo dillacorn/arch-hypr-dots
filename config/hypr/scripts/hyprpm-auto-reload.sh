@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # ~/.config/hypr/scripts/hyprpm-auto-reload.sh
 #
-# Safe default for Hyprland Lua/plugin migration:
-# - Does NOT run hyprpm reload by default.
-# - Live hyprpm reload can hot-unload/reload compositor plugins and may crash Hyprland.
-# - To intentionally allow the old behavior, set:
-#     HYPRPM_AUTO_LIVE_RELOAD=1
+# Safe Hyprland plugin reconciliation:
+# - Reconciles enabled plugins once when a new Hyprland session signature appears.
+# - Later/manual invocations stay no-op unless HYPRPM_AUTO_LIVE_RELOAD=1 is set.
+# - Session-start failures do not run hyprpm update in the background.
+# - Explicit live reload keeps the existing update-on-failure repair path.
 #
 # Log: ~/.cache/hyprpm-auto/hyprpm-auto-reload.log
 
@@ -18,6 +18,10 @@ HYPRCTL="$(command -v hyprctl || true)"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}"
 LOG_DIR="$CACHE_DIR/hyprpm-auto"
 LOG_FILE="$LOG_DIR/hyprpm-auto-reload.log"
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-${CACHE_DIR}/awtarchy-runtime}"
+SESSION_DIR="$RUNTIME_DIR/awtarchy"
+SESSION_MARKER="$SESSION_DIR/hyprpm-auto-reload.session"
+SESSION_SIGNATURE="${HYPRLAND_INSTANCE_SIGNATURE:-}"
 
 LOCK_TTL_SECONDS="${HYPRPM_AUTO_LOCK_TTL_SECONDS:-600}"
 LOCK_FILE="/tmp/hyprpm-auto-reload.lock"
@@ -74,22 +78,43 @@ log_block() {
 
 [[ -n "$HYPRPM" ]] || exit 0
 
-if have_recent_lock; then
+session_start_reconcile=0
+if [[ -n "$SESSION_SIGNATURE" ]]; then
+  mkdir -p "$SESSION_DIR" 2>/dev/null || true
+  chmod 700 "$SESSION_DIR" 2>/dev/null || true
+  previous_session="$(cat "$SESSION_MARKER" 2>/dev/null || true)"
+  if [[ "$previous_session" != "$SESSION_SIGNATURE" ]]; then
+    if printf '%s\n' "$SESSION_SIGNATURE" >"$SESSION_MARKER" 2>/dev/null; then
+      session_start_reconcile=1
+    else
+      log_line "Could not record Hyprland session marker; skipping automatic plugin reconciliation."
+    fi
+  fi
+fi
+
+if [[ "$session_start_reconcile" -ne 1 ]] && have_recent_lock; then
   exit 0
 fi
 
-if [[ "$LIVE_RELOAD" != "1" ]]; then
+if [[ "$session_start_reconcile" -eq 1 ]]; then
+  log_line "New Hyprland session detected. Reconciling enabled plugin load state with hyprpm reload."
+elif [[ "$LIVE_RELOAD" != "1" ]]; then
   log_line "Skipped hyprpm reload. Set HYPRPM_AUTO_LIVE_RELOAD=1 to allow live plugin reload."
   exit 0
+else
+  log_line "HYPRPM_AUTO_LIVE_RELOAD=1 set. Running live hyprpm reload."
 fi
-
-log_line "HYPRPM_AUTO_LIVE_RELOAD=1 set. Running live hyprpm reload."
 
 reload_out="$(run_maybe_timeout "$RELOAD_TIMEOUT_SECONDS" "$HYPRPM" reload 2>&1)"
 reload_rc=$?
 log_block "hyprpm reload" "$reload_rc" "$reload_out"
 
 if [[ "$reload_rc" -eq 0 ]]; then
+  exit 0
+fi
+
+if [[ "$session_start_reconcile" -eq 1 ]]; then
+  notify "hyprpm reload failed at session start. Use the Hyprland Plugin control to repair it. See log: $LOG_FILE"
   exit 0
 fi
 

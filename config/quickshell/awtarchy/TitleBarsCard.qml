@@ -33,6 +33,8 @@ Rectangle {
     function statusLabel() {
         if (hyprbarsState === "enabled")
             return "Enabled";
+        if (hyprbarsState === "not-loaded")
+            return "Enabled · Not loaded";
         if (hyprbarsState === "disabled")
             return "Disabled";
         if (hyprbarsState === "disabled-pending")
@@ -45,6 +47,8 @@ Rectangle {
     function buttonLabel() {
         if (hyprbarsState === "enabled")
             return "Disable";
+        if (hyprbarsState === "not-loaded")
+            return "Load";
         if (hyprbarsState === "disabled" || hyprbarsState === "disabled-pending"
                 || hyprbarsState === "unavailable")
             return "Enable";
@@ -67,7 +71,9 @@ Rectangle {
             ? "hyprbars-disable" : "hyprbars-enable";
         message = pendingAction === "hyprbars-enable" && hyprbarsState === "unavailable"
             ? "First-time setup updates Hyprland plugin headers and builds the official plugin repository, so it can take a while."
-            : "Enter your sudo password to update the Hyprland plugin state.";
+            : (pendingAction === "hyprbars-enable" && hyprbarsState === "not-loaded"
+                ? "Title Bars are enabled in hyprpm but not loaded. Enter your sudo password to load them into Hyprland."
+                : "Enter your sudo password to update the Hyprland plugin state.");
         authOpen = true;
         Qt.callLater(() => passwordInput.forceActiveFocus());
     }
@@ -140,7 +146,8 @@ Rectangle {
         stdout: StdioCollector {
             onStreamFinished: {
                 const state = text.trim();
-                root.hyprbarsState = state === "enabled" || state === "disabled" || state === "disabled-pending"
+                root.hyprbarsState = state === "enabled" || state === "not-loaded"
+                    || state === "disabled" || state === "disabled-pending"
                     || state === "unavailable" ? state : "unavailable";
             }
         }
@@ -259,9 +266,11 @@ Rectangle {
                 : (root.message.length > 0 ? root.message
                     : (root.hyprbarsState === "unavailable"
                         ? "Enable once to install and activate the official Hyprland Title Bars plugin."
-                        : (root.hyprbarsState === "disabled-pending"
-                            ? "Title Bars are loaded in this session, but hyprpm is configured to leave them off next login."
-                            : "Managed through Hyprland's plugin manager and synchronized with SUPER+ALT+T.")))
+                        : (root.hyprbarsState === "not-loaded"
+                            ? "Title Bars are enabled in hyprpm but not loaded in this Hyprland session."
+                            : (root.hyprbarsState === "disabled-pending"
+                                ? "Title Bars are loaded in this session, but hyprpm is configured to leave them off next login."
+                                : "Managed through Hyprland's plugin manager and synchronized with SUPER+ALT+T."))))
             color: root.errorMessage.length > 0 ? Theme.urgent : Theme.muted
             font.family: Theme.fontFamily
             font.pixelSize: root.scaledText(8)
