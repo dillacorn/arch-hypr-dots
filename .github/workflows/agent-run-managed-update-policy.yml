@@ -20,6 +20,9 @@ jobs:
       - name: Install validation tools
         run: sudo apt-get update && sudo apt-get install -y shellcheck lua5.4
 
+      - name: Repair managed history fixture
+        run: python3 .github/agent-sync-managed-history.py
+
       - name: Update regression expectations first
         run: python3 .github/agent-managed-update-policy.py tests
 
@@ -59,6 +62,7 @@ jobs:
         run: |
           rm -f \
             .github/agent-managed-update-policy.py \
+            .github/agent-sync-managed-history.py \
             .github/workflows/agent-managed-update-policy.yml \
             .github/workflows/agent-run-managed-update-policy.yml
           git config user.name github-actions[bot]
