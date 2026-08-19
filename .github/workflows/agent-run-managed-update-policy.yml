@@ -16,20 +16,54 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
-      - name: Execute patch workflow run steps
+
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck lua5.4
+
+      - name: Update regression expectations first
+        run: python3 .github/agent-managed-update-policy.py tests
+
+      - name: Verify regression fails before runtime fix
         run: |
-          python3 -m pip install --quiet pyyaml
-          python3 <<'PY'
-          import subprocess
-          import yaml
+          set +e
+          bash tests/test-quickshell-updater-migration.sh > /tmp/red.log 2>&1
+          rc=$?
+          set -e
+          if (( rc == 0 )); then
+            echo 'Regression test unexpectedly passed before the runtime fix.' >&2
+            exit 1
+          fi
+          grep -E 'Automatic merge conflict requires a terminal|updater did not restore the release Launcher.qml|preserve mode did not install the release Launcher.qml' /tmp/red.log >/dev/null
 
-          with open('.github/workflows/agent-managed-update-policy.yml', encoding='utf-8') as f:
-              workflow = yaml.safe_load(f)
+      - name: Apply managed-file update policy
+        run: python3 .github/agent-managed-update-policy.py code
 
-          for step in workflow['jobs']['patch-and-validate']['steps']:
-              command = step.get('run')
-              if not command:
-                  continue
-              print(f"==> {step.get('name', 'run step')}", flush=True)
-              subprocess.run(command, shell=True, executable='/bin/bash', check=True)
-          PY
+      - name: Validate the fix
+        run: |
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n local/bin/awtarchy
+          bash -n tests/test-quickshell-updater-migration.sh
+          shellcheck tests/test-quickshell-updater-migration.sh
+          bash tests/test-quickshell-updater-migration.sh
+
+          no_sudo_bin="$(mktemp -d)"
+          printf '%s\n' '#!/usr/bin/env bash' 'exit 1' >"${no_sudo_bin}/sudo"
+          chmod 0755 "${no_sudo_bin}/sudo"
+          PATH="${no_sudo_bin}:$PATH" bash tests/test-awtarchy-command.sh
+          rm -rf -- "$no_sudo_bin"
+
+          bash tests/test-awtarchy-git-mode.sh
+          git diff --check
+
+      - name: Commit validated fix
+        run: |
+          rm -f \
+            .github/agent-managed-update-policy.py \
+            .github/workflows/agent-managed-update-policy.yml \
+            .github/workflows/agent-run-managed-update-policy.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix updater managed-file preservation policy'
+          git push origin HEAD:fix-managed-update-preserve-policy
