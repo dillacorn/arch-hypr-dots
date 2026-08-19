@@ -1,0 +1,35 @@
+name: Run managed update policy fix
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  run-patch-workflow:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - name: Execute patch workflow run steps
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 <<'PY'
+          import subprocess
+          import yaml
+
+          with open('.github/workflows/agent-managed-update-policy.yml', encoding='utf-8') as f:
+              workflow = yaml.safe_load(f)
+
+          for step in workflow['jobs']['patch-and-validate']['steps']:
+              command = step.get('run')
+              if not command:
+                  continue
+              print(f"==> {step.get('name', 'run step')}", flush=True)
+              subprocess.run(command, shell=True, executable='/bin/bash', check=True)
+          PY
