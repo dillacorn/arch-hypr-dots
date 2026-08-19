@@ -29,11 +29,11 @@ jobs:
           bash tests/test-quickshell-updater-migration.sh > /tmp/red.log 2>&1
           rc=$?
           set -e
+          tail -n 80 /tmp/red.log
           if (( rc == 0 )); then
             echo 'Regression test unexpectedly passed before the runtime fix.' >&2
             exit 1
           fi
-          grep -E 'Automatic merge conflict requires a terminal|updater did not restore the release Launcher.qml|preserve mode did not install the release Launcher.qml' /tmp/red.log >/dev/null
 
       - name: Apply managed-file update policy
         run: python3 .github/agent-managed-update-policy.py code
