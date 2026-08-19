@@ -1043,7 +1043,7 @@ maintenance_menu() {
   while true; do
     choice="$(single_select_menu "Awtarchy Maintenance" 0 \
       "Refresh Awtarchy updater from main" \
-      "Update configs (merge personal modifications)" \
+      "Update configs (preserve Hyprland customizations)" \
       "Reset configs (clean-slate managed files)" \
       "Review config changes without applying" \
       "Clean Awtarchy backup files" \

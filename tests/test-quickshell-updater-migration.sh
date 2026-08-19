@@ -556,6 +556,23 @@ printf '%s\n' '// conflict-policy target marker' \
 tar -czf "${TMP}/conflict-testing-commit.tar.gz" \
   -C "$conflict_parent" "$(basename "$conflict_root")"
 
+
+hypr_conflict_parent="${TMP}/hypr-conflict-archive"
+hypr_conflict_root="${hypr_conflict_parent}/awtarchy-${TEST_COMMIT}"
+mkdir -p "$hypr_conflict_parent"
+cp -a -- "$archive_root" "$hypr_conflict_root"
+hypr_default_line='hl.env("QT_SCALE_FACTOR", "1")'
+hypr_local_line='hl.env("QT_SCALE_FACTOR", "1.25")'
+hypr_release_line='hl.env("QT_SCALE_FACTOR", "1.5")'
+replace_once \
+  "$hypr_conflict_root/config/hypr/hyprland.lua" \
+  "$hypr_default_line" \
+  "$hypr_release_line"
+printf '%s\n' '// hyprland conflict target marker' \
+  >>"$hypr_conflict_root/config/quickshell/awtarchy/Bar.qml"
+tar -czf "${TMP}/hypr-conflict-testing-commit.tar.gz" \
+  -C "$hypr_conflict_parent" "$(basename "$hypr_conflict_root")"
+
 seed_old_home() {
   local home="$1" rel
   mkdir -p \
@@ -1001,7 +1018,7 @@ assert_file "$poisoned_home/.local/state/awtarchy/migrations/quickshell-hyprland
 # Reproduce the poisoned-baseline failure from an already migrated desktop:
 # config-version and baseline are current, but an installed managed UI file is
 # still an exact older Awtarchy copy. The updater must repair that stock file,
-# preserve an actual QML customization and hyprland.lua, and repeat retired UI
+# replace a modified managed QML file with backup, preserve hyprland.lua, and repeat retired UI
 # cleanup even though the migration marker already exists.
 stale_system_state="$home/.config/quickshell/awtarchy/SystemState.qml"
 personal_launcher="$home/.config/quickshell/awtarchy/Launcher.qml"
@@ -1014,7 +1031,6 @@ printf '%s\t%s\n' \
   >"$repair_history"
 
 printf '\n%s\n' '// personal desktop launcher customization' >>"$personal_launcher"
-personal_launcher_sha="$(sha256sum "$personal_launcher" | awk '{print $1}')"
 printf '%s\n' '-- personal desktop Hyprland policy' >>"$home/.config/hypr/hyprland.lua"
 personal_hypr_sha="$(sha256sum "$home/.config/hypr/hyprland.lua" | awk '{print $1}')"
 
@@ -1047,8 +1063,15 @@ env \
 
 cmp -s "$stale_system_state" "$ROOT/config/quickshell/awtarchy/SystemState.qml" \
   || fail "updater did not repair a previously shipped stale SystemState.qml"
-[[ $personal_launcher_sha == "$(sha256sum "$personal_launcher" | awk '{print $1}')" ]] \
-  || fail "updater replaced a genuine Launcher.qml customization"
+cmp -s "$personal_launcher" "$ROOT/config/quickshell/awtarchy/Launcher.qml" \
+  || fail "updater did not restore the release Launcher.qml over a local managed-file edit"
+repair_launcher_backup="$(
+  find "$home/.config/quickshell/awtarchy" \
+    -maxdepth 1 -type f -name 'Launcher.qml.backup*' \
+    -exec grep -lF -- '// personal desktop launcher customization' {} + | head -n1
+)"
+[[ -n $repair_launcher_backup ]] \
+  || fail "updater did not back up the overwritten Launcher.qml customization"
 [[ $personal_hypr_sha == "$(sha256sum "$home/.config/hypr/hyprland.lua" | awk '{print $1}')" ]] \
   || fail "updater replaced the personalized Hyprland configuration on repair"
 assert_retired_paths_absent "$home"
@@ -1066,42 +1089,8 @@ latest_audit="$(
 grep -Fq '  .config/quickshell/awtarchy/SystemState.qml' "$latest_audit" \
   || fail "repair audit did not record the corrected SystemState.qml"
 
-# A real three-way conflict must offer a per-file decision. Keeping the local
-# file must allow unrelated release changes to finish, using the release file
-# must create a backup, and aborting must retain the safe rollback behavior.
-conflict_keep_home="${TMP}/conflict-keep-home"
-conflict_keep_packages="${TMP}/conflict-keep-packages"
-conflict_keep_managed="${TMP}/conflict-keep-managed"
-cp -a -- "$home" "$conflict_keep_home"
-cp -- "$package_state" "$conflict_keep_packages"
-cp -- "$managed_packages" "$conflict_keep_managed"
-replace_once \
-  "$conflict_keep_home/.config/quickshell/awtarchy/Launcher.qml" \
-  "$launcher_default_line" \
-  "$launcher_local_line"
-env \
-  "${update_env[@]}" \
-  "HOME=$conflict_keep_home" \
-  "AWTARCHY_TEST_TARGET_HOME=$conflict_keep_home" \
-  "AWTARCHY_TEST_ARCHIVE=${TMP}/conflict-testing-commit.tar.gz" \
-  "AWTARCHY_TEST_PACKAGE_STATE=$conflict_keep_packages" \
-  "AWTARCHY_MANAGED_PACKAGES_FILE=$conflict_keep_managed" \
-  "AWTARCHY_TEST_HYPRIDLE_STATE=${TMP}/conflict-keep-hypridle.state" \
-  "HYPRLAND_INSTANCE_SIGNATURE=" \
-  "$conflict_keep_home/.local/bin/awtarchy" git update \
-  --branch "$TEST_BRANCH" --commit "$TEST_COMMIT" \
-  --conflict-policy keep-local \
-  >"${TMP}/conflict-keep.out" 2>&1
-grep -Fq "$launcher_local_line" \
-  "$conflict_keep_home/.config/quickshell/awtarchy/Launcher.qml" \
-  || fail "keep-local conflict policy replaced the local Launcher.qml"
-grep -Fq '// conflict-policy target marker' \
-  "$conflict_keep_home/.config/quickshell/awtarchy/Bar.qml" \
-  || fail "keep-local conflict policy did not finish unrelated managed updates"
-grep -Fq 'Kept local file; release changes were skipped for: .config/quickshell/awtarchy/Launcher.qml' \
-  "${TMP}/conflict-keep.out" \
-  || fail "keep-local conflict policy did not report its decision"
-
+# Non-Hyprland managed files always take the release copy in preserve mode.
+# Local edits are retained as backups and no per-file conflict prompt is shown.
 conflict_release_home="${TMP}/conflict-release-home"
 conflict_release_packages="${TMP}/conflict-release-packages"
 conflict_release_managed="${TMP}/conflict-release-managed"
@@ -1123,124 +1112,63 @@ env \
   "HYPRLAND_INSTANCE_SIGNATURE=" \
   "$conflict_release_home/.local/bin/awtarchy" git update \
   --branch "$TEST_BRANCH" --commit "$TEST_COMMIT" \
-  --conflict-policy use-release \
   >"${TMP}/conflict-release.out" 2>&1
 grep -Fq "$launcher_release_line" \
   "$conflict_release_home/.config/quickshell/awtarchy/Launcher.qml" \
-  || fail "use-release conflict policy did not install the release Launcher.qml"
+  || fail "preserve mode did not install the release Launcher.qml"
 release_backup="$(
   find "$conflict_release_home/.config/quickshell/awtarchy" \
-    -maxdepth 1 -type f -name 'Launcher.qml.backup*' -print -quit
-)"
-[[ -n "$release_backup" ]] \
-  || fail "use-release conflict policy did not create a Launcher.qml backup"
-grep -Fq "$launcher_local_line" "$release_backup" \
-  || fail "use-release conflict backup did not retain the local Launcher.qml"
-grep -Fq '// conflict-policy target marker' \
-  "$conflict_release_home/.config/quickshell/awtarchy/Bar.qml" \
-  || fail "use-release conflict policy did not finish unrelated managed updates"
-grep -Fq 'Installed release file and kept the local file as a backup: .config/quickshell/awtarchy/Launcher.qml' \
-  "${TMP}/conflict-release.out" \
-  || fail "use-release conflict policy did not report its decision"
-
-# The plan loop consumes stdin from plan.tsv. Verify that an updater running in
-# a real pseudo-terminal still reaches /dev/tty for its per-file decision.
-conflict_prompt_home="${TMP}/conflict-prompt-home"
-conflict_prompt_packages="${TMP}/conflict-prompt-packages"
-conflict_prompt_managed="${TMP}/conflict-prompt-managed"
-cp -a -- "$home" "$conflict_prompt_home"
-cp -- "$package_state" "$conflict_prompt_packages"
-cp -- "$managed_packages" "$conflict_prompt_managed"
-replace_once \
-  "$conflict_prompt_home/.config/quickshell/awtarchy/Launcher.qml" \
-  "$launcher_default_line" \
-  "$launcher_local_line"
-script_bin="$(command -v script)" \
-  || fail "util-linux script is required for the interactive conflict test"
-prompt_command="$conflict_prompt_home/.local/bin/awtarchy git update --branch $TEST_BRANCH --commit $TEST_COMMIT"
-set +e
-printf 'q2\n' | env \
-  "${update_env[@]}" \
-  "HOME=$conflict_prompt_home" \
-  "TERM=xterm" \
-  "AWTARCHY_TEST_TARGET_HOME=$conflict_prompt_home" \
-  "AWTARCHY_TEST_ARCHIVE=${TMP}/conflict-testing-commit.tar.gz" \
-  "AWTARCHY_TEST_PACKAGE_STATE=$conflict_prompt_packages" \
-  "AWTARCHY_MANAGED_PACKAGES_FILE=$conflict_prompt_managed" \
-  "AWTARCHY_TEST_HYPRIDLE_STATE=${TMP}/conflict-prompt-hypridle.state" \
-  "HYPRLAND_INSTANCE_SIGNATURE=" \
-  "$script_bin" --quiet --return --command "$prompt_command" \
-  "${TMP}/conflict-prompt.out" \
-  >"${TMP}/conflict-prompt-driver.out" 2>&1
-conflict_prompt_rc=${PIPESTATUS[1]}
-set -e
-if (( conflict_prompt_rc != 0 )); then
-  tail -n 30 "${TMP}/conflict-prompt.out" >&2 || true
-  fail "interactive conflict prompt did not complete the update"
-fi
-grep -Fq 'Managed-file merge conflict:' "${TMP}/conflict-prompt.out" \
-  || fail "interactive update did not show the per-file conflict prompt"
-! grep -Fq 'Automatic merge conflict requires a terminal' \
-  "${TMP}/conflict-prompt.out" \
-  || fail "interactive conflict prompt lost its controlling terminal"
-grep -Fq "$launcher_release_line" \
-  "$conflict_prompt_home/.config/quickshell/awtarchy/Launcher.qml" \
-  || fail "interactive use-release choice did not install Launcher.qml"
-prompt_backup="$(
-  find "$conflict_prompt_home/.config/quickshell/awtarchy" \
     -maxdepth 1 -type f -name 'Launcher.qml.backup*' \
     -exec grep -lF -- "$launcher_local_line" {} + | head -n1
 )"
-[[ -n $prompt_backup ]] \
-  || fail "interactive use-release choice did not preserve the local Launcher.qml"
+[[ -n "$release_backup" ]] \
+  || fail "preserve mode did not back up the overwritten Launcher.qml"
 grep -Fq '// conflict-policy target marker' \
-  "$conflict_prompt_home/.config/quickshell/awtarchy/Bar.qml" \
-  || fail "interactive conflict choice did not finish unrelated managed updates"
+  "$conflict_release_home/.config/quickshell/awtarchy/Bar.qml" \
+  || fail "preserve mode did not finish unrelated managed updates"
+! grep -Fq 'Managed-file merge conflict:' "${TMP}/conflict-release.out" \
+  || fail "non-Hyprland conflict unexpectedly prompted for a per-file decision"
+! grep -Fq 'Automatic merge conflict requires a terminal' "${TMP}/conflict-release.out" \
+  || fail "non-Hyprland conflict still depends on conflict-policy prompting"
 
-conflict_abort_home="${TMP}/conflict-abort-home"
-conflict_abort_packages="${TMP}/conflict-abort-packages"
-conflict_abort_managed="${TMP}/conflict-abort-managed"
-cp -a -- "$home" "$conflict_abort_home"
-cp -- "$package_state" "$conflict_abort_packages"
-cp -- "$managed_packages" "$conflict_abort_managed"
+# hyprland.lua is the one preservation exception. When both the user and the
+# release change overlapping lines, keep the local file automatically.
+hypr_conflict_home="${TMP}/hypr-conflict-home"
+hypr_conflict_packages="${TMP}/hypr-conflict-packages"
+hypr_conflict_managed="${TMP}/hypr-conflict-managed"
+cp -a -- "$home" "$hypr_conflict_home"
+cp -- "$package_state" "$hypr_conflict_packages"
+cp -- "$managed_packages" "$hypr_conflict_managed"
 replace_once \
-  "$conflict_abort_home/.config/quickshell/awtarchy/Launcher.qml" \
-  "$launcher_default_line" \
-  "$launcher_local_line"
-printf '%s\n' 'tag=before-conflict-test' \
-  >"$conflict_abort_home/.local/state/awtarchy/config-version"
-set +e
+  "$hypr_conflict_home/.config/hypr/hyprland.lua" \
+  "$hypr_default_line" \
+  "$hypr_local_line"
 env \
   "${update_env[@]}" \
-  "HOME=$conflict_abort_home" \
-  "AWTARCHY_TEST_TARGET_HOME=$conflict_abort_home" \
-  "AWTARCHY_TEST_ARCHIVE=${TMP}/conflict-testing-commit.tar.gz" \
-  "AWTARCHY_TEST_PACKAGE_STATE=$conflict_abort_packages" \
-  "AWTARCHY_MANAGED_PACKAGES_FILE=$conflict_abort_managed" \
-  "AWTARCHY_TEST_HYPRIDLE_STATE=${TMP}/conflict-abort-hypridle.state" \
+  "HOME=$hypr_conflict_home" \
+  "AWTARCHY_TEST_TARGET_HOME=$hypr_conflict_home" \
+  "AWTARCHY_TEST_ARCHIVE=${TMP}/hypr-conflict-testing-commit.tar.gz" \
+  "AWTARCHY_TEST_PACKAGE_STATE=$hypr_conflict_packages" \
+  "AWTARCHY_MANAGED_PACKAGES_FILE=$hypr_conflict_managed" \
+  "AWTARCHY_TEST_HYPRIDLE_STATE=${TMP}/hypr-conflict-hypridle.state" \
   "HYPRLAND_INSTANCE_SIGNATURE=" \
-  "$conflict_abort_home/.local/bin/awtarchy" git update \
+  "$hypr_conflict_home/.local/bin/awtarchy" git update \
   --branch "$TEST_BRANCH" --commit "$TEST_COMMIT" \
-  >"${TMP}/conflict-abort.out" 2>&1
-conflict_abort_rc=$?
-set -e
-(( conflict_abort_rc != 0 )) \
-  || fail "abort conflict policy unexpectedly completed the update"
-grep -Fq "$launcher_local_line" \
-  "$conflict_abort_home/.config/quickshell/awtarchy/Launcher.qml" \
-  || fail "abort conflict policy did not retain the local Launcher.qml"
-! grep -Fq '// conflict-policy target marker' \
-  "$conflict_abort_home/.config/quickshell/awtarchy/Bar.qml" \
-  || fail "abort conflict policy did not roll back unrelated managed updates"
-grep -Fxq 'tag=before-conflict-test' \
-  "$conflict_abort_home/.local/state/awtarchy/config-version" \
-  || fail "abort conflict policy advanced the config version"
-grep -Fq 'Automatic merge is unsafe; refusing to replace local modifications: .config/quickshell/awtarchy/Launcher.qml' \
-  "${TMP}/conflict-abort.out" \
-  || fail "abort conflict policy did not report the unsafe merge"
-grep -Fq 'Automatic merge conflict requires a terminal or an explicit --conflict-policy: .config/quickshell/awtarchy/Launcher.qml' \
-  "${TMP}/conflict-abort.out" \
-  || fail "non-interactive conflict did not explain how to select a policy"
+  >"${TMP}/hypr-conflict.out" 2>&1
+grep -Fq "$hypr_local_line" \
+  "$hypr_conflict_home/.config/hypr/hyprland.lua" \
+  || fail "hyprland.lua merge conflict did not keep the local configuration"
+! grep -Fq "$hypr_release_line" \
+  "$hypr_conflict_home/.config/hypr/hyprland.lua" \
+  || fail "hyprland.lua merge conflict installed the overlapping release line"
+grep -Fq '// hyprland conflict target marker' \
+  "$hypr_conflict_home/.config/quickshell/awtarchy/Bar.qml" \
+  || fail "hyprland.lua conflict prevented unrelated managed updates"
+! grep -Fq 'Managed-file merge conflict:' "${TMP}/hypr-conflict.out" \
+  || fail "hyprland.lua conflict unexpectedly prompted for a decision"
+grep -Fq 'Hyprland merge conflict; kept the local file and skipped overlapping release changes: .config/hypr/hyprland.lua' \
+  "${TMP}/hypr-conflict.out" \
+  || fail "hyprland.lua automatic preservation was not reported"
 
 failure_packages="${TMP}/failure-packages"
 failure_managed="${TMP}/failure-managed-packages"

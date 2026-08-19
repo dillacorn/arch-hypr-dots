@@ -76,7 +76,7 @@ Run `awtarchy` with no arguments for the interactive maintenance menu.
 Common commands:
 
 ```text
-awtarchy update          Update from the latest published release while preserving personal modifications
+awtarchy update          Update release-managed files; preserve hyprland.lua and back up overwritten local edits
 awtarchy reset           Reset managed configs to published release defaults
 awtarchy review          Preview managed config changes without applying them
 awtarchy version         Show updater, config release, and git-testing status
@@ -97,7 +97,7 @@ Starting with **Awtarchy v3.0.0 Quickshell**, existing Awtarchy users can migrat
 awtarchy update
 ```
 
-The v3.0.0 update replaces Awtarchy's previous Waybar/Fuzzel-era shell stack with the Quickshell implementation. Preserve mode keeps personalized managed files where possible, creates backups when required, migrates supported Hyprland customizations, and removes retired Awtarchy-managed shell packages and configuration that are no longer used.
+The v3.0.0 update replaces Awtarchy's previous Waybar/Fuzzel-era shell stack with the Quickshell implementation. Preserve mode keeps `hyprland.lua` customizations where possible. Other Awtarchy-managed files are updated to the release copy, with local edits backed up before replacement. It also migrates supported Hyprland customizations and removes retired Awtarchy-managed shell packages and configuration that are no longer used.
 
 The retired shell stack includes Waybar/`waybar-git`, Fuzzel, Mako, Wlogout, Wofi, `network-manager-applet`, and Blueman. NetworkManager, BlueZ, and their underlying system services remain; the retired GUI applets are replaced by Awtarchy's Quickshell interfaces.
 

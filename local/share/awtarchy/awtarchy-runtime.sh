@@ -3242,7 +3242,7 @@ top_menu() {
     choice="$(single_select_menu "Awtarchy" 0 \
       "Install Awtarchy" \
       "Dry-run Awtarchy install plan" \
-      "Update configs (merge personal modifications)" \
+      "Update configs (preserve Hyprland customizations)" \
       "Reset configs (clean-slate managed files)" \
       "Clean Awtarchy backup files" \
       "Exit")" || exit 0
@@ -4439,7 +4439,7 @@ ACTIVE_THEME_FILE=""
 GIT_TESTING_FILE=""
 AUDIT_LOG=""
 UPDATE_MODE=""
-CONFLICT_POLICY="prompt"
+CONFLICT_POLICY="keep-local"
 MERGE_CONFLICT_RESOLUTION=""
 REVIEW_ONLY=0
 ASSUME_YES=0
@@ -6447,7 +6447,7 @@ select_update_mode() {
   local choice=""
   while true; do
     printf '\nUpdate mode:\n' >/dev/tty
-    printf '  1. Update managed files and merge personal modifications (recommended)\n' >/dev/tty
+    printf '  1. Update managed files and preserve hyprland.lua customizations (recommended)\n' >/dev/tty
     printf '  2. Clean-slate managed files\n' >/dev/tty
     printf '  3. Cancel\n' >/dev/tty
     printf 'Choose [1]: ' >/dev/tty
@@ -6548,40 +6548,6 @@ attempt_merge() {
   validate_candidate "$out" "$rel"
 }
 
-select_merge_conflict_resolution() {
-  local rel="$1" choice=""
-  MERGE_CONFLICT_RESOLUTION=""
-
-  if [[ "$CONFLICT_POLICY" != "prompt" ]]; then
-    MERGE_CONFLICT_RESOLUTION="$CONFLICT_POLICY"
-    return 0
-  fi
-
-  # apply_plan reads its TSV through stdin, so fd 0 is intentionally not a
-  # terminal here. The decision prompt itself reads from the controlling TTY.
-  if ! has_controlling_tty; then
-    warn "Automatic merge conflict requires a terminal or an explicit --conflict-policy: $rel"
-    MERGE_CONFLICT_RESOLUTION=abort
-    return 0
-  fi
-
-  while true; do
-    printf '\nManaged-file merge conflict:\n' >/dev/tty
-    printf '  %s\n\n' "$rel" >/dev/tty
-    printf 'Your local file and the release changed overlapping lines.\n' >/dev/tty
-    printf '  1. Keep the local file and skip its release changes\n' >/dev/tty
-    printf '  2. Use the release file and save the local file as a backup\n' >/dev/tty
-    printf '  3. Cancel the update and roll back\n' >/dev/tty
-    printf 'Choose [3]: ' >/dev/tty
-    IFS= read -r choice </dev/tty || choice=3
-    case "$choice" in
-      1) MERGE_CONFLICT_RESOLUTION=keep-local; return 0 ;;
-      2) MERGE_CONFLICT_RESOLUTION=use-release; return 0 ;;
-      ""|3) MERGE_CONFLICT_RESOLUTION=abort; return 0 ;;
-    esac
-  done
-}
-
 install_live_file() {
   local rel="$1" target_file="$2" local_file="$3" persistent_backup="${4:-0}"
   if ! validate_candidate "$target_file" "$rel"; then
@@ -6628,41 +6594,46 @@ apply_plan() {
         install_live_file "$rel" "$target_file" "$local_file" 0 || return 1
         ;;
       USER)
-        if [[ "$UPDATE_MODE" == "preserve" ]]; then
+        if [[ "$UPDATE_MODE" == "preserve" && "$rel" == ".config/hypr/hyprland.lua" ]]; then
           PRESERVED+=("$rel")
         else
           install_live_file "$rel" "$target_file" "$local_file" 1 || return 1
         fi
         ;;
       LEGACY)
-        if [[ "$UPDATE_MODE" == "preserve" ]]; then
+        if [[ "$UPDATE_MODE" == "preserve" && "$rel" == ".config/hypr/hyprland.lua" ]]; then
           PRESERVED+=("$rel")
-          warn "Legacy difference retained because no trusted old baseline exists: $rel"
+          warn "Legacy Hyprland difference retained because no trusted old baseline exists: $rel"
         else
           install_live_file "$rel" "$target_file" "$local_file" 1 || return 1
         fi
         ;;
       BOTH)
-        if [[ "$UPDATE_MODE" == "preserve" ]]; then
+        if [[ "$UPDATE_MODE" == "preserve" && "$rel" == ".config/hypr/hyprland.lua" ]]; then
           merge_tmp="${TMPD}/merge/${rel}"
           mkdir -p -- "$(dirname "$merge_tmp")"
           if attempt_merge "$local_file" "$baseline_file" "$target_file" "$rel" "$merge_tmp"; then
             install_live_file "$rel" "$merge_tmp" "$local_file" 1 || return 1
             MERGED+=("$rel")
           else
-            select_merge_conflict_resolution "$rel"
-            case "$MERGE_CONFLICT_RESOLUTION" in
-              keep-local)
-                PRESERVED+=("$rel")
-                warn "Kept local file; release changes were skipped for: $rel"
-                ;;
+            case "$CONFLICT_POLICY" in
               use-release)
                 install_live_file "$rel" "$target_file" "$local_file" 1 || return 1
-                warn "Installed release file and kept the local file as a backup: $rel"
+                warn "Explicit conflict policy installed the release Hyprland file and kept the local file as a backup: $rel"
+                ;;
+              abort)
+                FAILED+=("$rel")
+                warn "Explicit conflict policy aborted on Hyprland merge conflict: $rel"
+                rollback_changes
+                return 1
+                ;;
+              prompt|keep-local)
+                PRESERVED+=("$rel")
+                warn "Hyprland merge conflict; kept the local file and skipped overlapping release changes: $rel"
                 ;;
               *)
                 FAILED+=("$rel")
-                warn "Automatic merge is unsafe; refusing to replace local modifications: $rel"
+                warn "Unsupported merge conflict policy: $CONFLICT_POLICY"
                 rollback_changes
                 return 1
                 ;;
@@ -7405,7 +7376,11 @@ main() {
   fi
 
   select_update_mode
-  log "Selected update mode: ${UPDATE_MODE}"
+  if [[ "$UPDATE_MODE" == "preserve" ]]; then
+    log "Selected update mode: preserve hyprland.lua; update other managed files"
+  else
+    log "Selected update mode: clean"
+  fi
 
   if [[ ${AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR:-0} != 1 ]]; then
     repair_scxctl_update_helper "$repo_dir"
