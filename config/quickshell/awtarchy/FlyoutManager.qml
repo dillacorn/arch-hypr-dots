@@ -1,7 +1,9 @@
 pragma Singleton
 
 import QtQuick
+import Quickshell
 import Quickshell.Hyprland
+import Quickshell.Io
 
 QtObject {
     id: root
@@ -12,9 +14,20 @@ QtObject {
     property real recentBarMonitorTimestamp: 0
     property var barWindows: []
     property var lastToggleTimestamps: ({})
+    readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
+    readonly property string animationStatePath: runtimeDir + "/hypr-animations-enabled"
+    readonly property bool animationsEnabled: animationStateFile.text().trim() !== "0"
     readonly property int recentBarMonitorLifetimeMs: 1500
     readonly property int toggleDebounceMs: 250
     signal closeRequested(string exceptSurface)
+
+    property FileView animationStateFile: FileView {
+        path: root.animationStatePath
+        blockLoading: false
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+    }
 
     // Keep the previous flyout mapped until the newly requested different
     // surface is not only mapped, but actually active in Hyprland. Closing the
