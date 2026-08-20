@@ -15,6 +15,7 @@ ShellRoot {
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
     readonly property string barDragRuntimeScript: configHome + "/hypr/scripts/quickshell_bar_drag_runtime.sh"
+    readonly property int managedFlyoutFadeDuration: 140
     property bool barDragActive: false
     property bool barDropPending: false
     property string barDragMonitor: ""
@@ -98,6 +99,63 @@ ShellRoot {
         if (surface === "bluetooth")
             return BluetoothMenu;
         return null;
+    }
+
+    function managedFlyoutWindow(surface) {
+        const flyout = flyoutByName(surface);
+        const expectedTitle = FlyoutManager.titleForSurface(surface);
+        if (!flyout || !flyout.children || expectedTitle.length === 0)
+            return null;
+
+        for (const child of flyout.children) {
+            try {
+                if (child && String(child.title || "") === expectedTitle
+                    && child.contentItem)
+                    return child;
+            } catch (error) {
+                // Non-window singleton children do not expose window properties.
+            }
+        }
+        return null;
+    }
+
+    function runManagedFlyoutFade(window, animation) {
+        if (!window || !window.contentItem || !animation)
+            return;
+
+        const content = window.contentItem;
+        animation.stop();
+        animation.target = content;
+
+        if (!FlyoutManager.animationsEnabled) {
+            content.opacity = window.visible ? 1 : 0;
+            return;
+        }
+
+        if (window.visible && content.opacity >= 0.999)
+            content.opacity = 0;
+
+        animation.from = content.opacity;
+        animation.to = window.visible ? 1 : 0;
+        animation.restart();
+    }
+
+    function resetManagedFlyoutFades() {
+        const entries = [
+            [managedFlyoutWindow("clipboard"), clipboardFlyoutFade],
+            [managedFlyoutWindow("notifications"), notificationsFlyoutFade],
+            [managedFlyoutWindow("quick-settings"), quickSettingsFlyoutFade],
+            [managedFlyoutWindow("network"), networkFlyoutFade],
+            [managedFlyoutWindow("bluetooth"), bluetoothFlyoutFade]
+        ];
+
+        for (const entry of entries) {
+            const window = entry[0];
+            const animation = entry[1];
+            animation.stop();
+            if (window && window.contentItem)
+                window.contentItem.opacity = window.visible ? 1 : 0;
+        }
     }
 
     function closeActiveFloatingSurface() {
@@ -215,6 +273,89 @@ ShellRoot {
             root.clearBarDragState();
             if (!barDragRuntime.running)
                 barDragRuntime.exec(["bash", root.barDragRuntimeScript]);
+        }
+    }
+
+    NumberAnimation {
+        id: clipboardFlyoutFade
+        property: "opacity"
+        duration: root.managedFlyoutFadeDuration
+        easing.type: Easing.OutCubic
+    }
+
+    NumberAnimation {
+        id: notificationsFlyoutFade
+        property: "opacity"
+        duration: root.managedFlyoutFadeDuration
+        easing.type: Easing.OutCubic
+    }
+
+    NumberAnimation {
+        id: quickSettingsFlyoutFade
+        property: "opacity"
+        duration: root.managedFlyoutFadeDuration
+        easing.type: Easing.OutCubic
+    }
+
+    NumberAnimation {
+        id: networkFlyoutFade
+        property: "opacity"
+        duration: root.managedFlyoutFadeDuration
+        easing.type: Easing.OutCubic
+    }
+
+    NumberAnimation {
+        id: bluetoothFlyoutFade
+        property: "opacity"
+        duration: root.managedFlyoutFadeDuration
+        easing.type: Easing.OutCubic
+    }
+
+    Connections {
+        target: root.managedFlyoutWindow("clipboard")
+        ignoreUnknownSignals: true
+        function onVisibleChanged() {
+            root.runManagedFlyoutFade(root.managedFlyoutWindow("clipboard"), clipboardFlyoutFade);
+        }
+    }
+
+    Connections {
+        target: root.managedFlyoutWindow("notifications")
+        ignoreUnknownSignals: true
+        function onVisibleChanged() {
+            root.runManagedFlyoutFade(root.managedFlyoutWindow("notifications"), notificationsFlyoutFade);
+        }
+    }
+
+    Connections {
+        target: root.managedFlyoutWindow("quick-settings")
+        ignoreUnknownSignals: true
+        function onVisibleChanged() {
+            root.runManagedFlyoutFade(root.managedFlyoutWindow("quick-settings"), quickSettingsFlyoutFade);
+        }
+    }
+
+    Connections {
+        target: root.managedFlyoutWindow("network")
+        ignoreUnknownSignals: true
+        function onVisibleChanged() {
+            root.runManagedFlyoutFade(root.managedFlyoutWindow("network"), networkFlyoutFade);
+        }
+    }
+
+    Connections {
+        target: root.managedFlyoutWindow("bluetooth")
+        ignoreUnknownSignals: true
+        function onVisibleChanged() {
+            root.runManagedFlyoutFade(root.managedFlyoutWindow("bluetooth"), bluetoothFlyoutFade);
+        }
+    }
+
+    Connections {
+        target: FlyoutManager
+        function onAnimationsEnabledChanged() {
+            if (!FlyoutManager.animationsEnabled)
+                root.resetManagedFlyoutFades();
         }
     }
 
