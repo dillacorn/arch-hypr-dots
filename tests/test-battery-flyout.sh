@@ -64,6 +64,10 @@ require_source "$POWER_MODE" 'property bool presentationEnabled: false' \
   'Power Mode does not default to an inert compatibility host'
 require_source "$POWER_MODE" 'visible: root.presentationEnabled' \
   'Power Mode compatibility instance can still render in Quick Settings'
+require_source "$POWER_MODE" 'BatteryCareCard {' \
+  'Battery Health controls are not hosted with the moved Power Mode section'
+require_source "$POWER_MODE" 'active: root.presentationEnabled && root.active && root.isLaptop' \
+  'Battery Health controls do not follow the Battery flyout lifecycle'
 
 # Both bar layouts must open the Battery flyout.
 count="$(grep -Fc -- 'onClicked: BatteryMenu.toggleForScreen(bar.screen)' "$BAR")"
