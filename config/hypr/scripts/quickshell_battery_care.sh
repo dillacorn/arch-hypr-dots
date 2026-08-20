@@ -9,6 +9,7 @@ TLP_STAT_BIN="${AWTARCHY_TLP_STAT_BIN:-/usr/bin/tlp-stat}"
 TLP_CONFIG_DIR="${AWTARCHY_TLP_CONFIG_DIR:-/etc/tlp.d}"
 TLP_USER_CONFIG="${AWTARCHY_TLP_USER_CONFIG:-/etc/tlp.conf}"
 MANAGED_CONFIG="${TLP_CONFIG_DIR}/00-awtarchy-battery-care.conf"
+SONY_BATTERY_CARE_PATH="${AWTARCHY_SONY_BATTERY_CARE_PATH:-/sys/devices/platform/sony-laptop/battery_care_limiter}"
 
 usage() {
     printf 'usage: %s --status-json\n' "${0##*/}" >&2
@@ -143,6 +144,27 @@ if [[ -x "$TLP_STAT_BIN" ]]; then
     )"
 fi
 
+# `tlp-stat -b` is documented by TLP as a root command, while this detector is
+# intentionally unprivileged. sony_laptop exposes its actual limiter through a
+# read-only sysfs attribute, so use the kernel interface to recover capability
+# and current state when TLP's user-level report is empty. Writes still go only
+# through the root-owned TLP helper.
+sony_limit=null
+if value="$(read_percent "$SONY_BATTERY_CARE_PATH" 2>/dev/null)"; then
+    case "$value" in
+        0) sony_limit=100 ;;
+        50|80|100) sony_limit="$value" ;;
+    esac
+fi
+if [[ "$sony_limit" != null && "$tlp_available" == true ]]; then
+    features_lower_probe="${features,,}"
+    if [[ -z "$plugin" || "$features_lower_probe" != *"charge threshold"* || -z "$stop_spec" ]]; then
+        plugin="sony"
+        features="charge threshold"
+        stop_spec="50, 80, 100(off) -- battery care limiter"
+    fi
+fi
+
 plugin_lower="${plugin,,}"
 features_lower="${features,,}"
 tlp_supported=false
@@ -258,6 +280,26 @@ if [[ "$backend" == tlp ]]; then
             elif grep -Eq 'battery_life_extender[^=]*=[[:space:]]*0([^0-9]|$)' <<<"$tlp_output"; then
                 enabled=false
                 observed_target=100
+            fi
+            ;;
+        sony)
+            if [[ "$sony_limit" != null ]]; then
+                observed_target="$sony_limit"
+            else
+                observed="$(awk '
+                    /battery_care_limiter[^=]*=/ {
+                        value=$0
+                        sub(/^.*=[[:space:]]*/, "", value)
+                        if (match(value, /^[0-9]+/)) { print substr(value, RSTART, RLENGTH); exit }
+                    }
+                ' <<<"$tlp_output")"
+                if [[ "$observed" =~ ^[0-9]+$ ]]; then
+                    if (( observed == 0 )); then
+                        observed_target=100
+                    else
+                        observed_target="$observed"
+                    fi
+                fi
             fi
             ;;
         huawei)
