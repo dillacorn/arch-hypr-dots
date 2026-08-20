@@ -55,7 +55,7 @@ Rectangle {
         }
         statusLoading = true;
         refreshPending = false;
-        batteryCareReader.exec([batteryCareScript, "--status-json"]);
+        batteryCareReader.exec(["/usr/bin/bash", batteryCareScript, "--status-json"]);
     }
 
     function backendLabel() {
