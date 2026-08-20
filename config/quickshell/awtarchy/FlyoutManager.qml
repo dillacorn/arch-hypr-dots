@@ -64,6 +64,8 @@ QtObject {
             return "Awtarchy Network";
         if (surface === "bluetooth")
             return "Awtarchy Bluetooth";
+        if (surface === "battery")
+            return "Awtarchy Battery";
         return "";
     }
 
