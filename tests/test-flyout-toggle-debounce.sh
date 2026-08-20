@@ -78,6 +78,15 @@ require_source "$MANAGER" \
 require_source "$MANAGER" \
   'watchChanges: true' \
   'shared animation-state file is not watched for Super+A changes'
+require_source "$MANAGER" \
+  'property int windowLookupRevision: 0' \
+  'managed flyout window lookup has no lifecycle refresh revision'
+require_source "$MANAGER" \
+  'const dependency = windowLookupRevision;' \
+  'managed flyout title lookup does not depend on the lifecycle refresh revision'
+require_source "$MANAGER" \
+  'windowLookupRevision++;' \
+  'claiming a flyout does not refresh managed window bindings before show'
 
 require_source "$SHELL" \
   'readonly property int managedFlyoutFadeDuration: 140' \
