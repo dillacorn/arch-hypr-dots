@@ -6,6 +6,9 @@ export LC_ALL=C
 
 POWER_SUPPLY_ROOT="${AWTARCHY_POWER_SUPPLY_ROOT:-/sys/class/power_supply}"
 TLP_STAT_BIN="${AWTARCHY_TLP_STAT_BIN:-/usr/bin/tlp-stat}"
+TLP_CONFIG_DIR="${AWTARCHY_TLP_CONFIG_DIR:-/etc/tlp.d}"
+TLP_USER_CONFIG="${AWTARCHY_TLP_USER_CONFIG:-/etc/tlp.conf}"
+MANAGED_CONFIG="${TLP_CONFIG_DIR}/00-awtarchy-battery-care.conf"
 
 usage() {
     printf 'usage: %s --status-json\n' "${0##*/}" >&2
@@ -89,6 +92,27 @@ for battery_dir in "$POWER_SUPPLY_ROOT"/*; do
     )"
 done
 
+managed_config=false
+managed_target=null
+if [[ -f "$MANAGED_CONFIG" && ! -L "$MANAGED_CONFIG" ]]; then
+    managed_config=true
+    managed_target_text="$(sed -n -E 's/^#[[:space:]]*target=([0-9]+).*$/\1/p' "$MANAGED_CONFIG" | head -n1)"
+    if [[ "$managed_target_text" =~ ^[0-9]+$ ]] && (( managed_target_text >= 1 && managed_target_text <= 100 )); then
+        managed_target="$managed_target_text"
+    fi
+fi
+
+conflict_sources='[]'
+config_conflict=false
+for config_file in "$TLP_CONFIG_DIR"/*.conf "$TLP_USER_CONFIG"; do
+    [[ -f "$config_file" ]] || continue
+    [[ "$config_file" == "$MANAGED_CONFIG" ]] && continue
+    if grep -Eq '^[[:space:]]*(START|STOP)_CHARGE_THRESH_BAT[01][[:space:]]*=' "$config_file"; then
+        config_conflict=true
+        conflict_sources="$(jq -cn --argjson current "$conflict_sources" --arg file "$config_file" '$current + [$file]')"
+    fi
+done
+
 plugin=""
 features=""
 start_spec=""
@@ -125,9 +149,6 @@ tlp_supported=false
 if [[ "$features_lower" == *"charge threshold"* ]]; then
     tlp_supported=true
 elif [[ "$features_lower" == *"charge type"* && -n "$stop_spec" ]]; then
-    # Some fixed conservation modes are represented as charging profiles rather
-    # than literal percentage thresholds. TLP still exposes them through the
-    # START/STOP_CHARGE_THRESH configuration abstraction.
     tlp_supported=true
 fi
 
@@ -165,14 +186,9 @@ if [[ "$tlp_supported" == true ]]; then
 
     case "$plugin_lower" in
         lenovo|lenovo-legacy)
-            # ideapad_laptop exposes a vendor conservation mode. Its 0/1 values
-            # select Standard/Long_Life, not 0%/1%, and Linux cannot report the
-            # model-specific fixed target (commonly 60% or 80%).
             mode="fixed"
             ;;
         samsung)
-            # samsung_laptop also exposes 0/1, but TLP documents the actual
-            # battery-life extender target as 80%, with 100% meaning disabled.
             mode="fixed"
             stop_presets='[80,100]'
             ;;
@@ -206,6 +222,68 @@ elif [[ "$sysfs_supported" == true ]]; then
     supported=true
     backend="sysfs"
     mode="sysfs"
+fi
+
+observed_target=null
+enabled=null
+
+if [[ "$backend" == tlp ]]; then
+    case "$plugin_lower" in
+        lenovo)
+            if grep -Eq 'charge_types[^=]*=.*\[Long_Life\]' <<<"$tlp_output"; then
+                enabled=true
+            elif grep -Eq 'charge_types[^=]*=.*\[Standard\]' <<<"$tlp_output"; then
+                enabled=false
+                observed_target=100
+            fi
+            ;;
+        lenovo-legacy)
+            if grep -Eq 'conservation_mode[^=]*=[[:space:]]*1([^0-9]|$)' <<<"$tlp_output"; then
+                enabled=true
+            elif grep -Eq 'conservation_mode[^=]*=[[:space:]]*0([^0-9]|$)' <<<"$tlp_output"; then
+                enabled=false
+                observed_target=100
+            fi
+            ;;
+        samsung)
+            if grep -Eq 'battery_life_extender[^=]*=[[:space:]]*1([^0-9]|$)' <<<"$tlp_output"; then
+                enabled=true
+                observed_target=80
+            elif grep -Eq 'battery_life_extender[^=]*=[[:space:]]*0([^0-9]|$)' <<<"$tlp_output"; then
+                enabled=false
+                observed_target=100
+            fi
+            ;;
+        huawei)
+            observed="$(sed -n -E 's/^.*charge_control_thresholds[^=]*=[[:space:]]*[0-9]+[[:space:]]+([0-9]+).*$/\1/p' <<<"$tlp_output" | head -n1)"
+            if [[ "$observed" =~ ^[0-9]+$ ]]; then
+                observed_target="$observed"
+            fi
+            ;;
+        *)
+            observed="$(awk '
+                /(charge_control_end_threshold|stop_charge_thresh|battery_care_limit|battery_care_limiter)[^=]*=/ {
+                    value=$0
+                    sub(/^.*=[[:space:]]*/, "", value)
+                    if (match(value, /^[0-9]+/)) { print substr(value, RSTART, RLENGTH); exit }
+                }
+            ' <<<"$tlp_output")"
+            if [[ "$observed" =~ ^[0-9]+$ ]]; then
+                observed_target="$observed"
+            fi
+            ;;
+    esac
+fi
+
+if [[ "$observed_target" == null && "$first_stop" != null ]]; then
+    observed_target="$first_stop"
+fi
+if [[ "$enabled" == null && "$observed_target" != null ]]; then
+    if (( observed_target < 100 )); then
+        enabled=true
+    else
+        enabled=false
+    fi
 fi
 
 summary="Charge limiting unavailable"
@@ -261,6 +339,12 @@ jq -cn \
     --argjson current_start "$first_start" \
     --argjson current_stop "$first_stop" \
     --argjson tlp_available "$tlp_available" \
+    --argjson managed_config "$managed_config" \
+    --argjson managed_target "$managed_target" \
+    --argjson config_conflict "$config_conflict" \
+    --argjson conflict_sources "$conflict_sources" \
+    --argjson enabled "$enabled" \
+    --argjson target "$observed_target" \
     --argjson batteries "$batteries" '
     {
         supported:$supported,
@@ -279,5 +363,11 @@ jq -cn \
         current_start:$current_start,
         current_stop:$current_stop,
         tlp_available:$tlp_available,
+        managed_config:$managed_config,
+        managed_target:$managed_target,
+        config_conflict:$config_conflict,
+        conflict_sources:$conflict_sources,
+        enabled:$enabled,
+        target:$target,
         batteries:$batteries
     }'
