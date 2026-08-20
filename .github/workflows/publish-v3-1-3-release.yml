@@ -1,0 +1,126 @@
+name: Publish v3.1.3 Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/publish-v3-1-3-release.yml
+
+permissions:
+  contents: write
+
+jobs:
+  publish-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Publish v3.1.3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: f5175b0a754069907b2ea73791d6afd4eefe591f
+        run: |
+          set -euo pipefail
+
+          test "$(git rev-parse "${TARGET_SHA}^{tree}")" = "$(git rev-parse f5175b0a754069907b2ea73791d6afd4eefe591f^{tree})"
+
+          cat >release-notes.md <<'EOF'
+          # Awtarchy v3.1.3 Quickshell
+
+          Awtarchy v3.1.3 is a patch release focused on updater reliability and Quickshell flyout polish following v3.1.2.
+
+          ## Fresh install
+
+          Start from a minimal Arch Linux installation, then run:
+
+          ```bash
+          sudo pacman -S git --noconfirm
+          git clone https://github.com/dillacorn/awtarchy
+          cd awtarchy
+          sudo ./awtarchy-install.sh
+          ```
+
+          Reboot after installation. Future maintenance is handled through:
+
+          ```bash
+          awtarchy
+          ```
+
+          ## Existing Awtarchy users
+
+          Update normally with:
+
+          ```bash
+          awtarchy update
+          ```
+
+          Older installations that do not yet have the current `awtarchy` command can refresh it first:
+
+          ```bash
+          cd ~/awtarchy
+          git pull --ff-only
+          sudo ./awtarchy-install.sh
+          awtarchy update
+          ```
+
+          ## Included from the v3.1.2 post-release refresh
+
+          - Improved trackpad scrolling consistency across Awtarchy's scrollable Quickshell flyouts.
+          - Quick Settings, Network, Bluetooth, and Notifications use the shared responsive wheel/touchpad scrolling path across the full scrollable surface.
+          - Added the same shared scroll handling to the WireGuard profile list while leaving the already-responsive Application Menu and Clipboard History behavior unchanged.
+          - Application launcher learns launch frequency, similar to Fuzzel, so frequently launched applications naturally rise toward the top.
+          - Launch counts persist across sessions; typed fuzzy-search relevance still takes priority and unused applications remain alphabetical.
+
+          ## Fixes
+
+          - Fixed a false NVIDIA driver warning during update when a valid NVIDIA package was detected early in longer `pacman` output.
+          - Normal updates now preserve and merge only `.config/hypr/hyprland.lua`. Other Awtarchy-managed files update to the release copy, with locally modified files backed up before replacement.
+          - Removed the per-file managed-file conflict prompt from normal preserve-mode updates. Hyprland customizations remain protected while release-managed UI and helper files stay current.
+          - Quick Settings, Network, Bluetooth, Clipboard History, and Notification Center now use the same 140 ms OutCubic panel fade behavior as the Application Menu and honor the shared `Super+A` animation toggle.
+          - Fixed the transparent blur-only rectangle that could appear immediately before or after those flyouts. Their window lifecycle now matches the Application Menu so the panel fades cleanly without leaving a blurred window footprint during spawn or dismissal.
+
+          This release target was validated through the Awtarchy CI suite, including Bash syntax, ShellCheck, desktop-entry validation, managed-file history checks, flyout regression coverage, and updater/integration tests after the updater and flyout fixes.
+          EOF
+
+          if gh release view v3.1.3 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v3.1.3" --jq '.id')"
+            gh api \
+              --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+              --raw-field name='Awtarchy v3.1.3 Quickshell' \
+              --raw-field body="$(cat release-notes.md)" \
+              --raw-field target_commitish="$TARGET_SHA" >/dev/null
+            git tag -f v3.1.3 "$TARGET_SHA"
+            git push --force origin refs/tags/v3.1.3
+          else
+            gh release create v3.1.3 \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$TARGET_SHA" \
+              --title 'Awtarchy v3.1.3 Quickshell' \
+              --notes-file release-notes.md
+          fi
+
+          test "$(git ls-remote origin refs/tags/v3.1.3 | awk '{print $1}')" = "$TARGET_SHA"
+          gh release view v3.1.3 --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq '.targetCommitish' \
+            | grep -Fxq "$TARGET_SHA"
+          gh release view v3.1.3 --repo "$GITHUB_REPOSITORY" --json body --jq '.body' \
+            | grep -Fq 'Included from the v3.1.2 post-release refresh'
+          gh release view v3.1.3 --repo "$GITHUB_REPOSITORY" --json body --jq '.body' \
+            | grep -Fq 'transparent blur-only rectangle'
+
+      - name: Remove temporary publisher
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git rm -- .github/workflows/publish-v3-1-3-release.yml
+          git commit -m 'chore: remove v3.1.3 release publisher'
+          git push origin HEAD:main
