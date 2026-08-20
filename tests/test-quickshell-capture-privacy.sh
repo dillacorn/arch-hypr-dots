@@ -38,6 +38,7 @@ launcher="$QML_DIR/Launcher.qml"
 network_menu="$QML_DIR/NetworkMenu.qml"
 vpn_section="$QML_DIR/NetworkVpnSection.qml"
 bluetooth_menu="$QML_DIR/BluetoothMenu.qml"
+battery_menu="$QML_DIR/BatteryMenu.qml"
 quick_settings="$QML_DIR/QuickSettings.qml"
 clipboard_menu="$QML_DIR/ClipboardMenu.qml"
 notifications="$QML_DIR/Notifications.qml"
@@ -49,7 +50,7 @@ wireguard_helper="$SCRIPT_DIR/quickshell_wireguard.sh"
 
 for file in \
     "$capture_button" "$flyout_settings" "$launcher" "$network_menu" "$vpn_section" \
-    "$bluetooth_menu" "$quick_settings" "$clipboard_menu" "$notifications" \
+    "$bluetooth_menu" "$battery_menu" "$quick_settings" "$clipboard_menu" "$notifications" \
     "$shell_qml" "$numlock_tweak" "$runtime_rules" "$capture_lock" \
     "$wireguard_helper"; do
     require_file "$file"
@@ -62,12 +63,12 @@ require_contains "$capture_button" 'text: root.captureAllowed ? "" : ""'
 require_contains "$capture_button" 'property bool locked: false'
 require_contains "$capture_button" 'enabled: !root.locked'
 
-for file in "$launcher" "$clipboard_menu" "$notifications" "$quick_settings" "$network_menu" "$bluetooth_menu"; do
+for file in "$launcher" "$clipboard_menu" "$notifications" "$quick_settings" "$network_menu" "$bluetooth_menu" "$battery_menu"; do
     require_contains "$file" 'CaptureEyeButton {'
 done
 
 require_contains "$launcher" 'root.toggleCaptureAllowed();'
-for file in "$clipboard_menu" "$notifications" "$quick_settings" "$network_menu" "$bluetooth_menu"; do
+for file in "$clipboard_menu" "$notifications" "$quick_settings" "$network_menu" "$bluetooth_menu" "$battery_menu"; do
     require_contains "$file" 'onClicked: root.toggleCaptureAllowed()'
 done
 
@@ -77,11 +78,16 @@ require_not_contains "$launcher" 'Allow in screenshots and screen recordings'
 require_not_contains "$flyout_settings" 'Allow in screenshots and screen recordings'
 require_not_contains "$flyout_settings" 'NetworkVpnSection {'
 
-# Network and Bluetooth own their persisted capture state just like the other flyouts.
+# Connectivity and Battery own their persisted capture state just like the other flyouts.
 require_contains "$network_menu" 'readonly property bool captureAllowed:'
 require_contains "$network_menu" '["set-capture", "network", next ? "true" : "false"]'
 require_contains "$bluetooth_menu" 'readonly property bool captureAllowed:'
 require_contains "$bluetooth_menu" '["set-capture", "bluetooth", next ? "true" : "false"]'
+require_contains "$battery_menu" 'readonly property bool captureAllowed:'
+require_contains "$battery_menu" '["set-capture", "battery", next ? "true" : "false"]'
+require_contains "$runtime_rules" 'battery_protected=true'
+require_contains "$runtime_rules" 'capture_allowed battery && battery_protected=false'
+require_contains "$runtime_rules" 'awtarchy_battery_window_privacy_rule_v1:set_enabled(${battery_protected})'
 
 # VPN is fail-closed. The sensitive lock must be installed before vpnOpen becomes
 # true and the already-mapped Network window must be remapped before VPN content
