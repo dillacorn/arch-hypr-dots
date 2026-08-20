@@ -108,7 +108,7 @@ require_source "$APP_STATE" "battery) printf 'battery_views\\n'" \
   'application state helper cannot persist Battery flyout settings'
 require_source "$APP_STATE" 'clipboard|notifications|launcher|network|bluetooth|battery)' \
   'application state helper cannot persist Battery capture state'
-require_source "$BATTERY_MENU" '["save-flyout", "battery", activeMonitorName,' \
+require_source "$BATTERY_MENU" '"save-flyout", "battery", activeMonitorName,' \
   'Battery flyout does not save per-monitor display settings'
 require_source "$BATTERY_MENU" '["set-capture", "battery", next ? "true" : "false"]' \
   'Battery flyout does not persist capture visibility'
