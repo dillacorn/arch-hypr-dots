@@ -6,7 +6,11 @@ SCRIPT="${ROOT}/config/hypr/scripts/quickshell_battery_care.sh"
 CARE_CARD="${ROOT}/config/quickshell/awtarchy/BatteryCareCard.qml"
 POWER_CARD="${ROOT}/config/quickshell/awtarchy/PowerModeCard.qml"
 TMP="$(mktemp -d)"
-trap 'rm -rf -- "$TMP"' EXIT
+cleanup() {
+    chmod -R u+w -- "$TMP" 2>/dev/null || true
+    rm -rf -- "$TMP"
+}
+trap cleanup EXIT
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
@@ -134,7 +138,7 @@ assert_json "$json" '.stop_presets == [] and .stop_min == null and .stop_max == 
     'Lenovo 0/1 mode selectors were misreported as charge percentages'
 
 # Samsung also uses 0/1 control values, but TLP documents the actual battery-life
-# extender target as 80%, so Stage 3 may safely advertise 80%/100% choices.
+# extender target as 80%, so it may safely advertise 80%/100% choices.
 samsung_root="$TMP/samsung-power"
 make_battery "$samsung_root" BAT0
 cat >"$TMP/tlp-samsung" <<'EOF_TLP_SAMSUNG'
@@ -175,7 +179,7 @@ assert_json "$json" '.supported == true and .backend == "sysfs" and .mode == "sy
 assert_json "$json" '.batteries[0].name == "BAT1" and .batteries[0].stop_threshold == 85' \
     'sysfs fallback did not report the current threshold'
 
-# No exposed threshold interface means unsupported. Stage 3 must not claim a
+# No exposed threshold interface means unsupported. The detector must not claim a
 # control exists merely because a battery exists.
 unsupported_root="$TMP/unsupported-power"
 make_battery "$unsupported_root" BAT0
@@ -187,20 +191,20 @@ json="$(
 assert_json "$json" '.supported == false and .backend == "none" and .mode == "unsupported"' \
     'unsupported hardware was incorrectly advertised as charge-limit capable'
 
-# Stage 3 remains read-only and the Battery flyout consumes the detector through
-# a focused component hosted next to the existing Power Mode controls.
+# Capability detection itself remains unprivileged. The Battery Care card consumes
+# that detector while mutations are handled separately by the root-owned helper.
 require_source "$SCRIPT" 'AWTARCHY_POWER_SUPPLY_ROOT'
 require_source "$SCRIPT" 'AWTARCHY_TLP_STAT_BIN'
 require_source "$CARE_CARD" 'quickshell_battery_care.sh'
 require_source "$CARE_CARD" 'id: batteryCareReader'
 require_source "$CARE_CARD" 'JSON.parse(text.trim() || "{}")'
 require_source "$CARE_CARD" 'text: "Battery Health"'
-require_source "$CARE_CARD" 'Read-only detection'
+require_source "$CARE_CARD" 'text: "Battery Care"'
 require_source "$POWER_CARD" 'BatteryCareCard {'
 
 if grep -Eq '(^|[[:space:]])(sudo|pkexec)([[:space:]]|$)' "$SCRIPT" \
     || grep -Fq 'tlp setcharge' "$SCRIPT"; then
-    fail 'Stage 3 detector contains a privileged charge-write path'
+    fail 'battery capability detector contains a privileged charge-write path'
 fi
 
 printf '%s\n' 'Battery charge-limit capability detection regression tests passed.'
