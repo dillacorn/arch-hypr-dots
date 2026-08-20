@@ -3,7 +3,8 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="${ROOT}/config/hypr/scripts/quickshell_battery_care.sh"
-MENU="${ROOT}/config/quickshell/awtarchy/BatteryMenu.qml"
+CARE_CARD="${ROOT}/config/quickshell/awtarchy/BatteryCareCard.qml"
+POWER_CARD="${ROOT}/config/quickshell/awtarchy/PowerModeCard.qml"
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 
@@ -38,7 +39,8 @@ make_battery() {
 }
 
 require_file "$SCRIPT"
-require_file "$MENU"
+require_file "$CARE_CARD"
+require_file "$POWER_CARD"
 command -v jq >/dev/null 2>&1 || fail 'jq is required'
 
 # Range-capable hardware: TLP is authoritative for vendor-specific writable ranges,
@@ -128,14 +130,16 @@ json="$(
 assert_json "$json" '.supported == false and .backend == "none" and .mode == "unsupported"' \
     'unsupported hardware was incorrectly advertised as charge-limit capable'
 
-# Stage 3 remains read-only and BatteryMenu consumes the detector asynchronously.
+# Stage 3 remains read-only and the Battery flyout consumes the detector through
+# a focused component hosted next to the existing Power Mode controls.
 require_source "$SCRIPT" 'AWTARCHY_POWER_SUPPLY_ROOT'
 require_source "$SCRIPT" 'AWTARCHY_TLP_STAT_BIN'
-require_source "$MENU" 'quickshell_battery_care.sh'
-require_source "$MENU" 'id: batteryCareReader'
-require_source "$MENU" 'JSON.parse(text.trim() || "{}")'
-require_source "$MENU" 'text: "Battery Health"'
-require_source "$MENU" 'Stage 3 is read-only'
+require_source "$CARE_CARD" 'quickshell_battery_care.sh'
+require_source "$CARE_CARD" 'id: batteryCareReader'
+require_source "$CARE_CARD" 'JSON.parse(text.trim() || "{}")'
+require_source "$CARE_CARD" 'text: "Battery Health"'
+require_source "$CARE_CARD" 'Read-only detection'
+require_source "$POWER_CARD" 'BatteryCareCard {'
 
 if grep -Eq '(^|[[:space:]])sudo([[:space:]]|$)|tlp[[:space:]]+setcharge|charge_control_(start|end)_threshold[^\n]*>' "$SCRIPT"; then
     fail 'Stage 3 detector contains a privileged or threshold-write path'
