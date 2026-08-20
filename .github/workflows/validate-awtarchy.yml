@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
@@ -191,6 +191,35 @@ jobs:
           } | LC_ALL=C sort | while IFS= read -r path; do
             printf '%s\t.%s\n' "$(sha256sum "$path" | awk '{print $1}')" "$path"
           done
+      - name: Refresh managed history
+        if: github.event_name == 'pull_request' && github.head_ref == 'post-v3.1.3-battery-flyout-testing'
+        run: |
+          branch="$GITHUB_HEAD_REF"
+          manifest="local/share/awtarchy/quickshell-managed-history.sha256"
+          git checkout -B "$branch" "origin/$branch"
+          current="$(mktemp)"
+          {
+            find config/quickshell/awtarchy -maxdepth 1 -type f -print
+            find config/hypr/scripts -maxdepth 1 -type f \
+              \( -name 'quickshell*' -o -name 'ddc_brightness.sh' -o -name 'hypr-ddc-brightness.sh' \) -print
+          } | LC_ALL=C sort | while IFS= read -r path; do
+            printf '%s\t.%s\n' "$(sha256sum "$path" | awk '{print $1}')" "$path"
+          done >"$current"
+          missing="$(mktemp)"
+          while IFS= read -r entry; do
+            grep -Fqx -- "$entry" "$manifest" || printf '%s\n' "$entry" >>"$missing"
+          done <"$current"
+          if [[ -s "$missing" ]]; then
+            {
+              printf '\n%s\n' '# 2026-08-20 Battery flyout and battery-care stock hashes.'
+              cat "$missing"
+            } >>"$manifest"
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$manifest"
+            git commit -m 'chore: refresh battery managed hashes'
+            git push origin "HEAD:$branch"
+          fi
       - name: Command and updater integration tests
         run: |
           no_sudo_bin="$(mktemp -d)"
