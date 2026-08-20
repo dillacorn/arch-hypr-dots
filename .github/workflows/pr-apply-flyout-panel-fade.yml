@@ -21,6 +21,30 @@ jobs:
         shell: bash
         run: |
           python3 tools/tmp_apply_flyout_fade.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('tests/test-flyout-toggle-debounce.sh')
+          text = path.read_text()
+          text, count = re.subn(
+              r'require_source "\$MANAGER" \\\n'
+              r"  'property int windowLookupRevision: 0' \\\n"
+              r"  'managed flyout window lookup has no lifecycle refresh revision'\n"
+              r'require_source "\$MANAGER" \\\n'
+              r"  'const dependency = windowLookupRevision;' \\\n"
+              r"  'managed flyout title lookup does not depend on the lifecycle refresh revision'\n"
+              r'require_source "\$MANAGER" \\\n'
+              r"  'windowLookupRevision\+\+;' \\\n"
+              r"  'claiming a flyout does not refresh managed window bindings before show'\n\n",
+              '',
+              text,
+              count=1,
+          )
+          if count != 1:
+              raise RuntimeError('obsolete manager lifecycle assertions not found')
+          path.write_text(text)
+          PY
           bash -n tests/test-flyout-toggle-debounce.sh
           bash tests/test-flyout-toggle-debounce.sh
           git diff --check
