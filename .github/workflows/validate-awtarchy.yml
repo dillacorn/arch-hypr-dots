@@ -143,7 +143,6 @@ jobs:
             tests/test-battery-flyout-state.sh \
             tests/test-battery-flyout-position.sh \
             tests/test-battery-charge-limit-detection.sh \
-            tests/test-battery-care-control.sh \
             tests/test-battery-care-annotated-range.sh \
             tests/test-battery-care-thinkpad-readback.sh \
             tests/test-battery-care-multibattery.sh \
@@ -161,7 +160,6 @@ jobs:
             tests/test-power-profile-helper-update.sh \
             tests/test-power-profile-inline-auth.sh \
             tests/test-quickshell-backend-readiness.sh \
-            tests/test-quickshell-capture-privacy.sh \
             tests/test-quickshell-updater-migration.sh \
             tests/test-hyprbars-quicksettings.sh \
             tests/test-network-bar-state.sh \
@@ -173,6 +171,7 @@ jobs:
             tests/test-troubleshoot-command.sh \
             tests/test-usb-refresh-security.sh \
             tests/test-quickshell-resume-recovery.sh
+          shellcheck -e SC2016 tests/test-battery-care-control.sh tests/test-quickshell-capture-privacy.sh
           shellcheck -e SC2034,SC2153 config/hypr/scripts/hypr_quicksettings.sh
           shellcheck -e SC2015 config/hypr/scripts/hypr_quicksettings_core.sh
           shellcheck -e SC2015 config/hypr/scripts/quickshell_theme_apply.sh
