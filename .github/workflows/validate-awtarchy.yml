@@ -2,7 +2,7 @@ name: Validate Awtarchy
 
 on:
   push:
-    branches: [main]
+    branches: [main, post-v3.1.3-battery-flyout-testing]
   pull_request:
   workflow_dispatch:
 
