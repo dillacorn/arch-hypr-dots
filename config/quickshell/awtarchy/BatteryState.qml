@@ -19,6 +19,9 @@ Singleton {
     readonly property real energyWh: available ? validNonNegative(device.energy) : 0
     readonly property real energyCapacityWh: available ? validNonNegative(device.energyCapacity) : 0
     readonly property real changeRateWatts: available ? validNumber(device.changeRate) : 0
+    readonly property bool healthSupported: available && Boolean(device.healthSupported)
+    readonly property int healthPercentage: healthSupported
+        ? Math.max(0, Math.min(100, Math.round(validNonNegative(device.healthPercentage)))) : 0
     readonly property bool charging: available && (state === UPowerDeviceState.Charging
         || (pluggedIn && timeToFullSeconds > 0 && percentage < 100))
     readonly property bool pendingCharge: available && state === UPowerDeviceState.PendingCharge
