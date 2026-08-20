@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-SCRIPT="${ROOT}/config/hypr/scripts/quickshell_battery_care.sh"
+SCRIPT="${ROOT}/config/hypr/scripts/quickshell_battery_health.sh"
 CARD="${ROOT}/config/quickshell/awtarchy/BatteryCareCard.qml"
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
@@ -26,54 +26,41 @@ make_battery() {
 }
 
 command -v jq >/dev/null 2>&1 || fail 'jq is required'
+[[ -f "$SCRIPT" ]] || fail 'battery health detector is missing'
 
-# energy_* is the preferred laptop battery capacity source because it allows
-# human-readable Wh reporting as well as the health ratio.
+# energy_* is preferred because it gives both a health ratio and useful Wh
+# values such as the Sony test laptop's 25.3 Wh full vs 62.6 Wh design.
 energy_root="$TMP/energy"
 make_battery "$energy_root"
 printf '%s\n' 25330000 >"$energy_root/BAT0/energy_full"
 printf '%s\n' 62640000 >"$energy_root/BAT0/energy_full_design"
-json="$(
-    AWTARCHY_POWER_SUPPLY_ROOT="$energy_root" \
-    AWTARCHY_TLP_STAT_BIN="$TMP/no-tlp" \
-    bash "$SCRIPT" --status-json
-)"
-assert_json "$json" '.health.supported == true and .health.source == "sysfs-energy"' \
+json="$(AWTARCHY_POWER_SUPPLY_ROOT="$energy_root" bash "$SCRIPT" --status-json)"
+assert_json "$json" '.supported == true and .source == "sysfs-energy"' \
     'energy capacity health fallback was not detected'
-assert_json "$json" '.health.percentage == 40' \
+assert_json "$json" '.percentage == 40' \
     'energy capacity health percentage was not rounded correctly'
-assert_json "$json" '.health.full_wh == 25.33 and .health.design_wh == 62.64' \
+assert_json "$json" '.full_wh == 25.33 and .design_wh == 62.64' \
     'energy capacity Wh values were not exposed'
 
 # Some drivers expose charge_* rather than energy_*. The ratio remains valid
-# even when voltage data is unavailable, so report the percentage without
-# pretending the values are watt-hours.
+# without inventing watt-hours when voltage data is unavailable.
 charge_root="$TMP/charge"
 make_battery "$charge_root"
 printf '%s\n' 4500000 >"$charge_root/BAT0/charge_full"
 printf '%s\n' 6000000 >"$charge_root/BAT0/charge_full_design"
-json="$(
-    AWTARCHY_POWER_SUPPLY_ROOT="$charge_root" \
-    AWTARCHY_TLP_STAT_BIN="$TMP/no-tlp" \
-    bash "$SCRIPT" --status-json
-)"
-assert_json "$json" '.health.supported == true and .health.source == "sysfs-charge"' \
+json="$(AWTARCHY_POWER_SUPPLY_ROOT="$charge_root" bash "$SCRIPT" --status-json)"
+assert_json "$json" '.supported == true and .source == "sysfs-charge"' \
     'charge capacity health fallback was not detected'
-assert_json "$json" '.health.percentage == 75 and .health.full_ah == 4.5 and .health.design_ah == 6' \
+assert_json "$json" '.percentage == 75 and .full_ah == 4.5 and .design_ah == 6' \
     'charge capacity health values were not exposed correctly'
 
-# Invalid or unavailable design capacity must fail closed instead of fabricating
-# a battery-health percentage.
+# Invalid design capacity must fail closed instead of fabricating a percentage.
 invalid_root="$TMP/invalid"
 make_battery "$invalid_root"
 printf '%s\n' 25000000 >"$invalid_root/BAT0/energy_full"
 printf '%s\n' 0 >"$invalid_root/BAT0/energy_full_design"
-json="$(
-    AWTARCHY_POWER_SUPPLY_ROOT="$invalid_root" \
-    AWTARCHY_TLP_STAT_BIN="$TMP/no-tlp" \
-    bash "$SCRIPT" --status-json
-)"
-assert_json "$json" '.health.supported == false and .health.percentage == null' \
+json="$(AWTARCHY_POWER_SUPPLY_ROOT="$invalid_root" bash "$SCRIPT" --status-json)"
+assert_json "$json" '.supported == false and .percentage == null' \
     'invalid design capacity produced fake health data'
 
 grep -Fq 'text: "Battery Care"' "$CARD" \
@@ -84,6 +71,8 @@ grep -Fq 'Capacity health:' "$CARD" \
     || fail 'BatteryCareCard does not present physical capacity health'
 grep -Fq 'BatteryState.healthSupported' "$CARD" \
     || fail 'BatteryCareCard does not prefer native UPower health when available'
+grep -Fq 'quickshell_battery_health.sh' "$CARD" \
+    || fail 'BatteryCareCard does not load the sysfs health fallback'
 
 if grep -Eq '(^|[[:space:]])(sudo|pkexec)([[:space:]]|$)' "$SCRIPT"; then
     fail 'read-only battery health detection contains a privileged path'
