@@ -2,10 +2,9 @@
 set -Eeuo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
-HELPER="${ROOT}/local/libexec/awtarchy/battery-care-helper"
+HELPER="${ROOT}/local/libexec/awtarchy/power-profile-helper"
 DETECTOR="${ROOT}/config/hypr/scripts/quickshell_battery_care.sh"
 CARD="${ROOT}/config/quickshell/awtarchy/BatteryCareCard.qml"
-RECONCILER="${ROOT}/local/share/awtarchy/awtarchy-power-profile.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 
@@ -31,7 +30,6 @@ require_absent() {
 require_file "$HELPER"
 require_file "$DETECTOR"
 require_file "$CARD"
-require_file "$RECONCILER"
 
 require_source "$HELPER" 'TLP="/usr/bin/tlp"' 'helper does not pin the TLP executable'
 require_source "$HELPER" 'TLP_STAT="/usr/bin/tlp-stat"' 'helper does not pin tlp-stat'
@@ -44,17 +42,13 @@ require_source "$HELPER" 'verify_enabled_state' 'helper does not read back enabl
 require_source "$HELPER" 'verify_disabled_state' 'helper does not read back disabled state'
 require_absent "$HELPER" 'charge_control_end_threshold" >' 'helper writes battery sysfs directly'
 require_absent "$HELPER" 'charge_control_start_threshold" >' 'helper writes battery sysfs directly'
-require_absent "$RECONCILER" 'NOPASSWD: /usr/local/libexec/awtarchy/battery-care-helper' 'battery helper is passwordless'
-require_source "$RECONCILER" 'BATTERY_CARE_HELPER_SOURCE="${REPO_ROOT}/local/libexec/awtarchy/battery-care-helper"' 'reconciler does not own battery helper deployment'
-require_source "$RECONCILER" 'BATTERY_CARE_HELPER_DESTINATION="/usr/local/libexec/awtarchy/battery-care-helper"' 'battery helper destination is not fixed'
-require_source "$RECONCILER" 'install_battery_care_helper' 'battery helper is not installed/repaired during laptop reconciliation'
 
-require_source "$CARD" 'batteryCareHelper: "/usr/local/libexec/awtarchy/battery-care-helper"' 'Battery Health UI does not use the fixed helper path'
+require_source "$CARD" 'batteryCareHelper: "/usr/local/libexec/awtarchy/power-profile-helper"' 'Battery Health UI does not use the installed Power Mode helper'
 require_source "$CARD" '"/usr/bin/sudo", "-S", "-p", ""' 'Battery Health UI is missing explicit sudo authorization'
 require_source "$CARD" 'property int targetDraft: 80' 'Battery Health UI default target is not 80%'
-require_source "$CARD" 'root.pendingAction = "disable"' 'Battery Health UI has no OFF path'
-require_source "$CARD" 'root.pendingAction = "enable-fixed"' 'Battery Health UI has no fixed conservation-mode path'
-require_source "$CARD" 'root.pendingAction = "set"' 'Battery Health UI has no target-setting path'
+require_source "$CARD" 'root.pendingAction = "battery-disable"' 'Battery Health UI has no OFF path'
+require_source "$CARD" 'root.pendingAction = "battery-enable-fixed"' 'Battery Health UI has no fixed conservation-mode path'
+require_source "$CARD" 'root.pendingAction = "battery-set"' 'Battery Health UI has no target-setting path'
 require_absent "$CARD" 'charge_control_end_threshold' 'QML writes battery threshold sysfs directly'
 require_absent "$CARD" 'tlp setcharge' 'QML bypasses the privileged helper with tlp setcharge'
 
@@ -63,7 +57,7 @@ require_source "$DETECTOR" 'managed_config' 'detector does not expose Awtarchy-m
 require_source "$DETECTOR" 'enabled' 'detector does not expose observed charge-limit state'
 require_source "$DETECTOR" 'target' 'detector does not expose observed target'
 
-TEST_HELPER="$TMP/battery-care-helper"
+TEST_HELPER="$TMP/power-profile-helper"
 cp -- "$HELPER" "$TEST_HELPER"
 chmod 0755 "$TEST_HELPER"
 FAKE_BIN="$TMP/bin"
@@ -206,7 +200,7 @@ run_helper() {
     "$TEST_HELPER" "$@"
 }
 
-run_helper set 80
+run_helper battery-set 80
 MANAGED="$CONF_DIR/00-awtarchy-battery-care.conf"
 grep -Fxq 'START_CHARGE_THRESH_BAT0=75' "$MANAGED" || fail 'Dell start threshold was not derived as target-5'
 grep -Fxq 'STOP_CHARGE_THRESH_BAT0=80' "$MANAGED" || fail 'Dell stop threshold was not persisted'
@@ -215,41 +209,41 @@ grep -Fxq 'STOP_CHARGE_THRESH_BAT1=80' "$MANAGED" || fail 'Dell BAT1 stop thresh
 grep -Fxq 'start' "$LOG" || fail 'TLP start was not used to apply persistent thresholds'
 
 printf '%s\n' 'STOP_CHARGE_THRESH_BAT0=70' >"$CONF_DIR/10-user.conf"
-if run_helper set 85 >"$TMP/conflict.out" 2>"$TMP/conflict.err"; then fail 'external TLP thresholds were overwritten'; fi
+if run_helper battery-set 85 >"$TMP/conflict.out" 2>"$TMP/conflict.err"; then fail 'external TLP thresholds were overwritten'; fi
 grep -Fq 'Existing user-managed TLP charge thresholds' "$TMP/conflict.err" || fail 'config conflict was not explained'
 grep -Fxq 'STOP_CHARGE_THRESH_BAT0=80' "$MANAGED" || fail 'managed threshold changed despite external-config conflict'
 rm -f -- "$CONF_DIR/10-user.conf"
 
-if run_helper set 40 >"$TMP/range.out" 2>"$TMP/range.err"; then fail 'out-of-range Dell target was accepted'; fi
+if run_helper battery-set 40 >"$TMP/range.out" 2>"$TMP/range.err"; then fail 'out-of-range Dell target was accepted'; fi
 grep -Fq 'outside supported stop range' "$TMP/range.err" || fail 'out-of-range error was not specific'
 
 printf '%s\n' 'plugin=sony' 'target=100' 'enabled=0' 'start=0' >"$STATE"
 rm -f -- "$MANAGED"
-if run_helper set 70 >"$TMP/preset.out" 2>"$TMP/preset.err"; then fail 'unsupported Sony preset was accepted'; fi
-run_helper set 80
+if run_helper battery-set 70 >"$TMP/preset.out" 2>"$TMP/preset.err"; then fail 'unsupported Sony preset was accepted'; fi
+run_helper battery-set 80
 grep -Fxq 'START_CHARGE_THRESH_BAT0=0' "$MANAGED" || fail 'stop-only hardware did not use dummy start threshold'
 grep -Fxq 'STOP_CHARGE_THRESH_BAT0=80' "$MANAGED" || fail 'Sony 80% preset was not persisted'
 
 printf '%s\n' 'plugin=tuxedo' 'target=100' 'enabled=0' 'start=95' >"$STATE"
 rm -f -- "$MANAGED"
-run_helper set 80
+run_helper battery-set 80
 grep -Fxq 'START_CHARGE_THRESH_BAT0=70' "$MANAGED" || fail 'Tuxedo supported start threshold was not selected'
 grep -Fxq 'STOP_CHARGE_THRESH_BAT0=80' "$MANAGED" || fail 'Tuxedo stop preset was not persisted'
 
 printf '%s\n' 'plugin=lenovo' 'target=100' 'enabled=0' 'start=0' >"$STATE"
 rm -f -- "$MANAGED"
-run_helper enable-fixed
+run_helper battery-enable-fixed
 grep -Fxq 'START_CHARGE_THRESH_BAT0=0' "$MANAGED" || fail 'Lenovo dummy start threshold missing'
 grep -Fxq 'STOP_CHARGE_THRESH_BAT0=1' "$MANAGED" || fail 'Lenovo Long_Life selector was not persisted'
 grep -Fq 'enabled=1' "$STATE" || fail 'Lenovo fixed mode was not read back as enabled'
 
 printf '%s\n' 'plugin=samsung' 'target=100' 'enabled=0' 'start=0' >"$STATE"
 rm -f -- "$MANAGED"
-run_helper set 80
+run_helper battery-set 80
 grep -Fxq 'STOP_CHARGE_THRESH_BAT0=1' "$MANAGED" || fail 'Samsung 80% target was not translated to extender=1'
 grep -Fq 'target=80' "$STATE" || fail 'Samsung 80% state was not verified'
 
-run_helper disable
+run_helper battery-disable
 [[ ! -e "$MANAGED" ]] || fail 'disable left Awtarchy threshold persistence behind'
 grep -Fxq 'fullcharge' "$LOG" || fail 'disable did not restore vendor defaults with tlp fullcharge'
 grep -Fq 'enabled=0' "$STATE" || fail 'disabled state was not read back'
@@ -271,7 +265,7 @@ p = Path(sys.argv[1])
 s = p.read_text().replace('target="$stop"\n          start=', 'target=77\n          start=')
 p.write_text(s)
 PY
-if run_helper set 85 >"$TMP/readback.out" 2>"$TMP/readback.err"; then fail 'helper reported success when hardware readback disagreed'; fi
+if run_helper battery-set 85 >"$TMP/readback.out" 2>"$TMP/readback.err"; then fail 'helper reported success when hardware readback disagreed'; fi
 grep -Fq 'hardware read-back verification failed' "$TMP/readback.err" || fail 'readback failure was not explained'
 grep -Fxq 'STOP_CHARGE_THRESH_BAT0=80' "$MANAGED" || fail 'previous managed config was not restored after readback failure'
 
