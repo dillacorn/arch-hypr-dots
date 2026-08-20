@@ -44,8 +44,11 @@ curl_args() {
 # These globals are consumed by the dynamically extracted function below.
 # shellcheck disable=SC2034
 REPO_OWNER=dillacorn
+# shellcheck disable=SC2034
 REPO_NAME=awtarchy
+# shellcheck disable=SC2034
 UPDATER_BRANCH=main
+# shellcheck disable=SC2034
 CURL_ARGS=()
 
 eval "$function_text"
