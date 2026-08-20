@@ -134,6 +134,16 @@ Parameter value range:
 /sys/class/power_supply/BAT0/charge_types = $([[ $enabled == 1 ]] && printf 'Standard [Long_Life]' || printf '[Standard] Long_Life')
 EOF
     ;;
+  lg)
+    cat <<EOF
++++ Battery Care
+Plugin: lg
+Supported features: charge threshold
+Parameter value range:
+* STOP_CHARGE_THRESH_BAT0: 80(on), 100(off)
+/sys/class/power_supply/BAT0/charge_control_end_threshold = ${target} [%]
+EOF
+    ;;
   samsung)
     cat <<EOF
 +++ Battery Care
@@ -165,6 +175,10 @@ case "${1:-}" in
       case "$plugin" in
         lenovo)
           enabled="$stop"
+          ;;
+        lg)
+          target=$([[ "$stop" == 1 ]] && printf 80 || printf 100)
+          enabled=$([[ "$target" -lt 100 ]] && printf 1 || printf 0)
           ;;
         samsung)
           enabled="$stop"
@@ -236,6 +250,13 @@ run_helper battery-enable-fixed
 grep -Fxq 'START_CHARGE_THRESH_BAT0=0' "$MANAGED" || fail 'Lenovo dummy start threshold missing'
 grep -Fxq 'STOP_CHARGE_THRESH_BAT0=1' "$MANAGED" || fail 'Lenovo Long_Life selector was not persisted'
 grep -Fq 'enabled=1' "$STATE" || fail 'Lenovo fixed mode was not read back as enabled'
+
+printf '%s\n' 'plugin=lg' 'target=100' 'enabled=0' 'start=0' >"$STATE"
+rm -f -- "$MANAGED"
+run_helper battery-set 80
+grep -Fxq 'START_CHARGE_THRESH_BAT0=0' "$MANAGED" || fail 'LG dummy start threshold missing'
+grep -Fxq 'STOP_CHARGE_THRESH_BAT0=1' "$MANAGED" || fail 'LG 80% target was not translated to battery-care selector 1'
+grep -Fq 'target=80' "$STATE" || fail 'LG 80% state was not verified'
 
 printf '%s\n' 'plugin=samsung' 'target=100' 'enabled=0' 'start=0' >"$STATE"
 rm -f -- "$MANAGED"
