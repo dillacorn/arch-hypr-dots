@@ -219,7 +219,7 @@ Rectangle {
         }
         if ((mode === "fixed" || mode === "presets")
             && numericTargets().length > 0) {
-            return "Supported health targets: " + numericTargets().map(value => value + "%").join(", ");
+            return "Supported charge targets: " + numericTargets().map(value => value + "%").join(", ");
         }
         return String(statusData.detail || "");
     }
