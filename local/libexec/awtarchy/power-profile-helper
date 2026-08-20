@@ -353,6 +353,18 @@ verify_enabled_state() {
     huawei)
       /usr/bin/grep -Eq "charge_control_thresholds[^=]*=[[:space:]]*[0-9]+[[:space:]]+${expected}([^0-9]|$)" <<<"$report"
       ;;
+    thinkpad|thinkpad-legacy)
+      # Some ThinkPad E/L/S/Yoga EC firmware reports a different threshold than
+      # the value actually accepted. TLP documents this as a firmware display
+      # quirk. Verify that every reported stop threshold is actively below full
+      # charge instead of falsely rolling back a valid configured target.
+      while IFS= read -r value; do
+        [[ -n "$value" ]] || continue
+        found=1
+        (( value >= 1 && value < 100 )) || return 1
+      done < <(battery_observed_stop_values "$report")
+      (( found == 1 ))
+      ;;
     *)
       while IFS= read -r value; do
         [[ -n "$value" ]] || continue
