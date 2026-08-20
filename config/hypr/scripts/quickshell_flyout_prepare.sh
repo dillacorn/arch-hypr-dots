@@ -64,6 +64,10 @@ case "$surface" in
         title='Awtarchy Bluetooth'
         layout='corner'
         ;;
+    battery)
+        title='Awtarchy Battery'
+        layout='corner'
+        ;;
     *) usage ;;
 esac
 
