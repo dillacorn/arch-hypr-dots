@@ -379,26 +379,23 @@ updater_branch_head() {
   have python3 || return 1
   curl_args api
 
-  local json=""
-  json="$(curl "${CURL_ARGS[@]}" \
-    "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/commits/${UPDATER_BRANCH}")" \
-    || return 1
-
-  python3 - "$json" <<'PY'
+  curl "${CURL_ARGS[@]}" \
+    "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/commits/${UPDATER_BRANCH}" \
+    | python3 -c '
 import json
 import re
 import sys
 
 try:
-    payload = json.loads(sys.argv[1])
-except (IndexError, json.JSONDecodeError):
+    payload = json.load(sys.stdin)
+except (TypeError, json.JSONDecodeError):
     raise SystemExit(1)
 
 revision = str(payload.get("sha") or "").strip().lower()
 if not re.fullmatch(r"[0-9a-f]{40}", revision):
     raise SystemExit(1)
 print(revision)
-PY
+'
 }
 
 urlencode_ref() {

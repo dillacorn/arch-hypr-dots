@@ -97,6 +97,7 @@ jobs:
           bash -n tests/test-security-boundaries.sh
           bash -n tests/test-quickshell-theme-legacy-micro.sh
           bash -n tests/test-troubleshoot-command.sh
+          bash -n tests/test-updater-large-main-json.sh
           bash -n tests/test-usb-refresh-security.sh
           bash -n tests/test-quickshell-resume-recovery.sh
           python3 -m py_compile local/libexec/awtarchy/wireguard-helper
@@ -169,6 +170,7 @@ jobs:
             tests/test-security-boundaries.sh \
             tests/test-quickshell-theme-legacy-micro.sh \
             tests/test-troubleshoot-command.sh \
+            tests/test-updater-large-main-json.sh \
             tests/test-usb-refresh-security.sh \
             tests/test-quickshell-resume-recovery.sh
           shellcheck -e SC2016 tests/test-battery-care-control.sh tests/test-quickshell-capture-privacy.sh
@@ -229,5 +231,6 @@ jobs:
           bash tests/test-security-boundaries.sh
           bash tests/test-quickshell-theme-legacy-micro.sh
           bash tests/test-troubleshoot-command.sh
+          bash tests/test-updater-large-main-json.sh
           bash tests/test-usb-refresh-security.sh
           bash tests/test-quickshell-resume-recovery.sh
