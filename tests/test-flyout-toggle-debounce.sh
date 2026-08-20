@@ -37,6 +37,9 @@ require_source "${QML_DIR}/NetworkMenu.qml" \
 require_source "${QML_DIR}/BluetoothMenu.qml" \
   'FlyoutManager.acceptToggle("bluetooth")' \
   'Bluetooth flyout bypasses the toggle gate'
+require_source "${QML_DIR}/BatteryMenu.qml" \
+  'FlyoutManager.acceptToggle("battery")' \
+  'Battery flyout bypasses the toggle gate'
 require_source "${QML_DIR}/ClipboardMenu.qml" \
   'FlyoutManager.acceptToggle("clipboard")' \
   'clipboard flyout bypasses the toggle gate'
@@ -78,7 +81,7 @@ require_source "$MANAGER" \
 require_source "$MANAGER" \
   'watchChanges: true' \
   'shared animation-state file is not watched for Super+A changes'
-for flyout in QuickSettings.qml NetworkMenu.qml BluetoothMenu.qml ClipboardMenu.qml Notifications.qml; do
+for flyout in QuickSettings.qml NetworkMenu.qml BluetoothMenu.qml BatteryMenu.qml ClipboardMenu.qml Notifications.qml; do
   path="${QML_DIR}/${flyout}"
   require_source "$path" 'property bool panelPresented: false' \
     "${flyout} is missing local panel presentation state"
@@ -107,6 +110,7 @@ for flyout in QuickSettings.qml NetworkMenu.qml BluetoothMenu.qml ClipboardMenu.
     QuickSettings.qml) window_id='quickSettingsWindow' ;;
     NetworkMenu.qml) window_id='networkWindow' ;;
     BluetoothMenu.qml) window_id='bluetoothWindow' ;;
+    BatteryMenu.qml) window_id='batteryWindow' ;;
     ClipboardMenu.qml) window_id='clipboardWindow' ;;
     Notifications.qml) window_id='centerWindow' ;;
   esac
