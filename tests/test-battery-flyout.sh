@@ -50,6 +50,8 @@ require_source "$BATTERY_STATE" 'readonly property bool healthSupported:' \
   'battery state does not expose UPower battery-health capability'
 require_source "$BATTERY_STATE" 'readonly property int healthPercentage:' \
   'battery state does not expose battery health percentage'
+require_source "$BATTERY_MENU" 'readonly property bool available: BatteryState.available' \
+  'battery flyout does not track shared availability'
 require_source "$BATTERY_MENU" 'BatteryState.percentage' \
   'battery flyout does not use the shared battery percentage'
 require_source "$BATTERY_MENU" 'BatteryState.barTooltip' \
@@ -114,9 +116,9 @@ require_source "$POSITION" $'    battery)\n        title=\x27Awtarchy Battery\x2
   'post-map flyout positioning does not recognize Battery'
 require_source "$RUNTIME_RULES" 'capture_allowed battery && battery_protected=false' \
   'Battery capture state is not applied to runtime rules'
-require_source "$RUNTIME_RULES" 'match = { title = "^Awtarchy Battery$" }' \
+require_source "$RUNTIME_RULES" 'match = { title = \"^Awtarchy Battery$\" }' \
   'Battery capture privacy window rule is missing'
-require_source "$RUNTIME_RULES" 'Awtarchy Battery' \
+require_source "$RUNTIME_RULES" '^Awtarchy (Clipboard History|Notification Center|Quick Settings|Network|Bluetooth|Battery)$' \
   'Battery is absent from shared floating flyout runtime rules'
 require_source "$RUNTIME_RULES" '["Awtarchy Battery"] = "battery"' \
   'outside-click/Escape runtime handler cannot close Battery'
