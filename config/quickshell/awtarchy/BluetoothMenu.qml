@@ -30,6 +30,9 @@ Singleton {
     })
     property var stateCommandQueue: []
     property bool openPreparing: false
+    property bool panelPresented: false
+    property bool closeFadePending: false
+    readonly property int panelFadeDuration: 140
     property var flyoutScreen: null
 
     readonly property var adapters: Bluetooth.adapters
@@ -269,7 +272,15 @@ Singleton {
         const wasVisible = bluetoothWindow.visible;
 
         openPreparing = false;
+        closeFadeTimer.stop();
+        closeFadePending = false;
+        if (!wasVisible)
+            panelPresented = false;
         bluetoothWindow.visible = true;
+        if (!wasVisible)
+            Qt.callLater(() => root.panelPresented = true);
+        else
+            panelPresented = true;
         if (wasVisible)
             Qt.callLater(() => root.positionWindow());
         const current = adapter;
@@ -448,6 +459,26 @@ Singleton {
         openPreparing = false;
         if (prepareProcess.running)
             prepareProcess.running = false;
+        if (closeFadePending)
+            return;
+        if (bluetoothWindow.visible
+            && FlyoutManager.animationsEnabled
+            && panelPresented) {
+            closeFadePending = true;
+            panelPresented = false;
+            closeFadeTimer.restart();
+            return;
+        }
+        completeClose();
+    }
+
+    function completeClose() {
+        closeFadeTimer.stop();
+        closeFadePending = false;
+        panelPresented = false;
+        openPreparing = false;
+        if (prepareProcess.running)
+            prepareProcess.running = false;
         if (settingsDirty)
             discardDraft();
         bluetoothWindow.visible = false;
@@ -556,6 +587,13 @@ Singleton {
         function close(): void { root.close(); }
     }
 
+    Timer {
+        id: closeFadeTimer
+        interval: root.panelFadeDuration + 10
+        repeat: false
+        onTriggered: root.completeClose()
+    }
+
     FloatingWindow {
         id: bluetoothWindow
         visible: false
@@ -575,6 +613,15 @@ Singleton {
 
         Rectangle {
             id: panel
+            opacity: root.panelPresented ? 1 : 0
+
+            Behavior on opacity {
+                enabled: FlyoutManager.animationsEnabled
+                NumberAnimation {
+                    duration: root.panelFadeDuration
+                    easing.type: Easing.OutCubic
+                }
+            }
             anchors.fill: parent
             color: Theme.popupBackground
             border.width: 0
