@@ -648,12 +648,6 @@ Singleton {
                                 }
                             }
 
-                            BatteryCareCard {
-                                active: batteryWindow.visible
-                                textScale: root.effectiveTextScale
-                                iconScale: root.effectiveIconScale
-                            }
-
                             PowerModeCard {
                                 presentationEnabled: true
                                 active: batteryWindow.visible
