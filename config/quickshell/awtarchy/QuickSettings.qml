@@ -46,7 +46,6 @@ Singleton {
     property bool privacyRemapPending: false
     property bool openPreparing: false
     property bool panelPresented: false
-    property bool closeFadePending: false
     readonly property int panelFadeDuration: 140
     property var flyoutScreen: null
 
@@ -188,15 +187,8 @@ Singleton {
         const wasVisible = quickSettingsWindow.visible;
 
         openPreparing = false;
-        closeFadeTimer.stop();
-        closeFadePending = false;
-        if (!wasVisible)
-            panelPresented = false;
+        panelPresented = true;
         quickSettingsWindow.visible = true;
-        if (!wasVisible)
-            Qt.callLater(() => root.panelPresented = true);
-        else
-            panelPresented = true;
         if (wasVisible)
             Qt.callLater(() => root.positionWindow());
         refreshStatus();
@@ -533,29 +525,10 @@ Singleton {
         openPreparing = false;
         if (prepareProcess.running)
             prepareProcess.running = false;
-        if (closeFadePending)
-            return;
-        if (quickSettingsWindow.visible
-            && FlyoutManager.animationsEnabled
-            && panelPresented) {
-            closeFadePending = true;
-            panelPresented = false;
-            closeFadeTimer.restart();
-            return;
-        }
-        completeClose();
-    }
-
-    function completeClose() {
-        closeFadeTimer.stop();
-        closeFadePending = false;
-        panelPresented = false;
-        openPreparing = false;
-        if (prepareProcess.running)
-            prepareProcess.running = false;
         if (settingsDirty)
             discardDraft();
         quickSettingsWindow.visible = false;
+        panelPresented = false;
         FlyoutManager.release("quick-settings");
         settingsOpen = false;
         settingsPanel.resetCopySelection();
@@ -733,12 +706,6 @@ Singleton {
         onTriggered: root.refreshStatus()
     }
 
-    Timer {
-        id: closeFadeTimer
-        interval: root.panelFadeDuration + 10
-        repeat: false
-        onTriggered: root.completeClose()
-    }
 
     FloatingWindow {
         id: quickSettingsWindow

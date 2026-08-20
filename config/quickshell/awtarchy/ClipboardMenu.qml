@@ -36,7 +36,6 @@ Singleton {
     property bool privacyRemapPending: false
     property bool openPreparing: false
     property bool panelPresented: false
-    property bool closeFadePending: false
     readonly property int panelFadeDuration: 140
     property var flyoutScreen: null
 
@@ -136,15 +135,8 @@ Singleton {
         const wasVisible = clipboardWindow.visible;
 
         openPreparing = false;
-        closeFadeTimer.stop();
-        closeFadePending = false;
-        if (!wasVisible)
-            panelPresented = false;
+        panelPresented = true;
         clipboardWindow.visible = true;
-        if (!wasVisible)
-            Qt.callLater(() => root.panelPresented = true);
-        else
-            panelPresented = true;
         if (wasVisible)
             Qt.callLater(() => root.positionWindow());
         listProcess.running = true;
@@ -217,29 +209,10 @@ Singleton {
         openPreparing = false;
         if (prepareProcess.running)
             prepareProcess.running = false;
-        if (closeFadePending)
-            return;
-        if (clipboardWindow.visible
-            && FlyoutManager.animationsEnabled
-            && panelPresented) {
-            closeFadePending = true;
-            panelPresented = false;
-            closeFadeTimer.restart();
-            return;
-        }
-        completeClose();
-    }
-
-    function completeClose() {
-        closeFadeTimer.stop();
-        closeFadePending = false;
-        panelPresented = false;
-        openPreparing = false;
-        if (prepareProcess.running)
-            prepareProcess.running = false;
         if (settingsDirty)
             discardDraft();
         clipboardWindow.visible = false;
+        panelPresented = false;
         FlyoutManager.release("clipboard");
         search.text = "";
         settingsOpen = false;
@@ -537,12 +510,6 @@ Singleton {
         }
     }
 
-    Timer {
-        id: closeFadeTimer
-        interval: root.panelFadeDuration + 10
-        repeat: false
-        onTriggered: root.completeClose()
-    }
 
     FloatingWindow {
         id: clipboardWindow

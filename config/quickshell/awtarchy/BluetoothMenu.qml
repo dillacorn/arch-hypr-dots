@@ -31,7 +31,6 @@ Singleton {
     property var stateCommandQueue: []
     property bool openPreparing: false
     property bool panelPresented: false
-    property bool closeFadePending: false
     readonly property int panelFadeDuration: 140
     property var flyoutScreen: null
 
@@ -272,15 +271,8 @@ Singleton {
         const wasVisible = bluetoothWindow.visible;
 
         openPreparing = false;
-        closeFadeTimer.stop();
-        closeFadePending = false;
-        if (!wasVisible)
-            panelPresented = false;
+        panelPresented = true;
         bluetoothWindow.visible = true;
-        if (!wasVisible)
-            Qt.callLater(() => root.panelPresented = true);
-        else
-            panelPresented = true;
         if (wasVisible)
             Qt.callLater(() => root.positionWindow());
         const current = adapter;
@@ -459,29 +451,10 @@ Singleton {
         openPreparing = false;
         if (prepareProcess.running)
             prepareProcess.running = false;
-        if (closeFadePending)
-            return;
-        if (bluetoothWindow.visible
-            && FlyoutManager.animationsEnabled
-            && panelPresented) {
-            closeFadePending = true;
-            panelPresented = false;
-            closeFadeTimer.restart();
-            return;
-        }
-        completeClose();
-    }
-
-    function completeClose() {
-        closeFadeTimer.stop();
-        closeFadePending = false;
-        panelPresented = false;
-        openPreparing = false;
-        if (prepareProcess.running)
-            prepareProcess.running = false;
         if (settingsDirty)
             discardDraft();
         bluetoothWindow.visible = false;
+        panelPresented = false;
         const current = adapter;
         if (current && current.discovering)
             current.discovering = false;
@@ -587,12 +560,6 @@ Singleton {
         function close(): void { root.close(); }
     }
 
-    Timer {
-        id: closeFadeTimer
-        interval: root.panelFadeDuration + 10
-        repeat: false
-        onTriggered: root.completeClose()
-    }
 
     FloatingWindow {
         id: bluetoothWindow
