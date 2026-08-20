@@ -78,44 +78,41 @@ require_source "$MANAGER" \
 require_source "$MANAGER" \
   'watchChanges: true' \
   'shared animation-state file is not watched for Super+A changes'
-require_source "$MANAGER" \
-  'property int windowLookupRevision: 0' \
-  'managed flyout window lookup has no lifecycle refresh revision'
-require_source "$MANAGER" \
-  'const dependency = windowLookupRevision;' \
-  'managed flyout title lookup does not depend on the lifecycle refresh revision'
-require_source "$MANAGER" \
-  'windowLookupRevision++;' \
-  'claiming a flyout does not refresh managed window bindings before show'
-
-require_source "$SHELL" \
-  'readonly property int managedFlyoutFadeDuration: 140' \
-  'managed flyout fade duration does not match the launcher'
-require_source "$SHELL" \
-  'function managedFlyoutWindow(surface)' \
-  'managed flyout window lookup is missing'
-require_source "$SHELL" \
-  'function runManagedFlyoutFade(window, animation)' \
-  'shared managed flyout fade runner is missing'
-require_source "$SHELL" \
-  'if (!FlyoutManager.animationsEnabled)' \
-  'managed flyout fade does not honor the Super+A animation gate'
-require_source "$SHELL" \
-  'animation.target = content' \
-  'managed flyout fade does not target the flyout content item'
-require_source "$SHELL" \
-  'easing.type: Easing.OutCubic' \
-  'managed flyout fade easing does not match the launcher'
-
-for surface in clipboard notifications quick-settings network bluetooth; do
-  require_source "$SHELL" \
-    "root.managedFlyoutWindow(\"${surface}\")" \
-    "${surface} is not wired to the shared fade"
+for flyout in QuickSettings.qml NetworkMenu.qml BluetoothMenu.qml ClipboardMenu.qml Notifications.qml; do
+  path="${QML_DIR}/${flyout}"
+  require_source "$path" 'property bool panelPresented: false' \
+    "${flyout} is missing local panel presentation state"
+  require_source "$path" 'property bool closeFadePending: false' \
+    "${flyout} is missing delayed close state"
+  require_source "$path" 'readonly property int panelFadeDuration: 140' \
+    "${flyout} fade duration does not match the launcher"
+  require_source "$path" 'opacity: root.panelPresented ? 1 : 0' \
+    "${flyout} panel opacity is not driven locally"
+  require_source "$path" 'Behavior on opacity {' \
+    "${flyout} panel is missing an opacity behavior"
+  require_source "$path" 'enabled: FlyoutManager.animationsEnabled' \
+    "${flyout} fade does not honor Super+A"
+  require_source "$path" 'duration: root.panelFadeDuration' \
+    "${flyout} fade does not use the local duration"
+  require_source "$path" 'easing.type: Easing.OutCubic' \
+    "${flyout} fade easing does not match the launcher"
+  require_source "$path" 'id: closeFadeTimer' \
+    "${flyout} is missing the delayed unmap timer"
+  require_source "$path" 'interval: root.panelFadeDuration + 10' \
+    "${flyout} does not stay mapped through the fade"
+  require_source "$path" 'closeFadeTimer.restart();' \
+    "${flyout} close path does not start the fade timer"
+  require_source "$path" 'Qt.callLater(() => root.panelPresented = true);' \
+    "${flyout} open path does not present the panel after mapping"
 done
 
-require_source "$SHELL" \
-  'function onAnimationsEnabledChanged()' \
-  'managed flyout fades are not reset when Super+A disables animations'
+if grep -Fq -- 'managedFlyoutWindow(' "$SHELL"; then
+  fail 'shell still contains the broken singleton-child window lookup'
+fi
+if grep -Fq -- 'windowLookupRevision' "$MANAGER"; then
+  fail 'flyout manager still contains obsolete window lookup revision state'
+fi
+
 require_source "$LAUNCHER" \
   'duration: 140' \
   'launcher reference fade duration changed unexpectedly'
@@ -126,4 +123,4 @@ require_source "$TOGGLE" \
   'hypr-animations-enabled' \
   'Super+A animation state file changed unexpectedly'
 
-printf '%s\n' 'Flyout toggle debounce and fade regression test passed.'
+printf '%s\n' 'Flyout toggle debounce and panel fade regression test passed.'
