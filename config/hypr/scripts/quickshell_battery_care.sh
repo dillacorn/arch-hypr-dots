@@ -162,12 +162,18 @@ stop_max=null
 stop_presets='[]'
 
 parse_range() {
-    local spec="$1"
-    if [[ "$spec" =~ ([0-9]+)[[:space:]]*\.\.[[:space:]]*([0-9]+) ]]; then
-        printf '%s\t%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
-        return 0
-    fi
-    return 1
+    local spec="$1" first last min max
+    [[ "$spec" == *..* ]] || return 1
+
+    first="${spec%%..*}"
+    last="${spec##*..}"
+    [[ "$first" =~ ([0-9]+) ]] || return 1
+    min="${BASH_REMATCH[1]}"
+    [[ "$last" =~ ([0-9]+) ]] || return 1
+    max="${BASH_REMATCH[1]}"
+    (( min <= max )) || return 1
+
+    printf '%s\t%s\n' "$min" "$max"
 }
 
 parse_presets() {
