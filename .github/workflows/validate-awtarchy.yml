@@ -185,7 +185,7 @@ jobs:
           bash tests/test-battery-state.sh
           bash tests/test-battery-flyout.sh
           bash tests/test-battery-charge-limit-detection.sh
-          bash tests/test-battery-care-control.sh
+          sudo bash tests/test-battery-care-control.sh
           bash tests/test-battery-care-annotated-range.sh
           bash tests/test-ddc-brightness-watcher.sh
           bash tests/test-hybrid-brightness.sh
