@@ -31,6 +31,8 @@ Singleton {
     readonly property int referenceNetworkHeight: 600
     readonly property int referenceBluetoothWidth: 500
     readonly property int referenceBluetoothHeight: 600
+    readonly property int referenceBatteryWidth: 560
+    readonly property int referenceBatteryHeight: 560
 
     // Compatibility properties used by the existing Reset buttons. Clicking a
     // Reset control focuses that flyout, so these resolve against its monitor.
@@ -46,6 +48,8 @@ Singleton {
     readonly property int defaultNetworkHeight: networkDefaultSizeFor(focusedMonitorName()).height
     readonly property int defaultBluetoothWidth: bluetoothDefaultSizeFor(focusedMonitorName()).width
     readonly property int defaultBluetoothHeight: bluetoothDefaultSizeFor(focusedMonitorName()).height
+    readonly property int defaultBatteryWidth: batteryDefaultSizeFor(focusedMonitorName()).width
+    readonly property int defaultBatteryHeight: batteryDefaultSizeFor(focusedMonitorName()).height
 
     readonly property int defaultAppTextSize: 14
     readonly property int defaultAppIconSize: 18
@@ -117,6 +121,10 @@ Singleton {
 
     function bluetoothDefaultSizeFor(name) {
         return adaptiveDefaultSizeFor(name, referenceBluetoothWidth, referenceBluetoothHeight);
+    }
+
+    function batteryDefaultSizeFor(name) {
+        return adaptiveDefaultSizeFor(name, referenceBatteryWidth, referenceBatteryHeight);
     }
 
     function refresh() {
@@ -220,6 +228,7 @@ Singleton {
             quick_settings_views: {},
             network_views: {},
             bluetooth_views: {},
+            battery_views: {},
             capture_allowed: {}
         });
     }
@@ -246,6 +255,7 @@ Singleton {
                 "quick_settings_views",
                 "network_views",
                 "bluetooth_views",
+                "battery_views",
                 "capture_allowed"
             ]) {
                 if (!parsed[key] || typeof parsed[key] !== "object" || Array.isArray(parsed[key]))
@@ -460,6 +470,11 @@ Singleton {
     function bluetoothViewFor(name) {
         return flyoutViewFor("bluetooth_views", name,
             referenceBluetoothWidth, referenceBluetoothHeight);
+    }
+
+    function batteryViewFor(name) {
+        return flyoutViewFor("battery_views", name,
+            referenceBatteryWidth, referenceBatteryHeight);
     }
 
     function captureAllowedFor(surface) {
