@@ -14,6 +14,7 @@ QtObject {
     property real recentBarMonitorTimestamp: 0
     property var barWindows: []
     property var lastToggleTimestamps: ({})
+    property int windowLookupRevision: 0
     readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
     readonly property string animationStatePath: runtimeDir + "/hypr-animations-enabled"
     readonly property bool animationsEnabled: animationStateFile.text().trim() !== "0"
@@ -52,6 +53,12 @@ QtObject {
     }
 
     function titleForSurface(surface) {
+        // shell.qml's Connections targets discover singleton-owned windows by
+        // title. Their first evaluation can happen before those windows finish
+        // constructing, so make the lookup depend on a revision bumped by
+        // claim() before each flyout is shown.
+        const dependency = windowLookupRevision;
+
         if (surface === "launcher")
             return "Awtarchy Application Search";
         if (surface === "clipboard")
@@ -125,6 +132,10 @@ QtObject {
         } else {
             targetMonitor = consumeTargetMonitor();
         }
+
+        // Refresh shell.qml's managed-window bindings while every singleton is
+        // fully constructed, but before the requested flyout becomes visible.
+        windowLookupRevision++;
 
         // Same-surface monitor handoffs stay mapped and retarget in place.
         // Different surfaces overlap only until the requested replacement is
