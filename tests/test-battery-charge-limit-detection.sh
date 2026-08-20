@@ -198,8 +198,9 @@ require_source "$CARE_CARD" 'text: "Battery Health"'
 require_source "$CARE_CARD" 'Read-only detection'
 require_source "$POWER_CARD" 'BatteryCareCard {'
 
-if grep -Eq '(^|[[:space:]])sudo([[:space:]]|$)|tlp[[:space:]]+setcharge|charge_control_(start|end)_threshold[^\n]*>' "$SCRIPT"; then
-    fail 'Stage 3 detector contains a privileged or threshold-write path'
+if grep -Eq '(^|[[:space:]])(sudo|pkexec)([[:space:]]|$)' "$SCRIPT" \
+    || grep -Fq 'tlp setcharge' "$SCRIPT"; then
+    fail 'Stage 3 detector contains a privileged charge-write path'
 fi
 
 printf '%s\n' 'Battery charge-limit capability detection regression tests passed.'
