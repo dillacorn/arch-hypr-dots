@@ -119,8 +119,15 @@ if [[ -x "$TLP_STAT_BIN" ]]; then
     )"
 fi
 
+plugin_lower="${plugin,,}"
+features_lower="${features,,}"
 tlp_supported=false
-if [[ "${features,,}" == *"charge threshold"* ]]; then
+if [[ "$features_lower" == *"charge threshold"* ]]; then
+    tlp_supported=true
+elif [[ "$features_lower" == *"charge type"* && -n "$stop_spec" ]]; then
+    # Some fixed conservation modes are represented as charging profiles rather
+    # than literal percentage thresholds. TLP still exposes them through the
+    # START/STOP_CHARGE_THRESH configuration abstraction.
     tlp_supported=true
 fi
 
@@ -156,27 +163,45 @@ if [[ "$tlp_supported" == true ]]; then
     supported=true
     backend="tlp"
 
-    if range="$(parse_range "$start_spec" 2>/dev/null)"; then
-        IFS=$'\t' read -r start_min start_max <<<"$range"
-    fi
-    if range="$(parse_range "$stop_spec" 2>/dev/null)"; then
-        IFS=$'\t' read -r stop_min stop_max <<<"$range"
-    fi
-
-    if [[ "$stop_min" != null && "$stop_max" != null ]]; then
-        mode="range"
-    elif [[ -n "$stop_spec" ]]; then
-        stop_presets="$(parse_presets "$stop_spec")"
-        if [[ "${stop_spec,,}" == *"(on)"* && "${stop_spec,,}" == *"(off)"* ]]; then
+    case "$plugin_lower" in
+        lenovo|lenovo-legacy)
+            # ideapad_laptop exposes a vendor conservation mode. Its 0/1 values
+            # select Standard/Long_Life, not 0%/1%, and Linux cannot report the
+            # model-specific fixed target (commonly 60% or 80%).
             mode="fixed"
-        elif (( $(jq 'length' <<<"$stop_presets") >= 2 )); then
-            mode="presets"
-        else
-            mode="tlp"
-        fi
-    else
-        mode="tlp"
-    fi
+            ;;
+        samsung)
+            # samsung_laptop also exposes 0/1, but TLP documents the actual
+            # battery-life extender target as 80%, with 100% meaning disabled.
+            mode="fixed"
+            stop_presets='[80,100]'
+            ;;
+        *)
+            if range="$(parse_range "$start_spec" 2>/dev/null)"; then
+                IFS=$'\t' read -r start_min start_max <<<"$range"
+            fi
+            if range="$(parse_range "$stop_spec" 2>/dev/null)"; then
+                IFS=$'\t' read -r stop_min stop_max <<<"$range"
+            fi
+
+            if [[ "$features_lower" == *"charge type"* ]]; then
+                mode="fixed"
+            elif [[ "$stop_min" != null && "$stop_max" != null ]]; then
+                mode="range"
+            elif [[ -n "$stop_spec" ]]; then
+                stop_presets="$(parse_presets "$stop_spec")"
+                if [[ "${stop_spec,,}" == *"(on)"* && "${stop_spec,,}" == *"(off)"* ]]; then
+                    mode="fixed"
+                elif (( $(jq 'length' <<<"$stop_presets") >= 2 )); then
+                    mode="presets"
+                else
+                    mode="tlp"
+                fi
+            else
+                mode="tlp"
+            fi
+            ;;
+    esac
 elif [[ "$sysfs_supported" == true ]]; then
     supported=true
     backend="sysfs"
@@ -198,7 +223,11 @@ if [[ "$supported" == true ]]; then
             ;;
         fixed)
             summary="Battery health limit available"
-            detail="Hardware-defined charge limit presets"
+            if [[ "$plugin_lower" == lenovo || "$plugin_lower" == lenovo-legacy ]]; then
+                detail="Hardware-defined conservation mode; the exact fixed target is not exposed by Linux"
+            else
+                detail="Hardware-defined charge limit presets"
+            fi
             ;;
         presets)
             summary="Charge limit presets available"
