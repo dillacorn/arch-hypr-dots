@@ -8,6 +8,7 @@ ColumnLayout {
     id: root
 
     property bool active: false
+    property bool presentationEnabled: false
     property int textScale: 100
     property int iconScale: 100
     property string backendCommand: ""
@@ -26,6 +27,7 @@ ColumnLayout {
         || backendCommand === "power-profiles-daemon"
     readonly property bool conflictDetected: backendCommand === "conflict"
 
+    visible: root.presentationEnabled
     Layout.fillWidth: true
     spacing: 8
 
@@ -52,7 +54,7 @@ ColumnLayout {
     }
 
     function probeBackend() {
-        if (isLaptop && !backendProbe.running)
+        if (presentationEnabled && isLaptop && !backendProbe.running)
             backendProbe.running = true;
     }
 
@@ -101,7 +103,12 @@ ColumnLayout {
     }
 
     onActiveChanged: {
-        if (active && isLaptop)
+        if (active && presentationEnabled && isLaptop)
+            probeBackend();
+    }
+
+    onPresentationEnabledChanged: {
+        if (presentationEnabled && active && isLaptop)
             probeBackend();
     }
 
@@ -113,7 +120,7 @@ ColumnLayout {
                 + "elif /usr/bin/busctl --system get-property org.freedesktop.UPower.PowerProfiles /org/freedesktop/UPower/PowerProfiles org.freedesktop.UPower.PowerProfiles ActiveProfile >/dev/null 2>&1; then "
                 + "if /usr/bin/pacman -Qq 2>/dev/null | /usr/bin/grep -Fx -- tlp >/dev/null; then printf tlp-pd; else printf power-profiles-daemon; fi; fi"
         ]
-        running: root.isLaptop
+        running: root.presentationEnabled && root.isLaptop
         stdout: StdioCollector {
             onStreamFinished: root.backendCommand = text.trim()
         }
@@ -158,13 +165,13 @@ ColumnLayout {
     Timer {
         interval: 30000
         repeat: true
-        running: root.active && root.isLaptop && !root.setupAuthBusy
+        running: root.presentationEnabled && root.active && root.isLaptop && !root.setupAuthBusy
         onTriggered: root.probeBackend()
     }
 
     Rectangle {
         id: powerCard
-        visible: root.isLaptop
+        visible: root.presentationEnabled && root.isLaptop
         Layout.fillWidth: true
         Layout.preferredHeight: visible ? content.implicitHeight + 16 : 0
         color: Theme.popupButton
@@ -334,5 +341,4 @@ ColumnLayout {
             }
         }
     }
-
 }
