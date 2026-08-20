@@ -65,6 +65,7 @@ jobs:
           bash -n tests/test-battery-state.sh
           bash -n tests/test-battery-flyout.sh
           bash -n tests/test-battery-charge-limit-detection.sh
+          bash -n tests/test-battery-care-control.sh
           bash -n tests/test-ddc-brightness-watcher.sh
           bash -n tests/test-hybrid-brightness.sh
           bash -n tests/test-hardware-reconcile-sudo.sh
@@ -132,6 +133,7 @@ jobs:
             tests/test-battery-state.sh \
             tests/test-battery-flyout.sh \
             tests/test-battery-charge-limit-detection.sh \
+            tests/test-battery-care-control.sh \
             tests/test-ddc-brightness-watcher.sh \
             tests/test-hybrid-brightness.sh \
             tests/test-hardware-reconcile-sudo.sh \
@@ -181,6 +183,7 @@ jobs:
           bash tests/test-battery-state.sh
           bash tests/test-battery-flyout.sh
           bash tests/test-battery-charge-limit-detection.sh
+          bash tests/test-battery-care-control.sh
           bash tests/test-ddc-brightness-watcher.sh
           bash tests/test-hybrid-brightness.sh
           bash tests/test-hardware-reconcile-sudo.sh
