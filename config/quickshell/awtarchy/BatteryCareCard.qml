@@ -10,7 +10,9 @@ Rectangle {
     property int textScale: 100
     property int iconScale: 100
     property var statusData: emptyStatus()
+    property var healthData: emptyHealth()
     property bool statusLoading: false
+    property bool healthLoading: false
     property bool refreshPending: false
     property int targetDraft: 80
     property bool targetDirty: false
@@ -25,6 +27,7 @@ Rectangle {
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
         || (Quickshell.env("HOME") + "/.config")
     readonly property string batteryCareScript: configHome + "/hypr/scripts/quickshell_battery_care.sh"
+    readonly property string batteryHealthScript: configHome + "/hypr/scripts/quickshell_battery_health.sh"
     readonly property string batteryCareHelper: "/usr/local/libexec/awtarchy/power-profile-helper"
     readonly property string pluginName: String(statusData.plugin || "").toLowerCase()
     readonly property bool fixedUnknownTarget: pluginName === "lenovo" || pluginName === "lenovo-legacy"
@@ -34,6 +37,8 @@ Rectangle {
         && String(statusData.backend || "") === "tlp"
         && !Boolean(statusData.config_conflict)
         && (fixedUnknownTarget || root.hasNumericControl())
+    readonly property bool showFallbackHealth: !BatteryState.healthSupported
+        && Boolean(healthData.supported)
 
     Layout.fillWidth: true
     Layout.preferredHeight: content.implicitHeight + 16
@@ -70,6 +75,19 @@ Rectangle {
         });
     }
 
+    function emptyHealth() {
+        return ({
+            supported: false,
+            source: "",
+            percentage: null,
+            full_wh: null,
+            design_wh: null,
+            full_ah: null,
+            design_ah: null,
+            batteries: []
+        });
+    }
+
     function refreshStatus() {
         if (!active)
             return;
@@ -82,6 +100,13 @@ Rectangle {
         batteryCareReader.exec(["/usr/bin/bash", batteryCareScript, "--status-json"]);
     }
 
+    function refreshHealth() {
+        if (!active || batteryHealthReader.running)
+            return;
+        healthLoading = true;
+        batteryHealthReader.exec(["/usr/bin/bash", batteryHealthScript, "--status-json"]);
+    }
+
     function backendLabel() {
         if (statusData.backend === "tlp") {
             const plugin = String(statusData.plugin || "");
@@ -90,6 +115,28 @@ Rectangle {
         if (statusData.backend === "sysfs")
             return "Kernel";
         return "Unavailable";
+    }
+
+    function fallbackHealthPercentage() {
+        const value = Number(healthData.percentage);
+        return Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
+    }
+
+    function fallbackHealthDetail() {
+        const source = String(healthData.source || "");
+        if (source === "sysfs-energy") {
+            const full = Number(healthData.full_wh);
+            const design = Number(healthData.design_wh);
+            if (Number.isFinite(full) && Number.isFinite(design))
+                return full.toFixed(1) + " Wh full / " + design.toFixed(1) + " Wh design";
+        }
+        if (source === "sysfs-charge") {
+            const full = Number(healthData.full_ah);
+            const design = Number(healthData.design_ah);
+            if (Number.isFinite(full) && Number.isFinite(design))
+                return full.toFixed(1) + " Ah full / " + design.toFixed(1) + " Ah design";
+        }
+        return "";
     }
 
     function numericTargets() {
@@ -294,10 +341,12 @@ Rectangle {
     }
 
     onActiveChanged: {
-        if (active)
+        if (active) {
             refreshStatus();
-        else if (!authBusy)
+            refreshHealth();
+        } else if (!authBusy) {
             cancelAuthorization();
+        }
     }
 
     Process {
@@ -323,6 +372,23 @@ Rectangle {
             if (root.refreshPending)
                 Qt.callLater(() => root.refreshStatus());
         }
+    }
+
+    Process {
+        id: batteryHealthReader
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    const parsed = JSON.parse(text.trim() || "{}");
+                    root.healthData = parsed && typeof parsed === "object"
+                        ? parsed : root.emptyHealth();
+                } catch (error) {
+                    console.warn("Awtarchy battery health status parse failed:", error);
+                    root.healthData = root.emptyHealth();
+                }
+            }
+        }
+        onExited: root.healthLoading = false
     }
 
     Process {
@@ -364,7 +430,10 @@ Rectangle {
         interval: 60000
         repeat: true
         running: root.active && !root.authBusy
-        onTriggered: root.refreshStatus()
+        onTriggered: {
+            root.refreshStatus();
+            root.refreshHealth();
+        }
     }
 
     ColumnLayout {
@@ -373,13 +442,68 @@ Rectangle {
         anchors.margins: 8
         spacing: 6
 
+        ColumnLayout {
+            Layout.fillWidth: true
+            visible: root.showFallbackHealth
+            spacing: 3
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Battery Health"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: root.scaledText(12)
+                    font.bold: true
+                    elide: Text.ElideRight
+                }
+
+                Text {
+                    text: "Kernel"
+                    color: Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: root.scaledText(8)
+                }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: "Capacity health: " + root.fallbackHealthPercentage() + "%"
+                color: Theme.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: root.scaledText(9)
+                font.bold: true
+            }
+
+            Text {
+                Layout.fillWidth: true
+                visible: root.fallbackHealthDetail().length > 0
+                text: root.fallbackHealthDetail()
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: root.scaledText(8)
+                wrapMode: Text.Wrap
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 1
+            visible: root.showFallbackHealth
+            color: Theme.active
+            border.width: 0
+        }
+
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
 
             Text {
                 Layout.fillWidth: true
-                text: "Battery Health"
+                text: "Battery Care"
                 color: Theme.foreground
                 font.family: Theme.fontFamily
                 font.pixelSize: root.scaledText(12)
