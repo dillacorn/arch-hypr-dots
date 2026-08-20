@@ -82,8 +82,6 @@ for flyout in QuickSettings.qml NetworkMenu.qml BluetoothMenu.qml ClipboardMenu.
   path="${QML_DIR}/${flyout}"
   require_source "$path" 'property bool panelPresented: false' \
     "${flyout} is missing local panel presentation state"
-  require_source "$path" 'property bool closeFadePending: false' \
-    "${flyout} is missing delayed close state"
   require_source "$path" 'readonly property int panelFadeDuration: 140' \
     "${flyout} fade duration does not match the launcher"
   require_source "$path" 'opacity: root.panelPresented ? 1 : 0' \
@@ -96,14 +94,26 @@ for flyout in QuickSettings.qml NetworkMenu.qml BluetoothMenu.qml ClipboardMenu.
     "${flyout} fade does not use the local duration"
   require_source "$path" 'easing.type: Easing.OutCubic' \
     "${flyout} fade easing does not match the launcher"
-  require_source "$path" 'id: closeFadeTimer' \
-    "${flyout} is missing the delayed unmap timer"
-  require_source "$path" 'interval: root.panelFadeDuration + 10' \
-    "${flyout} does not stay mapped through the fade"
-  require_source "$path" 'closeFadeTimer.restart();' \
-    "${flyout} close path does not start the fade timer"
-  require_source "$path" 'Qt.callLater(() => root.panelPresented = true);' \
-    "${flyout} open path does not present the panel after mapping"
+  if grep -Fq -- 'closeFadePending' "$path"; then
+    fail "${flyout} still keeps a transparent mapped window alive during close"
+  fi
+  if grep -Fq -- 'closeFadeTimer' "$path"; then
+    fail "${flyout} still delays unmapping after the panel fades"
+  fi
+  if grep -Fq -- 'Qt.callLater(() => root.panelPresented = true);' "$path"; then
+    fail "${flyout} still maps a transparent panel before starting the fade"
+  fi
+  case "$flyout" in
+    QuickSettings.qml) window_id='quickSettingsWindow' ;;
+    NetworkMenu.qml) window_id='networkWindow' ;;
+    BluetoothMenu.qml) window_id='bluetoothWindow' ;;
+    ClipboardMenu.qml) window_id='clipboardWindow' ;;
+    Notifications.qml) window_id='centerWindow' ;;
+  esac
+  presented_line="$(grep -nF -- 'panelPresented = true;' "$path" | head -n1 | cut -d: -f1)"
+  visible_line="$(grep -nF -- "${window_id}.visible = true;" "$path" | head -n1 | cut -d: -f1)"
+  [[ -n "$presented_line" && -n "$visible_line" && "$presented_line" -lt "$visible_line" ]] \
+    || fail "${flyout} does not start panel presentation before mapping the window"
 done
 
 if grep -Fq -- 'managedFlyoutWindow(' "$SHELL"; then
@@ -123,4 +133,4 @@ require_source "$TOGGLE" \
   'hypr-animations-enabled' \
   'Super+A animation state file changed unexpectedly'
 
-printf '%s\n' 'Flyout toggle debounce and panel fade regression test passed.'
+printf '%s\n' 'Flyout toggle debounce, fade, and blur lifecycle regression test passed.'

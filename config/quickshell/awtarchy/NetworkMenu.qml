@@ -37,7 +37,6 @@ Singleton {
     property var stateCommandQueue: []
     property bool openPreparing: false
     property bool panelPresented: false
-    property bool closeFadePending: false
     readonly property int panelFadeDuration: 140
     property var flyoutScreen: null
 
@@ -346,15 +345,8 @@ Singleton {
         const wasVisible = networkWindow.visible;
 
         openPreparing = false;
-        closeFadeTimer.stop();
-        closeFadePending = false;
-        if (!wasVisible)
-            panelPresented = false;
+        panelPresented = true;
         networkWindow.visible = true;
-        if (!wasVisible)
-            Qt.callLater(() => root.panelPresented = true);
-        else
-            panelPresented = true;
         if (wasVisible)
             Qt.callLater(() => root.positionWindow());
         if (wifiPresent && Networking.wifiEnabled)
@@ -604,29 +596,10 @@ Singleton {
         openPreparing = false;
         if (prepareProcess.running)
             prepareProcess.running = false;
-        if (closeFadePending)
-            return;
-        if (networkWindow.visible
-            && FlyoutManager.animationsEnabled
-            && panelPresented) {
-            closeFadePending = true;
-            panelPresented = false;
-            closeFadeTimer.restart();
-            return;
-        }
-        completeClose();
-    }
-
-    function completeClose() {
-        closeFadeTimer.stop();
-        closeFadePending = false;
-        panelPresented = false;
-        openPreparing = false;
-        if (prepareProcess.running)
-            prepareProcess.running = false;
         if (settingsDirty)
             discardDraft();
         networkWindow.visible = false;
+        panelPresented = false;
         if (vpnOpen || vpnPrivacyOpening)
             closeVpnView();
         setWifiScanning(false);
@@ -741,12 +714,6 @@ Singleton {
         function close(): void { root.close(); }
     }
 
-    Timer {
-        id: closeFadeTimer
-        interval: root.panelFadeDuration + 10
-        repeat: false
-        onTriggered: root.completeClose()
-    }
 
     FloatingWindow {
         id: networkWindow

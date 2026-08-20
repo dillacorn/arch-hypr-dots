@@ -38,7 +38,6 @@ Singleton {
     property bool privacyRemapPending: false
     property bool openPreparing: false
     property bool panelPresented: false
-    property bool closeFadePending: false
     readonly property int panelFadeDuration: 140
     property var centerScreen: null
 
@@ -159,15 +158,8 @@ Singleton {
         const wasVisible = centerWindow.visible;
 
         openPreparing = false;
-        closeFadeTimer.stop();
-        closeFadePending = false;
-        if (!wasVisible)
-            panelPresented = false;
+        panelPresented = true;
         centerWindow.visible = true;
-        if (!wasVisible)
-            Qt.callLater(() => root.panelPresented = true);
-        else
-            panelPresented = true;
         if (wasVisible)
             Qt.callLater(() => root.positionCenter());
     }
@@ -527,29 +519,10 @@ Singleton {
         openPreparing = false;
         if (prepareProcess.running)
             prepareProcess.running = false;
-        if (closeFadePending)
-            return;
-        if (centerWindow.visible
-            && FlyoutManager.animationsEnabled
-            && panelPresented) {
-            closeFadePending = true;
-            panelPresented = false;
-            closeFadeTimer.restart();
-            return;
-        }
-        completeCloseCenter();
-    }
-
-    function completeCloseCenter() {
-        closeFadeTimer.stop();
-        closeFadePending = false;
-        panelPresented = false;
-        openPreparing = false;
-        if (prepareProcess.running)
-            prepareProcess.running = false;
         if (settingsDirty)
             discardDraft();
         centerWindow.visible = false;
+        panelPresented = false;
         FlyoutManager.release("notifications");
         settingsOpen = false;
         settingsPanel.resetCopySelection();
@@ -754,12 +727,6 @@ Singleton {
         }
     }
 
-    Timer {
-        id: closeFadeTimer
-        interval: root.panelFadeDuration + 10
-        repeat: false
-        onTriggered: root.completeCloseCenter()
-    }
 
     FloatingWindow {
         id: centerWindow
