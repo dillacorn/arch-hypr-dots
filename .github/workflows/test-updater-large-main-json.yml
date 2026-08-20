@@ -3,6 +3,7 @@ name: Test large updater response
 on:
   push:
     branches: [fix-updater-large-main-json]
+  pull_request:
 
 permissions:
   contents: read
