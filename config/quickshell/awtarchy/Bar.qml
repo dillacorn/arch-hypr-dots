@@ -673,6 +673,8 @@ PanelWindow {
                 label: bar.batteryIcon(pct) + (pluggedIn ? "  " : " ") + pct
                 foreground: pct <= 15 && !pluggedIn ? Theme.critical : Theme.foreground
                 tooltip: BatteryState.barTooltip
+                onClicked: BatteryMenu.toggleForScreen(bar.screen)
+                onRightClicked: BatteryMenu.toggleForScreen(bar.screen)
             }
 
             BarControl {
@@ -889,6 +891,8 @@ PanelWindow {
                 label: bar.batteryIcon(pct) + (pluggedIn ? "\n" : "") + "\n" + pct
                 foreground: pct <= 15 && !pluggedIn ? Theme.critical : Theme.foreground
                 tooltip: BatteryState.barTooltip
+                onClicked: BatteryMenu.toggleForScreen(bar.screen)
+                onRightClicked: BatteryMenu.toggleForScreen(bar.screen)
             }
 
             BarControl {
