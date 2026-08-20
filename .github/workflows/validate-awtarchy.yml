@@ -43,6 +43,7 @@ jobs:
           bash -n config/hypr/scripts/quickshell_application_state.sh
           bash -n config/hypr/scripts/quickshell_bar_restore.sh
           bash -n config/hypr/scripts/quickshell_battery_care.sh
+          bash -n config/hypr/scripts/quickshell_battery_health.sh
           bash -n config/hypr/scripts/quickshell_launcher_position.sh
           bash -n config/hypr/scripts/quickshell_ready_sound.sh
           bash -n config/hypr/scripts/quickshell_resume_recover.sh
@@ -71,6 +72,7 @@ jobs:
           bash -n tests/test-battery-care-annotated-range.sh
           bash -n tests/test-battery-care-thinkpad-readback.sh
           bash -n tests/test-battery-care-multibattery.sh
+          bash -n tests/test-battery-health-fallback.sh
           bash -n tests/test-ddc-brightness-watcher.sh
           bash -n tests/test-hybrid-brightness.sh
           bash -n tests/test-hardware-reconcile-sudo.sh
@@ -119,6 +121,7 @@ jobs:
             config/hypr/scripts/gif_capture.sh \
             config/hypr/scripts/quickshell_bar_restore.sh \
             config/hypr/scripts/quickshell_battery_care.sh \
+            config/hypr/scripts/quickshell_battery_health.sh \
             config/hypr/scripts/quickshell_launcher_position.sh \
             config/hypr/scripts/quickshell_resume_recover.sh \
             config/hypr/scripts/quickshell_runtime_rules.sh \
@@ -144,6 +147,7 @@ jobs:
             tests/test-battery-care-annotated-range.sh \
             tests/test-battery-care-thinkpad-readback.sh \
             tests/test-battery-care-multibattery.sh \
+            tests/test-battery-health-fallback.sh \
             tests/test-ddc-brightness-watcher.sh \
             tests/test-hybrid-brightness.sh \
             tests/test-hardware-reconcile-sudo.sh \
@@ -179,6 +183,15 @@ jobs:
             local/share/applications/quickshell_bar_flip.desktop \
             local/share/applications/quickshell_bar_rotate.desktop \
             local/share/applications/quickshell_bar_toggle.desktop
+      - name: Managed hash report
+        run: |
+          {
+            find config/quickshell/awtarchy -maxdepth 1 -type f -print
+            find config/hypr/scripts -maxdepth 1 -type f \
+              \( -name 'quickshell*' -o -name 'ddc_brightness.sh' -o -name 'hypr-ddc-brightness.sh' \) -print
+          } | LC_ALL=C sort | while IFS= read -r path; do
+            printf '%s\t.%s\n' "$(sha256sum "$path" | awk '{print $1}')" "$path"
+          done
       - name: Command and updater integration tests
         run: |
           no_sudo_bin="$(mktemp -d)"
@@ -199,6 +212,7 @@ jobs:
           bash tests/test-battery-care-annotated-range.sh
           bash tests/test-battery-care-thinkpad-readback.sh
           bash tests/test-battery-care-multibattery.sh
+          bash tests/test-battery-health-fallback.sh
           bash tests/test-ddc-brightness-watcher.sh
           bash tests/test-hybrid-brightness.sh
           bash tests/test-hardware-reconcile-sudo.sh
