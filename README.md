@@ -89,28 +89,6 @@ awtarchy help            Show the full command list
 
 `awtarchy git` is an explicit unreleased-testing mode. It shows the selected remote branch and exact commit and keeps git-testing state separate from stable release state.
 
-## Existing installations and Quickshell migration
-
-Starting with **Awtarchy v3.0.0 Quickshell**, existing Awtarchy users can migrate through the normal maintenance command:
-
-```bash
-awtarchy update
-```
-
-The v3.0.0 update replaces Awtarchy's previous Waybar/Fuzzel-era shell stack with the Quickshell implementation. Preserve mode keeps `hyprland.lua` customizations where possible. Other Awtarchy-managed files are updated to the release copy, with local edits backed up before replacement. It also migrates supported Hyprland customizations and removes retired Awtarchy-managed shell packages and configuration that are no longer used.
-
-The retired shell stack includes Waybar/`waybar-git`, Fuzzel, Mako, Wlogout, Wofi, `network-manager-applet`, and Blueman. NetworkManager, BlueZ, and their underlying system services remain; the retired GUI applets are replaced by Awtarchy's Quickshell interfaces.
-
-For installations still using the old repository-only updater:
-
-```bash
-cd ~/awtarchy
-git pull --ff-only
-sudo ./awtarchy-install.sh
-```
-
-This installs the current maintenance command without broadly replacing managed configs. After that migration, use `awtarchy update` for the v3.0.0 Quickshell release and future published updates.
-
 ## Dry-run
 
 Review the installer questionnaire and install plan without changing the system:
