@@ -76,7 +76,7 @@ assert_json "$json" '.stop_min == 55 and .stop_max == 100' 'stop threshold range
 assert_json "$json" '.batteries[0].name == "BAT0" and .batteries[0].start_threshold == 75 and .batteries[0].stop_threshold == 80' \
     'current BAT0 thresholds were not read'
 
-# Fixed/preset hardware must never be advertised as freely editable.
+# Fixed hardware with literal percentage presets can expose those presets safely.
 fixed_root="$TMP/fixed-power"
 make_battery "$fixed_root" BAT0 '' 80
 cat >"$TMP/tlp-fixed" <<'EOF_TLP_FIXED'
@@ -103,6 +103,63 @@ assert_json "$json" '.supported == true and .backend == "tlp" and .plugin == "lg
 assert_json "$json" '.mode == "fixed"' 'fixed hardware was not classified as fixed'
 assert_json "$json" '.stop_presets == [80,100]' 'fixed stop presets were not parsed'
 assert_json "$json" '.batteries[0].stop_threshold == 80' 'fixed current stop threshold was not read'
+
+# Lenovo conservation mode uses 0/1 mode selectors rather than percentages. Newer
+# TLP reports this as "charge type". It is supported, but the actual fixed limit
+# varies by model and must not be presented as 0%/1%.
+lenovo_root="$TMP/lenovo-power"
+make_battery "$lenovo_root" BAT0
+cat >"$TMP/tlp-lenovo" <<'EOF_TLP_LENOVO'
+#!/usr/bin/env bash
+cat <<'EOF_STATUS'
++++ Battery Care
+Plugin: lenovo
+Supported features: charge type
+Driver usage:
+* vendor (ideapad_laptop) = active (charge type)
+Parameter value range:
+* STOP_CHARGE_THRESH_BAT0/1: 0(Standard)..1(Long_Life) -- charge type
+EOF_STATUS
+EOF_TLP_LENOVO
+chmod +x "$TMP/tlp-lenovo"
+
+json="$(
+    AWTARCHY_POWER_SUPPLY_ROOT="$lenovo_root" \
+    AWTARCHY_TLP_STAT_BIN="$TMP/tlp-lenovo" \
+    bash "$SCRIPT" --status-json
+)"
+assert_json "$json" '.supported == true and .backend == "tlp" and .plugin == "lenovo" and .mode == "fixed"' \
+    'Lenovo charge-type conservation mode was not detected'
+assert_json "$json" '.stop_presets == [] and .stop_min == null and .stop_max == null' \
+    'Lenovo 0/1 mode selectors were misreported as charge percentages'
+
+# Samsung also uses 0/1 control values, but TLP documents the actual battery-life
+# extender target as 80%, so Stage 3 may safely advertise 80%/100% choices.
+samsung_root="$TMP/samsung-power"
+make_battery "$samsung_root" BAT0
+cat >"$TMP/tlp-samsung" <<'EOF_TLP_SAMSUNG'
+#!/usr/bin/env bash
+cat <<'EOF_STATUS'
++++ Battery Care
+Plugin: samsung
+Supported features: charge threshold
+Driver usage:
+* vendor (samsung_laptop) = active (charge threshold)
+Parameter value range:
+* STOP_CHARGE_THRESH_BAT0: 0(off), 1(on) -- battery life extender
+EOF_STATUS
+EOF_TLP_SAMSUNG
+chmod +x "$TMP/tlp-samsung"
+
+json="$(
+    AWTARCHY_POWER_SUPPLY_ROOT="$samsung_root" \
+    AWTARCHY_TLP_STAT_BIN="$TMP/tlp-samsung" \
+    bash "$SCRIPT" --status-json
+)"
+assert_json "$json" '.supported == true and .backend == "tlp" and .plugin == "samsung" and .mode == "fixed"' \
+    'Samsung battery-life extender was not detected'
+assert_json "$json" '.stop_presets == [80,100]' \
+    'Samsung 0/1 selectors were not translated to documented 80%/100% targets'
 
 # If TLP is absent, standardized kernel threshold files still provide useful
 # read-only capability/current-value reporting without guessing the writable range.
