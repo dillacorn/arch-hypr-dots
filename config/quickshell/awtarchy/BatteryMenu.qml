@@ -29,6 +29,7 @@ Singleton {
     property var stateCommandQueue: []
     property bool openPreparing: false
     property bool panelPresented: false
+    readonly property bool available: BatteryState.available
     readonly property int panelFadeDuration: 140
     property var flyoutScreen: null
 
@@ -301,7 +302,7 @@ Singleton {
     }
 
     function openForScreen(targetScreen) {
-        if (!targetScreen || !BatteryState.available)
+        if (!targetScreen || !available)
             return;
         FlyoutManager.claim("battery", targetScreen.name);
         flyoutScreen = targetScreen;
@@ -346,7 +347,7 @@ Singleton {
     }
 
     onAvailableChanged: {
-        if (!BatteryState.available && (batteryWindow.visible || openPreparing))
+        if (!available && (batteryWindow.visible || openPreparing))
             close();
     }
 
@@ -393,7 +394,7 @@ Singleton {
 
     IpcHandler {
         target: "battery"
-        function available(): bool { return BatteryState.available; }
+        function available(): bool { return root.available; }
         function toggle(): void { root.toggleForScreen(root.focusedScreen()); }
         function open(): void { root.openFocused(); }
         function close(): void { root.close(); }
