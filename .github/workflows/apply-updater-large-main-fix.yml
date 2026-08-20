@@ -1,0 +1,62 @@
+name: Apply updater stdin fix
+
+on:
+  push:
+    branches: [fix-updater-large-main-json]
+    paths:
+      - .github/workflows/apply-updater-large-main-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: fix-updater-large-main-json
+      - name: Replace updater branch parser
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('local/bin/awtarchy')
+          text = path.read_text(encoding='utf-8')
+          replacement = r'''updater_branch_head() {
+            have curl || return 1
+            have python3 || return 1
+            curl_args api
+
+            curl "${CURL_ARGS[@]}" \
+              "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/commits/${UPDATER_BRANCH}" \
+              | python3 -c '
+          import json
+          import re
+          import sys
+
+          try:
+              payload = json.load(sys.stdin)
+          except (TypeError, json.JSONDecodeError):
+              raise SystemExit(1)
+
+          revision = str(payload.get("sha") or "").strip().lower()
+          if not re.fullmatch(r"[0-9a-f]{40}", revision):
+              raise SystemExit(1)
+          print(revision)
+          '
+          }'''
+          pattern = r'updater_branch_head\(\) \{\n.*?\n\}\n\nurlencode_ref\(\)'
+          updated, count = re.subn(pattern, replacement + '\n\nurlencode_ref()', text, count=1, flags=re.S)
+          if count != 1:
+              raise SystemExit(f'expected one updater_branch_head function, replaced {count}')
+          path.write_text(updated, encoding='utf-8')
+          PY
+          bash -n local/bin/awtarchy
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add local/bin/awtarchy
+          git commit -m 'fix: parse main updater response from stdin'
+          git push origin HEAD:fix-updater-large-main-json
