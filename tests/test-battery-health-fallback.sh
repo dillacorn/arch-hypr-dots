@@ -73,6 +73,11 @@ grep -Fq 'BatteryState.healthSupported' "$CARD" \
     || fail 'BatteryCareCard does not prefer native UPower health when available'
 grep -Fq 'quickshell_battery_health.sh' "$CARD" \
     || fail 'BatteryCareCard does not load the sysfs health fallback'
+grep -Fq 'Supported charge targets:' "$CARD" \
+    || fail 'Battery Care does not label limiter percentages as charge targets'
+if grep -Fq 'Supported health targets:' "$CARD"; then
+    fail 'charge-limit percentages are still mislabeled as battery health'
+fi
 
 if grep -Eq '(^|[[:space:]])(sudo|pkexec)([[:space:]]|$)' "$SCRIPT"; then
     fail 'read-only battery health detection contains a privileged path'
