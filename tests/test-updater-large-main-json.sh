@@ -41,6 +41,8 @@ curl_args() {
   CURL_ARGS=()
 }
 
+# These globals are consumed by the dynamically extracted function below.
+# shellcheck disable=SC2034
 REPO_OWNER=dillacorn
 REPO_NAME=awtarchy
 UPDATER_BRANCH=main
