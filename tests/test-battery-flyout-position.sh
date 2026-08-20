@@ -14,8 +14,9 @@ fail() {
 [[ -x "$POSITION" ]] || fail 'battery flyout positioning helper is missing or not executable'
 command -v jq >/dev/null 2>&1 || fail 'jq is required'
 
-mkdir -p "$TMP/bin" "$TMP/cache/awtarchy"
+mkdir -p "$TMP/bin" "$TMP/cache/awtarchy" "$TMP/runtime"
 export XDG_CACHE_HOME="$TMP/cache"
+export XDG_RUNTIME_DIR="$TMP/runtime"
 export AWTARCHY_TEST_HYPR_LOG="$TMP/hypr-eval.log"
 
 cat >"$TMP/bin/hyprctl" <<'FAKE_HYPRCTL'
