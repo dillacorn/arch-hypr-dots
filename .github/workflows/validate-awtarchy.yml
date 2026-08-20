@@ -42,6 +42,8 @@ jobs:
           bash -n config/hypr/scripts/quickshell.sh
           bash -n config/hypr/scripts/quickshell_application_state.sh
           bash -n config/hypr/scripts/quickshell_bar_restore.sh
+          bash -n config/hypr/scripts/quickshell_battery_care.sh
+          bash -n config/hypr/scripts/quickshell_battery_health.sh
           bash -n config/hypr/scripts/quickshell_launcher_position.sh
           bash -n config/hypr/scripts/quickshell_ready_sound.sh
           bash -n config/hypr/scripts/quickshell_resume_recover.sh
@@ -61,6 +63,16 @@ jobs:
           bash -n tests/test-awtarchy-command-shim.sh
           bash -n tests/test-awtarchy-legacy-cleanup.sh
           bash -n tests/test-bar-wheel-input.sh
+          bash -n tests/test-battery-state.sh
+          bash -n tests/test-battery-flyout.sh
+          bash -n tests/test-battery-flyout-state.sh
+          bash -n tests/test-battery-flyout-position.sh
+          bash -n tests/test-battery-charge-limit-detection.sh
+          bash -n tests/test-battery-care-control.sh
+          bash -n tests/test-battery-care-annotated-range.sh
+          bash -n tests/test-battery-care-thinkpad-readback.sh
+          bash -n tests/test-battery-care-multibattery.sh
+          bash -n tests/test-battery-health-fallback.sh
           bash -n tests/test-ddc-brightness-watcher.sh
           bash -n tests/test-hybrid-brightness.sh
           bash -n tests/test-hardware-reconcile-sudo.sh
@@ -108,6 +120,8 @@ jobs:
             config/hypr/scripts/hyprsunset_ctl.sh \
             config/hypr/scripts/gif_capture.sh \
             config/hypr/scripts/quickshell_bar_restore.sh \
+            config/hypr/scripts/quickshell_battery_care.sh \
+            config/hypr/scripts/quickshell_battery_health.sh \
             config/hypr/scripts/quickshell_launcher_position.sh \
             config/hypr/scripts/quickshell_resume_recover.sh \
             config/hypr/scripts/quickshell_runtime_rules.sh \
@@ -124,6 +138,15 @@ jobs:
             tests/test-awtarchy-command-shim.sh \
             tests/test-awtarchy-legacy-cleanup.sh \
             tests/test-bar-wheel-input.sh \
+            tests/test-battery-state.sh \
+            tests/test-battery-flyout.sh \
+            tests/test-battery-flyout-state.sh \
+            tests/test-battery-flyout-position.sh \
+            tests/test-battery-charge-limit-detection.sh \
+            tests/test-battery-care-annotated-range.sh \
+            tests/test-battery-care-thinkpad-readback.sh \
+            tests/test-battery-care-multibattery.sh \
+            tests/test-battery-health-fallback.sh \
             tests/test-ddc-brightness-watcher.sh \
             tests/test-hybrid-brightness.sh \
             tests/test-hardware-reconcile-sudo.sh \
@@ -137,7 +160,6 @@ jobs:
             tests/test-power-profile-helper-update.sh \
             tests/test-power-profile-inline-auth.sh \
             tests/test-quickshell-backend-readiness.sh \
-            tests/test-quickshell-capture-privacy.sh \
             tests/test-quickshell-updater-migration.sh \
             tests/test-hyprbars-quicksettings.sh \
             tests/test-network-bar-state.sh \
@@ -149,6 +171,7 @@ jobs:
             tests/test-troubleshoot-command.sh \
             tests/test-usb-refresh-security.sh \
             tests/test-quickshell-resume-recovery.sh
+          shellcheck -e SC2016 tests/test-battery-care-control.sh tests/test-quickshell-capture-privacy.sh
           shellcheck -e SC2034,SC2153 config/hypr/scripts/hypr_quicksettings.sh
           shellcheck -e SC2015 config/hypr/scripts/hypr_quicksettings_core.sh
           shellcheck -e SC2015 config/hypr/scripts/quickshell_theme_apply.sh
@@ -170,6 +193,16 @@ jobs:
           bash tests/test-awtarchy-command-shim.sh
           bash tests/test-awtarchy-legacy-cleanup.sh
           bash tests/test-bar-wheel-input.sh
+          bash tests/test-battery-state.sh
+          bash tests/test-battery-flyout.sh
+          bash tests/test-battery-flyout-state.sh
+          bash tests/test-battery-flyout-position.sh
+          bash tests/test-battery-charge-limit-detection.sh
+          sudo bash tests/test-battery-care-control.sh
+          bash tests/test-battery-care-annotated-range.sh
+          bash tests/test-battery-care-thinkpad-readback.sh
+          bash tests/test-battery-care-multibattery.sh
+          bash tests/test-battery-health-fallback.sh
           bash tests/test-ddc-brightness-watcher.sh
           bash tests/test-hybrid-brightness.sh
           bash tests/test-hardware-reconcile-sudo.sh

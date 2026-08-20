@@ -237,13 +237,14 @@ flyout_key() {
         quick-settings) printf 'quick_settings_views\n' ;;
         network) printf 'network_views\n' ;;
         bluetooth) printf 'bluetooth_views\n' ;;
+        battery) printf 'battery_views\n' ;;
         *) printf 'invalid flyout: %s\n' "$1" >&2; exit 2 ;;
     esac
 }
 
 capture_key() {
     case "$1" in
-        clipboard|notifications|launcher|network|bluetooth) printf '%s\n' "$1" ;;
+        clipboard|notifications|launcher|network|bluetooth|battery) printf '%s\n' "$1" ;;
         quick-settings) printf 'quick_settings\n' ;;
         *) printf 'invalid capture surface: %s\n' "$1" >&2; exit 2 ;;
     esac
@@ -334,8 +335,7 @@ set_notification_popup_limit() {
         --argjson save_version "$SAVE_VERSION" '
         .notification_popup_limit = $popup_limit
         | .notification_popup_limit_save_version = $save_version
-        | .notification_views = ((if (.notification_views | type) == "object"
-            then .notification_views else {} end)
+        | .notification_views = ((if (.notification_views | type) == "object" then .notification_views else {} end)
             | with_entries(.value = (if (.value | type) == "object"
                 then (.value | del(.popup_limit)) else .value end)))
     ' "$STATE_FILE" >"$TMP_FILE"

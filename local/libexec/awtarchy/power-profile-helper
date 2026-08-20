@@ -5,6 +5,11 @@ umask 022
 
 PACMAN="/usr/bin/pacman"
 SYSTEMCTL="/usr/bin/systemctl"
+TLP="/usr/bin/tlp"
+TLP_STAT="/usr/bin/tlp-stat"
+CONFIG_DIR="/etc/tlp.d"
+USER_CONFIG="/etc/tlp.conf"
+MANAGED_CONFIG="${CONFIG_DIR}/00-awtarchy-battery-care.conf"
 MANAGED_FILE="/var/lib/awtarchy/managed-packages"
 
 fail() {
@@ -97,22 +102,451 @@ resolve_tlp_conflict() {
   install_tlp_backend
 }
 
-main() {
-  [[ $# -eq 1 ]] || fail 'exactly one action is required'
+battery_tlp_report() {
+  "$TLP_STAT" -b 2>/dev/null || true
+}
 
+battery_parse_field() {
+  local report="$1" field="$2"
+  /usr/bin/awk -F: -v field="$field" '
+    index($0, field ":") == 1 {
+      value=$2
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      print value
+      exit
+    }
+  ' <<<"$report"
+}
+
+battery_parse_spec() {
+  local report="$1" prefix="$2"
+  /usr/bin/sed -n -E "s/^\\*[[:space:]]+${prefix}_[^:]+:[[:space:]]*(.*)$/\\1/p" \
+    <<<"$report" | /usr/bin/head -n1
+}
+
+battery_plugin_allowed() {
   case "$1" in
-    setup|resolve-tlp-conflict) ;;
-    *) fail "unsupported action: $1" ;;
+    macbook|asus|cros-ec|dell|huawei|thinkpad|thinkpad-legacy|lenovo|lenovo-legacy|lg|lg-legacy|msi|samsung|sony|system76|toshiba|tuxedo|wilco-ec) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+battery_require_capability() {
+  local report="$1" plugin features
+  plugin="$(battery_parse_field "$report" Plugin)"
+  features="$(battery_parse_field "$report" 'Supported features')"
+  plugin="${plugin,,}"
+  features="${features,,}"
+
+  [[ -n "$plugin" ]] || fail 'TLP did not report a battery-care plugin'
+  battery_plugin_allowed "$plugin" || fail "unsupported TLP battery-care plugin: $plugin"
+  if [[ "$features" != *"charge threshold"* && "$features" != *"charge type"* ]]; then
+    fail 'TLP does not report charge-threshold support on this hardware'
+  fi
+  printf '%s\n' "$plugin"
+}
+
+battery_external_config_sources() {
+  local file
+  shopt -s nullglob
+  for file in "$CONFIG_DIR"/*.conf "$USER_CONFIG"; do
+    [[ -f "$file" ]] || continue
+    [[ "$file" == "$MANAGED_CONFIG" ]] && continue
+    if /usr/bin/grep -Eq '^[[:space:]]*(START|STOP)_CHARGE_THRESH_BAT[01][[:space:]]*=' "$file"; then
+      printf '%s\n' "$file"
+    fi
+  done
+}
+
+battery_require_no_external_config() {
+  local conflicts
+  conflicts="$(battery_external_config_sources)"
+  if [[ -n "$conflicts" ]]; then
+    fail "Existing user-managed TLP charge thresholds were found in: ${conflicts//$'\n'/, }. Awtarchy will not overwrite them."
+  fi
+}
+
+battery_parse_range() {
+  local spec="$1" first last min max
+  [[ "$spec" == *..* ]] || return 1
+
+  first="${spec%%..*}"
+  last="${spec##*..}"
+  [[ "$first" =~ ([0-9]+) ]] || return 1
+  min="${BASH_REMATCH[1]}"
+  [[ "$last" =~ ([0-9]+) ]] || return 1
+  max="${BASH_REMATCH[1]}"
+  (( min <= max )) || return 1
+
+  printf '%s\t%s\n' "$min" "$max"
+}
+
+battery_parse_values() {
+  local spec="$1"
+  /usr/bin/grep -oE '[0-9]+' <<<"$spec" | /usr/bin/awk '!seen[$0]++ { print $0 }'
+}
+
+battery_value_in_list() {
+  local expected="$1" value
+  shift
+  for value in "$@"; do
+    [[ "$value" == "$expected" ]] && return 0
+  done
+  return 1
+}
+
+battery_choose_start() {
+  local target="$1" start_spec="$2" range min max candidate value
+  local -a values=()
+
+  [[ -n "$start_spec" ]] || { printf '0\n'; return 0; }
+  if [[ "${start_spec,,}" == *"don't care"* || "${start_spec,,}" == *"not supported"* ]]; then
+    printf '0\n'
+    return 0
+  fi
+
+  if range="$(battery_parse_range "$start_spec" 2>/dev/null)"; then
+    IFS=$'\t' read -r min max <<<"$range"
+    candidate=$(( target - 5 ))
+    (( candidate < min )) && candidate="$min"
+    (( candidate > max )) && candidate="$max"
+    (( candidate < target )) || candidate=$(( target - 1 ))
+    (( candidate >= min && candidate <= max && candidate < target )) \
+      || fail "cannot derive a supported start threshold below ${target}%"
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  mapfile -t values < <(battery_parse_values "$start_spec")
+  candidate=-1
+  for value in "${values[@]}"; do
+    (( value < target && value > candidate )) && candidate="$value"
+  done
+  if (( candidate >= 0 )); then
+    printf '%s\n' "$candidate"
+  else
+    printf '0\n'
+  fi
+}
+
+battery_validate_target() {
+  local target="$1" stop_spec="$2" range min max
+  local -a values=()
+
+  [[ "$target" =~ ^[0-9]+$ ]] || fail 'battery target must be an integer percentage'
+  (( target >= 1 && target <= 99 )) || fail 'battery target must be between 1 and 99; use OFF for 100%'
+  [[ -n "$stop_spec" ]] || fail 'TLP did not report a supported stop threshold'
+
+  if range="$(battery_parse_range "$stop_spec" 2>/dev/null)"; then
+    IFS=$'\t' read -r min max <<<"$range"
+    (( target >= min && target <= max )) \
+      || fail "target ${target}% is outside supported stop range ${min}-${max}%"
+    return 0
+  fi
+
+  mapfile -t values < <(battery_parse_values "$stop_spec")
+  battery_value_in_list "$target" "${values[@]}" \
+    || fail "target ${target}% is not one of the supported charge targets"
+}
+
+battery_dual_config_plugin() {
+  case "$1" in
+    asus|cros-ec|dell|thinkpad|thinkpad-legacy|msi|toshiba) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+battery_require_config_path_safe() {
+  local dir_owner dir_mode file_owner file_mode
+  [[ -d "$CONFIG_DIR" && ! -L "$CONFIG_DIR" ]] \
+    || fail "unsafe or missing TLP configuration directory: $CONFIG_DIR"
+  dir_owner="$(/usr/bin/stat -c %u -- "$CONFIG_DIR" 2>/dev/null)" \
+    || fail "cannot inspect TLP configuration directory: $CONFIG_DIR"
+  dir_mode="$(/usr/bin/stat -c %a -- "$CONFIG_DIR" 2>/dev/null)" \
+    || fail "cannot inspect TLP configuration directory permissions"
+  [[ "$dir_owner" == 0 && "$dir_mode" =~ ^[0-7]{3,4}$ ]] \
+    || fail "unsafe TLP configuration directory ownership: $CONFIG_DIR"
+  (( (8#$dir_mode & 8#022) == 0 )) \
+    || fail "TLP configuration directory is group/world writable: $CONFIG_DIR"
+
+  if [[ -e "$MANAGED_CONFIG" || -L "$MANAGED_CONFIG" ]]; then
+    [[ -f "$MANAGED_CONFIG" && ! -L "$MANAGED_CONFIG" ]] \
+      || fail "refusing unsafe managed battery-care config: $MANAGED_CONFIG"
+    file_owner="$(/usr/bin/stat -c %u -- "$MANAGED_CONFIG" 2>/dev/null)" \
+      || fail "cannot inspect managed battery-care config"
+    file_mode="$(/usr/bin/stat -c %a -- "$MANAGED_CONFIG" 2>/dev/null)" \
+      || fail "cannot inspect managed battery-care config permissions"
+    [[ "$file_owner" == 0 && "$file_mode" =~ ^[0-7]{3,4}$ ]] \
+      || fail "unsafe managed battery-care config ownership"
+    (( (8#$file_mode & 8#022) == 0 )) \
+      || fail "managed battery-care config is group/world writable"
+  fi
+}
+
+battery_write_config() {
+  local plugin="$1" target_label="$2" start_value="$3" stop_value="$4"
+  local temporary
+
+  battery_require_config_path_safe
+
+  temporary="$(/usr/bin/mktemp "${CONFIG_DIR}/.awtarchy-battery-care.XXXXXX")"
+  {
+    printf '%s\n' '# Managed by Awtarchy Battery flyout.'
+    printf '# target=%s\n' "$target_label"
+    printf 'START_CHARGE_THRESH_BAT0=%s\n' "$start_value"
+    printf 'STOP_CHARGE_THRESH_BAT0=%s\n' "$stop_value"
+    if battery_dual_config_plugin "$plugin"; then
+      printf 'START_CHARGE_THRESH_BAT1=%s\n' "$start_value"
+      printf 'STOP_CHARGE_THRESH_BAT1=%s\n' "$stop_value"
+    fi
+  } >"$temporary"
+  /usr/bin/chmod 0644 "$temporary"
+  /usr/bin/mv -Tf -- "$temporary" "$MANAGED_CONFIG"
+}
+
+battery_saved_config_create() {
+  local backup="$1"
+  if [[ -f "$MANAGED_CONFIG" && ! -L "$MANAGED_CONFIG" ]]; then
+    /usr/bin/cp -a -- "$MANAGED_CONFIG" "$backup"
+    printf 'present\n'
+  else
+    printf 'absent\n'
+  fi
+}
+
+rollback_apply() {
+  local previous_state="$1" backup="$2"
+  if [[ "$previous_state" == present && -f "$backup" ]]; then
+    /usr/bin/cp -a -- "$backup" "$MANAGED_CONFIG"
+    "$TLP" start >/dev/null 2>&1 || true
+  else
+    /usr/bin/rm -f -- "$MANAGED_CONFIG"
+    "$TLP" fullcharge >/dev/null 2>&1 || true
+  fi
+}
+
+battery_observed_stop_values() {
+  local report="$1"
+  /usr/bin/awk '
+    /(charge_control_end_threshold|stop_charge_thresh|battery_care_limit|battery_care_limiter)[^=]*=/ {
+      value=$0
+      sub(/^.*=[[:space:]]*/, "", value)
+      if (match(value, /^[0-9]+/)) print substr(value, RSTART, RLENGTH)
+    }
+  ' <<<"$report"
+}
+
+verify_enabled_state() {
+  local plugin="$1" expected="$2" report value found=0
+  report="$(battery_tlp_report)"
+  case "$plugin" in
+    lenovo)
+      /usr/bin/grep -Eq 'charge_types[^=]*=.*\[Long_Life\]' <<<"$report"
+      ;;
+    lenovo-legacy)
+      /usr/bin/grep -Eq 'conservation_mode[^=]*=[[:space:]]*1([^0-9]|$)' <<<"$report"
+      ;;
+    samsung)
+      /usr/bin/grep -Eq 'battery_life_extender[^=]*=[[:space:]]*1([^0-9]|$)' <<<"$report"
+      ;;
+    huawei)
+      /usr/bin/grep -Eq "charge_control_thresholds[^=]*=[[:space:]]*[0-9]+[[:space:]]+${expected}([^0-9]|$)" <<<"$report"
+      ;;
+    thinkpad|thinkpad-legacy)
+      # Some ThinkPad E/L/S/Yoga EC firmware reports a different threshold than
+      # the value actually accepted. TLP documents this as a firmware display
+      # quirk. Verify that every reported stop threshold is actively below full
+      # charge instead of falsely rolling back a valid configured target.
+      while IFS= read -r value; do
+        [[ -n "$value" ]] || continue
+        found=1
+        (( value >= 1 && value < 100 )) || return 1
+      done < <(battery_observed_stop_values "$report")
+      (( found == 1 ))
+      ;;
+    *)
+      while IFS= read -r value; do
+        [[ -n "$value" ]] || continue
+        found=1
+        [[ "$value" == "$expected" ]] || return 1
+      done < <(battery_observed_stop_values "$report")
+      (( found == 1 ))
+      ;;
+  esac
+}
+
+verify_disabled_state() {
+  local plugin="$1" report value found=0
+  report="$(battery_tlp_report)"
+  case "$plugin" in
+    lenovo)
+      /usr/bin/grep -Eq 'charge_types[^=]*=.*\[Standard\]' <<<"$report"
+      ;;
+    lenovo-legacy)
+      /usr/bin/grep -Eq 'conservation_mode[^=]*=[[:space:]]*0([^0-9]|$)' <<<"$report"
+      ;;
+    samsung)
+      /usr/bin/grep -Eq 'battery_life_extender[^=]*=[[:space:]]*0([^0-9]|$)' <<<"$report"
+      ;;
+    huawei)
+      /usr/bin/grep -Eq 'charge_control_thresholds[^=]*=[[:space:]]*[0-9]+[[:space:]]+100([^0-9]|$)' <<<"$report"
+      ;;
+    *)
+      while IFS= read -r value; do
+        [[ -n "$value" ]] || continue
+        found=1
+        (( value >= 100 )) || return 1
+      done < <(battery_observed_stop_values "$report")
+      (( found == 1 ))
+      ;;
+  esac
+}
+
+battery_set_target() {
+  local target="$1" report plugin start_spec stop_spec start_value stop_value
+  local backup previous_state
+
+  [[ -x "$TLP" && -x "$TLP_STAT" ]] || fail 'TLP battery-care tools are unavailable'
+  battery_require_no_external_config
+  report="$(battery_tlp_report)"
+  plugin="$(battery_require_capability "$report")"
+  start_spec="$(battery_parse_spec "$report" START_CHARGE_THRESH)"
+  stop_spec="$(battery_parse_spec "$report" STOP_CHARGE_THRESH)"
+
+  case "$plugin" in
+    lenovo|lenovo-legacy)
+      fail 'this Lenovo uses a hardware-defined conservation mode; use the Battery Health toggle instead of a percentage target'
+      ;;
+    lg|lg-legacy)
+      [[ "$target" == 80 ]] || fail 'LG battery care mode only supports an 80% health target'
+      start_value=0
+      stop_value=1
+      ;;
+    samsung)
+      [[ "$target" == 80 ]] || fail 'Samsung battery life extender only supports an 80% health target'
+      start_value=0
+      stop_value=1
+      ;;
+    *)
+      battery_validate_target "$target" "$stop_spec"
+      start_value="$(battery_choose_start "$target" "$start_spec")"
+      stop_value="$target"
+      ;;
+  esac
+
+  backup="$(/usr/bin/mktemp /tmp/awtarchy-battery-care.backup.XXXXXX)"
+  previous_state="$(battery_saved_config_create "$backup")"
+  battery_write_config "$plugin" "$target" "$start_value" "$stop_value"
+  if ! "$TLP" start >/dev/null; then
+    rollback_apply "$previous_state" "$backup"
+    /usr/bin/rm -f -- "$backup"
+    fail 'TLP failed to apply the requested battery charge limit; previous settings were restored'
+  fi
+  if ! verify_enabled_state "$plugin" "$target"; then
+    rollback_apply "$previous_state" "$backup"
+    /usr/bin/rm -f -- "$backup"
+    fail 'hardware read-back verification failed; previous battery settings were restored'
+  fi
+  /usr/bin/rm -f -- "$backup"
+}
+
+battery_enable_fixed() {
+  local report plugin backup previous_state
+  [[ -x "$TLP" && -x "$TLP_STAT" ]] || fail 'TLP battery-care tools are unavailable'
+  battery_require_no_external_config
+  report="$(battery_tlp_report)"
+  plugin="$(battery_require_capability "$report")"
+  case "$plugin" in
+    lenovo|lenovo-legacy) ;;
+    *) fail 'hardware-defined conservation mode is not supported by this TLP battery plugin' ;;
+  esac
+
+  backup="$(/usr/bin/mktemp /tmp/awtarchy-battery-care.backup.XXXXXX)"
+  previous_state="$(battery_saved_config_create "$backup")"
+  battery_write_config "$plugin" fixed 0 1
+  if ! "$TLP" start >/dev/null; then
+    rollback_apply "$previous_state" "$backup"
+    /usr/bin/rm -f -- "$backup"
+    fail 'TLP failed to enable the hardware conservation mode; previous settings were restored'
+  fi
+  if ! verify_enabled_state "$plugin" 1; then
+    rollback_apply "$previous_state" "$backup"
+    /usr/bin/rm -f -- "$backup"
+    fail 'hardware read-back verification failed; previous settings were restored'
+  fi
+  /usr/bin/rm -f -- "$backup"
+}
+
+battery_fullcharge_all() {
+  local report name any=0
+  report="$(battery_tlp_report)"
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    any=1
+    "$TLP" fullcharge "$name" >/dev/null || return 1
+  done < <(/usr/bin/sed -n -E 's/^\+\+\+[[:space:]]+.*Battery Status:[[:space:]]*([^[:space:]]+).*$/\1/p' <<<"$report")
+  (( any == 1 )) || "$TLP" fullcharge >/dev/null
+}
+
+battery_disable() {
+  local report plugin backup previous_state
+  [[ -x "$TLP" && -x "$TLP_STAT" ]] || fail 'TLP battery-care tools are unavailable'
+  battery_require_no_external_config
+  report="$(battery_tlp_report)"
+  plugin="$(battery_require_capability "$report")"
+
+  backup="$(/usr/bin/mktemp /tmp/awtarchy-battery-care.backup.XXXXXX)"
+  previous_state="$(battery_saved_config_create "$backup")"
+  /usr/bin/rm -f -- "$MANAGED_CONFIG"
+  if ! battery_fullcharge_all; then
+    rollback_apply "$previous_state" "$backup"
+    /usr/bin/rm -f -- "$backup"
+    fail 'TLP failed to restore full-charge defaults; previous settings were restored'
+  fi
+  if ! verify_disabled_state "$plugin"; then
+    rollback_apply "$previous_state" "$backup"
+    /usr/bin/rm -f -- "$backup"
+    fail 'hardware read-back verification failed; previous battery settings were restored'
+  fi
+  /usr/bin/rm -f -- "$backup"
+}
+
+main() {
+  local action="${1:-}"
+
+  case "$action" in
+    setup|resolve-tlp-conflict|battery-enable-fixed|battery-disable)
+      [[ $# -eq 1 ]] || fail "${action} does not accept extra arguments"
+      ;;
+    battery-set)
+      [[ $# -eq 2 ]] || fail 'battery-set requires exactly one percentage target'
+      ;;
+    *) fail "unsupported action: ${action:-<none>}" ;;
   esac
 
   (( EUID == 0 )) || fail 'must run as root'
-  [[ -x "$PACMAN" && -x "$SYSTEMCTL" && -x /usr/bin/grep && -x /usr/bin/cat ]] \
-    || fail 'required system tools are unavailable'
-  is_laptop || fail 'Power Mode setup is only supported on laptop hardware'
 
-  case "$1" in
-    setup) setup_backend ;;
-    resolve-tlp-conflict) resolve_tlp_conflict ;;
+  case "$action" in
+    setup|resolve-tlp-conflict)
+      [[ -x "$PACMAN" && -x "$SYSTEMCTL" && -x /usr/bin/grep && -x /usr/bin/cat ]] \
+        || fail 'required system tools are unavailable'
+      is_laptop || fail 'Power Mode setup is only supported on laptop hardware'
+      if [[ "$action" == setup ]]; then
+        setup_backend
+      else
+        resolve_tlp_conflict
+      fi
+      ;;
+    battery-set)
+      battery_set_target "$2"
+      ;;
+    battery-enable-fixed)
+      battery_enable_fixed
+      ;;
+    battery-disable)
+      battery_disable
+      ;;
   esac
 }
 

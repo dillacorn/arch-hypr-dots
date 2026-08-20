@@ -27,6 +27,7 @@ notifications_protected=true
 quick_settings_protected=true
 network_protected=true
 bluetooth_protected=true
+battery_protected=true
 network_sensitive_locked=false
 [[ -e "$NETWORK_SENSITIVE_LOCK" ]] && network_sensitive_locked=true
 capture_allowed launcher && launcher_protected=false
@@ -35,6 +36,7 @@ capture_allowed notifications && notifications_protected=false
 capture_allowed quick_settings && quick_settings_protected=false
 capture_allowed network && network_protected=false
 capture_allowed bluetooth && bluetooth_protected=false
+capture_allowed battery && battery_protected=false
 if [[ "$network_sensitive_locked" == true ]]; then
     network_protected=true
 fi
@@ -110,6 +112,14 @@ if awtarchy_bluetooth_window_privacy_rule_v3 == nil then
     })
 end
 
+if awtarchy_battery_window_privacy_rule_v1 == nil then
+    awtarchy_battery_window_privacy_rule_v1 = hl.window_rule({
+        name = \"awtarchy-battery-window-capture-privacy-v1\",
+        match = { title = \"^Awtarchy Battery$\" },
+        no_screen_share = true,
+    })
+end
+
 if awtarchy_vpn_editor_privacy_rule_v1 == nil then
     awtarchy_vpn_editor_privacy_rule_v1 = hl.window_rule({
         name = \"awtarchy-vpn-editor-capture-privacy-v1\",
@@ -133,6 +143,7 @@ awtarchy_notifications_center_window_privacy_rule_v2:set_enabled(${notifications
 awtarchy_quick_settings_window_privacy_rule_v2:set_enabled(${quick_settings_protected})
 awtarchy_network_window_privacy_rule_v3:set_enabled(${network_protected})
 awtarchy_bluetooth_window_privacy_rule_v3:set_enabled(${bluetooth_protected})
+awtarchy_battery_window_privacy_rule_v1:set_enabled(${battery_protected})
 awtarchy_vpn_editor_privacy_rule_v1:set_enabled(true)
 awtarchy_public_ip_privacy_rule_v1:set_enabled(true)
 hl.exec_scheduled_prop_refresh_immediately()
@@ -167,11 +178,14 @@ end
 if awtarchy_quickshell_flyout_rule_v2 ~= nil then
     pcall(function() awtarchy_quickshell_flyout_rule_v2:set_enabled(false) end)
 end
+if awtarchy_quickshell_flyout_rule_v3 ~= nil then
+    pcall(function() awtarchy_quickshell_flyout_rule_v3:set_enabled(false) end)
+end
 
-if awtarchy_quickshell_flyout_rule_v3 == nil then
-    awtarchy_quickshell_flyout_rule_v3 = hl.window_rule({
-        name = "awtarchy-quickshell-floating-flyouts-v3",
-        match = { title = "^Awtarchy (Clipboard History|Notification Center|Quick Settings|Network|Bluetooth)$" },
+if awtarchy_quickshell_flyout_rule_v4 == nil then
+    awtarchy_quickshell_flyout_rule_v4 = hl.window_rule({
+        name = "awtarchy-quickshell-floating-flyouts-v4",
+        match = { title = "^Awtarchy (Clipboard History|Notification Center|Quick Settings|Network|Bluetooth|Battery)$" },
         float = true,
         border_size = 0,
         rounding = 0,
@@ -181,7 +195,7 @@ if awtarchy_quickshell_flyout_rule_v3 == nil then
         opacity = "0 override 0 override 0 override",
     })
 end
-awtarchy_quickshell_flyout_rule_v3:set_enabled(true)
+awtarchy_quickshell_flyout_rule_v4:set_enabled(true)
 
 local function shell_quote(value)
     local quote = string.char(39)
@@ -270,6 +284,7 @@ local awtarchy_flyout_spawn_layouts = {
     ["Awtarchy Quick Settings"] = "centered",
     ["Awtarchy Network"] = "corner",
     ["Awtarchy Bluetooth"] = "corner",
+    ["Awtarchy Battery"] = "corner",
 }
 
 local function awtarchy_bar_placement(layer)
@@ -445,6 +460,7 @@ local awtarchy_flyout_ipc_targets = {
     ["Awtarchy Quick Settings"] = "quicksettings",
     ["Awtarchy Network"] = "network",
     ["Awtarchy Bluetooth"] = "bluetooth",
+    ["Awtarchy Battery"] = "battery",
 }
 
 local function visible_awtarchy_flyouts()

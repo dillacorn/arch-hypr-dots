@@ -83,6 +83,15 @@ case "$surface" in
         min_h=360
         layout='corner'
         ;;
+    battery)
+        title='Awtarchy Battery'
+        state_key='battery_views'
+        default_w=560
+        default_h=560
+        min_w=420
+        min_h=360
+        layout='corner'
+        ;;
     *)
         printf 'quickshell_flyout_position.sh: invalid surface: %s\n' "$surface" >&2
         exit 2

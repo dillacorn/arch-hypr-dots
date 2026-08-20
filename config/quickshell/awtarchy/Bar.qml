@@ -7,7 +7,6 @@ import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Services.Pipewire
 import Quickshell.Services.SystemTray
-import Quickshell.Services.UPower
 import Quickshell.Wayland
 import Quickshell.Widgets
 
@@ -668,13 +667,14 @@ PanelWindow {
             }
 
             BarControl {
-                visible: UPower.displayDevice.ready && UPower.displayDevice.isLaptopBattery
-                readonly property int pct: Math.round(UPower.displayDevice.percentage * 100)
-                readonly property bool pluggedIn: !UPower.onBattery
+                visible: BatteryState.available
+                readonly property int pct: BatteryState.percentage
+                readonly property bool pluggedIn: BatteryState.pluggedIn
                 label: bar.batteryIcon(pct) + (pluggedIn ? "  " : " ") + pct
                 foreground: pct <= 15 && !pluggedIn ? Theme.critical : Theme.foreground
-                tooltip: "Battery: " + pct + "%\nPower: "
-                    + (pluggedIn ? "plugged in" : "battery")
+                tooltip: BatteryState.barTooltip
+                onClicked: BatteryMenu.toggleForScreen(bar.screen)
+                onRightClicked: BatteryMenu.toggleForScreen(bar.screen)
             }
 
             BarControl {
@@ -884,14 +884,15 @@ PanelWindow {
             }
 
             BarControl {
-                visible: UPower.displayDevice.ready && UPower.displayDevice.isLaptopBattery
+                visible: BatteryState.available
                 vertical: true; fixedWidth: bar.barSize
-                readonly property int pct: Math.round(UPower.displayDevice.percentage * 100)
-                readonly property bool pluggedIn: !UPower.onBattery
+                readonly property int pct: BatteryState.percentage
+                readonly property bool pluggedIn: BatteryState.pluggedIn
                 label: bar.batteryIcon(pct) + (pluggedIn ? "\n" : "") + "\n" + pct
                 foreground: pct <= 15 && !pluggedIn ? Theme.critical : Theme.foreground
-                tooltip: "Battery: " + pct + "%\nPower: "
-                    + (pluggedIn ? "plugged in" : "battery")
+                tooltip: BatteryState.barTooltip
+                onClicked: BatteryMenu.toggleForScreen(bar.screen)
+                onRightClicked: BatteryMenu.toggleForScreen(bar.screen)
             }
 
             BarControl {
