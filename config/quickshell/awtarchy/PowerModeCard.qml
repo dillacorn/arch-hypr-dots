@@ -169,6 +169,13 @@ ColumnLayout {
         onTriggered: root.probeBackend()
     }
 
+    BatteryCareCard {
+        visible: root.isLaptop
+        active: root.presentationEnabled && root.active && root.isLaptop
+        textScale: root.textScale
+        iconScale: root.iconScale
+    }
+
     Rectangle {
         id: powerCard
         visible: root.presentationEnabled && root.isLaptop
