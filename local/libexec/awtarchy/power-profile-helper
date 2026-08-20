@@ -251,14 +251,38 @@ battery_dual_config_plugin() {
   esac
 }
 
+battery_require_config_path_safe() {
+  local dir_owner dir_mode file_owner file_mode
+  [[ -d "$CONFIG_DIR" && ! -L "$CONFIG_DIR" ]] \
+    || fail "unsafe or missing TLP configuration directory: $CONFIG_DIR"
+  dir_owner="$(/usr/bin/stat -c %u -- "$CONFIG_DIR" 2>/dev/null)" \
+    || fail "cannot inspect TLP configuration directory: $CONFIG_DIR"
+  dir_mode="$(/usr/bin/stat -c %a -- "$CONFIG_DIR" 2>/dev/null)" \
+    || fail "cannot inspect TLP configuration directory permissions"
+  [[ "$dir_owner" == 0 && "$dir_mode" =~ ^[0-7]{3,4}$ ]] \
+    || fail "unsafe TLP configuration directory ownership: $CONFIG_DIR"
+  (( (8#$dir_mode & 8#022) == 0 )) \
+    || fail "TLP configuration directory is group/world writable: $CONFIG_DIR"
+
+  if [[ -e "$MANAGED_CONFIG" || -L "$MANAGED_CONFIG" ]]; then
+    [[ -f "$MANAGED_CONFIG" && ! -L "$MANAGED_CONFIG" ]] \
+      || fail "refusing unsafe managed battery-care config: $MANAGED_CONFIG"
+    file_owner="$(/usr/bin/stat -c %u -- "$MANAGED_CONFIG" 2>/dev/null)" \
+      || fail "cannot inspect managed battery-care config"
+    file_mode="$(/usr/bin/stat -c %a -- "$MANAGED_CONFIG" 2>/dev/null)" \
+      || fail "cannot inspect managed battery-care config permissions"
+    [[ "$file_owner" == 0 && "$file_mode" =~ ^[0-7]{3,4}$ ]] \
+      || fail "unsafe managed battery-care config ownership"
+    (( (8#$file_mode & 8#022) == 0 )) \
+      || fail "managed battery-care config is group/world writable"
+  fi
+}
+
 battery_write_config() {
   local plugin="$1" target_label="$2" start_value="$3" stop_value="$4"
   local temporary
 
-  [[ -d "$CONFIG_DIR" && ! -L "$CONFIG_DIR" ]] \
-    || fail "unsafe or missing TLP configuration directory: $CONFIG_DIR"
-  [[ ! -e "$MANAGED_CONFIG" || ( -f "$MANAGED_CONFIG" && ! -L "$MANAGED_CONFIG" ) ]] \
-    || fail "refusing unsafe managed battery-care config: $MANAGED_CONFIG"
+  battery_require_config_path_safe
 
   temporary="$(/usr/bin/mktemp "${CONFIG_DIR}/.awtarchy-battery-care.XXXXXX")"
   {
@@ -376,6 +400,11 @@ battery_set_target() {
     lenovo|lenovo-legacy)
       fail 'this Lenovo uses a hardware-defined conservation mode; use the Battery Health toggle instead of a percentage target'
       ;;
+    lg|lg-legacy)
+      [[ "$target" == 80 ]] || fail 'LG battery care mode only supports an 80% health target'
+      start_value=0
+      stop_value=1
+      ;;
     samsung)
       [[ "$target" == 80 ]] || fail 'Samsung battery life extender only supports an 80% health target'
       start_value=0
@@ -389,7 +418,6 @@ battery_set_target() {
   esac
 
   backup="$(/usr/bin/mktemp /tmp/awtarchy-battery-care.backup.XXXXXX)"
-  /usr/bin/rm -f -- "$backup"
   previous_state="$(battery_saved_config_create "$backup")"
   battery_write_config "$plugin" "$target" "$start_value" "$stop_value"
   if ! "$TLP" start >/dev/null; then
@@ -417,7 +445,6 @@ battery_enable_fixed() {
   esac
 
   backup="$(/usr/bin/mktemp /tmp/awtarchy-battery-care.backup.XXXXXX)"
-  /usr/bin/rm -f -- "$backup"
   previous_state="$(battery_saved_config_create "$backup")"
   battery_write_config "$plugin" fixed 0 1
   if ! "$TLP" start >/dev/null; then
@@ -452,7 +479,6 @@ battery_disable() {
   plugin="$(battery_require_capability "$report")"
 
   backup="$(/usr/bin/mktemp /tmp/awtarchy-battery-care.backup.XXXXXX)"
-  /usr/bin/rm -f -- "$backup"
   previous_state="$(battery_saved_config_create "$backup")"
   /usr/bin/rm -f -- "$MANAGED_CONFIG"
   if ! battery_fullcharge_all; then
@@ -463,7 +489,7 @@ battery_disable() {
   if ! verify_disabled_state "$plugin"; then
     rollback_apply "$previous_state" "$backup"
     /usr/bin/rm -f -- "$backup"
-    fail 'hardware read-back verification failed; previous settings were restored'
+    fail 'hardware read-back verification failed; previous battery settings were restored'
   fi
   /usr/bin/rm -f -- "$backup"
 }
