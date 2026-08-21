@@ -603,5 +603,6 @@ ca791b7bebe26db923c247b4ea72e76d87a7f8eeaf9b563a318b6cf4362ede7a	.config/quicksh
 # 2026-08-21 post-v3.1.5 bar input and brightness fixes.
 485d36f1daacbe79c7d00a93439397d280012a711017a523cf2f46845e9283fc	.config/hypr/scripts/ddc_brightness.sh
 84ae5fc7cf18fbc8bfcc3319b7086ef894bab88c59e09df85cf8062c589fc74d	.config/hypr/scripts/quickshell_volume.sh
+eacbd9ee31cdbc78f80fa24646a8fe3603a841c34e16363d1141cf8b6fb71104	.config/hypr/scripts/quickshell_volume.sh
 2a4ec3ae02f84b46615f6226a9b7c23ebe656fb8e7f85352e9c7ee3c000d8451	.config/hypr/scripts/toggle_mouse_submap.sh
 1347ada8fb9907734eb79fe74f8459e6c3004fc3469f254cb8dba986d0e323fd	.config/hypr/scripts/toggle_mouse_submap.sh

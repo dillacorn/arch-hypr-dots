@@ -102,17 +102,18 @@ fi
 
 volume_bin="${TMP}/volume-bin"
 volume_state="${TMP}/volume-state"
-fallback_marker="${TMP}/volume-fallback-ran"
 volume_runtime="${TMP}/runtime"
 volume_first_writer="${TMP}/volume-first-writer"
 volume_first_writer_ready="${TMP}/volume-first-writer-ready"
 volume_release_marker="${TMP}/volume-release-first-writer"
 volume_lock_file="${volume_runtime}/awtarchy/quickshell-volume.lock"
 mkdir -p "$volume_bin" "${volume_runtime}/awtarchy"
-printf '%s\n' '0.729000000' >"$volume_state"
+printf '%s\n' '90' >"$volume_state"
 
 cat >"${volume_bin}/wpctl" <<'EOF'
 #!/usr/bin/env bash
+set -euo pipefail
+
 case "${1:-}" in
   inspect)
     printf '%s\n' \
@@ -120,8 +121,32 @@ case "${1:-}" in
       '  * card.profile.device = "7"'
     ;;
   set-volume)
-    : >"$VOLUME_FALLBACK_MARKER"
-    exit 1
+    [[ ${2:-} == @DEFAULT_AUDIO_SINK@ ]] || exit 3
+    [[ ${4:-} == --limit ]] || exit 4
+    case "${5:-}" in
+      1.0) limit_percent=100 ;;
+      2.0) limit_percent=200 ;;
+      *) exit 5 ;;
+    esac
+
+    if mkdir "$VOLUME_FIRST_WRITER" 2>/dev/null; then
+      : >"$VOLUME_FIRST_WRITER_READY"
+      for _ in {1..500}; do
+        [[ -e $VOLUME_RELEASE_MARKER ]] && break
+        sleep 0.01
+      done
+      [[ -e $VOLUME_RELEASE_MARKER ]] || exit 6
+    fi
+
+    current="$(<"$VOLUME_STATE_FILE")"
+    case "${3:-}" in
+      5%+) target=$((current + 5)) ;;
+      *%) target="${3%%%}" ;;
+      *) exit 7 ;;
+    esac
+    ((target > limit_percent)) && target=$limit_percent
+    printf '%s\n' "$target" >"${VOLUME_STATE_FILE}.$$"
+    mv -f -- "${VOLUME_STATE_FILE}.$$" "$VOLUME_STATE_FILE"
     ;;
   *)
     exit 2
@@ -132,7 +157,12 @@ chmod 0755 "${volume_bin}/wpctl"
 
 cat >"${volume_bin}/pw-dump" <<'EOF'
 #!/usr/bin/env bash
-raw="$(<"$VOLUME_STATE_FILE")"
+case "$(<"$VOLUME_STATE_FILE")" in
+  90) raw='0.729000000' ;;
+  95) raw='0.857375000' ;;
+  100) raw='1.000000000' ;;
+  *) exit 2 ;;
+esac
 printf '[{"info":{"params":{"Route":[{"index":1,"device":7,"props":{"channelVolumes":[%s,%s],"mute":false}}]}}}]\n' \
   "$raw" "$raw"
 EOF
@@ -140,8 +170,6 @@ chmod 0755 "${volume_bin}/pw-dump"
 
 cat >"${volume_bin}/pw-cli" <<'EOF'
 #!/usr/bin/env bash
-raw="$(sed -nE 's/.*channelVolumes: \[ ([0-9.]+).*/\1/p' <<<"${4:-}")"
-[[ -n $raw ]] || exit 2
 if mkdir "$VOLUME_FIRST_WRITER" 2>/dev/null; then
   : >"$VOLUME_FIRST_WRITER_READY"
   for _ in {1..500}; do
@@ -150,15 +178,15 @@ if mkdir "$VOLUME_FIRST_WRITER" 2>/dev/null; then
   done
   [[ -e $VOLUME_RELEASE_MARKER ]] || exit 3
 fi
-printf '%s\n' "$raw" >"${VOLUME_STATE_FILE}.$$"
-mv -f -- "${VOLUME_STATE_FILE}.$$" "$VOLUME_STATE_FILE"
+# The attached iFi/PipeWire trace accepts direct Route writes with exit 0,
+# but silently ignores writes that raise channelVolumes.
+exit 0
 EOF
 chmod 0755 "${volume_bin}/pw-cli"
 
 PATH="${volume_bin}:$PATH" \
   XDG_RUNTIME_DIR="$volume_runtime" \
   VOLUME_STATE_FILE="$volume_state" \
-  VOLUME_FALLBACK_MARKER="$fallback_marker" \
   VOLUME_FIRST_WRITER="$volume_first_writer" \
   VOLUME_FIRST_WRITER_READY="$volume_first_writer_ready" \
   VOLUME_RELEASE_MARKER="$volume_release_marker" \
@@ -185,7 +213,6 @@ fi
 PATH="${volume_bin}:$PATH" \
   XDG_RUNTIME_DIR="$volume_runtime" \
   VOLUME_STATE_FILE="$volume_state" \
-  VOLUME_FALLBACK_MARKER="$fallback_marker" \
   VOLUME_FIRST_WRITER="$volume_first_writer" \
   VOLUME_FIRST_WRITER_READY="$volume_first_writer_ready" \
   VOLUME_RELEASE_MARKER="$volume_release_marker" \
@@ -201,9 +228,18 @@ wait "$second_volume_pid" \
   || fail "second concurrent volume adjustment failed"
 volume_pids=()
 
-[[ $(<"$volume_state") == 1.000000000 ]] \
+[[ $(<"$volume_state") == 100 ]] \
   || fail "concurrent volume-up events did not reach 100 percent"
-[[ ! -e $fallback_marker ]] \
-  || fail "route-aware volume control unexpectedly used its fallback"
+
+PATH="${volume_bin}:$PATH" \
+  XDG_RUNTIME_DIR="$volume_runtime" \
+  VOLUME_STATE_FILE="$volume_state" \
+  VOLUME_FIRST_WRITER="$volume_first_writer" \
+  VOLUME_FIRST_WRITER_READY="$volume_first_writer_ready" \
+  VOLUME_RELEASE_MARKER="$volume_release_marker" \
+  "$VOLUME_SCRIPT" set 250
+
+[[ $(<"$volume_state") == 200 ]] \
+  || fail "absolute volume set did not preserve the 200 percent safety cap"
 
 printf '%s\n' "Bar control action regression test passed."
