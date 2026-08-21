@@ -714,6 +714,10 @@ Singleton {
             ? root.popupPreviewPosition : BarState.notificationPopupPositionFor(monitorNameHere)
         readonly property string resolvedPopupPosition: FlyoutEdgeLayout.resolveNotificationPosition(
             requestedPopupPosition, barPositionHere)
+        readonly property int barAdjacentMargin: barVisibleHere
+            ? BarState.barSizeFor(screen.name,
+                barPositionHere === "left" || barPositionHere === "right") + 10
+            : 10
         readonly property int popupHeightLimit: Math.max(120,
             (screen ? screen.height : 1080)
                 - (barVisibleHere ? BarState.barSizeFor(screen.name,
@@ -724,10 +728,10 @@ Singleton {
         anchors.left: FlyoutEdgeLayout.positionIsLeft(resolvedPopupPosition)
         anchors.right: FlyoutEdgeLayout.positionIsRight(resolvedPopupPosition)
         margins {
-            top: barVisibleHere && barPositionHere === "top" ? 38 : 10
-            bottom: barVisibleHere && barPositionHere === "bottom" ? 38 : 10
-            left: barVisibleHere && barPositionHere === "left" ? 46 : 10
-            right: barVisibleHere && barPositionHere === "right" ? 46 : 10
+            top: barVisibleHere && barPositionHere === "top" ? barAdjacentMargin : 10
+            bottom: barVisibleHere && barPositionHere === "bottom" ? barAdjacentMargin : 10
+            left: barVisibleHere && barPositionHere === "left" ? barAdjacentMargin : 10
+            right: barVisibleHere && barPositionHere === "right" ? barAdjacentMargin : 10
         }
 
         implicitWidth: Math.max(320, Math.min(520, root.viewForScreen(screen).width))

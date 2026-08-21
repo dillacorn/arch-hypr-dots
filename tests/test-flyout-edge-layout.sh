@@ -106,6 +106,16 @@ require_source "${QML_DIR}/Notifications.qml" 'setPopupPreview(position)' \
   'Notification Center has no non-persistent popup preview IPC'
 require_source "${QML_DIR}/Notifications.qml" 'clearPopupPreview()' \
   'Notification Center cannot clear its popup preview'
+require_source "${QML_DIR}/Notifications.qml" 'readonly property int barAdjacentMargin:' \
+  'notification popup spacing does not follow the active display bar size'
+require_source "${QML_DIR}/Notifications.qml" 'BarState.barSizeFor(screen.name,' \
+  'notification popup spacing does not read the per-display bar size'
+require_source "${QML_DIR}/Notifications.qml" '? barAdjacentMargin : 10' \
+  'notification popup anchors do not use the dynamic bar-adjacent margin'
+if grep -Eq -- 'barPositionHere === "(top|bottom)" \? 38|barPositionHere === "(left|right)" \? 46' \
+    "${QML_DIR}/Notifications.qml"; then
+  fail 'notification popup still assumes the default 28/36 px bar sizes'
+fi
 
 require_source "${QML_DIR}/Bar.qml" 'label: "󰍽"' \
   'mouse submap does not use the theme-tintable Nerd Font glyph'
