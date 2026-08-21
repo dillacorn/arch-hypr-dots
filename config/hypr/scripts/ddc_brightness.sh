@@ -15,6 +15,13 @@ STEP="${AWTARCHY_DDC_STEP:-5}"
 SCROLL_DEBOUNCE_MS="${AWTARCHY_DDC_SCROLL_DEBOUNCE_MS:-1000}"
 SCROLL_MAX_WAIT_MS="${AWTARCHY_DDC_SCROLL_MAX_WAIT_MS:-60000}"
 QUERY_LOCK_TIMEOUT="${AWTARCHY_DDC_QUERY_LOCK_TIMEOUT:-5}"
+WATCH_STARTUP_ATTEMPTS="${AWTARCHY_DDC_WATCH_STARTUP_ATTEMPTS:-5}"
+WATCH_STARTUP_INTERVAL="${AWTARCHY_DDC_WATCH_STARTUP_INTERVAL:-1}"
+
+[[ $WATCH_STARTUP_ATTEMPTS =~ ^[1-9][0-9]*$ ]] \
+  || WATCH_STARTUP_ATTEMPTS=5
+[[ $WATCH_STARTUP_INTERVAL =~ ^[0-9]+([.][0-9]+)?$ ]] \
+  || WATCH_STARTUP_INTERVAL=1
 
 now_ms() {
   if date +%s%3N >/dev/null 2>&1; then
@@ -365,6 +372,26 @@ while True:
 PY
 }
 
+print_startup_status_for_monitor() {
+  local monitor="$1" attempt
+
+  # Display controllers can appear shortly after the bar starts at login.
+  for ((attempt = 1; attempt <= WATCH_STARTUP_ATTEMPTS; attempt += 1)); do
+    print_status_for_monitor "$monitor"
+
+    if read_preview_status "$monitor" >/dev/null \
+      || read_cached_status "$monitor" >/dev/null; then
+      return 0
+    fi
+
+    if (( attempt < WATCH_STARTUP_ATTEMPTS )); then
+      sleep "$WATCH_STARTUP_INTERVAL"
+    fi
+  done
+
+  return 0
+}
+
 watch_status() {
   local monitor event
 
@@ -380,7 +407,10 @@ watch_status() {
 
   while IFS= read -r event; do
     case "$event" in
-      ready|changed)
+      ready)
+        print_startup_status_for_monitor "$monitor"
+        ;;
+      changed)
         print_status_for_monitor "$monitor"
         ;;
     esac

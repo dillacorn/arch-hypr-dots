@@ -21,12 +21,20 @@ esac
   exit 2
 }
 
-for command in wpctl pw-dump pw-cli python3; do
+for command in wpctl pw-dump pw-cli python3 flock; do
   command -v "$command" >/dev/null 2>&1 || {
     printf 'ERROR: required command not found: %s\n' "$command" >&2
     exit 127
   }
 done
+
+runtime_root="${XDG_RUNTIME_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/awtarchy-runtime}"
+lock_dir="${runtime_root}/awtarchy"
+umask 077
+mkdir -p -- "$lock_dir"
+# Wheel events launch separate helpers, so protect the full read/modify/write.
+exec {volume_lock_fd}>"${lock_dir}/quickshell-volume.lock"
+flock -x "$volume_lock_fd"
 
 fallback_volume() {
   local limit_ratio
