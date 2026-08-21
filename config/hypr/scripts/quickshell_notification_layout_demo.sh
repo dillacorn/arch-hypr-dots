@@ -54,7 +54,7 @@ notify-send \
     --urgency=normal \
     --expire-time=1800 \
     'Awtarchy notification layout · automatic' \
-    'Automatic follows this display’s bar notification icon.'
+    "Automatic follows this display's bar notification icon."
 pause_between_positions
 clear_preview
 
