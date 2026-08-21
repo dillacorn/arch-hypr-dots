@@ -6,11 +6,13 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
+import "FlyoutEdgeLayout.js" as FlyoutEdgeLayout
 
 Singleton {
     id: root
 
     property string placement: "center"
+    readonly property bool bottomEdgeLayout: FlyoutEdgeLayout.isBottom(placement)
     property bool settingsOpen: false
     property int panelWidthOverride: -1
     property int panelHeightOverride: -1
@@ -67,6 +69,8 @@ Singleton {
         || savedView.textScale !== effectiveTextScale
         || savedView.iconScale !== effectiveIconScale
         || savedView.captureAllowed !== captureAllowed
+
+    onBottomEdgeLayoutChanged: Qt.callLater(() => alignContentToBar())
 
     function focusedScreen() {
         const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
@@ -141,6 +145,13 @@ Singleton {
 
     function scaledIcon(baseSize) {
         return Math.max(8, Math.round(baseSize * effectiveIconScale / 100));
+    }
+
+    function alignContentToBar() {
+        const minimumY = contentFlick.originY;
+        const maximumY = Math.max(minimumY,
+            minimumY + contentFlick.contentHeight - contentFlick.height);
+        contentFlick.contentY = bottomEdgeLayout ? maximumY : minimumY;
     }
 
     function batteryIcon(percent) {
@@ -413,8 +424,10 @@ Singleton {
 
         onClosed: root.close()
         onVisibleChanged: {
-            if (visible)
+            if (visible) {
                 Qt.callLater(() => root.positionWindow());
+                Qt.callLater(() => root.alignContentToBar());
+            }
         }
 
         Rectangle {
@@ -441,11 +454,14 @@ Singleton {
                 onPressed: mouse => mouse.accepted = true
             }
 
-            ColumnLayout {
+            GridLayout {
                 anchors.fill: parent
-                spacing: 0
+                columns: 1
+                rowSpacing: 0
+                columnSpacing: 0
 
                 Rectangle {
+                    Layout.row: root.bottomEdgeLayout ? 2 : 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: Math.max(38, root.scaledText(13) + 18)
                     color: Theme.active
@@ -506,6 +522,7 @@ Singleton {
                 }
 
                 Rectangle {
+                    Layout.row: 1
                     Layout.fillWidth: true
                     Layout.preferredHeight: root.settingsOpen ? settingsPanel.implicitHeight + 12 : 0
                     visible: root.settingsOpen
@@ -542,6 +559,7 @@ Singleton {
                 }
 
                 Item {
+                    Layout.row: root.bottomEdgeLayout ? 0 : 2
                     Layout.fillWidth: true
                     Layout.fillHeight: true
 
@@ -553,16 +571,21 @@ Singleton {
                         anchors.bottomMargin: 6
                         anchors.rightMargin: contentScrollBar.visible ? 19 : 6
                         contentWidth: width
-                        contentHeight: contentColumn.implicitHeight
+                        contentHeight: Math.max(height, contentColumn.implicitHeight)
                         clip: true
                         boundsBehavior: Flickable.StopAtBounds
 
-                        ColumnLayout {
+                        GridLayout {
                             id: contentColumn
+                            columns: 1
+                            y: root.bottomEdgeLayout
+                                ? Math.max(0, contentFlick.contentHeight - implicitHeight) : 0
                             width: contentFlick.width
-                            spacing: 8
+                            rowSpacing: 8
+                            columnSpacing: 0
 
                             Rectangle {
+                                Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 0, 2)
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: batteryContent.implicitHeight + 18
                                 color: Theme.popupButton
@@ -649,6 +672,7 @@ Singleton {
                             }
 
                             PowerModeCard {
+                                Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 1, 2)
                                 presentationEnabled: true
                                 active: batteryWindow.visible
                                 textScale: root.effectiveTextScale

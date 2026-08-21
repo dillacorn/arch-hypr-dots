@@ -7,6 +7,7 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Widgets
+import "FlyoutEdgeLayout.js" as FlyoutEdgeLayout
 
 Singleton {
     id: root
@@ -45,6 +46,7 @@ Singleton {
     readonly property int liveWidth: Math.round(launcherWindow.width)
     readonly property int liveHeight: Math.round(launcherWindow.height)
     readonly property bool centerOnScreen: launcherCenteredFor(activeMonitorName)
+    readonly property bool bottomEdgeLayout: FlyoutEdgeLayout.isBottom(requestedPlacement)
     readonly property bool captureAllowed: captureAllowedOverride >= 0
         ? captureAllowedOverride === 1 : BarState.captureAllowedFor("launcher")
     readonly property bool settingsDirty: savedView.width !== liveWidth
@@ -924,11 +926,14 @@ Singleton {
                 }
             }
 
-            ColumnLayout {
+            GridLayout {
                 anchors.fill: parent
-                spacing: 0
+                columns: 1
+                rowSpacing: 0
+                columnSpacing: 0
 
                 Rectangle {
+                    Layout.row: root.bottomEdgeLayout ? 2 : 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: 36
                     color: Theme.active
@@ -974,15 +979,24 @@ Singleton {
                                     }
                                     event.accepted = true;
                                 } else if (event.key === Qt.Key_Down) {
-                                    if (appList.count > 0)
-                                        appList.currentIndex = Math.min(appList.count - 1,
-                                            Math.max(0, appList.currentIndex) + appList.columnCount);
+                                    if (appList.count > 0) {
+                                        const downIndex = root.bottomEdgeLayout
+                                            ? Math.max(0, Math.max(0, appList.currentIndex) - appList.columnCount)
+                                            : Math.min(appList.count - 1,
+                                                Math.max(0, appList.currentIndex) + appList.columnCount);
+                                        appList.currentIndex = downIndex;
+                                    }
                                     appList.positionViewAtIndex(appList.currentIndex, GridView.Contain);
                                     event.accepted = true;
                                 } else if (event.key === Qt.Key_Up) {
-                                    if (appList.count > 0)
-                                        appList.currentIndex = Math.max(0,
-                                            Math.max(0, appList.currentIndex) - appList.columnCount);
+                                    if (appList.count > 0) {
+                                        const upIndex = root.bottomEdgeLayout
+                                            ? Math.min(appList.count - 1,
+                                                Math.max(0, appList.currentIndex) + appList.columnCount)
+                                            : Math.max(0,
+                                                Math.max(0, appList.currentIndex) - appList.columnCount);
+                                        appList.currentIndex = upIndex;
+                                    }
                                     appList.positionViewAtIndex(appList.currentIndex, GridView.Contain);
                                     event.accepted = true;
                                 } else if (event.key === Qt.Key_Right && appList.columnCount > 1) {
@@ -1088,6 +1102,7 @@ Singleton {
                 }
 
                 Rectangle {
+                    Layout.row: 1
                     Layout.fillWidth: true
                     Layout.preferredHeight: root.settingsOpen
                         ? (root.copySettingsOpen ? 108 : 139) : 0
@@ -1536,12 +1551,15 @@ Singleton {
 
                 GridView {
                     id: appList
+                    Layout.row: root.bottomEdgeLayout ? 0 : 2
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     clip: true
                     currentIndex: 0
                     boundsBehavior: Flickable.StopAtBounds
                     flow: GridView.FlowLeftToRight
+                    verticalLayoutDirection: root.bottomEdgeLayout
+                        ? GridView.BottomToTop : GridView.TopToBottom
                     readonly property int columnCount: Math.max(1,
                         Math.floor(width / root.applicationColumnMinimumWidth))
                     cellWidth: width / columnCount
@@ -1629,7 +1647,7 @@ Singleton {
                 width: 28
                 height: 28
                 x: launcherPanel.width - width - 6
-                y: 4
+                y: root.bottomEdgeLayout ? launcherPanel.height - height - 4 : 4
                 color: launcherCloseMouse.containsMouse ? Theme.focus : Theme.active
                 border.width: 1
                 border.color: launcherCloseMouse.containsMouse ? Theme.focus : Theme.muted

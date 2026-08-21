@@ -7,12 +7,14 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
+import "FlyoutEdgeLayout.js" as FlyoutEdgeLayout
 
 Singleton {
     id: root
 
     property var entries: []
     property string placement: "center"
+    readonly property bool bottomEdgeLayout: FlyoutEdgeLayout.isBottom(placement)
     property bool settingsOpen: false
     property bool detailOpen: false
     property var detailEntry: null
@@ -73,6 +75,8 @@ Singleton {
         || savedView.textScale !== effectiveTextScale
         || savedView.iconScale !== effectiveIconScale
         || savedView.captureAllowed !== captureAllowed
+
+    onBottomEdgeLayoutChanged: Qt.callLater(() => clipboardList.positionViewAtBeginning())
 
     function focusedScreen() {
         const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
@@ -558,11 +562,14 @@ Singleton {
                 onPressed: mouse => mouse.accepted = true
             }
 
-            ColumnLayout {
+            GridLayout {
                 anchors.fill: parent
-                spacing: 0
+                columns: 1
+                rowSpacing: 0
+                columnSpacing: 0
 
                 Rectangle {
+                    Layout.row: root.bottomEdgeLayout ? 2 : 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: 38
                     color: Theme.active
@@ -602,11 +609,15 @@ Singleton {
                                     root.close();
                                     event.accepted = true;
                                 } else if (event.key === Qt.Key_Down && clipboardList.count > 0) {
-                                    clipboardList.currentIndex = Math.min(clipboardList.count - 1, clipboardList.currentIndex + 1);
+                                    clipboardList.currentIndex = root.bottomEdgeLayout
+                                        ? Math.max(0, clipboardList.currentIndex - 1)
+                                        : Math.min(clipboardList.count - 1, clipboardList.currentIndex + 1);
                                     clipboardList.positionViewAtIndex(clipboardList.currentIndex, ListView.Contain);
                                     event.accepted = true;
                                 } else if (event.key === Qt.Key_Up && clipboardList.count > 0) {
-                                    clipboardList.currentIndex = Math.max(0, clipboardList.currentIndex - 1);
+                                    clipboardList.currentIndex = root.bottomEdgeLayout
+                                        ? Math.min(clipboardList.count - 1, clipboardList.currentIndex + 1)
+                                        : Math.max(0, clipboardList.currentIndex - 1);
                                     clipboardList.positionViewAtIndex(clipboardList.currentIndex, ListView.Contain);
                                     event.accepted = true;
                                 } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
@@ -716,6 +727,7 @@ Singleton {
                 }
 
                 Rectangle {
+                    Layout.row: 1
                     Layout.fillWidth: true
                     Layout.preferredHeight: root.settingsOpen ? settingsPanel.implicitHeight + 12 : 0
                     visible: root.settingsOpen
@@ -753,6 +765,7 @@ Singleton {
 
                 ListView {
                     id: clipboardList
+                    Layout.row: root.bottomEdgeLayout ? 0 : 2
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     visible: !root.detailOpen
@@ -760,6 +773,8 @@ Singleton {
                     clip: true
                     currentIndex: count > 0 ? 0 : -1
                     boundsBehavior: Flickable.StopAtBounds
+                    verticalLayoutDirection: root.bottomEdgeLayout
+                        ? ListView.BottomToTop : ListView.TopToBottom
 
                     delegate: Rectangle {
                         id: row
@@ -904,15 +919,19 @@ Singleton {
                 }
 
                 Item {
+                    Layout.row: root.bottomEdgeLayout ? 0 : 2
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     visible: root.detailOpen
 
-                    ColumnLayout {
+                    GridLayout {
                         anchors.fill: parent
-                        spacing: 0
+                        columns: 1
+                        rowSpacing: 0
+                        columnSpacing: 0
 
                         Rectangle {
+                            Layout.row: root.bottomEdgeLayout ? 2 : 0
                             Layout.fillWidth: true
                             Layout.preferredHeight: 36
                             color: Theme.popupButton
@@ -963,6 +982,7 @@ Singleton {
                         }
 
                         Text {
+                            Layout.row: 1
                             Layout.fillWidth: true
                             Layout.leftMargin: 10
                             Layout.rightMargin: 10
@@ -978,6 +998,7 @@ Singleton {
 
                         Flickable {
                             id: detailFlick
+                            Layout.row: root.bottomEdgeLayout ? 0 : 2
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             contentWidth: width

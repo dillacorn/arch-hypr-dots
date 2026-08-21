@@ -152,7 +152,7 @@ Rectangle {
         if (fontPixelSize > 0)
             return scaledIconSize(fontPixelSize);
 
-        if (part.indexOf("🖱") >= 0 || /^[↑↓←→]$/.test(part))
+        if (part.indexOf("󰍽") >= 0 || /^[↑↓←→]$/.test(part))
             return scaledIconSize(14);
 
         // Workspace numbers remain independently text-scaled while the

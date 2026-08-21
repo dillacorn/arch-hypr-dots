@@ -7,11 +7,13 @@ import Quickshell
 import Quickshell.Bluetooth
 import Quickshell.Hyprland
 import Quickshell.Io
+import "FlyoutEdgeLayout.js" as FlyoutEdgeLayout
 
 Singleton {
     id: root
 
     property string placement: "center"
+    readonly property bool bottomEdgeLayout: FlyoutEdgeLayout.isBottom(placement)
     property string actionMessage: ""
     property bool settingsOpen: false
     property int panelWidthOverride: -1
@@ -84,6 +86,8 @@ Singleton {
         || savedView.textScale !== effectiveTextScale
         || savedView.iconScale !== effectiveIconScale
         || savedView.captureAllowed !== captureAllowed
+
+    onBottomEdgeLayoutChanged: Qt.callLater(() => alignContentToBar())
 
     function devices() {
         const current = adapter;
@@ -286,6 +290,13 @@ Singleton {
 
     function scaledIcon(baseSize) {
         return Math.max(8, Math.round(baseSize * effectiveIconScale / 100));
+    }
+
+    function alignContentToBar() {
+        const minimumY = bluetoothFlick.originY;
+        const maximumY = Math.max(minimumY,
+            minimumY + bluetoothFlick.contentHeight - bluetoothFlick.height);
+        bluetoothFlick.contentY = bottomEdgeLayout ? maximumY : minimumY;
     }
 
     function otherMonitorNames() {
@@ -574,8 +585,10 @@ Singleton {
 
         onClosed: root.close()
         onVisibleChanged: {
-            if (visible)
+            if (visible) {
                 Qt.callLater(() => root.positionWindow());
+                Qt.callLater(() => root.alignContentToBar());
+            }
         }
 
         Rectangle {
@@ -600,11 +613,14 @@ Singleton {
                 onPressed: mouse => mouse.accepted = true
             }
 
-            ColumnLayout {
+            GridLayout {
                 anchors.fill: parent
-                spacing: 0
+                columns: 1
+                rowSpacing: 0
+                columnSpacing: 0
 
                 Rectangle {
+                    Layout.row: root.bottomEdgeLayout ? 2 : 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: Math.max(38, root.scaledText(13) + 18)
                     color: Theme.active
@@ -662,6 +678,7 @@ Singleton {
                 }
 
                 Rectangle {
+                    Layout.row: 1
                     Layout.fillWidth: true
                     Layout.preferredHeight: root.settingsOpen ? settingsPanel.implicitHeight + 12 : 0
                     visible: root.settingsOpen
@@ -699,21 +716,26 @@ Singleton {
 
                 Flickable {
                     id: bluetoothFlick
+                    Layout.row: root.bottomEdgeLayout ? 0 : 2
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     contentWidth: width
-                    contentHeight: bluetoothColumn.implicitHeight + 12
+                    contentHeight: Math.max(height, bluetoothColumn.implicitHeight + 12)
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
 
-                    ColumnLayout {
+                    GridLayout {
                         id: bluetoothColumn
+                        columns: 1
                         x: 6
-                        y: 6
+                        y: root.bottomEdgeLayout
+                            ? Math.max(6, bluetoothFlick.contentHeight - implicitHeight - 6) : 6
                         width: bluetoothFlick.width - (bluetoothScroll.visible ? 26 : 12)
-                        spacing: 8
+                        rowSpacing: 8
+                        columnSpacing: 0
 
                         Rectangle {
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 0, 2)
                             Layout.fillWidth: true
                             Layout.preferredHeight: adapterContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -768,36 +790,43 @@ Singleton {
                             }
                         }
 
-                        Text {
+                        ColumnLayout {
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 1, 2)
                             Layout.fillWidth: true
-                            visible: root.adapterEnabled && root.devices().length === 0
-                            text: root.adapterDiscovering
-                                ? "Scanning for Bluetooth devices…" : "No Bluetooth devices found"
-                            color: Theme.muted
-                            font.family: Theme.fontFamily
-                            font.pixelSize: root.scaledText(9)
-                        }
+                            spacing: 8
 
-                        Repeater {
-                            model: ScriptModel {
-                                values: root.adapterEnabled ? root.devices() : []
+                            Text {
+                                Layout.fillWidth: true
+                                visible: root.adapterEnabled && root.devices().length === 0
+                                text: root.adapterDiscovering
+                                    ? "Scanning for Bluetooth devices…" : "No Bluetooth devices found"
+                                color: Theme.muted
+                                font.family: Theme.fontFamily
+                                font.pixelSize: root.scaledText(9)
                             }
 
-                            Rectangle {
-                                id: deviceRow
-                                required property var modelData
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: Math.max(48,
-                                    root.scaledText(10) + root.scaledText(8) + 20)
-                                color: modelData.connected ? Theme.active : Theme.popupButton
-                                border.width: 1
-                                border.color: modelData.connected ? Theme.focus : Theme.active
+                            Repeater {
+                                model: ScriptModel {
+                                    values: root.adapterEnabled
+                                        ? (root.bottomEdgeLayout ? root.devices().slice().reverse() : root.devices())
+                                        : []
+                                }
 
-                                RowLayout {
-                                    anchors.fill: parent
-                                    anchors.leftMargin: 7
-                                    anchors.rightMargin: 5
-                                    spacing: 7
+                                Rectangle {
+                                    id: deviceRow
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: Math.max(48,
+                                        root.scaledText(10) + root.scaledText(8) + 20)
+                                    color: modelData.connected ? Theme.active : Theme.popupButton
+                                    border.width: 1
+                                    border.color: modelData.connected ? Theme.focus : Theme.active
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 7
+                                        anchors.rightMargin: 5
+                                        spacing: 7
 
                                     Text {
                                         text: deviceRow.modelData.connected ? "●" : ""
@@ -835,13 +864,14 @@ Singleton {
                                         textSize: root.scaledText(8)
                                         onClicked: root.forgetDevice(deviceRow.modelData)
                                     }
-                                    SettingsButton {
-                                        label: deviceRow.modelData.connected ? "Disconnect"
-                                            : (deviceRow.modelData.pairing ? "Cancel"
-                                                : (deviceRow.modelData.paired ? "Connect" : "Pair"))
-                                        active: deviceRow.modelData.connected
-                                        textSize: root.scaledText(9)
-                                        onClicked: root.toggleDevice(deviceRow.modelData)
+                                        SettingsButton {
+                                            label: deviceRow.modelData.connected ? "Disconnect"
+                                                : (deviceRow.modelData.pairing ? "Cancel"
+                                                    : (deviceRow.modelData.paired ? "Connect" : "Pair"))
+                                            active: deviceRow.modelData.connected
+                                            textSize: root.scaledText(9)
+                                            onClicked: root.toggleDevice(deviceRow.modelData)
+                                        }
                                     }
                                 }
                             }

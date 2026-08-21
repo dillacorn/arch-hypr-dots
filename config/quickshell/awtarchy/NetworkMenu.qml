@@ -7,11 +7,13 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Networking
+import "FlyoutEdgeLayout.js" as FlyoutEdgeLayout
 
 Singleton {
     id: root
 
     property string placement: "center"
+    readonly property bool bottomEdgeLayout: FlyoutEdgeLayout.isBottom(placement)
     property var pendingWifiNetwork: null
     property string wifiPassword: ""
     property string actionMessage: ""
@@ -89,6 +91,8 @@ Singleton {
         || savedView.textScale !== effectiveTextScale
         || savedView.iconScale !== effectiveIconScale
         || savedView.captureAllowed !== captureAllowed
+
+    onBottomEdgeLayoutChanged: Qt.callLater(() => alignContentToBar())
 
     function devicesOfType(type) {
         const devices = Networking.devices ? Networking.devices.values : [];
@@ -359,6 +363,13 @@ Singleton {
 
     function scaledIcon(baseSize) {
         return Math.max(8, Math.round(baseSize * effectiveIconScale / 100));
+    }
+
+    function alignContentToBar() {
+        const minimumY = networkFlick.originY;
+        const maximumY = Math.max(minimumY,
+            minimumY + networkFlick.contentHeight - networkFlick.height);
+        networkFlick.contentY = bottomEdgeLayout ? maximumY : minimumY;
     }
 
     function otherMonitorNames() {
@@ -728,8 +739,10 @@ Singleton {
 
         onClosed: root.close()
         onVisibleChanged: {
-            if (visible)
+            if (visible) {
                 Qt.callLater(() => root.positionWindow());
+                Qt.callLater(() => root.alignContentToBar());
+            }
         }
 
         Rectangle {
@@ -754,11 +767,14 @@ Singleton {
                 onPressed: mouse => mouse.accepted = true
             }
 
-            ColumnLayout {
+            GridLayout {
                 anchors.fill: parent
-                spacing: 0
+                columns: 1
+                rowSpacing: 0
+                columnSpacing: 0
 
                 Rectangle {
+                    Layout.row: root.bottomEdgeLayout ? 2 : 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: Math.max(38, root.scaledText(13) + 18)
                     color: Theme.active
@@ -824,6 +840,7 @@ Singleton {
                 }
 
                 Rectangle {
+                    Layout.row: 1
                     Layout.fillWidth: true
                     Layout.preferredHeight: root.settingsOpen ? settingsPanel.implicitHeight + 12 : 0
                     visible: root.settingsOpen
@@ -861,6 +878,7 @@ Singleton {
 
                 NetworkVpnSection {
                     id: vpnSection
+                    Layout.row: root.bottomEdgeLayout ? 0 : 2
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Layout.margins: 6
@@ -873,22 +891,27 @@ Singleton {
 
                 Flickable {
                     id: networkFlick
+                    Layout.row: root.bottomEdgeLayout ? 0 : 2
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     visible: !root.vpnOpen
                     contentWidth: width
-                    contentHeight: networkColumn.implicitHeight + 12
+                    contentHeight: Math.max(height, networkColumn.implicitHeight + 12)
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
 
-                    ColumnLayout {
+                    GridLayout {
                         id: networkColumn
+                        columns: 1
                         x: 6
-                        y: 6
+                        y: root.bottomEdgeLayout
+                            ? Math.max(6, networkFlick.contentHeight - implicitHeight - 6) : 6
                         width: networkFlick.width - (networkScroll.visible ? 26 : 12)
-                        spacing: 8
+                        rowSpacing: 8
+                        columnSpacing: 0
 
                         Rectangle {
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 0, 2)
                             visible: root.wiredPresent
                             Layout.fillWidth: true
                             Layout.preferredHeight: visible ? wiredContent.implicitHeight + 16 : 0
@@ -975,6 +998,7 @@ Singleton {
                         }
 
                         Rectangle {
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 1, 2)
                             visible: root.wifiPresent
                             Layout.fillWidth: true
                             Layout.preferredHeight: visible ? wifiContent.implicitHeight + 16 : 0

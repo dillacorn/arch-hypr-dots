@@ -553,7 +553,7 @@ PanelWindow {
 
                 BarControl {
                     id: wsHub
-                    label: "🖱"
+                    label: "󰍽"
                     tooltip: "Toggle mouse submap"
                     onClicked: Quickshell.execDetached([bar.mouseSubmapScript, "toggle"])
                     onRightClicked: Quickshell.execDetached([bar.mouseSubmapScript, "toggle"])
@@ -790,7 +790,7 @@ PanelWindow {
                 BarControl {
                     vertical: true
                     fixedWidth: bar.barSize
-                    label: "🖱"
+                    label: "󰍽"
                     tooltip: "Toggle mouse submap"
                     onClicked: Quickshell.execDetached([bar.mouseSubmapScript, "toggle"])
                     onRightClicked: Quickshell.execDetached([bar.mouseSubmapScript, "toggle"])

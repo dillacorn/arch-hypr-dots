@@ -225,6 +225,7 @@ Singleton {
             launcher_sizes: {},
             clipboard_views: {},
             notification_views: {},
+            notification_popup_positions: {},
             quick_settings_views: {},
             network_views: {},
             bluetooth_views: {},
@@ -252,6 +253,7 @@ Singleton {
             for (const key of [
                 "clipboard_views",
                 "notification_views",
+                "notification_popup_positions",
                 "quick_settings_views",
                 "network_views",
                 "bluetooth_views",
@@ -450,6 +452,20 @@ Singleton {
         if (!Number.isFinite(value))
             return defaultNotificationPopupLimit;
         return Math.max(1, Math.min(20, Math.round(value)));
+    }
+
+    function notificationPopupPositionFor(name) {
+        const positions = data().notification_popup_positions || ({});
+        const value = String(positions[name] || "automatic");
+        return [
+            "automatic",
+            "top-left",
+            "top-center",
+            "top-right",
+            "bottom-left",
+            "bottom-center",
+            "bottom-right"
+        ].indexOf(value) >= 0 ? value : "automatic";
     }
 
     function notificationViewFor(name) {

@@ -8,6 +8,7 @@ import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Services.Notifications
 import Quickshell.Wayland
+import "FlyoutEdgeLayout.js" as FlyoutEdgeLayout
 
 Singleton {
     id: root
@@ -17,6 +18,7 @@ Singleton {
     property var popupNotifications: []
     property int historyRevision: 0
     property string placement: "center"
+    readonly property bool bottomEdgeLayout: FlyoutEdgeLayout.isBottom(placement)
     property bool settingsOpen: false
     property int panelWidthOverride: -1
     property int panelHeightOverride: -1
@@ -24,6 +26,8 @@ Singleton {
     property int iconScaleOverride: -1
     property int captureAllowedOverride: -1
     property int popupLimitOverride: -1
+    property string popupPositionDraft: "automatic"
+    property string popupPreviewPosition: ""
     property real anchorAlongEdge: -1
     property string settingsMessage: ""
     property var savedView: ({
@@ -32,7 +36,8 @@ Singleton {
         textScale: 100,
         iconScale: 100,
         captureAllowed: false,
-        popupLimit: BarState.defaultNotificationPopupLimit
+        popupLimit: BarState.defaultNotificationPopupLimit,
+        popupPosition: "automatic"
     })
     property var stateCommandQueue: []
     property bool privacyRemapPending: false
@@ -79,13 +84,18 @@ Singleton {
         ? captureAllowedOverride === 1 : BarState.captureAllowedFor("notifications")
     readonly property int effectivePopupLimit: Math.max(1, Math.min(20,
         popupLimitOverride >= 0 ? popupLimitOverride : BarState.notificationPopupLimit()))
+    readonly property string effectivePopupPosition: FlyoutEdgeLayout.isNotificationPosition(popupPositionDraft)
+        ? popupPositionDraft : "automatic"
     readonly property bool settingsDirty: savedView.width !== livePanelWidth
         || savedView.height !== livePanelHeight
         || savedView.textScale !== effectiveTextScale
         || savedView.iconScale !== effectiveIconScale
         || savedView.captureAllowed !== captureAllowed
         || savedView.popupLimit !== effectivePopupLimit
+        || savedView.popupPosition !== effectivePopupPosition
     readonly property int historyCount: historyNotifications().length
+
+    onBottomEdgeLayoutChanged: Qt.callLater(() => historyList.positionViewAtBeginning())
 
     function focusedScreen() {
         const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
@@ -109,6 +119,16 @@ Singleton {
 
     function popupLimitForMonitor(name) {
         return BarState.notificationPopupLimit();
+    }
+
+    function setPopupPreview(position) {
+        const requested = String(position || "");
+        if (FlyoutEdgeLayout.isNotificationPosition(requested))
+            popupPreviewPosition = requested;
+    }
+
+    function clearPopupPreview() {
+        popupPreviewPosition = "";
     }
 
     function clampWidth(value) {
@@ -351,13 +371,15 @@ Singleton {
         iconScaleOverride = persisted.iconScale;
         captureAllowedOverride = BarState.captureAllowedFor("notifications") ? 1 : 0;
         popupLimitOverride = BarState.notificationPopupLimit();
+        popupPositionDraft = BarState.notificationPopupPositionFor(targetScreen.name);
         savedView = ({
             width: panelWidthOverride,
             height: panelHeightOverride,
             textScale: textScaleOverride,
             iconScale: iconScaleOverride,
             captureAllowed: captureAllowed,
-            popupLimit: effectivePopupLimit
+            popupLimit: effectivePopupLimit,
+            popupPosition: effectivePopupPosition
         });
     }
 
@@ -368,7 +390,8 @@ Singleton {
             textScale: effectiveTextScale,
             iconScale: effectiveIconScale,
             captureAllowed: captureAllowed,
-            popupLimit: effectivePopupLimit
+            popupLimit: effectivePopupLimit,
+            popupPosition: effectivePopupPosition
         });
     }
 
@@ -379,6 +402,7 @@ Singleton {
         iconScaleOverride = savedView.iconScale;
         captureAllowedOverride = savedView.captureAllowed ? 1 : 0;
         popupLimitOverride = savedView.popupLimit;
+        popupPositionDraft = savedView.popupPosition;
         applyWindowSize(width, height);
     }
 
@@ -409,6 +433,9 @@ Singleton {
         queueStateCommand([
             "set-notification-popup-limit", String(effectivePopupLimit)
         ]);
+        queueStateCommand([
+            "set-notification-popup-position", activeMonitorName, effectivePopupPosition
+        ]);
         panelWidthOverride = livePanelWidth;
         panelHeightOverride = livePanelHeight;
         acceptDraftAsSaved();
@@ -423,6 +450,7 @@ Singleton {
         iconScaleOverride = 100;
         captureAllowedOverride = 0;
         popupLimitOverride = BarState.defaultNotificationPopupLimit;
+        popupPositionDraft = "automatic";
         applyWindowSize(BarState.defaultNotificationWidth, BarState.defaultNotificationHeight);
         savedView = ({
             width: panelWidthOverride,
@@ -430,7 +458,8 @@ Singleton {
             textScale: 100,
             iconScale: 100,
             captureAllowed: false,
-            popupLimit: BarState.defaultNotificationPopupLimit
+            popupLimit: BarState.defaultNotificationPopupLimit,
+            popupPosition: "automatic"
         });
         privacyRemapPending = wasCaptureAllowed;
         queueStateCommand(["reset-flyout", "notifications", activeMonitorName]);
@@ -450,6 +479,11 @@ Singleton {
             String(effectiveTextScale), String(effectiveIconScale),
             ...targets
         ]);
+        for (const target of targets) {
+            queueStateCommand([
+                "set-notification-popup-position", String(target), effectivePopupPosition
+            ]);
+        }
         settingsMessage = "Copied Notification settings to " + targets.length
             + (targets.length === 1 ? " display" : " displays");
     }
@@ -584,6 +618,8 @@ Singleton {
         function dismissAll(): void { root.dismissAll(); }
         function dndEnabled(): bool { return root.mutePopups; }
         function popupsMuted(): bool { return root.mutePopups; }
+        function setPopupPreview(position: string): void { root.setPopupPreview(position); }
+        function clearPopupPreview(): void { root.clearPopupPreview(); }
     }
 
     NotificationServer {
@@ -673,15 +709,20 @@ Singleton {
 
         readonly property bool barVisibleHere: screen && BarState.enabledFor(screen.name)
         readonly property string barPositionHere: screen ? BarState.positionFor(screen.name) : "top"
+        readonly property string monitorNameHere: screen && screen.name ? String(screen.name) : ""
+        readonly property string requestedPopupPosition: root.popupPreviewPosition.length > 0
+            ? root.popupPreviewPosition : BarState.notificationPopupPositionFor(monitorNameHere)
+        readonly property string resolvedPopupPosition: FlyoutEdgeLayout.resolveNotificationPosition(
+            requestedPopupPosition, barPositionHere)
         readonly property int popupHeightLimit: Math.max(120,
             (screen ? screen.height : 1080)
                 - (barVisibleHere ? BarState.barSizeFor(screen.name,
                     barPositionHere === "left" || barPositionHere === "right") : 0) - 20)
 
-        anchors.top: barPositionHere !== "bottom"
-        anchors.bottom: barPositionHere === "bottom"
-        anchors.left: barPositionHere === "left"
-        anchors.right: barPositionHere !== "left"
+        anchors.top: FlyoutEdgeLayout.positionIsTop(resolvedPopupPosition)
+        anchors.bottom: FlyoutEdgeLayout.positionIsBottom(resolvedPopupPosition)
+        anchors.left: FlyoutEdgeLayout.positionIsLeft(resolvedPopupPosition)
+        anchors.right: FlyoutEdgeLayout.positionIsRight(resolvedPopupPosition)
         margins {
             top: barVisibleHere && barPositionHere === "top" ? 38 : 10
             bottom: barVisibleHere && barPositionHere === "bottom" ? 38 : 10
@@ -698,7 +739,10 @@ Singleton {
             spacing: 6
 
             Repeater {
-                model: ScriptModel { values: root.popupNotifications }
+                model: ScriptModel {
+                    values: FlyoutEdgeLayout.positionIsBottom(popupWindow.resolvedPopupPosition)
+                        ? root.popupNotifications.slice().reverse() : root.popupNotifications
+                }
 
                 delegate: NotificationCard {
                     id: popupCard
@@ -768,11 +812,14 @@ Singleton {
                 onPressed: mouse => mouse.accepted = true
             }
 
-            ColumnLayout {
+            GridLayout {
                 anchors.fill: parent
-                spacing: 0
+                columns: 1
+                rowSpacing: 0
+                columnSpacing: 0
 
                 Rectangle {
+                    Layout.row: root.bottomEdgeLayout ? 3 : 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: 38
                     color: Theme.active
@@ -909,6 +956,7 @@ Singleton {
                 }
 
                 Rectangle {
+                    Layout.row: root.bottomEdgeLayout ? 2 : 1
                     Layout.fillWidth: true
                     Layout.preferredHeight: root.settingsOpen ? settingsPanel.implicitHeight + 12 : 0
                     visible: root.settingsOpen
@@ -945,67 +993,111 @@ Singleton {
                 }
 
                 Rectangle {
+                    Layout.row: root.bottomEdgeLayout ? 1 : 2
                     Layout.fillWidth: true
-                    Layout.preferredHeight: root.settingsOpen ? 38 : 0
+                    Layout.preferredHeight: root.settingsOpen
+                        ? popupSettingsContent.implicitHeight + 12 : 0
                     visible: root.settingsOpen
                     color: Theme.popupButton
                     border.width: 0
 
-                    RowLayout {
+                    ColumnLayout {
+                        id: popupSettingsContent
                         anchors.fill: parent
-                        anchors.leftMargin: 8
-                        anchors.rightMargin: 8
-                        spacing: 8
+                        anchors.margins: 6
+                        spacing: 5
 
-                        Text {
+                        RowLayout {
                             Layout.fillWidth: true
-                            text: "Maximum simultaneous popups · Global"
-                            color: Theme.foreground
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 10
-                            elide: Text.ElideRight
-                        }
+                            spacing: 8
 
-                        Rectangle {
-                            Layout.preferredWidth: 54
-                            Layout.preferredHeight: 25
-                            color: Theme.active
-                            border.width: 1
-                            border.color: popupLimitInput.activeFocus ? Theme.focus : Theme.muted
-
-                            TextInput {
-                                id: popupLimitInput
-                                anchors.fill: parent
-                                text: String(root.effectivePopupLimit)
+                            Text {
+                                Layout.fillWidth: true
+                                text: "Maximum simultaneous popups · Global"
                                 color: Theme.foreground
-                                selectionColor: Theme.focus
-                                selectedTextColor: Theme.foreground
                                 font.family: Theme.fontFamily
                                 font.pixelSize: 10
-                                horizontalAlignment: TextInput.AlignHCenter
-                                verticalAlignment: TextInput.AlignVCenter
-                                validator: IntValidator { bottom: 1; top: 20 }
-                                selectByMouse: true
-                                onTextEdited: {
-                                    const value = Number(text);
-                                    if (/^\d+$/.test(text) && value >= 1 && value <= 20)
-                                        root.popupLimitOverride = value;
+                                elide: Text.ElideRight
+                            }
+
+                            Rectangle {
+                                Layout.preferredWidth: 54
+                                Layout.preferredHeight: 25
+                                color: Theme.active
+                                border.width: 1
+                                border.color: popupLimitInput.activeFocus ? Theme.focus : Theme.muted
+
+                                TextInput {
+                                    id: popupLimitInput
+                                    anchors.fill: parent
+                                    text: String(root.effectivePopupLimit)
+                                    color: Theme.foreground
+                                    selectionColor: Theme.focus
+                                    selectedTextColor: Theme.foreground
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: 10
+                                    horizontalAlignment: TextInput.AlignHCenter
+                                    verticalAlignment: TextInput.AlignVCenter
+                                    validator: IntValidator { bottom: 1; top: 20 }
+                                    selectByMouse: true
+                                    onTextEdited: {
+                                        const value = Number(text);
+                                        if (/^\d+$/.test(text) && value >= 1 && value <= 20)
+                                            root.popupLimitOverride = value;
+                                    }
+                                    onEditingFinished: text = String(root.effectivePopupLimit)
                                 }
-                                onEditingFinished: text = String(root.effectivePopupLimit)
+                            }
+
+                            Text {
+                                text: "1–20"
+                                color: Theme.muted
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 9
                             }
                         }
 
                         Text {
-                            text: "1–20"
+                            Layout.fillWidth: true
+                            text: "Popup position · " + root.activeMonitorName
+                                + " · Automatic follows this display's bar notification icon"
                             color: Theme.muted
                             font.family: Theme.fontFamily
                             font.pixelSize: 9
+                            elide: Text.ElideRight
+                        }
+
+                        Flow {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: childrenRect.height
+                            spacing: 5
+
+                            Repeater {
+                                model: [
+                                    { value: "automatic", label: "Automatic" },
+                                    { value: "top-left", label: "Top Left" },
+                                    { value: "top-center", label: "Top Center" },
+                                    { value: "top-right", label: "Top Right" },
+                                    { value: "bottom-left", label: "Bottom Left" },
+                                    { value: "bottom-center", label: "Bottom Center" },
+                                    { value: "bottom-right", label: "Bottom Right" }
+                                ]
+
+                                SettingsButton {
+                                    required property var modelData
+                                    label: modelData.label
+                                    active: root.effectivePopupPosition === modelData.value
+                                    textSize: 9
+                                    onClicked: root.popupPositionDraft = modelData.value
+                                }
+                            }
                         }
                     }
                 }
 
                 ListView {
                     id: historyList
+                    Layout.row: root.bottomEdgeLayout ? 0 : 3
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Layout.leftMargin: 6
@@ -1016,6 +1108,8 @@ Singleton {
                     spacing: 6
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
+                    verticalLayoutDirection: root.bottomEdgeLayout
+                        ? ListView.BottomToTop : ListView.TopToBottom
 
                     delegate: NotificationCard {
                         id: historyCard
@@ -1059,7 +1153,7 @@ Singleton {
                 width: 28
                 height: 28
                 x: panel.width - width - 6
-                y: 5
+                y: root.bottomEdgeLayout ? panel.height - height - 5 : 5
                 color: closeMouse.containsMouse ? Theme.focus : Theme.active
                 border.width: 1
                 border.color: closeMouse.containsMouse ? Theme.focus : Theme.muted

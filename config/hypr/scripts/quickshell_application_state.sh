@@ -342,6 +342,30 @@ set_notification_popup_limit() {
     commit_tmp
 }
 
+set_notification_popup_position() {
+    local monitor="$1" position="$2"
+    [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
+    case "$position" in
+        automatic|top-left|top-center|top-right|bottom-left|bottom-center|bottom-right) ;;
+        *)
+            printf 'invalid notification popup position: %s\n' "$position" >&2
+            exit 2
+            ;;
+    esac
+
+    new_tmp
+    jq \
+        --arg monitor "$monitor" \
+        --arg position "$position" '
+        .notification_popup_positions = (if (.notification_popup_positions | type) == "object"
+            then .notification_popup_positions else {} end)
+        | if $position == "automatic" then del(.notification_popup_positions[$monitor])
+          else .notification_popup_positions[$monitor] = $position
+          end
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
 copy_flyout() {
     local flyout="$1" width="$2" height="$3" text_scale="$4" icon_scale="$5"
     shift 5
@@ -398,6 +422,9 @@ reset_flyout() {
             | .notification_views = (.notification_views
                 | with_entries(.value = (if (.value | type) == "object"
                     then (.value | del(.popup_limit)) else .value end)))
+            | .notification_popup_positions = (if (.notification_popup_positions | type) == "object"
+                then .notification_popup_positions else {} end)
+            | del(.notification_popup_positions[$monitor])
           else . end
     ' "$STATE_FILE" >"$TMP_FILE"
     commit_tmp
@@ -566,6 +593,10 @@ case "$cmd" in
         [[ -n ${2:-} ]] || exit 2
         set_notification_popup_limit "$2"
         ;;
+    set-notification-popup-position)
+        [[ -n ${2:-} && -n ${3:-} ]] || exit 2
+        set_notification_popup_position "$2" "$3"
+        ;;
     copy-flyout)
         [[ -n ${2:-} && -n ${3:-} && -n ${4:-} && -n ${5:-} && -n ${6:-} && -n ${7:-} ]] || exit 2
         copy_flyout "$2" "$3" "$4" "$5" "$6" "${@:7}"
@@ -605,7 +636,7 @@ case "$cmd" in
         reset_defaults
         ;;
     *)
-        printf 'usage: %s {save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-notification-popup-limit <1-20>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
+        printf 'usage: %s {save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-notification-popup-limit <1-20>|set-notification-popup-position <MON> <automatic|top-left|top-center|top-right|bottom-left|bottom-center|bottom-right>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
         exit 2
         ;;
 esac

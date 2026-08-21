@@ -6,6 +6,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
+import "FlyoutEdgeLayout.js" as FlyoutEdgeLayout
 
 Singleton {
     id: root
@@ -17,6 +18,7 @@ Singleton {
     property string actionError: ""
     property var actionQueue: []
     property string placement: "center"
+    readonly property bool bottomEdgeLayout: FlyoutEdgeLayout.isBottom(placement)
     property string brightnessTarget: ""
     property string selectedSchedulerName: ""
     property bool schedulerEditorOpen: false
@@ -96,6 +98,8 @@ Singleton {
             return -1;
         return Math.max(0, Math.min(100, Math.round(current * 100 / maximum)));
     }
+
+    onBottomEdgeLayoutChanged: Qt.callLater(() => alignContentToBar())
 
     function emptyStatus() {
         return ({
@@ -200,6 +204,13 @@ Singleton {
 
     function scaledIcon(baseSize) {
         return Math.max(9, Math.round(baseSize * effectiveIconScale / 100));
+    }
+
+    function alignContentToBar() {
+        const minimumY = contentFlick.originY;
+        const maximumY = Math.max(minimumY,
+            minimumY + contentFlick.contentHeight - contentFlick.height);
+        contentFlick.contentY = bottomEdgeLayout ? maximumY : minimumY;
     }
 
     function monitorNames() {
@@ -720,8 +731,10 @@ Singleton {
 
         onClosed: root.close()
         onVisibleChanged: {
-            if (visible)
+            if (visible) {
                 Qt.callLater(() => root.positionWindow());
+                Qt.callLater(() => root.alignContentToBar());
+            }
         }
 
         Rectangle {
@@ -747,11 +760,14 @@ Singleton {
                 onPressed: mouse => mouse.accepted = true
             }
 
-            ColumnLayout {
+            GridLayout {
                 anchors.fill: parent
-                spacing: 0
+                columns: 1
+                rowSpacing: 0
+                columnSpacing: 0
 
                 Rectangle {
+                    Layout.row: root.bottomEdgeLayout ? 2 : 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: 38
                     color: Theme.active
@@ -818,6 +834,7 @@ Singleton {
                 }
 
                 Rectangle {
+                    Layout.row: 1
                     Layout.fillWidth: true
                     Layout.preferredHeight: root.settingsOpen ? settingsPanel.implicitHeight + 12 : 0
                     visible: root.settingsOpen
@@ -856,22 +873,27 @@ Singleton {
 
                 Flickable {
                     id: contentFlick
+                    Layout.row: root.bottomEdgeLayout ? 0 : 2
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Layout.bottomMargin: 0
                     contentWidth: width
-                    contentHeight: settingsColumn.implicitHeight + 12
+                    contentHeight: Math.max(height, settingsColumn.implicitHeight + 12)
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
 
-                    ColumnLayout {
+                    GridLayout {
                         id: settingsColumn
+                        columns: 1
                         x: 6
-                        y: 6
+                        y: root.bottomEdgeLayout
+                            ? Math.max(6, contentFlick.contentHeight - implicitHeight - 6) : 6
                         width: contentFlick.width - (contentScrollBar.visible ? 26 : 12)
-                        spacing: 8
+                        rowSpacing: 8
+                        columnSpacing: 0
 
                         Rectangle {
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 0, 12)
                             Layout.fillWidth: true
                             Layout.preferredHeight: brightnessContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1004,6 +1026,7 @@ Singleton {
                         }
 
                         Rectangle {
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 1, 12)
                             Layout.fillWidth: true
                             Layout.preferredHeight: outputVolumeContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1133,12 +1156,14 @@ Singleton {
                         }
 
                         PowerModeCard {
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 2, 12)
                             active: quickSettingsWindow.visible
                             textScale: root.effectiveTextScale
                             iconScale: root.effectiveIconScale
                         }
 
                         Rectangle {
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 3, 12)
                             Layout.fillWidth: true
                             Layout.preferredHeight: barContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1193,6 +1218,7 @@ Singleton {
                         }
 
                         RowLayout {
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 4, 12)
                             Layout.fillWidth: true
                             spacing: 8
 
@@ -1304,6 +1330,7 @@ Singleton {
                         }
 
                         Rectangle {
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 5, 12)
                             Layout.fillWidth: true
                             Layout.preferredHeight: submapContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1348,6 +1375,7 @@ Singleton {
                         }
 
                         Rectangle {
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 6, 12)
                             Layout.fillWidth: true
                             Layout.preferredHeight: wallpaperContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1393,6 +1421,7 @@ Singleton {
                         }
 
                         Rectangle {
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 7, 12)
                             Layout.fillWidth: true
                             Layout.preferredHeight: awtarchyContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1435,6 +1464,7 @@ Singleton {
                         }
 
                         Rectangle {
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 8, 12)
                             Layout.fillWidth: true
                             Layout.preferredHeight: smttyContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1476,6 +1506,7 @@ Singleton {
                         }
 
                         Rectangle {
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 9, 12)
                             Layout.fillWidth: true
                             Layout.preferredHeight: schedulerContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1754,6 +1785,7 @@ Singleton {
                         }
 
                         Rectangle {
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 10, 12)
                             Layout.fillWidth: true
                             Layout.preferredHeight: numlockContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1800,6 +1832,7 @@ Singleton {
                         }
 
               TitleBarsCard {
+                  Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 11, 12)
                   active: quickSettingsWindow.visible
                   textScale: root.effectiveTextScale
                   iconScale: root.effectiveIconScale
@@ -1821,7 +1854,7 @@ Singleton {
                 width: 28
                 height: 28
                 x: panel.width - width - 6
-                y: 5
+                y: root.bottomEdgeLayout ? panel.height - height - 5 : 5
                 color: closeMouse.containsMouse ? Theme.focus : Theme.active
                 border.width: 1
                 border.color: closeMouse.containsMouse ? Theme.focus : Theme.muted
