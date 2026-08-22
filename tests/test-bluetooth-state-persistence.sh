@@ -15,7 +15,25 @@ printf '%s\n' "$*" >>"${RFKILL_LOG:?}"
 FAKE
 cat >"$tmp/bin/bluetoothctl" <<'FAKE'
 #!/usr/bin/env bash
+set -euo pipefail
 printf '%s\n' "$*" >>"${BLUETOOTHCTL_LOG:?}"
+case "${1:-}" in
+    show)
+        printf 'Controller 00:11:22:33:44:55 test\n\tPowered: %s\n' "$(<"${BLUETOOTH_POWER_STATE_FILE:?}")"
+        ;;
+    power)
+        failures="$(<"${BLUETOOTH_POWER_FAILURES_FILE:?}")"
+        if (( failures > 0 )); then
+            printf '%s\n' "$((failures - 1))" >"${BLUETOOTH_POWER_FAILURES_FILE:?}"
+            exit 1
+        fi
+        case "${2:-}" in
+            on) printf '%s\n' yes >"${BLUETOOTH_POWER_STATE_FILE:?}" ;;
+            off) printf '%s\n' no >"${BLUETOOTH_POWER_STATE_FILE:?}" ;;
+            *) exit 2 ;;
+        esac
+        ;;
+esac
 FAKE
 chmod 0755 "$tmp/bin/rfkill" "$tmp/bin/bluetoothctl"
 
@@ -23,9 +41,13 @@ export HOME="$tmp/home"
 export XDG_STATE_HOME="$tmp/state"
 export RFKILL_LOG="$tmp/rfkill.log"
 export BLUETOOTHCTL_LOG="$tmp/bluetoothctl.log"
+export BLUETOOTH_POWER_STATE_FILE="$tmp/bluetooth-power-state"
+export BLUETOOTH_POWER_FAILURES_FILE="$tmp/bluetooth-power-failures"
 export AWTARCHY_BLUETOOTH_CLASS_DIR="$tmp/bluetooth"
 export PATH="$tmp/bin:$PATH"
 state_file="$XDG_STATE_HOME/awtarchy/bluetooth-state"
+printf '%s\n' yes >"$BLUETOOTH_POWER_STATE_FILE"
+printf '%s\n' 0 >"$BLUETOOTH_POWER_FAILURES_FILE"
 
 "$HELPER" restore
 [[ ! -e "$state_file" ]]
@@ -60,6 +82,18 @@ printf 'invalid\n' >"$state_file"
 "$HELPER" restore
 [[ ! -s "$RFKILL_LOG" ]]
 [[ ! -s "$BLUETOOTHCTL_LOG" ]]
+
+# After resume the HCI device can exist before BlueZ accepts adapter power changes.
+# A failed first power command must be retried until the requested state is observed.
+printf '%s\n' disabled >"$state_file"
+printf '%s\n' yes >"$BLUETOOTH_POWER_STATE_FILE"
+printf '%s\n' 1 >"$BLUETOOTH_POWER_FAILURES_FILE"
+: >"$RFKILL_LOG"
+: >"$BLUETOOTHCTL_LOG"
+AWTARCHY_BLUETOOTH_POWER_ATTEMPTS=3 "$HELPER" restore
+[[ "$(<"$BLUETOOTH_POWER_STATE_FILE")" == no ]]
+[[ "$(grep -Fxc 'power off' "$BLUETOOTHCTL_LOG")" -eq 2 ]]
+grep -Fxq 'show' "$BLUETOOTHCTL_LOG"
 
 grep -Fq 'Component.onCompleted: bluetoothRestore.exec([bluetoothStateScript, "restore"])' "$MENU"
 grep -Fq 'bluetoothEnable.exec([bluetoothStateScript, "set", "enabled"]);' "$MENU"
