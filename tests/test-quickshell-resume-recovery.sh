@@ -93,7 +93,11 @@ EOF
 cat >"${fakebin}/bluetooth-state" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "$*" >>"${AWTARCHY_TEST_BLUETOOTH_RESTORE_LOG:?}"
+printf '%s|wait=%s|retry=%s\n' \
+    "$*" \
+    "${AWTARCHY_BLUETOOTH_WAIT_ATTEMPTS:-unset}" \
+    "${AWTARCHY_BLUETOOTH_POWER_RETRY_SECONDS:-unset}" \
+    >>"${AWTARCHY_TEST_BLUETOOTH_RESTORE_LOG:?}"
 EOF
 
 cat >"${fakebin}/manager" <<'EOF'
@@ -183,7 +187,7 @@ reset_scenario
 printf '%s\n' 1 >"$layer_state"
 run_recovery
 assert_contains restore "$restore_log"
-assert_contains restore "$bluetooth_restore_log"
+assert_contains 'restore|wait=50|retry=3' "$bluetooth_restore_log"
 assert_not_contains '-c awtarchy ipc call control hardReload' "$qs_log"
 [[ ! -s $manager_log ]] || fail 'healthy resume unexpectedly invoked the manager'
 
