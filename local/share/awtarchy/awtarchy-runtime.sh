@@ -7302,7 +7302,7 @@ PY
 quickshell_update_instance_pids() {
   local config_name="${QUICKSHELL_CONFIG_NAME:-awtarchy}" instances=""
 
-  instances="$(run_target qs -c "$config_name" list --json 2>/dev/null)" || return 1
+  instances="$(run_target qs -c "$config_name" list --json 9>&- 2>/dev/null)" || return 1
   jq -e 'type == "array"' <<<"$instances" >/dev/null 2>&1 || return 1
   jq -r '.[] | .pid | select(type == "number" and . > 0)' <<<"$instances"
 }
