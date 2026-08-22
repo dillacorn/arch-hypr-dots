@@ -8,9 +8,13 @@ STATE_DIR="${STATE_HOME}/awtarchy"
 STATE_FILE="${STATE_DIR}/bluetooth-state"
 BLUETOOTH_CLASS_DIR="${AWTARCHY_BLUETOOTH_CLASS_DIR:-/sys/class/bluetooth}"
 BLUETOOTH_WAIT_ATTEMPTS="${AWTARCHY_BLUETOOTH_WAIT_ATTEMPTS:-20}"
+BLUETOOTH_POWER_RETRY_SECONDS="${AWTARCHY_BLUETOOTH_POWER_RETRY_SECONDS:-0}"
 
 if [[ ! "$BLUETOOTH_WAIT_ATTEMPTS" =~ ^[1-9][0-9]*$ ]]; then
     BLUETOOTH_WAIT_ATTEMPTS=20
+fi
+if [[ ! "$BLUETOOTH_POWER_RETRY_SECONDS" =~ ^[0-9]+$ ]]; then
+    BLUETOOTH_POWER_RETRY_SECONDS=0
 fi
 
 usage() {
@@ -46,15 +50,39 @@ wait_for_controller() {
     return 1
 }
 
-set_adapter_power() {
-    local state="$1"
-    need_bluetoothctl
-    wait_for_controller || return 1
+adapter_power_matches() {
+    local state="$1" expected="" output=""
     case "$state" in
-        enabled) timeout 5 bluetoothctl power on >/dev/null ;;
-        disabled) timeout 5 bluetoothctl power off >/dev/null ;;
+        enabled) expected=yes ;;
+        disabled) expected=no ;;
         *) return 2 ;;
     esac
+
+    output="$(timeout 5 bluetoothctl show 2>/dev/null)" || return 1
+    grep -Eq "^[[:space:]]*Powered:[[:space:]]*${expected}[[:space:]]*$" <<<"$output"
+}
+
+set_adapter_power() {
+    local state="$1" deadline
+    need_bluetoothctl
+    wait_for_controller || return 1
+    deadline=$((SECONDS + BLUETOOTH_POWER_RETRY_SECONDS))
+
+    while true; do
+        case "$state" in
+            enabled) timeout 5 bluetoothctl power on >/dev/null 2>&1 || true ;;
+            disabled) timeout 5 bluetoothctl power off >/dev/null 2>&1 || true ;;
+            *) return 2 ;;
+        esac
+
+        if adapter_power_matches "$state"; then
+            return 0
+        fi
+        if (( BLUETOOTH_POWER_RETRY_SECONDS == 0 || SECONDS >= deadline )); then
+            return 1
+        fi
+        sleep 0.1
+    done
 }
 
 apply_state() {
