@@ -614,3 +614,4 @@ be2ae4bd793a5a35f0b1eaee5865a5bb3634d9e7acaca0233946c8ac0d736e46	.config/hypr/sc
 # 2026-08-22 Bluetooth suspend/resume persistence.
 7b13be4b4b2dbd9d2e03d5eb530caa1e8aa917613a37933f1db4ec182d36ea34	.config/hypr/scripts/quickshell_bluetooth_state.sh
 e6d1ead0edd25f81da7fd9b5a2dd84f86fc97faa89719107fe8e72ed93591290	.config/hypr/scripts/quickshell_resume_recover.sh
+774c3639210b767e6e772be1984a9d50c9f2220fb2666a8cf1c3b05a8039d70c	.config/quickshell/awtarchy/Launcher.qml
