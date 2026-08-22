@@ -64,10 +64,9 @@ printf 'invalid\n' >"$state_file"
 grep -Fq 'Component.onCompleted: bluetoothRestore.exec([bluetoothStateScript, "restore"])' "$MENU"
 grep -Fq 'bluetoothEnable.exec([bluetoothStateScript, "set", "enabled"]);' "$MENU"
 grep -Fq 'bluetoothDisable.exec([bluetoothStateScript, "set", "disabled"]);' "$MENU"
-# shellcheck disable=SC2016
-grep -Fq 'kill -TERM -- "$pid"' "$MANAGER"
-if grep -Fq 'kill -KILL -- "$pid"' "$MANAGER"; then
-    printf '%s\n' 'Quickshell updater still contains SIGKILL fallback.' >&2
+grep -Fq 'signal.pidfd_send_signal(pidfd, signal.SIGTERM)' "$MANAGER"
+if grep -Fq 'signal.SIGKILL' "$MANAGER" || grep -Fq 'kill -KILL' "$MANAGER"; then
+    printf '%s\n' 'Quickshell updater still contains a SIGKILL fallback.' >&2
     exit 1
 fi
 
