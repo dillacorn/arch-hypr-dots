@@ -610,3 +610,7 @@ eacbd9ee31cdbc78f80fa24646a8fe3603a841c34e16363d1141cf8b6fb71104	.config/hypr/sc
 # 2026-08-22 package-replaced Quickshell process lifecycle fix.
 db92723488c080cfc28f200050a507cd5809c8f9a7868eda4f21558441a0ded9	.config/hypr/scripts/quickshell.sh
 be2ae4bd793a5a35f0b1eaee5865a5bb3634d9e7acaca0233946c8ac0d736e46	.config/hypr/scripts/quickshell.sh
+
+# 2026-08-22 Bluetooth suspend/resume persistence.
+7b13be4b4b2dbd9d2e03d5eb530caa1e8aa917613a37933f1db4ec182d36ea34	.config/hypr/scripts/quickshell_bluetooth_state.sh
+e6d1ead0edd25f81da7fd9b5a2dd84f86fc97faa89719107fe8e72ed93591290	.config/hypr/scripts/quickshell_resume_recover.sh
