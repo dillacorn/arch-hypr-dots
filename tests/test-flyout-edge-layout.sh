@@ -89,8 +89,11 @@ require_source "${QML_DIR}/ClipboardMenu.qml" 'ListView.BottomToTop' \
   'Clipboard history does not flow upward from a bottom bar'
 require_source "${QML_DIR}/Notifications.qml" 'ListView.BottomToTop' \
   'Notification history does not flow upward from a bottom bar'
-require_source "${QML_DIR}/Launcher.qml" 'GridView.BottomToTop' \
-  'Launcher results do not flow upward from a bottom bar'
+require_source "${QML_DIR}/Launcher.qml" 'verticalLayoutDirection: GridView.TopToBottom' \
+  'Launcher results do not stay top-to-bottom beside a bottom bar'
+if grep -Fq -- 'GridView.BottomToTop' "${QML_DIR}/Launcher.qml"; then
+  fail 'Launcher results still reverse upward from a bottom bar'
+fi
 
 require_source "${QML_DIR}/BarState.qml" 'notification_popup_positions: {}' \
   'default application state has no per-display notification popup positions'
