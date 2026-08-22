@@ -8,23 +8,62 @@ on:
       - completed
 
 permissions:
+  actions: read
   contents: write
+  statuses: write
 
 jobs:
-  update-release:
+  release-gate:
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_branch == 'main' &&
       github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     steps:
+      - name: Report validation result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$CONCLUSION" == success ]]; then
+            state=success
+            description='Validate Awtarchy passed'
+          else
+            state=failure
+            failed_steps="$(
+              gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --json jobs \
+                --jq '[.jobs[] | select(.conclusion == "failure") | .steps[] | select(.conclusion == "failure") | .name] | unique | join(", ")'
+            )"
+            [[ -n "$failed_steps" ]] || failed_steps="workflow conclusion: $CONCLUSION"
+            description="Validate Awtarchy failed: ${failed_steps}"
+            description="${description:0:140}"
+          fi
+
+          gh api \
+            --method POST \
+            "repos/$GITHUB_REPOSITORY/statuses/$EVENT_SHA" \
+            --raw-field state="$state" \
+            --raw-field context='release-gate/validate-awtarchy' \
+            --raw-field description="$description" \
+            --raw-field target_url="$RUN_URL" >/dev/null
+
+      - name: Stop on failed validation
+        if: ${{ github.event.workflow_run.conclusion != 'success' }}
+        run: exit 1
+
       - name: Check out repository
+        if: ${{ github.event.workflow_run.conclusion == 'success' }}
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           fetch-depth: 0
           ref: main
 
       - name: Update v3.1.5 after validation
+        if: ${{ github.event.workflow_run.conclusion == 'success' }}
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -91,7 +130,7 @@ jobs:
           grep -Fq 'updater-level Quickshell restart recovery' <<<"$verified_body"
 
       - name: Remove temporary updater
-        if: success()
+        if: ${{ github.event.workflow_run.conclusion == 'success' && success() }}
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_SHA: ${{ github.event.workflow_run.head_sha }}
