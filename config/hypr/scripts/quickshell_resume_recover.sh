@@ -23,6 +23,7 @@ MONITOR_WAIT_ATTEMPTS="${QUICKSHELL_RESUME_MONITOR_ATTEMPTS:-100}"
 NATURAL_WAIT_ATTEMPTS="${QUICKSHELL_RESUME_NATURAL_ATTEMPTS:-20}"
 RELOAD_WAIT_ATTEMPTS="${QUICKSHELL_RESUME_RELOAD_ATTEMPTS:-50}"
 BLUETOOTH_WAIT_ATTEMPTS="${QUICKSHELL_RESUME_BLUETOOTH_WAIT_ATTEMPTS:-50}"
+BLUETOOTH_RETRY_SECONDS="${QUICKSHELL_RESUME_BLUETOOTH_RETRY_SECONDS:-3}"
 WAIT_INTERVAL="${QUICKSHELL_RESUME_WAIT_INTERVAL:-0.1}"
 
 MONITORS_JSON='[]'
@@ -48,6 +49,11 @@ do
         exit 2
     fi
 done
+
+if ! valid_attempt_count "$BLUETOOTH_RETRY_SECONDS"; then
+    log "invalid Bluetooth retry window: $BLUETOOTH_RETRY_SECONDS"
+    exit 2
+fi
 
 for command in "$QS_BIN" "$HYPRCTL_BIN" "$JQ_BIN" "$SLEEP_BIN"; do
     if ! command -v "$command" >/dev/null 2>&1; then
@@ -86,6 +92,7 @@ restore_bluetooth_state() {
     fi
 
     if AWTARCHY_BLUETOOTH_WAIT_ATTEMPTS="$BLUETOOTH_WAIT_ATTEMPTS" \
+        AWTARCHY_BLUETOOTH_POWER_RETRY_SECONDS="$BLUETOOTH_RETRY_SECONDS" \
         bash "$BLUETOOTH_STATE_SCRIPT" restore >/dev/null 2>&1
     then
         log 'Bluetooth preference restore completed after sleep'
