@@ -39,6 +39,7 @@ shell_state="${TMP}/shell-state"
 qs_log="${TMP}/qs.log"
 manager_log="${TMP}/manager.log"
 restore_log="${TMP}/restore.log"
+bluetooth_restore_log="${TMP}/bluetooth-restore.log"
 event_log="${TMP}/events.log"
 fd_leak_file="${TMP}/manager-inherited-recovery-lock"
 
@@ -89,6 +90,12 @@ set -euo pipefail
 printf '%s\n' restore >>"${AWTARCHY_TEST_RESTORE_LOG:?}"
 EOF
 
+cat >"${fakebin}/bluetooth-state" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"${AWTARCHY_TEST_BLUETOOTH_RESTORE_LOG:?}"
+EOF
+
 cat >"${fakebin}/manager" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -121,7 +128,8 @@ printf '%s\n' recovery >>"${AWTARCHY_TEST_EVENT_LOG:?}"
 EOF
 
 chmod +x "${fakebin}/hyprctl" "${fakebin}/qs" "${fakebin}/restore" \
-    "${fakebin}/manager" "${fakebin}/systemctl" "${fakebin}/resume-hook"
+    "${fakebin}/bluetooth-state" "${fakebin}/manager" "${fakebin}/systemctl" \
+    "${fakebin}/resume-hook"
 
 printf '%s\n' '[{"name":"LVDS-1","focused":true,"disabled":false}]' >"$monitor_file"
 
@@ -130,6 +138,7 @@ reset_scenario() {
     : >"$qs_log"
     : >"$manager_log"
     : >"$restore_log"
+    : >"$bluetooth_restore_log"
     : >"$event_log"
     printf '%s\n' 0 >"$layer_state"
     printf '%s\n' '{"enabled":true,"monitors":{"LVDS-1":{"enabled":true}}}' >"$state_file"
@@ -144,6 +153,7 @@ run_recovery() {
         QUICKSHELL_STATE_FILE="$state_file" \
         QUICKSHELL_RESTORE_SCRIPT="${fakebin}/restore" \
         QUICKSHELL_MANAGER_SCRIPT="${fakebin}/manager" \
+        QUICKSHELL_BLUETOOTH_STATE_SCRIPT="${fakebin}/bluetooth-state" \
         QUICKSHELL_RESUME_LOG="${TMP}/resume.log" \
         QUICKSHELL_RESUME_MONITOR_ATTEMPTS=1 \
         QUICKSHELL_RESUME_NATURAL_ATTEMPTS=1 \
@@ -158,6 +168,7 @@ run_recovery() {
         AWTARCHY_TEST_QS_LOG="$qs_log" \
         AWTARCHY_TEST_MANAGER_LOG="$manager_log" \
         AWTARCHY_TEST_RESTORE_LOG="$restore_log" \
+        AWTARCHY_TEST_BLUETOOTH_RESTORE_LOG="$bluetooth_restore_log" \
         AWTARCHY_TEST_EVENT_LOG="$event_log" \
         AWTARCHY_TEST_FD_LEAK_FILE="$fd_leak_file" \
         AWTARCHY_TEST_RELOAD_CREATES_BAR="${AWTARCHY_TEST_RELOAD_CREATES_BAR:-0}" \
@@ -165,12 +176,14 @@ run_recovery() {
         bash "$RECOVERY_SCRIPT"
 }
 
-# A healthy, already-visible bar should only have its idle-hidden state cleared.
+# A healthy, already-visible bar should clear idle-hidden state and restore
+# the persisted Bluetooth preference without forcing a Quickshell reload.
 reset_scenario
 : >"$shell_state"
 printf '%s\n' 1 >"$layer_state"
 run_recovery
 assert_contains restore "$restore_log"
+assert_contains restore "$bluetooth_restore_log"
 assert_not_contains '-c awtarchy ipc call control hardReload' "$qs_log"
 [[ ! -s $manager_log ]] || fail 'healthy resume unexpectedly invoked the manager'
 
