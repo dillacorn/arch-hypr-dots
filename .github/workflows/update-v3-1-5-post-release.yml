@@ -33,6 +33,9 @@ jobs:
           fetch-depth: 0
           ref: main
 
+      - name: Install migration test dependency
+        run: sudo apt-get update && sudo apt-get install -y lua5.4
+
       - name: Close updater lock before Quickshell enumeration
         run: |
           set -euo pipefail
