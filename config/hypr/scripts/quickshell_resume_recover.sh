@@ -13,6 +13,7 @@ LOG_FILE="${QUICKSHELL_RESUME_LOG:-${CACHE_HOME}/awtarchy/quickshell-resume.log}
 
 RESTORE_SCRIPT="${QUICKSHELL_RESTORE_SCRIPT:-${CONFIG_HOME}/hypr/scripts/quickshell_bar_restore.sh}"
 MANAGER_SCRIPT="${QUICKSHELL_MANAGER_SCRIPT:-${CONFIG_HOME}/hypr/scripts/quickshell.sh}"
+BLUETOOTH_STATE_SCRIPT="${QUICKSHELL_BLUETOOTH_STATE_SCRIPT:-${CONFIG_HOME}/hypr/scripts/quickshell_bluetooth_state.sh}"
 QS_BIN="${QS_BIN:-qs}"
 HYPRCTL_BIN="${HYPRCTL_BIN:-hyprctl}"
 JQ_BIN="${JQ_BIN:-jq}"
@@ -21,6 +22,7 @@ SLEEP_BIN="${SLEEP_BIN:-sleep}"
 MONITOR_WAIT_ATTEMPTS="${QUICKSHELL_RESUME_MONITOR_ATTEMPTS:-100}"
 NATURAL_WAIT_ATTEMPTS="${QUICKSHELL_RESUME_NATURAL_ATTEMPTS:-20}"
 RELOAD_WAIT_ATTEMPTS="${QUICKSHELL_RESUME_RELOAD_ATTEMPTS:-50}"
+BLUETOOTH_WAIT_ATTEMPTS="${QUICKSHELL_RESUME_BLUETOOTH_WAIT_ATTEMPTS:-50}"
 WAIT_INTERVAL="${QUICKSHELL_RESUME_WAIT_INTERVAL:-0.1}"
 
 MONITORS_JSON='[]'
@@ -38,7 +40,8 @@ valid_attempt_count() {
 for attempts in \
     "$MONITOR_WAIT_ATTEMPTS" \
     "$NATURAL_WAIT_ATTEMPTS" \
-    "$RELOAD_WAIT_ATTEMPTS"
+    "$RELOAD_WAIT_ATTEMPTS" \
+    "$BLUETOOTH_WAIT_ATTEMPTS"
 do
     if ! valid_attempt_count "$attempts"; then
         log "invalid recovery attempt count: $attempts"
@@ -74,6 +77,22 @@ restore_idle_bar_state() {
         log 'could not clear the temporary idle-hidden bar state'
         return 1
     }
+}
+
+restore_bluetooth_state() {
+    if [[ ! -f "$BLUETOOTH_STATE_SCRIPT" ]]; then
+        log "Bluetooth state helper is unavailable: $BLUETOOTH_STATE_SCRIPT"
+        return 0
+    fi
+
+    if AWTARCHY_BLUETOOTH_WAIT_ATTEMPTS="$BLUETOOTH_WAIT_ATTEMPTS" \
+        bash "$BLUETOOTH_STATE_SCRIPT" restore >/dev/null 2>&1
+    then
+        log 'Bluetooth preference restore completed after sleep'
+    else
+        # Bluetooth recovery must never prevent display/bar recovery.
+        log 'Bluetooth preference restore failed after sleep'
+    fi
 }
 
 shell_running() {
@@ -196,6 +215,7 @@ if ! wait_for_connected_monitor; then
     exit 1
 fi
 
+restore_bluetooth_state || true
 set_expected_bar_count
 
 if ! shell_running; then
