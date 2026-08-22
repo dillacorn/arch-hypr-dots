@@ -980,21 +980,16 @@ Singleton {
                                     event.accepted = true;
                                 } else if (event.key === Qt.Key_Down) {
                                     if (appList.count > 0) {
-                                        const downIndex = root.bottomEdgeLayout
-                                            ? Math.max(0, Math.max(0, appList.currentIndex) - appList.columnCount)
-                                            : Math.min(appList.count - 1,
-                                                Math.max(0, appList.currentIndex) + appList.columnCount);
+                                        const downIndex = Math.min(appList.count - 1,
+                                            Math.max(0, appList.currentIndex) + appList.columnCount);
                                         appList.currentIndex = downIndex;
                                     }
                                     appList.positionViewAtIndex(appList.currentIndex, GridView.Contain);
                                     event.accepted = true;
                                 } else if (event.key === Qt.Key_Up) {
                                     if (appList.count > 0) {
-                                        const upIndex = root.bottomEdgeLayout
-                                            ? Math.min(appList.count - 1,
-                                                Math.max(0, appList.currentIndex) + appList.columnCount)
-                                            : Math.max(0,
-                                                Math.max(0, appList.currentIndex) - appList.columnCount);
+                                        const upIndex = Math.max(0,
+                                            Math.max(0, appList.currentIndex) - appList.columnCount);
                                         appList.currentIndex = upIndex;
                                     }
                                     appList.positionViewAtIndex(appList.currentIndex, GridView.Contain);
@@ -1189,7 +1184,7 @@ Singleton {
                                     id: centerPlacementMouse
                                     anchors.fill: parent
                                     hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
+                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                     onClicked: {
                                         root.toggleCenteredPlacement();
                                         Qt.callLater(() => search.forceActiveFocus());
@@ -1558,8 +1553,7 @@ Singleton {
                     currentIndex: 0
                     boundsBehavior: Flickable.StopAtBounds
                     flow: GridView.FlowLeftToRight
-                    verticalLayoutDirection: root.bottomEdgeLayout
-                        ? GridView.BottomToTop : GridView.TopToBottom
+                    verticalLayoutDirection: GridView.TopToBottom
                     readonly property int columnCount: Math.max(1,
                         Math.floor(width / root.applicationColumnMinimumWidth))
                     cellWidth: width / columnCount
