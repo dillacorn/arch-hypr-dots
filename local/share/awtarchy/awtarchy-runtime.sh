@@ -7188,6 +7188,200 @@ reload_quickshell_update_hyprland() {
   run_target hyprctl reload >/dev/null 2>&1
 }
 
+quickshell_update_proc_root() {
+  if [[ ${AWTARCHY_TEST_MODE:-0} == 1 && -n ${AWTARCHY_TEST_PROC_ROOT:-} ]]; then
+    printf '%s\n' "$AWTARCHY_TEST_PROC_ROOT"
+  else
+    printf '%s\n' /proc
+  fi
+}
+
+quickshell_update_process_state_start_time() {
+  local pid="$1" proc_root="" stat_line="" stat_tail=""
+  local -a stat_fields=()
+
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
+  proc_root="$(quickshell_update_proc_root)"
+  IFS= read -r stat_line 2>/dev/null <"${proc_root}/${pid}/stat" || return 1
+  [[ "$stat_line" == *') '* ]] || return 1
+  stat_tail="${stat_line##*) }"
+  IFS=' ' read -r -a stat_fields <<<"$stat_tail"
+  (( ${#stat_fields[@]} >= 20 )) || return 1
+  [[ "${stat_fields[0]}" =~ ^[A-Za-z]$ ]] || return 1
+  [[ "${stat_fields[19]}" =~ ^[0-9]+$ ]] || return 1
+  printf '%s %s\n' "${stat_fields[0]}" "${stat_fields[19]}"
+}
+
+quickshell_update_process_identity_is_running() {
+  local pid="$1" expected_start_time="$2" state="" start_time=""
+
+  IFS=' ' read -r state start_time < <(quickshell_update_process_state_start_time "$pid") || return 1
+  case "$state" in
+    Z|X|x) return 1 ;;
+  esac
+  [[ "$start_time" == "$expected_start_time" ]]
+}
+
+quickshell_update_pid_is_quickshell() {
+  local pid="$1" proc_root="" executable=""
+
+  proc_root="$(quickshell_update_proc_root)"
+  executable="$(readlink "${proc_root}/${pid}/exe" 2>/dev/null)" || return 1
+  executable="${executable% (deleted)}"
+  [[ "${executable##*/}" == quickshell ]]
+}
+
+quickshell_update_signal_identity() {
+  local pid="$1" expected_start_time="$2" rc=0
+
+  run_target python3 - "$pid" "$expected_start_time" 9>&- <<'PY' || rc=$?
+import os
+import signal
+import sys
+
+GONE_OR_REUSED = 3
+UNSAFE = 4
+
+try:
+    pid = int(sys.argv[1])
+    expected_start_time = sys.argv[2]
+except (IndexError, ValueError):
+    raise SystemExit(UNSAFE)
+
+if pid <= 0 or not expected_start_time.isdecimal():
+    raise SystemExit(UNSAFE)
+
+try:
+    pidfd = os.pidfd_open(pid, 0)
+except ProcessLookupError:
+    raise SystemExit(GONE_OR_REUSED)
+except (AttributeError, OSError):
+    raise SystemExit(UNSAFE)
+
+try:
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8", errors="surrogateescape") as handle:
+            stat_line = handle.read()
+    except FileNotFoundError:
+        raise SystemExit(GONE_OR_REUSED)
+    except OSError:
+        raise SystemExit(UNSAFE)
+
+    marker = stat_line.rfind(") ")
+    if marker < 0:
+        raise SystemExit(UNSAFE)
+    fields = stat_line[marker + 2:].split()
+    if len(fields) < 20 or len(fields[0]) != 1 or not fields[19].isdecimal():
+        raise SystemExit(UNSAFE)
+    if fields[0] in {"Z", "X", "x"} or fields[19] != expected_start_time:
+        raise SystemExit(GONE_OR_REUSED)
+
+    try:
+        executable = os.readlink(f"/proc/{pid}/exe")
+    except FileNotFoundError:
+        raise SystemExit(GONE_OR_REUSED)
+    except OSError:
+        raise SystemExit(UNSAFE)
+    if executable.endswith(" (deleted)"):
+        executable = executable[:-10]
+    if os.path.basename(executable) != "quickshell":
+        raise SystemExit(UNSAFE)
+
+    try:
+        signal.pidfd_send_signal(pidfd, signal.SIGTERM)
+    except ProcessLookupError:
+        raise SystemExit(GONE_OR_REUSED)
+    except (AttributeError, OSError):
+        raise SystemExit(UNSAFE)
+finally:
+    os.close(pidfd)
+PY
+  return "$rc"
+}
+
+quickshell_update_instance_pids() {
+  local config_name="${QUICKSHELL_CONFIG_NAME:-awtarchy}" instances=""
+
+  instances="$(run_target qs -c "$config_name" list --json 2>/dev/null)" || return 1
+  jq -e 'type == "array"' <<<"$instances" >/dev/null 2>&1 || return 1
+  jq -r '.[] | .pid | select(type == "number" and . > 0)' <<<"$instances"
+}
+
+stop_quickshell_update_instances() {
+  local pid="" state="" start_time="" identity="" pid_output="" proc_root="" signal_rc=0
+  local identity_error=0 signal_error=0 alive=0
+  local -a pids=() identities=() alive_pids=()
+
+  pid_output="$(quickshell_update_instance_pids)" || {
+    warn "Updater recovery could not enumerate the running Quickshell instance."
+    return 1
+  }
+  [[ -n "$pid_output" ]] && mapfile -t pids <<<"$pid_output"
+  (( ${#pids[@]} > 0 )) || return 0
+  proc_root="$(quickshell_update_proc_root)"
+
+  for pid in "${pids[@]}"; do
+    if ! IFS=' ' read -r state start_time < <(quickshell_update_process_state_start_time "$pid"); then
+      if [[ -d "${proc_root}/${pid}" ]]; then
+        warn "Updater recovery could not verify process identity for PID ${pid}; refusing to signal it."
+        identity_error=1
+      fi
+      continue
+    fi
+    case "$state" in
+      Z|X|x) continue ;;
+    esac
+    if ! quickshell_update_pid_is_quickshell "$pid"; then
+      if quickshell_update_process_identity_is_running "$pid" "$start_time"; then
+        warn "Updater recovery refused to signal PID ${pid} because it does not identify as Quickshell."
+        identity_error=1
+      fi
+      continue
+    fi
+    identities+=("${pid}:${start_time}")
+  done
+
+  (( identity_error == 0 )) || return 1
+  (( ${#identities[@]} > 0 )) || return 0
+
+  for identity in "${identities[@]}"; do
+    IFS=: read -r pid start_time <<<"$identity"
+    signal_rc=0
+    quickshell_update_signal_identity "$pid" "$start_time" || signal_rc=$?
+    case "$signal_rc" in
+      0|3) ;;
+      *)
+        warn "Updater recovery could not safely signal Quickshell PID ${pid}."
+        signal_error=1
+        ;;
+    esac
+  done
+
+  (( signal_error == 0 )) || return 1
+
+  for _ in {1..100}; do
+    alive=0
+    for identity in "${identities[@]}"; do
+      IFS=: read -r pid start_time <<<"$identity"
+      if quickshell_update_process_identity_is_running "$pid" "$start_time"; then
+        alive=1
+        break
+      fi
+    done
+    (( alive == 0 )) && return 0
+    sleep 0.05
+  done
+
+  for identity in "${identities[@]}"; do
+    IFS=: read -r pid start_time <<<"$identity"
+    quickshell_update_process_identity_is_running "$pid" "$start_time" \
+      && alive_pids+=("$pid")
+  done
+  (( ${#alive_pids[@]} > 0 )) || return 0
+  warn "Updater recovery could not stop Quickshell PID(s): ${alive_pids[*]}"
+  return 1
+}
+
 start_quickshell_update_shell() {
   command -v hyprctl >/dev/null 2>&1 || return 0
   [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || return 0
@@ -7197,7 +7391,15 @@ start_quickshell_update_shell() {
   [[ -f "$manager" ]] || return 1
   # Descriptor 9 owns the updater lock. Keep it in this runtime, but do not
   # let the long-lived Quickshell process or its children inherit it.
-  run_target bash "$manager" restart 9>&- || return 1
+  if ! run_target bash "$manager" restart 9>&-; then
+    # The updater runtime refreshes from main before managed configs refresh
+    # from the latest release. Keep this recovery here so an older release
+    # manager can still recover a package-replaced "quickshell (deleted)"
+    # process during the same ordinary `awtarchy update` invocation.
+    warn "Quickshell manager restart failed; retrying with updater-managed process shutdown."
+    stop_quickshell_update_instances || return 1
+    run_target bash "$manager" start 9>&- || return 1
+  fi
   status="$(run_target bash "$manager" status 9>&- 2>/dev/null || true)"
   [[ "$status" == "running" ]]
 }

@@ -34,7 +34,64 @@ cat >"${STOP_TEST_BIN}/hyprctl" <<'EOF_STOP_HYPRCTL'
 #!/usr/bin/env bash
 exit 0
 EOF_STOP_HYPRCTL
-chmod 0755 "${STOP_TEST_BIN}/qs" "${STOP_TEST_BIN}/hyprctl"
+
+cat >"${STOP_TEST_BIN}/python3" <<'EOF_STOP_PYTHON'
+#!/usr/bin/env bash
+set -euo pipefail
+
+[[ ${1:-} == - && ${2:-} =~ ^[1-9][0-9]*$ && ${3:-} =~ ^[0-9]+$ ]] || exit 4
+pid="$2"
+expected_start_time="$3"
+proc_root="${AWTARCHY_TEST_PROC_ROOT:?}"
+mode="${AWTARCHY_TEST_STOP_MODE:?}"
+
+write_stat() {
+  local state="$1" start_time="$2" field
+  printf '%s (quickshell) %s' "$pid" "$state" >"${proc_root}/${pid}/stat"
+  for field in {4..21}; do
+    printf ' 0' >>"${proc_root}/${pid}/stat"
+  done
+  printf ' %s\n' "$start_time" >>"${proc_root}/${pid}/stat"
+}
+
+case "$mode" in
+  pre-signal-reused)
+    write_stat S 200
+    ;;
+  pre-signal-mismatch)
+    ln -sfn -- /usr/bin/not-quickshell "${proc_root}/${pid}/exe"
+    ;;
+esac
+
+[[ -r ${proc_root}/${pid}/stat ]] || exit 3
+IFS= read -r stat_line <"${proc_root}/${pid}/stat" || exit 4
+[[ $stat_line == *') '* ]] || exit 4
+stat_tail="${stat_line##*) }"
+IFS=' ' read -r -a fields <<<"$stat_tail"
+(( ${#fields[@]} >= 20 )) || exit 4
+[[ ${fields[0]} != Z && ${fields[0]} != X && ${fields[0]} != x ]] || exit 3
+[[ ${fields[19]} == "$expected_start_time" ]] || exit 3
+executable="$(readlink "${proc_root}/${pid}/exe")" || exit 4
+executable="${executable% (deleted)}"
+[[ ${executable##*/} == quickshell ]] || exit 4
+
+printf '%s\n' '-TERM -- 424242' >>"${AWTARCHY_TEST_SIGNAL_LOG:?}"
+case "$mode" in
+  terminates)
+    rm -- "${proc_root}/${pid}/stat"
+    ;;
+  reused)
+    write_stat S 200
+    ;;
+  stubborn)
+    ;;
+  *)
+    exit 4
+    ;;
+esac
+EOF_STOP_PYTHON
+chmod 0755 "${STOP_TEST_BIN}/qs" "${STOP_TEST_BIN}/hyprctl" \
+  "${STOP_TEST_BIN}/python3"
 
 cat >"$STOP_TEST_ENV" <<'EOF_STOP_ENV'
 write_stop_test_stat() {
@@ -62,6 +119,13 @@ kill() {
           ;;
         reused)
           write_stop_test_stat "$pid" S 200
+          ;;
+        pre-signal-reused)
+          write_stop_test_stat "$pid" S 200
+          ;;
+        pre-signal-mismatch)
+          ln -sfn -- /usr/bin/not-quickshell \
+            "${AWTARCHY_TEST_PROC_ROOT:?}/${pid}/exe"
           ;;
         stubborn|zombie|mismatch)
           ;;
@@ -91,7 +155,11 @@ run_stop_fixture() {
   local name="$1" executable="$2" state="$3" mode="$4" expected="$5"
   local fixture="${TMPD}/${name}" rc=0
   mkdir -p -- "$fixture/home" "$fixture/proc/424242"
-  write_stop_fixture_stat "$fixture/proc/424242/stat" "$state" 100
+  if [[ $state == malformed ]]; then
+    printf '%s\n' 'not a Linux process stat record' >"$fixture/proc/424242/stat"
+  else
+    write_stop_fixture_stat "$fixture/proc/424242/stat" "$state" 100
+  fi
   ln -s -- "$executable" "$fixture/proc/424242/exe"
   : >"$fixture/signals.log"
 
@@ -133,5 +201,17 @@ grep -Fq 'did not finish after SIGTERM' "${TMPD}/stubborn/stderr" \
 run_stop_fixture identity-mismatch /usr/bin/not-quickshell S mismatch failure
 grep -Fq 'refusing to signal' "${TMPD}/identity-mismatch/stderr" \
   || fail 'Quickshell PID identity mismatch did not fail safely and explicitly'
+
+run_stop_fixture malformed-stat /usr/bin/quickshell malformed stubborn failure
+grep -Fq 'could not verify' "${TMPD}/malformed-stat/stderr" \
+  || fail 'Malformed process identity did not fail safely and explicitly'
+
+run_stop_fixture pre-signal-reuse /usr/bin/quickshell S pre-signal-reused success
+[[ ! -s ${TMPD}/pre-signal-reuse/signals.log ]] \
+  || fail 'Manager signaled a PID reused after initial validation'
+
+run_stop_fixture pre-signal-mismatch /usr/bin/quickshell S pre-signal-mismatch failure
+[[ ! -s ${TMPD}/pre-signal-mismatch/signals.log ]] \
+  || fail 'Manager signaled a process whose executable changed after initial validation'
 
 printf 'PASS: Quickshell process lifecycle regressions\n'

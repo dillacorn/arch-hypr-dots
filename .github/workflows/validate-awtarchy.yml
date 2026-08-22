@@ -105,6 +105,7 @@ jobs:
           bash -n tests/test-updater-large-main-json.sh
           bash -n tests/test-usb-refresh-security.sh
           bash -n tests/test-quickshell-resume-recovery.sh
+          bash -n tests/test-quickshell-updater-bootstrap.sh
           python3 -m py_compile local/libexec/awtarchy/wireguard-helper
           python3 -m py_compile local/share/awtarchy/keyring-pam-cleanup.py
           python3 -m py_compile tests/test-config-noise-comparison.py
@@ -182,7 +183,8 @@ jobs:
             tests/test-troubleshoot-command.sh \
             tests/test-updater-large-main-json.sh \
             tests/test-usb-refresh-security.sh \
-            tests/test-quickshell-resume-recovery.sh
+            tests/test-quickshell-resume-recovery.sh \
+            tests/test-quickshell-updater-bootstrap.sh
           shellcheck -e SC2016 tests/test-battery-care-control.sh tests/test-quickshell-capture-privacy.sh
           shellcheck -e SC2034,SC2153 config/hypr/scripts/hypr_quicksettings.sh
           shellcheck -e SC2015 config/hypr/scripts/hypr_quicksettings_core.sh
@@ -247,3 +249,4 @@ jobs:
           bash tests/test-updater-large-main-json.sh
           bash tests/test-usb-refresh-security.sh
           bash tests/test-quickshell-resume-recovery.sh
+          bash tests/test-quickshell-updater-bootstrap.sh

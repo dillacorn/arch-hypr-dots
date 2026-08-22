@@ -52,6 +52,7 @@ need qs
 need hyprctl
 need jq
 need flock
+need python3
 
 remove_legacy_quicksettings_desktop
 mkdir -p "$STATE_DIR"
@@ -109,13 +110,13 @@ process_state_start_time() {
     local -a stat_fields=()
 
     [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
-    IFS= read -r stat_line <"${PROC_ROOT}/${pid}/stat" 2>/dev/null || return 1
+    IFS= read -r stat_line 2>/dev/null <"${PROC_ROOT}/${pid}/stat" || return 1
     [[ "$stat_line" == *') '* ]] || return 1
 
     # Field 2 (comm) may contain spaces or parentheses. Remove it from the
     # right, then field 1 is the process state and field 20 is starttime.
     stat_tail="${stat_line##*) }"
-    read -r -a stat_fields <<<"$stat_tail"
+    IFS=' ' read -r -a stat_fields <<<"$stat_tail"
     (( ${#stat_fields[@]} >= 20 )) || return 1
     [[ "${stat_fields[0]}" =~ ^[A-Za-z]$ ]] || return 1
     [[ "${stat_fields[19]}" =~ ^[0-9]+$ ]] || return 1
@@ -126,7 +127,7 @@ process_state_start_time() {
 process_identity_is_running() {
     local pid="$1" expected_start_time="$2" state start_time
 
-    read -r state start_time < <(process_state_start_time "$pid") || return 1
+    IFS=' ' read -r state start_time < <(process_state_start_time "$pid") || return 1
     case "$state" in
         Z|X|x) return 1 ;;
     esac
@@ -141,6 +142,74 @@ pid_is_quickshell() {
     # that the still-running process has mapped.
     executable="${executable% (deleted)}"
     [[ "${executable##*/}" == quickshell ]]
+}
+
+signal_quickshell_identity() {
+    local pid="$1" expected_start_time="$2" rc=0
+
+    python3 - "$pid" "$expected_start_time" <<'PY' || rc=$?
+import os
+import signal
+import sys
+
+GONE_OR_REUSED = 3
+UNSAFE = 4
+
+try:
+    pid = int(sys.argv[1])
+    expected_start_time = sys.argv[2]
+except (IndexError, ValueError):
+    raise SystemExit(UNSAFE)
+
+if pid <= 0 or not expected_start_time.isdecimal():
+    raise SystemExit(UNSAFE)
+
+try:
+    pidfd = os.pidfd_open(pid, 0)
+except ProcessLookupError:
+    raise SystemExit(GONE_OR_REUSED)
+except (AttributeError, OSError):
+    raise SystemExit(UNSAFE)
+
+try:
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8", errors="surrogateescape") as handle:
+            stat_line = handle.read()
+    except FileNotFoundError:
+        raise SystemExit(GONE_OR_REUSED)
+    except OSError:
+        raise SystemExit(UNSAFE)
+
+    marker = stat_line.rfind(") ")
+    if marker < 0:
+        raise SystemExit(UNSAFE)
+    fields = stat_line[marker + 2:].split()
+    if len(fields) < 20 or len(fields[0]) != 1 or not fields[19].isdecimal():
+        raise SystemExit(UNSAFE)
+    if fields[0] in {"Z", "X", "x"} or fields[19] != expected_start_time:
+        raise SystemExit(GONE_OR_REUSED)
+
+    try:
+        executable = os.readlink(f"/proc/{pid}/exe")
+    except FileNotFoundError:
+        raise SystemExit(GONE_OR_REUSED)
+    except OSError:
+        raise SystemExit(UNSAFE)
+    if executable.endswith(" (deleted)"):
+        executable = executable[:-10]
+    if os.path.basename(executable) != "quickshell":
+        raise SystemExit(UNSAFE)
+
+    try:
+        signal.pidfd_send_signal(pidfd, signal.SIGTERM)
+    except ProcessLookupError:
+        raise SystemExit(GONE_OR_REUSED)
+    except (AttributeError, OSError):
+        raise SystemExit(UNSAFE)
+finally:
+    os.close(pidfd)
+PY
+    return "$rc"
 }
 
 wait_for_pids_stop() {
@@ -208,8 +277,8 @@ start_shell() {
 }
 
 stop_shell() {
-    local pid state start_time identity
-    local identity_error=0
+    local pid state start_time identity signal_rc
+    local identity_error=0 signal_error=0
     local -a pids=() identities=() alive_pids=()
 
     mapfile -t pids < <(instance_pids)
@@ -220,7 +289,13 @@ stop_shell() {
     # SIGTERM is not registered by Quickshell's crash handler, so terminate the
     # exact old Awtarchy instance directly and wait for it to disappear.
     for pid in "${pids[@]}"; do
-        read -r state start_time < <(process_state_start_time "$pid") || continue
+        if ! IFS=' ' read -r state start_time < <(process_state_start_time "$pid"); then
+            if [[ -d "${PROC_ROOT}/${pid}" ]]; then
+                printf 'quickshell.sh: could not verify process identity for PID %s; refusing to signal it.\n' "$pid" >&2
+                identity_error=1
+            fi
+            continue
+        fi
         case "$state" in
             Z|X|x) continue ;;
         esac
@@ -240,9 +315,18 @@ stop_shell() {
 
     for identity in "${identities[@]}"; do
         IFS=: read -r pid start_time <<<"$identity"
-        process_identity_is_running "$pid" "$start_time" || continue
-        kill -TERM -- "$pid" 2>/dev/null || true
+        signal_rc=0
+        signal_quickshell_identity "$pid" "$start_time" || signal_rc=$?
+        case "$signal_rc" in
+            0|3) ;;
+            *)
+                printf 'quickshell.sh: could not safely signal Quickshell PID %s.\n' "$pid" >&2
+                signal_error=1
+                ;;
+        esac
     done
+
+    (( signal_error == 0 )) || return 1
 
     wait_for_pids_stop "${identities[@]}" && return 0
 

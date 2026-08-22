@@ -609,3 +609,4 @@ eacbd9ee31cdbc78f80fa24646a8fe3603a841c34e16363d1141cf8b6fb71104	.config/hypr/sc
 
 # 2026-08-22 package-replaced Quickshell process lifecycle fix.
 db92723488c080cfc28f200050a507cd5809c8f9a7868eda4f21558441a0ded9	.config/hypr/scripts/quickshell.sh
+be2ae4bd793a5a35f0b1eaee5865a5bb3634d9e7acaca0233946c8ac0d736e46	.config/hypr/scripts/quickshell.sh
