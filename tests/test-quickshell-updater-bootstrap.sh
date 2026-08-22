@@ -116,9 +116,9 @@ chmod 0755 "${FAKE_BIN}/hyprctl" "${FAKE_BIN}/qs"
 chmod 0755 "${FAKE_BIN}/python3"
 
 write_proc_stat() {
-  local stat_file="$1" state="$2" start_time="$3" field
+  local stat_file="$1" state="$2" start_time="$3"
   printf '424242 (quickshell) %s' "$state" >"$stat_file"
-  for field in {4..21}; do
+  for _ in {4..21}; do
     printf ' 0' >>"$stat_file"
   done
   printf ' %s\n' "$start_time" >>"$stat_file"
