@@ -7,6 +7,11 @@ STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 STATE_DIR="${STATE_HOME}/awtarchy"
 STATE_FILE="${STATE_DIR}/bluetooth-state"
 BLUETOOTH_CLASS_DIR="${AWTARCHY_BLUETOOTH_CLASS_DIR:-/sys/class/bluetooth}"
+BLUETOOTH_WAIT_ATTEMPTS="${AWTARCHY_BLUETOOTH_WAIT_ATTEMPTS:-20}"
+
+if [[ ! "$BLUETOOTH_WAIT_ATTEMPTS" =~ ^[1-9][0-9]*$ ]]; then
+    BLUETOOTH_WAIT_ATTEMPTS=20
+fi
 
 usage() {
     printf 'usage: quickshell_bluetooth_state.sh set <enabled|disabled> | restore | status\n' >&2
@@ -33,8 +38,8 @@ unblock_controller() {
 }
 
 wait_for_controller() {
-    local _
-    for _ in {1..20}; do
+    local attempt
+    for ((attempt = 1; attempt <= BLUETOOTH_WAIT_ATTEMPTS; attempt++)); do
         compgen -G "${BLUETOOTH_CLASS_DIR}/hci*" >/dev/null && return 0
         sleep 0.1
     done
@@ -44,7 +49,7 @@ wait_for_controller() {
 set_adapter_power() {
     local state="$1"
     need_bluetoothctl
-    wait_for_controller || return 0
+    wait_for_controller || return 1
     case "$state" in
         enabled) timeout 5 bluetoothctl power on >/dev/null ;;
         disabled) timeout 5 bluetoothctl power off >/dev/null ;;
@@ -98,7 +103,7 @@ case "$command_name" in
             exit 0
         fi
         case "$state" in
-            enabled|disabled) apply_state "$state" || true ;;
+            enabled|disabled) apply_state "$state" ;;
             unset) ;;
         esac
         ;;
