@@ -13,6 +13,10 @@ STATE_LOCK_FILE="${STATE_FILE}.lock"
 START_LOCK_FILE="${STATE_DIR}/quickshell-start.lock"
 LEGACY_STATE_FILE="${CACHE_HOME}/waybar/state.json"
 LOG_FILE="${STATE_DIR}/quickshell.log"
+PROC_ROOT="/proc"
+if [[ ${AWTARCHY_TEST_MODE:-0} == 1 && -n ${AWTARCHY_TEST_PROC_ROOT:-} ]]; then
+    PROC_ROOT="${AWTARCHY_TEST_PROC_ROOT}"
+fi
 
 DEFAULT_HORIZONTAL_SIZE=28
 DEFAULT_VERTICAL_SIZE=36
@@ -100,14 +104,54 @@ instance_pids() {
         | jq -r '.[] | .pid | select(type == "number" and . > 0)' 2>/dev/null
 }
 
+process_state_start_time() {
+    local pid="$1" stat_line stat_tail
+    local -a stat_fields=()
+
+    [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
+    IFS= read -r stat_line <"${PROC_ROOT}/${pid}/stat" 2>/dev/null || return 1
+    [[ "$stat_line" == *') '* ]] || return 1
+
+    # Field 2 (comm) may contain spaces or parentheses. Remove it from the
+    # right, then field 1 is the process state and field 20 is starttime.
+    stat_tail="${stat_line##*) }"
+    read -r -a stat_fields <<<"$stat_tail"
+    (( ${#stat_fields[@]} >= 20 )) || return 1
+    [[ "${stat_fields[0]}" =~ ^[A-Za-z]$ ]] || return 1
+    [[ "${stat_fields[19]}" =~ ^[0-9]+$ ]] || return 1
+
+    printf '%s %s\n' "${stat_fields[0]}" "${stat_fields[19]}"
+}
+
+process_identity_is_running() {
+    local pid="$1" expected_start_time="$2" state start_time
+
+    read -r state start_time < <(process_state_start_time "$pid") || return 1
+    case "$state" in
+        Z|X|x) return 1 ;;
+    esac
+    [[ "$start_time" == "$expected_start_time" ]]
+}
+
+pid_is_quickshell() {
+    local pid="$1" executable
+
+    executable="$(readlink "${PROC_ROOT}/${pid}/exe" 2>/dev/null)" || return 1
+    # Linux appends this suffix when a package upgrade unlinks the executable
+    # that the still-running process has mapped.
+    executable="${executable% (deleted)}"
+    [[ "${executable##*/}" == quickshell ]]
+}
+
 wait_for_pids_stop() {
-    local pid alive
-    local -a pids=("$@")
+    local identity pid expected_start_time alive
+    local -a identities=("$@")
 
     for _ in {1..100}; do
         alive=0
-        for pid in "${pids[@]}"; do
-            if kill -0 "$pid" 2>/dev/null; then
+        for identity in "${identities[@]}"; do
+            IFS=: read -r pid expected_start_time <<<"$identity"
+            if process_identity_is_running "$pid" "$expected_start_time"; then
                 alive=1
                 break
             fi
@@ -164,8 +208,9 @@ start_shell() {
 }
 
 stop_shell() {
-    local pid
-    local -a pids=()
+    local pid state start_time identity
+    local identity_error=0
+    local -a pids=() identities=() alive_pids=()
 
     mapfile -t pids < <(instance_pids)
     (( ${#pids[@]} > 0 )) || return 0
@@ -175,13 +220,39 @@ stop_shell() {
     # SIGTERM is not registered by Quickshell's crash handler, so terminate the
     # exact old Awtarchy instance directly and wait for it to disappear.
     for pid in "${pids[@]}"; do
-        [[ "$(basename "$(readlink -f "/proc/${pid}/exe" 2>/dev/null || true)")" == "quickshell" ]] || continue
+        read -r state start_time < <(process_state_start_time "$pid") || continue
+        case "$state" in
+            Z|X|x) continue ;;
+        esac
+
+        if ! pid_is_quickshell "$pid"; then
+            if process_identity_is_running "$pid" "$start_time"; then
+                printf 'quickshell.sh: PID %s does not identify as Quickshell; refusing to signal it.\n' "$pid" >&2
+                identity_error=1
+            fi
+            continue
+        fi
+        identities+=("${pid}:${start_time}")
+    done
+
+    (( identity_error == 0 )) || return 1
+    (( ${#identities[@]} > 0 )) || return 0
+
+    for identity in "${identities[@]}"; do
+        IFS=: read -r pid start_time <<<"$identity"
+        process_identity_is_running "$pid" "$start_time" || continue
         kill -TERM -- "$pid" 2>/dev/null || true
     done
 
-    wait_for_pids_stop "${pids[@]}" && return 0
+    wait_for_pids_stop "${identities[@]}" && return 0
 
-    printf 'quickshell.sh: Quickshell shutdown did not finish after SIGTERM for PID(s): %s\n' "${pids[*]}" >&2
+    for identity in "${identities[@]}"; do
+        IFS=: read -r pid start_time <<<"$identity"
+        process_identity_is_running "$pid" "$start_time" && alive_pids+=("$pid")
+    done
+    (( ${#alive_pids[@]} > 0 )) || return 0
+
+    printf 'quickshell.sh: Quickshell shutdown did not finish after SIGTERM for PID(s): %s\n' "${alive_pids[*]}" >&2
     return 1
 }
 

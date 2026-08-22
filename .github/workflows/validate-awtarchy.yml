@@ -91,6 +91,7 @@ jobs:
           bash -n tests/test-power-profile-inline-auth.sh
           bash -n tests/test-quickshell-backend-readiness.sh
           bash -n tests/test-quickshell-capture-privacy.sh
+          bash -n tests/test-quickshell-process-lifecycle.sh
           bash -n tests/test-quickshell-production-readiness.sh
           bash -n tests/test-quickshell-updater-migration.sh
           bash -n tests/test-hyprbars-quicksettings.sh
@@ -169,6 +170,7 @@ jobs:
             tests/test-power-profile-helper-update.sh \
             tests/test-power-profile-inline-auth.sh \
             tests/test-quickshell-backend-readiness.sh \
+            tests/test-quickshell-process-lifecycle.sh \
             tests/test-quickshell-updater-migration.sh \
             tests/test-hyprbars-quicksettings.sh \
             tests/test-network-bar-state.sh \
@@ -230,6 +232,7 @@ jobs:
           bash tests/test-power-profile-inline-auth.sh
           bash tests/test-quickshell-backend-readiness.sh
           bash tests/test-quickshell-capture-privacy.sh
+          bash tests/test-quickshell-process-lifecycle.sh
           bash tests/test-quickshell-production-readiness.sh
           bash tests/test-hyprbars-quicksettings.sh
           bash tests/test-network-bar-state.sh
