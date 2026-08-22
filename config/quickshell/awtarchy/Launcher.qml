@@ -1184,7 +1184,7 @@ Singleton {
                                     id: centerPlacementMouse
                                     anchors.fill: parent
                                     hoverEnabled: true
-                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    cursorShape: Qt.PointingHandCursor
                                     onClicked: {
                                         root.toggleCenteredPlacement();
                                         Qt.callLater(() => search.forceActiveFocus());
