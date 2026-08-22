@@ -30,7 +30,25 @@ require_source "$LAUNCHER" '            : [launcherWindow]' \
 require_source "$LAUNCHER" 'root.launcherFocusGrabExpanded = true;' \
   'launcher never expands its focus-grab whitelist after activation'
 
+# Application results and keyboard navigation must keep the same top-to-bottom
+# direction regardless of whether the bar itself is attached to the top or
+# bottom edge. The bottom layout may move the search/settings row, but it must
+# not reverse the application model or arrow-key direction.
+require_source "$LAUNCHER" 'verticalLayoutDirection: GridView.TopToBottom' \
+  'launcher application results are not always laid out top-to-bottom'
+require_source "$LAUNCHER" 'Layout.row: root.bottomEdgeLayout ? 2 : 0' \
+  'bottom launcher search/settings row placement changed'
+require_source "$LAUNCHER" 'Layout.row: root.bottomEdgeLayout ? 0 : 2' \
+  'bottom launcher application-list placement changed'
+require_source "$LAUNCHER" 'Math.max(0, appList.currentIndex) + appList.columnCount);' \
+  'Down-key launcher navigation does not move forward through results'
+require_source "$LAUNCHER" 'Math.max(0, appList.currentIndex) - appList.columnCount);' \
+  'Up-key launcher navigation does not move backward through results'
+
 for forbidden in \
+  'verticalLayoutDirection: root.bottomEdgeLayout' \
+  'const downIndex = root.bottomEdgeLayout' \
+  'const upIndex = root.bottomEdgeLayout' \
   'hl.dsp.focus(' \
   'dispatch focuswindow' \
   'dispatch movecursor' \
@@ -40,8 +58,8 @@ for forbidden in \
   'setCursorPosition'
 do
   if grep -Fq -- "$forbidden" "$LAUNCHER" "$POSITIONER"; then
-    fail "launcher keyboard focus path contains pointer-affecting compositor operation: ${forbidden}"
+    fail "launcher keyboard/result path contains forbidden operation: ${forbidden}"
   fi
 done
 
-printf '%s\n' 'Launcher keyboard focus regression test passed.'
+printf '%s\n' 'Launcher keyboard focus and result-direction regression test passed.'
