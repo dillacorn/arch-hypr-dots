@@ -67,8 +67,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_SHA: ${{ github.event.workflow_run.head_sha }}
-          TARGET_SHA: ef97cee8857b715d4a6d8564e9d762078872390a
-          TARGET_TREE: fadb4bf5499d84bc19913024ce8e5592b206a7e9
+          TARGET_SHA: 61bb358c7667ac39ce9b7c881ac4eb62e35c3180
+          TARGET_TREE: 367bd079fbb19d58cd18a6a9c53bba9e02e8f3fe
           EXPECTED_OLD_TAG: 6e2dd8c525ccdc5120555d8cbd3957ab409f16b4
         run: |
           set -euo pipefail
