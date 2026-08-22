@@ -9,11 +9,24 @@ on:
 
 permissions:
   contents: write
+  statuses: write
 
 jobs:
   fix-updater-lock:
     runs-on: ubuntu-latest
     steps:
+      - name: Report fix run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api \
+            --method POST \
+            "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            --raw-field state=pending \
+            --raw-field context='updater-lock-fix' \
+            --raw-field description='Running targeted updater migration regression' \
+            --raw-field target_url="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
+
       - name: Check out repository
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
@@ -52,3 +65,24 @@ jobs:
           git diff --cached --check
           git commit -m 'Close updater lock before Quickshell enumeration'
           git push origin HEAD:main
+
+      - name: Report fix result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          if [[ "$JOB_STATUS" == success ]]; then
+            state=success
+            description='Targeted updater migration regression passed'
+          else
+            state=failure
+            description='Targeted updater migration regression failed'
+          fi
+          gh api \
+            --method POST \
+            "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            --raw-field state="$state" \
+            --raw-field context='updater-lock-fix' \
+            --raw-field description="$description" \
+            --raw-field target_url="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
