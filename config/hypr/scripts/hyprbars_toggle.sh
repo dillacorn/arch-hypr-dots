@@ -195,17 +195,19 @@ repair_hyprbars_if_needed() {
 interactive_main() {
   require_hyprpm || { pause_exit; exit 1; }
 
-  printf '\nChecking hyprbars...\n\n'
+  printf '\nChecking Title Bars...\n\n'
 
   if hyprbars_loaded; then
-    printf 'hyprbars is currently loaded.\n'
-    printf 'Not hot-unloading it. Hot-unloading hyprbars can crash Hyprland.\n\n'
+    printf 'Title Bars are enabled and loaded right now.\n'
+    printf 'Awtarchy will not hot-unload hyprbars because that can crash Hyprland.\n\n'
+    printf 'If you continue:\n'
+    printf '  Title Bars stay on for this session.\n'
+    printf '  Title Bars will be disabled after you log out and log back in.\n\n'
     printf 'This will run:\n'
     printf '  hyprpm disable hyprbars\n\n'
-    printf 'It will take effect after you log out and back in.\n\n'
 
     local ans=""
-    read -r -p "Disable hyprbars for next session? [y/N] " ans
+    read -r -p "Disable Title Bars after logout? [y/N] " ans
     case "${ans,,}" in
       y|yes) ;;
       *) printf 'Cancelled. No changes made.\n'; pause_exit; exit 0 ;;
@@ -214,13 +216,14 @@ interactive_main() {
     "$HYPRPM_BIN" disable "$PLUGIN"
     clear_repair_marker
 
-    printf '\nHyprbars disabled for next session.\n'
-    printf 'Log out and back in. Do not run hyprpm reload to hot-unload it.\n'
+    printf '\nTitle Bars are still on for this session.\n'
+    printf 'They will be disabled after you log out and log back in.\n'
+    printf 'Do not run hyprpm reload to force them off now.\n'
     pause_exit
     exit 0
   fi
 
-  printf 'hyprbars is not currently loaded.\n'
+  printf 'Title Bars are not currently loaded.\n'
 
   if ! have_hyprbars_in_hyprpm; then
     install_official_plugins_repo
@@ -233,7 +236,7 @@ interactive_main() {
 
   printf '\nhyprpm reload\n'
   if ! reload_hyprbars; then
-    printf '\nERROR: hyprbars did not load. Open Quick Settings > Hyprland Plugin and use Repair.\n' >&2
+    printf '\nERROR: Title Bars did not load. Open Quick Settings > Hyprland Plugin and use Repair.\n' >&2
     pause_exit
     exit 1
   fi
@@ -246,7 +249,7 @@ interactive_main() {
     "$HYPRCTL_BIN" configerrors || true
   fi
 
-  printf '\nHyprbars enabled.\n'
+  printf '\nTitle Bars enabled now and will stay enabled after future logins.\n'
   pause_exit
 }
 
