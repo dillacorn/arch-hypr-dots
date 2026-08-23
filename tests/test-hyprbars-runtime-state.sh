@@ -321,13 +321,15 @@ run_session_probe disabled session-disabled disabled 0 running-commit running-ab
 [[ ! -s $CASE_HYPRPM_LOG ]] || fail 'disabled hyprbars triggered hyprpm work at login'
 
 run_session_probe absent session-absent absent 0 running-commit running-abi 0
-[[ ! -s $CASE_HYPRPM_LOG ]] || fail 'systems without hyprbars triggered hyprpm work at login'
+[[ ! -s $CASE_HYPRPM_LOG ]] || fail 'systems without enabled hyprpm plugins triggered hyprpm work at login'
 
 run_session_probe loaded session-loaded enabled 1 running-commit running-abi 0
-[[ ! -s $CASE_HYPRPM_LOG ]] || fail 'already-loaded hyprbars triggered an unnecessary reload'
+[[ $(grep -cFx reload "$CASE_HYPRPM_LOG" || true) -eq 1 ]] \
+  || fail 'enabled hyprbars did not receive the normal once-per-session hyprpm reload'
 
 run_session_probe other-loaded session-other-loaded disabled 0 running-commit running-abi 0 1 0 1 1
-[[ ! -s $CASE_HYPRPM_LOG ]] || fail 'already-loaded non-Awtarchy plugin triggered an unnecessary reload'
+[[ $(grep -cFx reload "$CASE_HYPRPM_LOG" || true) -eq 1 ]] \
+  || fail 'enabled non-Awtarchy plugin did not receive the normal once-per-session hyprpm reload'
 
 run_session_probe other-healthy session-other disabled 0 running-commit running-abi 0 1 0 1 0
 [[ $(grep -cFx reload "$CASE_HYPRPM_LOG" || true) -eq 1 ]] \
@@ -409,7 +411,8 @@ repair_marker="$CASE_HOME/.local/state/awtarchy/hyprbars-repair-required"
 [[ ! -f $repair_marker ]] || fail 'transient Hyprland version failure was mislabeled as a plugin repair'
 
 run_session_probe live-base session-live enabled 1 running-commit running-abi 0
-[[ ! -s $CASE_HYPRPM_LOG ]] || fail 'live-reload fixture unexpectedly reloaded during initial already-loaded state'
+[[ $(grep -cFx reload "$CASE_HYPRPM_LOG" || true) -eq 1 ]] \
+  || fail 'normal session-start reload did not occur in live-reload fixture'
 env \
   PATH="$fakebin:$PATH" \
   HOME="$CASE_HOME" \
@@ -433,7 +436,7 @@ env \
   TEST_HYPRPM_LOG="$CASE_HYPRPM_LOG" \
   TEST_HYPRCTL_LOG="$CASE_HYPRCTL_LOG" \
   bash "$AUTO_RELOAD"
-[[ $(grep -cFx reload "$CASE_HYPRPM_LOG" || true) -eq 1 ]] \
+[[ $(grep -cFx reload "$CASE_HYPRPM_LOG" || true) -eq 2 ]] \
   || fail 'explicit HYPRPM_AUTO_LIVE_RELOAD=1 behavior was not preserved'
 
 run_session_probe no-session "" enabled 0 running-commit running-abi 0
