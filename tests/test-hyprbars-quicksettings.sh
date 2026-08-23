@@ -168,7 +168,7 @@ do
   fi
   digest="$(sha256sum "$source_file" | awk '{print $1}')"
   if ! grep -Fq -- "$digest"$'\t'"$rel" "$HISTORY"; then
-    printf 'MISSING_MANAGED_HASH %s\t%s\n' "$digest"$'\t'"$rel" >&2
+    printf 'MISSING_MANAGED_HASH %s\t%s\n' "$digest" "$rel" >&2
     missing_history=1
   fi
 done
