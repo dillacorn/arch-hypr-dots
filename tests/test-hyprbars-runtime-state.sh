@@ -54,7 +54,11 @@ EOF_STATE
   exit 0
 fi
 if [[ ${1:-} == reload ]]; then
-  exit "${TEST_RELOAD_RC:-0}"
+  rc="${TEST_RELOAD_RC:-0}"
+  if [[ $rc == 0 && ${TEST_RELOAD_LOADS:-1} == 1 && -n ${TEST_LOADED_MARKER:-} ]]; then
+    : >"$TEST_LOADED_MARKER"
+  fi
+  exit "$rc"
 fi
 exit 0
 EOF_HYPRPM
@@ -63,7 +67,7 @@ cat >"$fakebin/hyprctl" <<'EOF_HYPRCTL'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ ${1:-} == plugin && ${2:-} == list ]]; then
-  if [[ ${TEST_LOADED:-0} == 1 ]]; then
+  if [[ ${TEST_LOADED:-0} == 1 || ( -n ${TEST_LOADED_MARKER:-} && -f ${TEST_LOADED_MARKER} ) ]]; then
     cat <<'EOF_STATE'
 Plugin hyprbars by Vaxry:
     Version: 1.0
@@ -74,6 +78,9 @@ EOF_STATE
   exit 0
 fi
 if [[ ${1:-} == -j && ${2:-} == version ]]; then
+  if [[ ${TEST_VERSION_UNAVAILABLE:-0} == 1 ]]; then
+    exit 1
+  fi
   printf '{"commit":"%s","abiHash":"%s"}\n' \
     "${TEST_RUNNING_COMMIT:-running-commit}" "${TEST_RUNNING_ABI:-running-abi}"
   exit 0
@@ -86,7 +93,25 @@ if [[ ${1:-} == notify ]]; then
 fi
 exit 0
 EOF_HYPRCTL
-chmod 0755 "$fakebin/hyprpm" "$fakebin/hyprctl"
+
+cat >"$fakebin/pkgconf" <<'EOF_PKGCONF'
+#!/usr/bin/env bash
+set -euo pipefail
+pc_dir="${PKG_CONFIG_PATH%%:*}"
+pc="$pc_dir/hyprland.pc"
+[[ -r $pc ]] || exit 1
+awk '
+  /^[[:space:]]*Cflags:/ {
+    sub(/^[[:space:]]*Cflags:[[:space:]]*/, "")
+    print
+    found = 1
+    exit
+  }
+  END { if (!found) exit 1 }
+' "$pc"
+EOF_PKGCONF
+
+chmod 0755 "$fakebin/hyprpm" "$fakebin/hyprctl" "$fakebin/pkgconf"
 
 helper_fixture="$TMPD/scxctl-helper"
 sed \
@@ -160,7 +185,7 @@ contains "$TITLE_CARD" 'hyprbars-repair' \
 
 write_hyprpm_state() {
   local root="$1" commit="$2" abi="$3" persisted="$4"
-  mkdir -p "$root/headersRoot/include/hyprland/src"
+  mkdir -p "$root/headersRoot/include/hyprland/src" "$root/headersRoot/share/pkgconfig"
   cat >"$root/state.toml" <<EOF_STATE
 [state]
 hash = "$abi"
@@ -169,6 +194,12 @@ EOF_STATE
   cat >"$root/headersRoot/include/hyprland/src/version.h" <<EOF_HEADER
 #define GIT_COMMIT_HASH "$commit"
 EOF_HEADER
+  cat >"$root/headersRoot/share/pkgconfig/hyprland.pc" <<EOF_PC
+Name: Hyprland
+Description: test fixture
+Version: 1
+Cflags: -I$root/headersRoot/include
+EOF_PC
 
   if [[ $persisted != absent ]]; then
     mkdir -p "$root/hyprland-plugins"
@@ -188,11 +219,13 @@ EOF_PLUGIN
 
 run_session_probe() {
   local name="$1" signature="$2" persisted="$3" loaded="$4" header_commit="$5" header_abi="$6" reload_rc="$7"
+  local reload_loads="${8:-1}" version_unavailable="${9:-0}"
   local runtime="$TMPD/runtime-$name"
   local home="$TMPD/home-$name"
   local state="$TMPD/hyprpm-$name"
   local hyprpm_log="$TMPD/hyprpm-$name.log"
   local hyprctl_log="$TMPD/hyprctl-$name.log"
+  local loaded_marker="$runtime/reloaded"
   mkdir -p -- "$runtime" "$home"
   : >"$hyprpm_log"
   : >"$hyprctl_log"
@@ -209,6 +242,9 @@ run_session_probe() {
       HYPRPM_STATE_DIR="$state" \
       TEST_PERSISTED="$persisted" \
       TEST_LOADED="$loaded" \
+      TEST_LOADED_MARKER="$loaded_marker" \
+      TEST_RELOAD_LOADS="$reload_loads" \
+      TEST_VERSION_UNAVAILABLE="$version_unavailable" \
       TEST_RUNNING_COMMIT="running-commit" \
       TEST_RUNNING_ABI="running-abi" \
       TEST_RELOAD_RC="$reload_rc" \
@@ -225,6 +261,9 @@ run_session_probe() {
       HYPRPM_STATE_DIR="$state" \
       TEST_PERSISTED="$persisted" \
       TEST_LOADED="$loaded" \
+      TEST_LOADED_MARKER="$loaded_marker" \
+      TEST_RELOAD_LOADS="$reload_loads" \
+      TEST_VERSION_UNAVAILABLE="$version_unavailable" \
       TEST_RUNNING_COMMIT="running-commit" \
       TEST_RUNNING_ABI="running-abi" \
       TEST_RELOAD_RC="$reload_rc" \
@@ -252,6 +291,8 @@ run_session_probe healthy session-healthy enabled 0 running-commit running-abi 0
 [[ $(grep -cFx reload "$CASE_HYPRPM_LOG" || true) -eq 1 ]] \
   || fail 'healthy enabled hyprbars was not reloaded exactly once'
 [[ ! -s $CASE_HYPRCTL_LOG ]] || fail 'healthy startup generated an Awtarchy Hyprland notification'
+[[ ! -f $CASE_HOME/.local/state/awtarchy/hyprbars-repair-required ]] \
+  || fail 'successful healthy reload incorrectly left a repair marker'
 
 # The same Hyprland session must not retry even if the script is invoked again.
 env \
@@ -264,6 +305,9 @@ env \
   HYPRPM_STATE_DIR="$TMPD/hyprpm-healthy" \
   TEST_PERSISTED=enabled \
   TEST_LOADED=0 \
+  TEST_LOADED_MARKER="$CASE_RUNTIME/reloaded" \
+  TEST_RELOAD_LOADS=1 \
+  TEST_VERSION_UNAVAILABLE=0 \
   TEST_RUNNING_COMMIT=running-commit \
   TEST_RUNNING_ABI=running-abi \
   TEST_RELOAD_RC=0 \
@@ -293,6 +337,20 @@ repair_marker="$CASE_HOME/.local/state/awtarchy/hyprbars-repair-required"
 [[ -f $repair_marker ]] || fail 'reload failure did not mark hyprbars as needing repair'
 grep -Fqx 'reload-failed' "$repair_marker" || fail 'reload failure repair reason was not recorded'
 [[ ! -s $CASE_HYPRCTL_LOG ]] || fail 'reload failure emitted an extra Awtarchy Hyprland notification'
+
+run_session_probe reload-not-loaded session-not-loaded enabled 0 running-commit running-abi 0 0
+[[ $(grep -cFx reload "$CASE_HYPRPM_LOG" || true) -eq 1 ]] \
+  || fail 'reload-not-loaded case did not attempt exactly one reload'
+repair_marker="$CASE_HOME/.local/state/awtarchy/hyprbars-repair-required"
+[[ -f $repair_marker ]] || fail 'successful hyprpm reload without a loaded plugin did not request repair'
+grep -Fqx 'reload-not-loaded' "$repair_marker" \
+  || fail 'reload-not-loaded repair reason was not recorded'
+[[ ! -s $CASE_HYPRCTL_LOG ]] || fail 'reload-not-loaded emitted an extra Awtarchy Hyprland notification'
+
+run_session_probe version-unavailable session-version enabled 0 running-commit running-abi 0 1 1
+[[ ! -s $CASE_HYPRPM_LOG ]] || fail 'unknown running Hyprland version reached hyprpm reload'
+repair_marker="$CASE_HOME/.local/state/awtarchy/hyprbars-repair-required"
+[[ ! -f $repair_marker ]] || fail 'transient Hyprland version failure was mislabeled as a plugin repair'
 
 run_session_probe no-session "" enabled 0 running-commit running-abi 0
 [[ ! -s $CASE_HYPRPM_LOG ]] || fail 'invocation without a Hyprland session signature performed a live reload'
