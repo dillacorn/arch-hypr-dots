@@ -184,17 +184,27 @@ running_hyprland_identity() {
 }
 
 cached_abi_hash() {
-  [[ -r "$HYPRPM_GLOBAL_STATE" ]] || return 1
-  awk -F= '
-    /^[[:space:]]*hash[[:space:]]*=/ {
-      value = $2
-      sub(/^[[:space:]]*/, "", value)
-      sub(/[[:space:]]*$/, "", value)
-      gsub(/^"|"$/, "", value)
-      print value
-      exit
-    }
-  ' "$HYPRPM_GLOBAL_STATE"
+  [[ -n "$PYTHON" && -r "$HYPRPM_GLOBAL_STATE" ]] || return 1
+  "$PYTHON" - "$HYPRPM_GLOBAL_STATE" <<'PY_STATE'
+import sys
+import tomllib
+
+try:
+    with open(sys.argv[1], "rb") as handle:
+        data = tomllib.load(handle)
+except (OSError, tomllib.TOMLDecodeError):
+    raise SystemExit(1)
+
+state = data.get("state")
+if not isinstance(state, dict):
+    raise SystemExit(1)
+
+value = state.get("hash")
+if not isinstance(value, str) or not value.strip():
+    raise SystemExit(1)
+
+print(value.strip())
+PY_STATE
 }
 
 cached_header_commit() {
