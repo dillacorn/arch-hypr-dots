@@ -207,7 +207,7 @@ interactive_main() {
     printf '  hyprpm disable hyprbars\n\n'
 
     local ans=""
-    read -r -p "Disable Title Bars after logout? [y/N] " ans
+    read -r -p "Disable Title Bars? [y/N] " ans
     case "${ans,,}" in
       y|yes) ;;
       *) printf 'Cancelled. No changes made.\n'; pause_exit; exit 0 ;;
