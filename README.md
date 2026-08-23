@@ -10,8 +10,8 @@ pronounced: **aw-tar-chee**
 
 ## Install model
 
-1. Install Arch with `archinstall` and select the Minimal profile.
-2. Apply the awtarchy overlay on top of that base system.
+1. Start with a fresh Arch Linux installation, installed manually or with `archinstall` using the Minimal profile.
+2. Apply the awtarchy overlay on top of that fresh base system.
 
 > **Development note:** Awtarchy is a personal passion project maintained in spare time. Large language models have been used as development tools to assist with writing, reviewing, refactoring, documentation, and troubleshooting parts of the project. I use that assistance to spend more of my limited project time testing changes on real systems, diagnosing failures, and validating releases. LLM-assisted changes are not assumed correct simply because they were generated; they are reviewed and tested as part of the normal development process.
 
@@ -50,7 +50,7 @@ Awtarchy-authored code and configuration is licensed under MIT unless otherwise 
 
 ## Install
 
-Awtarchy expects a minimal vanilla Arch installation. `archinstall` with the Minimal profile is the recommended starting point.
+Awtarchy requires a fresh vanilla Arch Linux installation before running the installer. Install Arch manually or use `archinstall` with the Minimal profile, boot into that fresh system, then run:
 
 ```bash
 sudo pacman -S git --noconfirm
