@@ -620,3 +620,6 @@ e6d1ead0edd25f81da7fd9b5a2dd84f86fc97faa89719107fe8e72ed93591290	.config/hypr/sc
 a367f2f08a814ebf731836e337b031eff1c9ee574db0514463417546736c9f5f	.config/hypr/scripts/hyprpm-auto-reload.sh
 27154080482063137d5359813dc81738f8ac6f577add99007fd3b8bb7f96c9f0	.config/hypr/scripts/hyprbars_toggle.sh
 5659053a54520c0e839a59858abf4e113d79c0eb69097fa07e17b4dd7525bd12	.config/quickshell/awtarchy/TitleBarsCard.qml
+
+# 2026-08-23 final Hyprbars reconciliation wording.
+953c78925873c0c84c98d60c40eac37cda6e325ef47698afc3312bb7451e38fd	.config/hypr/scripts/hyprbars_toggle.sh
