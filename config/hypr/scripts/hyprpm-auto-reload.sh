@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # ~/.config/hypr/scripts/hyprpm-auto-reload.sh
 #
-# Quiet Awtarchy hyprbars session reconciliation.
-# - Does nothing when hyprbars is not enabled or is already loaded.
-# - Preflights hyprpm's cached Hyprland headers/commit/ABI before reload so known
-#   stale-plugin states are contained before hyprpm can emit warning/error notices.
-# - Never updates/builds plugins at login. Repair is handled explicitly through
-#   the Awtarchy Hyprland Plugin control.
+# Safe Hyprland plugin reconciliation:
+# - Reconciles all enabled hyprpm plugins once per new Hyprland session.
+# - Preflights hyprpm's cached Hyprland headers/commit/ABI before automatic
+#   startup reloads so known stale-plugin states never reach hyprpm reload.
+# - Never updates/builds plugins automatically at login.
+# - Marks Awtarchy's optional hyprbars control as repair-required when needed.
+# - Preserves the explicit HYPRPM_AUTO_LIVE_RELOAD=1 update-on-failure path.
 #
 # Log: ~/.cache/hyprpm-auto/hyprpm-auto-reload.log
 
@@ -32,7 +33,13 @@ HYPRPM_STATE_DIR="${HYPRPM_STATE_DIR:-/var/cache/hyprpm/${HYPRPM_USER}}"
 HYPRPM_GLOBAL_STATE="$HYPRPM_STATE_DIR/state.toml"
 HYPRPM_HEADERS_ROOT="$HYPRPM_STATE_DIR/headersRoot"
 HYPRPM_PKGCONFIG_DIR="$HYPRPM_HEADERS_ROOT/share/pkgconfig"
+
+LOCK_TTL_SECONDS="${HYPRPM_AUTO_LOCK_TTL_SECONDS:-600}"
+LOCK_FILE="${HYPRPM_AUTO_LOCK_FILE:-/tmp/hyprpm-auto-reload.lock}"
 RELOAD_TIMEOUT_SECONDS="${HYPRPM_RELOAD_TIMEOUT_SECONDS:-20}"
+UPDATE_TIMEOUT_SECONDS="${HYPRPM_UPDATE_TIMEOUT_SECONDS:-600}"
+LIVE_RELOAD="${HYPRPM_AUTO_LIVE_RELOAD:-0}"
+UPDATE_ON_FAILURE="${HYPRPM_AUTO_UPDATE_ON_FAILURE:-1}"
 
 mkdir -p "$LOG_DIR" "$STATE_DIR" 2>/dev/null || true
 
@@ -40,6 +47,12 @@ ts() { date +"%Y-%m-%d %H:%M:%S"; }
 
 log_line() {
   printf '[%s] %s\n' "$(ts)" "$*" >>"$LOG_FILE"
+}
+
+notify() {
+  local msg="$1"
+  [[ -n "$HYPRCTL" ]] || return 0
+  "$HYPRCTL" notify -1 9000 "rgb(ffcc00)" "$msg" >/dev/null 2>&1 || true
 }
 
 mark_repair() {
@@ -54,6 +67,20 @@ clear_repair() {
   rm -f -- "$REPAIR_MARKER" 2>/dev/null || true
 }
 
+have_recent_lock() {
+  [[ -f "$LOCK_FILE" ]] || return 1
+  local now lock_ts age
+  now="$(date +%s)"
+  lock_ts="$(cat "$LOCK_FILE" 2>/dev/null || echo 0)"
+  [[ "$lock_ts" =~ ^[0-9]+$ ]] || return 1
+  age=$((now - lock_ts))
+  ((age >= 0 && age < LOCK_TTL_SECONDS))
+}
+
+touch_lock() {
+  date +%s >"$LOCK_FILE" 2>/dev/null || true
+}
+
 run_maybe_timeout() {
   local secs="$1"
   shift
@@ -64,8 +91,17 @@ run_maybe_timeout() {
   fi
 }
 
-hyprbars_enabled() {
-  [[ -n "$PYTHON" && -d "$HYPRPM_STATE_DIR" ]] || return 1
+log_block() {
+  local label="$1" rc="$2" out="$3"
+  {
+    printf '[%s] %s (rc=%s)\n' "$(ts)" "$label" "$rc"
+    [[ -n "$out" ]] && printf '%s\n' "$out"
+    printf '\n'
+  } >>"$LOG_FILE"
+}
+
+enabled_plugins() {
+  [[ -n "$PYTHON" ]] || return 1
   "$PYTHON" - "$HYPRPM_STATE_DIR" <<'PY_STATE'
 import glob
 import sys
@@ -78,21 +114,59 @@ for path in glob.glob(root + "/*/state.toml"):
             state = tomllib.load(handle)
     except (OSError, tomllib.TOMLDecodeError):
         continue
-    plugin = state.get("hyprbars")
-    if isinstance(plugin, dict) and plugin.get("enabled") is True:
-        raise SystemExit(0)
-raise SystemExit(1)
+
+    for name, plugin in state.items():
+        if name == "repository":
+            continue
+        if isinstance(plugin, dict) and plugin.get("enabled") is True:
+            print(name)
 PY_STATE
 }
 
-hyprbars_loaded() {
+loaded_plugins() {
+  [[ -n "$HYPRCTL" ]] || return 1
   "$HYPRCTL" plugin list 2>/dev/null \
-    | grep -qiE '(^|[^a-zA-Z0-9_])hyprbars([^a-zA-Z0-9_]|$)'
+    | sed -n 's/^[[:space:]]*Plugin[[:space:]][[:space:]]*\([^[:space:]]\+\).*/\1/p'
+}
+
+array_contains_exact() {
+  local needle="$1" item
+  shift || true
+  for item in "$@"; do
+    [[ "$item" == "$needle" ]] && return 0
+  done
+  return 1
+}
+
+all_enabled_loaded() {
+  local -a enabled=("$@")
+  local loaded_output=""
+  local -a loaded=()
+  local plugin
+
+  loaded_output="$(loaded_plugins)" || return 1
+  mapfile -t loaded <<<"$loaded_output"
+  if [[ ${#loaded[@]} -eq 1 && -z ${loaded[0]} ]]; then
+    loaded=()
+  fi
+
+  for plugin in "${enabled[@]}"; do
+    array_contains_exact "$plugin" "${loaded[@]}" || return 1
+  done
+  return 0
+}
+
+hyprbars_loaded() {
+  local loaded_output=""
+  local -a loaded=()
+  loaded_output="$(loaded_plugins)" || return 1
+  mapfile -t loaded <<<"$loaded_output"
+  array_contains_exact hyprbars "${loaded[@]}"
 }
 
 wait_hyprbars_loaded() {
   local attempt
-  for ((attempt = 1; attempt <= 10; attempt++)); do
+  for ((attempt = 1; attempt <= 20; attempt++)); do
     hyprbars_loaded && return 0
     sleep 0.1
   done
@@ -100,7 +174,7 @@ wait_hyprbars_loaded() {
 }
 
 running_hyprland_identity_once() {
-  [[ -n "$PYTHON" ]] || return 1
+  [[ -n "$PYTHON" && -n "$HYPRCTL" ]] || return 1
   "$HYPRCTL" -j version 2>/dev/null \
     | "$PYTHON" -c '
 import json
@@ -120,7 +194,7 @@ print(abi)
 
 running_hyprland_identity() {
   local attempt identity=""
-  for ((attempt = 1; attempt <= 10; attempt++)); do
+  for ((attempt = 1; attempt <= 20; attempt++)); do
     if identity="$(running_hyprland_identity_once)"; then
       printf '%s\n' "$identity"
       return 0
@@ -202,55 +276,141 @@ preflight_reason() {
   return 0
 }
 
-[[ -n "$HYPRPM" && -n "$HYPRCTL" && -n "$SESSION_SIGNATURE" ]] || exit 0
+run_explicit_live_reconcile() {
+  local reload_out="" reload_rc=0 update_out="" update_rc=0 reload2_out="" reload2_rc=0
 
-mkdir -p "$SESSION_DIR" 2>/dev/null || exit 0
-chmod 700 "$SESSION_DIR" 2>/dev/null || true
-previous_session="$(cat "$SESSION_MARKER" 2>/dev/null || true)"
-[[ "$previous_session" != "$SESSION_SIGNATURE" ]] || exit 0
-printf '%s\n' "$SESSION_SIGNATURE" >"$SESSION_MARKER" 2>/dev/null || exit 0
+  if have_recent_lock; then
+    return 0
+  fi
 
-if ! hyprbars_enabled; then
-  clear_repair
-  log_line "Title Bars are not enabled; no plugin reconciliation needed."
+  log_line "HYPRPM_AUTO_LIVE_RELOAD=1 set. Running live hyprpm reload."
+  reload_out="$(run_maybe_timeout "$RELOAD_TIMEOUT_SECONDS" "$HYPRPM" reload 2>&1)"
+  reload_rc=$?
+  log_block "hyprpm reload" "$reload_rc" "$reload_out"
+
+  if [[ "$reload_rc" -eq 0 ]]; then
+    return 0
+  fi
+
+  if [[ "$UPDATE_ON_FAILURE" != "1" ]]; then
+    notify "hyprpm reload failed. Auto update disabled. See log: $LOG_FILE"
+    return 0
+  fi
+
+  touch_lock
+  notify "hyprpm reload failed. Running hyprpm update, then reload."
+
+  update_out="$(run_maybe_timeout "$UPDATE_TIMEOUT_SECONDS" "$HYPRPM" update 2>&1)"
+  update_rc=$?
+  log_block "hyprpm update" "$update_rc" "$update_out"
+
+  if [[ "$update_rc" -ne 0 ]]; then
+    notify "hyprpm update failed. See log: $LOG_FILE"
+    return 0
+  fi
+
+  reload2_out="$(run_maybe_timeout "$RELOAD_TIMEOUT_SECONDS" "$HYPRPM" reload 2>&1)"
+  reload2_rc=$?
+  log_block "hyprpm reload after update" "$reload2_rc" "$reload2_out"
+
+  if [[ "$reload2_rc" -ne 0 ]]; then
+    notify "hyprpm reload still failing after update. See log: $LOG_FILE"
+    return 0
+  fi
+
+  notify "hyprpm updated and reloaded."
+  return 0
+}
+
+[[ -n "$HYPRPM" ]] || exit 0
+
+session_start_reconcile=0
+if [[ -n "$SESSION_SIGNATURE" ]]; then
+  mkdir -p "$SESSION_DIR" 2>/dev/null || true
+  chmod 700 "$SESSION_DIR" 2>/dev/null || true
+  previous_session="$(cat "$SESSION_MARKER" 2>/dev/null || true)"
+  if [[ "$previous_session" != "$SESSION_SIGNATURE" ]]; then
+    if printf '%s\n' "$SESSION_SIGNATURE" >"$SESSION_MARKER" 2>/dev/null; then
+      session_start_reconcile=1
+    else
+      log_line "Could not record Hyprland session marker; skipping automatic plugin reconciliation."
+    fi
+  fi
+fi
+
+if [[ "$session_start_reconcile" -ne 1 ]]; then
+  if [[ "$LIVE_RELOAD" != "1" ]]; then
+    log_line "Skipped hyprpm reload. Set HYPRPM_AUTO_LIVE_RELOAD=1 to allow live plugin reload."
+    exit 0
+  fi
+  run_explicit_live_reconcile
   exit 0
 fi
 
-if hyprbars_loaded; then
+enabled_output=""
+if ! enabled_output="$(enabled_plugins)"; then
+  log_line "Could not inspect persisted hyprpm plugin state; skipping automatic reconciliation."
+  exit 0
+fi
+
+mapfile -t enabled <<<"$enabled_output"
+if [[ ${#enabled[@]} -eq 1 && -z ${enabled[0]} ]]; then
+  enabled=()
+fi
+
+if [[ ${#enabled[@]} -eq 0 ]]; then
   clear_repair
-  log_line "Title Bars are already loaded."
+  log_line "No enabled hyprpm plugins; no session reconciliation needed."
+  exit 0
+fi
+
+hyprbars_wanted=0
+array_contains_exact hyprbars "${enabled[@]}" && hyprbars_wanted=1
+
+if all_enabled_loaded "${enabled[@]}"; then
+  clear_repair
+  log_line "All enabled hyprpm plugins are already loaded."
   exit 0
 fi
 
 reason=""
 if ! reason="$(preflight_reason)"; then
   if [[ "$reason" == "version-unavailable" ]]; then
-    log_line "Could not read the running Hyprland version after retries; leaving Title Bars unchanged."
+    log_line "Could not read the running Hyprland version after retries; leaving plugin state unchanged."
     exit 0
   fi
-  mark_repair "${reason:-preflight-failed}"
+
+  if ((hyprbars_wanted == 1)); then
+    mark_repair "${reason:-preflight-failed}"
+  else
+    clear_repair
+    log_line "Hyprland plugin reload skipped: ${reason:-preflight-failed}. Run hyprpm update manually before reloading plugins."
+  fi
   exit 0
 fi
 
-log_line "Title Bars are enabled and compatible but not loaded. Running one quiet hyprpm reload."
+log_line "Enabled hyprpm plugins are compatible but not fully loaded. Running one quiet hyprpm reload."
 reload_out="$(run_maybe_timeout "$RELOAD_TIMEOUT_SECONDS" "$HYPRPM" reload 2>&1)"
 reload_rc=$?
-{
-  printf '[%s] hyprpm reload (rc=%d)\n' "$(ts)" "$reload_rc"
-  [[ -n "$reload_out" ]] && printf '%s\n' "$reload_out"
-  printf '\n'
-} >>"$LOG_FILE"
+log_block "hyprpm reload" "$reload_rc" "$reload_out"
 
 if [[ "$reload_rc" -ne 0 ]]; then
-  mark_repair "reload-failed"
+  if ((hyprbars_wanted == 1)); then
+    mark_repair "reload-failed"
+  else
+    clear_repair
+    log_line "hyprpm reload failed for non-Awtarchy plugins; no automatic update was attempted."
+  fi
   exit 0
 fi
 
-if ! wait_hyprbars_loaded; then
-  mark_repair "reload-not-loaded"
-  exit 0
+if ((hyprbars_wanted == 1)); then
+  if ! wait_hyprbars_loaded; then
+    mark_repair "reload-not-loaded"
+    exit 0
+  fi
 fi
 
 clear_repair
-log_line "Title Bars plugin state reloaded successfully."
+log_line "Enabled hyprpm plugin state reloaded successfully."
 exit 0
