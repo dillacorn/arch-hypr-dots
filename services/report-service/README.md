@@ -34,7 +34,7 @@ The GitHub App requires only Issues read/write plus GitHub's required Metadata r
 
 ## Tests
 
-Requires Node.js 20.6 or newer. Install the report-service development dependency, then run the tests:
+The focused test suite supports Node.js 20.6 or newer. Install the report-service development dependency, then run the tests:
 
 ```bash
 cd services/report-service
@@ -46,11 +46,14 @@ Tests use generated throwaway RSA keys and fake GitHub/D1 boundaries. No product
 
 ## Deploy
 
+Current Wrangler releases require Node.js 22 or newer. On Arch Linux, use the supported `nodejs-lts-jod` package (or another supported Node 22+ runtime) before deploying.
+
 The production D1 schema was created manually before this source-controlled service existed. `migrations/0001_initial.sql` records that schema for reproducibility, but do not run the initial migration against the existing production database merely to deploy this first test path.
 
 From this directory:
 
 ```bash
+node --version
 npx wrangler@latest login
 npx wrangler@latest deploy
 ```
