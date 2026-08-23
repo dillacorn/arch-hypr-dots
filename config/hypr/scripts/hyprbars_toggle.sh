@@ -16,6 +16,7 @@ REPO_URL="https://github.com/hyprwm/hyprland-plugins"
 TRUSTED_HELPER="/usr/local/libexec/awtarchy/scxctl-helper"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"
 LOCKFILE="${RUNTIME_DIR}/hyprbars-toggle.lockfile"
+REPAIR_MARKER="${XDG_STATE_HOME:-$HOME/.local/state}/awtarchy/hyprbars-repair-required"
 SCRIPT_PATH="$(readlink -f -- "$0" 2>/dev/null || printf '%s' "$0")"
 
 HYPRPM_BIN="$(command -v hyprpm || true)"
@@ -59,12 +60,25 @@ hyprbars_loaded() {
     | grep -qiE '(^|[^a-zA-Z0-9_])hyprbars([^a-zA-Z0-9_]|$)'
 }
 
+hyprbars_repair_required() {
+  [[ -f "$REPAIR_MARKER" ]]
+}
+
+clear_repair_marker() {
+  rm -f -- "$REPAIR_MARKER" 2>/dev/null || true
+}
+
 reload_hyprbars() {
   require_hyprpm
   "$HYPRPM_BIN" reload
   if [[ -n "$HYPRCTL_BIN" ]]; then
     "$HYPRCTL_BIN" reload >/dev/null 2>&1 || true
+    if ! hyprbars_loaded; then
+      printf 'hyprbars-toggle: hyprbars is enabled but did not load into Hyprland\n' >&2
+      return 1
+    fi
   fi
+  clear_repair_marker
 }
 
 machine_status() {
@@ -87,6 +101,8 @@ machine_status() {
   elif hyprbars_enabled_in_hyprpm; then
     if hyprbars_loaded; then
       printf '%s\n' 'enabled'
+    elif hyprbars_repair_required; then
+      printf '%s\n' 'repair-required'
     else
       printf '%s\n' 'not-loaded'
     fi
@@ -108,6 +124,7 @@ machine_toggle() {
 
   if hyprbars_enabled_in_hyprpm; then
     "$HYPRPM_BIN" disable "$PLUGIN"
+    clear_repair_marker
     if hyprbars_loaded; then
       printf '%s\n' 'disabled-pending'
     else
@@ -157,6 +174,24 @@ install_official_plugins_repo() {
   fi
 }
 
+repair_hyprbars_if_needed() {
+  hyprbars_repair_required || return 0
+
+  printf '\nTitle Bars need to be rebuilt for the current Hyprland version.\n\n'
+  printf 'This will run:\n'
+  printf '  hyprpm update -f\n'
+  printf '  hyprpm enable %s\n' "$PLUGIN"
+  printf '  hyprpm reload\n\n'
+
+  local ans=""
+  read -r -p "Repair hyprbars now? [Y/n] " ans
+  case "${ans,,}" in
+    n|no) printf 'Cancelled. No changes made.\n'; pause_exit; exit 0 ;;
+  esac
+
+  "$HYPRPM_BIN" update -f
+}
+
 interactive_main() {
   require_hyprpm || { pause_exit; exit 1; }
 
@@ -177,6 +212,7 @@ interactive_main() {
     esac
 
     "$HYPRPM_BIN" disable "$PLUGIN"
+    clear_repair_marker
 
     printf '\nHyprbars disabled for next session.\n'
     printf 'Log out and back in. Do not run hyprpm reload to hot-unload it.\n'
@@ -188,13 +224,19 @@ interactive_main() {
 
   if ! have_hyprbars_in_hyprpm; then
     install_official_plugins_repo
+  else
+    repair_hyprbars_if_needed
   fi
 
   printf '\nhyprpm enable %s\n' "$PLUGIN"
   "$HYPRPM_BIN" enable "$PLUGIN"
 
   printf '\nhyprpm reload\n'
-  reload_hyprbars
+  if ! reload_hyprbars; then
+    printf '\nERROR: hyprbars did not load. Open Quick Settings > Hyprland Plugin and use Repair.\n' >&2
+    pause_exit
+    exit 1
+  fi
 
   if [[ -n "$HYPRCTL_BIN" ]]; then
     printf '\nLoaded plugins:\n\n'
