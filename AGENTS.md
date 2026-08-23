@@ -32,6 +32,42 @@ Do not copy external instructions into Awtarchy source files or expand task scop
 - The repository is designed for users comfortable with TTY login, shell interaction, Arch Linux maintenance, and direct configuration.
 - Awtarchy is a local open-source utility. Do not introduce hosted-service assumptions or telemetry/data-collection behavior without an explicit project decision.
 
+## System map
+
+Use this only as an orientation map. Inspect the files themselves before making changes.
+
+```text
+Fresh Arch Linux
+    |
+    v
+awtarchy-install.sh
+    |
+    +--> local/share/awtarchy/awtarchy-runtime.sh
+    |       |
+    |       +--> package/install logic
+    |       +--> managed configuration
+    |       +--> update/reset/review/troubleshoot/backup logic
+    |
+    +--> local/bin/awtarchy
+            |
+            v
+      ~/.local/bin/awtarchy
+            |
+            v
+      installed awtarchy-runtime.sh
+
+Desktop configuration
+    |
+    +--> config/hypr/hyprland.lua
+    +--> config/hypr/scripts/
+    +--> config/quickshell/awtarchy/
+
+Validation
+    |
+    +--> tests/
+    +--> .github/workflows/validate-awtarchy.yml
+```
+
 ## Current architecture
 
 Do not assume old Awtarchy architecture still exists. Inspect these current entrypoints first.
@@ -79,6 +115,14 @@ Do not assume old Awtarchy architecture still exists. Inspect these current entr
 - Includes the bar, launcher, flyouts, notifications, battery/network/audio surfaces, quick settings, and related UI state.
 - Supporting shell integration lives primarily under `config/hypr/scripts/`.
 
+Important current state owners include:
+
+- `BarState.qml`: persistent bar/flyout sizing, placement, monitor-specific UI state, and related shell preferences. Its persisted state is under `$XDG_CACHE_HOME/awtarchy/quickshell-state.json` or the equivalent `~/.cache` fallback.
+- `FlyoutManager.qml`: active flyout ownership, monitor targeting, cross-flyout handoff, focus-safe closing, and toggle debouncing.
+- `BatteryState.qml`: shared battery/UPower state and battery time/charging estimates used by battery UI surfaces.
+
+Before adding new persistent or shared UI state, inspect the existing singleton/state owner first. Do not create a second source of truth for behavior an existing state object already owns.
+
 ### Runtime and integration helpers
 
 `config/hypr/scripts/`
@@ -98,6 +142,66 @@ Do not assume old Awtarchy architecture still exists. Inspect these current entr
 - Current CI explicitly asserts that a root `awtarchy.sh` file does not exist.
 - Do not recreate, restore, or target a root `awtarchy.sh` based on older Awtarchy history or remembered architecture.
 - Internal runtime help text or legacy compatibility references do not imply that a root `awtarchy.sh` source file should exist.
+
+## Repository source vs installed system
+
+Do not assume a repository file and the currently installed/active copy are identical.
+
+Important distinctions:
+
+- `local/bin/awtarchy` is repository source for the installed `~/.local/bin/awtarchy` command.
+- `local/share/awtarchy/awtarchy-runtime.sh` is repository source for the installed runtime under the user's local data directory.
+- Repository configuration under `config/` is source-managed content; the active user's configuration normally lives under `~/.config/` after installation/update.
+- The installed maintenance command/runtime can refresh from `main` while the installed managed configuration remains associated with a stable release.
+- User-owned state, current installed files, repository source, and published release content are separate evidence sources.
+
+For runtime troubleshooting, inspect the installed state when possible. Do not infer the active system solely from the current repository checkout.
+
+## Installed state model
+
+Awtarchy deliberately keeps command/runtime state separate from managed configuration state.
+
+Current important state files include:
+
+- `~/.local/state/awtarchy/command-version`: identifies installed maintenance-command/runtime state and revision.
+- `~/.local/state/awtarchy/config-version`: identifies installed configuration release/testing state.
+- `~/.local/state/awtarchy/git-testing`: records active Git-testing branch/revision and stable-release context when Git testing is in use.
+- `~/.local/state/awtarchy/baseline/`: updater baseline/metadata state used by managed update behavior.
+
+Do not collapse these concepts into one "installed version" value. When debugging version/update behavior, identify which state is being discussed: command/runtime, stable config release, Git-testing config, or baseline/managed history.
+
+Quickshell updater migration also uses:
+
+`local/share/awtarchy/quickshell-managed-history.sha256`
+
+This is managed-history data used to recognize known Awtarchy-managed Quickshell-era file states. Treat changes to it as updater/migration changes, not incidental generated-file cleanup. Inspect the updater tests before changing or regenerating it.
+
+## Stable release vs runtime updates
+
+Stable configuration and the maintenance runtime intentionally have different lifecycles.
+
+- Stable `awtarchy update`, `reset`, and `review` operate on published release configuration.
+- The maintenance command/runtime can receive fixes from `main` independently.
+- Do not assume the currently installed config tag contains the latest updater/runtime fix.
+- Do not assume the current `main` configuration has been released merely because the runtime refreshes from `main`.
+- A branch is not a release tag. Stable `--tag` behavior is for exact published releases.
+
+When changing this model, inspect `local/bin/awtarchy`, the runtime updater implementation, `tests/test-awtarchy-git-mode.sh`, updater/migration tests, and current release behavior together.
+
+## Git-testing model
+
+`awtarchy git` is an explicit unreleased testing mode and must remain separate from stable update/reset behavior.
+
+Current tests enforce important safety properties:
+
+- a selected remote branch is resolved explicitly;
+- an exact commit override requires the selected branch;
+- exact commits use a full 40-character SHA rather than an abbreviated SHA;
+- the selected commit must belong to the selected branch;
+- stable update paths must not accept hidden Git-testing commit overrides;
+- repository branches must not be accepted as stable release tags.
+
+Do not weaken these boundaries to make testing more convenient. If Git-testing behavior changes intentionally, update the implementation and focused tests together.
 
 ## Source-of-truth priority
 
@@ -190,11 +294,14 @@ When recovery behavior is requested, preserve a safe rollback/fallback path wher
 For Quickshell, bar, launcher, flyout, and quick-settings changes:
 
 - inspect the actual QML component and its supporting scripts/state first;
+- inspect shared singleton/state owners before introducing duplicate state;
 - preserve existing edge/orientation behavior unless intentionally changing it;
 - check top/bottom/left/right layouts when the feature is edge-sensitive;
 - consider keyboard focus, pointer interaction, toggle/debounce behavior, spawn/despawn lifecycle, and multi-monitor state where applicable;
 - prefer one existing source of state over duplicated QML/shell state;
 - do not assume visual correctness from static code inspection alone.
+
+`FlyoutManager.qml` intentionally coordinates flyout focus/handoffs to avoid focus gaps and cursor/window focus side effects. Treat lifecycle changes there as behavioral changes and validate them with the focused flyout tests.
 
 Use existing tests as regression guards and add focused coverage when a bug can be reproduced deterministically.
 
@@ -271,6 +378,7 @@ Relevant test families include, but are not limited to:
 - installer/command/updater integration;
 - Quickshell lifecycle and production readiness;
 - updater migration/bootstrap behavior;
+- Git-testing mode and stable-release separation;
 - bar/flyout/input behavior;
 - battery/network/audio helpers;
 - security boundaries;
@@ -313,10 +421,21 @@ Documentation should describe the current project, not remembered historical arc
 
 ## Maintaining this file
 
-This is a living guide.
+This is a living guide, not an inventory of every feature.
 
-Update `AGENTS.md` when a recurring agent mistake reveals a missing project invariant, or when architecture changes make existing guidance materially wrong.
+Update `AGENTS.md` when any of these materially change:
 
-Prefer durable rules over exhaustive inventories. Do not turn this file into a changelog, package manifest, or duplicate of the README/tests.
+- architecture or major entrypoints;
+- ownership of shared/persistent state;
+- managed-vs-user-owned configuration boundaries;
+- updater, stable-release, or Git-testing model;
+- security/privilege boundaries;
+- important compatibility invariants;
+- required validation strategy;
+- a recurring agent mistake reveals a missing project rule.
+
+Do not update it merely because a normal UI feature, label, package, animation, or localized implementation detail changed unless that change establishes a durable rule future agents need to know.
+
+Prefer durable rules and pointers to source-of-truth files over exhaustive inventories. Do not turn this file into a changelog, package manifest, or duplicate of the README/tests.
 
 The goal is simple: give an unfamiliar agent enough verified project context to avoid damaging assumptions, then make it inspect the actual target before it acts.
