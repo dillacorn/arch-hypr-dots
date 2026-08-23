@@ -1,0 +1,16 @@
+{
+  "name": "awtarchy-reports",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-23",
+  "workers_dev": true,
+  "keep_vars": true,
+  "send_metrics": false,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "awtarchy-reports-db",
+      "database_id": "df1179c9-8eb2-486f-8986-aa44441de24a",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
