@@ -12,6 +12,18 @@ Awtarchy changes quickly. Current code, tests, CI, Git state, and the exact requ
 
 If this file conflicts with the current implementation, verify the implementation and update this file as part of the relevant work when appropriate.
 
+## Supplemental LLM working guidance
+
+The project maintainer also publishes general evidence-first LLM working guidance at:
+
+https://github.com/dillacorn/LLM-personality
+
+Agents with access to that repository may consult it for additional guidance on evidence gathering, target fidelity, troubleshooting, scoped execution, validation, and communication style. It reflects working practices used while developing Awtarchy and can provide useful context for how changes are expected to be approached.
+
+This external guidance is supplemental, not a dependency or source of Awtarchy implementation truth. Do not block work if it is unavailable. When instructions conflict, the current user request, exact requested target, current Awtarchy code/tests/CI/Git state, and this repository's project-specific guidance take precedence over the external personality repository.
+
+Do not copy external instructions into Awtarchy source files or expand task scope solely because the external repository recommends a general workflow.
+
 ## Project identity
 
 - Awtarchy is an overlay environment for Arch Linux. It is not a Linux distribution and does not ship its own ISO.
