@@ -3,7 +3,7 @@
 #
 # Quiet Awtarchy hyprbars session reconciliation.
 # - Does nothing when hyprbars is not enabled or is already loaded.
-# - Preflights hyprpm's cached Hyprland commit + ABI before reload so known
+# - Preflights hyprpm's cached Hyprland headers/commit/ABI before reload so known
 #   stale-plugin states are contained before hyprpm can emit warning/error notices.
 # - Never updates/builds plugins at login. Repair is handled explicitly through
 #   the Awtarchy Hyprland Plugin control.
@@ -16,6 +16,7 @@ set -o pipefail
 HYPRPM="$(command -v hyprpm || true)"
 HYPRCTL="$(command -v hyprctl || true)"
 PYTHON="$(command -v python3 || true)"
+PKGCONF="$(command -v pkgconf || true)"
 
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/awtarchy"
@@ -29,7 +30,8 @@ SESSION_SIGNATURE="${HYPRLAND_INSTANCE_SIGNATURE:-}"
 HYPRPM_USER="${USER:-$(id -un 2>/dev/null || true)}"
 HYPRPM_STATE_DIR="${HYPRPM_STATE_DIR:-/var/cache/hyprpm/${HYPRPM_USER}}"
 HYPRPM_GLOBAL_STATE="$HYPRPM_STATE_DIR/state.toml"
-HYPRPM_VERSION_HEADER="$HYPRPM_STATE_DIR/headersRoot/include/hyprland/src/version.h"
+HYPRPM_HEADERS_ROOT="$HYPRPM_STATE_DIR/headersRoot"
+HYPRPM_PKGCONFIG_DIR="$HYPRPM_HEADERS_ROOT/share/pkgconfig"
 RELOAD_TIMEOUT_SECONDS="${HYPRPM_RELOAD_TIMEOUT_SECONDS:-20}"
 
 mkdir -p "$LOG_DIR" "$STATE_DIR" 2>/dev/null || true
@@ -88,7 +90,16 @@ hyprbars_loaded() {
     | grep -qiE '(^|[^a-zA-Z0-9_])hyprbars([^a-zA-Z0-9_]|$)'
 }
 
-running_hyprland_identity() {
+wait_hyprbars_loaded() {
+  local attempt
+  for ((attempt = 1; attempt <= 10; attempt++)); do
+    hyprbars_loaded && return 0
+    sleep 0.1
+  done
+  return 1
+}
+
+running_hyprland_identity_once() {
   [[ -n "$PYTHON" ]] || return 1
   "$HYPRCTL" -j version 2>/dev/null \
     | "$PYTHON" -c '
@@ -107,6 +118,18 @@ print(abi)
 '
 }
 
+running_hyprland_identity() {
+  local attempt identity=""
+  for ((attempt = 1; attempt <= 10; attempt++)); do
+    if identity="$(running_hyprland_identity_once)"; then
+      printf '%s\n' "$identity"
+      return 0
+    fi
+    sleep 0.2
+  done
+  return 1
+}
+
 cached_abi_hash() {
   [[ -r "$HYPRPM_GLOBAL_STATE" ]] || return 1
   awk -F= '
@@ -122,9 +145,28 @@ cached_abi_hash() {
 }
 
 cached_header_commit() {
-  [[ -r "$HYPRPM_VERSION_HEADER" ]] || return 1
+  local cflags="" token="" include_dir="" version_header=""
+  [[ -n "$PKGCONF" && -r "$HYPRPM_PKGCONFIG_DIR/hyprland.pc" ]] || return 1
+
+  cflags="$(
+    PKG_CONFIG_PATH="${HYPRPM_PKGCONFIG_DIR}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" \
+      "$PKGCONF" --cflags --keep-system-cflags hyprland 2>/dev/null
+  )" || return 1
+
+  for token in $cflags; do
+    case "$token" in
+      -I/*)
+        include_dir="${token#-I}"
+        [[ "$include_dir" == */protocols ]] && continue
+        version_header="$include_dir/hyprland/src/version.h"
+        break
+        ;;
+    esac
+  done
+
+  [[ -n "$version_header" && -r "$version_header" ]] || return 1
   sed -n 's/^[[:space:]]*#define[[:space:]][[:space:]]*GIT_COMMIT_HASH[[:space:]][[:space:]]*"\([^"]*\)".*/\1/p' \
-    "$HYPRPM_VERSION_HEADER" | head -n1
+    "$version_header" | head -n1
 }
 
 preflight_reason() {
@@ -182,6 +224,10 @@ fi
 
 reason=""
 if ! reason="$(preflight_reason)"; then
+  if [[ "$reason" == "version-unavailable" ]]; then
+    log_line "Could not read the running Hyprland version after retries; leaving Title Bars unchanged."
+    exit 0
+  fi
   mark_repair "${reason:-preflight-failed}"
   exit 0
 fi
@@ -197,6 +243,11 @@ reload_rc=$?
 
 if [[ "$reload_rc" -ne 0 ]]; then
   mark_repair "reload-failed"
+  exit 0
+fi
+
+if ! wait_hyprbars_loaded; then
+  mark_repair "reload-not-loaded"
   exit 0
 fi
 
