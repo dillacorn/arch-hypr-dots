@@ -25,6 +25,9 @@ mkdir -p -- "$fakebin"
 cat >"$fakebin/hyprpm" <<'EOF_HYPRPM'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ -n ${TEST_HYPRPM_LOG:-} ]]; then
+  printf '%s\n' "$*" >>"$TEST_HYPRPM_LOG"
+fi
 if [[ ${1:-} == list ]]; then
   case "${TEST_PERSISTED:-disabled}" in
     enabled)
@@ -49,9 +52,6 @@ EOF_STATE
       ;;
   esac
   exit 0
-fi
-if [[ -n ${TEST_HYPRPM_LOG:-} ]]; then
-  printf '%s\n' "$*" >>"$TEST_HYPRPM_LOG"
 fi
 if [[ ${1:-} == reload ]]; then
   exit "${TEST_RELOAD_RC:-0}"
@@ -159,7 +159,7 @@ contains "$TITLE_CARD" 'hyprbars-repair' \
   'Quick Settings does not route repair through the trusted helper'
 
 write_hyprpm_state() {
-  local root="$1" commit="$2" abi="$3"
+  local root="$1" commit="$2" abi="$3" persisted="$4"
   mkdir -p "$root/headersRoot/include/hyprland/src"
   cat >"$root/state.toml" <<EOF_STATE
 [state]
@@ -169,6 +169,21 @@ EOF_STATE
   cat >"$root/headersRoot/include/hyprland/src/version.h" <<EOF_HEADER
 #define GIT_COMMIT_HASH "$commit"
 EOF_HEADER
+
+  if [[ $persisted != absent ]]; then
+    mkdir -p "$root/hyprland-plugins"
+    cat >"$root/hyprland-plugins/state.toml" <<EOF_PLUGIN
+[repository]
+name = "hyprland-plugins"
+author = "hyprwm"
+url = "https://github.com/hyprwm/hyprland-plugins"
+
+[hyprbars]
+enabled = $([[ $persisted == enabled ]] && printf true || printf false)
+failed = false
+filename = "hyprbars.so"
+EOF_PLUGIN
+  fi
 }
 
 run_session_probe() {
@@ -181,7 +196,7 @@ run_session_probe() {
   mkdir -p -- "$runtime" "$home"
   : >"$hyprpm_log"
   : >"$hyprctl_log"
-  write_hyprpm_state "$state" "$header_commit" "$header_abi"
+  write_hyprpm_state "$state" "$header_commit" "$header_abi" "$persisted"
 
   if [[ -n $signature ]]; then
     env \
@@ -226,6 +241,9 @@ run_session_probe() {
 
 run_session_probe disabled session-disabled disabled 0 running-commit running-abi 0
 [[ ! -s $CASE_HYPRPM_LOG ]] || fail 'disabled hyprbars triggered hyprpm work at login'
+
+run_session_probe absent session-absent absent 0 running-commit running-abi 0
+[[ ! -s $CASE_HYPRPM_LOG ]] || fail 'systems without hyprbars triggered hyprpm work at login'
 
 run_session_probe loaded session-loaded enabled 1 running-commit running-abi 0
 [[ ! -s $CASE_HYPRPM_LOG ]] || fail 'already-loaded hyprbars triggered an unnecessary reload'
