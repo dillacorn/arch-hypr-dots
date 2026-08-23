@@ -1,0 +1,158 @@
+name: Update v3.1.5 Post-Release
+
+on:
+  workflow_run:
+    workflows:
+      - Validate Awtarchy
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: write
+  statuses: write
+
+jobs:
+  release-gate:
+    if: >-
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report validation result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$CONCLUSION" == success ]]; then
+            state=success
+            description='Validate Awtarchy passed'
+          else
+            state=failure
+            failed_steps="$(
+              gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --json jobs \
+                --jq '[.jobs[] | select(.conclusion == "failure") | .steps[] | select(.conclusion == "failure") | .name] | unique | join(", ")'
+            )"
+            [[ -n "$failed_steps" ]] || failed_steps="workflow conclusion: $CONCLUSION"
+            description="Validate Awtarchy failed: ${failed_steps}"
+            description="${description:0:140}"
+          fi
+
+          gh api \
+            --method POST \
+            "repos/$GITHUB_REPOSITORY/statuses/$EVENT_SHA" \
+            --raw-field state="$state" \
+            --raw-field context='release-gate/validate-awtarchy' \
+            --raw-field description="$description" \
+            --raw-field target_url="$RUN_URL" >/dev/null
+
+      - name: Stop on failed validation
+        if: ${{ github.event.workflow_run.conclusion != 'success' }}
+        run: exit 1
+
+      - name: Check out repository
+        if: ${{ github.event.workflow_run.conclusion == 'success' }}
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Update v3.1.5 after validation
+        if: ${{ github.event.workflow_run.conclusion == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_SHA: ${{ github.event.workflow_run.head_sha }}
+          TARGET_SHA: fa443e5cc23e5332adede1c82d4b7e2a720ac44e
+          TARGET_TREE: 43e9e9458af3107f7ded0800fdb0f130aba871f3
+          EXPECTED_OLD_TAG: b963742cf1de4db01795211ffb4fb46d3a158582
+        run: |
+          set -euo pipefail
+
+          test "$(git rev-parse HEAD)" = "$EVENT_SHA"
+          test "$(git rev-parse "${TARGET_SHA}^{tree}")" = "$TARGET_TREE"
+          git merge-base --is-ancestor "$TARGET_SHA" "$EVENT_SHA"
+          git diff --quiet "$TARGET_SHA" "$EVENT_SHA" -- . \
+            ':(exclude).github/workflows/update-v3-1-5-post-release.yml'
+          test "$(git rev-list -n1 v3.1.5)" = "$EXPECTED_OLD_TAG"
+
+          gh release view v3.1.5 --repo "$GITHUB_REPOSITORY" \
+            --json body --jq '.body' >release-notes.md
+          gh release view v3.1.5 --repo "$GITHUB_REPOSITORY" \
+            --json assets --jq '[.assets[].name] | sort | .[]' >release-assets.before
+          gh release view v3.1.5 --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,isPrerelease \
+            --jq '(.isDraft == false) and (.isPrerelease == false)' | grep -Fxq true
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("release-notes.md")
+          body = path.read_text()
+          marker = "## Post-release updates\n\n"
+          fingerprint = "Title Bars now reconcile their hyprpm state quietly across new Hyprland sessions"
+          addition = """### August 23, 2026
+
+          - Title Bars now reconcile their hyprpm state quietly across new Hyprland sessions, so an enabled Hyprbars setup returns automatically after login.
+          - Added compatibility preflight checks for Hyprland plugin headers and ABI state so stale plugin builds are caught before a noisy failed `hyprpm reload`; Quick Settings exposes a `Needs repair` / `Repair` state when rebuilding is actually required.
+          - Improved first-time Hyprbars setup, runtime verification, enable/disable persistence, and the `SUPER+ALT+T` Title Bars messaging.
+          - Added regression coverage for healthy reloads, stale headers/ABI, failed or incomplete loads, fresh plugin setup state, and other enabled hyprpm plugins.
+
+          This update was validated on a live Awtarchy desktop, including first-time repository setup, immediate enable, safe disable, and enable/disable persistence across logins.
+
+          """
+          if fingerprint not in body:
+              if body.count(marker) != 1:
+                  raise SystemExit("expected v3.1.5 post-release heading exactly once")
+              body = body.replace(marker, marker + addition, 1)
+          path.write_text(body)
+          PY
+
+          grep -Fq '### August 21, 2026' release-notes.md
+          grep -Fq '### August 22, 2026' release-notes.md
+          grep -Fq '### August 23, 2026' release-notes.md
+          grep -Fq 'Title Bars now reconcile their hyprpm state quietly' release-notes.md
+
+          git tag -f v3.1.5 "$TARGET_SHA"
+          git push --force origin refs/tags/v3.1.5
+
+          release_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v3.1.5" --jq '.id')"
+          gh api \
+            --method PATCH \
+            "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+            --raw-field name='Awtarchy v3.1.5 Quickshell' \
+            --raw-field body="$(cat release-notes.md)" \
+            --raw-field target_commitish="$TARGET_SHA" >/dev/null
+
+          test "$(git ls-remote origin refs/tags/v3.1.5 | awk '{print $1}')" = "$TARGET_SHA"
+          gh release view v3.1.5 --repo "$GITHUB_REPOSITORY" \
+            --json name --jq '.name' | grep -Fxq 'Awtarchy v3.1.5 Quickshell'
+          gh release view v3.1.5 --repo "$GITHUB_REPOSITORY" \
+            --json targetCommitish --jq '.targetCommitish' | grep -Fxq "$TARGET_SHA"
+          verified_body="$(gh release view v3.1.5 --repo "$GITHUB_REPOSITORY" --json body --jq '.body')"
+          grep -Fq 'Title Bars now reconcile their hyprpm state quietly' <<<"$verified_body"
+          grep -Fq 'live Awtarchy desktop' <<<"$verified_body"
+          gh release view v3.1.5 --repo "$GITHUB_REPOSITORY" \
+            --json assets --jq '[.assets[].name] | sort | .[]' >release-assets.after
+          diff -u release-assets.before release-assets.after
+          gh release view v3.1.5 --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,isPrerelease \
+            --jq '(.isDraft == false) and (.isPrerelease == false)' | grep -Fxq true
+
+      - name: Remove temporary updater
+        if: ${{ github.event.workflow_run.conclusion == 'success' && success() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EVENT_SHA"
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git rm -- .github/workflows/update-v3-1-5-post-release.yml
+          git commit -m 'chore: remove v3.1.5 post-release updater'
+          git push origin HEAD:main
