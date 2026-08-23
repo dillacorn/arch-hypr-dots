@@ -9,6 +9,7 @@ SUDO="/usr/bin/sudo"
 PYTHON="/usr/bin/python3"
 HYPRBARS_PLUGIN="hyprbars"
 HYPRBARS_REPO="https://github.com/hyprwm/hyprland-plugins"
+HYPRBARS_REPAIR_MARKER="${XDG_STATE_HOME:-${HOME}/.local/state}/awtarchy/hyprbars-repair-required"
 
 
 die() {
@@ -81,6 +82,14 @@ hyprbars_loaded() {
   [[ -x $HYPRCTL ]] || return 1
   "$HYPRCTL" plugin list 2>/dev/null \
     | /usr/bin/grep -qiE '(^|[^a-zA-Z0-9_])hyprbars([^a-zA-Z0-9_]|$)'
+}
+
+hyprbars_repair_required() {
+  [[ -f $HYPRBARS_REPAIR_MARKER ]]
+}
+
+hyprbars_clear_repair() {
+  /usr/bin/rm -f -- "$HYPRBARS_REPAIR_MARKER" 2>/dev/null || true
 }
 
 hyprbars_lock() {
@@ -251,6 +260,15 @@ def repo_added(text):
     return "repository hyprland-plugins:" in low or "hyprwm/hyprland-plugins" in low or repo.lower() in low
 
 
+def plugin_loaded():
+    if not (os.path.isfile(hyprctl) and os.access(hyprctl, os.X_OK)):
+        return True
+    result = subprocess.run([hyprctl, "plugin", "list"], capture_output=True, text=True, check=False)
+    return result.returncode == 0 and re.search(
+        r"(?i)(^|[^A-Za-z0-9_])hyprbars([^A-Za-z0-9_]|$)", result.stdout or ""
+    ) is not None
+
+
 def reload_plugin():
     emit("STAGE", "Reloading Hyprland plugin state…")
     result = subprocess.run([hyprpm, "reload"], capture_output=True, text=True, check=False)
@@ -260,11 +278,39 @@ def reload_plugin():
         return result.returncode
     if os.path.isfile(hyprctl) and os.access(hyprctl, os.X_OK):
         subprocess.run([hyprctl, "reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    if not plugin_loaded():
+        emit("ERROR", "Title Bars are enabled but did not load into the current Hyprland session.")
+        return 6
     return 0
 
 
 emit("STAGE", "Checking Hyprland plugin state…")
 state = list_state()
+
+if operation == "repair":
+    if not have_plugin(state):
+        emit("ERROR", "Title Bars (hyprbars) is not installed.")
+        raise SystemExit(3)
+
+    code, _ = run_hyprpm(
+        ["update", "-f"],
+        "Rebuilding Hyprland plugin headers and Title Bars for the current Hyprland version…",
+    )
+    if code != 0:
+        raise SystemExit(code)
+
+    state = list_state()
+    if not have_plugin(state):
+        emit("ERROR", "The Hyprland plugin refresh finished, but hyprbars was not found.")
+        raise SystemExit(4)
+
+    code, _ = run_hyprpm(["enable", plugin], "Enabling Title Bars (hyprbars)…")
+    if code != 0:
+        raise SystemExit(code)
+    if reload_plugin() != 0:
+        raise SystemExit(5)
+    emit("RESULT", "enabled")
+    raise SystemExit(0)
 
 if operation == "enable":
     if not have_plugin(state):
@@ -291,9 +337,9 @@ if operation == "enable":
             raise SystemExit(4)
 
     code, output = run_hyprpm(["enable", plugin], "Enabling Title Bars (hyprbars)…")
-    if code != 0 and ("headers are not up-to-date" in output.lower() or "headers version" in output.lower()):
+    if code != 0 and ("headers are not up-to-date" in output.lower() or "headers version" in output.lower() or "abi" in output.lower()):
         code, _ = run_hyprpm(
-            ["update"],
+            ["update", "-f"],
             "Refreshing Hyprland plugin headers before enabling Title Bars…",
         )
         if code == 0:
@@ -336,6 +382,8 @@ hyprbars_status() {
     enabled)
       if hyprbars_loaded; then
         printf '%s\n' 'enabled'
+      elif hyprbars_repair_required; then
+        printf '%s\n' 'repair-required'
       else
         printf '%s\n' 'not-loaded'
       fi
@@ -365,17 +413,33 @@ hyprbars_status() {
 }
 
 hyprbars_enable() {
+  local rc=0
   hyprbars_require_user
   hyprbars_require_tools
   hyprbars_lock
-  hyprbars_run_pty enable
+  hyprbars_run_pty enable || rc=$?
+  (( rc != 0 )) || hyprbars_clear_repair
+  return "$rc"
+}
+
+hyprbars_repair() {
+  local rc=0
+  hyprbars_require_user
+  hyprbars_require_tools
+  hyprbars_lock
+  hyprbars_run_pty repair || rc=$?
+  (( rc != 0 )) || hyprbars_clear_repair
+  return "$rc"
 }
 
 hyprbars_disable() {
+  local rc=0
   hyprbars_require_user
   hyprbars_require_tools
   hyprbars_lock
-  hyprbars_run_pty disable
+  hyprbars_run_pty disable || rc=$?
+  (( rc != 0 )) || hyprbars_clear_repair
+  return "$rc"
 }
 
 main() {
@@ -388,6 +452,11 @@ main() {
     hyprbars-enable)
       (( $# == 1 )) || die 'hyprbars-enable does not accept additional arguments'
       hyprbars_enable
+      return
+      ;;
+    hyprbars-repair)
+      (( $# == 1 )) || die 'hyprbars-repair does not accept additional arguments'
+      hyprbars_repair
       return
       ;;
     hyprbars-disable)
