@@ -1,0 +1,42 @@
+name: Fix Hyprbars Managed History
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix-history:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Append final Hyprbars stock hash and remove helper
+        env:
+          EVENT_SHA: ${{ github.sha }}
+          EXPECTED_HASH: 953c78925873c0c84c98d60c40eac37cda6e325ef47698afc3312bb7451e38fd
+        run: |
+          set -euo pipefail
+
+          test "$(git rev-parse HEAD)" = "$EVENT_SHA"
+          actual_hash="$(sha256sum config/hypr/scripts/hyprbars_toggle.sh | awk '{print $1}')"
+          test "$actual_hash" = "$EXPECTED_HASH"
+
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          entry="${EXPECTED_HASH}"$'\t''.config/hypr/scripts/hyprbars_toggle.sh'
+          if ! grep -Fqx -- "$entry" "$history"; then
+            printf '\n# 2026-08-23 final Hyprbars reconciliation wording.\n%s\n' "$entry" >>"$history"
+          fi
+
+          git rm -- .github/workflows/fix-hyprbars-managed-history.yml
+          git add -- "$history"
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git commit -m 'chore: record final Hyprbars managed hash'
+          git push origin HEAD:main
