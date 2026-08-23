@@ -160,13 +160,13 @@ contains "$TITLE_CARD" 'hyprbars-repair' \
 
 write_hyprpm_state() {
   local root="$1" commit="$2" abi="$3"
-  mkdir -p "$root/headersRoot/include/hyprland/hyprland/src"
+  mkdir -p "$root/headersRoot/include/hyprland/src"
   cat >"$root/state.toml" <<EOF_STATE
 [state]
 hash = "$abi"
 dont_warn_install = true
 EOF_STATE
-  cat >"$root/headersRoot/include/hyprland/hyprland/src/version.h" <<EOF_HEADER
+  cat >"$root/headersRoot/include/hyprland/src/version.h" <<EOF_HEADER
 #define GIT_COMMIT_HASH "$commit"
 EOF_HEADER
 }
