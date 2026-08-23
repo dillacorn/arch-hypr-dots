@@ -108,11 +108,13 @@ import sys
 import tomllib
 
 root = sys.argv[1]
+parse_failed = False
 for path in glob.glob(root + "/*/state.toml"):
     try:
         with open(path, "rb") as handle:
             state = tomllib.load(handle)
     except (OSError, tomllib.TOMLDecodeError):
+        parse_failed = True
         continue
 
     for name, plugin in state.items():
@@ -120,13 +122,10 @@ for path in glob.glob(root + "/*/state.toml"):
             continue
         if isinstance(plugin, dict) and plugin.get("enabled") is True:
             print(name)
-PY_STATE
-}
 
-loaded_plugins() {
-  [[ -n "$HYPRCTL" ]] || return 1
-  "$HYPRCTL" plugin list 2>/dev/null \
-    | sed -n 's/^[[:space:]]*Plugin[[:space:]][[:space:]]*\([^[:space:]]\+\).*/\1/p'
+if parse_failed:
+    raise SystemExit(2)
+PY_STATE
 }
 
 array_contains_exact() {
@@ -138,30 +137,10 @@ array_contains_exact() {
   return 1
 }
 
-all_enabled_loaded() {
-  local -a enabled=("$@")
-  local loaded_output=""
-  local -a loaded=()
-  local plugin
-
-  loaded_output="$(loaded_plugins)" || return 1
-  mapfile -t loaded <<<"$loaded_output"
-  if [[ ${#loaded[@]} -eq 1 && -z ${loaded[0]} ]]; then
-    loaded=()
-  fi
-
-  for plugin in "${enabled[@]}"; do
-    array_contains_exact "$plugin" "${loaded[@]}" || return 1
-  done
-  return 0
-}
-
 hyprbars_loaded() {
-  local loaded_output=""
-  local -a loaded=()
-  loaded_output="$(loaded_plugins)" || return 1
-  mapfile -t loaded <<<"$loaded_output"
-  array_contains_exact hyprbars "${loaded[@]}"
+  [[ -n "$HYPRCTL" ]] || return 1
+  "$HYPRCTL" plugin list 2>/dev/null \
+    | grep -qiE '(^|[^a-zA-Z0-9_])hyprbars([^a-zA-Z0-9_]|$)'
 }
 
 wait_hyprbars_loaded() {
@@ -367,12 +346,6 @@ fi
 hyprbars_wanted=0
 array_contains_exact hyprbars "${enabled[@]}" && hyprbars_wanted=1
 
-if all_enabled_loaded "${enabled[@]}"; then
-  clear_repair
-  log_line "All enabled hyprpm plugins are already loaded."
-  exit 0
-fi
-
 reason=""
 if ! reason="$(preflight_reason)"; then
   if [[ "$reason" == "version-unavailable" ]]; then
@@ -389,7 +362,7 @@ if ! reason="$(preflight_reason)"; then
   exit 0
 fi
 
-log_line "Enabled hyprpm plugins are compatible but not fully loaded. Running one quiet hyprpm reload."
+log_line "Enabled hyprpm plugins are compatible. Running one quiet hyprpm reload for the new session."
 reload_out="$(run_maybe_timeout "$RELOAD_TIMEOUT_SECONDS" "$HYPRPM" reload 2>&1)"
 reload_rc=$?
 log_block "hyprpm reload" "$reload_rc" "$reload_out"
