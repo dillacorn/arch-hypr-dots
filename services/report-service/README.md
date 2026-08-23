@@ -34,10 +34,11 @@ The GitHub App requires only Issues read/write plus GitHub's required Metadata r
 
 ## Tests
 
-Requires Node.js 22 or newer.
+Requires Node.js 20.6 or newer. Install the report-service development dependency, then run the tests:
 
 ```bash
 cd services/report-service
+npm install --no-audit --no-fund
 npm test
 ```
 
