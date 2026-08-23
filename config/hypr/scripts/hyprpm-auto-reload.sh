@@ -63,23 +63,24 @@ run_maybe_timeout() {
 }
 
 hyprbars_enabled() {
-  "$HYPRPM" list 2>/dev/null \
-    | awk '
-        BEGIN { seen = 0 }
-        {
-          line = $0
-          gsub(/\033\[[0-9;?]*[ -\/]*[@-~]/, "", line)
-          if (line ~ /Plugin[[:space:]]+hyprbars([[:space:]]|$)/) {
-            seen = 1
-            next
-          }
-          if (seen && line ~ /enabled:[[:space:]]*true([[:space:]]|$)/)
-            exit 0
-          if (seen && (line ~ /enabled:/ || line ~ /Plugin[[:space:]]+/))
-            exit 1
-        }
-        END { if (!seen) exit 1 }
-      '
+  [[ -n "$PYTHON" && -d "$HYPRPM_STATE_DIR" ]] || return 1
+  "$PYTHON" - "$HYPRPM_STATE_DIR" <<'PY_STATE'
+import glob
+import sys
+import tomllib
+
+root = sys.argv[1]
+for path in glob.glob(root + "/*/state.toml"):
+    try:
+        with open(path, "rb") as handle:
+            state = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError):
+        continue
+    plugin = state.get("hyprbars")
+    if isinstance(plugin, dict) and plugin.get("enabled") is True:
+        raise SystemExit(0)
+raise SystemExit(1)
+PY_STATE
 }
 
 hyprbars_loaded() {
