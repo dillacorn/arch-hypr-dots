@@ -23,7 +23,7 @@ contains "$HYPR_LUA" '{ "SUPER + ALT + T", hyprbars_toggle },' \
   'existing SUPER+ALT+T hyprbars bind changed or disappeared'
 contains "$SCRIPT" 'hyprpm disable' 'hyprbars disable behavior disappeared'
 contains "$SCRIPT" 'hyprpm reload' 'hyprbars enable/reload behavior disappeared'
-contains "$SCRIPT" 'Hot-unloading hyprbars can crash Hyprland.' \
+contains "$SCRIPT" 'will not hot-unload hyprbars because that can crash Hyprland.' \
   'hyprbars hot-unload safety behavior disappeared'
 absent "$SCRIPT" 'sudo -v' 'keyboard hyprbars script performs unconditional sudo pre-authentication'
 
@@ -168,7 +168,7 @@ do
   fi
   digest="$(sha256sum "$source_file" | awk '{print $1}')"
   if ! grep -Fq -- "$digest"$'\t'"$rel" "$HISTORY"; then
-    printf 'MISSING_MANAGED_HASH %s\t%s\n' "$digest" "$rel" >&2
+    printf 'MISSING_MANAGED_HASH %s\t%s\n' "$digest"$'\t'"$rel" >&2
     missing_history=1
   fi
 done
