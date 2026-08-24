@@ -4,7 +4,6 @@ import {
   runFailureReport,
   validateFailurePayload,
   type FailurePayload,
-  type FailureReportOptions,
   type FailureReportResult,
 } from './failure-report.ts';
 import { runControlledTest, type ControlledTestResult, type ReportServiceEnv } from './test-report.ts';
@@ -14,13 +13,13 @@ type ReportRateLimiter = {
 };
 
 export type WorkerEnv = ReportServiceEnv & {
-  REPORT_RATE_LIMITER: ReportRateLimiter;
+  REPORT_CLIENT_RATE_LIMITER: ReportRateLimiter;
+  REPORT_SIGNATURE_RATE_LIMITER: ReportRateLimiter;
 };
 type RunTest = (env: WorkerEnv) => Promise<ControlledTestResult | Record<string, unknown>>;
 type RunReport = (
   env: WorkerEnv,
   payload: FailurePayload,
-  options?: FailureReportOptions,
 ) => Promise<FailureReportResult | Record<string, unknown>>;
 
 const MAX_REPORT_BYTES = 32 * 1024;
@@ -101,11 +100,25 @@ async function parseReportRequest(request: Request): Promise<FailurePayload> {
   return validateFailurePayload(raw);
 }
 
-async function allowProductionReport(env: WorkerEnv, payload: FailurePayload): Promise<boolean | null> {
-  if (!env.REPORT_RATE_LIMITER) return null;
+async function allowProductionReport(
+  request: Request,
+  env: WorkerEnv,
+  payload: FailurePayload,
+): Promise<boolean | null> {
+  if (!env.REPORT_CLIENT_RATE_LIMITER || !env.REPORT_SIGNATURE_RATE_LIMITER) return null;
+
+  const clientIp = request.headers.get('CF-Connecting-IP');
+  if (!clientIp) return null;
+
+  const signature = canonicalFailureId(payload);
   try {
-    const result = await env.REPORT_RATE_LIMITER.limit({ key: canonicalFailureId(payload) });
-    return result.success === true;
+    const client = await env.REPORT_CLIENT_RATE_LIMITER.limit({
+      key: `${clientIp}|${signature}`,
+    });
+    if (client.success !== true) return false;
+
+    const global = await env.REPORT_SIGNATURE_RATE_LIMITER.limit({ key: signature });
+    return global.success === true;
   } catch {
     return null;
   }
@@ -139,16 +152,14 @@ export async function handleRequest(
       return json({ ok: false, error: 'invalid_report' }, 400);
     }
 
-    const rateLimit = await allowProductionReport(env, payload);
+    const rateLimit = await allowProductionReport(request, env, payload);
     if (rateLimit === null) return json({ ok: false, error: 'service_unavailable' }, 503);
+    if (!rateLimit) return json({ ok: false, error: 'rate_limited' }, 429);
 
     try {
-      const result = await runReport(env, payload, { rateLimitAllowed: rateLimit });
+      const result = await runReport(env, payload);
       if ('pending' in result && result.pending === true) return json(result, 202);
-      if ('ok' in result && result.ok === false) {
-        if ('error' in result && result.error === 'rate_limited') return json(result, 429);
-        return json(result, 502);
-      }
+      if ('ok' in result && result.ok === false) return json(result, 502);
       if ('created' in result && result.created === true) return json(result, 201);
       return json(result, 200);
     } catch {
