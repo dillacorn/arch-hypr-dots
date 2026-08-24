@@ -24,6 +24,12 @@ export type FailureIssueData = {
   kernelVersion: string;
   gpuFamily: string;
   context?: { recovery_attempted?: boolean; recovery_succeeded?: boolean };
+  diagnostic?: {
+    kind: 'qml_parse_error' | 'qml_import_error' | 'qml_type_error' | 'qml_load_error';
+    managed_file: string;
+    line: number;
+    column: number;
+  };
 };
 
 export type GitHubClient = {
@@ -278,9 +284,17 @@ export function createGitHubClient(env: GitHubEnv, fetchImpl: typeof fetch = fet
           bodyLines.push(`Recovery succeeded: \`${data.context.recovery_succeeded}\``);
         }
       }
+      if (data.diagnostic) {
+        bodyLines.push(
+          '',
+          `Diagnostic: \`${data.diagnostic.kind}\``,
+          `Managed file: \`${data.diagnostic.managed_file}\``,
+          `Location: \`${data.diagnostic.line}:${data.diagnostic.column}\``,
+        );
+      }
       bodyLines.push(
         '',
-        'The report payload contains no username, hostname, home-directory path, raw log, or persistent installation identifier.',
+        'The report payload contains no username, hostname, home-directory path, raw log, arbitrary diagnostic text, or persistent installation identifier.',
         '',
         `Report fingerprint: \`${data.fingerprint}\``,
         '',
