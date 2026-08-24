@@ -65,9 +65,9 @@ The optional QML diagnostic accepts only:
 }
 ```
 
-`kind` must be one of `qml_parse_error`, `qml_import_error`, `qml_type_error`, or `qml_load_error`. `managed_file` must be a basename ending in `.qml`; paths are rejected. Line and column must be positive bounded integers. There is no field for raw log text, exception text, module text, arbitrary diagnostic strings, or filesystem paths.
+`kind` must be one of `qml_parse_error`, `qml_import_error`, `qml_type_error`, or `qml_load_error`. `managed_file` must be the basename of a QML file in the Worker's server-owned allowlist of files Awtarchy actually ships under `config/quickshell/awtarchy/`; merely looking like a `.qml` filename is not sufficient, and paths are rejected. Line and column must be positive bounded integers. There is no field for raw log text, exception text, module text, arbitrary diagnostic strings, or filesystem paths.
 
-The open-source client applies a stricter first boundary before creating this object: it reads only a bounded tail of the Awtarchy Quickshell log, requires the log and managed configuration directory to be user-owned non-symlinks, and emits the basename only when the corresponding regular QML file exists inside Awtarchy's managed Quickshell directory.
+The open-source client applies a separate first boundary before creating this object: it reads only a bounded tail of the Awtarchy Quickshell log, requires the log and managed configuration directory to be user-owned non-symlinks, and emits the basename only when the corresponding regular QML file exists inside Awtarchy's managed Quickshell directory.
 
 Clients cannot provide the fingerprint, canonical error description, GitHub title/body, labels, repository, issue number, or GitHub API action. The Worker generates those values after validation.
 
