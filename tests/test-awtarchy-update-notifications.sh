@@ -239,6 +239,19 @@ assert_notification \
   $'v3.1.2 → v3.2.1\nRun: awtarchy update' \
   'update=Update ↑'
 rm -f -- "${catchup_home}/notify.json"
+jq '.update_notifications_enabled = true' \
+  "${catchup_home}/.cache/awtarchy/quickshell-state.json" \
+  >"${catchup_home}/state.tmp"
+mv -- "${catchup_home}/state.tmp" \
+  "${catchup_home}/.cache/awtarchy/quickshell-state.json"
+run_check "$catchup_home" suppressed-five '' 2000022000
+[[ ! -e ${catchup_home}/notify.json ]] \
+  || fail 're-enabling notifications repeated an announced catch-up target'
+jq '.update_notifications_enabled = false' \
+  "${catchup_home}/.cache/awtarchy/quickshell-state.json" \
+  >"${catchup_home}/state.tmp"
+mv -- "${catchup_home}/state.tmp" \
+  "${catchup_home}/.cache/awtarchy/quickshell-state.json"
 run_check "$catchup_home" suppressed-new-target '' 2000691200
 [[ ! -e ${catchup_home}/notify.json ]] \
   || fail 'suppression override ignored the 30-day catch-up cooldown'
