@@ -14,6 +14,7 @@ LOG_FILE="${QUICKSHELL_RESUME_LOG:-${CACHE_HOME}/awtarchy/quickshell-resume.log}
 RESTORE_SCRIPT="${QUICKSHELL_RESTORE_SCRIPT:-${CONFIG_HOME}/hypr/scripts/quickshell_bar_restore.sh}"
 MANAGER_SCRIPT="${QUICKSHELL_MANAGER_SCRIPT:-${CONFIG_HOME}/hypr/scripts/quickshell.sh}"
 BLUETOOTH_STATE_SCRIPT="${QUICKSHELL_BLUETOOTH_STATE_SCRIPT:-${CONFIG_HOME}/hypr/scripts/quickshell_bluetooth_state.sh}"
+REPORT_SCRIPT="${AWTARCHY_REPORT_SCRIPT:-${CONFIG_HOME}/hypr/scripts/awtarchy_report_failure.sh}"
 QS_BIN="${QS_BIN:-qs}"
 HYPRCTL_BIN="${HYPRCTL_BIN:-hyprctl}"
 JQ_BIN="${JQ_BIN:-jq}"
@@ -32,6 +33,14 @@ EXPECTED_BAR_COUNT=0
 log() {
     mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
     printf '%s %s\n' "$(date '+%F %T')" "$*" >>"$LOG_FILE" 2>/dev/null || true
+}
+
+report_resume_failure() {
+    local stage="$1" error_code="$2"
+    [[ -f "$REPORT_SCRIPT" || -x "$REPORT_SCRIPT" ]] || return 0
+    AWTARCHY_REPORT_RECOVERY_ATTEMPTED=true \
+        AWTARCHY_REPORT_RECOVERY_SUCCEEDED=false \
+        bash "$REPORT_SCRIPT" capture resume_recovery "$stage" "$error_code" || true
 }
 
 valid_attempt_count() {
@@ -212,7 +221,9 @@ wait_for_expected_bars() {
 manager() {
     # Descriptor 8 owns the recovery lock. A newly started Quickshell process
     # must not inherit it and make all future resume recoveries block forever.
-    bash "$MANAGER_SCRIPT" "$1" 8>&-
+    # The resume recovery path reports its own more-specific terminal failure,
+    # so suppress the manager's generic readiness report for this call.
+    AWTARCHY_REPORT_SUPPRESS_QUICKSHELL=1 bash "$MANAGER_SCRIPT" "$1" 8>&-
 }
 
 restore_idle_bar_state || true
@@ -229,6 +240,7 @@ if ! shell_running; then
     log 'Quickshell IPC was unavailable after resume; starting the shell'
     if ! manager start >/dev/null 2>&1; then
         log 'Quickshell failed to start after resume'
+        report_resume_failure start quickshell_start_failed
         exit 1
     fi
     restore_idle_bar_state || true
@@ -255,6 +267,7 @@ fi
 log 'hard reload did not restore every bar; restarting the Awtarchy shell'
 if ! manager restart >/dev/null 2>&1; then
     log 'Quickshell restart failed during resume recovery'
+    report_resume_failure restart quickshell_restart_failed
     exit 1
 fi
 restore_idle_bar_state || true
@@ -265,4 +278,5 @@ if wait_for_expected_bars "$RELOAD_WAIT_ATTEMPTS"; then
 fi
 
 log 'resume recovery failed: expected bar layers are still absent'
+report_resume_failure final_validation expected_bars_missing
 exit 1
