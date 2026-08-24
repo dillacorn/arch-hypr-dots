@@ -58,6 +58,8 @@ ${XDG_STATE_HOME:-$HOME/.local/state}/awtarchy/reports/
 
 The report directory is restricted to the user and pending report files are written with mode `0600`.
 
+The helper's send, review, and discard operations are restricted to Awtarchy's known pending-report filenames inside that directory. Before a pending report can be sent, the helper locally revalidates its size, allowed fields, field formats, recognized failure class, and filename-to-failure match. An arbitrary local file or a tampered report with unknown fields is rejected before any network request is made.
+
 A pending report is removed after a successful submission or when the user explicitly declines/discards it. A failed network submission leaves the sanitized report local so the user can retry later.
 
 ## Network and hosting
@@ -72,7 +74,7 @@ The Awtarchy report payload does not contain an IP-address field or a persistent
 
 The public report route also uses Cloudflare's Worker Rate Limiting binding before D1/GitHub processing. Awtarchy keys this limiter only by the validated failure signature. It does not add an IP address, username, machine identifier, or installation identifier to the application limiter key.
 
-For that reason, Awtarchy describes the report payload as identity-free/sanitized and does not claim absolute network-layer anonymity.
+For that reason, Awtarchy describes the report payload as sanitized and without direct or persistent identity fields, and does not claim absolute network-layer anonymity.
 
 ## GitHub issues
 
