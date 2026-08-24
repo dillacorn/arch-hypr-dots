@@ -1,0 +1,304 @@
+name: Publish v3.2.0 Scheduled One-Shot
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: awtarchy-v3-2-0-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Publish and verify v3.2.0
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: 64ae9b655c84c65f5ee92786e51781bdab8ec4cf
+          TARGET_TREE: 192934acba334e350abd6e2e76de27a664880bc2
+          RELEASE_TAG: v3.2.0
+          RELEASE_NAME: Awtarchy v3.2.0 Quickshell
+          STATUS_ISSUE: '52'
+        run: |
+          set -Eeuo pipefail
+
+          failure_comment() {
+            local rc="$?"
+            trap - ERR
+            gh issue comment "$STATUS_ISSUE" \
+              --repo "$GITHUB_REPOSITORY" \
+              --body "v3.2.0 scheduled publisher failed before completion (exit ${rc}). No success claim was recorded." \
+              >/dev/null 2>&1 || true
+            exit "$rc"
+          }
+          trap failure_comment ERR
+
+          test "$(git rev-parse "${TARGET_SHA}^{tree}")" = "$TARGET_TREE"
+          git merge-base --is-ancestor "$TARGET_SHA" HEAD
+          git diff --quiet "$TARGET_SHA" HEAD -- . \
+            ':(exclude).github/workflows/publish-v3-2-0-scheduled.yml'
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            printf '%s tag already exists\n' "$RELEASE_TAG" >&2
+            false
+          fi
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            printf '%s release already exists\n' "$RELEASE_TAG" >&2
+            false
+          fi
+
+          gh release view v3.1.5 --repo "$GITHUB_REPOSITORY" \
+            --json name,isDraft,isPrerelease,body >v3.1.5-release.json
+
+          jq -e '
+            .name == "Awtarchy v3.1.5 Quickshell"
+            and .isDraft == false
+            and .isPrerelease == false
+          ' v3.1.5-release.json >/dev/null
+          jq -r '.body' v3.1.5-release.json >v3.1.5-release.md
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def h2_sections(text: str):
+              lines = text.splitlines(keepends=True)
+              indexes = [i for i, line in enumerate(lines) if re.match(r'^##\s+\S', line)]
+              if not indexes:
+                  raise SystemExit('release body has no H2 sections')
+              out = []
+              for pos, start in enumerate(indexes):
+                  end = indexes[pos + 1] if pos + 1 < len(indexes) else len(lines)
+                  title = re.sub(r'^##\s+', '', lines[start]).strip()
+                  block = ''.join(lines[start:end]).rstrip() + '\n'
+                  out.append((title, block))
+              return out
+
+          def extract_installation(text: str) -> str:
+              sections = h2_sections(text)
+              install_idx = next(
+                  (i for i, (_, block) in enumerate(sections)
+                   if 'sudo pacman -S git --noconfirm' in block),
+                  None,
+              )
+              if install_idx is None:
+                  raise SystemExit('release does not contain expected Git installation command')
+
+              start_idx = install_idx
+              for i in range(install_idx, -1, -1):
+                  title = sections[i][0].casefold()
+                  if ('getting started' in title or 'start here' in title
+                          or 'fresh install' in title or 'fresh installation' in title):
+                      start_idx = i
+                      break
+
+              end_idx = None
+              for i in range(install_idx, len(sections)):
+                  title = sections[i][0].casefold()
+                  if 'existing' in title and ('awtarchy' in title or 'user' in title):
+                      end_idx = i
+                      break
+
+              if end_idx is None:
+                  for i in range(install_idx, len(sections)):
+                      if 'awtarchy update' in sections[i][1]:
+                          end_idx = i
+                          break
+
+              if end_idx is None:
+                  raise SystemExit('could not identify end of installation/getting-started block')
+
+              installation = '\n'.join(
+                  block for _, block in sections[start_idx:end_idx + 1]
+              ).strip()
+
+              required = (
+                  'sudo pacman -S git --noconfirm',
+                  'git clone https://github.com/dillacorn/awtarchy',
+                  'sudo ./awtarchy-install.sh',
+                  'awtarchy update',
+              )
+              missing = [item for item in required if item not in installation]
+              if missing:
+                  raise SystemExit(f'installation block missing expected text: {missing}')
+              return installation
+
+          source = Path('v3.1.5-release.md').read_text()
+          installation = extract_installation(source)
+          Path('v3.1.5-installation.md').write_text(installation + '\n')
+          installation_320 = installation.replace('v3.1.5', 'v3.2.0')
+
+          intro = '''# Awtarchy v3.2.0 Quickshell
+
+Awtarchy v3.2.0 introduces user-approved sanitized failure reporting for recognized Awtarchy and Quickshell failures. The reporting path was validated against the production service before release, including direct unauthenticated client submission and server-side GitHub issue creation.
+'''
+
+          reporting = '''## Anonymous failure reporting
+
+- Recognized failures can prepare a sanitized report locally without transmitting anything automatically.
+- The consent flow provides **Send**, **Review**, and **Don't send**. Review displays the exact structured payload before transmission.
+- Accepted reports may become part of a public GitHub issue in the Awtarchy repository.
+- Noninteractive failures remain queued locally rather than opening a terminal during a broken session.
+- Pending reports can resurface through normal Awtarchy maintenance and healthy Quickshell startup.
+- Initial reporting covers Quickshell start/restart readiness, exhausted resume recovery, and post-update Quickshell failure after updater recovery is exhausted.
+- Reporting failure never replaces the original Awtarchy, Quickshell, updater, or recovery result.
+'''
+
+          backend = '''## Report service and privacy
+
+- Added the production Cloudflare Worker and D1 report service.
+- Added the restricted Awtarchy Report Bot GitHub App for server-side issue creation and recovery.
+- New recognized failure signatures create a server-generated issue; repeated reports reuse the same issue through stable fingerprint deduplication.
+- Reports exclude raw logs, usernames, hostnames, home-directory paths, command history, clipboard contents, VPN details, and persistent machine/install identifiers.
+- Cloudflare necessarily processes normal transport metadata. Transport IP is not copied into the Awtarchy report payload, D1 report record, GitHub issue content, or a persistent Awtarchy identifier.
+- Client-side pending files are confined and revalidated before transmission.
+- The public Worker strictly allowlists fields and recognized failure classes and bounds request bodies and outbound GitHub operations.
+- Layered Cloudflare rate limiting runs before D1/GitHub work to reduce abuse without adding a client authentication requirement.
+'''
+
+          validation = '''## Production validation
+
+- The production Worker was deployed and passed its health check.
+- A reviewed real client submission created bot-authored issue #50 and an identical second submission resolved to the same issue, proving production deduplication.
+- A separate raw `curl` submission containing no `Authorization` header received HTTP 201 and created bot-authored issue #51, proving ordinary Awtarchy clients require no Cloudflare login, GitHub login, API token, or client secret.
+- Dedicated reporting CI covers the shell integration, Worker behavior, Node 20/22 backend tests, Wrangler deployment dry-runs, request validation, rate limiting, deduplication, and concurrency/recovery behavior.
+'''
+
+          placeholder = '''## Post-release updates
+
+_No post-release updates yet. This section is reserved for fixes or additions published after v3.2.0._
+'''
+
+          body = (
+              intro.rstrip() + '\n\n' +
+              installation_320.rstrip() + '\n\n' +
+              reporting.rstrip() + '\n\n' +
+              backend.rstrip() + '\n\n' +
+              validation.rstrip() + '\n\n' +
+              placeholder
+          )
+          Path('release-notes.md').write_text(body)
+          PY
+
+          grep -Fq '# Awtarchy v3.2.0 Quickshell' release-notes.md
+          grep -Fq 'sudo pacman -S git --noconfirm' release-notes.md
+          grep -Fq 'git clone https://github.com/dillacorn/awtarchy' release-notes.md
+          grep -Fq 'sudo ./awtarchy-install.sh' release-notes.md
+          grep -Fq 'awtarchy update' release-notes.md
+          grep -Fq 'issue #50' release-notes.md
+          grep -Fq 'issue #51' release-notes.md
+          grep -Fq '## Post-release updates' release-notes.md
+          grep -Fq '_No post-release updates yet. This section is reserved for fixes or additions published after v3.2.0._' release-notes.md
+
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$TARGET_SHA" \
+            --title "$RELEASE_NAME" \
+            --notes-file release-notes.md
+
+          test "$(git ls-remote origin "refs/tags/${RELEASE_TAG}" | awk '{print $1}')" = "$TARGET_SHA"
+
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json name,targetCommitish,isDraft,isPrerelease,body,url >verified-release.json
+
+          jq -e --arg name "$RELEASE_NAME" --arg target "$TARGET_SHA" '
+            .name == $name
+            and .targetCommitish == $target
+            and .isDraft == false
+            and .isPrerelease == false
+          ' verified-release.json >/dev/null
+          jq -r '.body' verified-release.json >verified-release.md
+
+          grep -Fq 'issue #51' verified-release.md
+          grep -Fq '## Post-release updates' verified-release.md
+          grep -Fq '_No post-release updates yet. This section is reserved for fixes or additions published after v3.2.0._' verified-release.md
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def h2_sections(text: str):
+              lines = text.splitlines(keepends=True)
+              indexes = [i for i, line in enumerate(lines) if re.match(r'^##\s+\S', line)]
+              out = []
+              for pos, start in enumerate(indexes):
+                  end = indexes[pos + 1] if pos + 1 < len(indexes) else len(lines)
+                  title = re.sub(r'^##\s+', '', lines[start]).strip()
+                  block = ''.join(lines[start:end]).rstrip() + '\n'
+                  out.append((title, block))
+              return out
+
+          def extract_installation(text: str) -> str:
+              sections = h2_sections(text)
+              install_idx = next(i for i, (_, block) in enumerate(sections)
+                                 if 'sudo pacman -S git --noconfirm' in block)
+              start_idx = install_idx
+              for i in range(install_idx, -1, -1):
+                  title = sections[i][0].casefold()
+                  if ('getting started' in title or 'start here' in title
+                          or 'fresh install' in title or 'fresh installation' in title):
+                      start_idx = i
+                      break
+              end_idx = next(
+                  (i for i in range(install_idx, len(sections))
+                   if 'existing' in sections[i][0].casefold()
+                   and ('awtarchy' in sections[i][0].casefold()
+                        or 'user' in sections[i][0].casefold())),
+                  None,
+              )
+              if end_idx is None:
+                  end_idx = next(i for i in range(install_idx, len(sections))
+                                 if 'awtarchy update' in sections[i][1])
+              return '\n'.join(block for _, block in sections[start_idx:end_idx + 1]).strip()
+
+          old = Path('v3.1.5-installation.md').read_text().strip()
+          new = extract_installation(Path('verified-release.md').read_text())
+          if new.replace('v3.2.0', 'v3.1.5') != old:
+              raise SystemExit('published v3.2.0 installation/getting-started text does not match v3.1.5')
+          PY
+
+          body_sha="$(sha256sum verified-release.md | awk '{print $1}')"
+          release_url="$(jq -r '.url' verified-release.json)"
+          gh issue comment "$STATUS_ISSUE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "v3.2.0 release published and verified. Target: \`${TARGET_SHA}\`. Release body SHA-256: \`${body_sha}\`. v3.1.5 installation/getting-started text was copied and verified. ${release_url}" \
+            >/dev/null
+          gh issue close "$STATUS_ISSUE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --reason completed >/dev/null
+
+          trap - ERR
+
+      - name: Remove temporary publisher and stray test branch
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          gh api --method DELETE \
+            "repos/$GITHUB_REPOSITORY/git/refs/heads/noop-check" \
+            >/dev/null 2>&1 || true
+
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+          if [[ -f .github/workflows/publish-v3-2-0-scheduled.yml ]]; then
+            git config user.name 'dillacorn'
+            git config user.email '28743863+dillacorn@users.noreply.github.com'
+            git rm -- .github/workflows/publish-v3-2-0-scheduled.yml
+            git commit -m 'chore: remove v3.2.0 scheduled publisher'
+            git push origin HEAD:main
+          fi
