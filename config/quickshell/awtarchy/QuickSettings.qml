@@ -1294,13 +1294,15 @@ Singleton {
                         }
 
                         RowLayout {
+                            id: nightLightVibranceRow
+                            readonly property real cardHeight: Math.max(nightContent.implicitHeight, vibranceContent.implicitHeight) + 16
                             Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 4, 12)
                             Layout.fillWidth: true
                             spacing: 8
 
                             Rectangle {
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: nightContent.implicitHeight + 16
+                                Layout.preferredHeight: nightLightVibranceRow.cardHeight
                                 color: Theme.popupButton
                                 border.width: 1
                                 border.color: Theme.active
@@ -1521,7 +1523,7 @@ Singleton {
 
                             Rectangle {
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: vibranceContent.implicitHeight + 16
+                                Layout.preferredHeight: nightLightVibranceRow.cardHeight
                                 color: Theme.popupButton
                                 border.width: 1
                                 border.color: Theme.active
