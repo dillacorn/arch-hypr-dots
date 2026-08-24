@@ -60,7 +60,9 @@ Add focused tests on both sides. If an updater/recovery caller needs a distinct 
 
 ## Abuse protection
 
-The production route accepts at most five validated requests per 60 seconds for each canonical failure signature before any D1/GitHub work. If the rate-limiter binding is unavailable, `/v1/report` fails closed with `503`. When the signature limit is exceeded it returns `429`. In either case, the client keeps the pending report locally rather than treating it as successfully submitted.
+The production route configures five validated limiter calls per 60 seconds for each canonical failure signature in each Cloudflare location before any D1/GitHub work. Cloudflare's native Worker limiter is location-local, permissive, and eventually consistent, so this is best-effort abuse reduction rather than a strict global request cap.
+
+If the rate-limiter binding is unavailable, `/v1/report` fails closed with `503`. When the limiter rejects a request it returns `429`. In either case, the client keeps the pending report locally rather than treating it as successfully submitted.
 
 ## Deployment
 
@@ -75,6 +77,8 @@ npx wrangler@latest deploy
 ```
 
 If Wrangler reports dashboard/local configuration differences, review them before accepting. The deployment must include the existing D1 binding and the source-controlled `REPORT_RATE_LIMITER` binding. Secrets must remain dashboard-managed and must never be committed.
+
+CI runs a Wrangler deployment dry run on Node 22 to parse the source-controlled Worker configuration before a live deploy.
 
 ## Test endpoint
 
