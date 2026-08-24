@@ -372,6 +372,7 @@ notify_pending() {
 }
 
 pending_reports() {
+    local quiet_empty="${1:-0}"
     [[ -d "$REPORT_DIR" && ! -L "$REPORT_DIR" && -O "$REPORT_DIR" ]] || return 0
     shopt -s nullglob
     local reports=("$REPORT_DIR"/*.json)
@@ -382,7 +383,7 @@ pending_reports() {
         ((valid_count += 1))
         prompt_report "$path"
     done
-    if (( valid_count == 0 )); then
+    if (( valid_count == 0 && quiet_empty == 0 )); then
         printf 'No pending Awtarchy failure reports.\n'
     fi
 }
@@ -420,12 +421,16 @@ main() {
             (( $# == 1 )) || return 2
             pending_reports
             ;;
+        prompt-pending)
+            (( $# == 1 )) || return 2
+            pending_reports 1
+            ;;
         notify-pending)
             (( $# == 1 )) || return 2
             notify_pending
             ;;
         *)
-            log_error 'usage: awtarchy_report_failure.sh {capture COMPONENT STAGE ERROR|pending|send FILE|review FILE|discard FILE|notify-pending}'
+            log_error 'usage: awtarchy_report_failure.sh {capture COMPONENT STAGE ERROR|pending|prompt-pending|send FILE|review FILE|discard FILE|notify-pending}'
             return 2
             ;;
     esac

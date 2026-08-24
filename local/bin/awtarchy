@@ -1219,6 +1219,10 @@ main() {
       die "Installation is handled by awtarchy-install.sh, not the awtarchy maintenance command."
       ;;
     "")
+      local report_helper="${TARGET_HOME}/.config/hypr/scripts/awtarchy_report_failure.sh"
+      if [[ -f "$report_helper" && ! -L "$report_helper" && -O "$report_helper" ]]; then
+        bash "$report_helper" prompt-pending || true
+      fi
       maintenance_menu
       ;;
     *)
