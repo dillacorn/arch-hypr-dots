@@ -827,7 +827,7 @@ reconcile_quickshell_ui_after_update() {
   if (( replaced == 1 )); then
     manager="${TARGET_HOME}/.config/hypr/scripts/quickshell.sh"
     if [[ -f "$manager" && ! -L "$manager" ]]; then
-      if ! bash "$manager" restart; then
+      if ! AWTARCHY_REPORT_FAILURE_STAGE=restart_after_update bash "$manager" restart; then
         printf 'WARN: Quickshell UI files were updated, but Quickshell could not be restarted automatically.\n' >&2
       fi
     fi
