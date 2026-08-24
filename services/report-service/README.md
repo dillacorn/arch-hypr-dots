@@ -29,6 +29,8 @@ GITHUB_REPO                Text
 TEST_AUTH_TOKEN            Secret
 ```
 
+The Worker also uses the source-controlled `REPORT_RATE_LIMITER` Cloudflare Rate Limiting binding for the public production route.
+
 Never commit `GITHUB_APP_PRIVATE_KEY` or `TEST_AUTH_TOKEN`.
 
 The GitHub App requires only Issues read/write plus GitHub's required Metadata read-only permission. It has no Contents, Pull requests, Actions, Releases, or Administration access.
@@ -59,6 +61,14 @@ schema_version | report_type | component | failure_stage | error_code
 ```
 
 Machine/version diagnostics do not split one bug into separate signatures.
+
+## Abuse protection
+
+After schema validation and before any D1/GitHub work, `/v1/report` uses Cloudflare's native Rate Limiting binding. Version 1 allows at most five accepted requests per 60 seconds for each canonical failure signature. The limiter key is the same stable server-validated signature material used for fingerprinting; Awtarchy does not add a user, machine, install, or IP identifier to that key.
+
+If the rate-limiter binding is unavailable, the production route fails closed with `503` rather than accepting unprotected reports. If a signature exceeds the configured limit, the Worker returns `429` and does not call the D1/GitHub reporting workflow. Awtarchy keeps a failed submission pending locally so it can be retried later.
+
+The limiter is intentionally before D1 because the Workers Free plan has bounded daily D1 write capacity. It is abuse protection, not an accounting or identity system.
 
 ## D1 and deduplication
 
@@ -94,7 +104,7 @@ npx wrangler@latest deploy
 
 Skip `wrangler login` when already authenticated.
 
-`wrangler.jsonc` uses `keep_vars: true` and records the dashboard-backed text variables, D1 binding, preview setting, and observability settings. Cloudflare secrets remain managed outside the repository.
+`wrangler.jsonc` uses `keep_vars: true` and records the dashboard-backed text variables, D1 binding, rate-limiter binding, preview setting, and observability settings. Cloudflare secrets remain managed outside the repository.
 
 ## Verify health
 
