@@ -48,8 +48,9 @@ Do not add automatic submission without a new explicit project decision and corr
 - Keep GitHub issue title/body/repository/action server-owned.
 - Keep fingerprints server-generated from stable enum-like failure identifiers only.
 - Keep both rate-limit bindings ahead of D1/GitHub reporting work.
-- `REPORT_CLIENT_RATE_LIMITER` combines Cloudflare's transport IP with the canonical failure signature for a small client-specific allowance.
-- `REPORT_SIGNATURE_RATE_LIMITER` applies a separate signature-wide ceiling so distributed abuse cannot bypass backend protection merely by changing client address.
+- Keep Cloudflare rate-limit keys based on the coarse canonical failure class only. Never let diagnostic kinds or managed filenames create additional limiter buckets.
+- `REPORT_CLIENT_RATE_LIMITER` combines Cloudflare's transport IP with the coarse canonical failure class for a small client-specific allowance.
+- `REPORT_SIGNATURE_RATE_LIMITER` applies a separate coarse failure-class ceiling so distributed abuse cannot bypass backend protection merely by changing client address or diagnostic values.
 - If either binding or the Cloudflare client-IP header is unavailable, fail the production route closed before D1/GitHub reporting work.
 - Do not ship a production API secret in the open-source client.
 - Do not accept arbitrary Markdown, logs, attachments, issue numbers, labels, or GitHub actions from clients.
@@ -102,7 +103,9 @@ resume_recovery | final_validation | expected_bars_missing
 
 Optional managed-QML diagnostics are best-effort hints and do not identify a user or machine. The client may emit only a fixed diagnostic kind, a verified Awtarchy-managed QML basename, and bounded numeric line/column. The Worker must independently validate the diagnostic and enforce its own exact QML filename allowlist.
 
-Fingerprints depend only on stable server-validated failure identifiers, not diagnostic versions, managed-QML diagnostics, or machine-specific values.
+D1/GitHub bug fingerprints use the stable failure class and may be refined only by the validated diagnostic kind plus server-allowlisted managed QML basename. Line/column, config version, command revision, runtime versions, recovery context, and machine-specific values must not enter the fingerprint.
+
+Cloudflare rate-limit signatures remain the coarse failure class regardless of diagnostic content. Preserve this separation when changing fingerprint or diagnostic logic.
 
 ## Failure isolation
 
