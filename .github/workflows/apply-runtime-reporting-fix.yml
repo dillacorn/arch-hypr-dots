@@ -1,0 +1,109 @@
+name: Apply Exact Runtime Reporting Fix
+
+on:
+  push:
+    branches: [anonymous-crash-reporting-testing]
+    paths:
+      - .github/workflows/apply-runtime-reporting-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: anonymous-crash-reporting-testing
+          fetch-depth: 1
+
+      - name: Apply exact runtime replacements
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('local/share/awtarchy/awtarchy-runtime.sh')
+          text = path.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  'if ! run_target bash "$manager" restart 9>&-; then',
+                  'if ! AWTARCHY_REPORT_SUPPRESS_QUICKSHELL=1 run_target bash "$manager" restart 9>&-; then',
+                  1,
+              ),
+              (
+                  '    run_target bash "$manager" start 9>&- || return 1',
+                  '    AWTARCHY_REPORT_SUPPRESS_QUICKSHELL=1 run_target bash "$manager" start 9>&- || return 1',
+                  1,
+              ),
+              (
+                  '    && ! run_target bash "$manager" start 9>&-;',
+                  '    && ! AWTARCHY_REPORT_SUPPRESS_QUICKSHELL=1 run_target bash "$manager" start 9>&-;',
+                  1,
+              ),
+          ]
+
+          for old, new, expected in replacements:
+              count = text.count(old)
+              if count != expected:
+                  raise SystemExit(
+                      f'expected {expected} occurrence(s) of {old!r}, found {count}'
+                  )
+              text = text.replace(old, new, expected)
+
+          anchor = '''start_quickshell_update_shell() {
+          '''
+          reporter = '''report_quickshell_update_failure() {
+            local source_label="$1" target_home="$2"
+            local report_script="${target_home}/.config/hypr/scripts/awtarchy_report_failure.sh"
+
+            if [[ ! -f "$report_script" || -L "$report_script" ]]; then
+              report_script="${HOME_DIR}/.config/hypr/scripts/awtarchy_report_failure.sh"
+            fi
+            [[ -f "$report_script" && ! -L "$report_script" ]] || return 0
+
+            AWTARCHY_REPORT_CONFIG_VERSION_OVERRIDE="$source_label" \\
+              run_target bash "$report_script" \\
+                capture quickshell restart_after_update quickshell_not_ready 9>&- \\
+              || true
+          }
+
+          start_quickshell_update_shell() {
+          '''
+          if text.count(anchor) != 1:
+              raise SystemExit('start_quickshell_update_shell anchor was not unique')
+          text = text.replace(anchor, reporter, 1)
+
+          old_failure = '''  if ! start_quickshell_update_shell; then
+            rollback_quickshell_update
+            die "Quickshell did not start successfully. User files were rolled back."
+          fi'''
+          new_failure = '''  if ! start_quickshell_update_shell; then
+            rollback_quickshell_update
+            report_quickshell_update_failure "$source_label" "$target_home"
+            die "Quickshell did not start successfully. User files were rolled back."
+          fi'''
+          if text.count(old_failure) != 1:
+              raise SystemExit('Quickshell startup failure block was not unique')
+          text = text.replace(old_failure, new_failure, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Validate exact runtime fix
+        run: |
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash tests/test-update-report-stage.sh
+          git diff --check
+
+      - name: Commit exact runtime fix and remove one-shot workflow
+        run: |
+          rm -- .github/workflows/apply-runtime-reporting-fix.yml
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add local/share/awtarchy/awtarchy-runtime.sh .github/workflows/apply-runtime-reporting-fix.yml
+          git diff --cached --check
+          git diff --cached --quiet && { echo 'No staged runtime fix'; false; }
+          git commit -m 'fix: report exhausted updater recovery once'
+          git push origin HEAD:anonymous-crash-reporting-testing
