@@ -39,7 +39,7 @@ for (const format of ['pkcs1', 'pkcs8'] as const) {
   });
 }
 
-test('GitHub client exchanges app JWT and creates only fixed test issue content', async () => {
+test('GitHub client bounds every API request and creates only fixed test issue content', async () => {
   const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
   const pem = privateKey.export({ format: 'pem', type: 'pkcs1' }).toString();
   const calls: Array<{ url: string; init?: RequestInit }> = [];
@@ -47,6 +47,8 @@ test('GitHub client exchanges app JWT and creates only fixed test issue content'
   const fakeFetch: typeof fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     calls.push({ url, init });
+    assert.ok(init?.signal instanceof AbortSignal, `GitHub request has no abort signal: ${url}`);
+    assert.equal(init.signal.aborted, false, `GitHub request started with an aborted signal: ${url}`);
 
     if (url.endsWith('/app/installations/156041074/access_tokens')) {
       assert.match(String(init?.headers && new Headers(init.headers).get('Authorization')), /^Bearer [^.]+\.[^.]+\.[^.]+$/);
