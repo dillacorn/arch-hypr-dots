@@ -23,6 +23,7 @@ The production client/report contract must not include:
 - command history or clipboard contents;
 - arbitrary window titles or file contents;
 - raw troubleshooting logs;
+- raw diagnostic/error text;
 - persistent machine, install, or user identifiers.
 
 Cloudflare necessarily processes transport metadata to receive requests. Never describe the system as guaranteeing network-layer anonymity.
@@ -41,6 +42,8 @@ Do not add automatic submission without a new explicit project decision and corr
 
 - Keep a strict allowlisted schema and hard request-size limit.
 - Reject unknown fields and unsupported failure triples.
+- Keep diagnostic kinds server-owned and enum-like.
+- For managed-QML diagnostics, accept only QML basenames in the server-owned allowlist of files Awtarchy actually ships; a generic filename regex is not sufficient.
 - Keep canonical error descriptions server-owned.
 - Keep GitHub issue title/body/repository/action server-owned.
 - Keep fingerprints server-generated from stable enum-like failure identifiers only.
@@ -97,7 +100,9 @@ resume_recovery | restart          | quickshell_restart_failed
 resume_recovery | final_validation | expected_bars_missing
 ```
 
-Fingerprints depend only on stable server-validated identifiers, not diagnostic versions or machine-specific values.
+Optional managed-QML diagnostics are best-effort hints and do not identify a user or machine. The client may emit only a fixed diagnostic kind, a verified Awtarchy-managed QML basename, and bounded numeric line/column. The Worker must independently validate the diagnostic and enforce its own exact QML filename allowlist.
+
+Fingerprints depend only on stable server-validated failure identifiers, not diagnostic versions, managed-QML diagnostics, or machine-specific values.
 
 ## Failure isolation
 
