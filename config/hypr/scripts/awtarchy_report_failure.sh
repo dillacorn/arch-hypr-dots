@@ -320,6 +320,7 @@ prompt_report() {
     while true; do
         printf '\nAwtarchy detected a failure.\n' >/dev/tty
         printf 'A sanitized failure report can be sent to the Awtarchy project.\n' >/dev/tty
+        printf 'If accepted, the sanitized report may become part of a public GitHub issue in the Awtarchy repository.\n' >/dev/tty
         printf 'It does not include your username, hostname, home path, raw logs, or a persistent machine ID.\n\n' >/dev/tty
         printf '  [S] Send report\n' >/dev/tty
         printf '  [R] Review report\n' >/dev/tty
