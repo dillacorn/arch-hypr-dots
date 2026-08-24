@@ -23,9 +23,17 @@ Version 1 uses a strict structured schema. A submitted report can contain:
 - Quickshell version;
 - kernel version;
 - broad GPU family: AMD, Intel, NVIDIA, Other, or Unknown;
-- fixed boolean recovery state for supported recovery failures.
+- fixed boolean recovery state for supported recovery failures;
+- for a recognized Quickshell load failure, an optional sanitized diagnostic containing only:
+  - a fixed diagnostic kind: `qml_parse_error`, `qml_import_error`, `qml_type_error`, or `qml_load_error`;
+  - the basename of an Awtarchy-managed `.qml` file, such as `Theme.qml`;
+  - positive numeric line and column values.
 
-The report service validates these fields again before accepting a report. Clients cannot choose the GitHub issue title, issue body, repository, fingerprint, or GitHub action.
+The optional Quickshell diagnostic is derived locally from a bounded portion of Awtarchy's Quickshell log. The raw matching log line is not copied into the report. A filename is emitted only when the corresponding regular file exists inside the user's Awtarchy-managed Quickshell configuration directory. Paths, arbitrary filenames outside that directory, error-message text, and module/type text are discarded locally.
+
+The report service validates these fields again before accepting a report. It independently rejects unknown diagnostic fields, unsupported diagnostic kinds, paths, and invalid line/column values. Clients cannot choose the GitHub issue title, issue body, repository, fingerprint, or GitHub action.
+
+The optional diagnostic is only a troubleshooting hint. It is not guaranteed to identify a root cause, and many failures will contain no diagnostic at all.
 
 ## What Awtarchy does not include
 
@@ -44,6 +52,8 @@ Failure-report payloads do not include:
 - arbitrary window titles;
 - arbitrary file contents;
 - raw troubleshooting logs;
+- raw Quickshell error messages;
+- arbitrary diagnostic text;
 - persistent machine, installation, or user identifiers.
 
 The reporting helper derives only the allowlisted structured fields above. Raw `awtarchy troubleshoot` output remains local unless a user chooses to share it separately.
@@ -58,7 +68,7 @@ ${XDG_STATE_HOME:-$HOME/.local/state}/awtarchy/reports/
 
 The report directory is restricted to the user and pending report files are written with mode `0600`.
 
-The helper's send, review, and discard operations are restricted to Awtarchy's known pending-report filenames inside that directory. Before a pending report can be sent, the helper locally revalidates its size, allowed fields, field formats, recognized failure class, and filename-to-failure match. An arbitrary local file or a tampered report with unknown fields is rejected before any network request is made.
+The helper's send, review, and discard operations are restricted to Awtarchy's known pending-report filenames inside that directory. Before a pending report can be sent, the helper locally revalidates its size, allowed fields, field formats, recognized failure class, optional diagnostic structure, and filename-to-failure match. An arbitrary local file or a tampered report with unknown fields is rejected before any network request is made.
 
 A pending report is removed after a successful submission or when the user explicitly declines/discards it. A failed network submission leaves the sanitized report local so the user can retry later.
 
@@ -82,7 +92,7 @@ For these reasons, Awtarchy describes the report payload as sanitized and withou
 
 ## GitHub issues
 
-The Worker validates accepted reports, creates a server-controlled bug fingerprint, and stores aggregate signature state in Cloudflare D1. The fingerprint identifies a failure signature, not a user or machine.
+The Worker validates accepted reports, creates a server-controlled bug fingerprint, and stores aggregate signature state in Cloudflare D1. The fingerprint identifies a failure signature, not a user or machine. Optional structured diagnostics do not participate in that fingerprint.
 
 For a new recognized signature, the dedicated Awtarchy Report Bot may create a public issue in `dillacorn/awtarchy`. The GitHub issue contains only server-generated text derived from the validated structured report.
 
