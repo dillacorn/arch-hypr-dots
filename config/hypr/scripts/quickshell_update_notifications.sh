@@ -158,20 +158,20 @@ show_notification() {
         notify_and_handle "$kind" "$title" "$body" "$action_id" "$action_label" "$command"
     else
         notify_and_handle "$kind" "$title" "$body" "$action_id" "$action_label" "$command" \
-            </dev/null >/dev/null 2>&1 &
+            9>&- </dev/null >/dev/null 2>&1 &
     fi
 }
 
 stable_release_position() {
     local releases_json="$1" target="$2" installed="$3"
-    python3 - "$target" "$installed" "$releases_json" <<'PY'
+    python3 -c '
 import json
 import re
 import sys
 
-target, installed, raw_releases = sys.argv[1:]
+target, installed = sys.argv[1:]
 try:
-    releases = json.loads(raw_releases)
+    releases = json.load(sys.stdin)
 except (json.JSONDecodeError, TypeError):
     raise SystemExit(1)
 
@@ -201,7 +201,7 @@ except ValueError:
 if target_index >= installed_index:
     raise SystemExit(1)
 print(installed_index - target_index)
-PY
+' "$target" "$installed" <<<"$releases_json"
 }
 
 check_stable_release() {
@@ -210,6 +210,7 @@ check_stable_release() {
     releases_json="$(api_get "${API_ROOT}/releases?per_page=100" 2>/dev/null)" || return 1
     behind="$(stable_release_position "$releases_json" "$target" "$installed" 2>/dev/null)" || return 1
     [[ $behind =~ ^[0-9]+$ ]] || return 1
+    [[ $LAST_STABLE_TARGET != "$target" ]] || return 0
 
     if [[ $enabled == false ]]; then
         (( behind >= CATCHUP_RELEASE_COUNT )) || return 0
@@ -220,11 +221,9 @@ check_stable_release() {
         fi
         LAST_CATCHUP_TARGET="$target"
         LAST_CATCHUP_AT="$NOW"
-    else
-        [[ $LAST_STABLE_TARGET != "$target" ]] || return 0
-        LAST_STABLE_TARGET="$target"
     fi
 
+    LAST_STABLE_TARGET="$target"
     save_state
     show_notification \
         "Update" \
@@ -326,6 +325,7 @@ main() {
     command -v jq >/dev/null 2>&1 || return 0
     command -v python3 >/dev/null 2>&1 || return 0
     command -v flock >/dev/null 2>&1 || return 0
+    command -v notify-send >/dev/null 2>&1 || return 0
 
     umask 077
     mkdir -p -- "$AWTARCHY_STATE_DIR"
