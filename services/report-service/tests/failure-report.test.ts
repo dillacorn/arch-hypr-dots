@@ -90,6 +90,9 @@ class FakeD1 {
     if (normalized.startsWith("UPDATE crash_signatures SET status = 'issue_error'")) {
       const [lastSeen, lastVersion, fingerprint] = args as [string, string, string];
       const row = this.rows.get(fingerprint)!;
+      if (normalized.includes("AND status IN ('pending_issue', 'issue_error')") && row.status === 'creating_issue') {
+        return { success: true, meta: { changes: 0 } };
+      }
       row.status = 'issue_error';
       row.last_seen = lastSeen;
       row.last_version = lastVersion;
@@ -195,4 +198,50 @@ test('first production report creates issue; duplicate increments same fingerpri
   const fingerprint = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
   assert.equal(db.rows.get(fingerprint)!.occurrence_count, 2);
   assert.equal(db.rows.get(fingerprint)!.last_version, 'v3.1.6');
+});
+
+test('lookup failure cannot clear another request\'s active issue-creation lease', async () => {
+  const db = new FakeD1();
+  let signalCreateStarted!: () => void;
+  let releaseCreate!: () => void;
+  const createStarted = new Promise<void>(resolve => { signalCreateStarted = resolve; });
+  const createRelease = new Promise<void>(resolve => { releaseCreate = resolve; });
+
+  const ownerGithub = {
+    async findIssueByFingerprint() { return null; },
+    async createTestIssue() { throw new Error('unused'); },
+    async createFailureIssue() {
+      signalCreateStarted();
+      await createRelease;
+      return { number: 71, url: 'https://github.com/dillacorn/awtarchy/issues/71' };
+    },
+  };
+  const observerGithub = {
+    async findIssueByFingerprint() { throw new Error('transient lookup failure'); },
+    async createTestIssue() { throw new Error('unused'); },
+    async createFailureIssue() { throw new Error('observer must not create'); },
+  };
+
+  const ownerPromise = runFailureReport(fakeEnv(db), valid, {
+    now: () => new Date('2026-08-24T00:00:00.000Z'),
+    github: ownerGithub,
+  });
+  await createStarted;
+
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalFailureId(valid)));
+  const fingerprint = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  assert.equal(db.rows.get(fingerprint)!.status, 'creating_issue');
+
+  const observer = await runFailureReport(fakeEnv(db), valid, {
+    now: () => new Date('2026-08-24T00:00:01.000Z'),
+    github: observerGithub,
+  });
+  assert.deepEqual(observer, { ok: false, error: 'github_issue_lookup_failed' });
+  assert.equal(db.rows.get(fingerprint)!.status, 'creating_issue');
+
+  releaseCreate();
+  const owner = await ownerPromise;
+  assert.equal(owner.created, true);
+  assert.equal(db.rows.get(fingerprint)!.status, 'open');
+  assert.equal(db.rows.get(fingerprint)!.github_issue_number, 71);
 });
