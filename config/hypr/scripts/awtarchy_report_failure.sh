@@ -100,6 +100,101 @@ report_path() {
     printf '%s/%s--%s--%s.json\n' "$REPORT_DIR" "$1" "$2" "$3"
 }
 
+report_basename_allowed() {
+    case "$1" in
+        quickshell--start--quickshell_not_ready.json|\
+        quickshell--restart--quickshell_not_ready.json|\
+        quickshell--restart_after_update--quickshell_not_ready.json|\
+        resume_recovery--start--quickshell_start_failed.json|\
+        resume_recovery--restart--quickshell_restart_failed.json|\
+        resume_recovery--final_validation--expected_bars_missing.json)
+            return 0
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+ensure_report_dir() {
+    if [[ -e "$REPORT_DIR" || -L "$REPORT_DIR" ]]; then
+        [[ -d "$REPORT_DIR" && ! -L "$REPORT_DIR" && -O "$REPORT_DIR" ]] || return 1
+    else
+        mkdir -p -- "$REPORT_DIR" || return 1
+    fi
+    chmod 0700 -- "$REPORT_DIR" || return 1
+}
+
+managed_report_path() {
+    local path="$1" base=""
+    base="${path##*/}"
+
+    [[ -d "$REPORT_DIR" && ! -L "$REPORT_DIR" && -O "$REPORT_DIR" ]] || return 2
+    report_basename_allowed "$base" || return 2
+    [[ "$path" == "$REPORT_DIR/$base" ]] || return 2
+    [[ -f "$path" && ! -L "$path" && -O "$path" ]] || return 2
+}
+
+validate_pending_payload() {
+    local path="$1" size=0 component="" stage="" error_code="" expected=""
+    managed_report_path "$path" || return 2
+    command -v jq >/dev/null 2>&1 || return 127
+
+    size="$(wc -c <"$path" 2>/dev/null || printf '0')"
+    [[ "$size" =~ ^[0-9]+$ ]] || return 2
+    (( size > 0 && size <= 32768 )) || return 2
+
+    jq -e '
+        def allowed: [
+          "schema_version", "report_type", "component", "failure_stage", "error_code",
+          "awtarchy_config_version", "awtarchy_command_revision", "hyprland_version",
+          "quickshell_version", "kernel_version", "gpu_family", "context"
+        ];
+        def required: [
+          "schema_version", "report_type", "component", "failure_stage", "error_code",
+          "awtarchy_config_version", "awtarchy_command_revision", "hyprland_version",
+          "quickshell_version", "kernel_version", "gpu_family"
+        ];
+        type == "object"
+        and ((keys - allowed) | length == 0)
+        and ((required - keys) | length == 0)
+        and .schema_version == 1
+        and .report_type == "failure"
+        and (.component | type == "string")
+        and (.component | test("^[a-z][a-z0-9_]{0,31}$"))
+        and (.failure_stage | type == "string")
+        and (.failure_stage | test("^[a-z][a-z0-9_]{0,47}$"))
+        and (.error_code | type == "string")
+        and (.error_code | test("^[a-z][a-z0-9_]{0,63}$"))
+        and (.awtarchy_config_version | type == "string")
+        and (.awtarchy_config_version | test("^[A-Za-z0-9._+@/-]{1,128}$"))
+        and (.awtarchy_command_revision | type == "string")
+        and (.awtarchy_command_revision | test("^(unknown|[0-9a-f]{40})$"))
+        and (.hyprland_version | type == "string")
+        and (.hyprland_version | test("^[A-Za-z0-9._+-]{1,96}$"))
+        and (.quickshell_version | type == "string")
+        and (.quickshell_version | test("^[A-Za-z0-9._+-]{1,96}$"))
+        and (.kernel_version | type == "string")
+        and (.kernel_version | test("^[A-Za-z0-9._+-]{1,96}$"))
+        and (.gpu_family == "AMD" or .gpu_family == "Intel" or .gpu_family == "NVIDIA"
+             or .gpu_family == "Other" or .gpu_family == "Unknown")
+        and (
+          (has("context") | not)
+          or (
+            (.context | type == "object")
+            and (((.context | keys) - ["recovery_attempted", "recovery_succeeded"]) | length == 0)
+            and ((.context | has("recovery_attempted") | not) or (.context.recovery_attempted | type == "boolean"))
+            and ((.context | has("recovery_succeeded") | not) or (.context.recovery_succeeded | type == "boolean"))
+          )
+        )
+    ' "$path" >/dev/null 2>&1 || return 2
+
+    IFS=$'\t' read -r component stage error_code < <(
+        jq -r '[.component, .failure_stage, .error_code] | @tsv' "$path"
+    ) || return 2
+    valid_failure "$component" "$stage" "$error_code" || return 2
+    expected="$(report_path "$component" "$stage" "$error_code")"
+    [[ "$path" == "$expected" ]] || return 2
+}
+
 write_pending_report() {
     local component="$1" stage="$2" error_code="$3"
     local path tmp config revision hyprland quickshell kernel gpu
@@ -109,8 +204,7 @@ write_pending_report() {
     valid_failure "$component" "$stage" "$error_code" || return 2
     command -v jq >/dev/null 2>&1 || return 127
 
-    mkdir -p -- "$REPORT_DIR" || return 1
-    chmod 0700 -- "$REPORT_DIR" 2>/dev/null || true
+    ensure_report_dir || return 1
     path="$(report_path "$component" "$stage" "$error_code")"
     tmp="${path}.tmp.$$"
 
@@ -165,9 +259,8 @@ write_pending_report() {
 
 submit_report() {
     local path="$1" response="" issue_url=""
-    [[ -f "$path" && ! -L "$path" ]] || return 2
+    validate_pending_payload "$path" || return $?
     command -v curl >/dev/null 2>&1 || return 127
-    command -v jq >/dev/null 2>&1 || return 127
 
     response="$(curl -fsS \
         --connect-timeout 5 \
@@ -188,14 +281,20 @@ submit_report() {
 
 review_report() {
     local path="$1"
-    [[ -f "$path" && ! -L "$path" ]] || return 2
+    managed_report_path "$path" || return 2
     command -v jq >/dev/null 2>&1 || return 127
     jq . "$path"
 }
 
 discard_report() {
-    local path="$1"
-    [[ -f "$path" && ! -L "$path" ]] || return 0
+    local path="$1" base=""
+    base="${path##*/}"
+    report_basename_allowed "$base" || return 2
+    [[ "$path" == "$REPORT_DIR/$base" ]] || return 2
+    if [[ ! -e "$path" && ! -L "$path" ]]; then
+        return 0
+    fi
+    managed_report_path "$path" || return 2
     rm -f -- "$path"
 }
 
@@ -230,7 +329,7 @@ prompt_report() {
                 printf '\n' >/dev/tty
                 ;;
             n|no|""|don\'t\ send|dont\ send)
-                discard_report "$path"
+                discard_report "$path" || true
                 printf 'Failure report was not sent.\n' >/dev/tty
                 return 0
                 ;;
@@ -242,12 +341,15 @@ prompt_report() {
 }
 
 notify_pending() {
-    local count=0
-    [[ -d "$REPORT_DIR" ]] || return 0
+    local count=0 path=""
+    [[ -d "$REPORT_DIR" && ! -L "$REPORT_DIR" && -O "$REPORT_DIR" ]] || return 0
     shopt -s nullglob
     local reports=("$REPORT_DIR"/*.json)
     shopt -u nullglob
-    count="${#reports[@]}"
+    for path in "${reports[@]}"; do
+        managed_report_path "$path" || continue
+        ((count += 1))
+    done
     (( count > 0 )) || return 0
     command -v notify-send >/dev/null 2>&1 || return 0
     notify-send \
@@ -257,18 +359,19 @@ notify_pending() {
 }
 
 pending_reports() {
-    [[ -d "$REPORT_DIR" ]] || return 0
+    [[ -d "$REPORT_DIR" && ! -L "$REPORT_DIR" && -O "$REPORT_DIR" ]] || return 0
     shopt -s nullglob
     local reports=("$REPORT_DIR"/*.json)
     shopt -u nullglob
-    local path
-    if (( ${#reports[@]} == 0 )); then
-        printf 'No pending Awtarchy failure reports.\n'
-        return 0
-    fi
+    local path valid_count=0
     for path in "${reports[@]}"; do
+        managed_report_path "$path" || continue
+        ((valid_count += 1))
         prompt_report "$path"
     done
+    if (( valid_count == 0 )); then
+        printf 'No pending Awtarchy failure reports.\n'
+    fi
 }
 
 capture_failure() {
