@@ -315,6 +315,7 @@ export async function runFailureReport(
              last_version = ?
        WHERE fingerprint = ?
          AND github_issue_number IS NULL
+         AND status IN ('pending_issue', 'issue_error')
     `).bind(nowIso, version, fingerprint).run();
     return { ok: false, error: 'github_issue_lookup_failed' };
   }
