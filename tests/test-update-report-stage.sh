@@ -13,6 +13,7 @@ fail() {
 
 launcher_expected="if ! AWTARCHY_REPORT_FAILURE_STAGE=restart_after_update bash \"\$manager\" restart; then"
 launcher_legacy="if ! bash \"\$manager\" restart; then"
+launcher_pending="bash \"\$report_helper\" prompt-pending"
 runtime_restart="AWTARCHY_REPORT_SUPPRESS_QUICKSHELL=1 run_target bash \"\$manager\" restart 9>&-"
 runtime_start="AWTARCHY_REPORT_SUPPRESS_QUICKSHELL=1 run_target bash \"\$manager\" start 9>&-"
 
@@ -25,7 +26,7 @@ grep -Fq -- "$launcher_expected" "$LAUNCHER" \
 ! grep -Fq -- "$launcher_legacy" "$LAUNCHER" \
     || fail 'post-update UI reconciliation still uses the generic restart reporting stage'
 
-grep -Fq -- 'bash "$report_helper" prompt-pending' "$LAUNCHER" \
+grep -Fq -- "$launcher_pending" "$LAUNCHER" \
     || fail 'interactive maintenance menu does not surface queued failure reports'
 grep -Fq -- 'prompt-pending)' "$REPORT_HELPER" \
     || fail 'report helper is missing the quiet maintenance-menu pending prompt mode'
