@@ -89,6 +89,16 @@ awtarchy help            Show the full command list
 
 `awtarchy git` is an explicit unreleased-testing mode. It shows the selected remote branch and exact commit and keeps git-testing state separate from stable release state.
 
+## Failure reporting
+
+Awtarchy can prepare a small sanitized report when it recognizes certain Awtarchy-owned Quickshell failures. Reports are **never submitted silently**. When an interactive terminal is available, Awtarchy offers to send the report, review it first, or not send it. Noninteractive failures can remain pending locally for later review.
+
+Submitted reports contain only a strict allowlist of failure identifiers and broad software/hardware version context. They do not include usernames, hostnames, home-directory paths, raw logs, command history, clipboard contents, secrets, or a persistent machine/install identifier.
+
+Accepted reports are sent through an Awtarchy Cloudflare Worker and may create a deduplicated public GitHub issue through the restricted Awtarchy Report Bot. Cloudflare necessarily processes network connection metadata to receive the request, so Awtarchy does not claim absolute network-layer anonymity.
+
+See [PRIVACY.md](PRIVACY.md) for the exact reporting and data-handling model.
+
 ## Dry-run
 
 Review the installer questionnaire and install plan without changing the system:
@@ -119,7 +129,7 @@ Awtarchy-authored code and configuration is licensed under the [MIT License](htt
 
 ## Legal Notice
 
-This project is a general-purpose open-source utility that runs locally on the user’s system. It does not provide a hosted service and does not collect user data. Users are responsible for complying with laws and regulations in their own jurisdiction when using this software.
+Awtarchy is a general-purpose open-source utility that primarily runs locally on the user's system. Its optional, user-approved failure-reporting feature uses a hosted Cloudflare Worker to receive strictly sanitized reports and may create deduplicated public GitHub issues through the Awtarchy Report Bot. See [PRIVACY.md](PRIVACY.md) for details. Users are responsible for complying with laws and regulations in their own jurisdiction when using this software.
 
 ## Donate
 
