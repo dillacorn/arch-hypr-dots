@@ -17,11 +17,17 @@ const valid = {
 };
 
 const env = {} as any;
+const CLIENT_IP = '203.0.113.7';
+const SIGNATURE = '1|failure|quickshell|start|quickshell_not_ready';
 
-function reportRequest(): Request {
+function reportRequest(includeClientIp = true): Request {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json; charset=utf-8',
+  };
+  if (includeClientIp) headers['CF-Connecting-IP'] = CLIENT_IP;
   return new Request('https://example.test/v1/report', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    headers,
     body: JSON.stringify(valid),
   });
 }
@@ -106,11 +112,13 @@ test('POST /v1/report stops reading an oversized streamed body at 32 KiB', async
   assert.equal(pulls, 1);
 });
 
-test('POST /v1/report fails closed when rate limiting is unavailable', async () => {
+test('POST /v1/report fails closed when client rate limiting is unavailable', async () => {
   let called = 0;
   const response = await handleRequest(
     reportRequest(),
-    env,
+    {
+      REPORT_SIGNATURE_RATE_LIMITER: { async limit() { return { success: true }; } },
+    } as any,
     undefined,
     async () => {
       called += 1;
@@ -123,76 +131,121 @@ test('POST /v1/report fails closed when rate limiting is unavailable', async () 
   assert.equal(called, 0);
 });
 
-test('POST /v1/report lets a saturated signature resolve an already-linked issue', async () => {
+test('POST /v1/report fails closed when signature rate limiting is unavailable', async () => {
   let called = 0;
-  let key = '';
-  let allowed: boolean | undefined;
-  const limitedEnv = {
-    REPORT_RATE_LIMITER: {
-      async limit(input: { key: string }) {
-        key = input.key;
-        return { success: false };
-      },
-    },
-  } as any;
-
   const response = await handleRequest(
     reportRequest(),
-    limitedEnv,
+    {
+      REPORT_CLIENT_RATE_LIMITER: { async limit() { return { success: true }; } },
+    } as any,
     undefined,
-    async (_env, _payload, options) => {
+    async () => {
       called += 1;
-      allowed = options?.rateLimitAllowed;
-      return {
-        ok: true,
-        created: false,
-        deduplicated: true,
-        issue_number: 88,
-        issue_url: 'https://github.com/dillacorn/awtarchy/issues/88',
-      };
+      return { ok: true, created: true, deduplicated: false, issue_number: 1, issue_url: 'x' };
     },
   );
 
-  assert.equal(response.status, 200);
-  assert.equal(key, '1|failure|quickshell|start|quickshell_not_ready');
-  assert.equal(called, 1);
-  assert.equal(allowed, false);
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { ok: false, error: 'service_unavailable' });
+  assert.equal(called, 0);
 });
 
-test('POST /v1/report maps a saturated unlinked signature to 429', async () => {
-  let called = 0;
-  const limitedEnv = {
-    REPORT_RATE_LIMITER: {
-      async limit() {
-        return { success: false };
+test('POST /v1/report fails closed when Cloudflare client IP is unavailable', async () => {
+  let clientCalls = 0;
+  let signatureCalls = 0;
+  const response = await handleRequest(
+    reportRequest(false),
+    {
+      REPORT_CLIENT_RATE_LIMITER: {
+        async limit() { clientCalls += 1; return { success: true }; },
       },
-    },
-  } as any;
+      REPORT_SIGNATURE_RATE_LIMITER: {
+        async limit() { signatureCalls += 1; return { success: true }; },
+      },
+    } as any,
+  );
 
+  assert.equal(response.status, 503);
+  assert.equal(clientCalls, 0);
+  assert.equal(signatureCalls, 0);
+});
+
+test('POST /v1/report client limiter blocks before global signature limiter and D1 workflow', async () => {
+  let clientKey = '';
+  let signatureCalls = 0;
+  let called = 0;
   const response = await handleRequest(
     reportRequest(),
-    limitedEnv,
+    {
+      REPORT_CLIENT_RATE_LIMITER: {
+        async limit(input: { key: string }) {
+          clientKey = input.key;
+          return { success: false };
+        },
+      },
+      REPORT_SIGNATURE_RATE_LIMITER: {
+        async limit() { signatureCalls += 1; return { success: true }; },
+      },
+    } as any,
     undefined,
-    async (_env, _payload, options) => {
+    async () => {
       called += 1;
-      assert.equal(options?.rateLimitAllowed, false);
-      return { ok: false, error: 'rate_limited' };
+      return { ok: true, created: true, deduplicated: false, issue_number: 1, issue_url: 'x' };
     },
   );
 
   assert.equal(response.status, 429);
   assert.deepEqual(await response.json(), { ok: false, error: 'rate_limited' });
-  assert.equal(called, 1);
+  assert.equal(clientKey, `${CLIENT_IP}|${SIGNATURE}`);
+  assert.equal(signatureCalls, 0);
+  assert.equal(called, 0);
 });
 
-test('POST /v1/report invokes production workflow with validated payload', async () => {
+test('POST /v1/report global signature limiter blocks before D1 workflow', async () => {
+  let clientCalls = 0;
+  let signatureKey = '';
+  let called = 0;
+  const response = await handleRequest(
+    reportRequest(),
+    {
+      REPORT_CLIENT_RATE_LIMITER: {
+        async limit() { clientCalls += 1; return { success: true }; },
+      },
+      REPORT_SIGNATURE_RATE_LIMITER: {
+        async limit(input: { key: string }) {
+          signatureKey = input.key;
+          return { success: false };
+        },
+      },
+    } as any,
+    undefined,
+    async () => {
+      called += 1;
+      return { ok: true, created: true, deduplicated: false, issue_number: 1, issue_url: 'x' };
+    },
+  );
+
+  assert.equal(response.status, 429);
+  assert.deepEqual(await response.json(), { ok: false, error: 'rate_limited' });
+  assert.equal(clientCalls, 1);
+  assert.equal(signatureKey, SIGNATURE);
+  assert.equal(called, 0);
+});
+
+test('POST /v1/report invokes production workflow only after both limiters allow it', async () => {
   let received: any = null;
-  let limiterCalls = 0;
-  let allowed: boolean | undefined;
+  let clientKey = '';
+  let signatureKey = '';
   const allowedEnv = {
-    REPORT_RATE_LIMITER: {
-      async limit() {
-        limiterCalls += 1;
+    REPORT_CLIENT_RATE_LIMITER: {
+      async limit(input: { key: string }) {
+        clientKey = input.key;
+        return { success: true };
+      },
+    },
+    REPORT_SIGNATURE_RATE_LIMITER: {
+      async limit(input: { key: string }) {
+        signatureKey = input.key;
         return { success: true };
       },
     },
@@ -202,9 +255,8 @@ test('POST /v1/report invokes production workflow with validated payload', async
     reportRequest(),
     allowedEnv,
     undefined,
-    async (_env, payload, options) => {
+    async (_env, payload) => {
       received = payload;
-      allowed = options?.rateLimitAllowed;
       return {
         ok: true,
         created: true,
@@ -216,8 +268,8 @@ test('POST /v1/report invokes production workflow with validated payload', async
   );
 
   assert.equal(response.status, 201);
-  assert.equal(limiterCalls, 1);
-  assert.equal(allowed, true);
+  assert.equal(clientKey, `${CLIENT_IP}|${SIGNATURE}`);
+  assert.equal(signatureKey, SIGNATURE);
   assert.equal(received.component, 'quickshell');
   assert.equal(received.failure_stage, 'start');
 });
