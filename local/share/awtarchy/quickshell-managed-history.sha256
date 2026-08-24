@@ -626,3 +626,6 @@ a367f2f08a814ebf731836e337b031eff1c9ee574db0514463417546736c9f5f	.config/hypr/sc
 
 # 2026-08-23 anonymous failure-reporting Quickshell integration.
 3511748e050d56c89ba69b4b4d07502c451a0d92ba0b692e85d3b579b3d698d9	.config/hypr/scripts/quickshell.sh
+
+# 2026-08-23 anonymous failure-reporting resume-recovery integration.
+6e6236ab84f2d363bf4b88eb008742f0ba01ee7ff90fe562fc661c324f0698c9	.config/hypr/scripts/quickshell_resume_recover.sh
