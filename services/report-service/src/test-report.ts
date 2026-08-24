@@ -148,6 +148,7 @@ export async function runControlledTest(
              last_seen = ?
        WHERE fingerprint = ?
          AND github_issue_number IS NULL
+         AND status IN ('pending_issue', 'issue_error')
     `).bind(nowIso, fingerprint).run();
     return { ok: false, error: 'github_issue_lookup_failed' };
   }
