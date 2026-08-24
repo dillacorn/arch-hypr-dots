@@ -51,6 +51,11 @@ export PATH="$BIN:/usr/bin:/bin"
 export CURL_CALLS="$TMP/curl.calls"
 export AWTARCHY_REPORT_NO_PROMPT=1
 
+grep -Fq 'public GitHub issue' "$SCRIPT" || {
+    echo 'failure-report consent prompt does not disclose public GitHub issue publication' >&2
+    exit 1
+}
+
 ATTEMPTED_VERSION='anonymous-crash-reporting-testing@fedcba9876543210fedcba9876543210fedcba98'
 export AWTARCHY_REPORT_CONFIG_VERSION_OVERRIDE="$ATTEMPTED_VERSION"
 bash "$SCRIPT" capture quickshell restart_after_update quickshell_not_ready
