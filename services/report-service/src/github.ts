@@ -11,9 +11,25 @@ export type GitHubIssueRef = {
   url: string;
 };
 
+export type FailureIssueData = {
+  fingerprint: string;
+  description: string;
+  component: string;
+  failureStage: string;
+  errorCode: string;
+  awtarchyConfigVersion: string;
+  awtarchyCommandRevision: string;
+  hyprlandVersion: string;
+  quickshellVersion: string;
+  kernelVersion: string;
+  gpuFamily: string;
+  context?: { recovery_attempted?: boolean; recovery_succeeded?: boolean };
+};
+
 export type GitHubClient = {
   findIssueByFingerprint(fingerprint: string): Promise<GitHubIssueRef | null>;
   createTestIssue(fingerprint: string): Promise<GitHubIssueRef>;
+  createFailureIssue(data: FailureIssueData): Promise<GitHubIssueRef>;
 };
 
 const GITHUB_API = 'https://api.github.com';
@@ -202,6 +218,64 @@ export function createGitHubClient(env: GitHubEnv, fetchImpl: typeof fetch = fet
           body: JSON.stringify({
             title: '[TEST] Awtarchy anonymous crash reporting',
             body,
+          }),
+        },
+      );
+      const issue = await responseJson<{ number?: unknown; html_url?: unknown }>(
+        response,
+        'github_issue_creation_failed',
+      );
+      if (typeof issue.number !== 'number' || typeof issue.html_url !== 'string') {
+        throw new Error('github_issue_creation_failed');
+      }
+      return { number: issue.number, url: issue.html_url };
+    },
+
+    async createFailureIssue(data: FailureIssueData): Promise<GitHubIssueRef> {
+      assertFingerprint(data.fingerprint);
+      const token = await installationToken();
+      const marker = `<!-- awtarchy-report-fingerprint:${data.fingerprint} -->`;
+      const bodyLines = [
+        'This issue was created from a user-approved, sanitized Awtarchy failure report.',
+        '',
+        `Component: \`${data.component}\``,
+        `Stage: \`${data.failureStage}\``,
+        `Error code: \`${data.errorCode}\``,
+        '',
+        `Awtarchy config: \`${data.awtarchyConfigVersion}\``,
+        `Awtarchy command revision: \`${data.awtarchyCommandRevision}\``,
+        `Hyprland: \`${data.hyprlandVersion}\``,
+        `Quickshell: \`${data.quickshellVersion}\``,
+        `Kernel: \`${data.kernelVersion}\``,
+        `GPU family: \`${data.gpuFamily}\``,
+      ];
+      if (data.context) {
+        if (data.context.recovery_attempted !== undefined) {
+          bodyLines.push(`Recovery attempted: \`${data.context.recovery_attempted}\``);
+        }
+        if (data.context.recovery_succeeded !== undefined) {
+          bodyLines.push(`Recovery succeeded: \`${data.context.recovery_succeeded}\``);
+        }
+      }
+      bodyLines.push(
+        '',
+        'The report payload contains no username, hostname, home-directory path, raw log, or persistent installation identifier.',
+        '',
+        `Report fingerprint: \`${data.fingerprint}\``,
+        '',
+        marker,
+      );
+      const response = await fetchImpl(
+        `${GITHUB_API}/repos/${owner}/${repo}/issues`,
+        {
+          method: 'POST',
+          headers: new Headers({
+            ...Object.fromEntries(githubHeaders(token)),
+            'Content-Type': 'application/json',
+          }),
+          body: JSON.stringify({
+            title: `Automatic failure report: ${data.description}`,
+            body: bodyLines.join('\n'),
           }),
         },
       );
