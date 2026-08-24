@@ -70,6 +70,8 @@ https://awtarchy-reports.dillacorn.workers.dev/v1/report
 
 The Awtarchy report payload does not contain an IP-address field or a persistent client identifier. However, Cloudflare necessarily processes network connection metadata, including source IP information, to receive and protect HTTP requests. Cloudflare may retain infrastructure or security logs according to its service behavior and the project's Cloudflare account settings.
 
+The public report route also uses Cloudflare's Worker Rate Limiting binding before D1/GitHub processing. Awtarchy keys this limiter only by the validated failure signature. It does not add an IP address, username, machine identifier, or installation identifier to the application limiter key.
+
 For that reason, Awtarchy describes the report payload as identity-free/sanitized and does not claim absolute network-layer anonymity.
 
 ## GitHub issues
