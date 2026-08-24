@@ -34,6 +34,7 @@ export type GitHubClient = {
 
 const GITHUB_API = 'https://api.github.com';
 const GITHUB_API_VERSION = '2026-03-10';
+const GITHUB_REQUEST_TIMEOUT_MS = 20_000;
 const REPORT_BOT_LOGIN = 'awtarchy-report-bot[bot]';
 const encoder = new TextEncoder();
 
@@ -142,6 +143,20 @@ function githubHeaders(token: string): Headers {
   });
 }
 
+async function boundedFetch(
+  fetchImpl: typeof fetch,
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), GITHUB_REQUEST_TIMEOUT_MS);
+  try {
+    return await fetchImpl(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function responseJson<T>(response: Response, errorCode: string): Promise<T> {
   if (!response.ok) throw new Error(errorCode);
   try {
@@ -157,7 +172,8 @@ export function createGitHubClient(env: GitHubEnv, fetchImpl: typeof fetch = fet
 
   async function installationToken(): Promise<string> {
     const jwt = await createAppJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
-    const response = await fetchImpl(
+    const response = await boundedFetch(
+      fetchImpl,
       `${GITHUB_API}/app/installations/${encodeURIComponent(env.GITHUB_INSTALLATION_ID)}/access_tokens`,
       {
         method: 'POST',
@@ -175,7 +191,8 @@ export function createGitHubClient(env: GitHubEnv, fetchImpl: typeof fetch = fet
     async findIssueByFingerprint(fingerprint: string): Promise<GitHubIssueRef | null> {
       assertFingerprint(fingerprint);
       const token = await installationToken();
-      const response = await fetchImpl(
+      const response = await boundedFetch(
+        fetchImpl,
         `${GITHUB_API}/repos/${owner}/${repo}/issues?state=all&per_page=100&sort=created&direction=desc`,
         { headers: githubHeaders(token) },
       );
@@ -210,7 +227,8 @@ export function createGitHubClient(env: GitHubEnv, fetchImpl: typeof fetch = fet
         '',
         marker,
       ].join('\n');
-      const response = await fetchImpl(
+      const response = await boundedFetch(
+        fetchImpl,
         `${GITHUB_API}/repos/${owner}/${repo}/issues`,
         {
           method: 'POST',
@@ -268,7 +286,8 @@ export function createGitHubClient(env: GitHubEnv, fetchImpl: typeof fetch = fet
         '',
         marker,
       );
-      const response = await fetchImpl(
+      const response = await boundedFetch(
+        fetchImpl,
         `${GITHUB_API}/repos/${owner}/${repo}/issues`,
         {
           method: 'POST',
