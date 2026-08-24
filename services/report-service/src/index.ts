@@ -56,16 +56,39 @@ function isJsonContentType(request: Request): boolean {
   return contentType.split(';', 1)[0].trim().toLowerCase() === 'application/json';
 }
 
-async function parseReportRequest(request: Request): Promise<FailurePayload> {
+async function readReportText(request: Request): Promise<string> {
   const contentLength = request.headers.get('Content-Length');
   if (contentLength && /^\d+$/.test(contentLength) && Number(contentLength) > MAX_REPORT_BYTES) {
     throw new FailureValidationError('payload_too_large');
   }
 
-  const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > MAX_REPORT_BYTES) {
-    throw new FailureValidationError('payload_too_large');
+  if (!request.body) return '';
+
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let byteLength = 0;
+  let text = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      byteLength += value.byteLength;
+      if (byteLength > MAX_REPORT_BYTES) {
+        await reader.cancel('payload_too_large').catch(() => undefined);
+        throw new FailureValidationError('payload_too_large');
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return text;
+  } finally {
+    reader.releaseLock();
   }
+}
+
+async function parseReportRequest(request: Request): Promise<FailurePayload> {
+  const text = await readReportText(request);
 
   let raw: unknown;
   try {
