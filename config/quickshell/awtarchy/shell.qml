@@ -15,11 +15,17 @@ ShellRoot {
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
     readonly property string barDragRuntimeScript: configHome + "/hypr/scripts/quickshell_bar_drag_runtime.sh"
+    readonly property string updateNotificationsScript: configHome + "/hypr/scripts/quickshell_update_notifications.sh"
     property bool barDragActive: false
     property bool barDropPending: false
     property string barDragMonitor: ""
     property string barDragCandidate: ""
     property string barDropTarget: ""
+
+    function runUpdateNotificationCheck() {
+        if (!updateNotificationCheck.running)
+            updateNotificationCheck.exec([updateNotificationsScript, "check"]);
+    }
 
     function validBarEdge(edge) {
         return ["top", "bottom", "left", "right"].indexOf(edge) >= 0;
@@ -166,6 +172,26 @@ ShellRoot {
         enabled: String(FlyoutManager.activeSurface || "").length > 0
         autoRepeat: false
         onActivated: root.closeActiveFloatingSurface()
+    }
+
+    Process {
+        id: updateNotificationCheck
+    }
+
+    Timer {
+        id: initialUpdateNotificationCheck
+        interval: 30000
+        repeat: false
+        running: true
+        onTriggered: root.runUpdateNotificationCheck()
+    }
+
+    Timer {
+        id: periodicUpdateNotificationCheck
+        interval: 21600000
+        repeat: true
+        running: true
+        onTriggered: root.runUpdateNotificationCheck()
     }
 
     Process {
