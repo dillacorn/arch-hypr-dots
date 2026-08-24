@@ -112,6 +112,12 @@ contains "$QUICK_SETTINGS" '["night-light-schedule", "set"' \
   'Night Light schedule save does not use the Quick Settings backend'
 contains "$QUICK_SETTINGS" '["night-light-schedule", "disable"]' \
   'Night Light schedule cannot be disabled from Quick Settings'
+contains "$QUICK_SETTINGS" 'id: nightLightVibranceRow' \
+  'Night Light and Vibrance are missing a shared row layout id'
+contains "$QUICK_SETTINGS" 'readonly property real cardHeight: Math.max(nightContent.implicitHeight, vibranceContent.implicitHeight) + 16' \
+  'Night Light and Vibrance do not derive one shared card height'
+[[ "$(grep -Fc -- 'Layout.preferredHeight: nightLightVibranceRow.cardHeight' "$QUICK_SETTINGS")" -eq 2 ]] \
+  || fail 'Night Light and Vibrance cards do not both use the shared row height'
 
 # These are release-managed files. Keep every new stock state recognizable so
 # later updates do not preserve Awtarchy's own previous version as a user edit.
