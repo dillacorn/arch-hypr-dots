@@ -9,8 +9,8 @@ fail() {
     exit 1
 }
 
-expected='if ! AWTARCHY_REPORT_FAILURE_STAGE=restart_after_update bash "$manager" restart; then'
-legacy='if ! bash "$manager" restart; then'
+expected="if ! AWTARCHY_REPORT_FAILURE_STAGE=restart_after_update bash \"\$manager\" restart; then"
+legacy="if ! bash \"\$manager\" restart; then"
 
 bash -n "$LAUNCHER"
 grep -Fq -- "$expected" "$LAUNCHER" \
