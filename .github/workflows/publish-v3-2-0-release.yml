@@ -1,0 +1,233 @@
+name: Publish v3.2.0 Release
+
+on:
+  pull_request_target:
+    types: [reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  publish-release:
+    if: github.event.pull_request.head.ref == 'v3-2-0-release-trigger'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Publish and verify v3.2.0
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: 9a96b5352461fc88e31c8fe690eb4487a3e16de4
+          TARGET_TREE: 192934acba334e350abd6e2e76de27a664880bc2
+          RELEASE_TAG: v3.2.0
+          RELEASE_NAME: Awtarchy v3.2.0 Quickshell
+        run: |
+          set -euo pipefail
+
+          test "$(git rev-parse "${TARGET_SHA}^{tree}")" = "$TARGET_TREE"
+          git merge-base --is-ancestor "$TARGET_SHA" HEAD
+          git diff --quiet "$TARGET_SHA" HEAD -- . \
+            ':(exclude).github/workflows/publish-v3-2-0-release.yml'
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "${RELEASE_TAG} tag already exists; refusing to recreate it." >&2
+            exit 1
+          fi
+
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "${RELEASE_TAG} release already exists; refusing to replace it." >&2
+            exit 1
+          fi
+
+          gh release view v3.1.5 --repo "$GITHUB_REPOSITORY" \
+            --json name,isDraft,isPrerelease,body >v3.1.5-release.json
+
+          jq -e '
+            .name == "Awtarchy v3.1.5 Quickshell"
+            and .isDraft == false
+            and .isPrerelease == false
+          ' v3.1.5-release.json >/dev/null
+
+          jq -r '.body' v3.1.5-release.json >v3.1.5-release.md
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          old = Path('v3.1.5-release.md').read_text()
+          lines = old.splitlines(keepends=True)
+          h2 = [i for i, line in enumerate(lines) if re.match(r'^##\s+\S', line)]
+          if not h2:
+              raise SystemExit('v3.1.5 release has no H2 sections')
+
+          sections = []
+          for pos, start in enumerate(h2):
+              end = h2[pos + 1] if pos + 1 < len(h2) else len(lines)
+              title = re.sub(r'^##\s+', '', lines[start]).strip()
+              sections.append((title, ''.join(lines[start:end]).rstrip() + '\n'))
+
+          install_idx = next(
+              (i for i, (_, block) in enumerate(sections)
+               if 'sudo pacman -S git --noconfirm' in block),
+              None,
+          )
+          if install_idx is None:
+              raise SystemExit('v3.1.5 release does not contain the expected install command')
+
+          start_idx = install_idx
+          for i in range(install_idx, -1, -1):
+              if sections[i][0].casefold() in {
+                  'getting started', 'start here', 'fresh install', 'fresh installation'
+              }:
+                  start_idx = i
+                  break
+
+          end_idx = None
+          for i in range(install_idx, len(sections)):
+              title = sections[i][0].casefold()
+              if 'existing awtarchy' in title or 'existing user' in title:
+                  end_idx = i
+                  break
+
+          if end_idx is None:
+              for i in range(install_idx, len(sections)):
+                  if 'awtarchy update' in sections[i][1]:
+                      end_idx = i
+                      break
+
+          if end_idx is None:
+              raise SystemExit('could not identify end of v3.1.5 Getting Started/install block')
+
+          installation = '\n'.join(
+              block for _, block in sections[start_idx:end_idx + 1]
+          ).strip()
+
+          required = (
+              'sudo pacman -S git --noconfirm',
+              'git clone https://github.com/dillacorn/awtarchy',
+              'sudo ./awtarchy-install.sh',
+              'awtarchy update',
+          )
+          missing = [item for item in required if item not in installation]
+          if missing:
+              raise SystemExit(f'v3.1.5 installation block missing expected text: {missing}')
+
+          Path('v3.1.5-installation.md').write_text(installation + '\n')
+          installation_320 = installation.replace('v3.1.5', 'v3.2.0')
+
+          body = f'''# Awtarchy v3.2.0 Quickshell
+
+Awtarchy v3.2.0 adds user-approved anonymous failure reporting for recognized Awtarchy and Quickshell failures, backed by a production-tested report service designed around explicit consent, strict data minimization, and duplicate-safe GitHub issue creation.
+
+{installation_320}
+
+## Anonymous failure reporting
+
+- Recognized failures can prepare a sanitized report locally without transmitting anything automatically.
+- The consent flow provides **Send**, **Review**, and **Don't send**. Review displays the exact structured payload before transmission, and the user is told that an accepted report may become part of a public GitHub issue.
+- Noninteractive failures stay pending locally instead of spawning a terminal during a broken session. Pending reports can resurface through normal Awtarchy maintenance and healthy Quickshell startup.
+- Initial reporting covers Quickshell start/restart readiness, exhausted resume recovery, and post-update Quickshell failure after updater recovery is exhausted.
+- Reporting remains secondary to the original failure and does not silently replace the updater, recovery, or Quickshell result.
+
+## Report service and privacy
+
+- Added the production Cloudflare Worker and D1 report service plus the restricted Awtarchy Report Bot GitHub App.
+- New recognized failure signatures can create a server-generated GitHub issue, while repeated reports reuse the same issue through stable fingerprint deduplication.
+- Report payloads exclude raw logs, usernames, hostnames, home-directory paths, command history, clipboard contents, VPN details, and persistent machine/install identifiers.
+- Cloudflare necessarily processes normal transport metadata. Transport IP is not copied into the Awtarchy report payload, D1 report record, GitHub issue content, or a persistent Awtarchy identifier.
+- Pending report files are confined and revalidated locally before transmission.
+- The public Worker strictly allowlists fields and recognized failure classes, bounds request bodies and outbound GitHub operations, and applies layered rate limiting before D1/GitHub work without requiring client authentication.
+
+## Production validation
+
+- The production Worker was deployed and passed its health check before release.
+- A reviewed user-style submission created bot-authored issue #50, and an identical second submission resolved to the same issue, proving production deduplication.
+- A separate raw `curl` submission containing no `Authorization` header received HTTP 201 and created bot-authored issue #51, proving ordinary Awtarchy users require no Cloudflare login, GitHub login, API token, or client secret to submit an approved report.
+- Dedicated reporting CI covers shell integration, Worker behavior, Node 20/22 backend tests, Wrangler deployment dry-runs, request validation, rate limiting, deduplication, and concurrency/recovery behavior.
+
+## Post-release updates
+
+_Placeholder for possible tested post-release patches to v3.2.0._
+'''
+
+          Path('release-notes.md').write_text(body)
+          PY
+
+          grep -Fq '# Awtarchy v3.2.0 Quickshell' release-notes.md
+          grep -Fq 'sudo pacman -S git --noconfirm' release-notes.md
+          grep -Fq 'git clone https://github.com/dillacorn/awtarchy' release-notes.md
+          grep -Fq 'sudo ./awtarchy-install.sh' release-notes.md
+          grep -Fq 'awtarchy update' release-notes.md
+          grep -Fq 'issue #50' release-notes.md
+          grep -Fq 'issue #51' release-notes.md
+          grep -Fq '## Post-release updates' release-notes.md
+          grep -Fq '_Placeholder for possible tested post-release patches to v3.2.0._' release-notes.md
+
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$TARGET_SHA" \
+            --title "$RELEASE_NAME" \
+            --notes-file release-notes.md
+
+          test "$(git ls-remote origin "refs/tags/${RELEASE_TAG}" | awk '{print $1}')" = "$TARGET_SHA"
+
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json name,targetCommitish,isDraft,isPrerelease,body,url >verified-release.json
+
+          jq -e --arg name "$RELEASE_NAME" --arg target "$TARGET_SHA" '
+            .name == $name
+            and .targetCommitish == $target
+            and .isDraft == false
+            and .isPrerelease == false
+          ' verified-release.json >/dev/null
+
+          jq -r '.body' verified-release.json >verified-release.md
+          grep -Fq 'issue #51' verified-release.md
+          grep -Fq '## Post-release updates' verified-release.md
+          grep -Fq '_Placeholder for possible tested post-release patches to v3.2.0._' verified-release.md
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          old = Path('v3.1.5-installation.md').read_text().strip()
+          new_body = Path('verified-release.md').read_text()
+          lines = new_body.splitlines(keepends=True)
+          h2 = [i for i, line in enumerate(lines) if re.match(r'^##\s+\S', line)]
+          sections = []
+          for pos, start in enumerate(h2):
+              end = h2[pos + 1] if pos + 1 < len(h2) else len(lines)
+              title = re.sub(r'^##\s+', '', lines[start]).strip()
+              sections.append((title, ''.join(lines[start:end]).rstrip() + '\n'))
+
+          install_idx = next(i for i, (_, block) in enumerate(sections) if 'sudo pacman -S git --noconfirm' in block)
+          start_idx = install_idx
+          for i in range(install_idx, -1, -1):
+              if sections[i][0].casefold() in {
+                  'getting started', 'start here', 'fresh install', 'fresh installation'
+              }:
+                  start_idx = i
+                  break
+
+          end_idx = None
+          for i in range(install_idx, len(sections)):
+              title = sections[i][0].casefold()
+              if 'existing awtarchy' in title or 'existing user' in title:
+                  end_idx = i
+                  break
+          if end_idx is None:
+              for i in range(install_idx, len(sections)):
+                  if 'awtarchy update' in sections[i][1]:
+                      end_idx = i
+                      break
+          if end_idx is None:
+              raise SystemExit('could not identify published Getting Started/install block')
+
+          new = '\n'.join(block for _, block in sections[start_idx:end_idx + 1]).strip()
+          if new.replace('v3.2.0', 'v3.1.5') != old:
+              raise SystemExit('published v3.2.0 Getting Started/install text does not match v3.1.5')
+          PY
