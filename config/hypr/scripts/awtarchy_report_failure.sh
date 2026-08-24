@@ -272,13 +272,21 @@ submit_report() {
         "$REPORT_ENDPOINT")" || return 1
 
     jq -e '.ok == true' <<<"$response" >/dev/null 2>&1 || return 1
-    issue_url="$(jq -r '.issue_url // empty' <<<"$response" 2>/dev/null || true)"
-    rm -f -- "$path"
-    if [[ -n "$issue_url" ]]; then
-        printf 'Awtarchy failure report sent: %s\n' "$issue_url"
-    else
-        printf 'Awtarchy failure report sent.\n'
+    if jq -e '.pending == true' <<<"$response" >/dev/null 2>&1; then
+        printf 'Awtarchy failure report is still processing. The sanitized report was kept locally for retry.\n'
+        return 75
     fi
+    jq -e '
+        .ok == true
+        and (.pending != true)
+        and (.created == true or .deduplicated == true)
+        and (.issue_number | type == "number")
+        and (.issue_url | type == "string" and length > 0)
+    ' <<<"$response" >/dev/null 2>&1 || return 1
+
+    issue_url="$(jq -r '.issue_url' <<<"$response" 2>/dev/null || true)"
+    rm -f -- "$path"
+    printf 'Awtarchy failure report sent: %s\n' "$issue_url"
 }
 
 review_report() {
@@ -306,7 +314,7 @@ interactive_terminal() {
 }
 
 prompt_report() {
-    local path="$1" choice=""
+    local path="$1" choice="" rc=0
     interactive_terminal || return 0
 
     while true; do
@@ -320,7 +328,9 @@ prompt_report() {
         IFS= read -r choice </dev/tty || return 0
         case "${choice,,}" in
             s|send)
-                if submit_report "$path" >/dev/tty 2>&1; then
+                rc=0
+                submit_report "$path" >/dev/tty 2>&1 || rc=$?
+                if (( rc == 0 || rc == 75 )); then
                     return 0
                 fi
                 printf 'Report submission failed. The sanitized report was kept locally for later.\n' >/dev/tty
