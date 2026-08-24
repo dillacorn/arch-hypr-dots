@@ -264,13 +264,24 @@ export function validateFailurePayload(value: unknown): FailurePayload {
   };
 }
 
-export function canonicalFailureId(payload: FailurePayload): string {
+export function canonicalFailureRateLimitId(payload: FailurePayload): string {
   return [
     payload.schema_version,
     payload.report_type,
     payload.component,
     payload.failure_stage,
     payload.error_code,
+  ].join('|');
+}
+
+export function canonicalFailureId(payload: FailurePayload): string {
+  const base = canonicalFailureRateLimitId(payload);
+  if (!payload.diagnostic) return base;
+  return [
+    base,
+    'diagnostic',
+    payload.diagnostic.kind,
+    payload.diagnostic.managed_file,
   ].join('|');
 }
 
