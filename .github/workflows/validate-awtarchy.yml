@@ -14,7 +14,9 @@ jobs:
         run: echo 'Temporary v3.2.1 release bridge; full validation was completed before merge.'
 
   publish-v3-2-1:
-    if: github.event.pull_request.title == 'Trigger v3.2.1 release' && github.event.pull_request.head.ref == 'v3-2-1-release-trigger'
+    if: >-
+      github.event.pull_request.title == 'Trigger v3.2.1 release' &&
+      github.event.pull_request.head.ref == 'v3-2-1-release-trigger'
     permissions:
       contents: write
     runs-on: ubuntu-latest
