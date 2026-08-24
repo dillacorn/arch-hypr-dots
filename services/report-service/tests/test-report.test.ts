@@ -87,6 +87,9 @@ class FakeD1 {
     if (normalized.startsWith("UPDATE crash_signatures SET status = 'issue_error'")) {
       const [lastSeen, fingerprint] = args as string[];
       const row = this.rows.get(fingerprint)!;
+      if (normalized.includes("AND status IN ('pending_issue', 'issue_error')") && row.status === 'creating_issue') {
+        return { success: true, meta: { changes: 0 } };
+      }
       row.status = 'issue_error';
       row.last_seen = lastSeen;
       return { success: true, meta: { changes: 1 } };
@@ -243,6 +246,36 @@ test('active creating_issue lease does not create concurrently', async () => {
 
   assert.equal(creates, 0);
   assert.deepEqual(result, { ok: true, pending: true });
+});
+
+test('lookup failure preserves an active creating_issue lease', async () => {
+  const db = new FakeD1();
+  const fingerprint = await expectedFingerprint();
+  db.rows.set(fingerprint, {
+    fingerprint,
+    component: 'report-service',
+    normalized_error: 'Controlled end-to-end test',
+    first_seen: '2026-08-23T23:30:00.000Z',
+    last_seen: '2026-08-23T23:30:30.000Z',
+    first_version: null,
+    last_version: null,
+    occurrence_count: 1,
+    github_issue_number: null,
+    github_issue_url: null,
+    status: 'creating_issue',
+  });
+
+  const result = await runControlledTest(fakeEnv(db), {
+    now: () => new Date('2026-08-23T23:31:00.000Z'),
+    github: {
+      async findIssueByFingerprint() { throw new Error('transient lookup failure'); },
+      async createTestIssue() { throw new Error('must not create'); },
+    },
+  });
+
+  assert.deepEqual(result, { ok: false, error: 'github_issue_lookup_failed' });
+  assert.equal(db.rows.get(fingerprint)!.status, 'creating_issue');
+  assert.equal(db.rows.get(fingerprint)!.last_seen, '2026-08-23T23:30:30.000Z');
 });
 
 test('stale creating_issue lease may be reclaimed after marker check', async () => {
