@@ -17,8 +17,8 @@ jobs:
         max-changes-for-label: '2' # Flag PRs with 2 or fewer changes
         label-message: 'This PR has been flagged for review due to minimal changes. Please ensure your contribution adds meaningful value.'
 
-  publish-v3-2-0:
-    if: github.event.pull_request.title == 'Trigger v3.2.0 release' && github.event.pull_request.head.ref == 'v3-2-0-release-trigger'
+  publish-v3-2-1:
+    if: github.event.pull_request.title == 'Trigger v3.2.1 release' && github.event.pull_request.head.ref == 'v3-2-1-release-trigger'
     runs-on: ubuntu-latest
     steps:
       - name: Check out main
@@ -27,11 +27,13 @@ jobs:
           fetch-depth: 0
           ref: main
 
-      - name: Publish Awtarchy v3.2.0
+      - name: Publish Awtarchy v3.2.1
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_SHA: 9a96b5352461fc88e31c8fe690eb4487a3e16de4
-          TARGET_TREE: 192934acba334e350abd6e2e76de27a664880bc2
+          TARGET_SHA: 7f403acf1dbc8957666dc8324359e91f3ff0f9fa
+          TARGET_TREE: 5b878335bfd49dec8fb164e456c1ef103df18156
+          RELEASE_TAG: v3.2.1
+          RELEASE_NAME: Awtarchy v3.2.1 Quickshell
         run: |
           set -euo pipefail
 
@@ -40,31 +42,32 @@ jobs:
           git diff --quiet "$TARGET_SHA" HEAD -- . \
             ':(exclude).github/workflows/antispam-pr-labeler.yml'
 
-          if git ls-remote --exit-code --tags origin refs/tags/v3.2.0 >/dev/null 2>&1; then
-            echo 'v3.2.0 tag already exists; refusing to recreate it.' >&2
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "${RELEASE_TAG} tag already exists; refusing to recreate it." >&2
             exit 1
           fi
 
-          if gh release view v3.2.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo 'v3.2.0 release already exists; refusing to replace it.' >&2
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "${RELEASE_TAG} release already exists; refusing to replace it." >&2
             exit 1
           fi
 
-          gh release view v3.1.5 --repo "$GITHUB_REPOSITORY" \
-            --json name,isDraft,isPrerelease,body >v3.1.5-release.json
+          gh release view v3.2.0 --repo "$GITHUB_REPOSITORY" \
+            --json name,isDraft,isPrerelease,body >v3.2.0-release.json
 
           jq -e '
-            .name == "Awtarchy v3.1.5 Quickshell"
+            .name == "Awtarchy v3.2.0 Quickshell"
             and .isDraft == false
             and .isPrerelease == false
-          ' v3.1.5-release.json >/dev/null
-          jq -r '.body' v3.1.5-release.json >v3.1.5-release.md
+          ' v3.2.0-release.json >/dev/null
+
+          jq -r '.body' v3.2.0-release.json >v3.2.0-release.md
 
           python3 - <<'PY'
           from pathlib import Path
           import re
 
-          source = Path('v3.1.5-release.md').read_text()
+          source = Path('v3.2.0-release.md').read_text()
           lines = source.splitlines(keepends=True)
           h2 = [i for i, line in enumerate(lines) if re.match(r'^##\s+\S', line)]
           sections = []
@@ -76,7 +79,7 @@ jobs:
           install_idx = next((i for i, (_, block) in enumerate(sections)
                               if 'sudo pacman -S git --noconfirm' in block), None)
           if install_idx is None:
-              raise SystemExit('v3.1.5 release does not contain expected installation text')
+              raise SystemExit('v3.2.0 release does not contain expected installation text')
 
           start_idx = install_idx
           for i in range(install_idx, -1, -1):
@@ -86,19 +89,14 @@ jobs:
                   start_idx = i
                   break
 
-          end_idx = None
-          for i in range(install_idx, len(sections)):
-              title = sections[i][0].casefold()
-              if 'existing awtarchy' in title or 'existing user' in title:
-                  end_idx = i
-                  break
+          end_idx = next((i for i in range(install_idx, len(sections))
+                          if 'existing awtarchy' in sections[i][0].casefold()
+                          or 'existing user' in sections[i][0].casefold()), None)
           if end_idx is None:
-              for i in range(install_idx, len(sections)):
-                  if 'awtarchy update' in sections[i][1]:
-                      end_idx = i
-                      break
+              end_idx = next((i for i in range(install_idx, len(sections))
+                              if 'awtarchy update' in sections[i][1]), None)
           if end_idx is None:
-              raise SystemExit('could not identify v3.1.5 Getting Started/install block')
+              raise SystemExit('could not identify v3.2.0 installation block')
 
           installation = '\n'.join(block for _, block in sections[start_idx:end_idx + 1]).strip()
           required = (
@@ -109,112 +107,85 @@ jobs:
           )
           missing = [item for item in required if item not in installation]
           if missing:
-              raise SystemExit(f'v3.1.5 installation block missing expected text: {missing}')
+              raise SystemExit(f'v3.2.0 installation block missing expected text: {missing}')
 
-          Path('v3.1.5-installation.md').write_text(installation + '\n')
-          installation = installation.replace('v3.1.5', 'v3.2.0')
+          installation = installation.replace('v3.2.0', 'v3.2.1')
 
-          body = f'''# Awtarchy v3.2.0 Quickshell
+          body = f'''# Awtarchy v3.2.1 Quickshell
 
-Awtarchy v3.2.0 adds user-approved anonymous failure reporting for recognized Awtarchy and Quickshell failures, backed by a production-tested report service designed around explicit consent, strict data minimization, and duplicate-safe GitHub issue creation.
+Awtarchy v3.2.1 adds scheduled Night Light controls to Quick Settings and makes user-approved anonymous Quickshell failure reports substantially more actionable while preserving strict data minimization.
 
 {installation}
 
-## Anonymous failure reporting
+## Night Light scheduling
 
-- Recognized failures can prepare a sanitized report locally without transmitting anything automatically.
-- The consent flow provides **Send**, **Review**, and **Don't send**. Review displays the exact structured payload before transmission, and the user is told that an accepted report may become part of a public GitHub issue.
-- Noninteractive failures stay pending locally instead of spawning a terminal during a broken session. Pending reports can resurface through normal Awtarchy maintenance and healthy Quickshell startup.
-- Initial reporting covers Quickshell start/restart readiness, exhausted resume recovery, and post-update Quickshell failure after updater recovery is exhausted.
-- Reporting remains secondary to the original failure and does not silently replace the updater, recovery, or Quickshell result.
+- Added a Samsung-style daily Night Light schedule directly to Quick Settings with start time, end time, and scheduled color temperature.
+- Overnight schedules identify the end time as the next day.
+- Scheduling uses native Hyprsunset profiles. Existing **Warmer**, **On/Off**, and **Cooler** manual controls continue to work.
+- Scheduling is disabled by default, and disabling a schedule preserves the selected start/end times and temperature for later reuse.
+- Awtarchy refuses to overwrite an existing user-owned `hyprsunset.conf`.
+- The Night Light and Vibrance cards now share the same row height for a consistent Quick Settings layout.
 
-## Report service and privacy
+## Sanitized failure diagnostics
 
-- Added the production Cloudflare Worker and D1 report service plus the restricted Awtarchy Report Bot GitHub App.
-- New recognized failure signatures can create a server-generated GitHub issue, while repeated reports reuse the same issue through stable fingerprint deduplication.
-- Report payloads exclude raw logs, usernames, hostnames, home-directory paths, command history, clipboard contents, VPN details, and persistent machine/install identifiers.
-- Cloudflare necessarily processes normal transport metadata. Transport IP is not copied into the Awtarchy report payload, D1 report record, GitHub issue content, or a persistent Awtarchy identifier.
-- Pending report files are confined and revalidated locally before transmission.
-- The public Worker strictly allowlists fields and recognized failure classes, bounds request bodies and outbound GitHub operations, and applies layered rate limiting before D1/GitHub work without requiring client authentication.
+- User-approved Quickshell failure reports can now include an optional tightly bounded diagnostic when Awtarchy can safely recognize one locally.
+- The diagnostic is limited to a fixed QML failure category, an Awtarchy-managed QML basename, and positive numeric line/column values.
+- Raw logs, raw exception/error text, arbitrary paths, usernames, hostnames, home-directory paths, and persistent installation identifiers remain excluded.
+- The public Worker independently validates diagnostic categories and managed filenames rather than trusting client-provided text.
+- Diagnostic issue fingerprints may refine by safe failure kind plus managed filename, while line/column, versions, GPU family, and machine-specific values remain outside the fingerprint.
+- Cloudflare rate limiting remains keyed to the original coarse failure class so rotating diagnostic values cannot increase the request budget.
+
+## Exact-source GitHub links
+
+- Recognized QML reports now generate a clickable GitHub source permalink to the exact failing Awtarchy revision, managed QML file, and reported line.
+- The client does not send a repository URL. The Worker constructs the permalink from server-owned repository coordinates plus the validated revision/file/line fields.
+- If a safe diagnostic cannot be extracted, reporting still works with the normal failure class and exact Awtarchy revision for manual investigation.
 
 ## Production validation
 
-- The production Worker was deployed and passed its health check before release.
-- A reviewed user-style submission created bot-authored issue #50, and an identical second submission resolved to the same issue, proving production deduplication.
-- A separate raw `curl` submission containing no `Authorization` header received HTTP 201 and created bot-authored issue #51, proving ordinary Awtarchy users require no Cloudflare login, GitHub login, API token, or client secret to submit an approved report.
-- Dedicated reporting CI covers shell integration, Worker behavior, Node 20/22 backend tests, Wrangler deployment dry-runs, request validation, rate limiting, deduplication, and concurrency/recovery behavior.
+- The updated Cloudflare report Worker was deployed and passed its production health check before release.
+- End-to-end issue #57 validated the enhanced path with an intentional `Theme.qml` parse failure: the report identified `qml_parse_error`, `Theme.qml`, location `67:1`, and linked directly to the exact failing source line.
+- The updater exhausted normal Quickshell recovery, offered the explicit review/send consent flow, created the sanitized GitHub issue, and rolled the user's changed files back safely.
+- The intentional failure was removed immediately afterward and the restored branch passed the full Awtarchy, anonymous-reporting, Node 20/22 report-service, and Wrangler dry-run validation suites.
 
 ## Post-release updates
 
-_Placeholder for possible tested post-release patches to v3.2.0._
+_Placeholder for possible tested post-release patches to v3.2.1._
 '''
           Path('release-notes.md').write_text(body)
           PY
 
-          grep -Fq '# Awtarchy v3.2.0 Quickshell' release-notes.md
+          grep -Fq '# Awtarchy v3.2.1 Quickshell' release-notes.md
           grep -Fq 'sudo pacman -S git --noconfirm' release-notes.md
           grep -Fq 'git clone https://github.com/dillacorn/awtarchy' release-notes.md
           grep -Fq 'sudo ./awtarchy-install.sh' release-notes.md
           grep -Fq 'awtarchy update' release-notes.md
-          grep -Fq 'issue #50' release-notes.md
-          grep -Fq 'issue #51' release-notes.md
+          grep -Fq '## Night Light scheduling' release-notes.md
+          grep -Fq '## Sanitized failure diagnostics' release-notes.md
+          grep -Fq 'issue #57' release-notes.md
           grep -Fq '## Post-release updates' release-notes.md
-          grep -Fq '_Placeholder for possible tested post-release patches to v3.2.0._' release-notes.md
 
-          gh release create v3.2.0 \
+          gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$TARGET_SHA" \
-            --title 'Awtarchy v3.2.0 Quickshell' \
+            --title "$RELEASE_NAME" \
             --latest \
             --notes-file release-notes.md
 
-          test "$(git ls-remote origin refs/tags/v3.2.0 | awk '{print $1}')" = "$TARGET_SHA"
+          test "$(git ls-remote origin "refs/tags/${RELEASE_TAG}" | awk '{print $1}')" = "$TARGET_SHA"
 
-          gh release view v3.2.0 --repo "$GITHUB_REPOSITORY" \
-            --json name,targetCommitish,isDraft,isPrerelease,body >verified-release.json
-          jq -e --arg target "$TARGET_SHA" '
-            .name == "Awtarchy v3.2.0 Quickshell"
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json name,targetCommitish,isDraft,isPrerelease,body,url >verified-release.json
+
+          jq -e --arg target "$TARGET_SHA" --arg name "$RELEASE_NAME" '
+            .name == $name
             and .targetCommitish == $target
             and .isDraft == false
             and .isPrerelease == false
           ' verified-release.json >/dev/null
+
           jq -r '.body' verified-release.json >verified-release.md
-
-          grep -Fq 'issue #51' verified-release.md
-          grep -Fq '## Post-release updates' verified-release.md
-          grep -Fq '_Placeholder for possible tested post-release patches to v3.2.0._' verified-release.md
-
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          old = Path('v3.1.5-installation.md').read_text().strip()
-          body = Path('verified-release.md').read_text()
-          lines = body.splitlines(keepends=True)
-          h2 = [i for i, line in enumerate(lines) if re.match(r'^##\s+\S', line)]
-          sections = []
-          for pos, start in enumerate(h2):
-              end = h2[pos + 1] if pos + 1 < len(h2) else len(lines)
-              title = re.sub(r'^##\s+', '', lines[start]).strip()
-              sections.append((title, ''.join(lines[start:end]).rstrip() + '\n'))
-          install_idx = next(i for i, (_, block) in enumerate(sections)
-                             if 'sudo pacman -S git --noconfirm' in block)
-          start_idx = install_idx
-          for i in range(install_idx, -1, -1):
-              if sections[i][0].casefold() in {
-                  'getting started', 'start here', 'fresh install', 'fresh installation'
-              }:
-                  start_idx = i
-                  break
-          end_idx = next((i for i in range(install_idx, len(sections))
-                          if 'existing awtarchy' in sections[i][0].casefold()
-                          or 'existing user' in sections[i][0].casefold()), None)
-          if end_idx is None:
-              end_idx = next((i for i in range(install_idx, len(sections))
-                              if 'awtarchy update' in sections[i][1]), None)
-          if end_idx is None:
-              raise SystemExit('could not identify published install block')
-          new = '\n'.join(block for _, block in sections[start_idx:end_idx + 1]).strip()
-          if new.replace('v3.2.0', 'v3.1.5') != old:
-              raise SystemExit('published v3.2.0 Getting Started/install text does not match v3.1.5')
-          PY
+          grep -Fq '## Night Light scheduling' verified-release.md
+          grep -Fq '## Sanitized failure diagnostics' verified-release.md
+          grep -Fq 'issue #57' verified-release.md
+          jq -r '.url' verified-release.json
