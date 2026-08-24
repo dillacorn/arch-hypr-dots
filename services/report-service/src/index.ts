@@ -4,6 +4,7 @@ import {
   runFailureReport,
   validateFailurePayload,
   type FailurePayload,
+  type FailureReportOptions,
   type FailureReportResult,
 } from './failure-report.ts';
 import { runControlledTest, type ControlledTestResult, type ReportServiceEnv } from './test-report.ts';
@@ -19,6 +20,7 @@ type RunTest = (env: WorkerEnv) => Promise<ControlledTestResult | Record<string,
 type RunReport = (
   env: WorkerEnv,
   payload: FailurePayload,
+  options?: FailureReportOptions,
 ) => Promise<FailureReportResult | Record<string, unknown>>;
 
 const MAX_REPORT_BYTES = 32 * 1024;
@@ -139,12 +141,14 @@ export async function handleRequest(
 
     const rateLimit = await allowProductionReport(env, payload);
     if (rateLimit === null) return json({ ok: false, error: 'service_unavailable' }, 503);
-    if (!rateLimit) return json({ ok: false, error: 'rate_limited' }, 429);
 
     try {
-      const result = await runReport(env, payload);
+      const result = await runReport(env, payload, { rateLimitAllowed: rateLimit });
       if ('pending' in result && result.pending === true) return json(result, 202);
-      if ('ok' in result && result.ok === false) return json(result, 502);
+      if ('ok' in result && result.ok === false) {
+        if ('error' in result && result.error === 'rate_limited') return json(result, 429);
+        return json(result, 502);
+      }
       if ('created' in result && result.created === true) return json(result, 201);
       return json(result, 200);
     } catch {
