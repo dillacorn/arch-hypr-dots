@@ -90,7 +90,7 @@ test('safe diagnostic class refines the bug signature without using location or 
   assert.equal(canonicalFailureRateLimitId(otherManagedFile), coarse);
 });
 
-test('GitHub issue renders only the structured diagnostic fields', async () => {
+test('GitHub issue renders only the structured diagnostic fields and exact source permalink', async () => {
   const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
   const pem = privateKey.export({ format: 'pem', type: 'pkcs1' }).toString();
   let posted: any = null;
@@ -136,6 +136,10 @@ test('GitHub issue renders only the structured diagnostic fields', async () => {
   assert.match(posted.body, /Diagnostic: `qml_parse_error`/);
   assert.match(posted.body, /Managed file: `Theme\.qml`/);
   assert.match(posted.body, /Location: `65:1`/);
+  assert.match(
+    posted.body,
+    /https:\/\/github\.com\/dillacorn\/awtarchy\/blob\/0123456789abcdef0123456789abcdef01234567\/config\/quickshell\/awtarchy\/Theme\.qml#L65/,
+  );
   assert.equal(posted.body.includes('/home/'), false);
   assert.equal(posted.body.includes('secret raw log text'), false);
 });
