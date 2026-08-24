@@ -31,7 +31,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate:
@@ -40,66 +40,6 @@ jobs:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
       - name: Install validation tools
         run: sudo apt-get update && sudo apt-get install -y jq shellcheck
-      - name: Apply queued-report resurfacing fix
-        if: github.event_name == 'push' && github.ref == 'refs/heads/anonymous-crash-reporting-testing'
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          replacements = [
-              (
-                  Path('config/hypr/scripts/awtarchy_report_failure.sh'),
-                  'pending_reports() {\n    [[ -d "$REPORT_DIR" && ! -L "$REPORT_DIR" && -O "$REPORT_DIR" ]] || return 0',
-                  'pending_reports() {\n    local quiet_empty="${1:-0}"\n    [[ -d "$REPORT_DIR" && ! -L "$REPORT_DIR" && -O "$REPORT_DIR" ]] || return 0',
-              ),
-              (
-                  Path('config/hypr/scripts/awtarchy_report_failure.sh'),
-                  '    if (( valid_count == 0 )); then\n        printf \'No pending Awtarchy failure reports.\\n\'\n    fi',
-                  '    if (( valid_count == 0 && quiet_empty == 0 )); then\n        printf \'No pending Awtarchy failure reports.\\n\'\n    fi',
-              ),
-              (
-                  Path('config/hypr/scripts/awtarchy_report_failure.sh'),
-                  '        pending)\n            (( $# == 1 )) || return 2\n            pending_reports\n            ;;\n        notify-pending)',
-                  '        pending)\n            (( $# == 1 )) || return 2\n            pending_reports\n            ;;\n        prompt-pending)\n            (( $# == 1 )) || return 2\n            pending_reports 1\n            ;;\n        notify-pending)',
-              ),
-              (
-                  Path('config/hypr/scripts/awtarchy_report_failure.sh'),
-                  'usage: awtarchy_report_failure.sh {capture COMPONENT STAGE ERROR|pending|send FILE|review FILE|discard FILE|notify-pending}',
-                  'usage: awtarchy_report_failure.sh {capture COMPONENT STAGE ERROR|pending|prompt-pending|send FILE|review FILE|discard FILE|notify-pending}',
-              ),
-              (
-                  Path('local/bin/awtarchy'),
-                  '    "")\n      maintenance_menu\n      ;;',
-                  '    "")\n      local report_helper="${TARGET_HOME}/.config/hypr/scripts/awtarchy_report_failure.sh"\n      if [[ -f "$report_helper" && ! -L "$report_helper" && -O "$report_helper" ]]; then\n        bash "$report_helper" prompt-pending || true\n      fi\n      maintenance_menu\n      ;;',
-              ),
-          ]
-
-          contents = {}
-          for path, old, new in replacements:
-              text = contents.get(path, path.read_text(encoding='utf-8'))
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{path}: expected exactly one match, found {count}: {old[:80]!r}')
-              contents[path] = text.replace(old, new, 1)
-
-          for path, text in contents.items():
-              path.write_text(text, encoding='utf-8')
-          PY
-
-          bash -n config/hypr/scripts/awtarchy_report_failure.sh
-          bash -n local/bin/awtarchy
-          shellcheck config/hypr/scripts/awtarchy_report_failure.sh
-          shellcheck local/bin/awtarchy
-          bash tests/test-anonymous-reporting.sh
-          bash tests/test-update-report-stage.sh
-          git diff --check
-          git diff -- config/hypr/scripts/awtarchy_report_failure.sh local/bin/awtarchy
-
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add config/hypr/scripts/awtarchy_report_failure.sh local/bin/awtarchy
-          git commit -m 'fix: surface queued reports in maintenance menu'
-          git push origin HEAD:anonymous-crash-reporting-testing
       - name: Bash syntax
         run: |
           bash -n config/hypr/scripts/awtarchy_report_failure.sh
