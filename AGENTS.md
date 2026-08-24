@@ -346,6 +346,20 @@ When working on a release:
 - do not increment the version unless explicitly requested;
 - verify the published release state after modification.
 
+### Editing an existing published release body
+
+If the exact GitHub release must be edited but the connected GitHub tool does not expose Release read/write actions, do not declare the release inaccessible and do not substitute `README.md`, another ref, or a recreated tag. A proven fallback is a one-use GitHub Actions release bridge on an isolated helper branch.
+
+- Start from the current `main` commit on a temporary helper branch. Do not merge the helper branch merely to edit release notes.
+- Add a narrowly guarded one-use job to an existing PR-triggered workflow on that helper branch, then open a specifically named temporary PR to trigger it. Keep the job conditional on the exact PR title/head branch.
+- Give only that job `permissions: contents: write`; keep repository-wide workflow permissions unchanged.
+- Before writing, use `gh release view` and record the exact release name/target plus the exact tag SHA. Generate the new body from the currently published body so unrelated release-note sections are preserved.
+- Update only the existing body with `gh release edit <tag> --notes-file <file>`. Never recreate, delete, or move the tag/release just to change notes.
+- Immediately re-read with `gh release view`, compare the complete published body to the intended body, and verify the tag SHA and release metadata are unchanged.
+- Keep temporary workflow YAML valid. For generated multiline text inside `run: |`, prefer escaped `\n` strings or another indentation-safe form rather than unindented multiline literals.
+- Close the temporary PR and delete helper branches/workflow machinery after verification.
+- If a direct authenticated Release update action is available in the current tool surface, prefer it over the temporary bridge.
+
 Release/update behavior may include post-release runtime changes from `main`; inspect current implementation and release state rather than assuming the tag contains every updater fix.
 
 ## Validation strategy
