@@ -44,6 +44,9 @@ WIREGUARD="${REPO_ROOT}/config/hypr/scripts/quickshell_wireguard.sh"
 WIREGUARD_PRIVILEGED="${REPO_ROOT}/local/libexec/awtarchy/wireguard-helper"
 SHELL_MANAGER="${REPO_ROOT}/config/hypr/scripts/quickshell.sh"
 APP_STATE="${REPO_ROOT}/config/hypr/scripts/quickshell_application_state.sh"
+UPDATE_NOTIFIER="${REPO_ROOT}/config/hypr/scripts/quickshell_update_notifications.sh"
+SHELL_QML="${REPO_ROOT}/config/quickshell/awtarchy/shell.qml"
+NOTIFICATIONS_QML="${REPO_ROOT}/config/quickshell/awtarchy/Notifications.qml"
 
 assert_not_contains "$INSTALLER" '--quickshell-command'
 assert_not_contains "$INSTALLER" 'awtarchy-quickshell'
@@ -264,7 +267,14 @@ PATH="${volume_test_bin}:$PATH" \
 [[ $(<"$volume_test_state") == 105 ]] \
   || fail 'Bar volume did not increase from 100% to 105% with a 125% limit'
 assert_not_contains "${REPO_ROOT}/config/quickshell/awtarchy/FlyoutSettings.qml" 'text: "Maximum output volume"'
-assert_contains "${REPO_ROOT}/config/quickshell/awtarchy/Notifications.qml" 'Maximum simultaneous popups · Global'
+assert_contains "$NOTIFICATIONS_QML" 'Maximum simultaneous popups · Global'
+assert_contains "$NOTIFICATIONS_QML" 'Awtarchy update notifications · Global'
+assert_contains "$NOTIFICATIONS_QML" 'set-update-notifications'
+[[ -x $UPDATE_NOTIFIER ]] || fail 'update notification checker is not executable'
+assert_contains "$SHELL_QML" 'id: initialUpdateNotificationCheck'
+assert_contains "$SHELL_QML" 'interval: 30000'
+assert_contains "$SHELL_QML" 'id: periodicUpdateNotificationCheck'
+assert_contains "$SHELL_QML" 'interval: 21600000'
 assert_not_contains "${REPO_ROOT}/config/quickshell/awtarchy/Notifications.qml" 'persisted.popupLimit'
 assert_not_contains "${REPO_ROOT}/config/quickshell/awtarchy/Notifications.qml" 'notification-popup-limits.json'
 assert_contains "$LAUNCHER" 'Update to current Awtarchy UI files and create backups (recommended)'
