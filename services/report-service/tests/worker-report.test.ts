@@ -76,6 +76,36 @@ test('POST /v1/report rejects bodies over 32 KiB', async () => {
   assert.equal(response.status, 413);
 });
 
+test('POST /v1/report stops reading an oversized streamed body at 32 KiB', async () => {
+  let pulls = 0;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      pulls += 1;
+      if (pulls === 1) {
+        controller.enqueue(new Uint8Array(32769));
+        return;
+      }
+      throw new Error('oversized request body was read past the limit');
+    },
+  });
+  const init = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: stream,
+    duplex: 'half',
+  } as RequestInit & { duplex: 'half' };
+
+  const response = await handleRequest(
+    new Request('https://example.test/v1/report', init),
+    env,
+    undefined,
+    async () => ({ ok: true, created: true, deduplicated: false, issue_number: 1, issue_url: 'x' }),
+  );
+
+  assert.equal(response.status, 413);
+  assert.equal(pulls, 1);
+});
+
 test('POST /v1/report fails closed when rate limiting is unavailable', async () => {
   let called = 0;
   const response = await handleRequest(
