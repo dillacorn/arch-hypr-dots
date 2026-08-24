@@ -29,7 +29,7 @@ GITHUB_REPO                Text
 TEST_AUTH_TOKEN            Secret
 ```
 
-The Worker also uses the source-controlled `REPORT_RATE_LIMITER` Cloudflare Rate Limiting binding for the public production route.
+The Worker also uses the source-controlled `REPORT_CLIENT_RATE_LIMITER` and `REPORT_SIGNATURE_RATE_LIMITER` Cloudflare Rate Limiting bindings for the public production route.
 
 Never commit `GITHUB_APP_PRIVATE_KEY` or `TEST_AUTH_TOKEN`.
 
@@ -64,19 +64,23 @@ Machine/version diagnostics do not split one bug into separate signatures.
 
 ## Abuse protection
 
-After schema validation and before any D1/GitHub work, `/v1/report` uses Cloudflare's native Rate Limiting binding. Version 1 configures five calls per 60 seconds for each canonical failure signature in each Cloudflare location. The limiter key is the same stable server-validated signature material used for fingerprinting; Awtarchy does not add a user, machine, install, or IP identifier to that key.
+After schema validation and before any D1/GitHub reporting work, `/v1/report` applies two Cloudflare native Rate Limiting bindings.
 
-Cloudflare documents these counters as location-local, permissive, and eventually consistent. This limiter is therefore best-effort abuse reduction and D1 protection, not a strict global request cap or accounting system.
+The client limiter allows three calls per 60 seconds for each `CF-Connecting-IP` plus canonical failure-signature pair in a Cloudflare location. This prevents one transport client from immediately consuming the entire signature-wide budget. The source IP is used only for this transient Cloudflare counter; it is not written into the report payload, D1, GitHub, or a persistent Awtarchy identifier.
 
-If the rate-limiter binding is unavailable, the production route fails closed with `503` rather than accepting unprotected reports. When the limiter rejects a request, the Worker returns `429` and does not call the D1/GitHub reporting workflow. Awtarchy keeps a failed submission pending locally so it can be retried later.
+The signature limiter then allows 20 calls per 60 seconds for each canonical failure signature in a Cloudflare location. This provides a separate ceiling on D1/GitHub work even if abuse is distributed across clients.
 
-The limiter is intentionally before D1 because the Workers Free plan has bounded daily D1 write capacity. It is abuse protection, not an identity system.
+Cloudflare documents Worker rate-limit counters as location-local, permissive, and eventually consistent. These limits are therefore best-effort abuse reduction and D1 protection, not strict global request caps or accounting. Cloudflare also cautions that IPs may be shared by legitimate users, which is why Awtarchy does not use the client-IP limiter as its only abuse boundary.
+
+If either rate-limiter binding is unavailable, the production route fails closed with `503`. If either limiter rejects a request, the Worker returns `429` before D1/GitHub reporting work. Awtarchy keeps a failed submission pending locally so it can be retried later.
 
 ## D1 and deduplication
 
-D1 stores aggregate signature state rather than permanent raw-report history. Repeated valid reports for the same server-generated fingerprint increment the same row instead of creating a new GitHub issue.
+D1 stores aggregate signature state rather than permanent raw-report history. Repeated valid reports for the same server-generated fingerprint increment the same row instead of creating a new GitHub issue. `occurrence_count` represents accepted report events, not unique affected users.
 
-Issue creation uses a short ownership lease and a fingerprint marker in the GitHub issue body. If issue creation succeeds but the Worker loses the response before linking D1, a later request searches existing issues for the exact marker and recovers the link before creating another issue.
+Issue creation uses a short ownership lease and a fingerprint marker in the GitHub issue body. If issue creation succeeds but the Worker loses the response before linking D1, a later request searches existing issues for the exact marker and recovers the link before creating another issue. Recovery accepts only issues authored by the Awtarchy Report Bot.
+
+GitHub API calls are bounded by explicit request timeouts so one creation attempt cannot outlive the D1 creation lease under normal request execution.
 
 ## Tests
 
@@ -108,7 +112,7 @@ npx wrangler@latest deploy
 
 Skip `wrangler login` when already authenticated.
 
-`wrangler.jsonc` uses `keep_vars: true` and records the dashboard-backed text variables, D1 binding, rate-limiter binding, preview setting, and observability settings. Cloudflare secrets remain managed outside the repository.
+`wrangler.jsonc` uses `keep_vars: true` and records the dashboard-backed text variables, D1 binding, both rate-limiter bindings, preview setting, and observability settings. Cloudflare secrets remain managed outside the repository.
 
 ## Verify health
 
@@ -152,4 +156,4 @@ After production reporting is proven and the maintenance endpoint is no longer u
 
 ## Privacy
 
-See the repository root [PRIVACY.md](../../PRIVACY.md). The Worker does not intentionally store request IPs as report fields or add persistent client identifiers. Cloudflare still necessarily processes connection metadata at the infrastructure layer.
+See the repository root [PRIVACY.md](../../PRIVACY.md). The Worker does not intentionally store request IPs as report fields or persistent client identifiers. It uses Cloudflare's client-IP transport header only to partition the first transient rate-limit counter. Cloudflare still necessarily processes connection metadata at the infrastructure layer.
