@@ -7,6 +7,7 @@ on:
       - config/hypr/scripts/awtarchy_report_failure.sh
       - config/hypr/scripts/quickshell.sh
       - config/hypr/scripts/quickshell_resume_recover.sh
+      - local/share/awtarchy/quickshell-managed-history.sha256
       - tests/test-anonymous-reporting.sh
       - tests/test-quickshell-report-hooks.sh
       - tests/test-quickshell-resume-report-hooks.sh
@@ -16,6 +17,7 @@ on:
       - config/hypr/scripts/awtarchy_report_failure.sh
       - config/hypr/scripts/quickshell.sh
       - config/hypr/scripts/quickshell_resume_recover.sh
+      - local/share/awtarchy/quickshell-managed-history.sha256
       - tests/test-anonymous-reporting.sh
       - tests/test-quickshell-report-hooks.sh
       - tests/test-quickshell-resume-report-hooks.sh
@@ -48,6 +50,14 @@ jobs:
           shellcheck tests/test-anonymous-reporting.sh
           shellcheck tests/test-quickshell-report-hooks.sh
           shellcheck tests/test-quickshell-resume-report-hooks.sh
+      - name: Managed history registration
+        run: |
+          hash="$(sha256sum config/hypr/scripts/quickshell.sh | awk '{print $1}')"
+          entry="${hash}"$'\t''.config/hypr/scripts/quickshell.sh'
+          if ! grep -Fxq "$entry" local/share/awtarchy/quickshell-managed-history.sha256; then
+            echo "Current quickshell.sh hash missing from managed history: ${hash}"
+            exit 1
+          fi
       - name: Anonymous reporting tests
         run: |
           bash tests/test-anonymous-reporting.sh
