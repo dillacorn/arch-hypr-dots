@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
-import { canonicalFailureId, validateFailurePayload } from '../src/failure-report.ts';
+import {
+  canonicalFailureId,
+  canonicalFailureRateLimitId,
+  validateFailurePayload,
+} from '../src/failure-report.ts';
 import { createGitHubClient } from '../src/github.ts';
 
 const base = {
@@ -53,7 +57,7 @@ test('rejects arbitrary diagnostic text, paths, filenames, kinds, and invalid lo
   );
 });
 
-test('safe diagnostic class refines the bug signature without using location', () => {
+test('safe diagnostic class refines the bug signature without using location or weakening rate limits', () => {
   const withoutDiagnostic = validateFailurePayload(base);
   const withDiagnostic = validateFailurePayload({ ...base, diagnostic });
   const movedDiagnostic = validateFailurePayload({
@@ -78,6 +82,12 @@ test('safe diagnostic class refines the bug signature without using location', (
   assert.equal(canonicalFailureId(withDiagnostic).includes('17'), false);
   assert.equal(canonicalFailureId(withDiagnostic).includes(base.awtarchy_config_version), false);
   assert.equal(canonicalFailureId(withDiagnostic).includes(base.awtarchy_command_revision), false);
+
+  const coarse = '1|failure|quickshell|restart_after_update|quickshell_not_ready';
+  assert.equal(canonicalFailureRateLimitId(withoutDiagnostic), coarse);
+  assert.equal(canonicalFailureRateLimitId(withDiagnostic), coarse);
+  assert.equal(canonicalFailureRateLimitId(importDiagnostic), coarse);
+  assert.equal(canonicalFailureRateLimitId(otherManagedFile), coarse);
 });
 
 test('GitHub issue renders only the structured diagnostic fields', async () => {
