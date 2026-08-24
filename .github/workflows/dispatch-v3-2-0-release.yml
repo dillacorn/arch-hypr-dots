@@ -6,6 +6,7 @@ on:
 
 permissions:
   actions: write
+  issues: write
 
 jobs:
   dispatch:
@@ -21,3 +22,5 @@ jobs:
         run: |
           set -euo pipefail
           gh workflow run publish-v3-2-0-scheduled.yml --repo "$GITHUB_REPOSITORY"
+          gh issue comment 52 --repo "$GITHUB_REPOSITORY" \
+            --body 'v3.2.0 publisher dispatch accepted by GitHub Actions.'
