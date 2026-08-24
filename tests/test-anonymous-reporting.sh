@@ -47,13 +47,16 @@ export PATH="$BIN:/usr/bin:/bin"
 export CURL_CALLS="$TMP/curl.calls"
 export AWTARCHY_REPORT_NO_PROMPT=1
 
+ATTEMPTED_VERSION='anonymous-crash-reporting-testing@fedcba9876543210fedcba9876543210fedcba98'
+export AWTARCHY_REPORT_CONFIG_VERSION_OVERRIDE="$ATTEMPTED_VERSION"
 bash "$SCRIPT" capture quickshell restart_after_update quickshell_not_ready
+unset AWTARCHY_REPORT_CONFIG_VERSION_OVERRIDE
 REPORT="$STATE/awtarchy/reports/quickshell--restart_after_update--quickshell_not_ready.json"
 [[ -f "$REPORT" ]]
 [[ "$(stat -c '%a' "$REPORT")" == 600 ]]
 [[ ! -e "$CURL_CALLS" ]]
 
-jq -e '
+jq -e --arg attempted "$ATTEMPTED_VERSION" '
   keys == [
     "awtarchy_command_revision",
     "awtarchy_config_version",
@@ -72,6 +75,7 @@ jq -e '
   and .component == "quickshell"
   and .failure_stage == "restart_after_update"
   and .error_code == "quickshell_not_ready"
+  and .awtarchy_config_version == $attempted
   and .gpu_family == "AMD"
 ' "$REPORT" >/dev/null
 
