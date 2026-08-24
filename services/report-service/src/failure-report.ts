@@ -85,11 +85,15 @@ export type FailureReportResult =
       issue_url: string;
     }
   | { ok: true; pending: true }
-  | { ok: false; error: 'github_issue_lookup_failed' | 'github_issue_creation_failed' };
+  | {
+      ok: false;
+      error: 'rate_limited' | 'github_issue_lookup_failed' | 'github_issue_creation_failed';
+    };
 
-type Overrides = {
+export type FailureReportOptions = {
   now?: () => Date;
   github?: GitHubClient;
+  rateLimitAllowed?: boolean;
 };
 
 export class FailureValidationError extends Error {
@@ -253,16 +257,31 @@ function issueData(payload: FailurePayload, fingerprint: string): FailureIssueDa
 export async function runFailureReport(
   env: ReportServiceEnv,
   rawPayload: unknown,
-  overrides: Overrides = {},
+  options: FailureReportOptions = {},
 ): Promise<FailureReportResult> {
   const payload = validateFailurePayload(rawPayload);
-  const now = overrides.now?.() ?? new Date();
+  const now = options.now?.() ?? new Date();
   const nowIso = now.toISOString();
   const staleCutoff = new Date(now.getTime() - CREATION_LEASE_MS).toISOString();
   const fingerprint = await sha256Hex(canonicalFailureId(payload));
   const description = canonicalFailureDescription(payload);
   const version = payload.awtarchy_config_version;
-  const github = overrides.github ?? createGitHubClient(env);
+  const github = options.github ?? createGitHubClient(env);
+  const rateLimitAllowed = options.rateLimitAllowed ?? true;
+
+  if (!rateLimitAllowed) {
+    const existing = await selectRow(env.DB, fingerprint);
+    if (existing?.github_issue_number !== null && existing?.github_issue_url) {
+      return {
+        ok: true,
+        created: false,
+        deduplicated: true,
+        issue_number: existing.github_issue_number,
+        issue_url: existing.github_issue_url,
+      };
+    }
+    return { ok: false, error: 'rate_limited' };
+  }
 
   const insert = await env.DB.prepare(`
     INSERT OR IGNORE INTO crash_signatures (
