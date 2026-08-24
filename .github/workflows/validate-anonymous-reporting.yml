@@ -112,15 +112,19 @@ jobs:
               raise SystemExit('start_quickshell_update_shell anchor was not unique')
           text = text.replace(anchor, reporter, 1)
 
-          old_failure = '''  if ! start_quickshell_update_shell; then
-            rollback_quickshell_update
-            die "Quickshell did not start successfully. User files were rolled back."
-          fi'''
-          new_failure = '''  if ! start_quickshell_update_shell; then
-            rollback_quickshell_update
-            report_quickshell_update_failure "$source_label" "$target_home"
-            die "Quickshell did not start successfully. User files were rolled back."
-          fi'''
+          old_failure = (
+              '  if ! start_quickshell_update_shell; then\n'
+              '    rollback_quickshell_update\n'
+              '    die "Quickshell did not start successfully. User files were rolled back."\n'
+              '  fi'
+          )
+          new_failure = (
+              '  if ! start_quickshell_update_shell; then\n'
+              '    rollback_quickshell_update\n'
+              '    report_quickshell_update_failure "$source_label" "$target_home"\n'
+              '    die "Quickshell did not start successfully. User files were rolled back."\n'
+              '  fi'
+          )
           if text.count(old_failure) != 1:
               raise SystemExit('Quickshell startup failure block was not unique')
           text = text.replace(old_failure, new_failure, 1)
