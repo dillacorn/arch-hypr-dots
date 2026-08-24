@@ -217,3 +217,5 @@ Once you have a working minimal Arch installation, install Awtarchy:
 
           print(after['url'])
           PY
+
+# Temporary synchronize trigger for the one-use release bridge.
