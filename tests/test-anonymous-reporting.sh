@@ -37,6 +37,10 @@ cat >"$BIN/curl" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$CURL_CALLS"
 if [[ ${CURL_FAIL:-0} == 1 ]]; then exit 22; fi
+if [[ ${CURL_PENDING:-0} == 1 ]]; then
+    printf '{"ok":true,"pending":true,"fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}\n'
+    exit 0
+fi
 printf '{"ok":true,"created":true,"deduplicated":false,"issue_number":99,"issue_url":"https://github.com/dillacorn/awtarchy/issues/99"}\n'
 SH
 chmod +x "$BIN"/*
@@ -121,6 +125,15 @@ fi
 [[ ! -e "$CURL_CALLS" ]]
 cp -- "$ORIGINAL" "$REPORT"
 chmod 0600 "$REPORT"
+
+export CURL_PENDING=1
+if bash "$SCRIPT" send "$REPORT" >"$TMP/pending.out" 2>&1; then
+    echo '202 pending response was treated as a completed submission' >&2
+    exit 1
+fi
+[[ -f "$REPORT" ]]
+grep -Fq 'still processing' "$TMP/pending.out"
+unset CURL_PENDING
 
 bash "$SCRIPT" send "$REPORT" >/dev/null
 [[ ! -e "$REPORT" ]]
