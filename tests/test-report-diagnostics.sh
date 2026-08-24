@@ -6,11 +6,17 @@ SCRIPT="${ROOT}/config/hypr/scripts/awtarchy_report_failure.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+fail() {
+    printf 'FAIL: %s\n' "$*" >&2
+    exit 1
+}
+
 HOME_DIR="$TMP/home"
 STATE="$TMP/state"
 CACHE="$TMP/cache"
 BIN="$TMP/bin"
-MANAGED="$HOME_DIR/.config/quickshell/awtarchy"
+CONFIG="$HOME_DIR/.config"
+MANAGED="$CONFIG/quickshell/awtarchy"
 mkdir -p "$MANAGED" "$STATE/awtarchy" "$CACHE/awtarchy" "$BIN"
 
 printf 'pragma Singleton\n' >"$MANAGED/Theme.qml"
@@ -37,6 +43,7 @@ SH
 chmod +x "$BIN"/*
 
 export HOME="$HOME_DIR"
+export XDG_CONFIG_HOME="$CONFIG"
 export XDG_STATE_HOME="$STATE"
 export XDG_CACHE_HOME="$CACHE"
 export PATH="$BIN:/usr/bin:/bin"
@@ -53,20 +60,21 @@ LOG
 bash "$SCRIPT" capture quickshell restart_after_update quickshell_not_ready
 REPORT="$STATE/awtarchy/reports/quickshell--restart_after_update--quickshell_not_ready.json"
 
-jq -e '.diagnostic == {
+if ! jq -e '.diagnostic == {
   "kind":"qml_parse_error",
   "managed_file":"Theme.qml",
   "line":65,
   "column":1
-}' "$REPORT" >/dev/null
+}' "$REPORT" >/dev/null; then
+    jq . "$REPORT" >&2
+    fail 'managed QML parse error was not reduced to the expected structured diagnostic'
+fi
 
 if grep -Fq 'Syntax error' "$REPORT"; then
-    echo 'diagnostic leaked raw Quickshell error text' >&2
-    exit 1
+    fail 'diagnostic leaked raw Quickshell error text'
 fi
 if grep -Fq '/home/' "$REPORT"; then
-    echo 'diagnostic leaked a home-directory path' >&2
-    exit 1
+    fail 'diagnostic leaked a home-directory path'
 fi
 
 cat >"$LOG" <<'LOG'
@@ -75,12 +83,15 @@ cat >"$LOG" <<'LOG'
 LOG
 bash "$SCRIPT" capture quickshell restart quickshell_not_ready
 REPORT="$STATE/awtarchy/reports/quickshell--restart--quickshell_not_ready.json"
-jq -e '.diagnostic == {
+if ! jq -e '.diagnostic == {
   "kind":"qml_import_error",
   "managed_file":"shell.qml",
   "line":10,
   "column":1
-}' "$REPORT" >/dev/null
+}' "$REPORT" >/dev/null; then
+    jq . "$REPORT" >&2
+    fail 'managed QML import error was not classified without raw diagnostic text'
+fi
 
 cat >"$LOG" <<'LOG'
  ERROR: Failed to load configuration
@@ -88,6 +99,9 @@ cat >"$LOG" <<'LOG'
 LOG
 bash "$SCRIPT" capture quickshell start quickshell_not_ready
 REPORT="$STATE/awtarchy/reports/quickshell--start--quickshell_not_ready.json"
-jq -e 'has("diagnostic") | not' "$REPORT" >/dev/null
+if ! jq -e 'has("diagnostic") | not' "$REPORT" >/dev/null; then
+    jq . "$REPORT" >&2
+    fail 'non-managed QML path was accepted as a report diagnostic'
+fi
 
 printf '%s\n' 'sanitized Quickshell diagnostic extraction tests passed'
