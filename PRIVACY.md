@@ -74,6 +74,8 @@ The Awtarchy report payload does not contain an IP-address field or a persistent
 
 The public report route also uses Cloudflare's Worker Rate Limiting binding before D1/GitHub processing. Awtarchy keys this limiter only by the validated failure signature. It does not add an IP address, username, machine identifier, or installation identifier to the application limiter key.
 
+If a failure signature is temporarily rate-saturated but is already linked to an Awtarchy Report Bot issue, the Worker can return that existing issue without performing another aggregate D1 occurrence-count write. New or unlinked signatures remain rate-protected before GitHub lookup or issue creation. As a result, D1 occurrence counts are best-effort aggregate signals under abuse protection, not an exact count of affected users or submitted events.
+
 For that reason, Awtarchy describes the report payload as sanitized and without direct or persistent identity fields, and does not claim absolute network-layer anonymity.
 
 ## GitHub issues
