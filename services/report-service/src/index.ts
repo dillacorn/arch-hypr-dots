@@ -1,7 +1,20 @@
+import {
+  FailureValidationError,
+  runFailureReport,
+  validateFailurePayload,
+  type FailurePayload,
+  type FailureReportResult,
+} from './failure-report.ts';
 import { runControlledTest, type ControlledTestResult, type ReportServiceEnv } from './test-report.ts';
 
 export type WorkerEnv = ReportServiceEnv;
 type RunTest = (env: WorkerEnv) => Promise<ControlledTestResult | Record<string, unknown>>;
+type RunReport = (
+  env: WorkerEnv,
+  payload: FailurePayload,
+) => Promise<FailureReportResult | Record<string, unknown>>;
+
+const MAX_REPORT_BYTES = 32 * 1024;
 
 function json(value: unknown, status = 200): Response {
   return Response.json(value, {
@@ -31,15 +44,68 @@ function bearerToken(request: Request): string | null {
   return token.length > 0 ? token : null;
 }
 
+function isJsonContentType(request: Request): boolean {
+  const contentType = request.headers.get('Content-Type') ?? '';
+  return contentType.split(';', 1)[0].trim().toLowerCase() === 'application/json';
+}
+
+async function parseReportRequest(request: Request): Promise<FailurePayload> {
+  const contentLength = request.headers.get('Content-Length');
+  if (contentLength && /^\d+$/.test(contentLength) && Number(contentLength) > MAX_REPORT_BYTES) {
+    throw new FailureValidationError('payload_too_large');
+  }
+
+  const text = await request.text();
+  if (new TextEncoder().encode(text).byteLength > MAX_REPORT_BYTES) {
+    throw new FailureValidationError('payload_too_large');
+  }
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    throw new FailureValidationError('malformed_json');
+  }
+  return validateFailurePayload(raw);
+}
+
 export async function handleRequest(
   request: Request,
   env: WorkerEnv,
   runTest: RunTest = runControlledTest,
+  runReport: RunReport = runFailureReport,
 ): Promise<Response> {
   const url = new URL(request.url);
 
   if (request.method === 'GET' && url.pathname === '/health') {
     return json({ ok: true, service: 'awtarchy-reports', version: 1 });
+  }
+
+  if (request.method === 'POST' && url.pathname === '/v1/report') {
+    if (!isJsonContentType(request)) {
+      return json({ ok: false, error: 'unsupported_media_type' }, 415);
+    }
+
+    let payload: FailurePayload;
+    try {
+      payload = await parseReportRequest(request);
+    } catch (error) {
+      if (error instanceof FailureValidationError) {
+        const status = error.code === 'payload_too_large' ? 413 : 400;
+        return json({ ok: false, error: 'invalid_report', reason: error.code }, status);
+      }
+      return json({ ok: false, error: 'invalid_report' }, 400);
+    }
+
+    try {
+      const result = await runReport(env, payload);
+      if ('pending' in result && result.pending === true) return json(result, 202);
+      if ('ok' in result && result.ok === false) return json(result, 502);
+      if ('created' in result && result.created === true) return json(result, 201);
+      return json(result, 200);
+    } catch {
+      return json({ ok: false, error: 'internal_error' }, 500);
+    }
   }
 
   if (request.method === 'POST' && url.pathname === '/v1/test') {
