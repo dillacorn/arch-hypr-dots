@@ -47,7 +47,7 @@ export PATH="$BIN:/usr/bin:/bin"
 export CURL_CALLS="$TMP/curl.calls"
 export AWTARCHY_REPORT_NO_PROMPT=1
 
-"$SCRIPT" capture quickshell restart_after_update quickshell_not_ready
+bash "$SCRIPT" capture quickshell restart_after_update quickshell_not_ready
 REPORT="$STATE/awtarchy/reports/quickshell--restart_after_update--quickshell_not_ready.json"
 [[ -f "$REPORT" ]]
 [[ "$(stat -c '%a' "$REPORT")" == 600 ]]
@@ -88,15 +88,15 @@ if grep -Fq -- "$(hostname)" "$REPORT"; then
     exit 1
 fi
 
-"$SCRIPT" send "$REPORT" >/dev/null
+bash "$SCRIPT" send "$REPORT" >/dev/null
 [[ ! -e "$REPORT" ]]
 [[ -s "$CURL_CALLS" ]]
 
 after_success_calls="$(wc -l <"$CURL_CALLS")"
-"$SCRIPT" capture quickshell start quickshell_not_ready
+bash "$SCRIPT" capture quickshell start quickshell_not_ready
 REPORT="$STATE/awtarchy/reports/quickshell--start--quickshell_not_ready.json"
 export CURL_FAIL=1
-if "$SCRIPT" send "$REPORT" >/dev/null 2>&1; then
+if bash "$SCRIPT" send "$REPORT" >/dev/null 2>&1; then
     echo 'failed HTTP submission unexpectedly succeeded' >&2
     exit 1
 fi
@@ -104,16 +104,16 @@ fi
 [[ "$(wc -l <"$CURL_CALLS")" -gt "$after_success_calls" ]]
 unset CURL_FAIL
 
-"$SCRIPT" discard "$REPORT"
+bash "$SCRIPT" discard "$REPORT"
 [[ ! -e "$REPORT" ]]
 
 export AWTARCHY_REPORT_RECOVERY_ATTEMPTED=true
 export AWTARCHY_REPORT_RECOVERY_SUCCEEDED=false
-"$SCRIPT" capture resume_recovery final_validation expected_bars_missing
+bash "$SCRIPT" capture resume_recovery final_validation expected_bars_missing
 REPORT="$STATE/awtarchy/reports/resume_recovery--final_validation--expected_bars_missing.json"
 jq -e '.context == {"recovery_attempted":true,"recovery_succeeded":false}' "$REPORT" >/dev/null
 
-"$SCRIPT" capture quickshell attacker arbitrary >/dev/null 2>&1 || true
+bash "$SCRIPT" capture quickshell attacker arbitrary >/dev/null 2>&1 || true
 [[ ! -e "$STATE/awtarchy/reports/quickshell--attacker--arbitrary.json" ]]
 
 printf 'anonymous reporting helper tests passed\n'
