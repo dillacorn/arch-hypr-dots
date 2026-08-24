@@ -1,0 +1,23 @@
+name: Dispatch v3.2.0 Release
+
+on:
+  issues:
+    types: [edited]
+
+permissions:
+  actions: write
+
+jobs:
+  dispatch:
+    if: >-
+      github.event.issue.user.login == github.repository_owner &&
+      github.event.issue.number == 52 &&
+      github.event.issue.body == 'AWTARCHY_DISPATCH_V3_2_0_20260824'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch publisher
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run publish-v3-2-0-scheduled.yml --repo "$GITHUB_REPOSITORY"
