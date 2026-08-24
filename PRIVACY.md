@@ -82,9 +82,11 @@ https://awtarchy-reports.dillacorn.workers.dev/v1/report
 
 The Awtarchy report payload does not contain an IP-address field or a persistent client identifier. However, Cloudflare necessarily processes network connection metadata, including source IP information, to receive and protect HTTP requests. Cloudflare may retain infrastructure or security logs according to its service behavior and the project's Cloudflare account settings.
 
-The public report route uses two Cloudflare Worker Rate Limiting bindings before any D1/GitHub reporting work. The first combines Cloudflare's `CF-Connecting-IP` transport header with the validated failure signature to keep one client from consuming the entire signature-wide allowance. The second applies a higher ceiling to the validated failure signature across clients in the same Cloudflare location.
+The public report route uses two Cloudflare Worker Rate Limiting bindings before any D1/GitHub reporting work. The first combines Cloudflare's `CF-Connecting-IP` transport header with the validated coarse failure class to keep one client from consuming the entire signature-wide allowance. The second applies a higher ceiling to the same coarse failure class across clients in the same Cloudflare location.
 
 The source IP is used transiently only for the first Cloudflare rate-limit counter. Awtarchy does not add it to the report payload, D1 signature state, GitHub issue content, or a persistent machine/install/user identifier. If either limiter rejects the request, the Worker returns `429` before D1/GitHub reporting work and the local sanitized report remains available for retry.
+
+Optional diagnostics do not expand the Cloudflare rate-limit key. Rotating among allowed diagnostic kinds or managed filenames does not create additional limiter buckets.
 
 Cloudflare documents Worker rate-limit counters as location-local, permissive, and eventually consistent. They are abuse controls, not exact accounting. D1 occurrence counts likewise represent accepted report events, not a count of unique affected users.
 
@@ -92,7 +94,11 @@ For these reasons, Awtarchy describes the report payload as sanitized and withou
 
 ## GitHub issues
 
-The Worker validates accepted reports, creates a server-controlled bug fingerprint, and stores aggregate signature state in Cloudflare D1. The fingerprint identifies a failure signature, not a user or machine. Optional structured diagnostics do not participate in that fingerprint.
+The Worker validates accepted reports, creates a server-controlled bug fingerprint, and stores aggregate signature state in Cloudflare D1. The fingerprint identifies a failure signature, not a user or machine.
+
+For reports without a structured diagnostic, the fingerprint uses only the fixed failure class. When a validated managed-QML diagnostic exists, the fingerprint is refined only by the fixed diagnostic kind and server-allowlisted managed QML basename. Numeric line/column, Awtarchy configuration version, command revision, runtime versions, GPU family, recovery context, IP address, and other machine-specific values are not fingerprint inputs.
+
+This refinement lets distinct safe failure classes such as a parse error in `Theme.qml` and an import error in `QuickSettings.qml` produce separate actionable issues, while repeated occurrences of the same class in the same managed file still deduplicate even when line numbers or software versions change.
 
 For a new recognized signature, the dedicated Awtarchy Report Bot may create a public issue in `dillacorn/awtarchy`. The GitHub issue contains only server-generated text derived from the validated structured report.
 
