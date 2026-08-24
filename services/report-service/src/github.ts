@@ -34,6 +34,7 @@ export type GitHubClient = {
 
 const GITHUB_API = 'https://api.github.com';
 const GITHUB_API_VERSION = '2026-03-10';
+const REPORT_BOT_LOGIN = 'awtarchy-report-bot[bot]';
 const encoder = new TextEncoder();
 
 function concatBytes(...parts: Uint8Array[]): Uint8Array {
@@ -183,10 +184,12 @@ export function createGitHubClient(env: GitHubEnv, fetchImpl: typeof fetch = fet
         html_url?: unknown;
         body?: unknown;
         pull_request?: unknown;
+        user?: { login?: unknown; type?: unknown };
       }>>(response, 'github_issue_lookup_failed');
       const marker = `<!-- awtarchy-report-fingerprint:${fingerprint} -->`;
       for (const issue of issues) {
         if (issue.pull_request !== undefined) continue;
+        if (issue.user?.login !== REPORT_BOT_LOGIN || issue.user?.type !== 'Bot') continue;
         if (typeof issue.body !== 'string' || !issue.body.includes(marker)) continue;
         if (typeof issue.number !== 'number' || typeof issue.html_url !== 'string') continue;
         return { number: issue.number, url: issue.html_url };
