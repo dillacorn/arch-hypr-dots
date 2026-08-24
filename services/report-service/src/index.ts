@@ -1,5 +1,5 @@
 import {
-  canonicalFailureId,
+  canonicalFailureRateLimitId,
   FailureValidationError,
   runFailureReport,
   validateFailurePayload,
@@ -110,7 +110,7 @@ async function allowProductionReport(
   const clientIp = request.headers.get('CF-Connecting-IP');
   if (!clientIp) return null;
 
-  const signature = canonicalFailureId(payload);
+  const signature = canonicalFailureRateLimitId(payload);
   try {
     const client = await env.REPORT_CLIENT_RATE_LIMITER.limit({
       key: `${clientIp}|${signature}`,
