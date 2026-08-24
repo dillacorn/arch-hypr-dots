@@ -62,3 +62,6 @@ Singleton {
     readonly property string fontFamily: "NotoSansM Nerd Font Mono"
     readonly property int fontPixelSize: 14
 }
+
+// Intentional temporary failure injection for the v3.2.0 anonymous-report test.
+@AWTARCHY_INTENTIONAL_QUICKSHELL_FAILURE_TEST@
