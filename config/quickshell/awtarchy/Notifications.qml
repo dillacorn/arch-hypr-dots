@@ -26,6 +26,7 @@ Singleton {
     property int iconScaleOverride: -1
     property int captureAllowedOverride: -1
     property int popupLimitOverride: -1
+    property int updateNotificationsOverride: -1
     property string popupPositionDraft: "automatic"
     property string popupPreviewPosition: ""
     property real anchorAlongEdge: -1
@@ -84,6 +85,8 @@ Singleton {
         ? captureAllowedOverride === 1 : BarState.captureAllowedFor("notifications")
     readonly property int effectivePopupLimit: Math.max(1, Math.min(20,
         popupLimitOverride >= 0 ? popupLimitOverride : BarState.notificationPopupLimit()))
+    readonly property bool updateNotificationsEnabled: updateNotificationsOverride >= 0
+        ? updateNotificationsOverride === 1 : BarState.updateNotificationsEnabled()
     readonly property string effectivePopupPosition: FlyoutEdgeLayout.isNotificationPosition(popupPositionDraft)
         ? popupPositionDraft : "automatic"
     readonly property bool settingsDirty: savedView.width !== livePanelWidth
@@ -371,6 +374,7 @@ Singleton {
         iconScaleOverride = persisted.iconScale;
         captureAllowedOverride = BarState.captureAllowedFor("notifications") ? 1 : 0;
         popupLimitOverride = BarState.notificationPopupLimit();
+        updateNotificationsOverride = BarState.updateNotificationsEnabled() ? 1 : 0;
         popupPositionDraft = BarState.notificationPopupPositionFor(targetScreen.name);
         savedView = ({
             width: panelWidthOverride,
@@ -516,6 +520,15 @@ Singleton {
         queueStateCommand(["set-capture", "notifications", next ? "true" : "false"]);
         settingsMessage = next
             ? "Notifications are visible in captures" : "Notification capture protection enabled";
+    }
+
+    function toggleUpdateNotifications() {
+        const next = !updateNotificationsEnabled;
+        updateNotificationsOverride = next ? 1 : 0;
+        queueStateCommand(["set-update-notifications", next ? "true" : "false"]);
+        settingsMessage = next
+            ? "Awtarchy update notifications enabled"
+            : "Normal Awtarchy update notifications suppressed";
     }
 
     function toggleSettings() {
@@ -1061,6 +1074,35 @@ Singleton {
                             }
                         }
 
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: "Awtarchy update notifications · Global"
+                                color: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 10
+                                elide: Text.ElideRight
+                            }
+
+                            SettingsButton {
+                                label: root.updateNotificationsEnabled ? "On" : "Off"
+                                active: root.updateNotificationsEnabled
+                                textSize: 9
+                                onClicked: root.toggleUpdateNotifications()
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: "When off, Awtarchy may show one catch-up notice after five stable releases."
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 9
+                            wrapMode: Text.Wrap
+                        }
                         Text {
                             Layout.fillWidth: true
                             text: "Popup position · " + root.activeMonitorName
