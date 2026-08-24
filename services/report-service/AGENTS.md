@@ -23,6 +23,7 @@ The production client/report contract must not include:
 - command history or clipboard contents;
 - arbitrary window titles or file contents;
 - raw troubleshooting logs;
+- raw diagnostic/error text;
 - persistent machine, install, or user identifiers.
 
 Cloudflare necessarily processes transport metadata to receive requests. Never describe the system as guaranteeing network-layer anonymity.
@@ -41,12 +42,15 @@ Do not add automatic submission without a new explicit project decision and corr
 
 - Keep a strict allowlisted schema and hard request-size limit.
 - Reject unknown fields and unsupported failure triples.
+- Keep diagnostic kinds server-owned and enum-like.
+- For managed-QML diagnostics, accept only QML basenames in the server-owned allowlist of files Awtarchy actually ships; a generic filename regex is not sufficient.
 - Keep canonical error descriptions server-owned.
 - Keep GitHub issue title/body/repository/action server-owned.
 - Keep fingerprints server-generated from stable enum-like failure identifiers only.
 - Keep both rate-limit bindings ahead of D1/GitHub reporting work.
-- `REPORT_CLIENT_RATE_LIMITER` combines Cloudflare's transport IP with the canonical failure signature for a small client-specific allowance.
-- `REPORT_SIGNATURE_RATE_LIMITER` applies a separate signature-wide ceiling so distributed abuse cannot bypass backend protection merely by changing client address.
+- Keep Cloudflare rate-limit keys based on the coarse canonical failure class only. Never let diagnostic kinds or managed filenames create additional limiter buckets.
+- `REPORT_CLIENT_RATE_LIMITER` combines Cloudflare's transport IP with the coarse canonical failure class for a small client-specific allowance.
+- `REPORT_SIGNATURE_RATE_LIMITER` applies a separate coarse failure-class ceiling so distributed abuse cannot bypass backend protection merely by changing client address or diagnostic values.
 - If either binding or the Cloudflare client-IP header is unavailable, fail the production route closed before D1/GitHub reporting work.
 - Do not ship a production API secret in the open-source client.
 - Do not accept arbitrary Markdown, logs, attachments, issue numbers, labels, or GitHub actions from clients.
@@ -97,7 +101,11 @@ resume_recovery | restart          | quickshell_restart_failed
 resume_recovery | final_validation | expected_bars_missing
 ```
 
-Fingerprints depend only on stable server-validated identifiers, not diagnostic versions or machine-specific values.
+Optional managed-QML diagnostics are best-effort hints and do not identify a user or machine. The client may emit only a fixed diagnostic kind, a verified Awtarchy-managed QML basename, and bounded numeric line/column. The Worker must independently validate the diagnostic and enforce its own exact QML filename allowlist.
+
+D1/GitHub bug fingerprints use the stable failure class and may be refined only by the validated diagnostic kind plus server-allowlisted managed QML basename. Line/column, config version, command revision, runtime versions, recovery context, and machine-specific values must not enter the fingerprint.
+
+Cloudflare rate-limit signatures remain the coarse failure class regardless of diagnostic content. Preserve this separation when changing fingerprint or diagnostic logic.
 
 ## Failure isolation
 

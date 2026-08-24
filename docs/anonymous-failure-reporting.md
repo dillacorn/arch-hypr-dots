@@ -12,9 +12,9 @@ known Awtarchy failure
   -> user Send / Review / Don't send
   -> https://awtarchy-reports.dillacorn.workers.dev/v1/report
   -> strict Worker validation
-  -> client+signature Cloudflare rate limit
-  -> signature-wide Cloudflare rate limit
-  -> server-generated SHA-256 failure fingerprint
+  -> client+failure-class Cloudflare rate limit
+  -> failure-class-wide Cloudflare rate limit
+  -> server-generated SHA-256 bug fingerprint
   -> D1 aggregate/deduplication
   -> Awtarchy Report Bot GitHub issue
 ```
@@ -30,10 +30,66 @@ Noninteractive failure paths queue the report but never invent consent or spawn 
 - Never add persistent install, machine, or user identifiers without a new explicit privacy/design decision.
 - Restrict client send/review/discard operations to known Awtarchy pending-report files and revalidate a report locally before transmission.
 - Keep both Worker rate limiters ahead of D1/GitHub reporting work. The client limiter may use Cloudflare's transport IP only for its transient counter; never persist that value or add it to report/D1/GitHub content.
+- Keep rate-limit keys coarse even when D1/GitHub bug fingerprints are refined by safe diagnostics.
 - Reporting failure must never change the original operation's exit code or recovery behavior.
 - Keep the GitHub App limited to Issues read/write plus required Metadata read-only.
 - Keep the Worker private key and maintainer test token in Cloudflare secrets only.
 - Keep D1 aggregate-only unless a future design explicitly justifies additional retention.
+
+## Optional structured diagnostics
+
+For recognized Quickshell load failures, Awtarchy may inspect the local Awtarchy Quickshell log before preparing the pending report. This is best-effort only. Failure to recognize a safe diagnostic does not block the report and does not change recovery behavior.
+
+The log itself is never attached or transmitted. Awtarchy reads only a bounded tail of a user-owned, non-symlink log file and may reduce one recognized error to this optional structure:
+
+```json
+{
+  "diagnostic": {
+    "kind": "qml_parse_error",
+    "managed_file": "Theme.qml",
+    "line": 65,
+    "column": 1
+  }
+}
+```
+
+Allowed diagnostic kinds are fixed server/client enums:
+
+```text
+qml_parse_error
+qml_import_error
+qml_type_error
+qml_load_error
+```
+
+`managed_file` is a basename only. The client emits it only when the corresponding regular file exists inside the user's Awtarchy-managed Quickshell configuration directory. Absolute paths, home-directory prefixes, the original Quickshell error message, module names, arbitrary strings, and unmatched files are discarded locally.
+
+The Worker independently revalidates the diagnostic object, rejects unknown fields and paths, requires `managed_file` to match its server-owned allowlist of QML files Awtarchy actually ships, and accepts only bounded positive numeric line/column values.
+
+This diagnostic is a troubleshooting hint, not a guaranteed root cause. Some failures cannot be safely reduced to this structure and still require normal investigation from the exact reported Awtarchy revision and environment.
+
+## Bug fingerprint vs rate-limit signature
+
+Awtarchy intentionally uses two related but different identifiers.
+
+The Cloudflare rate-limit signature remains coarse:
+
+```text
+schema_version | report_type | component | failure_stage | error_code
+```
+
+Diagnostic kind, managed filename, line, column, software versions, and machine data never create additional rate-limit buckets.
+
+The D1/GitHub bug fingerprint starts with that same failure class. When a validated managed-QML diagnostic is present, only its fixed diagnostic kind and server-allowlisted managed basename refine the fingerprint:
+
+```text
+schema_version | report_type | component | failure_stage | error_code
+[| diagnostic | diagnostic_kind | managed_qml_basename]
+```
+
+Line and column are deliberately excluded so moving the same error within the same managed file does not fragment deduplication. Awtarchy config version, command revision, runtime versions, GPU family, recovery context, IP address, and other machine-specific values are also excluded.
+
+This means a new diagnostic-bearing failure does not disappear into an older generic issue such as the controlled issue #56, while repeated reports for the same safe diagnostic class still reuse one issue.
 
 ## Reported failures
 
@@ -57,13 +113,15 @@ A new failure class is incomplete unless the same `(component, failure_stage, er
 1. the client helper allowlist; and
 2. the Worker canonical registry with a server-owned description.
 
-Add focused tests on both sides. If an updater/recovery caller needs a distinct stage, add a caller-to-manager wiring regression test too. The fingerprint must remain server-generated from stable enum-like identifiers, not diagnostic version strings or free-form error text.
+Add focused tests on both sides. If an updater/recovery caller needs a distinct stage, add a caller-to-manager wiring regression test too.
+
+A new diagnostic field, diagnostic kind, or reportable managed-QML filename is a privacy-contract change. Add client extraction tests, client payload validation, Worker validation/allowlisting, fingerprint/rate-limit tests, GitHub rendering tests, and documentation together. Do not broaden diagnostics to arbitrary error text or filesystem paths.
 
 ## Abuse protection
 
 The production route uses two Cloudflare Worker Rate Limiting bindings after validation and before D1/GitHub reporting work.
 
-`REPORT_CLIENT_RATE_LIMITER` allows three calls per 60 seconds for each Cloudflare client-IP plus canonical failure-signature pair in a Cloudflare location. `REPORT_SIGNATURE_RATE_LIMITER` then allows 20 calls per 60 seconds for each canonical failure signature in that location. The first boundary prevents one client from trivially monopolizing the second; the second still caps aggregate backend work if abuse is distributed.
+`REPORT_CLIENT_RATE_LIMITER` allows three calls per 60 seconds for each Cloudflare client-IP plus coarse canonical failure class in a Cloudflare location. `REPORT_SIGNATURE_RATE_LIMITER` then allows 20 calls per 60 seconds for each coarse canonical failure class in that location. The first boundary prevents one client from trivially monopolizing the second; the second still caps aggregate backend work if abuse is distributed.
 
 The client IP comes from Cloudflare's `CF-Connecting-IP` transport header and is used only for the transient client-rate counter. It is not added to the report payload, D1 state, GitHub issue, or a persistent Awtarchy identifier.
 

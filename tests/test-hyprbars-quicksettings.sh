@@ -175,5 +175,6 @@ done
 (( missing_history == 0 )) || fail 'managed history is missing current Hyprland Plugin stock hashes'
 
 bash "${ROOT}/tests/test-hyprbars-runtime-state.sh"
+bash "${ROOT}/tests/test-night-light-schedule.sh"
 
 printf '%s\n' 'PASS: Hyprland Plugin state is shared between keyboard and Quick Settings and placed below Num Lock.'

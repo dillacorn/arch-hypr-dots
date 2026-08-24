@@ -34,17 +34,66 @@ const TOP_LEVEL_KEYS = new Set([
   'kernel_version',
   'gpu_family',
   'context',
+  'diagnostic',
 ]);
 
 const CONTEXT_KEYS = new Set(['recovery_attempted', 'recovery_succeeded']);
+const DIAGNOSTIC_KEYS = new Set(['kind', 'managed_file', 'line', 'column']);
+const DIAGNOSTIC_KINDS = new Set([
+  'qml_parse_error',
+  'qml_import_error',
+  'qml_type_error',
+  'qml_load_error',
+]);
+const MANAGED_QML_FILES = new Set([
+  'AudioLimitState.qml',
+  'Bar.qml',
+  'BarButton.qml',
+  'BarSettingsSection.qml',
+  'BarState.qml',
+  'BarTooltip.qml',
+  'BatteryCareCard.qml',
+  'BatteryMenu.qml',
+  'BatteryState.qml',
+  'BluetoothMenu.qml',
+  'CaptureEyeButton.qml',
+  'ClipboardMenu.qml',
+  'FlyoutManager.qml',
+  'FlyoutSettings.qml',
+  'Launcher.qml',
+  'ListScrollBar.qml',
+  'NetworkMenu.qml',
+  'NetworkVpnSection.qml',
+  'NotificationCard.qml',
+  'Notifications.qml',
+  'NumlockSessionTweak.qml',
+  'PowerMenu.qml',
+  'PowerModeCard.qml',
+  'QuickSettings.qml',
+  'SettingsButton.qml',
+  'SystemState.qml',
+  'Theme.qml',
+  'ThemePicker.qml',
+  'TitleBarsCard.qml',
+  'TrayMenu.qml',
+  'shell.qml',
+]);
 const SAFE_VERSION = /^[A-Za-z0-9._+@\/-]{1,128}$/;
 const SAFE_RUNTIME_VERSION = /^[A-Za-z0-9._+-]{1,96}$/;
+const SAFE_MANAGED_QML = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}\.qml$/;
 const REVISION = /^(?:unknown|[0-9a-f]{40})$/;
 const GPU_FAMILIES = new Set(['AMD', 'Intel', 'NVIDIA', 'Other', 'Unknown']);
 
 export type FailureContext = {
   recovery_attempted?: boolean;
   recovery_succeeded?: boolean;
+};
+
+export type FailureDiagnostic = {
+  kind: 'qml_parse_error' | 'qml_import_error' | 'qml_type_error' | 'qml_load_error';
+  managed_file: string;
+  line: number;
+  column: number;
 };
 
 export type FailurePayload = {
@@ -60,6 +109,7 @@ export type FailurePayload = {
   kernel_version: string;
   gpu_family: 'AMD' | 'Intel' | 'NVIDIA' | 'Other' | 'Unknown';
   context?: FailureContext;
+  diagnostic?: FailureDiagnostic;
 };
 
 type SignatureRow = {
@@ -121,6 +171,39 @@ function canonicalKey(component: string, stage: string, code: string): string {
   return `${component}|${stage}|${code}`;
 }
 
+function validateDiagnostic(value: unknown): FailureDiagnostic {
+  if (!plainObject(value)) throw new FailureValidationError('invalid_diagnostic');
+  for (const key of Object.keys(value)) {
+    if (!DIAGNOSTIC_KEYS.has(key)) {
+      throw new FailureValidationError(`unknown_diagnostic_field:${key}`);
+    }
+  }
+
+  if (typeof value.kind !== 'string' || !DIAGNOSTIC_KINDS.has(value.kind)) {
+    throw new FailureValidationError('invalid_diagnostic_kind');
+  }
+  if (
+    typeof value.managed_file !== 'string'
+    || !SAFE_MANAGED_QML.test(value.managed_file)
+    || !MANAGED_QML_FILES.has(value.managed_file)
+  ) {
+    throw new FailureValidationError('invalid_diagnostic_managed_file');
+  }
+  if (!Number.isInteger(value.line) || Number(value.line) < 1 || Number(value.line) > 1_000_000) {
+    throw new FailureValidationError('invalid_diagnostic_line');
+  }
+  if (!Number.isInteger(value.column) || Number(value.column) < 1 || Number(value.column) > 1_000_000) {
+    throw new FailureValidationError('invalid_diagnostic_column');
+  }
+
+  return {
+    kind: value.kind as FailureDiagnostic['kind'],
+    managed_file: value.managed_file,
+    line: Number(value.line),
+    column: Number(value.column),
+  };
+}
+
 export function validateFailurePayload(value: unknown): FailurePayload {
   if (!plainObject(value)) throw new FailureValidationError('invalid_payload');
 
@@ -160,6 +243,10 @@ export function validateFailurePayload(value: unknown): FailurePayload {
     context = { ...value.context } as FailureContext;
   }
 
+  const diagnostic = value.diagnostic === undefined
+    ? undefined
+    : validateDiagnostic(value.diagnostic);
+
   return {
     schema_version: 1,
     report_type: 'failure',
@@ -173,16 +260,28 @@ export function validateFailurePayload(value: unknown): FailurePayload {
     kernel_version: kernelVersion,
     gpu_family: value.gpu_family as FailurePayload['gpu_family'],
     ...(context ? { context } : {}),
+    ...(diagnostic ? { diagnostic } : {}),
   };
 }
 
-export function canonicalFailureId(payload: FailurePayload): string {
+export function canonicalFailureRateLimitId(payload: FailurePayload): string {
   return [
     payload.schema_version,
     payload.report_type,
     payload.component,
     payload.failure_stage,
     payload.error_code,
+  ].join('|');
+}
+
+export function canonicalFailureId(payload: FailurePayload): string {
+  const base = canonicalFailureRateLimitId(payload);
+  if (!payload.diagnostic) return base;
+  return [
+    base,
+    'diagnostic',
+    payload.diagnostic.kind,
+    payload.diagnostic.managed_file,
   ].join('|');
 }
 
@@ -247,6 +346,7 @@ function issueData(payload: FailurePayload, fingerprint: string): FailureIssueDa
     kernelVersion: payload.kernel_version,
     gpuFamily: payload.gpu_family,
     context: payload.context,
+    diagnostic: payload.diagnostic,
   };
 }
 

@@ -153,7 +153,9 @@ valid_scheduler_profile() {
 
 machine_status() {
   local panel_monitor="${1:-}" brightness_monitor="${2:-}" monitors_json schedulers_json scheduler_authorized
-  local scheduler profiles_json profile custom autopower summary sun_temp
+  local scheduler profiles_json profile custom autopower summary sun_temp sunset_status
+  local NLS_schedule_enabled="0" NLS_schedule_start="20:00" NLS_schedule_end="07:00"
+  local NLS_schedule_temperature="N/A" NLS_schedule_next_day="0"
 
   command -v jq >/dev/null 2>&1 || {
     printf 'hypr_quicksettings: jq is required\n' >&2
@@ -168,6 +170,11 @@ machine_status() {
 
   sched_ext_state_load
   refresh_all
+
+  sunset_status="$(run_capture "$SUNSET_SCRIPT" status || true)"
+  if [[ -n "$sunset_status" ]]; then
+    parse_kv_into "$sunset_status" NLS
+  fi
 
   scheduler_authorized=false
   if (( EUID == 0 )) || scxctl_auth_state_cached; then
@@ -234,6 +241,11 @@ machine_status() {
     --arg sun_temperature "$sun_temp" \
     --arg sun_identity "$SUN_IDENTITY" \
     --arg sun_enabled "$SUN_ENABLED" \
+    --arg sun_schedule_enabled "$NLS_schedule_enabled" \
+    --arg sun_schedule_start "$NLS_schedule_start" \
+    --arg sun_schedule_end "$NLS_schedule_end" \
+    --arg sun_schedule_temperature "$NLS_schedule_temperature" \
+    --arg sun_schedule_next_day "$NLS_schedule_next_day" \
     --arg vibrance_value "$VIB_VAL" \
     --arg vibrance_enabled "$VIB_ENABLED" \
     --arg submap "$SUBMAP_CURRENT" \
@@ -261,7 +273,12 @@ machine_status() {
         night_light:{
           temperature:($sun_temperature | number_or_null),
           identity:$sun_identity,
-          enabled:(($sun_identity == "false") or ($sun_enabled == "1"))
+          enabled:(($sun_identity == "false") or ($sun_enabled == "1")),
+          schedule_enabled:($sun_schedule_enabled == "1"),
+          schedule_start:$sun_schedule_start,
+          schedule_end:$sun_schedule_end,
+          schedule_temperature:($sun_schedule_temperature | number_or_null),
+          schedule_next_day:($sun_schedule_next_day == "1")
         },
         vibrance:{
           value:($vibrance_value | number_or_null),
@@ -379,6 +396,20 @@ machine_action() {
       value="${1:-}"
       [[ "$value" =~ ^(toggle|up|down|on|off)$ ]] || return 2
       "$SUNSET_SCRIPT" "$value"
+      ;;
+    night-light-schedule)
+      value="${1:-}"
+      case "$value" in
+        set)
+          [[ $# -eq 4 ]] || return 2
+          "$SUNSET_SCRIPT" schedule set "$2" "$3" "$4"
+          ;;
+        enable|disable)
+          [[ $# -eq 1 ]] || return 2
+          "$SUNSET_SCRIPT" schedule "$value"
+          ;;
+        *) return 2 ;;
+      esac
       ;;
     vibrance)
       value="${1:-}"

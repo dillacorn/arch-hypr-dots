@@ -30,6 +30,11 @@ Singleton {
     property string schedulerAuthPendingPassword: ""
     property int brightnessHoverPercent: -1
     property int outputVolumeHoverPercent: -1
+    property bool nightLightScheduleEditorOpen: false
+    property string nightLightScheduleStartDraft: "20:00"
+    property string nightLightScheduleEndDraft: "07:00"
+    property string nightLightScheduleTemperatureDraft: "5000"
+    property string nightLightScheduleError: ""
     property bool settingsOpen: false
     property int panelWidthOverride: -1
     property int panelHeightOverride: -1
@@ -106,7 +111,16 @@ Singleton {
             monitors: [],
             brightness: { target: "", connector: "", current: null, max: null },
             bar: { monitor: "", position: "top", enabled: true },
-            night_light: { temperature: null, identity: "unknown", enabled: false },
+            night_light: {
+                temperature: null,
+                identity: "unknown",
+                enabled: false,
+                schedule_enabled: false,
+                schedule_start: "20:00",
+                schedule_end: "07:00",
+                schedule_temperature: 5000,
+                schedule_next_day: true
+            },
             vibrance: { value: null, enabled: false },
             submap: "reset",
             sched_ext: {
@@ -309,6 +323,64 @@ Singleton {
         queueAction(["brightness-percent", target,
             String(Math.max(0, Math.min(100, Math.round(percent))))],
             "Setting brightness on " + target + "…");
+    }
+
+    function nightLightScheduleLabel() {
+        const start = String(nightLightStatus.schedule_start || "20:00");
+        const end = String(nightLightStatus.schedule_end || "07:00");
+        return start + " ~ " + end
+            + (Boolean(nightLightStatus.schedule_next_day) ? " next day" : "");
+    }
+
+    function syncNightLightScheduleDraft() {
+        nightLightScheduleStartDraft = String(nightLightStatus.schedule_start || "20:00");
+        nightLightScheduleEndDraft = String(nightLightStatus.schedule_end || "07:00");
+        const scheduled = Number(nightLightStatus.schedule_temperature);
+        const current = Number(nightLightStatus.temperature);
+        const temperature = Number.isFinite(scheduled) && scheduled >= 1000 && scheduled <= 20000
+            ? scheduled
+            : (Number.isFinite(current) && current >= 1000 && current <= 20000 ? current : 5000);
+        nightLightScheduleTemperatureDraft = String(Math.round(temperature));
+        nightLightScheduleError = "";
+    }
+
+    function toggleNightLightScheduleEditor() {
+        if (!nightLightScheduleEditorOpen)
+            syncNightLightScheduleDraft();
+        nightLightScheduleEditorOpen = !nightLightScheduleEditorOpen;
+        nightLightScheduleError = "";
+    }
+
+    function validNightLightScheduleTime(value) {
+        return /^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(String(value || "").trim());
+    }
+
+    function saveNightLightSchedule() {
+        const start = String(nightLightScheduleStartDraft || "").trim();
+        const end = String(nightLightScheduleEndDraft || "").trim();
+        const temperature = Number(String(nightLightScheduleTemperatureDraft || "").trim());
+
+        if (!validNightLightScheduleTime(start) || !validNightLightScheduleTime(end)) {
+            nightLightScheduleError = "Use 24-hour HH:MM times";
+            return;
+        }
+        if (start === end) {
+            nightLightScheduleError = "Start and end times must be different";
+            return;
+        }
+        if (!Number.isInteger(temperature) || temperature < 1000 || temperature > 20000) {
+            nightLightScheduleError = "Color temperature must be 1000–20000K";
+            return;
+        }
+
+        nightLightScheduleError = "";
+        queueAction(["night-light-schedule", "set", start, end, String(temperature)],
+            "Saving Night Light schedule…");
+    }
+
+    function disableNightLightSchedule() {
+        nightLightScheduleError = "";
+        queueAction(["night-light-schedule", "disable"], "Disabling Night Light schedule…");
     }
 
     function openSmtty() {
@@ -526,6 +598,8 @@ Singleton {
         settingsMessage = "";
         schedulerEditorOpen = false;
         schedulerArgsDirty = false;
+        nightLightScheduleEditorOpen = false;
+        nightLightScheduleError = "";
         loadSavedView(targetScreen);
         prepareWindowOpen(targetScreen);
     }
@@ -545,6 +619,8 @@ Singleton {
         settingsPanel.resetCopySelection();
         settingsMessage = "";
         schedulerEditorOpen = false;
+        nightLightScheduleEditorOpen = false;
+        nightLightScheduleError = "";
         if (!schedulerAuthBusy)
             cancelSchedulerAuthorization();
         else
@@ -1218,13 +1294,15 @@ Singleton {
                         }
 
                         RowLayout {
+                            id: nightLightVibranceRow
+                            readonly property real cardHeight: Math.max(nightContent.implicitHeight, vibranceContent.implicitHeight) + 16
                             Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 4, 12)
                             Layout.fillWidth: true
                             spacing: 8
 
                             Rectangle {
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: nightContent.implicitHeight + 16
+                                Layout.preferredHeight: nightLightVibranceRow.cardHeight
                                 color: Theme.popupButton
                                 border.width: 1
                                 border.color: Theme.active
@@ -1264,6 +1342,174 @@ Singleton {
                                             onClicked: root.queueAction(["night-light", "up"], "Making display cooler…")
                                         }
                                     }
+
+                                    SettingsButton {
+                                        Layout.fillWidth: true
+                                        label: "Set schedule: " + root.nightLightScheduleLabel()
+                                        active: Boolean(root.nightLightStatus.schedule_enabled)
+                                        textSize: root.scaledText(9)
+                                        onClicked: root.toggleNightLightScheduleEditor()
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        visible: root.nightLightScheduleEditorOpen
+                                        spacing: 5
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: root.nightLightStatus.schedule_enabled
+                                                ? "Schedule enabled" : "Schedule disabled"
+                                            color: root.nightLightStatus.schedule_enabled
+                                                ? Theme.foreground : Theme.muted
+                                            font.family: Theme.fontFamily
+                                            font.pixelSize: root.scaledText(8)
+                                        }
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 5
+
+                                            Text {
+                                                text: "Start"
+                                                color: Theme.foreground
+                                                font.family: Theme.fontFamily
+                                                font.pixelSize: root.scaledText(8)
+                                            }
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                Layout.preferredHeight: 27
+                                                color: Theme.active
+                                                border.width: 1
+                                                border.color: nightLightScheduleStartInput.activeFocus
+                                                    ? Theme.focus : Theme.muted
+                                                TextInput {
+                                                    id: nightLightScheduleStartInput
+                                                    anchors.fill: parent
+                                                    anchors.leftMargin: 6
+                                                    anchors.rightMargin: 6
+                                                    text: root.nightLightScheduleStartDraft
+                                                    color: Theme.foreground
+                                                    selectionColor: Theme.focus
+                                                    selectedTextColor: Theme.foreground
+                                                    font.family: Theme.fontFamily
+                                                    font.pixelSize: root.scaledText(8)
+                                                    verticalAlignment: TextInput.AlignVCenter
+                                                    selectByMouse: true
+                                                    clip: true
+                                                    onTextEdited: root.nightLightScheduleStartDraft = text
+                                                }
+                                            }
+
+                                            Text {
+                                                text: "End"
+                                                color: Theme.foreground
+                                                font.family: Theme.fontFamily
+                                                font.pixelSize: root.scaledText(8)
+                                            }
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                Layout.preferredHeight: 27
+                                                color: Theme.active
+                                                border.width: 1
+                                                border.color: nightLightScheduleEndInput.activeFocus
+                                                    ? Theme.focus : Theme.muted
+                                                TextInput {
+                                                    id: nightLightScheduleEndInput
+                                                    anchors.fill: parent
+                                                    anchors.leftMargin: 6
+                                                    anchors.rightMargin: 6
+                                                    text: root.nightLightScheduleEndDraft
+                                                    color: Theme.foreground
+                                                    selectionColor: Theme.focus
+                                                    selectedTextColor: Theme.foreground
+                                                    font.family: Theme.fontFamily
+                                                    font.pixelSize: root.scaledText(8)
+                                                    verticalAlignment: TextInput.AlignVCenter
+                                                    selectByMouse: true
+                                                    clip: true
+                                                    onTextEdited: root.nightLightScheduleEndDraft = text
+                                                }
+                                            }
+                                        }
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 5
+
+                                            Text {
+                                                text: "Color temp"
+                                                color: Theme.foreground
+                                                font.family: Theme.fontFamily
+                                                font.pixelSize: root.scaledText(8)
+                                            }
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                Layout.preferredHeight: 27
+                                                color: Theme.active
+                                                border.width: 1
+                                                border.color: nightLightScheduleTemperatureInput.activeFocus
+                                                    ? Theme.focus : Theme.muted
+                                                TextInput {
+                                                    id: nightLightScheduleTemperatureInput
+                                                    anchors.fill: parent
+                                                    anchors.leftMargin: 6
+                                                    anchors.rightMargin: 6
+                                                    text: root.nightLightScheduleTemperatureDraft
+                                                    color: Theme.foreground
+                                                    selectionColor: Theme.focus
+                                                    selectedTextColor: Theme.foreground
+                                                    font.family: Theme.fontFamily
+                                                    font.pixelSize: root.scaledText(8)
+                                                    verticalAlignment: TextInput.AlignVCenter
+                                                    selectByMouse: true
+                                                    clip: true
+                                                    onTextEdited: root.nightLightScheduleTemperatureDraft = text
+                                                }
+                                            }
+                                            Text {
+                                                text: "K"
+                                                color: Theme.muted
+                                                font.family: Theme.fontFamily
+                                                font.pixelSize: root.scaledText(8)
+                                            }
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            visible: root.nightLightScheduleError.length > 0
+                                            text: root.nightLightScheduleError
+                                            color: Theme.urgent
+                                            font.family: Theme.fontFamily
+                                            font.pixelSize: root.scaledText(8)
+                                            wrapMode: Text.Wrap
+                                        }
+
+                                        Flow {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: childrenRect.height
+                                            spacing: 5
+
+                                            SettingsButton {
+                                                label: root.nightLightStatus.schedule_enabled
+                                                    ? "Save" : "Save & Enable"
+                                                textSize: root.scaledText(8)
+                                                onClicked: root.saveNightLightSchedule()
+                                            }
+                                            SettingsButton {
+                                                visible: Boolean(root.nightLightStatus.schedule_enabled)
+                                                label: "Disable"
+                                                textSize: root.scaledText(8)
+                                                onClicked: root.disableNightLightSchedule()
+                                            }
+                                            SettingsButton {
+                                                label: "Cancel"
+                                                textSize: root.scaledText(8)
+                                                onClicked: root.toggleNightLightScheduleEditor()
+                                            }
+                                        }
+                                    }
+
                                     Text {
                                         Layout.fillWidth: true
                                         text: "SUPER+ALT+CTRL+- warmer  ·  SUPER+ALT+CTRL+= cooler  ·  SUPER+ALT+CTRL+BACKSPACE toggle"
@@ -1277,7 +1523,7 @@ Singleton {
 
                             Rectangle {
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: vibranceContent.implicitHeight + 16
+                                Layout.preferredHeight: nightLightVibranceRow.cardHeight
                                 color: Theme.popupButton
                                 border.width: 1
                                 border.color: Theme.active

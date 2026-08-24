@@ -629,3 +629,11 @@ a367f2f08a814ebf731836e337b031eff1c9ee574db0514463417546736c9f5f	.config/hypr/sc
 
 # 2026-08-23 anonymous failure-reporting resume-recovery integration.
 6e6236ab84f2d363bf4b88eb008742f0ba01ee7ff90fe562fc661c324f0698c9	.config/hypr/scripts/quickshell_resume_recover.sh
+
+# 2026-08-24 Night Light scheduling.
+8ebd5ae0c3860031239451754e3863da85dc6f099af9c29b1afeb3420c707bc9	.config/quickshell/awtarchy/QuickSettings.qml
+7ba8970d9b161e6ee8c7f7822db219837552c78ea8264cffb58f616871f8cffa	.config/hypr/scripts/hyprsunset_ctl.sh
+95cae23cd61f6af43ec597ecc0632476de8fad99ab913b1ecafda3fd41a83fba	.config/hypr/scripts/hypr_quicksettings.sh
+
+# 2026-08-24 Night Light and Vibrance equal-height layout.
+00f7bbd7365a52fcf8c3cdbb6097d133e7a553c9bbe0a0699d965e46ac0b4c9c	.config/quickshell/awtarchy/QuickSettings.qml

@@ -6,9 +6,13 @@ umask 077
 
 REPORT_ENDPOINT="${AWTARCHY_REPORT_ENDPOINT:-https://awtarchy-reports.dillacorn.workers.dev/v1/report}"
 STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
+CACHE_HOME="${XDG_CACHE_HOME:-${HOME}/.cache}"
+CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
 REPORT_DIR="${STATE_HOME}/awtarchy/reports"
 COMMAND_VERSION_FILE="${STATE_HOME}/awtarchy/command-version"
 CONFIG_VERSION_FILE="${STATE_HOME}/awtarchy/config-version"
+QUICKSHELL_LOG="${CACHE_HOME}/awtarchy/quickshell.log"
+QUICKSHELL_CONFIG_DIR="${CONFIG_HOME}/quickshell/awtarchy"
 
 log_error() {
     printf 'Awtarchy report: %s\n' "$*" >&2
@@ -84,6 +88,62 @@ gpu_family() {
     fi
 }
 
+quickshell_diagnostic_kind() {
+    local message="${1,,}"
+    if [[ "$message" == *"syntax error"* \
+      || "$message" == *"parse error"* \
+      || "$message" == *"unexpected token"* \
+      || "$message" == *"expected token"* ]]; then
+        printf '%s\n' qml_parse_error
+    elif [[ "$message" == *"module "* \
+      && ( "$message" == *"not installed"* \
+        || "$message" == *"not found"* \
+        || "$message" == *"unavailable"* ) ]]; then
+        printf '%s\n' qml_import_error
+    elif [[ ( "$message" == *"type "* && "$message" == *"unavailable"* ) \
+      || "$message" == *"is not a type"* ]]; then
+        printf '%s\n' qml_type_error
+    else
+        printf '%s\n' qml_load_error
+    fi
+}
+
+extract_quickshell_diagnostic() {
+    local size=0 line="" parsed="" candidate="" base="" line_no="" column="" message="" kind=""
+
+    [[ -f "$QUICKSHELL_LOG" && ! -L "$QUICKSHELL_LOG" && -O "$QUICKSHELL_LOG" ]] || return 1
+    size="$(wc -c <"$QUICKSHELL_LOG" 2>/dev/null || printf '0')"
+    [[ "$size" =~ ^[0-9]+$ ]] || return 1
+    (( size > 0 && size <= 1048576 )) || return 1
+    [[ -d "$QUICKSHELL_CONFIG_DIR" && ! -L "$QUICKSHELL_CONFIG_DIR" && -O "$QUICKSHELL_CONFIG_DIR" ]] || return 1
+
+    while IFS= read -r line; do
+        parsed="$(sed -nE 's/.*@([^[]+\.qml)\[([0-9]{1,7}):([0-9]{1,7})\]:(.*)$/\1\t\2\t\3\t\4/p' <<<"$line")"
+        [[ -n "$parsed" ]] || continue
+        IFS=$'\t' read -r candidate line_no column message <<<"$parsed"
+        candidate="${candidate#file://}"
+        base="${candidate##*/}"
+
+        [[ "$base" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}\.qml$ ]] || continue
+        [[ "$line_no" =~ ^[0-9]{1,7}$ && "$column" =~ ^[0-9]{1,7}$ ]] || continue
+        (( 10#$line_no >= 1 && 10#$line_no <= 1000000 )) || continue
+        (( 10#$column >= 1 && 10#$column <= 1000000 )) || continue
+
+        if [[ "$candidate" == */* && "$candidate" != "$QUICKSHELL_CONFIG_DIR/$base" ]]; then
+            continue
+        fi
+        [[ -f "$QUICKSHELL_CONFIG_DIR/$base" \
+          && ! -L "$QUICKSHELL_CONFIG_DIR/$base" \
+          && -O "$QUICKSHELL_CONFIG_DIR/$base" ]] || continue
+
+        kind="$(quickshell_diagnostic_kind "$message")"
+        printf '%s\t%s\t%s\t%s\n' "$kind" "$base" "$((10#$line_no))" "$((10#$column))"
+        return 0
+    done < <(tail -n 200 -- "$QUICKSHELL_LOG" | tac)
+
+    return 1
+}
+
 valid_failure() {
     case "$1|$2|$3" in
         quickshell\|start\|quickshell_not_ready|\
@@ -148,7 +208,7 @@ validate_pending_payload() {
         def allowed: [
           "schema_version", "report_type", "component", "failure_stage", "error_code",
           "awtarchy_config_version", "awtarchy_command_revision", "hyprland_version",
-          "quickshell_version", "kernel_version", "gpu_family", "context"
+          "quickshell_version", "kernel_version", "gpu_family", "context", "diagnostic"
         ];
         def required: [
           "schema_version", "report_type", "component", "failure_stage", "error_code",
@@ -187,6 +247,21 @@ validate_pending_payload() {
             and ((.context | has("recovery_succeeded") | not) or (.context.recovery_succeeded | type == "boolean"))
           )
         )
+        and (
+          (has("diagnostic") | not)
+          or (
+            (.diagnostic | type == "object")
+            and ((.diagnostic | keys) == ["column", "kind", "line", "managed_file"])
+            and (.diagnostic.kind == "qml_parse_error"
+                 or .diagnostic.kind == "qml_import_error"
+                 or .diagnostic.kind == "qml_type_error"
+                 or .diagnostic.kind == "qml_load_error")
+            and (.diagnostic.managed_file | type == "string")
+            and (.diagnostic.managed_file | test("^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}\\.qml$"))
+            and (.diagnostic.line | type == "number" and floor == . and . >= 1 and . <= 1000000)
+            and (.diagnostic.column | type == "number" and floor == . and . >= 1 and . <= 1000000)
+          )
+        )
     ' "$path" >/dev/null 2>&1 || return 2
 
     IFS=$'\t' read -r component stage error_code < <(
@@ -199,7 +274,8 @@ validate_pending_payload() {
 
 write_pending_report() {
     local component="$1" stage="$2" error_code="$3"
-    local path tmp config revision hyprland quickshell kernel gpu
+    local path tmp config revision hyprland quickshell kernel gpu diagnostic=""
+    local diagnostic_kind="" diagnostic_file="" diagnostic_line="" diagnostic_column=""
     local recovery_attempted="${AWTARCHY_REPORT_RECOVERY_ATTEMPTED:-}"
     local recovery_succeeded="${AWTARCHY_REPORT_RECOVERY_SUCCEEDED:-}"
 
@@ -217,6 +293,13 @@ write_pending_report() {
     kernel="$(kernel_version)"
     gpu="$(gpu_family)"
 
+    if [[ "$component" == quickshell || "$component" == resume_recovery ]]; then
+        diagnostic="$(extract_quickshell_diagnostic 2>/dev/null || true)"
+        if [[ -n "$diagnostic" ]]; then
+            IFS=$'\t' read -r diagnostic_kind diagnostic_file diagnostic_line diagnostic_column <<<"$diagnostic"
+        fi
+    fi
+
     jq -n \
         --arg component "$component" \
         --arg stage "$stage" \
@@ -228,7 +311,11 @@ write_pending_report() {
         --arg kernel "$kernel" \
         --arg gpu "$gpu" \
         --arg recovery_attempted "$recovery_attempted" \
-        --arg recovery_succeeded "$recovery_succeeded" '
+        --arg recovery_succeeded "$recovery_succeeded" \
+        --arg diagnostic_kind "$diagnostic_kind" \
+        --arg diagnostic_file "$diagnostic_file" \
+        --arg diagnostic_line "$diagnostic_line" \
+        --arg diagnostic_column "$diagnostic_column" '
         {
           schema_version: 1,
           report_type: "failure",
@@ -251,6 +338,16 @@ write_pending_report() {
             | if ($recovery_succeeded == "true" or $recovery_succeeded == "false") then
                 .context.recovery_succeeded = ($recovery_succeeded == "true")
               else . end
+          else . end
+        | if ($diagnostic_kind != "" and $diagnostic_file != ""
+              and ($diagnostic_line | test("^[0-9]+$"))
+              and ($diagnostic_column | test("^[0-9]+$"))) then
+            .diagnostic = {
+              kind: $diagnostic_kind,
+              managed_file: $diagnostic_file,
+              line: ($diagnostic_line | tonumber),
+              column: ($diagnostic_column | tonumber)
+            }
           else . end
     ' >"$tmp" || { rm -f -- "$tmp"; return 1; }
 

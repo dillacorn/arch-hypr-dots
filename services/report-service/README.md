@@ -50,25 +50,53 @@ resume_recovery | restart          | quickshell_restart_failed
 resume_recovery | final_validation | expected_bars_missing
 ```
 
-The accepted structured diagnostics are limited to Awtarchy config/revision, Hyprland version, Quickshell version, kernel version, broad GPU family, and fixed boolean recovery context.
+The accepted structured diagnostics are limited to Awtarchy config/revision, Hyprland version, Quickshell version, kernel version, broad GPU family, fixed boolean recovery context, and an optional tightly bounded managed-QML diagnostic.
 
-Clients cannot provide the fingerprint, canonical error description, GitHub title/body, labels, repository, issue number, or GitHub API action. The Worker generates those values after validation.
+The optional QML diagnostic accepts only:
 
-The fingerprint is SHA-256 over only:
+```json
+{
+  "diagnostic": {
+    "kind": "qml_parse_error",
+    "managed_file": "Theme.qml",
+    "line": 65,
+    "column": 1
+  }
+}
+```
+
+`kind` must be one of `qml_parse_error`, `qml_import_error`, `qml_type_error`, or `qml_load_error`. `managed_file` must be the basename of a QML file in the Worker's server-owned allowlist of files Awtarchy actually ships under `config/quickshell/awtarchy/`; merely looking like a `.qml` filename is not sufficient, and paths are rejected. Line and column must be positive bounded integers. There is no field for raw log text, exception text, module text, arbitrary diagnostic strings, or filesystem paths.
+
+The open-source client applies a separate first boundary before creating this object: it reads only a bounded tail of the Awtarchy Quickshell log, requires the log and managed configuration directory to be user-owned non-symlinks, and emits the basename only when the corresponding regular QML file exists inside Awtarchy's managed Quickshell directory.
+
+When `awtarchy_config_version` ends in an exact 40-character Git commit SHA, the Worker may render a GitHub source permalink for the validated managed QML file and numeric line. The client does not provide the URL. The Worker constructs it from its configured GitHub owner/repository, the already-validated commit SHA, the server-allowlisted QML basename, and the bounded line number. Reports without an exact commit SHA simply omit the source link.
+
+Clients cannot provide the fingerprint, canonical error description, GitHub title/body, labels, repository, issue number, source URL, or GitHub API action. The Worker generates those values after validation.
+
+The D1/GitHub bug fingerprint is SHA-256 over the fixed failure class and, when present, only the safe diagnostic class:
+
+```text
+schema_version | report_type | component | failure_stage | error_code
+[| diagnostic | diagnostic_kind | managed_qml_basename]
+```
+
+This lets a recognized `qml_parse_error` in `Theme.qml` create a distinct actionable issue instead of disappearing into an older generic `quickshell_not_ready` issue. Line, column, Awtarchy config version, command revision, runtime versions, GPU family, and recovery context never enter the fingerprint. Moving the same class of error within the same managed file therefore still deduplicates.
+
+Cloudflare rate limiting deliberately does **not** use the refined diagnostic fingerprint. Both production limiters remain keyed by the original coarse failure class:
 
 ```text
 schema_version | report_type | component | failure_stage | error_code
 ```
 
-Machine/version diagnostics do not split one bug into separate signatures.
+A hostile caller therefore cannot increase the rate-limit budget by rotating among allowed diagnostic kinds or managed filenames.
 
 ## Abuse protection
 
 After schema validation and before any D1/GitHub reporting work, `/v1/report` applies two Cloudflare native Rate Limiting bindings.
 
-The client limiter allows three calls per 60 seconds for each `CF-Connecting-IP` plus canonical failure-signature pair in a Cloudflare location. This prevents one transport client from immediately consuming the entire signature-wide budget. The source IP is used only for this transient Cloudflare counter; it is not written into the report payload, D1, GitHub, or a persistent Awtarchy identifier.
+The client limiter allows three calls per 60 seconds for each `CF-Connecting-IP` plus coarse canonical failure-class pair in a Cloudflare location. This prevents one transport client from immediately consuming the entire signature-wide budget. The source IP is used only for this transient Cloudflare counter; it is not written into the report payload, D1, GitHub, or a persistent Awtarchy identifier.
 
-The signature limiter then allows 20 calls per 60 seconds for each canonical failure signature in a Cloudflare location. This provides a separate ceiling on D1/GitHub work even if abuse is distributed across clients.
+The signature limiter then allows 20 calls per 60 seconds for each coarse canonical failure class in a Cloudflare location. This provides a separate ceiling on D1/GitHub work even if abuse is distributed across clients.
 
 Cloudflare documents Worker rate-limit counters as location-local, permissive, and eventually consistent. These limits are therefore best-effort abuse reduction and D1 protection, not strict global request caps or accounting. Cloudflare also cautions that IPs may be shared by legitimate users, which is why Awtarchy does not use the client-IP limiter as its only abuse boundary.
 
@@ -76,7 +104,7 @@ If either rate-limiter binding is unavailable, the production route fails closed
 
 ## D1 and deduplication
 
-D1 stores aggregate signature state rather than permanent raw-report history. Repeated valid reports for the same server-generated fingerprint increment the same row instead of creating a new GitHub issue. `occurrence_count` represents accepted report events, not unique affected users.
+D1 stores aggregate signature state rather than permanent raw-report history. Repeated valid reports for the same server-generated bug fingerprint increment the same row instead of creating a new GitHub issue. `occurrence_count` represents accepted report events, not unique affected users.
 
 Issue creation uses a short ownership lease and a fingerprint marker in the GitHub issue body. If issue creation succeeds but the Worker loses the response before linking D1, a later request searches existing issues for the exact marker and recovers the link before creating another issue. Recovery accepts only issues authored by the Awtarchy Report Bot.
 
