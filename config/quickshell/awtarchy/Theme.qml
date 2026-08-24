@@ -62,3 +62,6 @@ Singleton {
     readonly property string fontFamily: "NotoSansM Nerd Font Mono"
     readonly property int fontPixelSize: 14
 }
+
+// Intentional temporary failure injection for sanitized QML report validation.
+@AWTARCHY_INTENTIONAL_QUICKSHELL_FAILURE_TEST@
