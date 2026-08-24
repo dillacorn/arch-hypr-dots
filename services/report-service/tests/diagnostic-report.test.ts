@@ -53,10 +53,31 @@ test('rejects arbitrary diagnostic text, paths, filenames, kinds, and invalid lo
   );
 });
 
-test('diagnostic detail does not change the stable failure fingerprint input', () => {
-  const withDiagnostic = validateFailurePayload({ ...base, diagnostic });
+test('safe diagnostic class refines the bug signature without using location', () => {
   const withoutDiagnostic = validateFailurePayload(base);
-  assert.equal(canonicalFailureId(withDiagnostic), canonicalFailureId(withoutDiagnostic));
+  const withDiagnostic = validateFailurePayload({ ...base, diagnostic });
+  const movedDiagnostic = validateFailurePayload({
+    ...base,
+    diagnostic: { ...diagnostic, line: 999, column: 17 },
+  });
+  const importDiagnostic = validateFailurePayload({
+    ...base,
+    diagnostic: { ...diagnostic, kind: 'qml_import_error' },
+  });
+  const otherManagedFile = validateFailurePayload({
+    ...base,
+    diagnostic: { ...diagnostic, managed_file: 'QuickSettings.qml' },
+  });
+
+  assert.notEqual(canonicalFailureId(withDiagnostic), canonicalFailureId(withoutDiagnostic));
+  assert.equal(canonicalFailureId(withDiagnostic), canonicalFailureId(movedDiagnostic));
+  assert.notEqual(canonicalFailureId(withDiagnostic), canonicalFailureId(importDiagnostic));
+  assert.notEqual(canonicalFailureId(withDiagnostic), canonicalFailureId(otherManagedFile));
+
+  assert.equal(canonicalFailureId(withDiagnostic).includes('65'), false);
+  assert.equal(canonicalFailureId(withDiagnostic).includes('17'), false);
+  assert.equal(canonicalFailureId(withDiagnostic).includes(base.awtarchy_config_version), false);
+  assert.equal(canonicalFailureId(withDiagnostic).includes(base.awtarchy_command_revision), false);
 });
 
 test('GitHub issue renders only the structured diagnostic fields', async () => {
