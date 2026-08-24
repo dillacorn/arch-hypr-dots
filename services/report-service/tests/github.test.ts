@@ -92,7 +92,7 @@ test('GitHub client exchanges app JWT and creates only fixed test issue content'
   assert.equal(calls.length, 4, 'each GitHub operation gets a fresh installation token');
 });
 
-test('GitHub client recovers an existing issue by exact fingerprint marker', async () => {
+test('GitHub client recovers only bot-authored issue with exact fingerprint marker', async () => {
   const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
   const pem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
   const fingerprint = 'b'.repeat(64);
@@ -103,11 +103,23 @@ test('GitHub client recovers an existing issue by exact fingerprint marker', asy
     }
     if (url.includes('/issues?')) {
       return Response.json([
-        { number: 8, html_url: 'https://github.com/dillacorn/awtarchy/issues/8', body: 'unrelated' },
+        {
+          number: 8,
+          html_url: 'https://github.com/dillacorn/awtarchy/issues/8',
+          body: 'unrelated',
+          user: { login: 'awtarchy-report-bot[bot]', type: 'Bot' },
+        },
         {
           number: 9,
           html_url: 'https://github.com/dillacorn/awtarchy/issues/9',
-          body: `test\n<!-- awtarchy-report-fingerprint:${fingerprint} -->`,
+          body: `forged\n<!-- awtarchy-report-fingerprint:${fingerprint} -->`,
+          user: { login: 'attacker', type: 'User' },
+        },
+        {
+          number: 10,
+          html_url: 'https://github.com/dillacorn/awtarchy/issues/10',
+          body: `real\n<!-- awtarchy-report-fingerprint:${fingerprint} -->`,
+          user: { login: 'awtarchy-report-bot[bot]', type: 'Bot' },
         },
       ]);
     }
@@ -123,7 +135,7 @@ test('GitHub client recovers an existing issue by exact fingerprint marker', asy
   }, fakeFetch);
 
   assert.deepEqual(await client.findIssueByFingerprint(fingerprint), {
-    number: 9,
-    url: 'https://github.com/dillacorn/awtarchy/issues/9',
+    number: 10,
+    url: 'https://github.com/dillacorn/awtarchy/issues/10',
   });
 });
