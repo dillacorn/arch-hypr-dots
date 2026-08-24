@@ -358,7 +358,9 @@ export async function runFailureReport(
              last_version = ?
        WHERE fingerprint = ?
          AND github_issue_number IS NULL
-    `).bind(nowIso, version, fingerprint).run();
+         AND status = 'creating_issue'
+         AND last_seen = ?
+    `).bind(nowIso, version, fingerprint, nowIso).run();
     return { ok: false, error: 'github_issue_creation_failed' };
   }
 
