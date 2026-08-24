@@ -52,12 +52,17 @@ jobs:
           shellcheck tests/test-quickshell-resume-report-hooks.sh
       - name: Managed history registration
         run: |
-          hash="$(sha256sum config/hypr/scripts/quickshell.sh | awk '{print $1}')"
-          entry="${hash}"$'\t''.config/hypr/scripts/quickshell.sh'
-          if ! grep -Fxq "$entry" local/share/awtarchy/quickshell-managed-history.sha256; then
-            echo "Current quickshell.sh hash missing from managed history: ${hash}"
-            exit 1
-          fi
+          while IFS='|' read -r file rel; do
+            hash="$(sha256sum "$file" | awk '{print $1}')"
+            entry="${hash}"$'\t'"${rel}"
+            if ! grep -Fxq "$entry" local/share/awtarchy/quickshell-managed-history.sha256; then
+              echo "Current ${file} hash missing from managed history: ${hash}"
+              exit 1
+            fi
+          done <<'EOF'
+          config/hypr/scripts/quickshell.sh|.config/hypr/scripts/quickshell.sh
+          config/hypr/scripts/quickshell_resume_recover.sh|.config/hypr/scripts/quickshell_resume_recover.sh
+          EOF
       - name: Anonymous reporting tests
         run: |
           bash tests/test-anonymous-reporting.sh
