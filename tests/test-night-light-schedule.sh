@@ -5,6 +5,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="${ROOT}/config/hypr/scripts/hyprsunset_ctl.sh"
 BACKEND="${ROOT}/config/hypr/scripts/hypr_quicksettings.sh"
 QUICK_SETTINGS="${ROOT}/config/quickshell/awtarchy/QuickSettings.qml"
+HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -111,5 +112,26 @@ contains "$QUICK_SETTINGS" '["night-light-schedule", "set"' \
   'Night Light schedule save does not use the Quick Settings backend'
 contains "$QUICK_SETTINGS" '["night-light-schedule", "disable"]' \
   'Night Light schedule cannot be disabled from Quick Settings'
+
+# These are release-managed files. Keep every new stock state recognizable so
+# later updates do not preserve Awtarchy's own previous version as a user edit.
+missing_history=0
+for rel in \
+  .config/hypr/scripts/hyprsunset_ctl.sh \
+  .config/hypr/scripts/hypr_quicksettings.sh \
+  .config/quickshell/awtarchy/QuickSettings.qml
+do
+  case "$rel" in
+    .config/hypr/scripts/hyprsunset_ctl.sh) source_file="$SCRIPT" ;;
+    .config/hypr/scripts/hypr_quicksettings.sh) source_file="$BACKEND" ;;
+    .config/quickshell/awtarchy/QuickSettings.qml) source_file="$QUICK_SETTINGS" ;;
+  esac
+  digest="$(sha256sum "$source_file" | awk '{print $1}')"
+  if ! grep -Fq -- "$digest"$'\t'"$rel" "$HISTORY"; then
+    printf 'MISSING_MANAGED_HASH %s\t%s\n' "$digest" "$rel" >&2
+    missing_history=1
+  fi
+done
+(( missing_history == 0 )) || fail 'managed history is missing current Night Light schedule stock hashes'
 
 printf '%s\n' 'PASS: Night Light supports safe daily enable/disable scheduling with a scheduled temperature.'
