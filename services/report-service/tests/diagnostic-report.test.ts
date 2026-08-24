@@ -30,13 +30,17 @@ test('accepts a tightly structured managed-QML diagnostic', () => {
   assert.deepEqual(payload.diagnostic, diagnostic);
 });
 
-test('rejects arbitrary diagnostic text, paths, kinds, and invalid locations', () => {
+test('rejects arbitrary diagnostic text, paths, filenames, kinds, and invalid locations', () => {
   assert.throws(
     () => validateFailurePayload({ ...base, diagnostic: { ...diagnostic, message: 'secret raw log text' } }),
     /unknown_diagnostic_field/,
   );
   assert.throws(
     () => validateFailurePayload({ ...base, diagnostic: { ...diagnostic, managed_file: '/home/alice/Theme.qml' } }),
+    /invalid_diagnostic_managed_file/,
+  );
+  assert.throws(
+    () => validateFailurePayload({ ...base, diagnostic: { ...diagnostic, managed_file: 'JohnDoe.qml' } }),
     /invalid_diagnostic_managed_file/,
   );
   assert.throws(
