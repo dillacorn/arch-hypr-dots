@@ -123,9 +123,10 @@ test('POST /v1/report fails closed when rate limiting is unavailable', async () 
   assert.equal(called, 0);
 });
 
-test('POST /v1/report rate limits by canonical failure signature before D1 workflow', async () => {
+test('POST /v1/report lets a saturated signature resolve an already-linked issue', async () => {
   let called = 0;
   let key = '';
+  let allowed: boolean | undefined;
   const limitedEnv = {
     REPORT_RATE_LIMITER: {
       async limit(input: { key: string }) {
@@ -139,21 +140,55 @@ test('POST /v1/report rate limits by canonical failure signature before D1 workf
     reportRequest(),
     limitedEnv,
     undefined,
-    async () => {
+    async (_env, _payload, options) => {
       called += 1;
-      return { ok: true, created: true, deduplicated: false, issue_number: 1, issue_url: 'x' };
+      allowed = options?.rateLimitAllowed;
+      return {
+        ok: true,
+        created: false,
+        deduplicated: true,
+        issue_number: 88,
+        issue_url: 'https://github.com/dillacorn/awtarchy/issues/88',
+      };
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(key, '1|failure|quickshell|start|quickshell_not_ready');
+  assert.equal(called, 1);
+  assert.equal(allowed, false);
+});
+
+test('POST /v1/report maps a saturated unlinked signature to 429', async () => {
+  let called = 0;
+  const limitedEnv = {
+    REPORT_RATE_LIMITER: {
+      async limit() {
+        return { success: false };
+      },
+    },
+  } as any;
+
+  const response = await handleRequest(
+    reportRequest(),
+    limitedEnv,
+    undefined,
+    async (_env, _payload, options) => {
+      called += 1;
+      assert.equal(options?.rateLimitAllowed, false);
+      return { ok: false, error: 'rate_limited' };
     },
   );
 
   assert.equal(response.status, 429);
   assert.deepEqual(await response.json(), { ok: false, error: 'rate_limited' });
-  assert.equal(key, '1|failure|quickshell|start|quickshell_not_ready');
-  assert.equal(called, 0);
+  assert.equal(called, 1);
 });
 
 test('POST /v1/report invokes production workflow with validated payload', async () => {
   let received: any = null;
   let limiterCalls = 0;
+  let allowed: boolean | undefined;
   const allowedEnv = {
     REPORT_RATE_LIMITER: {
       async limit() {
@@ -167,8 +202,9 @@ test('POST /v1/report invokes production workflow with validated payload', async
     reportRequest(),
     allowedEnv,
     undefined,
-    async (_env, payload) => {
+    async (_env, payload, options) => {
       received = payload;
+      allowed = options?.rateLimitAllowed;
       return {
         ok: true,
         created: true,
@@ -181,6 +217,7 @@ test('POST /v1/report invokes production workflow with validated payload', async
 
   assert.equal(response.status, 201);
   assert.equal(limiterCalls, 1);
+  assert.equal(allowed, true);
   assert.equal(received.component, 'quickshell');
   assert.equal(received.failure_stage, 'start');
 });
