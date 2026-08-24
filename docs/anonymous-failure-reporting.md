@@ -12,13 +12,14 @@ known Awtarchy failure
   -> user Send / Review / Don't send
   -> https://awtarchy-reports.dillacorn.workers.dev/v1/report
   -> strict Worker validation
-  -> signature-keyed Cloudflare rate limiting
+  -> client+signature Cloudflare rate limit
+  -> signature-wide Cloudflare rate limit
   -> server-generated SHA-256 failure fingerprint
   -> D1 aggregate/deduplication
   -> Awtarchy Report Bot GitHub issue
 ```
 
-Noninteractive failure paths queue the report but never invent consent or spawn a terminal. The report remains local until a user explicitly submits or discards it. Once Quickshell becomes healthy again, Awtarchy may notify the user that sanitized reports are waiting.
+Noninteractive failure paths queue the report but never invent consent or spawn a terminal. The report remains local until a user explicitly submits or discards it. Once Quickshell becomes healthy again, Awtarchy may notify the user that sanitized reports are waiting. If Quickshell remains unavailable, opening the interactive `awtarchy` maintenance menu also surfaces any valid pending reports.
 
 ## Security invariants
 
@@ -28,7 +29,7 @@ Noninteractive failure paths queue the report but never invent consent or spawn 
 - Never add raw logs or arbitrary strings to the report schema merely because they are useful for debugging.
 - Never add persistent install, machine, or user identifiers without a new explicit privacy/design decision.
 - Restrict client send/review/discard operations to known Awtarchy pending-report files and revalidate a report locally before transmission.
-- Keep the Worker rate limiter ahead of D1/GitHub and key it only by the canonical failure signature unless a future privacy/design decision explicitly changes that model.
+- Keep both Worker rate limiters ahead of D1/GitHub reporting work. The client limiter may use Cloudflare's transport IP only for its transient counter; never persist that value or add it to report/D1/GitHub content.
 - Reporting failure must never change the original operation's exit code or recovery behavior.
 - Keep the GitHub App limited to Issues read/write plus required Metadata read-only.
 - Keep the Worker private key and maintainer test token in Cloudflare secrets only.
@@ -60,9 +61,13 @@ Add focused tests on both sides. If an updater/recovery caller needs a distinct 
 
 ## Abuse protection
 
-The production route configures five validated limiter calls per 60 seconds for each canonical failure signature in each Cloudflare location before any D1/GitHub work. Cloudflare's native Worker limiter is location-local, permissive, and eventually consistent, so this is best-effort abuse reduction rather than a strict global request cap.
+The production route uses two Cloudflare Worker Rate Limiting bindings after validation and before D1/GitHub reporting work.
 
-If the rate-limiter binding is unavailable, `/v1/report` fails closed with `503`. When the limiter rejects a request it returns `429`. In either case, the client keeps the pending report locally rather than treating it as successfully submitted.
+`REPORT_CLIENT_RATE_LIMITER` allows three calls per 60 seconds for each Cloudflare client-IP plus canonical failure-signature pair in a Cloudflare location. `REPORT_SIGNATURE_RATE_LIMITER` then allows 20 calls per 60 seconds for each canonical failure signature in that location. The first boundary prevents one client from trivially monopolizing the second; the second still caps aggregate backend work if abuse is distributed.
+
+The client IP comes from Cloudflare's `CF-Connecting-IP` transport header and is used only for the transient client-rate counter. It is not added to the report payload, D1 state, GitHub issue, or a persistent Awtarchy identifier.
+
+Cloudflare's native Worker limiter is location-local, permissive, and eventually consistent, so these are best-effort abuse controls rather than strict global request caps. If either binding or the Cloudflare client-IP header is unavailable, `/v1/report` fails closed with `503`. If either limiter rejects a request it returns `429`. In either case, the client keeps the pending report locally rather than treating it as successfully submitted.
 
 ## Deployment
 
@@ -76,7 +81,7 @@ npm test
 npx wrangler@latest deploy
 ```
 
-If Wrangler reports dashboard/local configuration differences, review them before accepting. The deployment must include the existing D1 binding and the source-controlled `REPORT_RATE_LIMITER` binding. Secrets must remain dashboard-managed and must never be committed.
+If Wrangler reports dashboard/local configuration differences, review them before accepting. The deployment must include the existing D1 binding plus both source-controlled rate-limit bindings. Secrets must remain dashboard-managed and must never be committed.
 
 CI runs a Wrangler deployment dry run on Node 22 to parse the source-controlled Worker configuration before a live deploy.
 
