@@ -191,7 +191,9 @@ export async function runControlledTest(
              last_seen = ?
        WHERE fingerprint = ?
          AND github_issue_number IS NULL
-    `).bind(nowIso, fingerprint).run();
+         AND status = 'creating_issue'
+         AND last_seen = ?
+    `).bind(nowIso, fingerprint, nowIso).run();
     return { ok: false, error: 'github_issue_creation_failed' };
   }
 
