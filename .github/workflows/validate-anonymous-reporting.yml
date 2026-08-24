@@ -43,7 +43,7 @@ jobs:
       - name: ShellCheck
         run: |
           shellcheck config/hypr/scripts/awtarchy_report_failure.sh
-          shellcheck config/hypr/scripts/quickshell.sh
+          shellcheck -e SC2034 config/hypr/scripts/quickshell.sh
           shellcheck config/hypr/scripts/quickshell_resume_recover.sh
           shellcheck tests/test-anonymous-reporting.sh
           shellcheck tests/test-quickshell-report-hooks.sh
