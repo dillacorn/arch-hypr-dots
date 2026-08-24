@@ -88,6 +88,36 @@ if grep -Fq -- "$(hostname)" "$REPORT"; then
     exit 1
 fi
 
+OUTSIDE="$TMP/outside-report.json"
+cp -- "$REPORT" "$OUTSIDE"
+if bash "$SCRIPT" send "$OUTSIDE" >/dev/null 2>&1; then
+    echo 'send accepted a file outside the pending-report directory' >&2
+    exit 1
+fi
+[[ -f "$OUTSIDE" ]]
+[[ ! -e "$CURL_CALLS" ]]
+
+DO_NOT_DELETE="$TMP/do-not-delete.json"
+printf '{"keep":true}\n' >"$DO_NOT_DELETE"
+if bash "$SCRIPT" discard "$DO_NOT_DELETE" >/dev/null 2>&1; then
+    echo 'discard accepted a file outside the pending-report directory' >&2
+    exit 1
+fi
+[[ -f "$DO_NOT_DELETE" ]]
+
+ORIGINAL="$TMP/original-report.json"
+cp -- "$REPORT" "$ORIGINAL"
+jq '.secret = "must-never-leave-the-client"' "$REPORT" >"${REPORT}.tmp"
+mv -f -- "${REPORT}.tmp" "$REPORT"
+if bash "$SCRIPT" send "$REPORT" >/dev/null 2>&1; then
+    echo 'send accepted a tampered pending report with an unknown field' >&2
+    exit 1
+fi
+[[ -f "$REPORT" ]]
+[[ ! -e "$CURL_CALLS" ]]
+cp -- "$ORIGINAL" "$REPORT"
+chmod 0600 "$REPORT"
+
 bash "$SCRIPT" send "$REPORT" >/dev/null
 [[ ! -e "$REPORT" ]]
 [[ -s "$CURL_CALLS" ]]
