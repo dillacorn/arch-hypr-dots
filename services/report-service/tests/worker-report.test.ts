@@ -18,6 +18,14 @@ const valid = {
 
 const env = {} as any;
 
+function reportRequest(): Request {
+  return new Request('https://example.test/v1/report', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    body: JSON.stringify(valid),
+  });
+}
+
 test('POST /v1/report requires application/json', async () => {
   let called = 0;
   const response = await handleRequest(
@@ -68,15 +76,66 @@ test('POST /v1/report rejects bodies over 32 KiB', async () => {
   assert.equal(response.status, 413);
 });
 
+test('POST /v1/report fails closed when rate limiting is unavailable', async () => {
+  let called = 0;
+  const response = await handleRequest(
+    reportRequest(),
+    env,
+    undefined,
+    async () => {
+      called += 1;
+      return { ok: true, created: true, deduplicated: false, issue_number: 1, issue_url: 'x' };
+    },
+  );
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { ok: false, error: 'service_unavailable' });
+  assert.equal(called, 0);
+});
+
+test('POST /v1/report rate limits by canonical failure signature before D1 workflow', async () => {
+  let called = 0;
+  let key = '';
+  const limitedEnv = {
+    REPORT_RATE_LIMITER: {
+      async limit(input: { key: string }) {
+        key = input.key;
+        return { success: false };
+      },
+    },
+  } as any;
+
+  const response = await handleRequest(
+    reportRequest(),
+    limitedEnv,
+    undefined,
+    async () => {
+      called += 1;
+      return { ok: true, created: true, deduplicated: false, issue_number: 1, issue_url: 'x' };
+    },
+  );
+
+  assert.equal(response.status, 429);
+  assert.deepEqual(await response.json(), { ok: false, error: 'rate_limited' });
+  assert.equal(key, '1|failure|quickshell|start|quickshell_not_ready');
+  assert.equal(called, 0);
+});
+
 test('POST /v1/report invokes production workflow with validated payload', async () => {
   let received: any = null;
+  let limiterCalls = 0;
+  const allowedEnv = {
+    REPORT_RATE_LIMITER: {
+      async limit() {
+        limiterCalls += 1;
+        return { success: true };
+      },
+    },
+  } as any;
+
   const response = await handleRequest(
-    new Request('https://example.test/v1/report', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      body: JSON.stringify(valid),
-    }),
-    env,
+    reportRequest(),
+    allowedEnv,
     undefined,
     async (_env, payload) => {
       received = payload;
@@ -91,6 +150,7 @@ test('POST /v1/report invokes production workflow with validated payload', async
   );
 
   assert.equal(response.status, 201);
+  assert.equal(limiterCalls, 1);
   assert.equal(received.component, 'quickshell');
   assert.equal(received.failure_stage, 'start');
 });
