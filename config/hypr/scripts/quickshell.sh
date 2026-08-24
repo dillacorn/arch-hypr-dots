@@ -6,6 +6,7 @@ set -euo pipefail
 export LC_ALL=C.UTF-8
 
 CONFIG_NAME="${QUICKSHELL_CONFIG_NAME:-awtarchy}"
+CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 STATE_DIR="${CACHE_HOME}/awtarchy"
 STATE_FILE="${STATE_DIR}/quickshell-state.json"
@@ -13,6 +14,7 @@ STATE_LOCK_FILE="${STATE_FILE}.lock"
 START_LOCK_FILE="${STATE_DIR}/quickshell-start.lock"
 LEGACY_STATE_FILE="${CACHE_HOME}/waybar/state.json"
 LOG_FILE="${STATE_DIR}/quickshell.log"
+REPORT_SCRIPT="${AWTARCHY_REPORT_SCRIPT:-${CONFIG_HOME}/hypr/scripts/awtarchy_report_failure.sh}"
 PROC_ROOT="/proc"
 if [[ ${AWTARCHY_TEST_MODE:-0} == 1 && -n ${AWTARCHY_TEST_PROC_ROOT:-} ]]; then
     PROC_ROOT="${AWTARCHY_TEST_PROC_ROOT}"
@@ -232,7 +234,20 @@ wait_for_pids_stop() {
     return 1
 }
 
+report_quickshell_failure() {
+    local stage="$1"
+    [[ ${AWTARCHY_REPORT_SUPPRESS_QUICKSHELL:-0} != 1 ]] || return 0
+    [[ -f "$REPORT_SCRIPT" || -x "$REPORT_SCRIPT" ]] || return 0
+    bash "$REPORT_SCRIPT" capture quickshell "$stage" quickshell_not_ready || true
+}
+
+notify_pending_reports() {
+    [[ -f "$REPORT_SCRIPT" || -x "$REPORT_SCRIPT" ]] || return 0
+    bash "$REPORT_SCRIPT" notify-pending >/dev/null 2>&1 || true
+}
+
 start_shell() {
+    local report_stage="${1:-start}"
     local stable_pings=0
 
     # Multiple login/startup paths can legitimately ask for Quickshell at the
@@ -249,6 +264,7 @@ start_shell() {
 
     if is_running; then
         flock -u 7
+        notify_pending_reports
         return 0
     fi
 
@@ -263,6 +279,7 @@ start_shell() {
             ((stable_pings += 1))
             if (( stable_pings >= 5 )); then
                 flock -u 7
+                notify_pending_reports
                 return 0
             fi
         else
@@ -273,6 +290,7 @@ start_shell() {
 
     flock -u 7
     printf 'quickshell.sh: Quickshell did not become ready; see %s\n' "$LOG_FILE" >&2
+    report_quickshell_failure "$report_stage"
     return 1
 }
 
@@ -341,10 +359,16 @@ stop_shell() {
 }
 
 restart_shell() {
+    local report_stage="${AWTARCHY_REPORT_FAILURE_STAGE:-restart}"
+    case "$report_stage" in
+        restart|restart_after_update) ;;
+        *) report_stage=restart ;;
+    esac
+
     # A soft QML reload cannot reliably discover newly installed component
     # files. Fully stop the current shell before starting the updated tree.
     stop_shell
-    start_shell
+    start_shell "$report_stage"
 }
 
 list_monitors() {
@@ -603,11 +627,11 @@ case "$cmd" in
 esac
 
 case "$cmd" in
-    start) start_shell ;;
+    start) start_shell start ;;
     stop) stop_shell ;;
     restart) restart_shell ;;
     status) status ;;
-    enable) set_global_enabled true; start_shell ;;
+    enable) set_global_enabled true; start_shell start ;;
     disable) set_global_enabled false ;;
     dump-state) ensure_state; cat "$STATE_FILE" ;;
     list-monitors) list_monitors ;;
