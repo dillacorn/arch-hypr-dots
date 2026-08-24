@@ -42,6 +42,8 @@ Do not add automatic submission without a new explicit project decision and corr
 - Keep canonical error descriptions server-owned.
 - Keep GitHub issue title/body/repository/action server-owned.
 - Keep fingerprints server-generated from stable enum-like failure identifiers only.
+- Keep `REPORT_RATE_LIMITER` ahead of D1/GitHub work and fail the production route closed if the binding is unavailable.
+- Rate-limit by the canonical failure signature, not a persistent user/machine/install identifier. Using IP-based application identity requires a new explicit privacy/design decision.
 - Do not ship a production API secret in the open-source client.
 - Do not accept arbitrary Markdown, logs, attachments, issue numbers, labels, or GitHub actions from clients.
 
