@@ -45,6 +45,39 @@ const DIAGNOSTIC_KINDS = new Set([
   'qml_type_error',
   'qml_load_error',
 ]);
+const MANAGED_QML_FILES = new Set([
+  'AudioLimitState.qml',
+  'Bar.qml',
+  'BarButton.qml',
+  'BarSettingsSection.qml',
+  'BarState.qml',
+  'BarTooltip.qml',
+  'BatteryCareCard.qml',
+  'BatteryMenu.qml',
+  'BatteryState.qml',
+  'BluetoothMenu.qml',
+  'CaptureEyeButton.qml',
+  'ClipboardMenu.qml',
+  'FlyoutManager.qml',
+  'FlyoutSettings.qml',
+  'Launcher.qml',
+  'ListScrollBar.qml',
+  'NetworkMenu.qml',
+  'NetworkVpnSection.qml',
+  'NotificationCard.qml',
+  'Notifications.qml',
+  'NumlockSessionTweak.qml',
+  'PowerMenu.qml',
+  'PowerModeCard.qml',
+  'QuickSettings.qml',
+  'SettingsButton.qml',
+  'SystemState.qml',
+  'Theme.qml',
+  'ThemePicker.qml',
+  'TitleBarsCard.qml',
+  'TrayMenu.qml',
+  'shell.qml',
+]);
 const SAFE_VERSION = /^[A-Za-z0-9._+@\/-]{1,128}$/;
 const SAFE_RUNTIME_VERSION = /^[A-Za-z0-9._+-]{1,96}$/;
 const SAFE_MANAGED_QML = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}\.qml$/;
@@ -149,7 +182,11 @@ function validateDiagnostic(value: unknown): FailureDiagnostic {
   if (typeof value.kind !== 'string' || !DIAGNOSTIC_KINDS.has(value.kind)) {
     throw new FailureValidationError('invalid_diagnostic_kind');
   }
-  if (typeof value.managed_file !== 'string' || !SAFE_MANAGED_QML.test(value.managed_file)) {
+  if (
+    typeof value.managed_file !== 'string'
+    || !SAFE_MANAGED_QML.test(value.managed_file)
+    || !MANAGED_QML_FILES.has(value.managed_file)
+  ) {
     throw new FailureValidationError('invalid_diagnostic_managed_file');
   }
   if (!Number.isInteger(value.line) || Number(value.line) < 1 || Number(value.line) > 1_000_000) {
