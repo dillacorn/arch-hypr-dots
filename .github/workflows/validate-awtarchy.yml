@@ -1,7 +1,10 @@
 name: Validate Awtarchy
 
 on:
+  push:
+    branches: [main, post-v3.1.5-input-brightness-fix-testing]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -10,78 +13,240 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Temporary release bridge guard
-        run: echo 'Temporary v3.2.1 release bridge; full validation was completed before merge.'
-
-  publish-v3-2-1:
-    if: >-
-      github.event.pull_request.title == 'Trigger v3.2.1 release' &&
-      github.event.pull_request.head.ref == 'v3-2-1-release-trigger'
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out main
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           fetch-depth: 0
-          ref: main
-
-      - name: Publish and verify v3.2.1
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TARGET_SHA: d51e7dcab8d87ce4cc8bdd77f9d12a2e275150ee
-          TARGET_TREE: 9e6f5569cab701edc352d0bac0a5bc99dd3e2d02
-          RELEASE_TAG: v3.2.1
-          RELEASE_NAME: Awtarchy v3.2.1 Quickshell
-          RELEASE_NOTES_B64: IyBBd3RhcmNoeSB2My4yLjEgUXVpY2tzaGVsbAoKQXd0YXJjaHkgdjMuMi4xIGFkZHMgc2NoZWR1bGVkIE5pZ2h0IExpZ2h0IGNvbnRyb2xzIHRvIFF1aWNrIFNldHRpbmdzIGFuZCBtYWtlcyB1c2VyLWFwcHJvdmVkIGFub255bW91cyBRdWlja3NoZWxsIGZhaWx1cmUgcmVwb3J0cyBzdWJzdGFudGlhbGx5IG1vcmUgYWN0aW9uYWJsZSB3aGlsZSBwcmVzZXJ2aW5nIHN0cmljdCBkYXRhIG1pbmltaXphdGlvbi4KCiMjIEdldHRpbmcgc3RhcnRlZAoKRnJlc2ggaW5zdGFsbDoKCmBgYGJhc2gKc3VkbyBwYWNtYW4gLVMgZ2l0IC0tbm9jb25maXJtCmdpdCBjbG9uZSBodHRwczovL2dpdGh1Yi5jb20vZGlsbGFjb3JuL2F3dGFyY2h5CmNkIGF3dGFyY2h5CnN1ZG8gLi9hd3RhcmNoeS1pbnN0YWxsLnNoCmBgYAoKRXhpc3RpbmcgQXd0YXJjaHkgdXNlcnM6CgpgYGBiYXNoCmF3dGFyY2h5IHVwZGF0ZQpgYGAKCiMjIE5pZ2h0IExpZ2h0IHNjaGVkdWxpbmcKCi0gQWRkZWQgYSBTYW1zdW5nLXN0eWxlIGRhaWx5IE5pZ2h0IExpZ2h0IHNjaGVkdWxlIGRpcmVjdGx5IHRvIFF1aWNrIFNldHRpbmdzIHdpdGggc3RhcnQgdGltZSwgZW5kIHRpbWUsIGFuZCBzY2hlZHVsZWQgY29sb3IgdGVtcGVyYXR1cmUuCi0gT3Zlcm5pZ2h0IHNjaGVkdWxlcyBpZGVudGlmeSB0aGUgZW5kIHRpbWUgYXMgdGhlIG5leHQgZGF5LgotIFNjaGVkdWxpbmcgdXNlcyBuYXRpdmUgSHlwcnN1bnNldCBwcm9maWxlcy4gRXhpc3RpbmcgKipXYXJtZXIqKiwgKipPbi9PZmYqKiwgYW5kICoqQ29vbGVyKiogbWFudWFsIGNvbnRyb2xzIGNvbnRpbnVlIHRvIHdvcmsuCi0gU2NoZWR1bGluZyBpcyBkaXNhYmxlZCBieSBkZWZhdWx0LCBhbmQgZGlzYWJsaW5nIGEgc2NoZWR1bGUgcHJlc2VydmVzIHRoZSBzZWxlY3RlZCBzdGFydC9lbmQgdGltZXMgYW5kIHRlbXBlcmF0dXJlIGZvciBsYXRlciByZXVzZS4KLSBBd3RhcmNoeSByZWZ1c2VzIHRvIG92ZXJ3cml0ZSBhbiBleGlzdGluZyB1c2VyLW93bmVkIGBoeXByc3Vuc2V0LmNvbmZgLgotIFRoZSBOaWdodCBMaWdodCBhbmQgVmlicmFuY2UgY2FyZHMgbm93IHNoYXJlIHRoZSBzYW1lIHJvdyBoZWlnaHQgZm9yIGEgY29uc2lzdGVudCBRdWljayBTZXR0aW5ncyBsYXlvdXQuCgojIyBTYW5pdGl6ZWQgZmFpbHVyZSBkaWFnbm9zdGljcwoKLSBVc2VyLWFwcHJvdmVkIFF1aWNrc2hlbGwgZmFpbHVyZSByZXBvcnRzIGNhbiBub3cgaW5jbHVkZSBhbiBvcHRpb25hbCB0aWdodGx5IGJvdW5kZWQgZGlhZ25vc3RpYyB3aGVuIEF3dGFyY2h5IGNhbiBzYWZlbHkgcmVjb2duaXplIG9uZSBsb2NhbGx5LgotIFRoZSBkaWFnbm9zdGljIGlzIGxpbWl0ZWQgdG8gYSBmaXhlZCBRTUwgZmFpbHVyZSBjYXRlZ29yeSwgYW4gQXd0YXJjaHktbWFuYWdlZCBRTUwgYmFzZW5hbWUsIGFuZCBwb3NpdGl2ZSBudW1lcmljIGxpbmUvY29sdW1uIHZhbHVlcy4KLSBSYXcgbG9ncywgcmF3IGV4Y2VwdGlvbi9lcnJvciB0ZXh0LCBhcmJpdHJhcnkgcGF0aHMsIHVzZXJuYW1lcywgaG9zdG5hbWVzLCBob21lLWRpcmVjdG9yeSBwYXRocywgYW5kIHBlcnNpc3RlbnQgaW5zdGFsbGF0aW9uIGlkZW50aWZpZXJzIHJlbWFpbiBleGNsdWRlZC4KLSBUaGUgcHVibGljIFdvcmtlciBpbmRlcGVuZGVudGx5IHZhbGlkYXRlcyBkaWFnbm9zdGljIGNhdGVnb3JpZXMgYW5kIG1hbmFnZWQgZmlsZW5hbWVzIHJhdGhlciB0aGFuIHRydXN0aW5nIGNsaWVudC1wcm92aWRlZCB0ZXh0LgotIERpYWdub3N0aWMgaXNzdWUgZmluZ2VycHJpbnRzIG1heSByZWZpbmUgYnkgc2FmZSBmYWlsdXJlIGtpbmQgcGx1cyBtYW5hZ2VkIGZpbGVuYW1lLCB3aGlsZSBsaW5lL2NvbHVtbiwgdmVyc2lvbnMsIEdQVSBmYW1pbHksIGFuZCBtYWNoaW5lLXNwZWNpZmljIHZhbHVlcyByZW1haW4gb3V0c2lkZSB0aGUgZmluZ2VycHJpbnQuCi0gQ2xvdWRmbGFyZSByYXRlIGxpbWl0aW5nIHJlbWFpbnMga2V5ZWQgdG8gdGhlIG9yaWdpbmFsIGNvYXJzZSBmYWlsdXJlIGNsYXNzIHNvIHJvdGF0aW5nIGRpYWdub3N0aWMgdmFsdWVzIGNhbm5vdCBpbmNyZWFzZSB0aGUgcmVxdWVzdCBidWRnZXQuCgojIyBFeGFjdC1zb3VyY2UgR2l0SHViIGxpbmtzCgotIFJlY29nbml6ZWQgUU1MIHJlcG9ydHMgbm93IGdlbmVyYXRlIGEgY2xpY2thYmxlIEdpdEh1YiBzb3VyY2UgcGVybWFsaW5rIHRvIHRoZSBleGFjdCBmYWlsaW5nIEF3dGFyY2h5IHJldmlzaW9uLCBtYW5hZ2VkIFFNTCBmaWxlLCBhbmQgcmVwb3J0ZWQgbGluZS4KLSBUaGUgY2xpZW50IGRvZXMgbm90IHNlbmQgYSByZXBvc2l0b3J5IFVSTC4gVGhlIFdvcmtlciBjb25zdHJ1Y3RzIHRoZSBwZXJtYWxpbmsgZnJvbSBzZXJ2ZXItb3duZWQgcmVwb3NpdG9yeSBjb29yZGluYXRlcyBwbHVzIHRoZSB2YWxpZGF0ZWQgcmV2aXNpb24vZmlsZS9saW5lIGZpZWxkcy4KLSBJZiBhIHNhZmUgZGlhZ25vc3RpYyBjYW5ub3QgYmUgZXh0cmFjdGVkLCByZXBvcnRpbmcgc3RpbGwgd29ya3Mgd2l0aCB0aGUgbm9ybWFsIGZhaWx1cmUgY2xhc3MgYW5kIGV4YWN0IEF3dGFyY2h5IHJldmlzaW9uIGZvciBtYW51YWwgaW52ZXN0aWdhdGlvbi4KCiMjIFByb2R1Y3Rpb24gdmFsaWRhdGlvbgoKLSBUaGUgdXBkYXRlZCBDbG91ZGZsYXJlIHJlcG9ydCBXb3JrZXIgd2FzIGRlcGxveWVkIGFuZCBwYXNzZWQgaXRzIHByb2R1Y3Rpb24gaGVhbHRoIGNoZWNrIGJlZm9yZSByZWxlYXNlLgotIEVuZC10by1lbmQgaXNzdWUgIzU3IHZhbGlkYXRlZCB0aGUgZW5oYW5jZWQgcGF0aCB3aXRoIGFuIGludGVudGlvbmFsIGBUaGVtZS5xbWxgIHBhcnNlIGZhaWx1cmU6IHRoZSByZXBvcnQgaWRlbnRpZmllZCBgcW1sX3BhcnNlX2Vycm9yYCwgYFRoZW1lLnFtbGAsIGxvY2F0aW9uIGA2NzoxYCwgYW5kIGxpbmtlZCBkaXJlY3RseSB0byB0aGUgZXhhY3QgZmFpbGluZyBzb3VyY2UgbGluZS4KLSBUaGUgdXBkYXRlciBleGhhdXN0ZWQgbm9ybWFsIFF1aWNrc2hlbGwgcmVjb3ZlcnksIG9mZmVyZWQgdGhlIGV4cGxpY2l0IHJldmlldy9zZW5kIGNvbnNlbnQgZmxvdywgY3JlYXRlZCB0aGUgc2FuaXRpemVkIEdpdEh1YiBpc3N1ZSwgYW5kIHJvbGxlZCB0aGUgY2hhbmdlZCB1c2VyIGZpbGVzIGJhY2sgc2FmZWx5LgotIFRoZSBpbnRlbnRpb25hbCBmYWlsdXJlIHdhcyByZW1vdmVkIGltbWVkaWF0ZWx5IGFmdGVyd2FyZCBhbmQgdGhlIHJlc3RvcmVkIGJyYW5jaCBwYXNzZWQgdGhlIGZ1bGwgQXd0YXJjaHksIGFub255bW91cy1yZXBvcnRpbmcsIE5vZGUgMjAvMjIgcmVwb3J0LXNlcnZpY2UsIGFuZCBXcmFuZ2xlciBkcnktcnVuIHZhbGlkYXRpb24gc3VpdGVzLgoKIyMgUG9zdC1yZWxlYXNlIHVwZGF0ZXMKCl9QbGFjZWhvbGRlciBmb3IgcG9zc2libGUgdGVzdGVkIHBvc3QtcmVsZWFzZSBwYXRjaGVzIHRvIHYzLjIuMS5fCg==
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y desktop-file-utils shellcheck lua5.4
+      - name: Bash syntax
         run: |
-          set -euo pipefail
-
-          test "$(git rev-parse "${TARGET_SHA}^{tree}")" = "$TARGET_TREE"
-          git merge-base --is-ancestor "$TARGET_SHA" HEAD
-          git diff --quiet "$TARGET_SHA" HEAD -- . \
-            ':(exclude).github/workflows/validate-awtarchy.yml' \
-            ':(exclude).github/workflows/validate-anonymous-reporting.yml'
-
-          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
-            echo "${RELEASE_TAG} tag already exists; refusing to recreate it." >&2
-            false
-          fi
-
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "${RELEASE_TAG} release already exists; refusing to replace it." >&2
-            false
-          fi
-
-          printf '%s' "$RELEASE_NOTES_B64" | base64 --decode >release-notes.md
-          test "$(sha256sum release-notes.md | awk '{print $1}')" = '6b5f398aea6aa1e0911c5976271295d3d2932527412bb88f697e8e5bac998566'
-          grep -Fq '# Awtarchy v3.2.1 Quickshell' release-notes.md
-          grep -Fq 'sudo ./awtarchy-install.sh' release-notes.md
-          grep -Fq 'awtarchy update' release-notes.md
-          grep -Fq '## Night Light scheduling' release-notes.md
-          grep -Fq '## Sanitized failure diagnostics' release-notes.md
-          grep -Fq 'issue #57' release-notes.md
-
-          gh release create "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$TARGET_SHA" \
-            --title "$RELEASE_NAME" \
-            --latest \
-            --notes-file release-notes.md
-
-          test "$(git ls-remote origin "refs/tags/${RELEASE_TAG}" | awk '{print $1}')" = "$TARGET_SHA"
-
-          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
-            --json name,targetCommitish,isDraft,isPrerelease,body,url >verified-release.json
-          jq -e --arg target "$TARGET_SHA" --arg name "$RELEASE_NAME" '
-            .name == $name
-            and .targetCommitish == $target
-            and .isDraft == false
-            and .isPrerelease == false
-          ' verified-release.json >/dev/null
-          jq -r '.body' verified-release.json >verified-release.md
-          grep -Fq '## Night Light scheduling' verified-release.md
-          grep -Fq '## Sanitized failure diagnostics' verified-release.md
-          grep -Fq 'issue #57' verified-release.md
-          jq -r '.url' verified-release.json
+          test ! -e awtarchy.sh
+          bash -n awtarchy-install.sh
+          bash -n local/bin/awtarchy
+          grep -Fq 'exec "${TARGET_HOME}/.local/bin/awtarchy" "$@"' local/bin/awtarchy
+          bash -n local/libexec/awtarchy/scxctl-helper
+          bash -n local/libexec/awtarchy/power-profile-helper
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n local/share/awtarchy/awtarchy-power-profile.sh
+          bash -n config/hypr/scripts/awtarchy-tips-tui.sh
+          bash -n config/hypr/scripts/ddc_brightness.sh
+          bash -n config/hypr/scripts/dim_display.sh
+          bash -n config/hypr/scripts/hypr-ddc-brightness.sh
+          bash -n config/hypr/scripts/hypr_quicksettings.sh
+          bash -n config/hypr/scripts/hypr_quicksettings_core.sh
+          bash -n config/hypr/scripts/hyprbars_toggle.sh
+          bash -n config/hypr/scripts/hypridle_action.sh
+          bash -n config/hypr/scripts/hypridle_restart.sh
+          bash -n config/hypr/scripts/hyprsunset_ctl.sh
+          bash -n config/hypr/scripts/gif_capture.sh
+          bash -n config/hypr/scripts/quickshell.sh
+          bash -n config/hypr/scripts/quickshell_application_state.sh
+          bash -n config/hypr/scripts/quickshell_bar_restore.sh
+          bash -n config/hypr/scripts/quickshell_battery_care.sh
+          bash -n config/hypr/scripts/quickshell_battery_health.sh
+          bash -n config/hypr/scripts/quickshell_launcher_position.sh
+          bash -n config/hypr/scripts/quickshell_notification_layout_demo.sh
+          bash -n config/hypr/scripts/quickshell_ready_sound.sh
+          bash -n config/hypr/scripts/quickshell_resume_recover.sh
+          bash -n config/hypr/scripts/quickshell_runtime_rules.sh
+          bash -n config/hypr/scripts/quickshell_sensitive_capture.sh
+          bash -n config/hypr/scripts/quickshell_theme_apply.sh
+          bash -n config/hypr/scripts/quickshell_volume.sh
+          bash -n config/hypr/scripts/quickshell_wireguard.sh
+          bash -n config/hypr/scripts/usb_refresh_fixer.sh
+          bash -n config/hypr/scripts/restore_brightness.sh
+          bash -n config/hypr/scripts/screenshot_area.sh
+          bash -n config/hypr/scripts/screenshot_display.sh
+          bash -n config/hypr/scripts/screenshot_fullscreen.sh
+          bash -n config/hypr/scripts/toggle_mouse_submap.sh
+          bash -n config/hypr/scripts/toggle_resize_if_ok.sh
+          bash -n tests/test-awtarchy-command.sh
+          bash -n tests/test-awtarchy-git-mode.sh
+          bash -n tests/test-awtarchy-command-shim.sh
+          bash -n tests/test-awtarchy-legacy-cleanup.sh
+          bash -n tests/test-bar-control-actions.sh
+          bash -n tests/test-bar-wheel-input.sh
+          bash -n tests/test-battery-state.sh
+          bash -n tests/test-battery-flyout.sh
+          bash -n tests/test-battery-flyout-state.sh
+          bash -n tests/test-battery-flyout-position.sh
+          bash -n tests/test-battery-charge-limit-detection.sh
+          bash -n tests/test-battery-care-control.sh
+          bash -n tests/test-battery-care-annotated-range.sh
+          bash -n tests/test-battery-care-thinkpad-readback.sh
+          bash -n tests/test-battery-care-multibattery.sh
+          bash -n tests/test-battery-health-fallback.sh
+          bash -n tests/test-ddc-brightness-watcher.sh
+          bash -n tests/test-hybrid-brightness.sh
+          bash -n tests/test-hardware-reconcile-sudo.sh
+          bash -n tests/test-hypridle-restart.sh
+          bash -n tests/test-flyout-toggle-debounce.sh
+          bash -n tests/test-flyout-edge-layout.sh
+          bash -n tests/test-launcher-keyboard-focus.sh
+          bash -n tests/test-desktop-candidate-validation.sh
+          bash -n tests/test-lua-validation.sh
+          bash -n tests/test-mdns-stack.sh
+          bash -n tests/test-playerctl-dependency.sh
+          bash -n tests/test-power-profile-helper-update.sh
+          bash -n tests/test-power-profile-inline-auth.sh
+          bash -n tests/test-quickshell-backend-readiness.sh
+          bash -n tests/test-quickshell-capture-privacy.sh
+          bash -n tests/test-quickshell-process-lifecycle.sh
+          bash -n tests/test-quickshell-production-readiness.sh
+          bash -n tests/test-quickshell-updater-migration.sh
+          bash -n tests/test-hyprbars-quicksettings.sh
+          bash -n tests/test-network-bar-state.sh
+          bash -n tests/test-scxctl-auth-ui.sh
+          bash -n tests/test-scxctl-auth-stale-rule.sh
+          bash -n tests/test-scxctl-helper-update.sh
+          bash -n tests/test-security-boundaries.sh
+          bash -n tests/test-quickshell-theme-legacy-micro.sh
+          bash -n tests/test-troubleshoot-command.sh
+          bash -n tests/test-updater-large-main-json.sh
+          bash -n tests/test-usb-refresh-security.sh
+          bash -n tests/test-quickshell-resume-recovery.sh
+          bash -n tests/test-quickshell-updater-bootstrap.sh
+          python3 -m py_compile local/libexec/awtarchy/wireguard-helper
+          python3 -m py_compile local/share/awtarchy/keyring-pam-cleanup.py
+          python3 -m py_compile tests/test-config-noise-comparison.py
+          python3 -m py_compile tests/test-keyring-pam-cleanup.py
+          test -x config/hypr/scripts/quickshell_sensitive_capture.sh
+      - name: ShellCheck command code
+        run: |
+          shellcheck \
+            awtarchy-install.sh \
+            local/bin/awtarchy \
+            local/libexec/awtarchy/scxctl-helper \
+            local/libexec/awtarchy/power-profile-helper \
+            local/share/awtarchy/awtarchy-power-profile.sh \
+            config/hypr/scripts/ddc_brightness.sh \
+            config/hypr/scripts/dim_display.sh \
+            config/hypr/scripts/hypr-ddc-brightness.sh \
+            config/hypr/scripts/hyprbars_toggle.sh \
+            config/hypr/scripts/hypridle_restart.sh \
+            config/hypr/scripts/hyprsunset_ctl.sh \
+            config/hypr/scripts/gif_capture.sh \
+            config/hypr/scripts/quickshell_bar_restore.sh \
+            config/hypr/scripts/quickshell_battery_care.sh \
+            config/hypr/scripts/quickshell_battery_health.sh \
+            config/hypr/scripts/quickshell_launcher_position.sh \
+            config/hypr/scripts/quickshell_notification_layout_demo.sh \
+            config/hypr/scripts/quickshell_resume_recover.sh \
+            config/hypr/scripts/quickshell_runtime_rules.sh \
+            config/hypr/scripts/quickshell_sensitive_capture.sh \
+            config/hypr/scripts/quickshell_volume.sh \
+            config/hypr/scripts/quickshell_wireguard.sh \
+            config/hypr/scripts/usb_refresh_fixer.sh \
+            config/hypr/scripts/restore_brightness.sh \
+            config/hypr/scripts/screenshot_area.sh \
+            config/hypr/scripts/screenshot_display.sh \
+            config/hypr/scripts/screenshot_fullscreen.sh \
+            config/hypr/scripts/toggle_mouse_submap.sh \
+            config/hypr/scripts/toggle_resize_if_ok.sh \
+            tests/test-awtarchy-git-mode.sh \
+            tests/test-awtarchy-command-shim.sh \
+            tests/test-awtarchy-legacy-cleanup.sh \
+            tests/test-bar-control-actions.sh \
+            tests/test-bar-wheel-input.sh \
+            tests/test-battery-state.sh \
+            tests/test-battery-flyout.sh \
+            tests/test-battery-flyout-state.sh \
+            tests/test-battery-flyout-position.sh \
+            tests/test-battery-charge-limit-detection.sh \
+            tests/test-battery-care-annotated-range.sh \
+            tests/test-battery-care-thinkpad-readback.sh \
+            tests/test-battery-care-multibattery.sh \
+            tests/test-battery-health-fallback.sh \
+            tests/test-ddc-brightness-watcher.sh \
+            tests/test-hybrid-brightness.sh \
+            tests/test-hardware-reconcile-sudo.sh \
+            tests/test-hypridle-restart.sh \
+            tests/test-flyout-toggle-debounce.sh \
+            tests/test-flyout-edge-layout.sh \
+            tests/test-launcher-keyboard-focus.sh \
+            tests/test-desktop-candidate-validation.sh \
+            tests/test-lua-validation.sh \
+            tests/test-mdns-stack.sh \
+            tests/test-playerctl-dependency.sh \
+            tests/test-power-profile-helper-update.sh \
+            tests/test-power-profile-inline-auth.sh \
+            tests/test-quickshell-backend-readiness.sh \
+            tests/test-quickshell-process-lifecycle.sh \
+            tests/test-quickshell-updater-migration.sh \
+            tests/test-hyprbars-quicksettings.sh \
+            tests/test-network-bar-state.sh \
+            tests/test-scxctl-auth-ui.sh \
+            tests/test-scxctl-auth-stale-rule.sh \
+            tests/test-scxctl-helper-update.sh \
+            tests/test-security-boundaries.sh \
+            tests/test-quickshell-theme-legacy-micro.sh \
+            tests/test-troubleshoot-command.sh \
+            tests/test-updater-large-main-json.sh \
+            tests/test-usb-refresh-security.sh \
+            tests/test-quickshell-resume-recovery.sh \
+            tests/test-quickshell-updater-bootstrap.sh
+          shellcheck -e SC2016 tests/test-battery-care-control.sh tests/test-quickshell-capture-privacy.sh
+          shellcheck -e SC2034,SC2153 config/hypr/scripts/hypr_quicksettings.sh
+          shellcheck -e SC2015 config/hypr/scripts/hypr_quicksettings_core.sh
+          shellcheck -e SC2015 config/hypr/scripts/quickshell_theme_apply.sh
+          shellcheck -e SC2016 tests/test-awtarchy-command.sh
+      - name: Quickshell desktop entry validation
+        run: |
+          desktop-file-validate \
+            local/share/applications/quickshell_bar_flip.desktop \
+            local/share/applications/quickshell_bar_rotate.desktop \
+            local/share/applications/quickshell_bar_toggle.desktop
+      - name: Command and updater integration tests
+        run: |
+          no_sudo_bin="$(mktemp -d)"
+          printf '%s\n' '#!/usr/bin/env bash' 'exit 1' >"${no_sudo_bin}/sudo"
+          chmod 0755 "${no_sudo_bin}/sudo"
+          PATH="${no_sudo_bin}:$PATH" bash tests/test-awtarchy-command.sh
+          rm -rf -- "$no_sudo_bin"
+          bash tests/test-awtarchy-git-mode.sh
+          bash tests/test-awtarchy-command-shim.sh
+          bash tests/test-awtarchy-legacy-cleanup.sh
+          bash tests/test-bar-control-actions.sh
+          bash tests/test-bar-wheel-input.sh
+          bash tests/test-battery-state.sh
+          bash tests/test-battery-flyout.sh
+          bash tests/test-battery-flyout-state.sh
+          bash tests/test-battery-flyout-position.sh
+          bash tests/test-battery-charge-limit-detection.sh
+          sudo bash tests/test-battery-care-control.sh
+          bash tests/test-battery-care-annotated-range.sh
+          bash tests/test-battery-care-thinkpad-readback.sh
+          bash tests/test-battery-care-multibattery.sh
+          bash tests/test-battery-health-fallback.sh
+          bash tests/test-ddc-brightness-watcher.sh
+          bash tests/test-hybrid-brightness.sh
+          bash tests/test-hardware-reconcile-sudo.sh
+          bash tests/test-hypridle-restart.sh
+          bash tests/test-flyout-toggle-debounce.sh
+          bash tests/test-flyout-edge-layout.sh
+          bash tests/test-launcher-keyboard-focus.sh
+          bash tests/test-desktop-candidate-validation.sh
+          python3 tests/test-keyring-pam-cleanup.py
+          bash tests/test-lua-validation.sh
+          bash tests/test-mdns-stack.sh
+          bash tests/test-playerctl-dependency.sh
+          bash tests/test-power-profile-helper-update.sh
+          bash tests/test-power-profile-inline-auth.sh
+          bash tests/test-quickshell-backend-readiness.sh
+          bash tests/test-quickshell-capture-privacy.sh
+          bash tests/test-quickshell-process-lifecycle.sh
+          bash tests/test-quickshell-production-readiness.sh
+          bash tests/test-hyprbars-quicksettings.sh
+          bash tests/test-network-bar-state.sh
+          python3 tests/test-config-noise-comparison.py
+          bash tests/test-quickshell-updater-migration.sh
+          bash tests/test-scxctl-auth-ui.sh
+          bash tests/test-scxctl-auth-stale-rule.sh
+          bash tests/test-scxctl-helper-update.sh
+          bash tests/test-security-boundaries.sh
+          bash tests/test-quickshell-theme-legacy-micro.sh
+          bash tests/test-troubleshoot-command.sh
+          bash tests/test-updater-large-main-json.sh
+          bash tests/test-usb-refresh-security.sh
+          bash tests/test-quickshell-resume-recovery.sh
+          bash tests/test-quickshell-updater-bootstrap.sh
