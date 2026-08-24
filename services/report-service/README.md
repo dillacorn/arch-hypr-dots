@@ -50,7 +50,24 @@ resume_recovery | restart          | quickshell_restart_failed
 resume_recovery | final_validation | expected_bars_missing
 ```
 
-The accepted structured diagnostics are limited to Awtarchy config/revision, Hyprland version, Quickshell version, kernel version, broad GPU family, and fixed boolean recovery context.
+The accepted structured diagnostics are limited to Awtarchy config/revision, Hyprland version, Quickshell version, kernel version, broad GPU family, fixed boolean recovery context, and an optional tightly bounded managed-QML diagnostic.
+
+The optional QML diagnostic accepts only:
+
+```json
+{
+  "diagnostic": {
+    "kind": "qml_parse_error",
+    "managed_file": "Theme.qml",
+    "line": 65,
+    "column": 1
+  }
+}
+```
+
+`kind` must be one of `qml_parse_error`, `qml_import_error`, `qml_type_error`, or `qml_load_error`. `managed_file` must be a basename ending in `.qml`; paths are rejected. Line and column must be positive bounded integers. There is no field for raw log text, exception text, module text, arbitrary diagnostic strings, or filesystem paths.
+
+The open-source client applies a stricter first boundary before creating this object: it reads only a bounded tail of the Awtarchy Quickshell log, requires the log and managed configuration directory to be user-owned non-symlinks, and emits the basename only when the corresponding regular QML file exists inside Awtarchy's managed Quickshell directory.
 
 Clients cannot provide the fingerprint, canonical error description, GitHub title/body, labels, repository, issue number, or GitHub API action. The Worker generates those values after validation.
 
@@ -60,7 +77,7 @@ The fingerprint is SHA-256 over only:
 schema_version | report_type | component | failure_stage | error_code
 ```
 
-Machine/version diagnostics do not split one bug into separate signatures.
+Machine/version/managed-QML diagnostics do not split one bug into separate signatures.
 
 ## Abuse protection
 
