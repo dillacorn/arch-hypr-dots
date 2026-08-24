@@ -264,4 +264,8 @@ _No post-release updates yet. This section is reserved for fixes or additions pu
             --body "v3.2.0 release published and verified. Target: \`${TARGET_SHA}\`. Release body SHA-256: \`${body_sha}\`. v3.1.5 installation/getting-started text was copied and verified. ${release_url}" \
             >/dev/null
 
+          gh api --method DELETE \
+            "repos/$GITHUB_REPOSITORY/git/refs/heads/noop-check" \
+            >/dev/null 2>&1 || true
+
           trap - ERR
