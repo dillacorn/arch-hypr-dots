@@ -63,7 +63,7 @@ qml_load_error
 
 `managed_file` is a basename only. The client emits it only when the corresponding regular file exists inside the user's Awtarchy-managed Quickshell configuration directory. Absolute paths, home-directory prefixes, the original Quickshell error message, module names, arbitrary strings, and unmatched files are discarded locally.
 
-The Worker independently revalidates the diagnostic object, rejects unknown fields, rejects paths, and accepts only bounded positive numeric line/column values. Diagnostics do not participate in the failure fingerprint, so two reports for the same failure class still deduplicate even when one report has a diagnostic and another does not.
+The Worker independently revalidates the diagnostic object, rejects unknown fields and paths, requires `managed_file` to match its server-owned allowlist of QML files Awtarchy actually ships, and accepts only bounded positive numeric line/column values. Diagnostics do not participate in the failure fingerprint, so two reports for the same failure class still deduplicate even when one report has a diagnostic and another does not.
 
 This diagnostic is a troubleshooting hint, not a guaranteed root cause. Some failures cannot be safely reduced to this structure and still require normal investigation from the exact reported Awtarchy revision and environment.
 
@@ -91,7 +91,7 @@ A new failure class is incomplete unless the same `(component, failure_stage, er
 
 Add focused tests on both sides. If an updater/recovery caller needs a distinct stage, add a caller-to-manager wiring regression test too. The fingerprint must remain server-generated from stable enum-like identifiers, not diagnostic version strings or free-form error text.
 
-A new diagnostic field or kind is a privacy-contract change. Add client extraction tests, client payload validation, Worker validation, GitHub rendering tests, and documentation together. Do not broaden diagnostics to arbitrary error text or filesystem paths.
+A new diagnostic field, diagnostic kind, or reportable managed-QML filename is a privacy-contract change. Add client extraction tests, client payload validation, Worker validation/allowlisting, GitHub rendering tests, and documentation together. Do not broaden diagnostics to arbitrary error text or filesystem paths.
 
 ## Abuse protection
 
