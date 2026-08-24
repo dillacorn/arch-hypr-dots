@@ -827,7 +827,7 @@ reconcile_quickshell_ui_after_update() {
   if (( replaced == 1 )); then
     manager="${TARGET_HOME}/.config/hypr/scripts/quickshell.sh"
     if [[ -f "$manager" && ! -L "$manager" ]]; then
-      if ! bash "$manager" restart; then
+      if ! AWTARCHY_REPORT_FAILURE_STAGE=restart_after_update bash "$manager" restart; then
         printf 'WARN: Quickshell UI files were updated, but Quickshell could not be restarted automatically.\n' >&2
       fi
     fi
@@ -1219,6 +1219,10 @@ main() {
       die "Installation is handled by awtarchy-install.sh, not the awtarchy maintenance command."
       ;;
     "")
+      local report_helper="${TARGET_HOME}/.config/hypr/scripts/awtarchy_report_failure.sh"
+      if [[ -f "$report_helper" && ! -L "$report_helper" && -O "$report_helper" ]]; then
+        bash "$report_helper" prompt-pending || true
+      fi
       maintenance_menu
       ;;
     *)

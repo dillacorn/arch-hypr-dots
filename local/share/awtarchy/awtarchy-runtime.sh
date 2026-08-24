@@ -7382,6 +7382,21 @@ stop_quickshell_update_instances() {
   return 1
 }
 
+report_quickshell_update_failure() {
+  local source_label="$1" target_home="$2"
+  local report_script="${target_home}/.config/hypr/scripts/awtarchy_report_failure.sh"
+
+  if [[ ! -f "$report_script" || -L "$report_script" ]]; then
+    report_script="${HOME_DIR}/.config/hypr/scripts/awtarchy_report_failure.sh"
+  fi
+  [[ -f "$report_script" && ! -L "$report_script" ]] || return 0
+
+  AWTARCHY_REPORT_CONFIG_VERSION_OVERRIDE="$source_label" \
+    run_target bash "$report_script" \
+      capture quickshell restart_after_update quickshell_not_ready 9>&- \
+    || true
+}
+
 start_quickshell_update_shell() {
   command -v hyprctl >/dev/null 2>&1 || return 0
   [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || return 0
@@ -7391,14 +7406,14 @@ start_quickshell_update_shell() {
   [[ -f "$manager" ]] || return 1
   # Descriptor 9 owns the updater lock. Keep it in this runtime, but do not
   # let the long-lived Quickshell process or its children inherit it.
-  if ! run_target bash "$manager" restart 9>&-; then
+  if ! AWTARCHY_REPORT_SUPPRESS_QUICKSHELL=1 run_target bash "$manager" restart 9>&-; then
     # The updater runtime refreshes from main before managed configs refresh
     # from the latest release. Keep this recovery here so an older release
     # manager can still recover a package-replaced "quickshell (deleted)"
     # process during the same ordinary `awtarchy update` invocation.
     warn "Quickshell manager restart failed; retrying with updater-managed process shutdown."
     stop_quickshell_update_instances || return 1
-    run_target bash "$manager" start 9>&- || return 1
+    AWTARCHY_REPORT_SUPPRESS_QUICKSHELL=1 run_target bash "$manager" start 9>&- || return 1
   fi
   status="$(run_target bash "$manager" status 9>&- 2>/dev/null || true)"
   [[ "$status" == "running" ]]
@@ -7412,7 +7427,7 @@ rollback_quickshell_update() {
   rollback_changes
   reload_quickshell_update_hyprland || true
   if [[ -f "$manager" ]] \
-    && ! run_target bash "$manager" start 9>&-;
+    && ! AWTARCHY_REPORT_SUPPRESS_QUICKSHELL=1 run_target bash "$manager" start 9>&-;
   then
     warn "User files were restored, but the restored Quickshell could not be restarted automatically."
   fi
@@ -7615,6 +7630,7 @@ main() {
 
   if ! start_quickshell_update_shell; then
     rollback_quickshell_update
+    report_quickshell_update_failure "$source_label" "$target_home"
     die "Quickshell did not start successfully. User files were rolled back."
   fi
 

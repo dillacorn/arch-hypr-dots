@@ -1,0 +1,47 @@
+{
+  "name": "awtarchy-reports",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-23",
+  "workers_dev": true,
+  "preview_urls": false,
+  "keep_vars": true,
+  "send_metrics": false,
+  "vars": {
+    "GITHUB_APP_ID": "4695629",
+    "GITHUB_INSTALLATION_ID": "156041074",
+    "GITHUB_OWNER": "dillacorn",
+    "GITHUB_REPO": "awtarchy"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "awtarchy-reports-db",
+      "database_id": "df1179c9-8eb2-486f-8986-aa44441de24a",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "REPORT_CLIENT_RATE_LIMITER",
+      "namespace_id": "20260824",
+      "simple": {
+        "limit": 3,
+        "period": 60
+      }
+    },
+    {
+      "name": "REPORT_SIGNATURE_RATE_LIMITER",
+      "namespace_id": "20260823",
+      "simple": {
+        "limit": 20,
+        "period": 60
+      }
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true
+    }
+  }
+}
