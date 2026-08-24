@@ -31,7 +31,7 @@ Version 1 uses a strict structured schema. A submitted report can contain:
 
 The optional Quickshell diagnostic is derived locally from a bounded portion of Awtarchy's Quickshell log. The raw matching log line is not copied into the report. A filename is emitted only when the corresponding regular file exists inside the user's Awtarchy-managed Quickshell configuration directory. Paths, arbitrary filenames outside that directory, error-message text, and module/type text are discarded locally.
 
-The report service validates these fields again before accepting a report. It independently rejects unknown diagnostic fields, unsupported diagnostic kinds, paths, and invalid line/column values. Clients cannot choose the GitHub issue title, issue body, repository, fingerprint, or GitHub action.
+The report service validates these fields again before accepting a report. It independently rejects unknown diagnostic fields, unsupported diagnostic kinds, paths, basenames that are not in its server-owned allowlist of QML files Awtarchy actually ships, and invalid line/column values. Clients cannot choose the GitHub issue title, issue body, repository, fingerprint, or GitHub action.
 
 The optional diagnostic is only a troubleshooting hint. It is not guaranteed to identify a root cause, and many failures will contain no diagnostic at all.
 
