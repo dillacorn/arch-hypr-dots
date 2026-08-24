@@ -30,8 +30,10 @@ safe_value() {
 }
 
 config_version() {
-    local value=""
-    value="$(state_value tag "$CONFIG_VERSION_FILE" 2>/dev/null || true)"
+    local value="${AWTARCHY_REPORT_CONFIG_VERSION_OVERRIDE:-}"
+    if [[ -z "$value" ]]; then
+        value="$(state_value tag "$CONFIG_VERSION_FILE" 2>/dev/null || true)"
+    fi
     safe_value "${value:-unknown}" '^[A-Za-z0-9._+@/-]{1,128}$'
 }
 
