@@ -68,12 +68,22 @@ if bash "$SCRIPT" schedule set 20:00 20:00 4500 >/dev/null 2>&1; then
   fail 'identical enable/disable times were accepted'
 fi
 
-# Disabling the schedule removes only Awtarchy-owned schedule files.
+# Disabling removes only the Awtarchy-generated profile file while preserving
+# the chosen schedule values for a later re-enable.
 bash "$SCRIPT" schedule disable >/dev/null
-[[ ! -e "$SCHEDULE_FILE" ]] || fail 'schedule state remains after disabling'
+[[ -f "$SCHEDULE_FILE" ]] || fail 'disabled schedule did not preserve saved values'
 [[ ! -e "$CONFIG_FILE" ]] || fail 'Awtarchy-managed hyprsunset.conf remains after disabling'
 status="$(bash "$SCRIPT" status)"
 grep -Fqx 'schedule_enabled=0' <<<"$status" || fail 'status still reports schedule enabled after disabling'
+grep -Fqx 'schedule_start=07:00' <<<"$status" || fail 'disabled schedule lost its saved start time'
+grep -Fqx 'schedule_end=20:00' <<<"$status" || fail 'disabled schedule lost its saved end time'
+grep -Fqx 'schedule_temperature=5000' <<<"$status" || fail 'disabled schedule lost its saved temperature'
+
+bash "$SCRIPT" schedule enable >/dev/null
+[[ -f "$CONFIG_FILE" ]] || fail 'saved schedule did not recreate hyprsunset.conf when re-enabled'
+status="$(bash "$SCRIPT" status)"
+grep -Fqx 'schedule_enabled=1' <<<"$status" || fail 'saved schedule did not re-enable'
+bash "$SCRIPT" schedule disable >/dev/null
 
 # Never overwrite a user-owned Hyprsunset configuration.
 mkdir -p -- "$(dirname -- "$CONFIG_FILE")"
