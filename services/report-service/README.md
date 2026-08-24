@@ -64,11 +64,13 @@ Machine/version diagnostics do not split one bug into separate signatures.
 
 ## Abuse protection
 
-After schema validation and before any D1/GitHub work, `/v1/report` uses Cloudflare's native Rate Limiting binding. Version 1 allows at most five accepted requests per 60 seconds for each canonical failure signature. The limiter key is the same stable server-validated signature material used for fingerprinting; Awtarchy does not add a user, machine, install, or IP identifier to that key.
+After schema validation and before any D1/GitHub work, `/v1/report` uses Cloudflare's native Rate Limiting binding. Version 1 configures five calls per 60 seconds for each canonical failure signature in each Cloudflare location. The limiter key is the same stable server-validated signature material used for fingerprinting; Awtarchy does not add a user, machine, install, or IP identifier to that key.
 
-If the rate-limiter binding is unavailable, the production route fails closed with `503` rather than accepting unprotected reports. If a signature exceeds the configured limit, the Worker returns `429` and does not call the D1/GitHub reporting workflow. Awtarchy keeps a failed submission pending locally so it can be retried later.
+Cloudflare documents these counters as location-local, permissive, and eventually consistent. This limiter is therefore best-effort abuse reduction and D1 protection, not a strict global request cap or accounting system.
 
-The limiter is intentionally before D1 because the Workers Free plan has bounded daily D1 write capacity. It is abuse protection, not an accounting or identity system.
+If the rate-limiter binding is unavailable, the production route fails closed with `503` rather than accepting unprotected reports. When the limiter rejects a request, the Worker returns `429` and does not call the D1/GitHub reporting workflow. Awtarchy keeps a failed submission pending locally so it can be retried later.
+
+The limiter is intentionally before D1 because the Workers Free plan has bounded daily D1 write capacity. It is abuse protection, not an identity system.
 
 ## D1 and deduplication
 
@@ -87,6 +89,8 @@ npm test
 ```
 
 Tests use generated throwaway RSA keys and fake GitHub/D1 boundaries. No production Cloudflare or GitHub credentials are needed.
+
+CI also runs a Wrangler deployment dry run on Node 22 so source-controlled Worker bindings and configuration are parsed before a live deploy.
 
 ## Deploy
 
