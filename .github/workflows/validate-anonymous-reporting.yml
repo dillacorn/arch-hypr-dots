@@ -83,3 +83,137 @@ jobs:
           bash tests/test-quickshell-report-hooks.sh
           bash tests/test-quickshell-resume-report-hooks.sh
           bash tests/test-update-report-stage.sh
+
+  edit-v3-2-1-release-notes:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.title == 'Trigger v3.2.1 release notes edit' &&
+      github.event.pull_request.head.ref == 'v3-2-1-release-notes-pr-bridge'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Edit and verify v3.2.1 release notes only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: v3.2.1
+          EXPECTED_TAG_SHA: d51e7dcab8d87ce4cc8bdd77f9d12a2e275150ee
+          EXPECTED_NAME: Awtarchy v3.2.1 Quickshell
+        run: |
+          set -euo pipefail
+
+          before_tag_sha="$(git ls-remote origin "refs/tags/${RELEASE_TAG}" | awk '{print $1}')"
+          test "$before_tag_sha" = "$EXPECTED_TAG_SHA"
+
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json name,targetCommitish,isDraft,isPrerelease,body,url > before-release.json
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path('before-release.json').read_text())
+          expected_name = 'Awtarchy v3.2.1 Quickshell'
+          expected_target = 'd51e7dcab8d87ce4cc8bdd77f9d12a2e275150ee'
+
+          if data['name'] != expected_name:
+              raise SystemExit(f"unexpected release name: {data['name']!r}")
+          if data['targetCommitish'] != expected_target:
+              raise SystemExit(f"unexpected release target: {data['targetCommitish']!r}")
+          if data['isDraft'] or data['isPrerelease']:
+              raise SystemExit('v3.2.1 is unexpectedly draft/prerelease')
+
+          body = data['body']
+          old = '''## Getting started
+
+Fresh install:
+
+'''
+          new = '''## Getting started
+
+Awtarchy is an Arch Linux overlay/environment, not a Linux distribution or an Arch Linux installer. Install it onto a working minimal Arch Linux system.
+
+If you are starting from zero:
+
+1. Download the official Arch Linux ISO from the [Arch Linux download page](https://archlinux.org/download/).
+2. Boot the Arch Linux ISO.
+3. Install a working minimal Arch Linux system first.
+   - For most users, Awtarchy recommends the official `archinstall` guided installer included with the Arch ISO as the easiest path. Run `archinstall` from the live environment and complete a minimal Arch installation.
+   - A normal manual Arch installation using the [ArchWiki Installation Guide](https://wiki.archlinux.org/title/Installation_guide) is also fine.
+4. Boot into the installed Arch system.
+
+Once you have a working minimal Arch installation, install Awtarchy:
+
+'''
+
+          if body.count(old) != 1:
+              raise SystemExit('expected Getting started marker exactly once')
+
+          updated = body.replace(old, new, 1)
+          Path('updated-release.md').write_text(updated)
+
+          required = [
+              'sudo ./awtarchy-install.sh',
+              'awtarchy update',
+              '## Night Light scheduling',
+              '## Sanitized failure diagnostics',
+              '## Exact-source GitHub links',
+              '## Production validation',
+              '## Post-release updates',
+          ]
+          for marker in required:
+              if marker not in updated:
+                  raise SystemExit(f'missing required preserved marker: {marker}')
+          PY
+
+          gh release edit "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --notes-file updated-release.md
+
+          after_tag_sha="$(git ls-remote origin "refs/tags/${RELEASE_TAG}" | awk '{print $1}')"
+          test "$after_tag_sha" = "$EXPECTED_TAG_SHA"
+          test "$after_tag_sha" = "$before_tag_sha"
+
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json name,targetCommitish,isDraft,isPrerelease,body,url > after-release.json
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          before = json.loads(Path('before-release.json').read_text())
+          after = json.loads(Path('after-release.json').read_text())
+          expected_body = Path('updated-release.md').read_text()
+
+          if after['body'] != expected_body:
+              raise SystemExit('published release body does not exactly match requested edit')
+
+          for key in ('name', 'targetCommitish', 'isDraft', 'isPrerelease'):
+              if after[key] != before[key]:
+                  raise SystemExit(f'release metadata changed unexpectedly: {key}')
+
+          required = [
+              'Awtarchy is an Arch Linux overlay/environment, not a Linux distribution or an Arch Linux installer.',
+              'https://archlinux.org/download/',
+              '`archinstall` guided installer',
+              'ArchWiki Installation Guide',
+              'sudo ./awtarchy-install.sh',
+              'awtarchy update',
+              '## Night Light scheduling',
+              '## Sanitized failure diagnostics',
+              '## Exact-source GitHub links',
+              '## Production validation',
+              '## Post-release updates',
+          ]
+          for marker in required:
+              if marker not in after['body']:
+                  raise SystemExit(f'published release missing required marker: {marker}')
+
+          print(after['url'])
+          PY
