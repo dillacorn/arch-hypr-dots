@@ -30,6 +30,7 @@ on:
       - tests/test-quickshell-resume-report-hooks.sh
       - tests/test-update-report-stage.sh
       - .github/workflows/validate-anonymous-reporting.yml
+      - .github/v3.2.1-release-trigger
   workflow_dispatch:
 
 permissions:
@@ -83,3 +84,134 @@ jobs:
           bash tests/test-quickshell-report-hooks.sh
           bash tests/test-quickshell-resume-report-hooks.sh
           bash tests/test-update-report-stage.sh
+
+  publish-v3-2-1:
+    if: github.event_name == 'pull_request' && github.event.pull_request.title == 'Trigger v3.2.1 release' && github.event.pull_request.head.ref == 'v3-2-1-release-trigger'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Publish and verify v3.2.1
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: d51e7dcab8d87ce4cc8bdd77f9d12a2e275150ee
+          TARGET_TREE: 9e6f5569cab701edc352d0bac0a5bc99dd3e2d02
+          RELEASE_TAG: v3.2.1
+          RELEASE_NAME: Awtarchy v3.2.1 Quickshell
+        run: |
+          set -euo pipefail
+
+          test "$(git rev-parse "${TARGET_SHA}^{tree}")" = "$TARGET_TREE"
+          git merge-base --is-ancestor "$TARGET_SHA" HEAD
+          git diff --quiet "$TARGET_SHA" HEAD -- . \
+            ':(exclude).github/workflows/validate-anonymous-reporting.yml'
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "${RELEASE_TAG} tag already exists; refusing to recreate it." >&2
+            false
+          fi
+
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "${RELEASE_TAG} release already exists; refusing to replace it." >&2
+            false
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          body = '''# Awtarchy v3.2.1 Quickshell
+
+Awtarchy v3.2.1 adds scheduled Night Light controls to Quick Settings and makes user-approved anonymous Quickshell failure reports substantially more actionable while preserving strict data minimization.
+
+## Getting started
+
+Fresh install:
+
+```bash
+sudo pacman -S git --noconfirm
+git clone https://github.com/dillacorn/awtarchy
+cd awtarchy
+sudo ./awtarchy-install.sh
+```
+
+Existing Awtarchy users:
+
+```bash
+awtarchy update
+```
+
+## Night Light scheduling
+
+- Added a Samsung-style daily Night Light schedule directly to Quick Settings with start time, end time, and scheduled color temperature.
+- Overnight schedules identify the end time as the next day.
+- Scheduling uses native Hyprsunset profiles. Existing **Warmer**, **On/Off**, and **Cooler** manual controls continue to work.
+- Scheduling is disabled by default, and disabling a schedule preserves the selected start/end times and temperature for later reuse.
+- Awtarchy refuses to overwrite an existing user-owned `hyprsunset.conf`.
+- The Night Light and Vibrance cards now share the same row height for a consistent Quick Settings layout.
+
+## Sanitized failure diagnostics
+
+- User-approved Quickshell failure reports can now include an optional tightly bounded diagnostic when Awtarchy can safely recognize one locally.
+- The diagnostic is limited to a fixed QML failure category, an Awtarchy-managed QML basename, and positive numeric line/column values.
+- Raw logs, raw exception/error text, arbitrary paths, usernames, hostnames, home-directory paths, and persistent installation identifiers remain excluded.
+- The public Worker independently validates diagnostic categories and managed filenames rather than trusting client-provided text.
+- Diagnostic issue fingerprints may refine by safe failure kind plus managed filename, while line/column, versions, GPU family, and machine-specific values remain outside the fingerprint.
+- Cloudflare rate limiting remains keyed to the original coarse failure class so rotating diagnostic values cannot increase the request budget.
+
+## Exact-source GitHub links
+
+- Recognized QML reports now generate a clickable GitHub source permalink to the exact failing Awtarchy revision, managed QML file, and reported line.
+- The client does not send a repository URL. The Worker constructs the permalink from server-owned repository coordinates plus the validated revision/file/line fields.
+- If a safe diagnostic cannot be extracted, reporting still works with the normal failure class and exact Awtarchy revision for manual investigation.
+
+## Production validation
+
+- The updated Cloudflare report Worker was deployed and passed its production health check before release.
+- End-to-end issue #57 validated the enhanced path with an intentional `Theme.qml` parse failure: the report identified `qml_parse_error`, `Theme.qml`, location `67:1`, and linked directly to the exact failing source line.
+- The updater exhausted normal Quickshell recovery, offered the explicit review/send consent flow, created the sanitized GitHub issue, and rolled the changed user files back safely.
+- The intentional failure was removed immediately afterward and the restored branch passed the full Awtarchy, anonymous-reporting, Node 20/22 report-service, and Wrangler dry-run validation suites.
+
+## Post-release updates
+
+_Placeholder for possible tested post-release patches to v3.2.1._
+'''
+          Path('release-notes.md').write_text(body)
+          PY
+
+          grep -Fq '# Awtarchy v3.2.1 Quickshell' release-notes.md
+          grep -Fq 'sudo ./awtarchy-install.sh' release-notes.md
+          grep -Fq 'awtarchy update' release-notes.md
+          grep -Fq '## Night Light scheduling' release-notes.md
+          grep -Fq '## Sanitized failure diagnostics' release-notes.md
+          grep -Fq 'issue #57' release-notes.md
+
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$TARGET_SHA" \
+            --title "$RELEASE_NAME" \
+            --latest \
+            --notes-file release-notes.md
+
+          test "$(git ls-remote origin "refs/tags/${RELEASE_TAG}" | awk '{print $1}')" = "$TARGET_SHA"
+
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json name,targetCommitish,isDraft,isPrerelease,body,url >verified-release.json
+
+          jq -e --arg target "$TARGET_SHA" --arg name "$RELEASE_NAME" '
+            .name == $name
+            and .targetCommitish == $target
+            and .isDraft == false
+            and .isPrerelease == false
+          ' verified-release.json >/dev/null
+
+          jq -r '.body' verified-release.json >verified-release.md
+          grep -Fq '## Night Light scheduling' verified-release.md
+          grep -Fq '## Sanitized failure diagnostics' verified-release.md
+          grep -Fq 'issue #57' verified-release.md
+          jq -r '.url' verified-release.json
