@@ -285,12 +285,17 @@ export function createGitHubClient(env: GitHubEnv, fetchImpl: typeof fetch = fet
         }
       }
       if (data.diagnostic) {
+        const sourceRevision = /@([0-9a-f]{40})$/.exec(data.awtarchyConfigVersion)?.[1];
         bodyLines.push(
           '',
           `Diagnostic: \`${data.diagnostic.kind}\``,
           `Managed file: \`${data.diagnostic.managed_file}\``,
           `Location: \`${data.diagnostic.line}:${data.diagnostic.column}\``,
         );
+        if (sourceRevision) {
+          const sourceUrl = `https://github.com/${owner}/${repo}/blob/${sourceRevision}/config/quickshell/awtarchy/${encodeURIComponent(data.diagnostic.managed_file)}#L${data.diagnostic.line}`;
+          bodyLines.push(`Source: [${data.diagnostic.managed_file}#L${data.diagnostic.line}](${sourceUrl})`);
+        }
       }
       bodyLines.push(
         '',
