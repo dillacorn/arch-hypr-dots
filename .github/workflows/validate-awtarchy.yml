@@ -34,6 +34,7 @@ jobs:
           TARGET_TREE: 9e6f5569cab701edc352d0bac0a5bc99dd3e2d02
           RELEASE_TAG: v3.2.1
           RELEASE_NAME: Awtarchy v3.2.1 Quickshell
+          RELEASE_NOTES_B64: IyBBd3RhcmNoeSB2My4yLjEgUXVpY2tzaGVsbAoKQXd0YXJjaHkgdjMuMi4xIGFkZHMgc2NoZWR1bGVkIE5pZ2h0IExpZ2h0IGNvbnRyb2xzIHRvIFF1aWNrIFNldHRpbmdzIGFuZCBtYWtlcyB1c2VyLWFwcHJvdmVkIGFub255bW91cyBRdWlja3NoZWxsIGZhaWx1cmUgcmVwb3J0cyBzdWJzdGFudGlhbGx5IG1vcmUgYWN0aW9uYWJsZSB3aGlsZSBwcmVzZXJ2aW5nIHN0cmljdCBkYXRhIG1pbmltaXphdGlvbi4KCiMjIEdldHRpbmcgc3RhcnRlZAoKRnJlc2ggaW5zdGFsbDoKCmBgYGJhc2gKc3VkbyBwYWNtYW4gLVMgZ2l0IC0tbm9jb25maXJtCmdpdCBjbG9uZSBodHRwczovL2dpdGh1Yi5jb20vZGlsbGFjb3JuL2F3dGFyY2h5CmNkIGF3dGFyY2h5CnN1ZG8gLi9hd3RhcmNoeS1pbnN0YWxsLnNoCmBgYAoKRXhpc3RpbmcgQXd0YXJjaHkgdXNlcnM6CgpgYGBiYXNoCmF3dGFyY2h5IHVwZGF0ZQpgYGAKCiMjIE5pZ2h0IExpZ2h0IHNjaGVkdWxpbmcKCi0gQWRkZWQgYSBTYW1zdW5nLXN0eWxlIGRhaWx5IE5pZ2h0IExpZ2h0IHNjaGVkdWxlIGRpcmVjdGx5IHRvIFF1aWNrIFNldHRpbmdzIHdpdGggc3RhcnQgdGltZSwgZW5kIHRpbWUsIGFuZCBzY2hlZHVsZWQgY29sb3IgdGVtcGVyYXR1cmUuCi0gT3Zlcm5pZ2h0IHNjaGVkdWxlcyBpZGVudGlmeSB0aGUgZW5kIHRpbWUgYXMgdGhlIG5leHQgZGF5LgotIFNjaGVkdWxpbmcgdXNlcyBuYXRpdmUgSHlwcnN1bnNldCBwcm9maWxlcy4gRXhpc3RpbmcgKipXYXJtZXIqKiwgKipPbi9PZmYqKiwgYW5kICoqQ29vbGVyKiogbWFudWFsIGNvbnRyb2xzIGNvbnRpbnVlIHRvIHdvcmsuCi0gU2NoZWR1bGluZyBpcyBkaXNhYmxlZCBieSBkZWZhdWx0LCBhbmQgZGlzYWJsaW5nIGEgc2NoZWR1bGUgcHJlc2VydmVzIHRoZSBzZWxlY3RlZCBzdGFydC9lbmQgdGltZXMgYW5kIHRlbXBlcmF0dXJlIGZvciBsYXRlciByZXVzZS4KLSBBd3RhcmNoeSByZWZ1c2VzIHRvIG92ZXJ3cml0ZSBhbiBleGlzdGluZyB1c2VyLW93bmVkIGBoeXByc3Vuc2V0LmNvbmZgLgotIFRoZSBOaWdodCBMaWdodCBhbmQgVmlicmFuY2UgY2FyZHMgbm93IHNoYXJlIHRoZSBzYW1lIHJvdyBoZWlnaHQgZm9yIGEgY29uc2lzdGVudCBRdWljayBTZXR0aW5ncyBsYXlvdXQuCgojIyBTYW5pdGl6ZWQgZmFpbHVyZSBkaWFnbm9zdGljcwoKLSBVc2VyLWFwcHJvdmVkIFF1aWNrc2hlbGwgZmFpbHVyZSByZXBvcnRzIGNhbiBub3cgaW5jbHVkZSBhbiBvcHRpb25hbCB0aWdodGx5IGJvdW5kZWQgZGlhZ25vc3RpYyB3aGVuIEF3dGFyY2h5IGNhbiBzYWZlbHkgcmVjb2duaXplIG9uZSBsb2NhbGx5LgotIFRoZSBkaWFnbm9zdGljIGlzIGxpbWl0ZWQgdG8gYSBmaXhlZCBRTUwgZmFpbHVyZSBjYXRlZ29yeSwgYW4gQXd0YXJjaHktbWFuYWdlZCBRTUwgYmFzZW5hbWUsIGFuZCBwb3NpdGl2ZSBudW1lcmljIGxpbmUvY29sdW1uIHZhbHVlcy4KLSBSYXcgbG9ncywgcmF3IGV4Y2VwdGlvbi9lcnJvciB0ZXh0LCBhcmJpdHJhcnkgcGF0aHMsIHVzZXJuYW1lcywgaG9zdG5hbWVzLCBob21lLWRpcmVjdG9yeSBwYXRocywgYW5kIHBlcnNpc3RlbnQgaW5zdGFsbGF0aW9uIGlkZW50aWZpZXJzIHJlbWFpbiBleGNsdWRlZC4KLSBUaGUgcHVibGljIFdvcmtlciBpbmRlcGVuZGVudGx5IHZhbGlkYXRlcyBkaWFnbm9zdGljIGNhdGVnb3JpZXMgYW5kIG1hbmFnZWQgZmlsZW5hbWVzIHJhdGhlciB0aGFuIHRydXN0aW5nIGNsaWVudC1wcm92aWRlZCB0ZXh0LgotIERpYWdub3N0aWMgaXNzdWUgZmluZ2VycHJpbnRzIG1heSByZWZpbmUgYnkgc2FmZSBmYWlsdXJlIGtpbmQgcGx1cyBtYW5hZ2VkIGZpbGVuYW1lLCB3aGlsZSBsaW5lL2NvbHVtbiwgdmVyc2lvbnMsIEdQVSBmYW1pbHksIGFuZCBtYWNoaW5lLXNwZWNpZmljIHZhbHVlcyByZW1haW4gb3V0c2lkZSB0aGUgZmluZ2VycHJpbnQuCi0gQ2xvdWRmbGFyZSByYXRlIGxpbWl0aW5nIHJlbWFpbnMga2V5ZWQgdG8gdGhlIG9yaWdpbmFsIGNvYXJzZSBmYWlsdXJlIGNsYXNzIHNvIHJvdGF0aW5nIGRpYWdub3N0aWMgdmFsdWVzIGNhbm5vdCBpbmNyZWFzZSB0aGUgcmVxdWVzdCBidWRnZXQuCgojIyBFeGFjdC1zb3VyY2UgR2l0SHViIGxpbmtzCgotIFJlY29nbml6ZWQgUU1MIHJlcG9ydHMgbm93IGdlbmVyYXRlIGEgY2xpY2thYmxlIEdpdEh1YiBzb3VyY2UgcGVybWFsaW5rIHRvIHRoZSBleGFjdCBmYWlsaW5nIEF3dGFyY2h5IHJldmlzaW9uLCBtYW5hZ2VkIFFNTCBmaWxlLCBhbmQgcmVwb3J0ZWQgbGluZS4KLSBUaGUgY2xpZW50IGRvZXMgbm90IHNlbmQgYSByZXBvc2l0b3J5IFVSTC4gVGhlIFdvcmtlciBjb25zdHJ1Y3RzIHRoZSBwZXJtYWxpbmsgZnJvbSBzZXJ2ZXItb3duZWQgcmVwb3NpdG9yeSBjb29yZGluYXRlcyBwbHVzIHRoZSB2YWxpZGF0ZWQgcmV2aXNpb24vZmlsZS9saW5lIGZpZWxkcy4KLSBJZiBhIHNhZmUgZGlhZ25vc3RpYyBjYW5ub3QgYmUgZXh0cmFjdGVkLCByZXBvcnRpbmcgc3RpbGwgd29ya3Mgd2l0aCB0aGUgbm9ybWFsIGZhaWx1cmUgY2xhc3MgYW5kIGV4YWN0IEF3dGFyY2h5IHJldmlzaW9uIGZvciBtYW51YWwgaW52ZXN0aWdhdGlvbi4KCiMjIFByb2R1Y3Rpb24gdmFsaWRhdGlvbgoKLSBUaGUgdXBkYXRlZCBDbG91ZGZsYXJlIHJlcG9ydCBXb3JrZXIgd2FzIGRlcGxveWVkIGFuZCBwYXNzZWQgaXRzIHByb2R1Y3Rpb24gaGVhbHRoIGNoZWNrIGJlZm9yZSByZWxlYXNlLgotIEVuZC10by1lbmQgaXNzdWUgIzU3IHZhbGlkYXRlZCB0aGUgZW5oYW5jZWQgcGF0aCB3aXRoIGFuIGludGVudGlvbmFsIGBUaGVtZS5xbWxgIHBhcnNlIGZhaWx1cmU6IHRoZSByZXBvcnQgaWRlbnRpZmllZCBgcW1sX3BhcnNlX2Vycm9yYCwgYFRoZW1lLnFtbGAsIGxvY2F0aW9uIGA2NzoxYCwgYW5kIGxpbmtlZCBkaXJlY3RseSB0byB0aGUgZXhhY3QgZmFpbGluZyBzb3VyY2UgbGluZS4KLSBUaGUgdXBkYXRlciBleGhhdXN0ZWQgbm9ybWFsIFF1aWNrc2hlbGwgcmVjb3ZlcnksIG9mZmVyZWQgdGhlIGV4cGxpY2l0IHJldmlldy9zZW5kIGNvbnNlbnQgZmxvdywgY3JlYXRlZCB0aGUgc2FuaXRpemVkIEdpdEh1YiBpc3N1ZSwgYW5kIHJvbGxlZCB0aGUgY2hhbmdlZCB1c2VyIGZpbGVzIGJhY2sgc2FmZWx5LgotIFRoZSBpbnRlbnRpb25hbCBmYWlsdXJlIHdhcyByZW1vdmVkIGltbWVkaWF0ZWx5IGFmdGVyd2FyZCBhbmQgdGhlIHJlc3RvcmVkIGJyYW5jaCBwYXNzZWQgdGhlIGZ1bGwgQXd0YXJjaHksIGFub255bW91cy1yZXBvcnRpbmcsIE5vZGUgMjAvMjIgcmVwb3J0LXNlcnZpY2UsIGFuZCBXcmFuZ2xlciBkcnktcnVuIHZhbGlkYXRpb24gc3VpdGVzLgoKIyMgUG9zdC1yZWxlYXNlIHVwZGF0ZXMKCl9QbGFjZWhvbGRlciBmb3IgcG9zc2libGUgdGVzdGVkIHBvc3QtcmVsZWFzZSBwYXRjaGVzIHRvIHYzLjIuMS5fCg==
         run: |
           set -euo pipefail
 
@@ -53,67 +54,8 @@ jobs:
             false
           fi
 
-          python3 - <<'PY'
-          from pathlib import Path
-
-          Path('release-notes.md').write_text('''# Awtarchy v3.2.1 Quickshell
-
-Awtarchy v3.2.1 adds scheduled Night Light controls to Quick Settings and makes user-approved anonymous Quickshell failure reports substantially more actionable while preserving strict data minimization.
-
-## Getting started
-
-Fresh install:
-
-```bash
-sudo pacman -S git --noconfirm
-git clone https://github.com/dillacorn/awtarchy
-cd awtarchy
-sudo ./awtarchy-install.sh
-```
-
-Existing Awtarchy users:
-
-```bash
-awtarchy update
-```
-
-## Night Light scheduling
-
-- Added a Samsung-style daily Night Light schedule directly to Quick Settings with start time, end time, and scheduled color temperature.
-- Overnight schedules identify the end time as the next day.
-- Scheduling uses native Hyprsunset profiles. Existing **Warmer**, **On/Off**, and **Cooler** manual controls continue to work.
-- Scheduling is disabled by default, and disabling a schedule preserves the selected start/end times and temperature for later reuse.
-- Awtarchy refuses to overwrite an existing user-owned `hyprsunset.conf`.
-- The Night Light and Vibrance cards now share the same row height for a consistent Quick Settings layout.
-
-## Sanitized failure diagnostics
-
-- User-approved Quickshell failure reports can now include an optional tightly bounded diagnostic when Awtarchy can safely recognize one locally.
-- The diagnostic is limited to a fixed QML failure category, an Awtarchy-managed QML basename, and positive numeric line/column values.
-- Raw logs, raw exception/error text, arbitrary paths, usernames, hostnames, home-directory paths, and persistent installation identifiers remain excluded.
-- The public Worker independently validates diagnostic categories and managed filenames rather than trusting client-provided text.
-- Diagnostic issue fingerprints may refine by safe failure kind plus managed filename, while line/column, versions, GPU family, and machine-specific values remain outside the fingerprint.
-- Cloudflare rate limiting remains keyed to the original coarse failure class so rotating diagnostic values cannot increase the request budget.
-
-## Exact-source GitHub links
-
-- Recognized QML reports now generate a clickable GitHub source permalink to the exact failing Awtarchy revision, managed QML file, and reported line.
-- The client does not send a repository URL. The Worker constructs the permalink from server-owned repository coordinates plus the validated revision/file/line fields.
-- If a safe diagnostic cannot be extracted, reporting still works with the normal failure class and exact Awtarchy revision for manual investigation.
-
-## Production validation
-
-- The updated Cloudflare report Worker was deployed and passed its production health check before release.
-- End-to-end issue #57 validated the enhanced path with an intentional `Theme.qml` parse failure: the report identified `qml_parse_error`, `Theme.qml`, location `67:1`, and linked directly to the exact failing source line.
-- The updater exhausted normal Quickshell recovery, offered the explicit review/send consent flow, created the sanitized GitHub issue, and rolled the changed user files back safely.
-- The intentional failure was removed immediately afterward and the restored branch passed the full Awtarchy, anonymous-reporting, Node 20/22 report-service, and Wrangler dry-run validation suites.
-
-## Post-release updates
-
-_Placeholder for possible tested post-release patches to v3.2.1._
-''')
-          PY
-
+          printf '%s' "$RELEASE_NOTES_B64" | base64 --decode >release-notes.md
+          test "$(sha256sum release-notes.md | awk '{print $1}')" = '6b5f398aea6aa1e0911c5976271295d3d2932527412bb88f697e8e5bac998566'
           grep -Fq '# Awtarchy v3.2.1 Quickshell' release-notes.md
           grep -Fq 'sudo ./awtarchy-install.sh' release-notes.md
           grep -Fq 'awtarchy update' release-notes.md
