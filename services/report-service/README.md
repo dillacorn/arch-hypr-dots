@@ -69,7 +69,9 @@ The optional QML diagnostic accepts only:
 
 The open-source client applies a separate first boundary before creating this object: it reads only a bounded tail of the Awtarchy Quickshell log, requires the log and managed configuration directory to be user-owned non-symlinks, and emits the basename only when the corresponding regular QML file exists inside Awtarchy's managed Quickshell directory.
 
-Clients cannot provide the fingerprint, canonical error description, GitHub title/body, labels, repository, issue number, or GitHub API action. The Worker generates those values after validation.
+When `awtarchy_config_version` ends in an exact 40-character Git commit SHA, the Worker may render a GitHub source permalink for the validated managed QML file and numeric line. The client does not provide the URL. The Worker constructs it from its configured GitHub owner/repository, the already-validated commit SHA, the server-allowlisted QML basename, and the bounded line number. Reports without an exact commit SHA simply omit the source link.
+
+Clients cannot provide the fingerprint, canonical error description, GitHub title/body, labels, repository, issue number, source URL, or GitHub API action. The Worker generates those values after validation.
 
 The D1/GitHub bug fingerprint is SHA-256 over the fixed failure class and, when present, only the safe diagnostic class:
 
