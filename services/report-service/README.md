@@ -1,13 +1,14 @@
 # Awtarchy Report Service
 
-Cloudflare Worker backend for Awtarchy's privacy-conscious failure-reporting system.
+Cloudflare Worker backend for Awtarchy's privacy-conscious, user-approved failure-reporting system.
 
-This initial testing phase exposes only:
+Endpoints:
 
 - `GET /health` — side-effect-free readiness check.
+- `POST /v1/report` — public production endpoint for the strict sanitized Awtarchy failure-report schema.
 - `POST /v1/test` — maintainer-only end-to-end test that creates or recovers one fixed GitHub test issue through the Awtarchy Report Bot.
 
-Production `POST /v1/report` and Awtarchy client failure hooks are intentionally not enabled yet.
+The public report endpoint has no client secret. Awtarchy is open source, so any secret shipped in the client would not provide authentication. Instead, the Worker treats every request as hostile input and accepts only fixed known failure classes and bounded structured fields.
 
 ## Runtime configuration
 
@@ -32,6 +33,39 @@ Never commit `GITHUB_APP_PRIVATE_KEY` or `TEST_AUTH_TOKEN`.
 
 The GitHub App requires only Issues read/write plus GitHub's required Metadata read-only permission. It has no Contents, Pull requests, Actions, Releases, or Administration access.
 
+## Production report contract
+
+`POST /v1/report` requires `Content-Type: application/json`, rejects bodies over 32 KiB, rejects unknown fields, and recognizes only server-defined failure triples.
+
+Version 1 recognizes:
+
+```text
+quickshell | start                | quickshell_not_ready
+quickshell | restart              | quickshell_not_ready
+quickshell | restart_after_update | quickshell_not_ready
+resume_recovery | start            | quickshell_start_failed
+resume_recovery | restart          | quickshell_restart_failed
+resume_recovery | final_validation | expected_bars_missing
+```
+
+The accepted structured diagnostics are limited to Awtarchy config/revision, Hyprland version, Quickshell version, kernel version, broad GPU family, and fixed boolean recovery context.
+
+Clients cannot provide the fingerprint, canonical error description, GitHub title/body, labels, repository, issue number, or GitHub API action. The Worker generates those values after validation.
+
+The fingerprint is SHA-256 over only:
+
+```text
+schema_version | report_type | component | failure_stage | error_code
+```
+
+Machine/version diagnostics do not split one bug into separate signatures.
+
+## D1 and deduplication
+
+D1 stores aggregate signature state rather than permanent raw-report history. Repeated valid reports for the same server-generated fingerprint increment the same row instead of creating a new GitHub issue.
+
+Issue creation uses a short ownership lease and a fingerprint marker in the GitHub issue body. If issue creation succeeds but the Worker loses the response before linking D1, a later request searches existing issues for the exact marker and recovers the link before creating another issue.
+
 ## Tests
 
 The focused test suite supports Node.js 20.6 or newer. Install the report-service development dependency, then run the tests:
@@ -48,7 +82,7 @@ Tests use generated throwaway RSA keys and fake GitHub/D1 boundaries. No product
 
 Current Wrangler releases require Node.js 22 or newer. On Arch Linux, use the supported `nodejs-lts-jod` package (or another supported Node 22+ runtime) before deploying.
 
-The production D1 schema was created manually before this source-controlled service existed. `migrations/0001_initial.sql` records that schema for reproducibility, but do not run the initial migration against the existing production database merely to deploy this first test path.
+The production D1 schema was created manually before this source-controlled service existed. `migrations/0001_initial.sql` records that schema for reproducibility. Do **not** run the initial migration against the existing production database merely to deploy code.
 
 From this directory:
 
@@ -60,7 +94,7 @@ npx wrangler@latest deploy
 
 Skip `wrangler login` when already authenticated.
 
-`wrangler.jsonc` uses `keep_vars: true` so dashboard-managed runtime variables remain in place. Cloudflare secrets remain managed outside the repository.
+`wrangler.jsonc` uses `keep_vars: true` and records the dashboard-backed text variables, D1 binding, preview setting, and observability settings. Cloudflare secrets remain managed outside the repository.
 
 ## Verify health
 
@@ -99,3 +133,9 @@ The first successful request creates exactly one issue titled:
 Repeating the authenticated request must return the same issue number with `deduplicated: true` instead of creating another issue.
 
 The controlled test contains no user diagnostic data. Its server-generated fingerprint identifies only this fixed test signature, not a user or machine.
+
+After production reporting is proven and the maintenance endpoint is no longer useful, remove `TEST_AUTH_TOKEN` from the Worker to disable `/v1/test`.
+
+## Privacy
+
+See the repository root [PRIVACY.md](../../PRIVACY.md). The Worker does not intentionally store request IPs as report fields or add persistent client identifiers. Cloudflare still necessarily processes connection metadata at the infrastructure layer.
