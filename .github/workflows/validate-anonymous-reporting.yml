@@ -130,27 +130,19 @@ jobs:
               raise SystemExit('v3.2.1 is unexpectedly draft/prerelease')
 
           body = data['body']
-          old = '''## Getting started
-
-Fresh install:
-
-'''
-          new = '''## Getting started
-
-Awtarchy is an Arch Linux overlay/environment, not a Linux distribution or an Arch Linux installer. Install it onto a working minimal Arch Linux system.
-
-If you are starting from zero:
-
-1. Download the official Arch Linux ISO from the [Arch Linux download page](https://archlinux.org/download/).
-2. Boot the Arch Linux ISO.
-3. Install a working minimal Arch Linux system first.
-   - For most users, Awtarchy recommends the official `archinstall` guided installer included with the Arch ISO as the easiest path. Run `archinstall` from the live environment and complete a minimal Arch installation.
-   - A normal manual Arch installation using the [ArchWiki Installation Guide](https://wiki.archlinux.org/title/Installation_guide) is also fine.
-4. Boot into the installed Arch system.
-
-Once you have a working minimal Arch installation, install Awtarchy:
-
-'''
+          old = "## Getting started\n\nFresh install:\n\n"
+          new = (
+              "## Getting started\n\n"
+              "Awtarchy is an Arch Linux overlay/environment, not a Linux distribution or an Arch Linux installer. Install it onto a working minimal Arch Linux system.\n\n"
+              "If you are starting from zero:\n\n"
+              "1. Download the official Arch Linux ISO from the [Arch Linux download page](https://archlinux.org/download/).\n"
+              "2. Boot the Arch Linux ISO.\n"
+              "3. Install a working minimal Arch Linux system first.\n"
+              "   - For most users, Awtarchy recommends the official `archinstall` guided installer included with the Arch ISO as the easiest path. Run `archinstall` from the live environment and complete a minimal Arch installation.\n"
+              "   - A normal manual Arch installation using the [ArchWiki Installation Guide](https://wiki.archlinux.org/title/Installation_guide) is also fine.\n"
+              "4. Boot into the installed Arch system.\n\n"
+              "Once you have a working minimal Arch installation, install Awtarchy:\n\n"
+          )
 
           if body.count(old) != 1:
               raise SystemExit('expected Getting started marker exactly once')
@@ -217,5 +209,3 @@ Once you have a working minimal Arch installation, install Awtarchy:
 
           print(after['url'])
           PY
-
-# Temporary synchronize trigger for the one-use release bridge.
