@@ -85,9 +85,14 @@ class FakeD1 {
       return { success: true, meta: { changes: 1 } };
     }
     if (normalized.startsWith("UPDATE crash_signatures SET status = 'issue_error'")) {
-      const [lastSeen, fingerprint] = args as string[];
+      const [lastSeen, fingerprint, leaseLastSeen] = args as [string, string, string?];
       const row = this.rows.get(fingerprint)!;
       if (normalized.includes("AND status IN ('pending_issue', 'issue_error')") && row.status === 'creating_issue') {
+        return { success: true, meta: { changes: 0 } };
+      }
+      if (normalized.includes("AND status = 'creating_issue'") && (
+        row.status !== 'creating_issue' || row.last_seen !== leaseLastSeen
+      )) {
         return { success: true, meta: { changes: 0 } };
       }
       row.status = 'issue_error';
@@ -309,6 +314,60 @@ test('stale creating_issue lease may be reclaimed after marker check', async () 
 
   assert.equal(creates, 1);
   assert.equal(result.issue_number, 31);
+});
+
+test('stale controlled owner failure cannot clear a reclaimed creation lease', async () => {
+  const db = new FakeD1();
+  let signalFirstStarted!: () => void;
+  let releaseFirst!: () => void;
+  let signalSecondStarted!: () => void;
+  let releaseSecond!: () => void;
+  const firstStarted = new Promise<void>(resolve => { signalFirstStarted = resolve; });
+  const firstRelease = new Promise<void>(resolve => { releaseFirst = resolve; });
+  const secondStarted = new Promise<void>(resolve => { signalSecondStarted = resolve; });
+  const secondRelease = new Promise<void>(resolve => { releaseSecond = resolve; });
+
+  const firstPromise = runControlledTest(fakeEnv(db), {
+    now: () => new Date('2026-08-23T23:30:00.000Z'),
+    github: {
+      async findIssueByFingerprint() { return null; },
+      async createTestIssue() {
+        signalFirstStarted();
+        await firstRelease;
+        throw new Error('first owner failed late');
+      },
+    },
+  });
+  await firstStarted;
+
+  const secondPromise = runControlledTest(fakeEnv(db), {
+    now: () => new Date('2026-08-23T23:31:01.000Z'),
+    github: {
+      async findIssueByFingerprint() { return null; },
+      async createTestIssue() {
+        signalSecondStarted();
+        await secondRelease;
+        return { number: 32, url: 'https://github.com/dillacorn/awtarchy/issues/32' };
+      },
+    },
+  });
+  await secondStarted;
+
+  const fingerprint = await expectedFingerprint();
+  assert.equal(db.rows.get(fingerprint)!.status, 'creating_issue');
+  assert.equal(db.rows.get(fingerprint)!.last_seen, '2026-08-23T23:31:01.000Z');
+
+  releaseFirst();
+  const first = await firstPromise;
+  assert.deepEqual(first, { ok: false, error: 'github_issue_creation_failed' });
+  assert.equal(db.rows.get(fingerprint)!.status, 'creating_issue');
+  assert.equal(db.rows.get(fingerprint)!.last_seen, '2026-08-23T23:31:01.000Z');
+
+  releaseSecond();
+  const second = await secondPromise;
+  assert.equal(second.created, true);
+  assert.equal(db.rows.get(fingerprint)!.status, 'open');
+  assert.equal(db.rows.get(fingerprint)!.github_issue_number, 32);
 });
 
 test('GitHub creation failure becomes non-secret issue_error', async () => {
