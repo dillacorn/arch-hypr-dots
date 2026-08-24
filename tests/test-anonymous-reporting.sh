@@ -56,6 +56,15 @@ grep -Fq 'public GitHub issue' "$SCRIPT" || {
     exit 1
 }
 
+if ! bash "$SCRIPT" prompt-pending >"$TMP/prompt-empty.out" 2>&1; then
+    echo 'quiet pending-report prompt command is unavailable' >&2
+    exit 1
+fi
+[[ ! -s "$TMP/prompt-empty.out" ]] || {
+    echo 'quiet pending-report prompt printed output when no report was pending' >&2
+    exit 1
+}
+
 ATTEMPTED_VERSION='anonymous-crash-reporting-testing@fedcba9876543210fedcba9876543210fedcba98'
 export AWTARCHY_REPORT_CONFIG_VERSION_OVERRIDE="$ATTEMPTED_VERSION"
 bash "$SCRIPT" capture quickshell restart_after_update quickshell_not_ready
