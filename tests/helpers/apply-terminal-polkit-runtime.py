@@ -208,3 +208,11 @@ if "shell.qml" in text or "window-guard.sh" in text or "/usr/bin/quickshell ]]" 
     raise SystemExit("obsolete Quickshell PolicyKit runtime reference remains after patch")
 
 path.write_text(text, encoding="utf-8")
+
+security_path = Path("tests/test-polkit-agent-secure.sh")
+security = security_path.read_text(encoding="utf-8")
+old_security = "    reject_regex \"$LAUNCHER\" 'quickshell|QML_IMPORT_PATH|QML2_IMPORT_PATH'\n"
+new_security = "    reject_regex \"$LAUNCHER\" '/usr/bin/quickshell|quickshell[[:space:]].*--config|shell\\.qml'\n"
+if security.count(old_security) != 1:
+    raise SystemExit("launcher Quickshell security assertion: expected exactly one match")
+security_path.write_text(security.replace(old_security, new_security, 1), encoding="utf-8")
