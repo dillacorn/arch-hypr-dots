@@ -59,8 +59,8 @@ require_normal_user() {
         || fail 'XDG_RUNTIME_DIR does not match the current desktop user' || return 1
     [[ -S ${XDG_RUNTIME_DIR}/bus ]] \
         || fail 'the current systemd/D-Bus user session is unavailable' || return 1
-    [[ -n ${WAYLAND_DISPLAY:-} && -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] \
-        || fail 'this command must run inside the active Hyprland desktop session' || return 1
+    [[ -n ${WAYLAND_DISPLAY:-} && -n ${HYPRLAND_INSTANCE_SIGNATURE:-} && -n ${XDG_SESSION_ID:-} ]] \
+        || fail 'this command must run inside the active Hyprland/logind desktop session' || return 1
 }
 
 require_commands() {
@@ -430,6 +430,7 @@ import_desktop_environment() {
         DISPLAY \
         WAYLAND_DISPLAY \
         HYPRLAND_INSTANCE_SIGNATURE \
+        XDG_SESSION_ID \
         XDG_CURRENT_DESKTOP \
         XDG_SESSION_DESKTOP \
         XDG_SESSION_TYPE \

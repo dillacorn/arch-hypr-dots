@@ -3235,16 +3235,17 @@ activate_awtarchy_polkit_agent() {
   target_uid="$(awtarchy_polkit_target_uid)" || return 1
   runtime_dir="/run/user/${target_uid}"
 
-  [[ -S "${runtime_dir}/bus" && -n "${WAYLAND_DISPLAY:-}" && -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || return 2
+  [[ -S "${runtime_dir}/bus" && -n "${WAYLAND_DISPLAY:-}" && -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" && -n "${XDG_SESSION_ID:-}" ]] || return 2
   awtarchy_polkit_verify_runtime || return 1
 
   awtarchy_polkit_user_command /usr/bin/env \
     WAYLAND_DISPLAY="$WAYLAND_DISPLAY" \
     HYPRLAND_INSTANCE_SIGNATURE="$HYPRLAND_INSTANCE_SIGNATURE" \
+    XDG_SESSION_ID="$XDG_SESSION_ID" \
     XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-Hyprland}" \
     XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-wayland}" \
     /usr/bin/systemctl --user import-environment \
-    WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP XDG_SESSION_TYPE >/dev/null || return 1
+    WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_SESSION_ID XDG_CURRENT_DESKTOP XDG_SESSION_TYPE >/dev/null || return 1
 
   awtarchy_polkit_user_command /usr/bin/systemctl --user daemon-reload || return 1
   awtarchy_polkit_user_command /usr/bin/systemctl --user disable "$AWTARCHY_POLKIT_SERVICE_NAME" >/dev/null 2>&1 || true
