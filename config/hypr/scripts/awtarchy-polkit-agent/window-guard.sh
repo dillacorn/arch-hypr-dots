@@ -81,7 +81,7 @@ correct_window() {
 }
 
 main() {
-    local state address floating width height
+    local state address floating width height last_address=""
 
     [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] || return 0
     [[ -x /usr/bin/hyprctl && -x /usr/bin/python3 ]] || return 0
@@ -89,9 +89,22 @@ main() {
     while true; do
         if state="$(query_window_state)"; then
             IFS=$'\t' read -r address floating width height <<<"$state"
-            if [[ $floating != true ]] || ! size_is_correct "$width" "$height"; then
+
+            # Always normalize a newly mapped authentication window once. This
+            # handles the case where the compositor already reports 900x520 but
+            # spawned it somewhere other than the intended visible center.
+            if [[ $address != "$last_address" ]]; then
+                correct_window "$address" || true
+                last_address="$address"
+            elif [[ $floating != true ]] || ! size_is_correct "$width" "$height"; then
+                # Recover dynamically if a manual/compositor state change tiles
+                # or resizes the window while the authentication request is open.
                 correct_window "$address" || true
             fi
+        else
+            # The next mapped authentication window must be normalized even if
+            # Hyprland later reuses an address.
+            last_address=""
         fi
         /usr/bin/sleep "$WATCH_INTERVAL"
     done
