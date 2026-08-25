@@ -1,0 +1,475 @@
+#!/usr/bin/env bash
+# Awtarchy PolicyKit terminal UI concept.
+# Visual prototype only: this does not register a PolicyKit agent or authenticate anything.
+
+set -u
+set -o pipefail
+IFS=$'\n\t'
+export LC_ALL=C.UTF-8
+
+APP_ID="awtarchy-polkit-agent-concept"
+SCRIPT_PATH="$(readlink -f -- "${BASH_SOURCE[0]}" 2>/dev/null || printf '%s' "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd -- "$(dirname -- "$SCRIPT_PATH")" 2>/dev/null && pwd -P)"
+
+C_RESET=$'\033[0m'
+C_BOLD=$'\033[1m'
+C_DIM=$'\033[2m'
+C_ACCENT=$'\033[1;35m'
+C_GREEN=$'\033[1;32m'
+C_RED=$'\033[1;31m'
+C_YELLOW=$'\033[1;33m'
+C_REVERSE=$'\033[7m'
+
+TTY_STATE=""
+UI_ACTIVE=0
+FOCUS=0
+SHOW_DETAILS=1
+DEMO_PASSWORD=""
+STATUS_MSG="Visual prototype only. Input is discarded; do not enter your real password."
+
+PASSWORD_ROW=0
+DETAILS_ROW=0
+BUTTON_ROW=0
+CANCEL_X1=0
+CANCEL_X2=0
+AUTH_X1=0
+AUTH_X2=0
+
+usage() {
+    printf '%s\n' \
+        'Usage: awtarchy-polkit-agent-concept.sh [--tui|--print]' \
+        '' \
+        'Without arguments, opens the concept in the preferred terminal.' \
+        '--tui    Run interactively in the current terminal.' \
+        '--print  Print a static noninteractive preview.' \
+        '' \
+        'This is a visual prototype only. It never talks to polkitd.'
+}
+
+cleanup_terminal() {
+    if (( UI_ACTIVE == 0 )); then
+        return 0
+    fi
+
+    if [[ -n "$TTY_STATE" ]]; then
+        stty "$TTY_STATE" <&3 2>/dev/null || true
+    fi
+    printf '\033[?1000l\033[?1006l\033[?25h\033[0m\033[?1049l' >&3 2>/dev/null || true
+    UI_ACTIVE=0
+}
+
+open_tty() {
+    exec 3<>/dev/tty || {
+        printf '%s\n' 'awtarchy-polkit-agent-concept: /dev/tty is unavailable' >&2
+        return 1
+    }
+
+    TTY_STATE="$(stty -g <&3 2>/dev/null || true)"
+    [[ -n "$TTY_STATE" ]] || {
+        printf '%s\n' 'awtarchy-polkit-agent-concept: could not read terminal state' >&2
+        return 1
+    }
+
+    return 0
+}
+
+ui_enter() {
+    printf '\033[?1049h\033[2J\033[H\033[?1000h\033[?1006h\033[?25l' >&3
+    stty -echo -icanon min 1 time 0 <&3
+    UI_ACTIVE=1
+}
+
+term_cols() {
+    local cols
+    cols="$(tput cols 2>/dev/null || printf '80')"
+    [[ "$cols" =~ ^[0-9]+$ ]] || cols=80
+    printf '%s\n' "$cols"
+}
+
+term_lines() {
+    local lines
+    lines="$(tput lines 2>/dev/null || printf '24')"
+    [[ "$lines" =~ ^[0-9]+$ ]] || lines=24
+    printf '%s\n' "$lines"
+}
+
+goto_xy() {
+    printf '\033[%d;%dH' "$1" "$2" >&3
+}
+
+print_at() {
+    local row="$1" col="$2"
+    shift 2
+    goto_xy "$row" "$col"
+    printf '%s' "$*" >&3
+}
+
+repeat_char() {
+    local char="$1" count="$2" out=""
+    (( count < 0 )) && count=0
+    printf -v out '%*s' "$count" ''
+    printf '%s' "${out// /$char}"
+}
+
+focus_wrap() {
+    local selected="$1" text="$2" color="${3:-}"
+    if (( FOCUS == selected )); then
+        printf '%s%s%s%s' "$C_REVERSE" "$color" "$text" "$C_RESET"
+    else
+        printf '%s%s%s' "$color" "$text" "$C_RESET"
+    fi
+}
+
+password_field_text() {
+    local cols="$1" stars="" field_width=40 content pad
+    (( cols < 72 )) && field_width=28
+    (( cols > 100 )) && field_width=46
+
+    if (( ${#DEMO_PASSWORD} > 0 )); then
+        stars="$(repeat_char '•' "${#DEMO_PASSWORD}")"
+    fi
+    (( ${#stars} > field_width )) && stars="${stars: -field_width}"
+    pad=$((field_width - ${#stars}))
+    content="${stars}$(repeat_char ' ' "$pad")"
+
+    if (( FOCUS == 0 )); then
+        printf '%s[%s]%s' "$C_REVERSE" "$content" "$C_RESET"
+    else
+        printf '[%s]' "$content"
+    fi
+}
+
+render() {
+    local cols lines left=3 row=2 field button_gap=6 total button_start
+    local cancel='[ Cancel ]' auth='[ Authenticate ]'
+
+    cols="$(term_cols)"
+    lines="$(term_lines)"
+    printf '\033[H\033[2J' >&3
+
+    if (( cols < 64 || lines < 20 )); then
+        print_at 2 2 "${C_YELLOW}${C_BOLD}Terminal is too small for this concept.${C_RESET}"
+        print_at 4 2 "Resize to at least 64 columns × 20 rows."
+        print_at 6 2 "Esc closes the prototype."
+        return 0
+    fi
+
+    print_at "$row" "$left" "${C_ACCENT}${C_BOLD}Authentication Required${C_RESET}"
+    ((row += 2))
+    print_at "$row" "$left" 'An application is attempting to perform an action that requires privileges.'
+    ((row++))
+    print_at "$row" "$left" "Authentication is needed to run '/usr/bin/true' as the super user."
+    ((row += 2))
+
+    PASSWORD_ROW=$row
+    field="$(password_field_text "$cols")"
+    print_at "$row" "$left" "Password:  ${field}"
+    ((row += 2))
+
+    DETAILS_ROW=$row
+    if (( SHOW_DETAILS == 1 )); then
+        print_at "$row" "$left" "$(focus_wrap 1 '▼ Details:' "$C_ACCENT")"
+        ((row++))
+        print_at "$row" "$((left + 2))" "${C_DIM}Action:${C_RESET}      org.freedesktop.policykit.exec"
+        ((row++))
+        print_at "$row" "$((left + 2))" "${C_DIM}Vendor:${C_RESET}      The polkit project"
+        ((row++))
+        print_at "$row" "$((left + 2))" "${C_DIM}Description:${C_RESET} Run programs as another user"
+        ((row++))
+        print_at "$row" "$((left + 2))" "${C_DIM}Identity:${C_RESET}    unix-user:${USER:-user}"
+        ((row += 2))
+    else
+        print_at "$row" "$left" "$(focus_wrap 1 '▶ Details:' "$C_ACCENT")"
+        ((row += 2))
+    fi
+
+    total=$(( ${#cancel} + button_gap + ${#auth} ))
+    button_start=$(( (cols - total) / 2 + 1 ))
+    (( button_start < left )) && button_start=$left
+    BUTTON_ROW=$row
+    CANCEL_X1=$button_start
+    CANCEL_X2=$((CANCEL_X1 + ${#cancel} - 1))
+    AUTH_X1=$((CANCEL_X2 + button_gap + 1))
+    AUTH_X2=$((AUTH_X1 + ${#auth} - 1))
+
+    print_at "$row" "$CANCEL_X1" "$(focus_wrap 2 "$cancel" "$C_RED")"
+    print_at "$row" "$AUTH_X1" "$(focus_wrap 3 "$auth" "$C_GREEN")"
+    ((row += 2))
+
+    print_at "$row" "$left" "${C_YELLOW}${STATUS_MSG}${C_RESET}"
+    ((row += 2))
+    print_at "$row" "$left" "${C_DIM}Tab/Shift+Tab: move   Enter: activate   Mouse: click   Esc: cancel${C_RESET}"
+}
+
+read_key() {
+    local key="" next=""
+
+    IFS= read -rsn1 key <&3 || return 1
+    if [[ "$key" != $'\033' ]]; then
+        printf '%s' "$key"
+        return 0
+    fi
+
+    if ! IFS= read -rsn1 -t 0.04 next <&3; then
+        printf '%s' "$key"
+        return 0
+    fi
+    key+="$next"
+
+    if [[ "$next" == '[' ]]; then
+        if IFS= read -rsn1 -t 0.04 next <&3; then
+            key+="$next"
+            if [[ "$next" == '<' ]]; then
+                while IFS= read -rsn1 -t 0.04 next <&3; do
+                    key+="$next"
+                    [[ "$next" == 'M' || "$next" == 'm' ]] && break
+                done
+            elif [[ "$next" =~ [0-9] ]]; then
+                while IFS= read -rsn1 -t 0.04 next <&3; do
+                    key+="$next"
+                    [[ "$next" == '~' || "$next" =~ [A-Za-z] ]] && break
+                done
+            fi
+        fi
+    fi
+
+    printf '%s' "$key"
+}
+
+parse_mouse_event() {
+    local event="$1" body suffix
+    MOUSE_BUTTON=-1
+    MOUSE_X=0
+    MOUSE_Y=0
+    MOUSE_RELEASE=0
+
+    [[ "$event" == $'\033[<'* ]] || return 1
+    suffix="${event: -1}"
+    [[ "$suffix" == 'M' || "$suffix" == 'm' ]] || return 1
+    body="${event#$'\033[<'}"
+    body="${body%?}"
+    IFS=';' read -r MOUSE_BUTTON MOUSE_X MOUSE_Y <<<"$body"
+    [[ "$MOUSE_BUTTON" =~ ^[0-9]+$ && "$MOUSE_X" =~ ^[0-9]+$ && "$MOUSE_Y" =~ ^[0-9]+$ ]] || return 1
+    [[ "$suffix" == 'm' ]] && MOUSE_RELEASE=1
+    return 0
+}
+
+simulate_authentication() {
+    STATUS_MSG='Authenticating… visual demo only.'
+    render
+    sleep 0.45
+    DEMO_PASSWORD=""
+    STATUS_MSG='Authenticate selected. No PolicyKit request or credential was sent.'
+    FOCUS=0
+}
+
+handle_mouse_event() {
+    local event="$1" button
+    parse_mouse_event "$event" || return 1
+    (( MOUSE_RELEASE == 1 )) && return 0
+
+    button=$(( MOUSE_BUTTON & 3 ))
+    (( button == 0 )) || return 0
+
+    if (( MOUSE_Y == PASSWORD_ROW )); then
+        FOCUS=0
+        return 0
+    fi
+
+    if (( MOUSE_Y == DETAILS_ROW )); then
+        FOCUS=1
+        SHOW_DETAILS=$((1 - SHOW_DETAILS))
+        return 0
+    fi
+
+    if (( MOUSE_Y == BUTTON_ROW && MOUSE_X >= CANCEL_X1 && MOUSE_X <= CANCEL_X2 )); then
+        FOCUS=2
+        return 2
+    fi
+
+    if (( MOUSE_Y == BUTTON_ROW && MOUSE_X >= AUTH_X1 && MOUSE_X <= AUTH_X2 )); then
+        FOCUS=3
+        simulate_authentication
+        return 0
+    fi
+
+    return 0
+}
+
+run_tui() {
+    local key="" mouse_status=0
+
+    open_tty || return 1
+    ui_enter
+    trap cleanup_terminal EXIT
+
+    while true; do
+        render
+        key="$(read_key || true)"
+        [[ -n "$key" ]] || continue
+
+        if handle_mouse_event "$key"; then
+            continue
+        else
+            mouse_status=$?
+            (( mouse_status == 2 )) && break
+        fi
+
+        case "$key" in
+            $'\033')
+                break
+                ;;
+            $'\t')
+                FOCUS=$(( (FOCUS + 1) % 4 ))
+                ;;
+            $'\033[Z')
+                FOCUS=$(( (FOCUS + 3) % 4 ))
+                ;;
+            $'\033[D')
+                FOCUS=$(( (FOCUS + 3) % 4 ))
+                ;;
+            $'\033[C')
+                FOCUS=$(( (FOCUS + 1) % 4 ))
+                ;;
+            $'\177'|$'\b')
+                if (( FOCUS == 0 && ${#DEMO_PASSWORD} > 0 )); then
+                    DEMO_PASSWORD="${DEMO_PASSWORD%?}"
+                fi
+                ;;
+            ''|$'\r'|$'\n')
+                case "$FOCUS" in
+                    0)
+                        STATUS_MSG='Demo input captured locally. Select Authenticate to preview the action state.'
+                        ;;
+                    1)
+                        SHOW_DETAILS=$((1 - SHOW_DETAILS))
+                        ;;
+                    2)
+                        break
+                        ;;
+                    3)
+                        simulate_authentication
+                        ;;
+                esac
+                ;;
+            *)
+                if (( FOCUS == 0 )) && [[ ${#key} -eq 1 && "$key" != $'\033' ]]; then
+                    DEMO_PASSWORD+="$key"
+                    STATUS_MSG='Visual prototype only. Input is discarded; do not enter your real password.'
+                fi
+                ;;
+        esac
+    done
+
+    cleanup_terminal
+    trap - EXIT
+    return 0
+}
+
+print_static() {
+    printf '%sAuthentication Required%s\n\n' "$C_ACCENT" "$C_RESET"
+    printf '%s\n' \
+        'An application is attempting to perform an action that requires privileges.' \
+        "Authentication is needed to run '/usr/bin/true' as the super user." \
+        '' \
+        'Password:  [                                      ]' \
+        ''
+    printf '%s▼ Details:%s\n' "$C_ACCENT" "$C_RESET"
+    printf '  Action:      org.freedesktop.policykit.exec\n'
+    printf '  Vendor:      The polkit project\n'
+    printf '  Description: Run programs as another user\n'
+    printf '  Identity:    unix-user:%s\n\n' "${USER:-user}"
+    printf '              %s[ Cancel ]%s      %s[ Authenticate ]%s\n\n' "$C_RED" "$C_RESET" "$C_GREEN" "$C_RESET"
+    printf '%sVisual prototype only. No PolicyKit request is sent.%s\n' "$C_YELLOW" "$C_RESET"
+}
+
+launch_with_terminal() {
+    local helper="${SCRIPT_DIR}/default_terminal.sh" terminal_name=""
+    local -a terminal_args=()
+
+    if [[ -x "$helper" ]]; then
+        "$helper" --class "$APP_ID" -- "$SCRIPT_PATH" --tui >/dev/null 2>&1 &
+        return 0
+    fi
+
+    if [[ -n ${TERMINAL:-} ]]; then
+        read -r -a terminal_args <<<"$TERMINAL"
+        if (( ${#terminal_args[@]} == 0 )) || ! command -v "${terminal_args[0]}" >/dev/null 2>&1; then
+            terminal_args=()
+        fi
+    fi
+
+    if (( ${#terminal_args[@]} == 0 )); then
+        local candidate
+        for candidate in footclient foot kitty alacritty wezterm konsole gnome-terminal xfce4-terminal xterm; do
+            if command -v "$candidate" >/dev/null 2>&1; then
+                terminal_args=("$candidate")
+                break
+            fi
+        done
+    fi
+
+    (( ${#terminal_args[@]} > 0 )) || {
+        printf '%s\n' 'awtarchy-polkit-agent-concept: no supported terminal emulator was found' >&2
+        return 127
+    }
+
+    terminal_name="${terminal_args[0]##*/}"
+    case "$terminal_name" in
+        foot|footclient)
+            "${terminal_args[@]}" --app-id="$APP_ID" "$SCRIPT_PATH" --tui >/dev/null 2>&1 &
+            ;;
+        kitty)
+            "${terminal_args[@]}" --class "$APP_ID" "$SCRIPT_PATH" --tui >/dev/null 2>&1 &
+            ;;
+        alacritty)
+            "${terminal_args[@]}" --class "$APP_ID,$APP_ID" --title "$APP_ID" -e "$SCRIPT_PATH" --tui >/dev/null 2>&1 &
+            ;;
+        wezterm)
+            "${terminal_args[@]}" start --class "$APP_ID" -- "$SCRIPT_PATH" --tui >/dev/null 2>&1 &
+            ;;
+        konsole)
+            "${terminal_args[@]}" --appname "$APP_ID" -e "$SCRIPT_PATH" --tui >/dev/null 2>&1 &
+            ;;
+        gnome-terminal)
+            "${terminal_args[@]}" --title="$APP_ID" -- "$SCRIPT_PATH" --tui >/dev/null 2>&1 &
+            ;;
+        xfce4-terminal)
+            "${terminal_args[@]}" --title="$APP_ID" --execute "$SCRIPT_PATH" --tui >/dev/null 2>&1 &
+            ;;
+        xterm)
+            "${terminal_args[@]}" -class "$APP_ID" -T "$APP_ID" -e "$SCRIPT_PATH" --tui >/dev/null 2>&1 &
+            ;;
+        *)
+            "${terminal_args[@]}" -e "$SCRIPT_PATH" --tui >/dev/null 2>&1 &
+            ;;
+    esac
+
+    return 0
+}
+
+main() {
+    case "${1:-}" in
+        '')
+            launch_with_terminal
+            ;;
+        --tui)
+            run_tui
+            ;;
+        --print)
+            print_static
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            usage >&2
+            printf 'Unknown option: %s\n' "$1" >&2
+            return 2
+            ;;
+    esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi
