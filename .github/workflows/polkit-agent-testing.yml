@@ -24,6 +24,8 @@ jobs:
           python3 -m py_compile config/hypr/scripts/awtarchy-polkit-agent/agent.py config/hypr/scripts/awtarchy-polkit-agent/tui.py
       - name: Terminal TUI parser
         run: python3 tests/test-polkit-agent-tui.py
+      - name: Authentication feedback contract
+        run: python3 tests/test-polkit-agent-auth-feedback.py
       - name: Password retry contract
         run: bash tests/test-polkit-agent-password-retry.sh
       - name: Alacritty appearance contract
