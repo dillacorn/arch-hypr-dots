@@ -243,15 +243,17 @@ class TerminalPolkitAgent:
         journal_message("info", "startup: authentication terminal hidden and ready")
 
         conditions = GLib.IOCondition.IN | GLib.IOCondition.HUP | GLib.IOCondition.ERR
-        GLib.unix_fd_add(GLib.PRIORITY_DEFAULT, self.ui.tty_fd, conditions, self._on_tty_ready)
+        self.tty_channel = GLib.IOChannel.unix_new(self.ui.tty_fd)
+        self.tty_channel.set_close_on_unref(False)
+        self.tty_channel.add_watch(conditions, self._on_tty_ready)
         GLib.timeout_add(45, self._flush_pending_escape)
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, self._on_signal)
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, self._on_signal)
 
         self.loop.run()
 
-    def _on_tty_ready(self, fd: int, condition: GLib.IOCondition) -> bool:
-        del fd
+    def _on_tty_ready(self, channel: GLib.IOChannel, condition: GLib.IOCondition) -> bool:
+        del channel
         if condition & (GLib.IOCondition.HUP | GLib.IOCondition.ERR):
             self.shutdown()
             return False
