@@ -70,6 +70,7 @@ main() {
     local account_info account home_dir expected_runtime
     local wayland_display="${WAYLAND_DISPLAY:-}"
     local hypr_signature="${HYPRLAND_INSTANCE_SIGNATURE:-}"
+    local session_id="${XDG_SESSION_ID:-}"
     local runtime_from_env="${XDG_RUNTIME_DIR:-}"
     local lang_value="${LANG:-C.UTF-8}"
 
@@ -95,6 +96,8 @@ main() {
         || fail 'WAYLAND_DISPLAY is unavailable or invalid' || return 1
     [[ -n $hypr_signature && $hypr_signature != */* && $hypr_signature != *$'\n'* ]] \
         || fail 'HYPRLAND_INSTANCE_SIGNATURE is unavailable or invalid' || return 1
+    [[ $session_id =~ ^[A-Za-z0-9_.:-]{1,128}$ ]] \
+        || fail 'XDG_SESSION_ID is unavailable or invalid' || return 1
 
     # User-manager environment values must not alter Python imports, dynamic
     # libraries, terminal plugins, or PolicyKit debugging behavior.
@@ -125,6 +128,7 @@ main() {
         DBUS_SESSION_BUS_ADDRESS="unix:path=${expected_runtime}/bus" \
         WAYLAND_DISPLAY="$wayland_display" \
         HYPRLAND_INSTANCE_SIGNATURE="$hypr_signature" \
+        XDG_SESSION_ID="$session_id" \
         XDG_CURRENT_DESKTOP=Hyprland \
         XDG_SESSION_DESKTOP=Hyprland \
         XDG_SESSION_TYPE=wayland \
