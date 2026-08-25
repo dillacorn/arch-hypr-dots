@@ -9,7 +9,44 @@ permissions:
   contents: read
 
 jobs:
+  apply-glib-watch:
+    if: github.event.head_commit.message == 'Apply portable Polkit GLib watch fix'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Apply portable GLib TTY watch
+        run: python3 tests/helpers/apply-polkit-glib-watch.py
+      - name: Remove patch helper
+        run: rm -f tests/helpers/apply-polkit-glib-watch.py
+      - name: Validate implementation
+        run: |
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n config/hypr/scripts/awtarchy-polkit-agent/launcher.sh
+          bash -n config/hypr/scripts/awtarchy-polkit-agent-live-test.sh
+          python3 -m py_compile config/hypr/scripts/awtarchy-polkit-agent/agent.py config/hypr/scripts/awtarchy-polkit-agent/tui.py
+          python3 tests/test-polkit-agent-tui.py
+          bash tests/test-polkit-agent-glib-watch.sh
+          bash tests/test-polkit-agent-hypr-dispatch.sh
+          bash tests/test-polkit-agent-session-binding.sh
+          bash tests/test-polkit-agent-startup-diagnostics.sh
+          bash tests/test-polkit-agent-production-integration.sh
+          bash tests/test-polkit-agent-secure.sh
+          bash tests/test-polkit-agent-runtime-rebuild.sh
+          git diff --check
+      - name: Commit implementation
+        run: |
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add -A
+          git commit -m 'Use portable GLib TTY watch'
+          git push origin HEAD:polkit-agent-concept-testing
+
   polkit-contracts:
+    if: github.event.head_commit.message != 'Apply portable Polkit GLib watch fix'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
