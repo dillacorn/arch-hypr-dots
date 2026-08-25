@@ -31,6 +31,7 @@ INTERFACE_NAME = "org.freedesktop.PolicyKit1.AuthenticationAgent"
 ERROR_FAILED = "org.freedesktop.PolicyKit1.Error.Failed"
 ERROR_CANCELLED = "org.freedesktop.PolicyKit1.Error.Cancelled"
 PKACTION = "/usr/bin/pkaction"
+SYSTEMD_CAT = "/usr/bin/systemd-cat"
 SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 
 INTROSPECTION_XML = """
@@ -50,6 +51,27 @@ INTROSPECTION_XML = """
   </interface>
 </node>
 """
+
+
+def journal_message(priority: str, message: str) -> None:
+    """Write non-secret startup diagnostics to the user journal."""
+    try:
+        subprocess.run(
+            [
+                SYSTEMD_CAT,
+                "--identifier=awtarchy-polkit-agent",
+                f"--priority={priority}",
+            ],
+            input=f"{message}\n",
+            text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"},
+            timeout=2.0,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass
 
 
 class TerminalPolkitAgent:
@@ -212,11 +234,13 @@ class TerminalPolkitAgent:
             None,
         )
         self.registered = True
+        journal_message("info", "startup: PolicyKit authentication agent registered")
 
         # Alacritty is already mapped by the time this child is running. Keep the
         # registered agent alive but put its terminal on a private special
         # workspace until PolicyKit starts a request.
         self.ui.prime_hidden()
+        journal_message("info", "startup: authentication terminal hidden and ready")
 
         conditions = GLib.IOCondition.IN | GLib.IOCondition.HUP | GLib.IOCondition.ERR
         GLib.unix_fd_add(GLib.PRIORITY_DEFAULT, self.ui.tty_fd, conditions, self._on_tty_ready)
@@ -454,8 +478,10 @@ def main() -> int:
         agent = TerminalPolkitAgent()
         agent.start()
         return 0
-    except (GLib.Error, OSError, RuntimeError) as exc:
-        print(f"awtarchy-polkit-agent: {exc}", file=sys.stderr)
+    except Exception as exc:
+        message = f"fatal startup: {type(exc).__name__}: {exc}"
+        journal_message("err", message)
+        print(f"awtarchy-polkit-agent: {message}", file=sys.stderr)
         return 78
 
 

@@ -73,6 +73,7 @@ require_commands() {
         /usr/bin/find \
         /usr/bin/hyprctl \
         /usr/bin/install \
+        /usr/bin/journalctl \
         /usr/bin/kill \
         /usr/bin/mktemp \
         /usr/bin/mv \
@@ -488,6 +489,31 @@ stop_awtarchy_agent() {
     /usr/bin/systemctl --user stop "$SERVICE_NAME" >/dev/null 2>&1 || true
 }
 
+show_startup_diagnostics() {
+    local active substate result main_pid main_status restarts executable="unavailable"
+
+    active="$(/usr/bin/systemctl --user show -p ActiveState --value "$SERVICE_NAME" 2>/dev/null || printf 'unknown')"
+    substate="$(/usr/bin/systemctl --user show -p SubState --value "$SERVICE_NAME" 2>/dev/null || printf 'unknown')"
+    result="$(/usr/bin/systemctl --user show -p Result --value "$SERVICE_NAME" 2>/dev/null || printf 'unknown')"
+    main_pid="$(/usr/bin/systemctl --user show -p MainPID --value "$SERVICE_NAME" 2>/dev/null || printf '0')"
+    main_status="$(/usr/bin/systemctl --user show -p ExecMainStatus --value "$SERVICE_NAME" 2>/dev/null || printf 'unknown')"
+    restarts="$(/usr/bin/systemctl --user show -p NRestarts --value "$SERVICE_NAME" 2>/dev/null || printf 'unknown')"
+
+    if [[ $main_pid =~ ^[1-9][0-9]*$ ]]; then
+        executable="$(/usr/bin/readlink -f -- "/proc/${main_pid}/exe" 2>/dev/null || printf 'unavailable')"
+    fi
+
+    fail "startup diagnostics: ActiveState=${active:-unknown} SubState=${substate:-unknown} Result=${result:-unknown} MainPID=${main_pid:-0} ExecMainStatus=${main_status:-unknown} NRestarts=${restarts:-unknown}"
+    fail "startup diagnostics: MainPID executable=${executable}"
+    if [[ $main_pid =~ ^[1-9][0-9]*$ ]] && process_has_agent_command "$main_pid"; then
+        fail 'startup diagnostics: Python agent child is present but full service verification failed'
+    else
+        fail 'startup diagnostics: Python agent child was not found under the service MainPID'
+    fi
+
+    /usr/bin/journalctl --user -u "$SERVICE_NAME" -b --no-pager -n 30 >&2 || true
+}
+
 rollback_to_gnome() {
     fail 'Awtarchy terminal PolicyKit agent failed; restoring polkit-gnome.'
     stop_awtarchy_agent
@@ -518,6 +544,7 @@ start_awtarchy_agent() {
     if ! /usr/bin/systemctl --user is-active --quiet "$SERVICE_NAME" \
         || ! verify_service_process;
     then
+        show_startup_diagnostics
         rollback_to_gnome
         return 1
     fi
@@ -527,6 +554,7 @@ start_awtarchy_agent() {
     /usr/bin/sleep 1.5
     restarts="$(/usr/bin/systemctl --user show -p NRestarts --value "$SERVICE_NAME" 2>/dev/null || printf 'unknown')"
     if [[ ! $restarts =~ ^[0-9]+$ || $restarts -ne 0 ]] || ! verify_service_process; then
+        show_startup_diagnostics
         rollback_to_gnome
         return 1
     fi
