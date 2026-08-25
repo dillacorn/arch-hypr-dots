@@ -77,6 +77,7 @@ require_commands() {
         /usr/bin/mktemp \
         /usr/bin/mv \
         /usr/bin/nohup \
+        /usr/bin/pacman \
         /usr/bin/pgrep \
         /usr/bin/pkcheck \
         /usr/bin/pkexec \
@@ -92,6 +93,24 @@ require_commands() {
     do
         [[ -x $path ]] || fail "required executable is unavailable: $path" || return 1
     done
+}
+
+ensure_test_prerequisites() {
+    local pkg
+    local -a missing=()
+
+    for pkg in polkit python-gobject; do
+        /usr/bin/pacman -Q "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
+    done
+
+    if ((${#missing[@]} > 0)); then
+        note "Installing terminal PolicyKit test prerequisites: ${missing[*]}"
+        /usr/bin/sudo /usr/bin/pacman -S --needed --noconfirm "${missing[@]}" \
+            || fail 'could not install terminal PolicyKit test prerequisites' || return 1
+    fi
+
+    /usr/bin/python3 -I -c 'import gi; gi.require_version("Polkit", "1.0"); gi.require_version("PolkitAgent", "1.0"); from gi.repository import Gio, GLib, Polkit, PolkitAgent' \
+        || fail 'PolicyKit Python bindings are unavailable after prerequisite installation' || return 1
 }
 
 verify_python_source() {
@@ -524,6 +543,7 @@ install_test_runtime() {
     start_gnome || return 1
 
     /usr/bin/sudo -v || fail 'sudo authentication failed' || return 1
+    ensure_test_prerequisites || return 1
     ensure_root_directory "$RUNTIME_PARENT" || return 1
     ensure_root_directory "$USER_UNIT_DIR" || return 1
 
