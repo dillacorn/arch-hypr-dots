@@ -354,6 +354,18 @@ hl.window_rule({
     no_follow_mouse = true,
 })
 
+-- Internal PolicyKit terminal: map directly to its private parking workspace.
+-- Quickshell intentionally excludes this service window from user scratchpad/task UI.
+hl.window_rule({
+    name = "awtarchy-polkit-agent-internal",
+    match = { class = "awtarchy-polkit-agent" },
+    float = true,
+    workspace = "special:awtarchy-polkit-agent silent",
+    no_initial_focus = true,
+    no_follow_mouse = true,
+    no_anim = true,
+})
+
 -- ───────────────────────────────────────────────────────────────────────────────
 -- INPUT
 -- ───────────────────────────────────────────────────────────────────────────────
