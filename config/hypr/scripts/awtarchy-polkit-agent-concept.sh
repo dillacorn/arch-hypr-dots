@@ -511,14 +511,11 @@ run_tui() {
         key="$READ_KEY_VALUE"
         [[ -n $key ]] || continue
 
-        if [[ $key == $'\033[<'* ]]; then
-            if handle_mouse_event "$key"; then
-                continue
-            else
-                mouse_status=$?
-                (( mouse_status == 2 )) && break
-                continue
-            fi
+        if handle_mouse_event "$key"; then
+            continue
+        else
+            mouse_status=$?
+            (( mouse_status == 2 )) && break
         fi
 
         case "$key" in
