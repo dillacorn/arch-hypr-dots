@@ -89,9 +89,13 @@ require_contains "$RUNTIME" 'pacman -Rns --noconfirm polkit-gnome'
 
 # Package removal is irreversible by the user-file rollback transaction. It must
 # happen only after every rollback-capable live/config validation and cleanup has
-# succeeded, but before the new baseline is committed.
-require_order "$RUNTIME" '  remove_quickshell_update_legacy_packages' '  remove_legacy_polkit_gnome_package'
-require_order "$RUNTIME" '  remove_legacy_polkit_gnome_package' '  commit_baseline "$target_home" "$source_label" "$active_theme"'
+# succeeded, only if live activation actually succeeded, and before the new
+# baseline is committed.
+require_contains "$RUNTIME" 'local polkit_migration_rc=0 polkit_activation_rc=0 polkit_remove_legacy_ready=0'
+require_contains "$RUNTIME" 'polkit_remove_legacy_ready=1'
+require_contains "$RUNTIME" 'if (( polkit_remove_legacy_ready == 1 )); then'
+require_order "$RUNTIME" '  remove_quickshell_update_legacy_packages' '    remove_legacy_polkit_gnome_package'
+require_order "$RUNTIME" '    remove_legacy_polkit_gnome_package' '  commit_baseline "$target_home" "$source_label" "$active_theme"'
 
 # This unit is started explicitly after Hyprland imports its environment. Do not
 # globally enable it at default.target where it can race WAYLAND_DISPLAY setup.
