@@ -78,7 +78,7 @@ cleanup_terminal() {
     if [[ -n $TTY_STATE ]]; then
         stty "$TTY_STATE" <&3 2>/dev/null || true
     fi
-    printf '\033[?1000l\033[?1006l\033[?25h\033[0m\033[?1049l' >&3 2>/dev/null || true
+    printf '\033[?1000l\033[?1002l\033[?1006l\033[?25h\033[0m\033[?1049l' >&3 2>/dev/null || true
     UI_ACTIVE=0
 }
 
@@ -95,8 +95,13 @@ open_tty() {
     }
 }
 
+enable_mouse_tracking() {
+    printf '\033[?1000h\033[?1006h\033[?1002h' >&3
+}
+
 ui_enter() {
-    printf '\033[?1049h\033[2J\033[H\033[?1000h\033[?1006h\033[?25l' >&3
+    printf '\033[?1049h\033[2J\033[H\033[?25l' >&3
+    enable_mouse_tracking
     stty -echo -icanon min 1 time 0 <&3
     UI_ACTIVE=1
 }
@@ -330,7 +335,7 @@ render() {
 
     cols="$(term_cols)"
     lines="$(term_lines)"
-    printf '\033[H\033[2J' >&3
+    printf '\033[?1000h\033[?1006h\033[?1002h\033[H\033[2J' >&3
 
     if (( cols < 64 || lines < 20 )); then
         print_at 2 2 "${C_YELLOW}${C_BOLD}Review window is below the minimum terminal cell size.${C_RESET}"
@@ -393,28 +398,28 @@ read_key() {
     local key="" next=""
     READ_KEY_VALUE=""
 
-    IFS= read -rsn1 key <&3 || return 1
+    IFS= read -rsN1 key <&3 || return 1
     if [[ $key != $'\033' ]]; then
         READ_KEY_VALUE="$key"
         return 0
     fi
 
-    if ! IFS= read -rsn1 -t 0.04 next <&3; then
+    if ! IFS= read -rsN1 -t 0.12 next <&3; then
         READ_KEY_VALUE="$key"
         return 0
     fi
     key+="$next"
 
     if [[ $next == '[' ]]; then
-        if IFS= read -rsn1 -t 0.04 next <&3; then
+        if IFS= read -rsN1 -t 0.12 next <&3; then
             key+="$next"
             if [[ $next == '<' ]]; then
-                while IFS= read -rsn1 -t 0.04 next <&3; do
+                while IFS= read -rsN1 -t 0.12 next <&3; do
                     key+="$next"
                     [[ $next == 'M' || $next == 'm' ]] && break
                 done
             elif [[ $next =~ [0-9] ]]; then
-                while IFS= read -rsn1 -t 0.04 next <&3; do
+                while IFS= read -rsN1 -t 0.12 next <&3; do
                     key+="$next"
                     [[ $next == '~' || $next =~ [A-Za-z] ]] && break
                 done
@@ -509,7 +514,6 @@ run_tui() {
             continue
         fi
         key="$READ_KEY_VALUE"
-        [[ -n $key ]] || continue
 
         if handle_mouse_event "$key"; then
             continue
