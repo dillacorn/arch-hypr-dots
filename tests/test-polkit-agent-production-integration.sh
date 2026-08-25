@@ -26,6 +26,20 @@ reject_contains() {
     fi
 }
 
+line_number() {
+    local file="$1" pattern="$2" line
+    line="$(grep -nF -- "$pattern" "$file" | head -n1 | cut -d: -f1 || true)"
+    [[ $line =~ ^[1-9][0-9]*$ ]] || fail "$file missing ordered marker: $pattern" || return 1
+    printf '%s\n' "$line"
+}
+
+require_order() {
+    local file="$1" first="$2" second="$3" first_line second_line
+    first_line="$(line_number "$file" "$first")" || return 1
+    second_line="$(line_number "$file" "$second")" || return 1
+    (( first_line < second_line )) || fail "$file has unsafe ordering: $first must precede $second"
+}
+
 for file in "$RUNTIME" "$HYPR" "$LAUNCHER" "$SERVICE"; do
     [[ -f $file ]] || fail "missing $file"
 done
@@ -38,7 +52,9 @@ bash -n "$LAUNCHER"
 require_contains "$HYPR" 'hl.exec_cmd("/usr/bin/systemctl --user restart awtarchy-polkit-agent.service")'
 reject_contains "$HYPR" '/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1'
 
-# Fresh installs must not pull the retired GNOME authentication agent.
+# Fresh installs must explicitly install PolicyKit itself, not rely on an
+# unrelated package dependency, and must not pull the retired GNOME agent.
+require_contains "$RUNTIME" '"Utilities:upower polkit gnome-keyring '
 reject_contains "$RUNTIME" 'Utilities:upower polkit-gnome '
 
 # The real runtime/service are installed root-owned outside HOME from the
@@ -70,6 +86,12 @@ require_contains "$RUNTIME" 'restore_legacy_polkit_gnome'
 require_contains "$RUNTIME" 'remove_legacy_polkit_gnome_package()'
 require_contains "$RUNTIME" 'managed_package_recorded polkit-gnome'
 require_contains "$RUNTIME" 'pacman -Rns --noconfirm polkit-gnome'
+
+# Package removal is irreversible by the user-file rollback transaction. It must
+# happen only after every rollback-capable live/config validation and cleanup has
+# succeeded, but before the new baseline is committed.
+require_order "$RUNTIME" '  remove_quickshell_update_legacy_packages' '  remove_legacy_polkit_gnome_package'
+require_order "$RUNTIME" '  remove_legacy_polkit_gnome_package' '  commit_baseline "$target_home" "$source_label" "$active_theme"'
 
 # This unit is started explicitly after Hyprland imports its environment. Do not
 # globally enable it at default.target where it can race WAYLAND_DISPLAY setup.
