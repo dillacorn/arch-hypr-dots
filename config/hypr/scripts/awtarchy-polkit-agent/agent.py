@@ -31,6 +31,7 @@ INTERFACE_NAME = "org.freedesktop.PolicyKit1.AuthenticationAgent"
 ERROR_FAILED = "org.freedesktop.PolicyKit1.Error.Failed"
 ERROR_CANCELLED = "org.freedesktop.PolicyKit1.Error.Cancelled"
 PKACTION = "/usr/bin/pkaction"
+SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 
 INTROSPECTION_XML = """
 <node>
@@ -192,7 +193,17 @@ class TerminalPolkitAgent:
         if not self.registration_id:
             raise RuntimeError("could not export PolicyKit authentication agent object")
 
-        self.subject = Polkit.UnixSession.new_for_process_sync(os.getpid(), None)
+        # This process is supervised by systemd --user and may therefore live
+        # outside the graphical session's session-*.scope. Register against the
+        # explicit logind session inherited from Hyprland instead of asking
+        # PolicyKit to infer a session from this service process PID.
+        session_id = os.environ.get("XDG_SESSION_ID", "")
+        if not SESSION_ID_RE.fullmatch(session_id):
+            raise RuntimeError("XDG_SESSION_ID is unavailable or invalid")
+        self.subject = Polkit.UnixSession.new(session_id)
+        if self.subject is None:
+            raise RuntimeError("could not construct the graphical PolicyKit session subject")
+
         self.authority = Polkit.Authority.get_sync(None)
         self.authority.register_authentication_agent_sync(
             self.subject,
