@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regression checks for safely replacing an untrusted pre-existing Polkit test runtime.
+# Regression checks for safely replacing an untrusted pre-existing terminal Polkit runtime.
 
 set -euo pipefail
 
@@ -16,6 +16,16 @@ grep -Fq 'replace_runtime_tree()' "$SCRIPT"
 grep -Fq 'verify_runtime_tree "$RUNTIME_DIR"' "$SCRIPT"
 grep -Fq "IFS=' ' read -r uid mode type" "$SCRIPT"
 
+# The complete terminal runtime must be staged before replacement.
+grep -Fq 'agent.py' "$SCRIPT"
+grep -Fq 'tui.py' "$SCRIPT"
+grep -Fq 'alacritty.toml' "$SCRIPT"
+grep -Fq 'launcher.sh' "$SCRIPT"
+if grep -Fq 'shell.qml' "$SCRIPT" || grep -Fq 'window-guard.sh' "$SCRIPT"; then
+    printf '%s\n' 'FAIL: live-test staging still references obsolete Quickshell runtime files' >&2
+    exit 1
+fi
+
 # A pre-existing user-owned runtime must not simply be chowned/adopted in place.
 if grep -Eq 'chown[^\n]*\$RUNTIME_DIR|chown[^\n]*/polkit-agent' "$SCRIPT"; then
     printf '%s\n' 'FAIL: installer adopts an existing runtime directory with chown' >&2
@@ -27,4 +37,4 @@ grep -Fq '/usr/bin/sudo /usr/bin/mv -Tf -- "$RUNTIME_DIR" "$previous"' "$SCRIPT"
 grep -Fq '/usr/bin/sudo /usr/bin/mv -Tf -- "$stage" "$RUNTIME_DIR"' "$SCRIPT"
 grep -Fq '/usr/bin/sudo /usr/bin/mv -Tf -- "$previous" "$RUNTIME_DIR"' "$SCRIPT"
 
-printf '%s\n' 'polkit runtime rebuild tests passed'
+printf '%s\n' 'terminal Polkit runtime rebuild tests passed'
