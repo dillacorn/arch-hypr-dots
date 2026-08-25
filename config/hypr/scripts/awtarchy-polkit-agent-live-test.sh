@@ -16,6 +16,7 @@ LAUNCHER_SOURCE="${SOURCE_DIR}/launcher.sh"
 GUARD_SOURCE="${SOURCE_DIR}/window-guard.sh"
 SERVICE_SOURCE="${SOURCE_DIR}/awtarchy-polkit-agent.service"
 
+RUNTIME_PARENT="/usr/local/libexec/awtarchy"
 RUNTIME_DIR="/usr/local/libexec/awtarchy/polkit-agent"
 USER_UNIT_DIR="/usr/local/lib/systemd/user"
 SERVICE_NAME="awtarchy-polkit-agent.service"
@@ -23,6 +24,7 @@ SERVICE_DEST="${USER_UNIT_DIR}/${SERVICE_NAME}"
 GNOME_BIN="/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"
 
 GNOME_PIDS=()
+STAGED_RUNTIME=""
 
 usage() {
     printf '%s\n' \
@@ -60,7 +62,9 @@ require_commands() {
     local path
     for path in \
         /usr/bin/bash \
+        /usr/bin/chmod \
         /usr/bin/dirname \
+        /usr/bin/find \
         /usr/bin/install \
         /usr/bin/kill \
         /usr/bin/mktemp \
@@ -70,10 +74,13 @@ require_commands() {
         /usr/bin/pkcheck \
         /usr/bin/pkexec \
         /usr/bin/readlink \
+        /usr/bin/rm \
         /usr/bin/sleep \
+        /usr/bin/sort \
         /usr/bin/stat \
         /usr/bin/sudo \
-        /usr/bin/systemctl
+        /usr/bin/systemctl \
+        /usr/bin/test
     do
         [[ -x $path ]] || fail "required executable is unavailable: $path" || return 1
     done
@@ -102,8 +109,11 @@ verify_sources() {
 verify_root_directory() {
     local path="$1" uid mode type mode_value
 
-    [[ -d $path && ! -L $path ]] || fail "missing or unsafe root-owned directory: $path" || return 1
-    read -r uid mode type < <(/usr/bin/stat -Lc '%u %a %F' -- "$path") || return 1
+    /usr/bin/sudo /usr/bin/test -d "$path" \
+        && ! /usr/bin/sudo /usr/bin/test -L "$path" \
+        || fail "missing or unsafe root-owned directory: $path" || return 1
+
+    read -r uid mode type < <(/usr/bin/sudo /usr/bin/stat -Lc '%u %a %F' -- "$path") || return 1
     [[ $uid == 0 && $type == directory ]] \
         || fail "directory is not root-owned: $path" || return 1
 
@@ -115,18 +125,33 @@ verify_root_directory() {
 verify_installed_file() {
     local path="$1" expected_mode="$2" uid mode type
 
-    [[ -f $path && ! -L $path ]] || fail "missing or unsafe installed file: $path" || return 1
-    read -r uid mode type < <(/usr/bin/stat -Lc '%u %a %F' -- "$path") || return 1
+    /usr/bin/sudo /usr/bin/test -f "$path" \
+        && ! /usr/bin/sudo /usr/bin/test -L "$path" \
+        || fail "missing or unsafe installed file: $path" || return 1
+
+    read -r uid mode type < <(/usr/bin/sudo /usr/bin/stat -Lc '%u %a %F' -- "$path") || return 1
     [[ $uid == 0 && $mode == "$expected_mode" && $type == 'regular file' ]] \
         || fail "unexpected owner/mode/type for installed file: $path" || return 1
 }
 
+verify_runtime_tree() {
+    local directory="$1" actual expected
+
+    verify_root_directory "$directory" || return 1
+    verify_installed_file "${directory}/shell.qml" 644 || return 1
+    verify_installed_file "${directory}/launcher" 755 || return 1
+    verify_installed_file "${directory}/window-guard.sh" 755 || return 1
+
+    actual="$(/usr/bin/sudo /usr/bin/find "$directory" -mindepth 1 -maxdepth 1 -printf '%f\n' 2>/dev/null | /usr/bin/sort)" \
+        || return 1
+    expected=$'launcher\nshell.qml\nwindow-guard.sh'
+    [[ $actual == "$expected" ]] \
+        || fail "runtime contains unexpected entries: $directory" || return 1
+}
+
 verify_installed_runtime() {
-    verify_root_directory "$RUNTIME_DIR" || return 1
+    verify_runtime_tree "$RUNTIME_DIR" || return 1
     verify_root_directory "$USER_UNIT_DIR" || return 1
-    verify_installed_file "${RUNTIME_DIR}/shell.qml" 644 || return 1
-    verify_installed_file "${RUNTIME_DIR}/launcher" 755 || return 1
-    verify_installed_file "${RUNTIME_DIR}/window-guard.sh" 755 || return 1
     verify_installed_file "$SERVICE_DEST" 644 || return 1
 }
 
@@ -139,8 +164,8 @@ ensure_root_directory() {
     fi
 
     if /usr/bin/sudo /usr/bin/test -e "$path"; then
-        verify_root_directory "$path" || return 1
-        return 0
+        verify_root_directory "$path"
+        return $?
     fi
 
     /usr/bin/sudo /usr/bin/install -d -m 0755 -o root -g root -- "$path" \
@@ -159,10 +184,10 @@ install_atomic() {
         return 1
     fi
     if /usr/bin/sudo /usr/bin/test -e "$destination"; then
-        local existing_uid existing_type
-        read -r existing_uid existing_type < <(/usr/bin/sudo /usr/bin/stat -Lc '%u %F' -- "$destination") || return 1
-        [[ $existing_uid == 0 && $existing_type == 'regular file' ]] \
-            || fail "refusing non-root or non-regular destination: $destination" || return 1
+        local existing_type
+        existing_type="$(/usr/bin/sudo /usr/bin/stat -Lc '%F' -- "$destination")" || return 1
+        [[ $existing_type == 'regular file' ]] \
+            || fail "refusing non-regular destination: $destination" || return 1
     fi
 
     temporary="$(/usr/bin/sudo /usr/bin/mktemp "${directory}/.${basename}.awtarchy.XXXXXX")" \
@@ -194,6 +219,84 @@ install_atomic() {
         /usr/bin/sudo /usr/bin/rm -f -- "$temporary" 2>/dev/null || true
         fail "could not atomically install $destination"
         return 1
+    fi
+}
+
+cleanup_staged_runtime() {
+    if [[ -n ${STAGED_RUNTIME:-} ]]; then
+        /usr/bin/sudo /usr/bin/rm -rf --one-file-system -- "$STAGED_RUNTIME" 2>/dev/null || true
+        STAGED_RUNTIME=""
+    fi
+}
+
+stage_runtime_tree() {
+    ensure_root_directory "$RUNTIME_PARENT" || return 1
+
+    STAGED_RUNTIME="$(/usr/bin/sudo /usr/bin/mktemp -d "${RUNTIME_PARENT}/.polkit-agent.stage.XXXXXX")" \
+        || fail 'could not create root-owned runtime staging directory' || return 1
+
+    if ! /usr/bin/sudo /usr/bin/install -m 0644 -o root -g root -- "$SHELL_SOURCE" "${STAGED_RUNTIME}/shell.qml" \
+        || ! /usr/bin/sudo /usr/bin/install -m 0755 -o root -g root -- "$LAUNCHER_SOURCE" "${STAGED_RUNTIME}/launcher" \
+        || ! /usr/bin/sudo /usr/bin/install -m 0755 -o root -g root -- "$GUARD_SOURCE" "${STAGED_RUNTIME}/window-guard.sh" \
+        || ! /usr/bin/sudo /usr/bin/chmod 0755 -- "$STAGED_RUNTIME";
+    then
+        cleanup_staged_runtime
+        fail 'could not build the root-owned PolicyKit runtime staging tree'
+        return 1
+    fi
+
+    verify_runtime_tree "$STAGED_RUNTIME" || {
+        cleanup_staged_runtime
+        return 1
+    }
+}
+
+replace_runtime_tree() {
+    local stage="$1" previous="" failed=""
+
+    [[ -n $stage ]] || fail 'runtime staging path is empty' || return 1
+    verify_runtime_tree "$stage" || return 1
+
+    if /usr/bin/sudo /usr/bin/test -L "$RUNTIME_DIR"; then
+        fail "refusing symbolic-link runtime destination: $RUNTIME_DIR"
+        return 1
+    fi
+
+    if /usr/bin/sudo /usr/bin/test -e "$RUNTIME_DIR"; then
+        [[ "$(/usr/bin/sudo /usr/bin/stat -Lc '%F' -- "$RUNTIME_DIR")" == directory ]] \
+            || fail "refusing non-directory runtime destination: $RUNTIME_DIR" || return 1
+
+        previous="${RUNTIME_PARENT}/.polkit-agent.previous.${$}"
+        /usr/bin/sudo /usr/bin/test ! -e "$previous" \
+            || fail "temporary previous-runtime path already exists: $previous" || return 1
+
+        /usr/bin/sudo /usr/bin/mv -Tf -- "$RUNTIME_DIR" "$previous" \
+            || fail 'could not move the previous PolicyKit runtime aside' || return 1
+    fi
+
+    if ! /usr/bin/sudo /usr/bin/mv -Tf -- "$stage" "$RUNTIME_DIR"; then
+        if [[ -n $previous ]]; then
+            /usr/bin/sudo /usr/bin/mv -Tf -- "$previous" "$RUNTIME_DIR" 2>/dev/null || true
+        fi
+        fail 'could not activate the staged PolicyKit runtime'
+        return 1
+    fi
+    STAGED_RUNTIME=""
+
+    if ! verify_runtime_tree "$RUNTIME_DIR"; then
+        failed="${RUNTIME_PARENT}/.polkit-agent.failed.${$}"
+        /usr/bin/sudo /usr/bin/mv -Tf -- "$RUNTIME_DIR" "$failed" 2>/dev/null || true
+        if [[ -n $previous ]]; then
+            /usr/bin/sudo /usr/bin/mv -Tf -- "$previous" "$RUNTIME_DIR" 2>/dev/null || true
+        fi
+        /usr/bin/sudo /usr/bin/rm -rf --one-file-system -- "$failed" 2>/dev/null || true
+        fail 'activated PolicyKit runtime failed verification; previous runtime restored'
+        return 1
+    fi
+
+    if [[ -n $previous ]]; then
+        /usr/bin/sudo /usr/bin/rm -rf --one-file-system -- "$previous" \
+            || fail 'new runtime is active, but the previous test runtime could not be removed' || return 1
     fi
 }
 
@@ -230,8 +333,6 @@ stop_gnome() {
         /usr/bin/sleep 0.05
     done
 
-    # Re-resolve exact executable paths before the forced fallback so a reused
-    # PID cannot cause an unrelated process to be killed.
     get_gnome_pids
     for pid in "${GNOME_PIDS[@]}"; do
         /usr/bin/kill -KILL -- "$pid" 2>/dev/null || true
@@ -278,23 +379,24 @@ install_runtime() {
     require_commands || return 1
     verify_sources || return 1
 
-    # Keep the known-good GNOME agent available while replacing test runtime
-    # files. The permanent Hyprland autostart is deliberately untouched.
     /usr/bin/systemctl --user stop "$SERVICE_NAME" >/dev/null 2>&1 || true
     start_gnome || return 1
 
     note 'Installing root-owned Awtarchy PolicyKit test runtime...'
     /usr/bin/sudo -v || fail 'sudo authentication failed; nothing was installed' || return 1
 
-    ensure_root_directory "$RUNTIME_DIR" || return 1
+    ensure_root_directory "$RUNTIME_PARENT" || return 1
     ensure_root_directory "$USER_UNIT_DIR" || return 1
 
-    install_atomic "$SHELL_SOURCE" "${RUNTIME_DIR}/shell.qml" 0644 || return 1
-    install_atomic "$LAUNCHER_SOURCE" "${RUNTIME_DIR}/launcher" 0755 || return 1
-    install_atomic "$GUARD_SOURCE" "${RUNTIME_DIR}/window-guard.sh" 0755 || return 1
-    install_atomic "$SERVICE_SOURCE" "$SERVICE_DEST" 0644 || return 1
+    stage_runtime_tree || return 1
+    replace_runtime_tree "$STAGED_RUNTIME" || {
+        cleanup_staged_runtime
+        return 1
+    }
 
+    install_atomic "$SERVICE_SOURCE" "$SERVICE_DEST" 0644 || return 1
     verify_installed_runtime || return 1
+
     /usr/bin/systemctl --user daemon-reload \
         || fail 'systemd user-manager reload failed' || return 1
 
@@ -346,8 +448,6 @@ start_awtarchy_agent() {
         return 1
     fi
 
-    # shell.qml fails with status 78 if Polkit registration did not complete.
-    # Give that guard time to fire before declaring the process stable.
     for attempt in {1..25}; do
         if ! /usr/bin/systemctl --user is-active --quiet "$SERVICE_NAME"; then
             rollback_to_gnome
@@ -378,11 +478,9 @@ run_real_test() {
         }
     fi
 
-    # Force this test to require a fresh authentication conversation rather
-    # than consuming a recently cached temporary Polkit authorization.
     /usr/bin/pkcheck --revoke-temp >/dev/null 2>&1 || true
 
-    note "Triggering a real harmless PolicyKit request: /usr/bin/true"
+    note 'Triggering a real harmless PolicyKit request: /usr/bin/true'
     note 'You may enter your real password in the Awtarchy authentication window.'
 
     if /usr/bin/pkexec --disable-internal-agent /usr/bin/true; then
@@ -394,11 +492,9 @@ run_real_test() {
     case "$status" in
         0)
             note 'Authentication completed successfully.'
-            return 0
             ;;
         126)
             note 'Authentication was cancelled.'
-            return 0
             ;;
         *)
             fail "pkexec test failed with status $status"
@@ -459,6 +555,7 @@ main() {
             ;;
         status)
             require_normal_user || return 1
+            require_commands || return 1
             show_status
             ;;
         stop|restore-gnome)
