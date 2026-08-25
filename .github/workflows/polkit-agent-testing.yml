@@ -23,6 +23,8 @@ jobs:
           python3 -m py_compile config/hypr/scripts/awtarchy-polkit-agent/agent.py config/hypr/scripts/awtarchy-polkit-agent/tui.py
       - name: Terminal TUI parser
         run: python3 tests/test-polkit-agent-tui.py
+      - name: Hyprland dispatcher contract
+        run: bash tests/test-polkit-agent-hypr-dispatch.sh
       - name: Graphical session binding contract
         run: bash tests/test-polkit-agent-session-binding.sh
       - name: Startup diagnostics contract
