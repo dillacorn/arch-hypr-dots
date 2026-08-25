@@ -88,6 +88,14 @@ EOF_CURL
 cat >"${fakebin}/notify-send" <<'EOF_NOTIFY'
 #!/usr/bin/env bash
 set -euo pipefail
+selected_action_fd=""
+print_id=0
+for argument in "$@"; do
+  case "$argument" in
+    --selected-action-fd=*) selected_action_fd="${argument#*=}" ;;
+    --print-id) print_id=1 ;;
+  esac
+done
 python3 - "${AWTARCHY_TEST_NOTIFY_LOG:?}" "$@" <<'PY'
 import json
 import sys
@@ -95,7 +103,14 @@ from pathlib import Path
 
 Path(sys.argv[1]).write_text(json.dumps(sys.argv[2:]), encoding="utf-8")
 PY
-printf '%s\n' "${AWTARCHY_TEST_ACTION:-}"
+if (( print_id )); then
+  printf '%s\n' "${AWTARCHY_TEST_NOTIFICATION_ID:-42}"
+fi
+if [[ -n $selected_action_fd ]]; then
+  printf '%s\n' "${AWTARCHY_TEST_ACTION:-}" >&"$selected_action_fd"
+else
+  printf '%s\n' "${AWTARCHY_TEST_ACTION:-}"
+fi
 EOF_NOTIFY
 
 cat >"${fakebin}/default-terminal" <<'EOF_TERMINAL'
@@ -116,11 +131,48 @@ set -euo pipefail
 printf '%s\n' "$@" >"${AWTARCHY_TEST_RELEASE_LOG:?}"
 EOF_XDG_OPEN
 
+cat >"${fakebin}/awtarchy" <<'EOF_AWTARCHY'
+#!/usr/bin/env bash
+set -euo pipefail
+python3 - "${AWTARCHY_TEST_UPDATE_LOG:?}" "$@" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_text(json.dumps(sys.argv[2:]), encoding="utf-8")
+PY
+[[ $# -eq 1 && $1 == update ]] || exit 64
+case "${AWTARCHY_TEST_UPDATE_RESULT:?}" in
+  success)
+    printf 'tag=%s\nupdated_at=2026-09-01T00:00:00Z\n' \
+      "${AWTARCHY_TEST_UPDATE_TARGET:?}" \
+      >"${XDG_STATE_HOME:?}/awtarchy/config-version"
+    ;;
+  unchanged) ;;
+  failure) exit 23 ;;
+  *) exit 64 ;;
+esac
+EOF_AWTARCHY
+
+cat >"${fakebin}/busctl" <<'EOF_BUSCTL'
+#!/usr/bin/env bash
+set -euo pipefail
+python3 - "${AWTARCHY_TEST_CLOSE_LOG:?}" "$@" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_text(json.dumps(sys.argv[2:]), encoding="utf-8")
+PY
+EOF_BUSCTL
+
 chmod 0755 \
   "${fakebin}/curl" \
   "${fakebin}/notify-send" \
   "${fakebin}/default-terminal" \
-  "${fakebin}/xdg-open"
+  "${fakebin}/xdg-open" \
+  "${fakebin}/awtarchy" \
+  "${fakebin}/busctl"
 
 new_home() {
   local name="$1" config_tag="$2" command_revision="${3:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}"
@@ -178,13 +230,17 @@ PY
 }
 
 assert_terminal() {
-  local file="$1" command="$2"
-  python3 - "$file" "$command" <<'PY'
+  local file="$1" command="$2" notification_id="${3:-}" target="${4:-}"
+  python3 - "$file" "$command" "$notification_id" "$target" "$CHECKER" <<'PY'
 import json
 import sys
 
 args = json.load(open(sys.argv[1], encoding="utf-8"))
-expected = ["--class", "awtarchy-update", "--hold", "--no-profile", "--", "awtarchy", sys.argv[2]]
+if sys.argv[2] == "update":
+    expected_command = [sys.argv[5], "run-stable-update", sys.argv[3], sys.argv[4]]
+else:
+    expected_command = ["awtarchy", sys.argv[2]]
+expected = ["--class", "awtarchy-update", "--hold", "--no-profile", "--", *expected_command]
 if args != expected:
     raise SystemExit(f"unexpected terminal arguments: {args!r}")
 PY
@@ -210,8 +266,10 @@ assert_notification \
   $'v3.1.5 → v3.2.1\nRun: awtarchy update' \
   'update=Update ↑' \
   'release=Release Notes ↗' \
-  '--icon=github'
-assert_terminal "${stable_home}/terminal.json" update
+  '--icon=github' \
+  '--hint=boolean:resident:true' \
+  '--print-id'
+assert_terminal "${stable_home}/terminal.json" update 42 v3.2.1
 rm -f -- "${stable_home}/notify.json" "${stable_home}/terminal.json"
 run_check "$stable_home" stable-update update 2000022000
 [[ ! -e ${stable_home}/notify.json ]] || fail 'stable target was announced twice'
@@ -222,6 +280,8 @@ run_check "$release_home" stable-update release
   || fail 'release action did not open the exact stable release page'
 [[ ! -e ${release_home}/terminal.json ]] \
   || fail 'release action unexpectedly launched the updater terminal'
+[[ ! -e ${release_home}/close.json ]] \
+  || fail 'release action unexpectedly closed the resident notification'
 
 same_payload_home="$(new_home same-payload v3.2.1)"
 run_check "$same_payload_home" same-payload
@@ -237,7 +297,95 @@ assert_notification \
   'refresh=Refresh ↑' \
   '--icon=github'
 assert_notification_omits "${maintenance_home}/notify.json" 'release=Release Notes ↗'
+assert_notification_omits "${maintenance_home}/notify.json" '--hint=boolean:resident:true'
 assert_terminal "${maintenance_home}/terminal.json" self-update
+
+update_success_home="$(new_home update-success v3.1.5)"
+env \
+  HOME="$update_success_home" \
+  XDG_CACHE_HOME="${update_success_home}/.cache" \
+  XDG_CONFIG_HOME="${update_success_home}/.config" \
+  XDG_DATA_HOME="${update_success_home}/.local/share" \
+  XDG_STATE_HOME="${update_success_home}/.local/state" \
+  PATH="${fakebin}:${PATH}" \
+  AWTARCHY_TEST_UPDATE_LOG="${update_success_home}/update.json" \
+  AWTARCHY_TEST_UPDATE_RESULT=success \
+  AWTARCHY_TEST_UPDATE_TARGET=v3.2.1 \
+  AWTARCHY_TEST_CLOSE_LOG="${update_success_home}/close.json" \
+  bash "$CHECKER" run-stable-update 42 v3.2.1
+python3 - "${update_success_home}/update.json" "${update_success_home}/close.json" <<'PY'
+import json
+import sys
+
+update_args = json.load(open(sys.argv[1], encoding="utf-8"))
+if update_args != ["update"]:
+    raise SystemExit(f"unexpected update command: {update_args!r}")
+close_args = json.load(open(sys.argv[2], encoding="utf-8"))
+expected = [
+    "--user",
+    "call",
+    "org.freedesktop.Notifications",
+    "/org/freedesktop/Notifications",
+    "org.freedesktop.Notifications.CloseNotification",
+    "u",
+    "42",
+]
+if close_args != expected:
+    raise SystemExit(f"successful update did not close the original notification: {close_args!r}")
+PY
+
+update_newer_home="$(new_home update-newer v3.1.5)"
+env \
+  HOME="$update_newer_home" \
+  XDG_CACHE_HOME="${update_newer_home}/.cache" \
+  XDG_CONFIG_HOME="${update_newer_home}/.config" \
+  XDG_DATA_HOME="${update_newer_home}/.local/share" \
+  XDG_STATE_HOME="${update_newer_home}/.local/state" \
+  PATH="${fakebin}:${PATH}" \
+  AWTARCHY_TEST_UPDATE_LOG="${update_newer_home}/update.json" \
+  AWTARCHY_TEST_UPDATE_RESULT=success \
+  AWTARCHY_TEST_UPDATE_TARGET=v3.2.2 \
+  AWTARCHY_TEST_CLOSE_LOG="${update_newer_home}/close.json" \
+  bash "$CHECKER" run-stable-update 45 v3.2.1
+[[ -s ${update_newer_home}/close.json ]] \
+  || fail 'update beyond the advertised target left a stale notification'
+
+update_unchanged_home="$(new_home update-unchanged v3.1.5)"
+env \
+  HOME="$update_unchanged_home" \
+  XDG_CACHE_HOME="${update_unchanged_home}/.cache" \
+  XDG_CONFIG_HOME="${update_unchanged_home}/.config" \
+  XDG_DATA_HOME="${update_unchanged_home}/.local/share" \
+  XDG_STATE_HOME="${update_unchanged_home}/.local/state" \
+  PATH="${fakebin}:${PATH}" \
+  AWTARCHY_TEST_UPDATE_LOG="${update_unchanged_home}/update.json" \
+  AWTARCHY_TEST_UPDATE_RESULT=unchanged \
+  AWTARCHY_TEST_UPDATE_TARGET=v3.2.1 \
+  AWTARCHY_TEST_CLOSE_LOG="${update_unchanged_home}/close.json" \
+  bash "$CHECKER" run-stable-update 43 v3.2.1
+[[ ! -e ${update_unchanged_home}/close.json ]] \
+  || fail 'zero-status update without the target config closed the notification'
+
+update_failure_home="$(new_home update-failure v3.1.5)"
+set +e
+env \
+  HOME="$update_failure_home" \
+  XDG_CACHE_HOME="${update_failure_home}/.cache" \
+  XDG_CONFIG_HOME="${update_failure_home}/.config" \
+  XDG_DATA_HOME="${update_failure_home}/.local/share" \
+  XDG_STATE_HOME="${update_failure_home}/.local/state" \
+  PATH="${fakebin}:${PATH}" \
+  AWTARCHY_TEST_UPDATE_LOG="${update_failure_home}/update.json" \
+  AWTARCHY_TEST_UPDATE_RESULT=failure \
+  AWTARCHY_TEST_UPDATE_TARGET=v3.2.1 \
+  AWTARCHY_TEST_CLOSE_LOG="${update_failure_home}/close.json" \
+  bash "$CHECKER" run-stable-update 44 v3.2.1
+update_failure_status=$?
+set -e
+[[ $update_failure_status -eq 23 ]] \
+  || fail "failed update returned ${update_failure_status} instead of 23"
+[[ ! -e ${update_failure_home}/close.json ]] \
+  || fail 'failed update closed the notification'
 
 prerelease_home="$(new_home prerelease v3.2.1)"
 run_check "$prerelease_home" prerelease

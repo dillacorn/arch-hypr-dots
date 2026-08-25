@@ -10,6 +10,8 @@ CACHE_HOME="${XDG_CACHE_HOME:-${HOME_DIR}/.cache}"
 STATE_HOME="${XDG_STATE_HOME:-${HOME_DIR}/.local/state}"
 CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME_DIR}/.config}"
 DATA_HOME="${XDG_DATA_HOME:-${HOME_DIR}/.local/share}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+SCRIPT_PATH="${SCRIPT_DIR}/${BASH_SOURCE[0]##*/}"
 
 AWTARCHY_STATE_DIR="${STATE_HOME}/awtarchy"
 CONFIG_VERSION_FILE="${AWTARCHY_STATE_DIR}/config-version"
@@ -62,6 +64,18 @@ valid_oid() {
 
 valid_stable_tag() {
     [[ $1 =~ ^v[0-9]+(\.[0-9]+)+$ ]]
+}
+
+stable_version_at_least() {
+    local installed="$1" target="$2" oldest
+    valid_stable_tag "$installed" || return 1
+    valid_stable_tag "$target" || return 1
+    oldest="$(printf '%s\n%s\n' "$target" "$installed" | LC_ALL=C sort -V | head -n 1)"
+    [[ $oldest == "$target" ]]
+}
+
+valid_notification_id() {
+    [[ $1 =~ ^[1-9][0-9]*$ ]]
 }
 
 state_value() {
@@ -125,14 +139,58 @@ PY
 }
 
 launch_update() {
-    local command="$1"
+    local command="$1" notification_id="${2:-}" target="${3:-}"
     [[ -x "$DEFAULT_TERMINAL" ]] || return 0
-    "$DEFAULT_TERMINAL" \
-        --class awtarchy-update \
-        --hold \
-        --no-profile \
-        -- \
-        awtarchy "$command"
+    if [[ $command == update ]] \
+        && valid_notification_id "$notification_id" \
+        && valid_stable_tag "$target"; then
+        "$DEFAULT_TERMINAL" \
+            --class awtarchy-update \
+            --hold \
+            --no-profile \
+            -- \
+            "$SCRIPT_PATH" run-stable-update "$notification_id" "$target"
+    else
+        "$DEFAULT_TERMINAL" \
+            --class awtarchy-update \
+            --hold \
+            --no-profile \
+            -- \
+            awtarchy "$command"
+    fi
+}
+
+close_notification() {
+    local notification_id="$1"
+    valid_notification_id "$notification_id" || return 0
+    command -v busctl >/dev/null 2>&1 || return 0
+    busctl --user call \
+        org.freedesktop.Notifications \
+        /org/freedesktop/Notifications \
+        org.freedesktop.Notifications.CloseNotification \
+        u "$notification_id" \
+        >/dev/null 2>&1 || true
+}
+
+run_stable_update() {
+    local notification_id="$1" target="$2" status installed
+    valid_notification_id "$notification_id" || return 2
+    valid_stable_tag "$target" || return 2
+
+    if awtarchy update; then
+        status=0
+    else
+        status=$?
+    fi
+
+    if (( status == 0 )); then
+        installed="$(read_field "$CONFIG_VERSION_FILE" tag 2>/dev/null || true)"
+        if stable_version_at_least "$installed" "$target"; then
+            close_notification "$notification_id"
+        fi
+    fi
+
+    return "$status"
 }
 
 open_release_page() {
@@ -144,7 +202,7 @@ open_release_page() {
 
 notify_and_handle() {
     local kind="$1" title="$2" body="$3" action_id="$4" action_label="$5" command="$6"
-    local release_target="${7:-}" action
+    local release_target="${7:-}" action notification_id=""
     local -a notify_args=(
         notify-send
         --app-name=Awtarchy
@@ -155,12 +213,28 @@ notify_and_handle() {
     )
 
     if valid_stable_tag "$release_target"; then
-        notify_args+=(--action "release=Release Notes ↗")
+        notify_args+=(
+            --hint=boolean:resident:true
+            --action "release=Release Notes ↗"
+            --print-id
+        )
+        TMP_FILE="$(mktemp "${NOTIFICATION_STATE_FILE}.action.XXXXXX")"
+        chmod 0600 "$TMP_FILE"
+        notification_id="$(
+            "${notify_args[@]}" \
+                --selected-action-fd=3 \
+                "$title" "$body" \
+                3>"$TMP_FILE" 2>/dev/null || true
+        )"
+        action="$(<"$TMP_FILE")"
+        rm -f -- "$TMP_FILE"
+        TMP_FILE=""
+    else
+        action="$("${notify_args[@]}" "$title" "$body" 2>/dev/null || true)"
     fi
 
-    action="$("${notify_args[@]}" "$title" "$body" 2>/dev/null || true)"
     case "$action" in
-        default|"$action_id") launch_update "$command" ;;
+        default|"$action_id") launch_update "$command" "$notification_id" "$release_target" ;;
         release) open_release_page "$release_target" ;;
     esac
 }
@@ -334,9 +408,14 @@ check_for_updates() {
 }
 
 main() {
+    if [[ ${1:-} == run-stable-update && $# -eq 3 ]]; then
+        run_stable_update "$2" "$3"
+        return
+    fi
+
     [[ ${1:-} == check && $# -eq 1 ]] || {
         printf 'usage: %s check\n' "${0##*/}" >&2
-        exit 2
+        return 2
     }
 
     command -v curl >/dev/null 2>&1 || return 0
