@@ -129,10 +129,11 @@ Awtarchy owns its desktop PolicyKit authentication agent instead of delegating t
 
 Repository sources:
 
-- `config/hypr/scripts/awtarchy-polkit-agent/shell.qml`
-- `config/hypr/scripts/awtarchy-polkit-agent/launcher.sh`
-- `config/hypr/scripts/awtarchy-polkit-agent/window-guard.sh`
-- `config/hypr/scripts/awtarchy-polkit-agent/awtarchy-polkit-agent.service`
+- `config/hypr/scripts/awtarchy-polkit-agent/agent.py`: system-bus registration and the PolicyKit/PAM authentication conversation.
+- `config/hypr/scripts/awtarchy-polkit-agent/tui.py`: the real terminal authentication UI, keyboard/mouse handling, and exact-window Hyprland lifecycle.
+- `config/hypr/scripts/awtarchy-polkit-agent/launcher.sh`: validates the trusted runtime and starts the dedicated Alacritty terminal with isolated Python.
+- `config/hypr/scripts/awtarchy-polkit-agent/alacritty.toml`: root-owned terminal configuration for the authentication window.
+- `config/hypr/scripts/awtarchy-polkit-agent/awtarchy-polkit-agent.service`: supervised user service.
 
 Installed trusted runtime:
 
@@ -141,14 +142,17 @@ Installed trusted runtime:
 
 Important invariants:
 
-- `polkit` is an explicit Arch package dependency. `polkit-gnome` is retired and may exist only as a controlled migration/testing fallback.
+- `polkit` and `python-gobject` are explicit Arch package dependencies. `polkit-gnome` is retired and may exist only as a controlled migration/testing fallback.
+- The real authentication frontend is the dedicated Alacritty terminal. Quickshell/QML does not participate in the authentication process and must not be reintroduced as an authentication backend/frontend without an explicit architecture change.
+- The Python agent exports `org.freedesktop.PolicyKit1.AuthenticationAgent` on the system bus and uses `PolkitAgent.Session` for the PAM conversation. Password responses must travel only through `PolkitAgent.Session.response()`.
 - Hyprland starts/restarts `awtarchy-polkit-agent.service` after the Wayland/Hyprland session environment exists. Do not globally enable the unit at `default.target` where it can race `WAYLAND_DISPLAY` and `HYPRLAND_INSTANCE_SIGNATURE` setup.
-- Authentication QML and executable launcher code must run from the root-owned, non-user-writable runtime under `/usr/local`. Do not execute the live authentication agent from `~/.config`, and do not reintroduce user-controlled QML/plugin/library search paths into the agent process.
-- Password responses must travel only through Quickshell `AuthFlow`. Never log, persist, shell-expand, write to temporary files, or transport credentials through `sudo -S`, `pkexec` arguments, sockets, or helper-process stdin.
-- Migration must stop only the exact retired GNOME agent binary, verify the supervised Quickshell process, and restore the GNOME fallback when activation fails.
+- Authentication Python, launcher code, and the dedicated Alacritty configuration must run from the root-owned, non-user-writable runtime under `/usr/local`. Do not execute the live agent from `~/.config`, and do not add user-controlled Python/library/plugin search paths to the agent process.
+- Never log, persist, shell-expand, write to temporary files, pass in argv, or transport credentials through `sudo -S`, `pkexec` arguments, sockets, helper-process stdin, or any custom IPC channel.
+- The terminal stays registered while idle and is hidden on the private Hyprland special workspace `special:awtarchy-polkit-agent`. During authentication, move/focus/resize only the exact `awtarchy-polkit-agent` window; never target arbitrary windows.
+- Preserve the approved terminal behavior: fixed 900x520 geometry, Details collapsed initially, targeted password-field redraw without full-screen typing flicker, SGR mouse support, keyboard navigation, and real PAM status/error messages.
+- Migration must stop only the exact retired GNOME agent binary, verify both the supervised Alacritty process and its isolated `python3 -I .../agent.py` descendant, and restore GNOME when activation fails.
 - Automatic `polkit-gnome` package removal is allowed only when Awtarchy recorded ownership of that package, live activation succeeded, and every rollback-capable update validation/cleanup step has already completed.
-- Changes to this architecture require the focused production/security/runtime-rebuild tests to remain aligned with the implementation.
-
+- Changes to this architecture require `tests/test-polkit-agent-production-integration.sh`, `tests/test-polkit-agent-secure.sh`, `tests/test-polkit-agent-runtime-rebuild.sh`, and `tests/test-polkit-agent-tui.py` to remain aligned with the implementation.
 ### Runtime and integration helpers
 
 `config/hypr/scripts/`
