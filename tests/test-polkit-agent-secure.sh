@@ -105,6 +105,9 @@ test_launcher_contract() {
     require_contains "$LAUNCHER" '--config-file'
     require_contains "$LAUNCHER" '--class'
     require_contains "$LAUNCHER" '-I'
+    require_contains "$LAUNCHER" 'gi.require_version("Polkit", "1.0")'
+    require_contains "$LAUNCHER" 'gi.require_version("PolkitAgent", "1.0")'
+    require_contains "$LAUNCHER" 'PolicyKit Python bindings are unavailable'
     reject_regex "$LAUNCHER" '/usr/bin/quickshell|quickshell[[:space:]].*--config|shell\.qml'
     reject_regex "$LAUNCHER" '(^|[^[:alnum:]_])eval([[:space:]]|$)'
 }
@@ -141,6 +144,9 @@ test_controller_contract() {
     require_contains "$CONTROLLER" 'rollback_to_gnome'
     require_contains "$CONTROLLER" '/usr/bin/alacritty'
     require_contains "$CONTROLLER" '/usr/bin/python3'
+    require_contains "$CONTROLLER" 'ensure_test_prerequisites'
+    require_contains "$CONTROLLER" 'python-gobject'
+    require_contains "$CONTROLLER" '/usr/bin/pacman -S --needed --noconfirm'
 
     # Testing must not uninstall GNOME or rewrite permanent Hyprland autostart.
     reject_regex "$CONTROLLER" 'pacman[[:space:]].*-R|hyprland\.lua|sed[[:space:]].*polkit-gnome'
