@@ -62,6 +62,10 @@ reject_contains "$HYPR" '/usr/lib/polkit-gnome/polkit-gnome-authentication-agent
 require_contains "$RUNTIME" '"Utilities:upower polkit python-gobject gnome-keyring '
 reject_contains "$RUNTIME" 'Utilities:upower polkit-gnome '
 
+# Existing installs entering the migration must also receive the dependencies
+# before the new agent is activated; fresh-install package ownership is not enough.
+require_contains "$RUNTIME" 'local -a required=(quickshell upower playerctl hyprland-qt-support polkit python-gobject) missing=()'
+
 # The real runtime/service are installed root-owned outside HOME from the
 # immutable release/git-testing source tree, not from ~/.config.
 require_contains "$RUNTIME" 'install_awtarchy_polkit_agent_runtime()'
