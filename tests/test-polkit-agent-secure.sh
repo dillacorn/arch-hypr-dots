@@ -95,6 +95,7 @@ test_service_contract() {
     require_file "$SERVICE"
     require_contains "$SERVICE" 'ExecStart=/usr/local/libexec/awtarchy/polkit-agent/launcher'
     require_contains "$SERVICE" 'Restart=on-failure'
+    require_contains "$SERVICE" 'RestartPreventExitStatus=78'
     reject_regex "$SERVICE" '%h/|HOME=|EnvironmentFile='
 }
 
@@ -111,7 +112,7 @@ test_controller_contract() {
     require_contains "$CONTROLLER" 'restore_gnome'
     require_contains "$CONTROLLER" '/usr/bin/pkcheck --revoke-temp'
     require_contains "$CONTROLLER" '/usr/bin/pkexec --disable-internal-agent /usr/bin/true'
-    require_contains "$CONTROLLER" 'readlink -f -- "/proc/${pid}/exe"'
+    require_contains "$CONTROLLER" '/usr/bin/readlink -f -- "/proc/${pid}/exe"'
     require_contains "$CONTROLLER" 'verify_installed_runtime'
     require_contains "$CONTROLLER" 'rollback_to_gnome'
 
