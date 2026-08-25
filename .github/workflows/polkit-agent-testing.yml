@@ -1,0 +1,25 @@
+name: Polkit agent testing
+
+on:
+  push:
+    branches:
+      - polkit-agent-concept-testing
+
+permissions:
+  contents: read
+
+jobs:
+  polkit-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Production integration contract
+        run: bash tests/test-polkit-agent-production-integration.sh
+      - name: Secure agent contract
+        run: bash tests/test-polkit-agent-secure.sh
+      - name: Concept input regressions
+        run: bash tests/test-polkit-agent-concept-input-redraw.sh
+      - name: Runtime rebuild regressions
+        run: bash tests/test-polkit-agent-runtime-rebuild.sh
+      - name: Diff whitespace
+        run: git diff --check HEAD~1 HEAD
