@@ -25,6 +25,8 @@ jobs:
         run: python3 tests/test-polkit-agent-tui.py
       - name: Alacritty appearance contract
         run: bash tests/test-polkit-agent-alacritty-appearance.sh
+      - name: Internal window UX contract
+        run: bash tests/test-polkit-agent-internal-window-ui.sh
       - name: Portable GLib TTY watch contract
         run: bash tests/test-polkit-agent-glib-watch.sh
       - name: Hyprland dispatcher contract
