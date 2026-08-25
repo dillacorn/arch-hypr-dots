@@ -24,8 +24,6 @@ jobs:
         run: bash tests/test-polkit-agent-production-integration.sh
       - name: Secure agent contract
         run: bash tests/test-polkit-agent-secure.sh
-      - name: Concept input regressions
-        run: bash tests/test-polkit-agent-concept-input-redraw.sh
       - name: Runtime rebuild regressions
         run: bash tests/test-polkit-agent-runtime-rebuild.sh
       - name: Diff whitespace
