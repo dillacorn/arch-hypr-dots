@@ -47,7 +47,7 @@ bootstrap_state() {
 
 ensure_state_locked() {
     if [[ ! -s "$STATE_FILE" ]] || ! jq -e 'type == "object"' "$STATE_FILE" >/dev/null 2>&1; then
-        printf '{"enabled":true,"monitors":{},"launcher_sizes":{}}\n' >"$STATE_FILE"
+        printf '{"enabled":true,"monitors":{},"launcher_sizes":{},"update_notifications_enabled":true}\n' >"$STATE_FILE"
     fi
 }
 
@@ -256,6 +256,16 @@ parse_bool() {
         0|false|off) printf 'false\n' ;;
         *) printf '%s must be true or false\n' "$2" >&2; exit 2 ;;
     esac
+}
+
+set_update_notifications() {
+    local enabled
+    enabled="$(parse_bool "$1" 'update notifications')"
+    new_tmp
+    jq --argjson enabled "$enabled" \
+        '.update_notifications_enabled = $enabled' \
+        "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
 }
 
 set_capture() {
@@ -589,6 +599,10 @@ case "$cmd" in
         [[ -n ${2:-} && -n ${3:-} && -n ${4:-} && -n ${5:-} && -n ${6:-} && -n ${7:-} && -n ${8:-} ]] || exit 2
         save_flyout "$2" "$3" "$4" "$5" "$6" "$7" "$8" "${9:-}"
         ;;
+    set-update-notifications)
+        [[ -n ${2:-} ]] || exit 2
+        set_update_notifications "$2"
+        ;;
     set-notification-popup-limit)
         [[ -n ${2:-} ]] || exit 2
         set_notification_popup_limit "$2"
@@ -636,7 +650,7 @@ case "$cmd" in
         reset_defaults
         ;;
     *)
-        printf 'usage: %s {save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-notification-popup-limit <1-20>|set-notification-popup-position <MON> <automatic|top-left|top-center|top-right|bottom-left|bottom-center|bottom-right>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
+        printf 'usage: %s {save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-update-notifications <true|false>|set-notification-popup-limit <1-20>|set-notification-popup-position <MON> <automatic|top-left|top-center|top-right|bottom-left|bottom-center|bottom-right>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
         exit 2
         ;;
 esac

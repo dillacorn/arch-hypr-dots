@@ -221,6 +221,7 @@ Singleton {
     function emptyData() {
         return ({
             enabled: true,
+            update_notifications_enabled: true,
             monitors: {},
             launcher_sizes: {},
             clipboard_views: {},
@@ -265,11 +266,17 @@ Singleton {
             }
             if (parsed.enabled === undefined)
                 parsed.enabled = true;
+            if (parsed.update_notifications_enabled === undefined)
+                parsed.update_notifications_enabled = true;
             return parsed;
         } catch (error) {
             console.warn("Awtarchy Quickshell: invalid shell state:", error);
             return emptyData();
         }
+    }
+
+    function updateNotificationsEnabled() {
+        return data().update_notifications_enabled !== false;
     }
 
     function monitorState(name) {

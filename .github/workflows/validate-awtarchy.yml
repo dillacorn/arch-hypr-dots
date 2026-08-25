@@ -30,6 +30,7 @@ jobs:
           bash -n local/share/awtarchy/awtarchy-power-profile.sh
           bash -n config/hypr/scripts/awtarchy-tips-tui.sh
           bash -n config/hypr/scripts/ddc_brightness.sh
+          bash -n config/hypr/scripts/default_terminal.sh
           bash -n config/hypr/scripts/dim_display.sh
           bash -n config/hypr/scripts/hypr-ddc-brightness.sh
           bash -n config/hypr/scripts/hypr_quicksettings.sh
@@ -41,6 +42,7 @@ jobs:
           bash -n config/hypr/scripts/gif_capture.sh
           bash -n config/hypr/scripts/quickshell.sh
           bash -n config/hypr/scripts/quickshell_application_state.sh
+          bash -n config/hypr/scripts/quickshell_update_notifications.sh
           bash -n config/hypr/scripts/quickshell_bar_restore.sh
           bash -n config/hypr/scripts/quickshell_battery_care.sh
           bash -n config/hypr/scripts/quickshell_battery_health.sh
@@ -64,6 +66,7 @@ jobs:
           bash -n tests/test-awtarchy-git-mode.sh
           bash -n tests/test-awtarchy-command-shim.sh
           bash -n tests/test-awtarchy-legacy-cleanup.sh
+          bash -n tests/test-awtarchy-update-notifications.sh
           bash -n tests/test-bar-control-actions.sh
           bash -n tests/test-bar-wheel-input.sh
           bash -n tests/test-battery-state.sh
@@ -120,6 +123,7 @@ jobs:
             local/libexec/awtarchy/power-profile-helper \
             local/share/awtarchy/awtarchy-power-profile.sh \
             config/hypr/scripts/ddc_brightness.sh \
+            config/hypr/scripts/default_terminal.sh \
             config/hypr/scripts/dim_display.sh \
             config/hypr/scripts/hypr-ddc-brightness.sh \
             config/hypr/scripts/hyprbars_toggle.sh \
@@ -130,6 +134,7 @@ jobs:
             config/hypr/scripts/quickshell_battery_care.sh \
             config/hypr/scripts/quickshell_battery_health.sh \
             config/hypr/scripts/quickshell_launcher_position.sh \
+            config/hypr/scripts/quickshell_update_notifications.sh \
             config/hypr/scripts/quickshell_notification_layout_demo.sh \
             config/hypr/scripts/quickshell_resume_recover.sh \
             config/hypr/scripts/quickshell_runtime_rules.sh \
@@ -146,6 +151,7 @@ jobs:
             tests/test-awtarchy-git-mode.sh \
             tests/test-awtarchy-command-shim.sh \
             tests/test-awtarchy-legacy-cleanup.sh \
+            tests/test-awtarchy-update-notifications.sh \
             tests/test-bar-control-actions.sh \
             tests/test-bar-wheel-input.sh \
             tests/test-battery-state.sh \
@@ -206,6 +212,7 @@ jobs:
           bash tests/test-awtarchy-git-mode.sh
           bash tests/test-awtarchy-command-shim.sh
           bash tests/test-awtarchy-legacy-cleanup.sh
+          bash tests/test-awtarchy-update-notifications.sh
           bash tests/test-bar-control-actions.sh
           bash tests/test-bar-wheel-input.sh
           bash tests/test-battery-state.sh
