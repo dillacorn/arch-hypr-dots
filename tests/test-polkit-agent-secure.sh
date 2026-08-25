@@ -72,7 +72,7 @@ test_launcher_contract() {
     require_contains "$LAUNCHER" 'LD_LIBRARY_PATH'
     require_contains "$LAUNCHER" 'POLKIT_DEBUG'
     require_contains "$LAUNCHER" 'stat -Lc'
-    require_contains "$LAUNCHER" '[[ ! -L $path ]]'
+    require_contains "$LAUNCHER" '! -L $path'
     reject_regex "$LAUNCHER" '(^|[^[:alnum:]_])eval([[:space:]]|$)'
 }
 
