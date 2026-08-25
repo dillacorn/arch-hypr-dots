@@ -23,6 +23,12 @@ ALT_ENTER = b"\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l"
 ALT_LEAVE = b"\x1b[?25h\x1b[0m\x1b[?1049l"
 MOUSE_ENABLE = b"\x1b[?1000h\x1b[?1006h"
 MOUSE_DISABLE = b"\x1b[?1000l\x1b[?1006l"
+NORMAL_CLEAR = b"\x1b[3J\x1b[2J\x1b[H"
+SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+
+def spinner_text(index: int) -> str:
+    return f"Authenticating {SPINNER_FRAMES[index % len(SPINNER_FRAMES)]}"
+
 
 C_RESET = "\x1b[0m"
 C_BOLD = "\x1b[1m"
@@ -171,8 +177,11 @@ class TerminalUI:
         self.echo_on = False
         self.status = ""
         self.status_error = False
+        self.authenticating = False
+        self.spinner_index = 0
         self._response = bytearray()
         self.password_row = 0
+        self.status_row = 0
         self.details_row = 0
         self.identity_row = 0
         self.button_row = 0
@@ -208,7 +217,7 @@ class TerminalUI:
     def _leave_raw(self) -> None:
         if not self.raw_active:
             return
-        self._write(MOUSE_DISABLE + ALT_LEAVE)
+        self._write(MOUSE_DISABLE + ALT_LEAVE + NORMAL_CLEAR)
         termios.tcsetattr(self.tty_fd, termios.TCSANOW, self._saved_termios)
         self.raw_active = False
 
@@ -324,6 +333,8 @@ class TerminalUI:
         self.echo_on = False
         self.status = ""
         self.status_error = False
+        self.authenticating = False
+        self.spinner_index = 0
         self.focus = 0
         self.details_expanded = False
         workspace = self._active_workspace()
@@ -334,6 +345,8 @@ class TerminalUI:
 
     def hide(self) -> None:
         self.clear_secret()
+        self.authenticating = False
+        self.spinner_index = 0
         self.visible = False
         self._leave_raw()
         try:
@@ -365,6 +378,32 @@ class TerminalUI:
         self.focus = 0
         if self.visible:
             self.render()
+
+    def set_authenticating(self, active: bool) -> None:
+        active = bool(active)
+        if active:
+            self.clear_secret()
+            self.authenticating = True
+            self.spinner_index = 0
+            self.status = spinner_text(0)
+            self.status_error = False
+            self.focus = 2
+        else:
+            self.authenticating = False
+            self.spinner_index = 0
+            if self.status.startswith("Authenticating "):
+                self.status = ""
+                self.status_error = False
+        if self.visible:
+            self.render()
+
+    def advance_spinner(self) -> None:
+        if not self.authenticating:
+            return
+        self.spinner_index = (self.spinner_index + 1) % len(SPINNER_FRAMES)
+        self.status = spinner_text(self.spinner_index)
+        if self.visible:
+            self.render_status_only()
 
     def set_identity_index(self, index: int) -> None:
         if not self.identities:
@@ -423,6 +462,16 @@ class TerminalUI:
         label = self.prompt if self.prompt.endswith(":") else f"{self.prompt}:"
         self._print_at(self.password_row, 3, " " * max(1, columns - 4))
         self._print_at(self.password_row, 3, f"{label:<10} {self._field_text(columns)}")
+
+    def render_status_only(self) -> None:
+        if not self.visible or self.status_row <= 0:
+            return
+        columns, _ = self._columns_lines()
+        left = 3
+        self._print_at(self.status_row, left, " " * max(1, columns - left - 1))
+        if self.status:
+            color = C_RED if self.status_error else C_YELLOW
+            self._print_at(self.status_row, left, f"{color}{self.status}{C_RESET}"[: max(1, columns - left)])
 
     def render(self) -> None:
         if not self.visible:
@@ -489,6 +538,7 @@ class TerminalUI:
         self._print_at(row, self.auth_x1, self._focus(3, authenticate, C_GREEN))
         row += 2
 
+        self.status_row = row
         if self.status:
             color = C_RED if self.status_error else C_YELLOW
             self._print_at(row, left, f"{color}{self.status}{C_RESET}"[: max(1, columns - left)])
@@ -508,6 +558,8 @@ class TerminalUI:
             self.handle_event(event)
 
     def _submit(self) -> None:
+        if self.authenticating:
+            return
         if not self._response:
             self.status = "Password not entered."
             self.status_error = False
@@ -525,6 +577,15 @@ class TerminalUI:
 
     def handle_event(self, event: InputEvent) -> None:
         if not self.visible:
+            return
+        if self.authenticating:
+            if event.kind == "escape":
+                self.on_cancel()
+                return
+            if event.kind == "mouse" and event.mouse is not None:
+                button, x, y, release = event.mouse
+                if not release and button == 0 and y == self.button_row and self.cancel_x1 <= x <= self.cancel_x2:
+                    self.on_cancel()
             return
         if event.kind == "escape":
             self.on_cancel()

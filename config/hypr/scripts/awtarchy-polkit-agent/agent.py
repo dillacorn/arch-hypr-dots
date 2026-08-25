@@ -97,6 +97,7 @@ class TerminalPolkitAgent:
         self.auth_attempts = 0
         self.last_session_error = ""
         self.retry_limit_reached = False
+        self.auth_feedback_source = 0
 
         self.ui = TerminalUI(
             on_submit=self._submit_response,
@@ -365,9 +366,28 @@ class TerminalPolkitAgent:
         self.identity_index = (self.identity_index + delta) % len(self.identity_objects)
         self.ui.set_identity_index(self.identity_index)
 
+    def _advance_auth_feedback(self) -> bool:
+        if self.begin_invocation is None or self.cancel_requested or not self.ui.authenticating:
+            self.auth_feedback_source = 0
+            return GLib.SOURCE_REMOVE
+        self.ui.advance_spinner()
+        return GLib.SOURCE_CONTINUE
+
+    def _start_auth_feedback(self) -> None:
+        self.ui.set_authenticating(True)
+        if not self.auth_feedback_source:
+            self.auth_feedback_source = GLib.timeout_add(90, self._advance_auth_feedback)
+
+    def _stop_auth_feedback(self) -> None:
+        if self.auth_feedback_source:
+            GLib.source_remove(self.auth_feedback_source)
+            self.auth_feedback_source = 0
+        self.ui.set_authenticating(False)
+
     def _submit_response(self, response: str) -> None:
         if self.begin_invocation is None or self.cancel_requested or self.retry_limit_reached:
             return
+        self._start_auth_feedback()
         if self.active_session is None:
             self.pending_response = response
             self._start_session()
@@ -399,15 +419,18 @@ class TerminalPolkitAgent:
         if self.pending_response is not None:
             response = self.pending_response
             self.pending_response = None
+            self._start_auth_feedback()
             session.response(response)
             response = ""
 
     def _on_session_info(self, session: PolkitAgent.Session, text: str) -> None:
         if session is self.active_session:
+            self._stop_auth_feedback()
             self.ui.set_status(str(text))
 
     def _on_session_error(self, session: PolkitAgent.Session, text: str) -> None:
         if session is self.active_session:
+            self._stop_auth_feedback()
             self.last_session_error = str(text).strip()
             self.ui.set_error(self._friendly_auth_error())
 
@@ -432,6 +455,7 @@ class TerminalPolkitAgent:
     def _on_session_completed(self, session: PolkitAgent.Session, gained_authorization: bool) -> None:
         if session is not self.active_session:
             return
+        self._stop_auth_feedback()
         self.active_session = None
         self.pending_response = None
 
@@ -467,6 +491,7 @@ class TerminalPolkitAgent:
             return
         self.cancel_requested = True
         self.pending_response = None
+        self._stop_auth_feedback()
         self.ui.clear_secret()
         if self.active_session is not None:
             self.active_session.cancel()
@@ -474,6 +499,7 @@ class TerminalPolkitAgent:
             self._finish_request(cancelled=True)
 
     def _finish_request(self, *, cancelled: bool, error: str = "") -> None:
+        self._stop_auth_feedback()
         invocation = self.begin_invocation
         self.begin_invocation = None
         self.pending_response = None

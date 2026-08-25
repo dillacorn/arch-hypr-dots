@@ -13,6 +13,7 @@ LAUNCHER="${RUNTIME_DIR}/launcher"
 ALACRITTY="/usr/bin/alacritty"
 PYTHON="/usr/bin/python3"
 HYPRCTL="/usr/bin/hyprctl"
+SYSTEMD_CAT="/usr/bin/systemd-cat"
 APP_ID="awtarchy-polkit-agent"
 
 fail() {
@@ -253,6 +254,7 @@ main() {
     verify_system_binary "$ALACRITTY" || return 1
     verify_system_binary "$PYTHON" || return 1
     verify_system_binary "$HYPRCTL" || return 1
+    verify_system_binary "$SYSTEMD_CAT" || return 1
 
     verify_root_owned_directory "$RUNTIME_DIR" || return 1
     verify_root_owned_file "$AGENT" 644 || return 1
@@ -325,7 +327,9 @@ main() {
         "${appearance_args[@]}" \
         --class "$APP_ID,$APP_ID" \
         --title "$APP_ID" \
-        -e "$PYTHON" -I "$AGENT"
+        -e "$SYSTEMD_CAT" \
+        --identifier=awtarchy-polkit-agent \
+        "$PYTHON" -I "$AGENT"
 }
 
 main "$@"
