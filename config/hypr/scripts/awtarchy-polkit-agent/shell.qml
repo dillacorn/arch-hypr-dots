@@ -85,7 +85,7 @@ ShellRoot {
         const lines = String(rawText || "").split("\n");
         for (const rawLine of lines) {
             const line = rawLine.trim();
-            let separator = line.indexOf(":");
+            const separator = line.indexOf(":");
             if (separator <= 0)
                 continue;
 
@@ -125,6 +125,20 @@ ShellRoot {
         id: polkitAgent
         path: "/org/awtarchy/PolkitAgent"
         onFlowChanged: root.resetForNewFlow()
+    }
+
+    // A running Quickshell process is not enough. If another agent owns the
+    // session or registration otherwise fails, terminate non-zero so systemd
+    // and the test controller can detect the failure and restore GNOME.
+    Timer {
+        id: registrationGuard
+        interval: 4000
+        repeat: false
+        running: true
+        onTriggered: {
+            if (!polkitAgent.isRegistered)
+                Qt.exit(78);
+        }
     }
 
     Process {
