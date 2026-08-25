@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regression checks for terminal concept password-entry redraw and mouse dispatch.
+# Regression checks for terminal concept password redraw, keyboard activation, and mouse dispatch.
 
 set -euo pipefail
 
@@ -22,6 +22,7 @@ from pathlib import Path
 import sys
 
 text = Path(sys.argv[1]).read_text(encoding="utf-8")
+read_key = text.split("read_key() {", 1)[1].split("\nparse_mouse_event() {", 1)[0]
 run_tui = text.split("run_tui() {", 1)[1].split("\nprint_static() {", 1)[0]
 
 bad_loop = "while true; do\n        WINDOW_RESIZED=0\n        render\n"
@@ -31,14 +32,24 @@ if bad_loop in run_tui:
 if "render_password_field_only" not in run_tui:
     raise SystemExit("FAIL: password input does not use a targeted field redraw")
 
-# Mouse events must use the previously working unconditional parser path. The
-# parser itself decides whether an input sequence is a mouse event; adding a
-# second prefix gate here caused mouse clicks to stop reaching Details/buttons.
+# read -n treats newline as a delimiter and loses Enter. Exact-character -N
+# preserves Enter and terminal escape-stream bytes verbatim.
+if "read -rsN1" not in read_key:
+    raise SystemExit("FAIL: input reader does not use exact-character read -N1")
+if "read -rsn1" in read_key:
+    raise SystemExit("FAIL: input reader still uses delimiter-sensitive read -n1")
+
+if '[[ -n $key ]] || continue' in run_tui or '[[ -n "$key" ]] || continue' in run_tui:
+    raise SystemExit("FAIL: run_tui still discards empty/delimiter Enter input")
+
+# Mouse events must use the parser directly; the parser owns validation.
 if 'if handle_mouse_event "$key"; then' not in run_tui:
     raise SystemExit("FAIL: mouse events are not dispatched through handle_mouse_event")
 
-if "if [[ $key == $'\\033[<'* ]]; then" in run_tui:
-    raise SystemExit("FAIL: mouse dispatch is hidden behind the regressed prefix gate")
+# Structural redraws should reassert the mouse modes without touching password-only redraws.
+render = text.split("render() {", 1)[1].split("\nread_key() {", 1)[0]
+if "\\033[?1000h\\033[?1006h" not in render:
+    raise SystemExit("FAIL: structural render does not reassert mouse tracking")
 PY
 
-printf '%s\n' 'polkit concept input redraw/mouse tests passed'
+printf '%s\n' 'polkit concept input redraw/keyboard/mouse tests passed'
