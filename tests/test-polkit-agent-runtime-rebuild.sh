@@ -14,6 +14,7 @@ grep -Fq 'stage_runtime_tree()' "$SCRIPT"
 grep -Fq '.polkit-agent.stage.' "$SCRIPT"
 grep -Fq 'replace_runtime_tree()' "$SCRIPT"
 grep -Fq 'verify_runtime_tree "$RUNTIME_DIR"' "$SCRIPT"
+grep -Fq "IFS=' ' read -r uid mode type" "$SCRIPT"
 
 # A pre-existing user-owned runtime must not simply be chowned/adopted in place.
 if grep -Eq 'chown[^\n]*\$RUNTIME_DIR|chown[^\n]*/polkit-agent' "$SCRIPT"; then
