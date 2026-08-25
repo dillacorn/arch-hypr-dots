@@ -6,6 +6,7 @@ After=graphical-session-pre.target
 Type=simple
 ExecStart=/usr/local/libexec/awtarchy/polkit-agent/launcher
 Restart=on-failure
+RestartPreventExitStatus=78
 RestartSec=2s
 TimeoutStopSec=5s
 
