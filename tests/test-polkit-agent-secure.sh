@@ -42,6 +42,7 @@ test_qml_contract() {
     require_contains "$QML" 'import Quickshell.Services.Polkit'
     require_contains "$QML" 'PolkitAgent {'
     require_contains "$QML" 'property bool detailsExpanded: false'
+    require_contains "$QML" 'detailsExpanded = false'
     require_contains "$QML" 'flow.submit(response)'
     require_contains "$QML" 'flow.cancelAuthenticationRequest()'
     require_contains "$QML" 'flow.responseVisible ? TextInput.Normal : TextInput.Password'
@@ -50,6 +51,8 @@ test_qml_contract() {
     require_contains "$QML" 'implicitWidth: 900'
     require_contains "$QML" 'implicitHeight: 520'
     require_contains "$QML" 'inputField.text = ""'
+    require_contains "$QML" 'polkitAgent.isRegistered'
+    require_contains "$QML" 'Qt.exit(78)'
 
     # No credential transport outside AuthFlow and no executable user theme/import path.
     reject_regex "$QML" 'sudo[[:space:]]+-S|pkexec.*(password|response)|/tmp/.*(password|response)|Socket|ServerSocket'
@@ -83,6 +86,8 @@ test_window_guard_contract() {
     require_contains "$GUARD" 'window.float({ action = "set", window = w })'
     require_contains "$GUARD" 'window.resize({ x = 900, y = 520, relative = false, window = w })'
     require_contains "$GUARD" 'window.center({ window = w })'
+    require_contains "$GUARD" 'last_address'
+    require_contains "$GUARD" 'if [[ $address != "$last_address" ]]'
     reject_regex "$GUARD" 'password|AuthFlow|submit\('
 }
 
@@ -107,6 +112,8 @@ test_controller_contract() {
     require_contains "$CONTROLLER" '/usr/bin/pkcheck --revoke-temp'
     require_contains "$CONTROLLER" '/usr/bin/pkexec --disable-internal-agent /usr/bin/true'
     require_contains "$CONTROLLER" 'readlink -f -- "/proc/${pid}/exe"'
+    require_contains "$CONTROLLER" 'verify_installed_runtime'
+    require_contains "$CONTROLLER" 'rollback_to_gnome'
 
     # Testing must not uninstall GNOME or rewrite permanent Hyprland autostart.
     reject_regex "$CONTROLLER" 'pacman[[:space:]].*-R|hyprland\.lua|sed[[:space:]].*polkit-gnome'
