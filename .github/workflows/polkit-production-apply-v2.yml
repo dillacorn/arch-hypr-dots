@@ -16,12 +16,15 @@ jobs:
         with:
           fetch-depth: 2
       - name: Apply migration patch
-        run: python3 tests/helpers/apply-polkit-production-migration.py
+        run: |
+          python3 tests/helpers/apply-polkit-production-migration.py
+          python3 tests/helpers/fix-polkit-service-eof.py
       - name: Remove one-use patch machinery
         run: |
           rm -f .github/workflows/polkit-production-apply.yml
           rm -f .github/workflows/polkit-production-apply-v2.yml
           rm -f tests/helpers/apply-polkit-production-migration.py
+          rm -f tests/helpers/fix-polkit-service-eof.py
       - name: Validate implementation
         run: |
           bash -n local/share/awtarchy/awtarchy-runtime.sh
