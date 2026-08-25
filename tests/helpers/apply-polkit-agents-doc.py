@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 
+# One-shot branch patch helper. Deleted by the gated workflow after use.
 path = Path("AGENTS.md")
 text = path.read_text(encoding="utf-8")
 marker = "### Runtime and integration helpers\n"
