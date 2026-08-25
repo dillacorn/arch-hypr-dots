@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regression checks for terminal concept password-entry redraw behavior.
+# Regression checks for terminal concept password-entry redraw and mouse dispatch.
 
 set -euo pipefail
 
@@ -30,6 +30,15 @@ if bad_loop in run_tui:
 
 if "render_password_field_only" not in run_tui:
     raise SystemExit("FAIL: password input does not use a targeted field redraw")
+
+# Mouse events must use the previously working unconditional parser path. The
+# parser itself decides whether an input sequence is a mouse event; adding a
+# second prefix gate here caused mouse clicks to stop reaching Details/buttons.
+if 'if handle_mouse_event "$key"; then' not in run_tui:
+    raise SystemExit("FAIL: mouse events are not dispatched through handle_mouse_event")
+
+if "if [[ $key == $'\\033[<'* ]]; then" in run_tui:
+    raise SystemExit("FAIL: mouse dispatch is hidden behind the regressed prefix gate")
 PY
 
-printf '%s\n' 'polkit concept input redraw tests passed'
+printf '%s\n' 'polkit concept input redraw/mouse tests passed'
