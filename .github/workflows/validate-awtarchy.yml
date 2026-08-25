@@ -258,8 +258,8 @@ jobs:
           bash tests/test-quickshell-resume-recovery.sh
           bash tests/test-quickshell-updater-bootstrap.sh
 
-  publish-v3-2-2:
-    name: Publish and verify v3.2.2
+  verify-v3-2-2:
+    name: Verify v3.2.2 and remove one-use bridge
     needs: validate
     if: github.event_name == 'pull_request' && github.event.pull_request.title == 'Trigger v3.2.2 release' && github.event.pull_request.head.ref == 'v3-2-2-release-trigger' && github.event.pull_request.base.ref == 'main'
     permissions:
@@ -267,12 +267,12 @@ jobs:
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
-      - name: Check out guarded release bridge
+      - name: Check out guarded verification bridge
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           fetch-depth: 0
 
-      - name: Publish, verify, and remove the one-use bridge
+      - name: Verify the published release and remove the one-use bridge
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET_SHA: 8fffb63c431854aded9d862c58737ca1395ffb12
@@ -300,32 +300,7 @@ jobs:
             and .isPrerelease == false
           ' previous-release.json >/dev/null
 
-          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
-            echo "${RELEASE_TAG} tag already exists; refusing to recreate it." >&2
-            false
-          fi
-
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "${RELEASE_TAG} release already exists; refusing to replace it." >&2
-            false
-          fi
-
-          grep -Fq "# Awtarchy v3.2.2 Quickshell" "$NOTES_FILE"
-          grep -Fq "## Getting started" "$NOTES_FILE"
-          grep -Fq "sudo ./awtarchy-install.sh" "$NOTES_FILE"
-          grep -Fq "awtarchy update" "$NOTES_FILE"
-          grep -Fq "## Stable update notifications" "$NOTES_FILE"
-          grep -Fq "## Same-release maintenance refreshes" "$NOTES_FILE"
-
-          gh release create "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$TARGET_SHA" \
-            --title "$RELEASE_NAME" \
-            --latest \
-            --notes-file "$NOTES_FILE"
-
           test "$(git ls-remote origin "refs/tags/${RELEASE_TAG}" | awk '{print $1}')" = "$TARGET_SHA"
-
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
             --json name,targetCommitish,isDraft,isPrerelease,body,url >verified-release.json
           jq -e --arg target "$TARGET_SHA" --arg name "$RELEASE_NAME" '
@@ -334,7 +309,7 @@ jobs:
             and .isDraft == false
             and .isPrerelease == false
           ' verified-release.json >/dev/null
-          jq -r '.body' verified-release.json >verified-release.md
+          jq -j '.body' verified-release.json >verified-release.md
           cmp --silent "$NOTES_FILE" verified-release.md
           test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name)" = "$RELEASE_TAG"
           release_url="$(jq -r '.url' verified-release.json)"
@@ -342,4 +317,4 @@ jobs:
           gh pr close "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --delete-branch \
             --comment "${RELEASE_TAG} published and verified: ${release_url}"
 
-          printf "Published and verified %s at %s\n" "$RELEASE_TAG" "$release_url"
+          printf "Verified %s at %s and removed the one-use bridge\n" "$RELEASE_TAG" "$release_url"
