@@ -261,21 +261,37 @@ class TerminalUI:
             self._last_workspace = name
         return self._last_workspace
 
+    @staticmethod
+    def _lua_string(value: str) -> str:
+        return (
+            value.replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+        )
+
     def _move_window(self, workspace: str, focus: bool) -> None:
         client = self._window()
         if client is None:
             raise RuntimeError("Awtarchy PolicyKit terminal window not found")
         address = str(client["address"])
-        self._hypr("dispatch", "movetoworkspacesilent", f"{workspace},address:{address}")
+        selector = self._lua_string(f"address:{address}")
+        workspace_value = self._lua_string(workspace)
+        commands = [
+            f'local w="{selector}"',
+            f'local workspace="{workspace_value}"',
+            'hl.dispatch(hl.dsp.window.move({ workspace = workspace, follow = false, window = w }))',
+        ]
         if focus:
-            lua = (
-                f'local w="address:{address}"; '
-                'hl.dispatch(hl.dsp.window.float({ action = "set", window = w })); '
-                f'hl.dispatch(hl.dsp.window.resize({{ x = {WINDOW_WIDTH}, y = {WINDOW_HEIGHT}, relative = false, window = w }})); '
-                'hl.dispatch(hl.dsp.window.center({ window = w }))'
+            commands.extend(
+                [
+                    'hl.dispatch(hl.dsp.window.float({ action = "enable", window = w }))',
+                    f'hl.dispatch(hl.dsp.window.resize({{ x = {WINDOW_WIDTH}, y = {WINDOW_HEIGHT}, relative = false, window = w }}))',
+                    'hl.dispatch(hl.dsp.window.center({ window = w }))',
+                    'hl.dispatch(hl.dsp.focus({ window = w }))',
+                ]
             )
-            self._hypr("eval", lua)
-            self._hypr("dispatch", "focuswindow", f"address:{address}")
+        self._hypr("eval", "; ".join(commands))
 
     def prime_hidden(self) -> None:
         """Hide the service terminal after Alacritty maps it."""
