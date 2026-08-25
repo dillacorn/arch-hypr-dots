@@ -35,7 +35,6 @@ PASSWORD_LENGTH=0
 STATUS_MSG=""
 GEOMETRY_WATCH_PID=""
 WINDOW_RESIZED=0
-READ_KEY_VALUE=""
 
 PASSWORD_ROW=0
 DETAILS_ROW=0
@@ -389,46 +388,41 @@ render() {
     print_at "$row" "$left" "${C_DIM}Tab/Shift+Tab: move   Enter: activate   Mouse: click   Esc: cancel${C_RESET}"
 }
 
+# Keep this reader identical to awtarchy-tips-tui.sh. It is already exercised
+# by Awtarchy's mouse-capable terminal UI and preserves standard SGR events.
 read_key() {
     local key="" next=""
-    READ_KEY_VALUE=""
 
     IFS= read -rsn1 key <&3 || return 1
-
-    if [[ -z $key ]]; then
-        READ_KEY_VALUE=$'\n'
-        return 0
-    fi
-
-    if [[ $key != $'\033' ]]; then
-        READ_KEY_VALUE="$key"
+    if [[ "$key" != $'\033' ]]; then
+        printf '%s' "$key"
         return 0
     fi
 
     if ! IFS= read -rsn1 -t 0.04 next <&3; then
-        READ_KEY_VALUE="$key"
+        printf '%s' "$key"
         return 0
     fi
     key+="$next"
 
-    if [[ $next == '[' ]]; then
+    if [[ "$next" == "[" ]]; then
         if IFS= read -rsn1 -t 0.04 next <&3; then
             key+="$next"
-            if [[ $next == '<' ]]; then
+            if [[ "$next" == "<" ]]; then
                 while IFS= read -rsn1 -t 0.04 next <&3; do
                     key+="$next"
-                    [[ $next == 'M' || $next == 'm' ]] && break
+                    [[ "$next" == "M" || "$next" == "m" ]] && break
                 done
-            elif [[ $next =~ [0-9] ]]; then
+            elif [[ "$next" =~ [0-9] ]]; then
                 while IFS= read -rsn1 -t 0.04 next <&3; do
                     key+="$next"
-                    [[ $next == '~' || $next =~ [A-Za-z] ]] && break
+                    [[ "$next" == "~" || "$next" =~ [A-Za-z] ]] && break
                 done
             fi
         fi
     fi
 
-    READ_KEY_VALUE="$key"
+    printf '%s' "$key"
 }
 
 parse_mouse_event() {
@@ -438,14 +432,15 @@ parse_mouse_event() {
     MOUSE_Y=0
     MOUSE_RELEASE=0
 
-    [[ $event == $'\033[<'* ]] || return 1
+    [[ "$event" == $'\033[<'* ]] || return 1
     suffix="${event: -1}"
-    [[ $suffix == 'M' || $suffix == 'm' ]] || return 1
+    [[ "$suffix" == "M" || "$suffix" == "m" ]] || return 1
     body="${event#$'\033[<'}"
     body="${body%?}"
     IFS=';' read -r MOUSE_BUTTON MOUSE_X MOUSE_Y <<<"$body"
-    [[ $MOUSE_BUTTON =~ ^[0-9]+$ && $MOUSE_X =~ ^[0-9]+$ && $MOUSE_Y =~ ^[0-9]+$ ]] || return 1
-    [[ $suffix == 'm' ]] && MOUSE_RELEASE=1
+    [[ "$MOUSE_BUTTON" =~ ^[0-9]+$ && "$MOUSE_X" =~ ^[0-9]+$ && "$MOUSE_Y" =~ ^[0-9]+$ ]] || return 1
+    [[ "$suffix" == "m" ]] && MOUSE_RELEASE=1
+    return 0
 }
 
 simulate_authentication() {
@@ -465,9 +460,9 @@ simulate_authentication() {
     render
 }
 
-handle_mouse_event() {
-    local event="$1" button
-    parse_mouse_event "$event" || return 1
+handle_parsed_mouse_event() {
+    local button
+
     (( MOUSE_RELEASE == 1 )) && return 0
 
     button=$(( MOUSE_BUTTON & 3 ))
@@ -514,20 +509,16 @@ run_tui() {
 
     while true; do
         WINDOW_RESIZED=0
+        key="$(read_key || true)"
 
-        if ! read_key; then
-            if (( WINDOW_RESIZED == 1 )); then
-                render
+        if parse_mouse_event "$key"; then
+            if handle_parsed_mouse_event; then
+                continue
+            else
+                mouse_status=$?
+                (( mouse_status == 2 )) && break
+                continue
             fi
-            continue
-        fi
-        key="$READ_KEY_VALUE"
-
-        if handle_mouse_event "$key"; then
-            continue
-        else
-            mouse_status=$?
-            (( mouse_status == 2 )) && break
         fi
 
         case "$key" in
@@ -553,7 +544,7 @@ run_tui() {
                     render_password_field_only
                 fi
                 ;;
-            $'\r'|$'\n')
+            ""|$'\r'|$'\n')
                 case "$FOCUS" in
                     0)
                         simulate_authentication
@@ -578,6 +569,10 @@ run_tui() {
                 fi
                 ;;
         esac
+
+        if (( WINDOW_RESIZED == 1 )); then
+            render
+        fi
     done
 
     trap - WINCH
