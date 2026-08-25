@@ -1,44 +1,53 @@
 [window]
-decorations = "None"
+decorations = "Buttonless"
 dynamic_title = false
-opacity = 1.0
-padding = { x = 8, y = 8 }
+opacity = 0.85
+padding = { x = 22, y = 22 }
 
 [scrolling]
 history = 0
 
 [font]
-size = 11.0
+size = 12.0
 normal = { family = "NotoSansM Nerd Font Mono", style = "Regular" }
 bold = { family = "NotoSansM Nerd Font Mono", style = "Bold" }
+italic = { family = "NotoSansM Nerd Font Mono", style = "Italic" }
+bold_italic = { family = "NotoSansM Nerd Font Mono", style = "Bold Italic" }
+glyph_offset = { x = 0, y = 2 }
+
+[colors]
+transparent_background_colors = false
+draw_bold_text_with_bright_colors = false
 
 [colors.primary]
-background = "#202020"
-foreground = "#dedede"
+background = "#1f1f1f"
+foreground = "#e5e1d8"
 
 [colors.normal]
-black = "#202020"
-red = "#ff6b65"
-green = "#a6e36a"
-yellow = "#e5c07b"
-blue = "#61afef"
-magenta = "#ff6cff"
-cyan = "#56b6c2"
-white = "#dedede"
+black = "#000000"
+red = "#f7786d"
+green = "#bde97c"
+yellow = "#efdfac"
+blue = "#6ebaf8"
+magenta = "#ef88ff"
+cyan = "#90fdf8"
+white = "#e5e1d8"
 
 [colors.bright]
-black = "#969696"
-red = "#ff6b65"
-green = "#a6e36a"
-yellow = "#e5c07b"
-blue = "#61afef"
-magenta = "#ff6cff"
-cyan = "#56b6c2"
+black = "#b4b4b4"
+red = "#f99f92"
+green = "#e3f7a1"
+yellow = "#f2e9bf"
+blue = "#b3d2ff"
+magenta = "#e5bdff"
+cyan = "#c2fefa"
 white = "#ffffff"
 
 [cursor]
-style = { shape = "Block", blinking = "Off" }
-unfocused_hollow = false
+style = { shape = "Block", blinking = "On" }
+blink_interval = 750
+blink_timeout = 0
+unfocused_hollow = true
 
 [mouse]
-hide_when_typing = false
+hide_when_typing = true
