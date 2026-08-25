@@ -9,38 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  apply-agents-documentation:
-    if: github.event.head_commit.message == 'Apply Polkit AGENTS documentation'
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-      - name: Document PolicyKit architecture
-        run: python3 tests/helpers/apply-polkit-agents-doc.py
-      - name: Remove patch helper
-        run: rm -f tests/helpers/apply-polkit-agents-doc.py
-      - name: Validate branch
-        run: |
-          bash -n local/share/awtarchy/awtarchy-runtime.sh
-          bash -n config/hypr/scripts/awtarchy-polkit-agent/launcher.sh
-          bash -n config/hypr/scripts/awtarchy-polkit-agent/window-guard.sh
-          bash tests/test-polkit-agent-production-integration.sh
-          bash tests/test-polkit-agent-secure.sh
-          bash tests/test-polkit-agent-runtime-rebuild.sh
-          git diff --check
-      - name: Commit documentation
-        run: |
-          git config user.name 'dillacorn'
-          git config user.email '28743863+dillacorn@users.noreply.github.com'
-          git add -A
-          git commit -m 'Document Awtarchy Polkit architecture'
-          git push origin HEAD:polkit-agent-concept-testing
-
   polkit-contracts:
-    if: github.event.head_commit.message != 'Apply Polkit AGENTS documentation'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
