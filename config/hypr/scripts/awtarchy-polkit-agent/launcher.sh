@@ -1,14 +1,19 @@
 #!/usr/bin/bash
-# Root-owned runtime launcher for the Awtarchy PolicyKit agent.
+# Root-owned runtime launcher for the Awtarchy terminal PolicyKit agent.
 
 set -euo pipefail
 IFS=$'\n\t'
 umask 077
 
 RUNTIME_DIR="/usr/local/libexec/awtarchy/polkit-agent"
-SHELL_QML="${RUNTIME_DIR}/shell.qml"
-GUARD="${RUNTIME_DIR}/window-guard.sh"
-QUICKSHELL="/usr/bin/quickshell"
+AGENT="${RUNTIME_DIR}/agent.py"
+TUI="${RUNTIME_DIR}/tui.py"
+TERMINAL_CONFIG="${RUNTIME_DIR}/alacritty.toml"
+LAUNCHER="${RUNTIME_DIR}/launcher"
+ALACRITTY="/usr/bin/alacritty"
+PYTHON="/usr/bin/python3"
+HYPRCTL="/usr/bin/hyprctl"
+APP_ID="awtarchy-polkit-agent"
 
 fail() {
     printf 'awtarchy-polkit-agent: %s\n' "$*" >&2
@@ -27,11 +32,12 @@ verify_root_owned_directory() {
 }
 
 verify_root_owned_file() {
-    local path="$1" uid mode type mode_value
+    local path="$1" expected_mode="$2" uid mode type mode_value
 
     [[ -f $path && ! -L $path ]] || fail "unsafe runtime file: $path" || return 1
     IFS=' ' read -r uid mode type < <(/usr/bin/stat -Lc '%u %a %F' -- "$path") || return 1
     [[ $uid == 0 && $type == 'regular file' ]] || fail "runtime file must be root-owned and regular: $path" || return 1
+    [[ $mode == "$expected_mode" ]] || fail "unexpected runtime mode for $path: $mode" || return 1
 
     mode_value=$((8#$mode))
     (( (mode_value & 0022) == 0 )) || fail "runtime file is group/world writable: $path" || return 1
@@ -54,20 +60,28 @@ validated_account() {
     printf '%s\t%s\n' "$account" "$passwd_home"
 }
 
+verify_system_binary() {
+    local path="$1"
+    [[ $path == /usr/bin/* && -x $path ]] \
+        || fail "required system executable is unavailable: $path" || return 1
+}
+
 main() {
-    local account_info account home_dir runtime_dir expected_runtime
+    local account_info account home_dir expected_runtime
     local wayland_display="${WAYLAND_DISPLAY:-}"
     local hypr_signature="${HYPRLAND_INSTANCE_SIGNATURE:-}"
     local runtime_from_env="${XDG_RUNTIME_DIR:-}"
     local lang_value="${LANG:-C.UTF-8}"
 
-    [[ -x $QUICKSHELL && -f $QUICKSHELL && ! -L $QUICKSHELL ]] \
-        || fail "Quickshell executable is unavailable or unsafe: $QUICKSHELL" || return 1
+    verify_system_binary "$ALACRITTY" || return 1
+    verify_system_binary "$PYTHON" || return 1
+    verify_system_binary "$HYPRCTL" || return 1
 
     verify_root_owned_directory "$RUNTIME_DIR" || return 1
-    verify_root_owned_file "$SHELL_QML" || return 1
-    verify_root_owned_file "$GUARD" || return 1
-    verify_root_owned_file "${RUNTIME_DIR}/launcher" || return 1
+    verify_root_owned_file "$AGENT" 644 || return 1
+    verify_root_owned_file "$TUI" 644 || return 1
+    verify_root_owned_file "$TERMINAL_CONFIG" 644 || return 1
+    verify_root_owned_file "$LAUNCHER" 755 || return 1
 
     account_info="$(validated_account)" || return 1
     IFS=$'\t' read -r account home_dir <<<"$account_info"
@@ -75,17 +89,18 @@ main() {
     expected_runtime="/run/user/${EUID}"
     [[ $runtime_from_env == "$expected_runtime" && -d $runtime_from_env && ! -L $runtime_from_env ]] \
         || fail "unexpected XDG_RUNTIME_DIR: ${runtime_from_env:-unset}" || return 1
-    [[ -n $wayland_display && $wayland_display != */* ]] \
+    [[ -S ${expected_runtime}/bus ]] \
+        || fail 'the current user D-Bus session is unavailable' || return 1
+    [[ -n $wayland_display && $wayland_display != */* && $wayland_display != *$'\n'* ]] \
         || fail 'WAYLAND_DISPLAY is unavailable or invalid' || return 1
-    [[ -n $hypr_signature && $hypr_signature != */* ]] \
+    [[ -n $hypr_signature && $hypr_signature != */* && $hypr_signature != *$'\n'* ]] \
         || fail 'HYPRLAND_INSTANCE_SIGNATURE is unavailable or invalid' || return 1
 
-    # Do not allow a user-manager environment injection to alter QML/plugin/library
-    # resolution or enable Polkit credential debugging in this process.
-    unset QML2_IMPORT_PATH QML_IMPORT_PATH QT_PLUGIN_PATH LD_PRELOAD LD_LIBRARY_PATH POLKIT_DEBUG
-    unset QS_CONFIG_PATH QS_CONFIG_NAME QS_APP_ID
-
-    /usr/bin/bash "$GUARD" >/dev/null 2>&1 &
+    # User-manager environment values must not alter Python imports, dynamic
+    # libraries, terminal plugins, or PolicyKit debugging behavior.
+    unset PYTHONPATH PYTHONHOME PYTHONSTARTUP PYTHONINSPECT PYTHONUSERBASE
+    unset LD_PRELOAD LD_LIBRARY_PATH GTK_PATH GIO_EXTRA_MODULES GI_TYPELIB_PATH
+    unset QT_PLUGIN_PATH QML2_IMPORT_PATH QML_IMPORT_PATH POLKIT_DEBUG
 
     exec /usr/bin/env -i \
         HOME="$home_dir" \
@@ -101,10 +116,11 @@ main() {
         XDG_CURRENT_DESKTOP=Hyprland \
         XDG_SESSION_DESKTOP=Hyprland \
         XDG_SESSION_TYPE=wayland \
-        QT_QPA_PLATFORM=wayland \
-        QS_DISABLE_FILE_WATCHER=1 \
-        QS_DISABLE_CRASH_HANDLER=1 \
-        "$QUICKSHELL" -n -p "$RUNTIME_DIR"
+        "$ALACRITTY" \
+        --config-file "$TERMINAL_CONFIG" \
+        --class "$APP_ID,$APP_ID" \
+        --title "$APP_ID" \
+        -e "$PYTHON" -I "$AGENT"
 }
 
 main "$@"
