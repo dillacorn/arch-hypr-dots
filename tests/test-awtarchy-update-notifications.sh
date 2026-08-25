@@ -106,10 +106,16 @@ PY
 if (( print_id )); then
   printf '%s\n' "${AWTARCHY_TEST_NOTIFICATION_ID:-42}"
 fi
+action="${AWTARCHY_TEST_ACTION:-}"
+if [[ -f ${AWTARCHY_TEST_ACTION_FILE:-} ]]; then
+  action="$(sed -n '1p' "$AWTARCHY_TEST_ACTION_FILE")"
+  sed '1d' "$AWTARCHY_TEST_ACTION_FILE" >"${AWTARCHY_TEST_ACTION_FILE}.tmp"
+  mv -- "${AWTARCHY_TEST_ACTION_FILE}.tmp" "$AWTARCHY_TEST_ACTION_FILE"
+fi
 if [[ -n $selected_action_fd ]]; then
-  printf '%s\n' "${AWTARCHY_TEST_ACTION:-}" >&"$selected_action_fd"
+  printf '%s\n' "$action" >&"$selected_action_fd"
 else
-  printf '%s\n' "${AWTARCHY_TEST_ACTION:-}"
+  printf '%s\n' "$action"
 fi
 EOF_NOTIFY
 
@@ -207,6 +213,7 @@ run_check() {
     PATH="${fakebin}:${PATH}" \
     AWTARCHY_DEFAULT_TERMINAL="${fakebin}/default-terminal" \
     AWTARCHY_TEST_ACTION="$action" \
+    AWTARCHY_TEST_ACTION_FILE="${home}/actions" \
     AWTARCHY_TEST_NOTIFY_LOG="${home}/notify.json" \
     AWTARCHY_TEST_TERMINAL_LOG="${home}/terminal.json" \
     AWTARCHY_TEST_RELEASE_LOG="${home}/release-url" \
@@ -217,8 +224,9 @@ run_check() {
 }
 
 assert_notification() {
-  local file="$1" title="$2" body="$3" action="$4"
-  python3 - "$file" "$title" "$body" "$action" <<'PY'
+  local file="$1"
+  shift
+  python3 - "$file" "$@" <<'PY'
 import json
 import sys
 
@@ -275,13 +283,23 @@ run_check "$stable_home" stable-update update 2000022000
 [[ ! -e ${stable_home}/notify.json ]] || fail 'stable target was announced twice'
 
 release_home="$(new_home release v3.1.5)"
-run_check "$release_home" stable-update release
+printf '%s\n' release >"${release_home}/actions"
+run_check "$release_home" stable-update
 [[ $(<"${release_home}/release-url") == 'https://github.com/dillacorn/awtarchy/releases/tag/v3.2.1' ]] \
   || fail 'release action did not open the exact stable release page'
 [[ ! -e ${release_home}/terminal.json ]] \
   || fail 'release action unexpectedly launched the updater terminal'
 [[ ! -e ${release_home}/close.json ]] \
   || fail 'release action unexpectedly closed the resident notification'
+assert_notification \
+  "${release_home}/notify.json" \
+  '--hint=boolean:resident:true' \
+  '--replace-id=42'
+
+release_then_update_home="$(new_home release-then-update v3.1.5)"
+printf '%s\n' release update >"${release_then_update_home}/actions"
+run_check "$release_then_update_home" stable-update
+assert_terminal "${release_then_update_home}/terminal.json" update 42 v3.2.1
 
 same_payload_home="$(new_home same-payload v3.2.1)"
 run_check "$same_payload_home" same-payload

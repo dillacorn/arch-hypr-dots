@@ -651,3 +651,4 @@ e0ac40813279eaf6f65b56a32c10f3ec0fe5bf81cd48706e6ccc99b8b90017c8	.config/quicksh
 
 # 2026-08-24 resident update notification lifecycle.
 58c2349a3a2ed4794097ed4d4d24840273809c897512dd1cf0866dc92cd827fc	.config/hypr/scripts/quickshell_update_notifications.sh
+318d5d5a89932c1f3b2eb9a996a73fd6121aef6cad7b686455582086df2819e1	.config/hypr/scripts/quickshell_update_notifications.sh

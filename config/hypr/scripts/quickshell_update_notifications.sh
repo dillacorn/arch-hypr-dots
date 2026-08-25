@@ -202,8 +202,8 @@ open_release_page() {
 
 notify_and_handle() {
     local kind="$1" title="$2" body="$3" action_id="$4" action_label="$5" command="$6"
-    local release_target="${7:-}" action notification_id=""
-    local -a notify_args=(
+    local release_target="${7:-}" action notification_id="" reported_id
+    local -a active_notify_args notify_args=(
         notify-send
         --app-name=Awtarchy
         --urgency=normal
@@ -218,24 +218,39 @@ notify_and_handle() {
             --action "release=Release Notes ↗"
             --print-id
         )
-        TMP_FILE="$(mktemp "${NOTIFICATION_STATE_FILE}.action.XXXXXX")"
-        chmod 0600 "$TMP_FILE"
-        notification_id="$(
-            "${notify_args[@]}" \
-                --selected-action-fd=3 \
-                "$title" "$body" \
-                3>"$TMP_FILE" 2>/dev/null || true
-        )"
-        action="$(<"$TMP_FILE")"
-        rm -f -- "$TMP_FILE"
-        TMP_FILE=""
+        while :; do
+            active_notify_args=("${notify_args[@]}")
+            if valid_notification_id "$notification_id"; then
+                active_notify_args+=(--replace-id="$notification_id")
+            fi
+            TMP_FILE="$(mktemp "${NOTIFICATION_STATE_FILE}.action.XXXXXX")"
+            chmod 0600 "$TMP_FILE"
+            reported_id="$(
+                "${active_notify_args[@]}" \
+                    --selected-action-fd=3 \
+                    "$title" "$body" \
+                    3>"$TMP_FILE" 2>/dev/null || true
+            )"
+            if valid_notification_id "$reported_id"; then
+                notification_id="$reported_id"
+            fi
+            action="$(<"$TMP_FILE")"
+            rm -f -- "$TMP_FILE"
+            TMP_FILE=""
+
+            if [[ $action == release ]]; then
+                open_release_page "$release_target"
+                valid_notification_id "$notification_id" || action=""
+                [[ -z $action ]] || continue
+            fi
+            break
+        done
     else
         action="$("${notify_args[@]}" "$title" "$body" 2>/dev/null || true)"
     fi
 
     case "$action" in
         default|"$action_id") launch_update "$command" "$notification_id" "$release_target" ;;
-        release) open_release_page "$release_target" ;;
     esac
 }
 
