@@ -33,6 +33,7 @@ ERROR_CANCELLED = "org.freedesktop.PolicyKit1.Error.Cancelled"
 PKACTION = "/usr/bin/pkaction"
 SYSTEMD_CAT = "/usr/bin/systemd-cat"
 SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
+MAX_AUTH_ATTEMPTS = 3
 
 INTROSPECTION_XML = """
 <node>
@@ -93,6 +94,9 @@ class TerminalPolkitAgent:
         self.active_session: Optional[PolkitAgent.Session] = None
         self.pending_response: Optional[str] = None
         self.cancel_requested = False
+        self.auth_attempts = 0
+        self.last_session_error = ""
+        self.retry_limit_reached = False
 
         self.ui = TerminalUI(
             on_submit=self._submit_response,
@@ -322,6 +326,9 @@ class TerminalPolkitAgent:
         self.active_session = None
         self.pending_response = None
         self.cancel_requested = False
+        self.auth_attempts = 0
+        self.last_session_error = ""
+        self.retry_limit_reached = False
 
         try:
             self.ui.show_request(
@@ -359,7 +366,7 @@ class TerminalPolkitAgent:
         self.ui.set_identity_index(self.identity_index)
 
     def _submit_response(self, response: str) -> None:
-        if self.begin_invocation is None or self.cancel_requested:
+        if self.begin_invocation is None or self.cancel_requested or self.retry_limit_reached:
             return
         if self.active_session is None:
             self.pending_response = response
@@ -369,8 +376,10 @@ class TerminalPolkitAgent:
         response = ""
 
     def _start_session(self) -> None:
-        if self.begin_invocation is None or self.active_session is not None:
+        if self.begin_invocation is None or self.active_session is not None or self.retry_limit_reached:
             return
+        self.auth_attempts += 1
+        self.last_session_error = ""
         identity = self.identity_objects[self.identity_index]
         session = PolkitAgent.Session.new(identity, self.active_cookie)
         session.connect("request", self._on_session_request)
@@ -399,16 +408,56 @@ class TerminalPolkitAgent:
 
     def _on_session_error(self, session: PolkitAgent.Session, text: str) -> None:
         if session is self.active_session:
-            self.ui.set_error(str(text))
+            self.last_session_error = str(text).strip()
+            self.ui.set_error(self._friendly_auth_error())
+
+    def _friendly_auth_error(self) -> str:
+        message = self.last_session_error.strip()
+        normalized = message.casefold()
+        password_failure_markers = (
+            "authentication failure",
+            "authentication failed",
+            "incorrect password",
+            "password incorrect",
+            "sorry, try again",
+        )
+        if any(marker in normalized for marker in password_failure_markers):
+            return "Incorrect password. Try again."
+        if message:
+            return message
+        if not self.ui.echo_on and "password" in self.ui.prompt.casefold():
+            return "Incorrect password. Try again."
+        return "Authentication failed. Try again."
 
     def _on_session_completed(self, session: PolkitAgent.Session, gained_authorization: bool) -> None:
         if session is not self.active_session:
             return
-        # The helper tells polkitd about successful authorization itself. The
-        # D-Bus method simply remains outstanding until this conversation ends.
-        # Only explicit cancellation is returned as Request dismissed.
-        del gained_authorization
-        self._finish_request(cancelled=self.cancel_requested)
+        self.active_session = None
+        self.pending_response = None
+
+        # The helper reports successful authorization to polkitd itself. Keep
+        # BeginAuthentication outstanding across failed PAM sessions so a typo
+        # can be retried with the same PolicyKit cookie.
+        if gained_authorization:
+            self._finish_request(cancelled=False)
+            return
+        if self.cancel_requested:
+            self._finish_request(cancelled=True)
+            return
+
+        self.ui.clear_secret()
+        if self.auth_attempts < MAX_AUTH_ATTEMPTS:
+            self.ui.set_error(self._friendly_auth_error())
+            return
+
+        self.retry_limit_reached = True
+        self.ui.set_error(f"Authentication failed after {MAX_AUTH_ATTEMPTS} attempts.")
+        GLib.timeout_add(1200, self._finish_denied_after_retry_limit)
+
+    def _finish_denied_after_retry_limit(self) -> bool:
+        if self.begin_invocation is not None and not self.cancel_requested:
+            self._finish_request(cancelled=False)
+        return GLib.SOURCE_REMOVE
 
     def _cancel_from_ui(self) -> None:
         self._request_cancel()
@@ -435,6 +484,9 @@ class TerminalPolkitAgent:
         self.identity_labels = []
         self.identity_index = 0
         self.cancel_requested = False
+        self.auth_attempts = 0
+        self.last_session_error = ""
+        self.retry_limit_reached = False
         self.ui.hide()
 
         if invocation is None:
