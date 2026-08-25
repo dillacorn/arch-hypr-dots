@@ -130,34 +130,52 @@ launch_update() {
     "$DEFAULT_TERMINAL" \
         --class awtarchy-update \
         --hold \
+        --no-profile \
         -- \
         awtarchy "$command"
 }
 
+open_release_page() {
+    local target="$1"
+    valid_stable_tag "$target" || return 0
+    command -v xdg-open >/dev/null 2>&1 || return 0
+    xdg-open "https://github.com/${REPOSITORY}/releases/tag/${target}" >/dev/null 2>&1 || true
+}
+
 notify_and_handle() {
     local kind="$1" title="$2" body="$3" action_id="$4" action_label="$5" command="$6"
-    local action
+    local release_target="${7:-}" action
+    local -a notify_args=(
+        notify-send
+        --app-name=Awtarchy
+        --urgency=normal
+        --icon=github
+        --action "default=Run ${kind}"
+        --action "${action_id}=${action_label}"
+    )
 
-    action="$(notify-send \
-        --app-name=Awtarchy \
-        --urgency=normal \
-        --icon=system-software-update \
-        --action "default=Run ${kind}" \
-        --action "${action_id}=${action_label}" \
-        "$title" "$body" 2>/dev/null || true)"
+    if valid_stable_tag "$release_target"; then
+        notify_args+=(--action "release=Release Notes ↗")
+    fi
+
+    action="$("${notify_args[@]}" "$title" "$body" 2>/dev/null || true)"
     case "$action" in
         default|"$action_id") launch_update "$command" ;;
+        release) open_release_page "$release_target" ;;
     esac
 }
 
 show_notification() {
     local kind="$1" title="$2" body="$3" action_id="$4" action_label="$5" command="$6"
+    local release_target="${7:-}"
     command -v notify-send >/dev/null 2>&1 || return 0
 
     if [[ ${AWTARCHY_UPDATE_NOTIFY_FOREGROUND:-0} == 1 ]]; then
-        notify_and_handle "$kind" "$title" "$body" "$action_id" "$action_label" "$command"
+        notify_and_handle \
+            "$kind" "$title" "$body" "$action_id" "$action_label" "$command" "$release_target"
     else
-        notify_and_handle "$kind" "$title" "$body" "$action_id" "$action_label" "$command" \
+        notify_and_handle \
+            "$kind" "$title" "$body" "$action_id" "$action_label" "$command" "$release_target" \
             9>&- </dev/null >/dev/null 2>&1 &
     fi
 }
@@ -229,7 +247,7 @@ check_stable_release() {
         "Update" \
         "New Awtarchy Update" \
         "${installed} → ${target}"$'\n'"Run: awtarchy update" \
-        "update" "Update ↑" "update"
+        "update" "Update ↑" "update" "$target"
 }
 
 check_maintenance_refresh() {

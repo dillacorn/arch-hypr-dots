@@ -1024,13 +1024,22 @@ Singleton {
                         anchors.margins: 6
                         spacing: 5
 
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Global behavior"
+                            color: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 10
+                            font.bold: true
+                        }
+
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 8
 
                             Text {
                                 Layout.fillWidth: true
-                                text: "Maximum simultaneous popups · Global"
+                                text: "Maximum popups"
                                 color: Theme.foreground
                                 font.family: Theme.fontFamily
                                 font.pixelSize: 10
@@ -1080,7 +1089,7 @@ Singleton {
 
                             Text {
                                 Layout.fillWidth: true
-                                text: "Awtarchy update notifications · Global"
+                                text: "Update alerts"
                                 color: Theme.foreground
                                 font.family: Theme.fontFamily
                                 font.pixelSize: 10
@@ -1097,19 +1106,29 @@ Singleton {
 
                         Text {
                             Layout.fillWidth: true
+                            visible: !root.updateNotificationsEnabled
+                            Layout.preferredHeight: visible ? implicitHeight : 0
                             text: "When off, Awtarchy may show one catch-up notice after five stable releases."
                             color: Theme.muted
                             font.family: Theme.fontFamily
                             font.pixelSize: 9
                             wrapMode: Text.Wrap
                         }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 1
+                            color: Theme.muted
+                            opacity: 0.35
+                        }
+
                         Text {
                             Layout.fillWidth: true
                             text: "Popup position · " + root.activeMonitorName
-                                + " · Automatic follows this display's bar notification icon"
-                            color: Theme.muted
+                            color: Theme.foreground
                             font.family: Theme.fontFamily
-                            font.pixelSize: 9
+                            font.pixelSize: 10
+                            font.bold: true
                             elide: Text.ElideRight
                         }
 
@@ -1137,6 +1156,17 @@ Singleton {
                                     onClicked: root.popupPositionDraft = modelData.value
                                 }
                             }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            visible: root.effectivePopupPosition === "automatic"
+                            Layout.preferredHeight: visible ? implicitHeight : 0
+                            text: "Automatic follows this display's bar notification icon."
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 9
+                            wrapMode: Text.Wrap
                         }
                     }
                 }

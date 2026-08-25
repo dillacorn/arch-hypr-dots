@@ -5,6 +5,7 @@ set -euo pipefail
 
 window_class="terminal-command"
 hold_open=0
+no_profile=0
 
 while (( $# > 0 )); do
   case "$1" in
@@ -15,6 +16,10 @@ while (( $# > 0 )); do
       ;;
     --hold)
       hold_open=1
+      shift
+      ;;
+    --no-profile)
+      no_profile=1
       shift
       ;;
     --)
@@ -28,14 +33,19 @@ while (( $# > 0 )); do
 done
 
 (( $# > 0 )) || {
-  printf 'usage: %s [--class NAME] [--hold] -- COMMAND [ARG...]\n' "${0##*/}" >&2
+  printf 'usage: %s [--class NAME] [--hold] [--no-profile] -- COMMAND [ARG...]\n' "${0##*/}" >&2
   exit 2
 }
 
 command_args=("$@")
 if (( hold_open )); then
   printf -v command_line '%q ' "${command_args[@]}"
-  command_args=(bash -lc "${command_line}status=\$?; printf '\\n[command finished: %s]\\nPress ENTER to close...' \"\$status\"; IFS= read -r _; exit \"\$status\"")
+  hold_command="${command_line}; status=\$?; printf '\\n[command finished: %s]\\nPress ENTER to close...' \"\$status\"; IFS= read -r _; finish_with_status() { return \"\$1\"; }; finish_with_status \"\$status\""
+  if (( no_profile )); then
+    command_args=(bash --noprofile --norc -c "$hold_command")
+  else
+    command_args=(bash -lc "$hold_command")
+  fi
 fi
 
 terminal_args=()

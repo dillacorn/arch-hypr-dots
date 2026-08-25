@@ -267,8 +267,11 @@ PATH="${volume_test_bin}:$PATH" \
 [[ $(<"$volume_test_state") == 105 ]] \
   || fail 'Bar volume did not increase from 100% to 105% with a 125% limit'
 assert_not_contains "${REPO_ROOT}/config/quickshell/awtarchy/FlyoutSettings.qml" 'text: "Maximum output volume"'
-assert_contains "$NOTIFICATIONS_QML" 'Maximum simultaneous popups · Global'
-assert_contains "$NOTIFICATIONS_QML" 'Awtarchy update notifications · Global'
+assert_contains "$NOTIFICATIONS_QML" 'text: "Global behavior"'
+assert_contains "$NOTIFICATIONS_QML" 'text: "Maximum popups"'
+assert_contains "$NOTIFICATIONS_QML" 'text: "Update alerts"'
+assert_contains "$NOTIFICATIONS_QML" 'visible: !root.updateNotificationsEnabled'
+assert_contains "$NOTIFICATIONS_QML" 'visible: root.effectivePopupPosition === "automatic"'
 assert_contains "$NOTIFICATIONS_QML" 'set-update-notifications'
 [[ -x $UPDATE_NOTIFIER ]] || fail 'update notification checker is not executable'
 assert_contains "$SHELL_QML" 'id: initialUpdateNotificationCheck'

@@ -30,6 +30,7 @@ jobs:
           bash -n local/share/awtarchy/awtarchy-power-profile.sh
           bash -n config/hypr/scripts/awtarchy-tips-tui.sh
           bash -n config/hypr/scripts/ddc_brightness.sh
+          bash -n config/hypr/scripts/default_terminal.sh
           bash -n config/hypr/scripts/dim_display.sh
           bash -n config/hypr/scripts/hypr-ddc-brightness.sh
           bash -n config/hypr/scripts/hypr_quicksettings.sh
@@ -122,6 +123,7 @@ jobs:
             local/libexec/awtarchy/power-profile-helper \
             local/share/awtarchy/awtarchy-power-profile.sh \
             config/hypr/scripts/ddc_brightness.sh \
+            config/hypr/scripts/default_terminal.sh \
             config/hypr/scripts/dim_display.sh \
             config/hypr/scripts/hypr-ddc-brightness.sh \
             config/hypr/scripts/hyprbars_toggle.sh \

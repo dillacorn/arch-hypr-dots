@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 CHECKER="${ROOT}/config/hypr/scripts/quickshell_update_notifications.sh"
 APP_STATE="${ROOT}/config/hypr/scripts/quickshell_application_state.sh"
+DEFAULT_TERMINAL="${ROOT}/config/hypr/scripts/default_terminal.sh"
 TMPD="$(mktemp -d)"
 trap 'rm -rf -- "$TMPD"' EXIT
 
@@ -15,6 +16,7 @@ fail() {
 
 [[ -x $CHECKER ]] || fail "missing executable update checker: $CHECKER"
 [[ -x $APP_STATE ]] || fail "missing executable Quickshell state writer: $APP_STATE"
+[[ -x $DEFAULT_TERMINAL ]] || fail "missing executable default terminal helper: $DEFAULT_TERMINAL"
 
 fakebin="${TMPD}/bin"
 mkdir -p -- "$fakebin"
@@ -108,7 +110,17 @@ Path(sys.argv[1]).write_text(json.dumps(sys.argv[2:]), encoding="utf-8")
 PY
 EOF_TERMINAL
 
-chmod 0755 "${fakebin}/curl" "${fakebin}/notify-send" "${fakebin}/default-terminal"
+cat >"${fakebin}/xdg-open" <<'EOF_XDG_OPEN'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$@" >"${AWTARCHY_TEST_RELEASE_LOG:?}"
+EOF_XDG_OPEN
+
+chmod 0755 \
+  "${fakebin}/curl" \
+  "${fakebin}/notify-send" \
+  "${fakebin}/default-terminal" \
+  "${fakebin}/xdg-open"
 
 new_home() {
   local name="$1" config_tag="$2" command_revision="${3:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}"
@@ -145,6 +157,7 @@ run_check() {
     AWTARCHY_TEST_ACTION="$action" \
     AWTARCHY_TEST_NOTIFY_LOG="${home}/notify.json" \
     AWTARCHY_TEST_TERMINAL_LOG="${home}/terminal.json" \
+    AWTARCHY_TEST_RELEASE_LOG="${home}/release-url" \
     AWTARCHY_TEST_SCENARIO="$scenario" \
     AWTARCHY_UPDATE_NOTIFY_FOREGROUND=1 \
     AWTARCHY_UPDATE_NOTIFY_NOW="$now" \
@@ -171,9 +184,21 @@ import json
 import sys
 
 args = json.load(open(sys.argv[1], encoding="utf-8"))
-expected = ["--class", "awtarchy-update", "--hold", "--", "awtarchy", sys.argv[2]]
+expected = ["--class", "awtarchy-update", "--hold", "--no-profile", "--", "awtarchy", sys.argv[2]]
 if args != expected:
     raise SystemExit(f"unexpected terminal arguments: {args!r}")
+PY
+}
+
+assert_notification_omits() {
+  local file="$1" unwanted="$2"
+  python3 - "$file" "$unwanted" <<'PY'
+import json
+import sys
+
+args = json.load(open(sys.argv[1], encoding="utf-8"))
+if sys.argv[2] in args:
+    raise SystemExit(f"unexpected notification argument {sys.argv[2]!r}: {args!r}")
 PY
 }
 
@@ -183,11 +208,20 @@ assert_notification \
   "${stable_home}/notify.json" \
   'New Awtarchy Update' \
   $'v3.1.5 → v3.2.1\nRun: awtarchy update' \
-  'update=Update ↑'
+  'update=Update ↑' \
+  'release=Release Notes ↗' \
+  '--icon=github'
 assert_terminal "${stable_home}/terminal.json" update
 rm -f -- "${stable_home}/notify.json" "${stable_home}/terminal.json"
 run_check "$stable_home" stable-update update 2000022000
 [[ ! -e ${stable_home}/notify.json ]] || fail 'stable target was announced twice'
+
+release_home="$(new_home release v3.1.5)"
+run_check "$release_home" stable-update release
+[[ $(<"${release_home}/release-url") == 'https://github.com/dillacorn/awtarchy/releases/tag/v3.2.1' ]] \
+  || fail 'release action did not open the exact stable release page'
+[[ ! -e ${release_home}/terminal.json ]] \
+  || fail 'release action unexpectedly launched the updater terminal'
 
 same_payload_home="$(new_home same-payload v3.2.1)"
 run_check "$same_payload_home" same-payload
@@ -200,7 +234,9 @@ assert_notification \
   "${maintenance_home}/notify.json" \
   'Awtarchy Maintenance Refresh' \
   $'v3.2.1 configuration\nUpdater/runtime refresh available\nRun: awtarchy self-update' \
-  'refresh=Refresh ↑'
+  'refresh=Refresh ↑' \
+  '--icon=github'
+assert_notification_omits "${maintenance_home}/notify.json" 'release=Release Notes ↗'
 assert_terminal "${maintenance_home}/terminal.json" self-update
 
 prerelease_home="$(new_home prerelease v3.2.1)"
@@ -277,5 +313,62 @@ env \
 jq -e '.update_notifications_enabled == true' \
   "${state_home}/.cache/awtarchy/quickshell-state.json" >/dev/null \
   || fail 'state writer did not enable update notifications'
+
+cat >"${fakebin}/terminal-capture" <<'EOF_CAPTURE'
+#!/usr/bin/env bash
+set -uo pipefail
+python3 - "${AWTARCHY_TEST_TERMINAL_CAPTURE:?}" "$@" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_text(json.dumps(sys.argv[2:]), encoding="utf-8")
+PY
+[[ ${1:-} == -e ]] || false
+shift
+set +e
+printf '\n' | "$@" >"${AWTARCHY_TEST_TERMINAL_OUTPUT:?}" 2>&1
+status=$?
+set -e
+printf '%s\n' "$status" >"${AWTARCHY_TEST_TERMINAL_STATUS:?}"
+[[ $status -eq 0 ]]
+EOF_CAPTURE
+chmod 0755 "${fakebin}/terminal-capture"
+
+held_home="${TMPD}/held-home"
+mkdir -p -- "$held_home"
+printf '%s\n' 'printf "profile-marker\\n"' >"${held_home}/.bash_profile"
+if env \
+  HOME="$held_home" \
+  TERMINAL="${fakebin}/terminal-capture" \
+  AWTARCHY_TEST_TERMINAL_CAPTURE="${held_home}/capture.json" \
+  AWTARCHY_TEST_TERMINAL_OUTPUT="${held_home}/output" \
+  AWTARCHY_TEST_TERMINAL_STATUS="${held_home}/status" \
+  bash "$DEFAULT_TERMINAL" \
+    --class awtarchy-update \
+    --hold \
+    --no-profile \
+    -- \
+    /usr/bin/sh -c 'printf "held-command\\n"; false';
+then
+  fail 'held terminal did not preserve the command failure status'
+fi
+python3 - "${held_home}/capture.json" <<'PY'
+import json
+import sys
+
+args = json.load(open(sys.argv[1], encoding="utf-8"))
+expected_prefix = ["-e", "bash", "--noprofile", "--norc", "-c"]
+if args[:5] != expected_prefix:
+    raise SystemExit(f"held terminal did not use a clean Bash shell: {args!r}")
+PY
+grep -Fq 'held-command' "${held_home}/output" \
+  || fail 'held terminal did not run the requested command'
+grep -Fq '[command finished: 1]' "${held_home}/output" \
+  || fail 'held terminal did not report the command failure status'
+! grep -Fq 'profile-marker' "${held_home}/output" \
+  || fail 'held terminal sourced the login profile'
+[[ $(<"${held_home}/status") == 1 ]] \
+  || fail 'held terminal did not return the command failure status'
 
 printf '%s\n' 'Awtarchy update notification tests passed.'
