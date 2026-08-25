@@ -19,7 +19,7 @@ verify_root_owned_directory() {
     local path="$1" uid mode type mode_value
 
     [[ -d $path && ! -L $path ]] || fail "unsafe runtime directory: $path" || return 1
-    read -r uid mode type < <(/usr/bin/stat -Lc '%u %a %F' -- "$path") || return 1
+    IFS=' ' read -r uid mode type < <(/usr/bin/stat -Lc '%u %a %F' -- "$path") || return 1
     [[ $uid == 0 && $type == directory ]] || fail "runtime directory must be root-owned: $path" || return 1
 
     mode_value=$((8#$mode))
@@ -30,7 +30,7 @@ verify_root_owned_file() {
     local path="$1" uid mode type mode_value
 
     [[ -f $path && ! -L $path ]] || fail "unsafe runtime file: $path" || return 1
-    read -r uid mode type < <(/usr/bin/stat -Lc '%u %a %F' -- "$path") || return 1
+    IFS=' ' read -r uid mode type < <(/usr/bin/stat -Lc '%u %a %F' -- "$path") || return 1
     [[ $uid == 0 && $type == 'regular file' ]] || fail "runtime file must be root-owned and regular: $path" || return 1
 
     mode_value=$((8#$mode))

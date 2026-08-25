@@ -9,6 +9,3 @@ Restart=on-failure
 RestartPreventExitStatus=78
 RestartSec=2s
 TimeoutStopSec=5s
-
-[Install]
-WantedBy=default.target

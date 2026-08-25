@@ -33,7 +33,7 @@ declare -a PKG_GROUPS=(
   "Fonts:woff2-font-awesome otf-font-awesome ttf-dejavu ttf-liberation ttf-noto-nerd noto-fonts-emoji"
   "Themes:papirus-icon-theme materia-gtk-theme xcursor-comix kvantum-theme-materia"
   "Terminal Apps:nano micro fastfetch btop htop curl passt devtools wget git dos2unix brightnessctl ipcalc cmatrix asciiquarium figlet termdown espeak-ng cava man-db man-pages unzip xarchiver ncdu ddcutil scx-scheds scx-tools"
-  "Utilities:upower polkit-gnome gnome-keyring networkmanager bluez bluez-utils wiremix pcmanfm-qt gvfs gvfs-smb gvfs-mtp gvfs-afc speedcrunch imagemagick pipewire pipewire-pulse pipewire-alsa ufw jq earlyoom libsixel xdg-utils python usbutils awww"
+  "Utilities:upower gnome-keyring networkmanager bluez bluez-utils wiremix pcmanfm-qt gvfs gvfs-smb gvfs-mtp gvfs-afc speedcrunch imagemagick pipewire pipewire-pulse pipewire-alsa ufw jq earlyoom libsixel xdg-utils python usbutils awww"
   "Multimedia:ffmpeg avahi nss-mdns mpv cheese exiv2 zathura zathura-pdf-mupdf mousai"
   "Development:base-devel archlinux-keyring bubblewrap gnupg coreutils clang ninja go rust virt-manager qemu qemu-hw-usb-host virt-viewer vde2 libguestfs dmidecode gamemode gamescope nftables swtpm"
   "Network Tools:firefox wireguard-tools wireplumber openssh iptables systemd-resolvconf bridge-utils qemu-guest-agent dnsmasq dhcpcd inetutils openbsd-netcat"
@@ -2902,6 +2902,342 @@ print(str(value).strip())
   printf '%s\n' unreleased
 }
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Awtarchy PolicyKit authentication agent
+# ──────────────────────────────────────────────────────────────────────────────
+AWTARCHY_POLKIT_RUNTIME_PARENT="/usr/local/libexec/awtarchy"
+AWTARCHY_POLKIT_RUNTIME_DIR="/usr/local/libexec/awtarchy/polkit-agent"
+AWTARCHY_POLKIT_USER_UNIT_DIR="/usr/local/lib/systemd/user"
+AWTARCHY_POLKIT_SERVICE_NAME="awtarchy-polkit-agent.service"
+AWTARCHY_POLKIT_SERVICE_DEST="/usr/local/lib/systemd/user/awtarchy-polkit-agent.service"
+AWTARCHY_GNOME_POLKIT_BIN="/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"
+
+awtarchy_polkit_root() {
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    "$@"
+    return
+  fi
+  have sudo || { warn "sudo is required to install the Awtarchy PolicyKit agent."; return 1; }
+  sudo -- "$@"
+}
+
+awtarchy_polkit_verify_source_file() {
+  local path="$1"
+  [[ -f "$path" && ! -L "$path" ]] || { warn "Unsafe PolicyKit source file: $path"; return 1; }
+  [[ "$(stat -Lc '%F' -- "$path" 2>/dev/null)" == 'regular file' ]] \
+    || { warn "PolicyKit source is not a regular file: $path"; return 1; }
+}
+
+awtarchy_polkit_verify_root_directory() {
+  local path="$1" uid mode type mode_value
+  awtarchy_polkit_root /usr/bin/test -d "$path" \
+    && awtarchy_polkit_root /usr/bin/test ! -L "$path" \
+    || { warn "Unsafe PolicyKit runtime directory: $path"; return 1; }
+  IFS=' ' read -r uid mode type < <(awtarchy_polkit_root /usr/bin/stat -Lc '%u %a %F' -- "$path") || return 1
+  [[ "$uid" == 0 && "$type" == directory ]] || { warn "PolicyKit runtime directory is not root-owned: $path"; return 1; }
+  mode_value=$((8#$mode))
+  (( (mode_value & 0022) == 0 )) || { warn "PolicyKit runtime directory is writable by group/other: $path"; return 1; }
+}
+
+awtarchy_polkit_verify_root_file() {
+  local path="$1" expected_mode="$2" uid mode type
+  awtarchy_polkit_root /usr/bin/test -f "$path" \
+    && awtarchy_polkit_root /usr/bin/test ! -L "$path" \
+    || { warn "Unsafe PolicyKit runtime file: $path"; return 1; }
+  IFS=' ' read -r uid mode type < <(awtarchy_polkit_root /usr/bin/stat -Lc '%u %a %F' -- "$path") || return 1
+  [[ "$uid" == 0 && "$mode" == "$expected_mode" && "$type" == 'regular file' ]] \
+    || { warn "Unexpected owner/mode/type for PolicyKit runtime file: $path"; return 1; }
+}
+
+awtarchy_polkit_verify_runtime() {
+  local actual expected
+  awtarchy_polkit_verify_root_directory "$AWTARCHY_POLKIT_RUNTIME_DIR" || return 1
+  awtarchy_polkit_verify_root_file "${AWTARCHY_POLKIT_RUNTIME_DIR}/shell.qml" 644 || return 1
+  awtarchy_polkit_verify_root_file "${AWTARCHY_POLKIT_RUNTIME_DIR}/launcher" 755 || return 1
+  awtarchy_polkit_verify_root_file "${AWTARCHY_POLKIT_RUNTIME_DIR}/window-guard.sh" 755 || return 1
+  awtarchy_polkit_verify_root_file "$AWTARCHY_POLKIT_SERVICE_DEST" 644 || return 1
+  actual="$(awtarchy_polkit_root /usr/bin/find "$AWTARCHY_POLKIT_RUNTIME_DIR" -mindepth 1 -maxdepth 1 -printf '%f\n' 2>/dev/null | LC_ALL=C sort)" || return 1
+  expected=$'launcher\nshell.qml\nwindow-guard.sh'
+  [[ "$actual" == "$expected" ]] || { warn "Unexpected files in Awtarchy PolicyKit runtime."; return 1; }
+}
+
+awtarchy_polkit_restore_install_transaction() {
+  local previous_runtime="$1" failed_runtime="$2" previous_service="$3"
+  if awtarchy_polkit_root /usr/bin/test -e "$AWTARCHY_POLKIT_RUNTIME_DIR"; then
+    awtarchy_polkit_root /usr/bin/mv -Tf -- "$AWTARCHY_POLKIT_RUNTIME_DIR" "$failed_runtime" 2>/dev/null || true
+  fi
+  if [[ -n "$previous_runtime" ]] && awtarchy_polkit_root /usr/bin/test -e "$previous_runtime"; then
+    awtarchy_polkit_root /usr/bin/mv -Tf -- "$previous_runtime" "$AWTARCHY_POLKIT_RUNTIME_DIR" 2>/dev/null || true
+  fi
+  awtarchy_polkit_root /usr/bin/rm -rf --one-file-system -- "$failed_runtime" 2>/dev/null || true
+  if [[ -n "$previous_service" ]] && awtarchy_polkit_root /usr/bin/test -e "$previous_service"; then
+    awtarchy_polkit_root /usr/bin/mv -Tf -- "$previous_service" "$AWTARCHY_POLKIT_SERVICE_DEST" 2>/dev/null || true
+  fi
+}
+
+install_awtarchy_polkit_agent_runtime() {
+  local repo_dir="$1"
+  local source_dir="${repo_dir}/config/hypr/scripts/awtarchy-polkit-agent"
+  local shell_source="${source_dir}/shell.qml"
+  local launcher_source="${source_dir}/launcher.sh"
+  local guard_source="${source_dir}/window-guard.sh"
+  local service_source="${source_dir}/awtarchy-polkit-agent.service"
+  local stage="" previous_runtime="" failed_runtime="" service_tmp="" previous_service=""
+
+  awtarchy_polkit_verify_source_file "$shell_source" || return 1
+  awtarchy_polkit_verify_source_file "$launcher_source" || return 1
+  awtarchy_polkit_verify_source_file "$guard_source" || return 1
+  awtarchy_polkit_verify_source_file "$service_source" || return 1
+  bash -n "$launcher_source" || { warn "PolicyKit launcher failed Bash syntax validation."; return 1; }
+  bash -n "$guard_source" || { warn "PolicyKit window guard failed Bash syntax validation."; return 1; }
+
+  if awtarchy_polkit_root /usr/bin/test -L "$AWTARCHY_POLKIT_RUNTIME_PARENT" \
+    || awtarchy_polkit_root /usr/bin/test -L "$AWTARCHY_POLKIT_USER_UNIT_DIR" \
+    || awtarchy_polkit_root /usr/bin/test -L "$AWTARCHY_POLKIT_RUNTIME_DIR" \
+    || awtarchy_polkit_root /usr/bin/test -L "$AWTARCHY_POLKIT_SERVICE_DEST";
+  then
+    warn "Refusing PolicyKit installation through a symbolic-link system path."
+    return 1
+  fi
+
+  awtarchy_polkit_root /usr/bin/install -d -m 0755 -o root -g root -- "$AWTARCHY_POLKIT_RUNTIME_PARENT" || return 1
+  awtarchy_polkit_root /usr/bin/install -d -m 0755 -o root -g root -- "$AWTARCHY_POLKIT_USER_UNIT_DIR" || return 1
+  awtarchy_polkit_verify_root_directory "$AWTARCHY_POLKIT_RUNTIME_PARENT" || return 1
+  awtarchy_polkit_verify_root_directory "$AWTARCHY_POLKIT_USER_UNIT_DIR" || return 1
+
+  stage="$(awtarchy_polkit_root /usr/bin/mktemp -d "${AWTARCHY_POLKIT_RUNTIME_PARENT}/.polkit-agent.stage.XXXXXX")" || return 1
+  if ! awtarchy_polkit_root /usr/bin/install -m 0644 -o root -g root -- "$shell_source" "${stage}/shell.qml" \
+    || ! awtarchy_polkit_root /usr/bin/install -m 0755 -o root -g root -- "$launcher_source" "${stage}/launcher" \
+    || ! awtarchy_polkit_root /usr/bin/install -m 0755 -o root -g root -- "$guard_source" "${stage}/window-guard.sh" \
+    || ! awtarchy_polkit_root /usr/bin/chmod 0755 -- "$stage";
+  then
+    awtarchy_polkit_root /usr/bin/rm -rf --one-file-system -- "$stage" 2>/dev/null || true
+    return 1
+  fi
+
+  if awtarchy_polkit_root /usr/bin/test -e "$AWTARCHY_POLKIT_RUNTIME_DIR"; then
+    [[ "$(awtarchy_polkit_root /usr/bin/stat -Lc '%F' -- "$AWTARCHY_POLKIT_RUNTIME_DIR")" == directory ]] \
+      || { awtarchy_polkit_root /usr/bin/rm -rf --one-file-system -- "$stage"; warn "PolicyKit runtime destination is not a directory."; return 1; }
+    previous_runtime="${AWTARCHY_POLKIT_RUNTIME_PARENT}/.polkit-agent.previous.$$"
+    awtarchy_polkit_root /usr/bin/test ! -e "$previous_runtime" || return 1
+    awtarchy_polkit_root /usr/bin/mv -Tf -- "$AWTARCHY_POLKIT_RUNTIME_DIR" "$previous_runtime" || return 1
+  fi
+
+  if ! awtarchy_polkit_root /usr/bin/mv -Tf -- "$stage" "$AWTARCHY_POLKIT_RUNTIME_DIR"; then
+    [[ -z "$previous_runtime" ]] || awtarchy_polkit_root /usr/bin/mv -Tf -- "$previous_runtime" "$AWTARCHY_POLKIT_RUNTIME_DIR" 2>/dev/null || true
+    return 1
+  fi
+
+  failed_runtime="${AWTARCHY_POLKIT_RUNTIME_PARENT}/.polkit-agent.failed.$$"
+  if awtarchy_polkit_root /usr/bin/test -e "$AWTARCHY_POLKIT_SERVICE_DEST"; then
+    [[ "$(awtarchy_polkit_root /usr/bin/stat -Lc '%F' -- "$AWTARCHY_POLKIT_SERVICE_DEST")" == 'regular file' ]] \
+      || { awtarchy_polkit_restore_install_transaction "$previous_runtime" "$failed_runtime" ""; return 1; }
+    previous_service="${AWTARCHY_POLKIT_USER_UNIT_DIR}/.awtarchy-polkit-agent.service.previous.$$"
+    awtarchy_polkit_root /usr/bin/test ! -e "$previous_service" || return 1
+    awtarchy_polkit_root /usr/bin/mv -Tf -- "$AWTARCHY_POLKIT_SERVICE_DEST" "$previous_service" || return 1
+  fi
+
+  service_tmp="$(awtarchy_polkit_root /usr/bin/mktemp "${AWTARCHY_POLKIT_USER_UNIT_DIR}/.awtarchy-polkit-agent.service.XXXXXX")" || {
+    awtarchy_polkit_restore_install_transaction "$previous_runtime" "$failed_runtime" "$previous_service"
+    return 1
+  }
+  if ! awtarchy_polkit_root /usr/bin/install -m 0644 -o root -g root -- "$service_source" "$service_tmp" \
+    || ! awtarchy_polkit_root /usr/bin/mv -Tf -- "$service_tmp" "$AWTARCHY_POLKIT_SERVICE_DEST";
+  then
+    awtarchy_polkit_root /usr/bin/rm -f -- "$service_tmp" 2>/dev/null || true
+    awtarchy_polkit_restore_install_transaction "$previous_runtime" "$failed_runtime" "$previous_service"
+    return 1
+  fi
+
+  if ! awtarchy_polkit_verify_runtime; then
+    awtarchy_polkit_restore_install_transaction "$previous_runtime" "$failed_runtime" "$previous_service"
+    warn "Awtarchy PolicyKit runtime verification failed."
+    return 1
+  fi
+
+  [[ -z "$previous_runtime" ]] || awtarchy_polkit_root /usr/bin/rm -rf --one-file-system -- "$previous_runtime" || return 1
+  [[ -z "$previous_service" ]] || awtarchy_polkit_root /usr/bin/rm -f -- "$previous_service" || return 1
+  log "Installed root-owned Awtarchy PolicyKit authentication runtime."
+}
+
+migrate_awtarchy_polkit_autostart() {
+  local rel=".config/hypr/hyprland.lua"
+  local file="${HOME_DIR}/${rel}" tmp="" count_old count_new item already_changed=0
+  local old='    hl.exec_cmd("/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1")'
+  local new='    hl.exec_cmd("/usr/bin/systemctl --user restart awtarchy-polkit-agent.service")'
+
+  [[ -f "$file" && ! -L "$file" ]] || { warn "Hyprland config is unavailable for PolicyKit migration: $file"; return 2; }
+  count_old="$(grep -Fxc -- "$old" "$file" || true)"
+  count_new="$(grep -Fxc -- "$new" "$file" || true)"
+
+  if (( count_new == 1 && count_old == 0 )); then
+    return 0
+  fi
+  if (( count_old != 1 || count_new != 0 )); then
+    warn "Hyprland has custom PolicyKit startup; leaving that custom startup untouched."
+    return 2
+  fi
+
+  tmp="$(mktemp)"
+  awk -v old="$old" -v new="$new" '{ if ($0 == old) print new; else print }' "$file" >"$tmp"
+
+  for item in "${CHANGED[@]:-}"; do
+    [[ "$item" == "$rel" ]] && already_changed=1
+  done
+  if (( already_changed == 0 )); then
+    snapshot_for_rollback "$rel" "$file"
+    ROLLBACK_PATHS+=("$rel")
+    make_persistent_backup "$file"
+    CHANGED+=("$rel")
+  fi
+  if ! validate_candidate "$tmp" "$rel" || ! atomic_copy "$tmp" "$file"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+  rm -f -- "$tmp"
+  log "Migrated Hyprland from polkit-gnome to the Awtarchy PolicyKit service."
+}
+
+awtarchy_polkit_target_uid() {
+  id -u "$TARGET_USER" 2>/dev/null
+}
+
+awtarchy_polkit_user_command() {
+  local target_uid runtime_dir
+  target_uid="$(awtarchy_polkit_target_uid)" || return 1
+  runtime_dir="/run/user/${target_uid}"
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    runuser -u "$TARGET_USER" -- /usr/bin/env \
+      HOME="$HOME_DIR" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
+      XDG_RUNTIME_DIR="$runtime_dir" DBUS_SESSION_BUS_ADDRESS="unix:path=${runtime_dir}/bus" \
+      "$@"
+  else
+    /usr/bin/env HOME="$HOME_DIR" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
+      XDG_RUNTIME_DIR="$runtime_dir" DBUS_SESSION_BUS_ADDRESS="unix:path=${runtime_dir}/bus" \
+      "$@"
+  fi
+}
+
+awtarchy_polkit_get_gnome_pids() {
+  local target_uid pid resolved
+  target_uid="$(awtarchy_polkit_target_uid)" || return 1
+  while IFS= read -r pid; do
+    [[ "$pid" =~ ^[1-9][0-9]*$ ]] || continue
+    resolved="$(readlink -f -- "/proc/${pid}/exe" 2>/dev/null)" || continue
+    [[ "$resolved" == "$AWTARCHY_GNOME_POLKIT_BIN" ]] || continue
+    printf '%s\n' "$pid"
+  done < <(pgrep -u "$target_uid" -f -- "$AWTARCHY_GNOME_POLKIT_BIN" 2>/dev/null || true)
+}
+
+awtarchy_polkit_stop_gnome() {
+  local pid attempt active=""
+  while IFS= read -r pid; do
+    [[ -n "$pid" ]] || continue
+    kill -TERM -- "$pid" 2>/dev/null || awtarchy_polkit_root /usr/bin/kill -TERM -- "$pid" 2>/dev/null || true
+  done < <(awtarchy_polkit_get_gnome_pids)
+  for attempt in {1..40}; do
+    active="$(awtarchy_polkit_get_gnome_pids)"
+    [[ -z "$active" ]] && return 0
+    sleep 0.05
+  done
+  warn "Could not stop the exact polkit-gnome agent process."
+  return 1
+}
+
+restore_legacy_polkit_gnome() {
+  local target_uid runtime_dir attempt active=""
+  [[ -x "$AWTARCHY_GNOME_POLKIT_BIN" && -f "$AWTARCHY_GNOME_POLKIT_BIN" && ! -L "$AWTARCHY_GNOME_POLKIT_BIN" ]] || return 1
+  active="$(awtarchy_polkit_get_gnome_pids)"
+  [[ -n "$active" ]] && return 0
+  target_uid="$(awtarchy_polkit_target_uid)" || return 1
+  runtime_dir="/run/user/${target_uid}"
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    runuser -u "$TARGET_USER" -- /usr/bin/env HOME="$HOME_DIR" USER="$TARGET_USER" LOGNAME="$TARGET_USER" \
+      XDG_RUNTIME_DIR="$runtime_dir" DBUS_SESSION_BUS_ADDRESS="unix:path=${runtime_dir}/bus" \
+      WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" HYPRLAND_INSTANCE_SIGNATURE="${HYPRLAND_INSTANCE_SIGNATURE:-}" \
+      /usr/bin/nohup "$AWTARCHY_GNOME_POLKIT_BIN" </dev/null >/dev/null 2>&1 &
+  else
+    /usr/bin/nohup "$AWTARCHY_GNOME_POLKIT_BIN" </dev/null >/dev/null 2>&1 &
+  fi
+  for attempt in {1..60}; do
+    active="$(awtarchy_polkit_get_gnome_pids)"
+    [[ -n "$active" ]] && return 0
+    sleep 0.05
+  done
+  return 1
+}
+
+awtarchy_polkit_verify_service_process() {
+  local pid resolved
+  pid="$(awtarchy_polkit_user_command /usr/bin/systemctl --user show -p MainPID --value "$AWTARCHY_POLKIT_SERVICE_NAME" 2>/dev/null)" || return 1
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
+  resolved="$(readlink -f -- "/proc/${pid}/exe" 2>/dev/null)" || return 1
+  [[ "$resolved" == /usr/bin/quickshell ]]
+}
+
+activate_awtarchy_polkit_agent() {
+  local target_uid runtime_dir attempt restarts activation_rc=0
+  target_uid="$(awtarchy_polkit_target_uid)" || return 1
+  runtime_dir="/run/user/${target_uid}"
+
+  [[ -S "${runtime_dir}/bus" && -n "${WAYLAND_DISPLAY:-}" && -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || return 2
+  awtarchy_polkit_verify_runtime || return 1
+
+  awtarchy_polkit_user_command /usr/bin/env \
+    WAYLAND_DISPLAY="$WAYLAND_DISPLAY" \
+    HYPRLAND_INSTANCE_SIGNATURE="$HYPRLAND_INSTANCE_SIGNATURE" \
+    XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-Hyprland}" \
+    XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-wayland}" \
+    /usr/bin/systemctl --user import-environment \
+    WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP XDG_SESSION_TYPE >/dev/null || return 1
+
+  awtarchy_polkit_user_command /usr/bin/systemctl --user daemon-reload || return 1
+  awtarchy_polkit_user_command /usr/bin/systemctl --user disable "$AWTARCHY_POLKIT_SERVICE_NAME" >/dev/null 2>&1 || true
+  awtarchy_polkit_user_command /usr/bin/systemctl --user stop "$AWTARCHY_POLKIT_SERVICE_NAME" >/dev/null 2>&1 || true
+  awtarchy_polkit_user_command /usr/bin/systemctl --user reset-failed "$AWTARCHY_POLKIT_SERVICE_NAME" >/dev/null 2>&1 || true
+  awtarchy_polkit_stop_gnome || return 1
+
+  if ! awtarchy_polkit_user_command /usr/bin/systemctl --user start "$AWTARCHY_POLKIT_SERVICE_NAME"; then
+    restore_legacy_polkit_gnome || true
+    return 1
+  fi
+
+  for attempt in {1..25}; do
+    if ! awtarchy_polkit_user_command /usr/bin/systemctl --user is-active --quiet "$AWTARCHY_POLKIT_SERVICE_NAME"; then
+      activation_rc=1
+      break
+    fi
+    sleep 0.20
+  done
+  restarts="$(awtarchy_polkit_user_command /usr/bin/systemctl --user show -p NRestarts --value "$AWTARCHY_POLKIT_SERVICE_NAME" 2>/dev/null || printf 'unknown')"
+  if (( activation_rc != 0 )) || [[ ! "$restarts" =~ ^[0-9]+$ || "$restarts" -ne 0 ]] || ! awtarchy_polkit_verify_service_process; then
+    awtarchy_polkit_user_command /usr/bin/systemctl --user stop "$AWTARCHY_POLKIT_SERVICE_NAME" >/dev/null 2>&1 || true
+    restore_legacy_polkit_gnome || true
+    warn "Awtarchy PolicyKit agent failed live activation; polkit-gnome was restored."
+    return 1
+  fi
+  log "Awtarchy PolicyKit authentication agent is active."
+}
+
+remove_legacy_polkit_gnome_package() {
+  local manifest tmp
+  [[ -z "${TESTING_BRANCH:-}" ]] || { log "Git testing keeps polkit-gnome installed as an inactive emergency fallback."; return 0; }
+  managed_package_recorded polkit-gnome || { log "polkit-gnome is not recorded as Awtarchy-owned; leaving the package installed but inactive."; return 0; }
+  pacman -Qq polkit-gnome >/dev/null 2>&1 || return 0
+  run_update_root /usr/bin/pacman -Rns --noconfirm polkit-gnome || { warn "Could not remove retired Awtarchy-owned polkit-gnome; leaving it installed but inactive."; return 0; }
+  manifest="$(managed_packages_file)"
+  [[ -r "$manifest" ]] || return 0
+  tmp="$(mktemp)"
+  grep -Fxv polkit-gnome "$manifest" >"$tmp" || true
+  if ! cat -- "$tmp" | atomic_update_root_file_from_stdin 0644 0 0 "$manifest"; then
+    rm -f -- "$tmp"
+    warn "Removed polkit-gnome but could not update the Awtarchy package ownership manifest."
+    return 0
+  fi
+  rm -f -- "$tmp"
+  log "Removed retired Awtarchy-owned polkit-gnome package."
+}
+
 install_awtarchy_command_stage() {
   local install_dir="${HOME_DIR}/.local/share/awtarchy"
   local bin_dir="${HOME_DIR}/.local/bin"
@@ -3207,6 +3543,7 @@ run_install() {
     cleanup_legacy_keyring_pam_stage "$REPO_DIR"
   fi
   copy_awtarchy_configs_stage
+  install_awtarchy_polkit_agent_runtime "$REPO_DIR" || die "Could not install the Awtarchy PolicyKit authentication runtime."
   remove_legacy_shell_files_stage
   install_awtarchy_command_stage
   remove_legacy_shell_packages_stage
@@ -7612,6 +7949,39 @@ main() {
   snapshot_quickshell_update_legacy_paths
 
   apply_plan "$plan_file" || die "Update failed and user files were rolled back."
+
+  if ! install_awtarchy_polkit_agent_runtime "$repo_dir"; then
+    rollback_changes
+    die "Could not install the root-owned Awtarchy PolicyKit authentication runtime."
+  fi
+
+  local polkit_migration_rc=0 polkit_activation_rc=0
+  migrate_awtarchy_polkit_autostart || polkit_migration_rc=$?
+  case "$polkit_migration_rc" in
+    0)
+      activate_awtarchy_polkit_agent || polkit_activation_rc=$?
+      case "$polkit_activation_rc" in
+        0)
+          remove_legacy_polkit_gnome_package
+          ;;
+        2)
+          warn "No live Hyprland user session is available; the Awtarchy PolicyKit agent will start on the next Hyprland session."
+          warn "Leaving polkit-gnome installed as a fallback until live activation is confirmed."
+          ;;
+        *)
+          rollback_changes
+          die "Awtarchy PolicyKit activation failed; polkit-gnome was restored and managed user files were rolled back."
+          ;;
+      esac
+      ;;
+    2)
+      warn "Custom PolicyKit startup was detected; the Awtarchy runtime was installed but that custom startup was not replaced."
+      ;;
+    *)
+      rollback_changes
+      die "Could not migrate Hyprland PolicyKit startup; managed user files were rolled back."
+      ;;
+  esac
 
   hardware_reconcile
   fix_managed_perms "$target_home"
