@@ -33,7 +33,7 @@ declare -a PKG_GROUPS=(
   "Fonts:woff2-font-awesome otf-font-awesome ttf-dejavu ttf-liberation ttf-noto-nerd noto-fonts-emoji"
   "Themes:papirus-icon-theme materia-gtk-theme xcursor-comix kvantum-theme-materia"
   "Terminal Apps:nano micro fastfetch btop htop curl passt devtools wget git dos2unix brightnessctl ipcalc cmatrix asciiquarium figlet termdown espeak-ng cava man-db man-pages unzip xarchiver ncdu ddcutil scx-scheds scx-tools"
-  "Utilities:upower polkit gnome-keyring networkmanager bluez bluez-utils wiremix pcmanfm-qt gvfs gvfs-smb gvfs-mtp gvfs-afc speedcrunch imagemagick pipewire pipewire-pulse pipewire-alsa ufw jq earlyoom libsixel xdg-utils python usbutils awww"
+  "Utilities:upower polkit python-gobject gnome-keyring networkmanager bluez bluez-utils wiremix pcmanfm-qt gvfs gvfs-smb gvfs-mtp gvfs-afc speedcrunch imagemagick pipewire pipewire-pulse pipewire-alsa ufw jq earlyoom libsixel xdg-utils python usbutils awww"
   "Multimedia:ffmpeg avahi nss-mdns mpv cheese exiv2 zathura zathura-pdf-mupdf mousai"
   "Development:base-devel archlinux-keyring bubblewrap gnupg coreutils clang ninja go rust virt-manager qemu qemu-hw-usb-host virt-viewer vde2 libguestfs dmidecode gamemode gamescope nftables swtpm"
   "Network Tools:firefox wireguard-tools wireplumber openssh iptables systemd-resolvconf bridge-utils qemu-guest-agent dnsmasq dhcpcd inetutils openbsd-netcat"
@@ -2949,16 +2949,25 @@ awtarchy_polkit_verify_root_file() {
     || { warn "Unexpected owner/mode/type for PolicyKit runtime file: $path"; return 1; }
 }
 
-awtarchy_polkit_verify_runtime() {
-  local actual expected
-  awtarchy_polkit_verify_root_directory "$AWTARCHY_POLKIT_RUNTIME_DIR" || return 1
-  awtarchy_polkit_verify_root_file "${AWTARCHY_POLKIT_RUNTIME_DIR}/shell.qml" 644 || return 1
-  awtarchy_polkit_verify_root_file "${AWTARCHY_POLKIT_RUNTIME_DIR}/launcher" 755 || return 1
-  awtarchy_polkit_verify_root_file "${AWTARCHY_POLKIT_RUNTIME_DIR}/window-guard.sh" 755 || return 1
-  awtarchy_polkit_verify_root_file "$AWTARCHY_POLKIT_SERVICE_DEST" 644 || return 1
-  actual="$(awtarchy_polkit_root /usr/bin/find "$AWTARCHY_POLKIT_RUNTIME_DIR" -mindepth 1 -maxdepth 1 -printf '%f\n' 2>/dev/null | LC_ALL=C sort)" || return 1
-  expected=$'launcher\nshell.qml\nwindow-guard.sh'
+awtarchy_polkit_verify_runtime_tree() {
+  local directory="$1" actual expected
+  awtarchy_polkit_verify_root_directory "$directory" || return 1
+  awtarchy_polkit_verify_root_file "${directory}/agent.py" 644 || return 1
+  awtarchy_polkit_verify_root_file "${directory}/alacritty.toml" 644 || return 1
+  awtarchy_polkit_verify_root_file "${directory}/launcher" 755 || return 1
+  awtarchy_polkit_verify_root_file "${directory}/tui.py" 644 || return 1
+  actual="$(awtarchy_polkit_root /usr/bin/find "$directory" -mindepth 1 -maxdepth 1 -printf '%f
+' 2>/dev/null | LC_ALL=C sort)" || return 1
+  expected=$'agent.py
+alacritty.toml
+launcher
+tui.py'
   [[ "$actual" == "$expected" ]] || { warn "Unexpected files in Awtarchy PolicyKit runtime."; return 1; }
+}
+
+awtarchy_polkit_verify_runtime() {
+  awtarchy_polkit_verify_runtime_tree "$AWTARCHY_POLKIT_RUNTIME_DIR" || return 1
+  awtarchy_polkit_verify_root_file "$AWTARCHY_POLKIT_SERVICE_DEST" 644 || return 1
 }
 
 awtarchy_polkit_restore_install_transaction() {
@@ -2978,27 +2987,21 @@ awtarchy_polkit_restore_install_transaction() {
 install_awtarchy_polkit_agent_runtime() {
   local repo_dir="$1"
   local source_dir="${repo_dir}/config/hypr/scripts/awtarchy-polkit-agent"
-  local shell_source="${source_dir}/shell.qml"
+  local agent_source="${source_dir}/agent.py"
+  local tui_source="${source_dir}/tui.py"
+  local terminal_config_source="${source_dir}/alacritty.toml"
   local launcher_source="${source_dir}/launcher.sh"
-  local guard_source="${source_dir}/window-guard.sh"
   local service_source="${source_dir}/awtarchy-polkit-agent.service"
   local stage="" previous_runtime="" failed_runtime="" service_tmp="" previous_service=""
 
-  awtarchy_polkit_verify_source_file "$shell_source" || return 1
+  awtarchy_polkit_verify_source_file "$agent_source" || return 1
+  awtarchy_polkit_verify_source_file "$tui_source" || return 1
+  awtarchy_polkit_verify_source_file "$terminal_config_source" || return 1
   awtarchy_polkit_verify_source_file "$launcher_source" || return 1
-  awtarchy_polkit_verify_source_file "$guard_source" || return 1
   awtarchy_polkit_verify_source_file "$service_source" || return 1
   bash -n "$launcher_source" || { warn "PolicyKit launcher failed Bash syntax validation."; return 1; }
-  bash -n "$guard_source" || { warn "PolicyKit window guard failed Bash syntax validation."; return 1; }
-
-  if awtarchy_polkit_root /usr/bin/test -L "$AWTARCHY_POLKIT_RUNTIME_PARENT" \
-    || awtarchy_polkit_root /usr/bin/test -L "$AWTARCHY_POLKIT_USER_UNIT_DIR" \
-    || awtarchy_polkit_root /usr/bin/test -L "$AWTARCHY_POLKIT_RUNTIME_DIR" \
-    || awtarchy_polkit_root /usr/bin/test -L "$AWTARCHY_POLKIT_SERVICE_DEST";
-  then
-    warn "Refusing PolicyKit installation through a symbolic-link system path."
-    return 1
-  fi
+  /usr/bin/python3 -c 'import ast,pathlib,sys; [ast.parse(pathlib.Path(p).read_text(encoding="utf-8"), filename=p) for p in sys.argv[1:]]' \
+    "$agent_source" "$tui_source" || { warn "PolicyKit Python source failed syntax validation."; return 1; }
 
   awtarchy_polkit_root /usr/bin/install -d -m 0755 -o root -g root -- "$AWTARCHY_POLKIT_RUNTIME_PARENT" || return 1
   awtarchy_polkit_root /usr/bin/install -d -m 0755 -o root -g root -- "$AWTARCHY_POLKIT_USER_UNIT_DIR" || return 1
@@ -3006,29 +3009,46 @@ install_awtarchy_polkit_agent_runtime() {
   awtarchy_polkit_verify_root_directory "$AWTARCHY_POLKIT_USER_UNIT_DIR" || return 1
 
   stage="$(awtarchy_polkit_root /usr/bin/mktemp -d "${AWTARCHY_POLKIT_RUNTIME_PARENT}/.polkit-agent.stage.XXXXXX")" || return 1
-  if ! awtarchy_polkit_root /usr/bin/install -m 0644 -o root -g root -- "$shell_source" "${stage}/shell.qml" \
+  if ! awtarchy_polkit_root /usr/bin/install -m 0644 -o root -g root -- "$agent_source" "${stage}/agent.py" \
+    || ! awtarchy_polkit_root /usr/bin/install -m 0644 -o root -g root -- "$tui_source" "${stage}/tui.py" \
+    || ! awtarchy_polkit_root /usr/bin/install -m 0644 -o root -g root -- "$terminal_config_source" "${stage}/alacritty.toml" \
     || ! awtarchy_polkit_root /usr/bin/install -m 0755 -o root -g root -- "$launcher_source" "${stage}/launcher" \
-    || ! awtarchy_polkit_root /usr/bin/install -m 0755 -o root -g root -- "$guard_source" "${stage}/window-guard.sh" \
     || ! awtarchy_polkit_root /usr/bin/chmod 0755 -- "$stage";
   then
     awtarchy_polkit_root /usr/bin/rm -rf --one-file-system -- "$stage" 2>/dev/null || true
     return 1
   fi
+  awtarchy_polkit_verify_runtime_tree "$stage" || {
+    awtarchy_polkit_root /usr/bin/rm -rf --one-file-system -- "$stage" 2>/dev/null || true
+    return 1
+  }
 
+  if awtarchy_polkit_root /usr/bin/test -L "$AWTARCHY_POLKIT_RUNTIME_DIR"; then
+    awtarchy_polkit_root /usr/bin/rm -rf --one-file-system -- "$stage" 2>/dev/null || true
+    warn "Refusing symbolic-link Awtarchy PolicyKit runtime destination."
+    return 1
+  fi
   if awtarchy_polkit_root /usr/bin/test -e "$AWTARCHY_POLKIT_RUNTIME_DIR"; then
-    [[ "$(awtarchy_polkit_root /usr/bin/stat -Lc '%F' -- "$AWTARCHY_POLKIT_RUNTIME_DIR")" == directory ]] \
-      || { awtarchy_polkit_root /usr/bin/rm -rf --one-file-system -- "$stage"; warn "PolicyKit runtime destination is not a directory."; return 1; }
+    [[ "$(awtarchy_polkit_root /usr/bin/stat -Lc '%F' -- "$AWTARCHY_POLKIT_RUNTIME_DIR")" == directory ]] || {
+      awtarchy_polkit_root /usr/bin/rm -rf --one-file-system -- "$stage" 2>/dev/null || true
+      return 1
+    }
     previous_runtime="${AWTARCHY_POLKIT_RUNTIME_PARENT}/.polkit-agent.previous.$$"
     awtarchy_polkit_root /usr/bin/test ! -e "$previous_runtime" || return 1
     awtarchy_polkit_root /usr/bin/mv -Tf -- "$AWTARCHY_POLKIT_RUNTIME_DIR" "$previous_runtime" || return 1
   fi
 
+  failed_runtime="${AWTARCHY_POLKIT_RUNTIME_PARENT}/.polkit-agent.failed.$$"
   if ! awtarchy_polkit_root /usr/bin/mv -Tf -- "$stage" "$AWTARCHY_POLKIT_RUNTIME_DIR"; then
     [[ -z "$previous_runtime" ]] || awtarchy_polkit_root /usr/bin/mv -Tf -- "$previous_runtime" "$AWTARCHY_POLKIT_RUNTIME_DIR" 2>/dev/null || true
     return 1
   fi
 
-  failed_runtime="${AWTARCHY_POLKIT_RUNTIME_PARENT}/.polkit-agent.failed.$$"
+  if awtarchy_polkit_root /usr/bin/test -L "$AWTARCHY_POLKIT_SERVICE_DEST"; then
+    awtarchy_polkit_restore_install_transaction "$previous_runtime" "$failed_runtime" ""
+    warn "Refusing symbolic-link Awtarchy PolicyKit service destination."
+    return 1
+  fi
   if awtarchy_polkit_root /usr/bin/test -e "$AWTARCHY_POLKIT_SERVICE_DEST"; then
     [[ "$(awtarchy_polkit_root /usr/bin/stat -Lc '%F' -- "$AWTARCHY_POLKIT_SERVICE_DEST")" == 'regular file' ]] \
       || { awtarchy_polkit_restore_install_transaction "$previous_runtime" "$failed_runtime" ""; return 1; }
@@ -3057,7 +3077,7 @@ install_awtarchy_polkit_agent_runtime() {
 
   [[ -z "$previous_runtime" ]] || awtarchy_polkit_root /usr/bin/rm -rf --one-file-system -- "$previous_runtime" || return 1
   [[ -z "$previous_service" ]] || awtarchy_polkit_root /usr/bin/rm -f -- "$previous_service" || return 1
-  log "Installed root-owned Awtarchy PolicyKit authentication runtime."
+  log "Installed root-owned Awtarchy terminal PolicyKit authentication runtime."
 }
 
 migrate_awtarchy_polkit_autostart() {
@@ -3167,12 +3187,47 @@ restore_legacy_polkit_gnome() {
   return 1
 }
 
+awtarchy_polkit_process_tree_has_agent() {
+  local root_pid="$1" expected_python parent children_raw child child_exe
+  local -a queue=() children=() argv=()
+  expected_python="$(/usr/bin/readlink -f -- /usr/bin/python3 2>/dev/null)" || return 1
+  queue=("$root_pid")
+
+  while (( ${#queue[@]} > 0 )); do
+    parent="${queue[0]}"
+    queue=("${queue[@]:1}")
+    children_raw=""
+    if [[ -r "/proc/${parent}/task/${parent}/children" ]]; then
+      IFS= read -r children_raw <"/proc/${parent}/task/${parent}/children" || true
+    fi
+    children=()
+    IFS=' ' read -r -a children <<<"$children_raw"
+    for child in "${children[@]}"; do
+      [[ "$child" =~ ^[1-9][0-9]*$ ]] || continue
+      queue+=("$child")
+      child_exe="$(/usr/bin/readlink -f -- "/proc/${child}/exe" 2>/dev/null)" || continue
+      [[ "$child_exe" == "$expected_python" ]] || continue
+      argv=()
+      mapfile -d '' -t argv <"/proc/${child}/cmdline" 2>/dev/null || continue
+      if [[ "${argv[0]:-}" == /usr/bin/python3 \
+        && "${argv[1]:-}" == -I \
+        && "${argv[2]:-}" == "${AWTARCHY_POLKIT_RUNTIME_DIR}/agent.py" ]];
+      then
+        return 0
+      fi
+    done
+  done
+  return 1
+}
+
 awtarchy_polkit_verify_service_process() {
-  local pid resolved
+  local pid resolved expected_alacritty
   pid="$(awtarchy_polkit_user_command /usr/bin/systemctl --user show -p MainPID --value "$AWTARCHY_POLKIT_SERVICE_NAME" 2>/dev/null)" || return 1
   [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
-  resolved="$(readlink -f -- "/proc/${pid}/exe" 2>/dev/null)" || return 1
-  [[ "$resolved" == /usr/bin/quickshell ]]
+  expected_alacritty="$(/usr/bin/readlink -f -- /usr/bin/alacritty 2>/dev/null)" || return 1
+  resolved="$(/usr/bin/readlink -f -- "/proc/${pid}/exe" 2>/dev/null)" || return 1
+  [[ "$resolved" == "$expected_alacritty" ]] || return 1
+  awtarchy_polkit_process_tree_has_agent "$pid"
 }
 
 activate_awtarchy_polkit_agent() {
@@ -7398,7 +7453,7 @@ ensure_quickshell_update_prerequisites() {
     || die "pacman is required for the Quickshell migration"
 
   local pkg
-  local -a required=(quickshell upower playerctl hyprland-qt-support) missing=()
+  local -a required=(quickshell upower playerctl hyprland-qt-support polkit python-gobject) missing=()
   for pkg in "${required[@]}"; do
     pacman -Q "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
   done

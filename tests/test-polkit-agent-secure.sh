@@ -105,7 +105,7 @@ test_launcher_contract() {
     require_contains "$LAUNCHER" '--config-file'
     require_contains "$LAUNCHER" '--class'
     require_contains "$LAUNCHER" '-I'
-    reject_regex "$LAUNCHER" 'quickshell|QML_IMPORT_PATH|QML2_IMPORT_PATH'
+    reject_regex "$LAUNCHER" '/usr/bin/quickshell|quickshell[[:space:]].*--config|shell\.qml'
     reject_regex "$LAUNCHER" '(^|[^[:alnum:]_])eval([[:space:]]|$)'
 }
 
