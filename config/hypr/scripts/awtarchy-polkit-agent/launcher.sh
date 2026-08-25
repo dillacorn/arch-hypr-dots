@@ -102,6 +102,18 @@ main() {
     unset LD_PRELOAD LD_LIBRARY_PATH GTK_PATH GIO_EXTRA_MODULES GI_TYPELIB_PATH
     unset QT_PLUGIN_PATH QML2_IMPORT_PATH QML_IMPORT_PATH POLKIT_DEBUG
 
+    # Fail before Alacritty owns stderr so missing PyGObject/PolicyKit bindings
+    # are visible in the systemd journal instead of flashing in a closing PTY.
+    if ! /usr/bin/env -i \
+        PATH=/usr/bin:/bin \
+        LANG=C.UTF-8 \
+        LC_ALL=C.UTF-8 \
+        "$PYTHON" -I -c 'import gi; gi.require_version("Polkit", "1.0"); gi.require_version("PolkitAgent", "1.0"); from gi.repository import Gio, GLib, Polkit, PolkitAgent';
+    then
+        printf '%s\n' 'awtarchy-polkit-agent: PolicyKit Python bindings are unavailable; install polkit and python-gobject.' >&2
+        return 78
+    fi
+
     exec /usr/bin/env -i \
         HOME="$home_dir" \
         USER="$account" \
