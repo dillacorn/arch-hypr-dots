@@ -33,7 +33,7 @@ declare -a PKG_GROUPS=(
   "Fonts:woff2-font-awesome otf-font-awesome ttf-dejavu ttf-liberation ttf-noto-nerd noto-fonts-emoji"
   "Themes:papirus-icon-theme materia-gtk-theme xcursor-comix kvantum-theme-materia"
   "Terminal Apps:nano micro fastfetch btop htop curl passt devtools wget git dos2unix brightnessctl ipcalc cmatrix asciiquarium figlet termdown espeak-ng cava man-db man-pages unzip xarchiver ncdu ddcutil scx-scheds scx-tools"
-  "Utilities:upower gnome-keyring networkmanager bluez bluez-utils wiremix pcmanfm-qt gvfs gvfs-smb gvfs-mtp gvfs-afc speedcrunch imagemagick pipewire pipewire-pulse pipewire-alsa ufw jq earlyoom libsixel xdg-utils python usbutils awww"
+  "Utilities:upower polkit gnome-keyring networkmanager bluez bluez-utils wiremix pcmanfm-qt gvfs gvfs-smb gvfs-mtp gvfs-afc speedcrunch imagemagick pipewire pipewire-pulse pipewire-alsa ufw jq earlyoom libsixel xdg-utils python usbutils awww"
   "Multimedia:ffmpeg avahi nss-mdns mpv cheese exiv2 zathura zathura-pdf-mupdf mousai"
   "Development:base-devel archlinux-keyring bubblewrap gnupg coreutils clang ninja go rust virt-manager qemu qemu-hw-usb-host virt-viewer vde2 libguestfs dmidecode gamemode gamescope nftables swtpm"
   "Network Tools:firefox wireguard-tools wireplumber openssh iptables systemd-resolvconf bridge-utils qemu-guest-agent dnsmasq dhcpcd inetutils openbsd-netcat"
@@ -7955,14 +7955,14 @@ main() {
     die "Could not install the root-owned Awtarchy PolicyKit authentication runtime."
   fi
 
-  local polkit_migration_rc=0 polkit_activation_rc=0
+  local polkit_migration_rc=0 polkit_activation_rc=0 polkit_remove_legacy_ready=0
   migrate_awtarchy_polkit_autostart || polkit_migration_rc=$?
   case "$polkit_migration_rc" in
     0)
       activate_awtarchy_polkit_agent || polkit_activation_rc=$?
       case "$polkit_activation_rc" in
         0)
-          remove_legacy_polkit_gnome_package
+          polkit_remove_legacy_ready=1
           ;;
         2)
           warn "No live Hyprland user session is available; the Awtarchy PolicyKit agent will start on the next Hyprland session."
@@ -8011,6 +8011,10 @@ main() {
 
   persist_quickshell_hyprland_user_patch
   remove_quickshell_update_legacy_packages
+
+  if (( polkit_remove_legacy_ready == 1 )); then
+    remove_legacy_polkit_gnome_package
+  fi
 
   commit_baseline "$target_home" "$source_label" "$active_theme"
   write_hardware_state
