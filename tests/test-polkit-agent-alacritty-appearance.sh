@@ -7,35 +7,57 @@ MAIN_CONFIG="config/alacritty/alacritty.toml"
 [[ -f $AUTH_CONFIG ]]
 [[ -f $MAIN_CONFIG ]]
 
-# The trusted authentication terminal should look like Awtarchy's normal
-# Alacritty without importing any user-writable configuration at runtime.
-grep -Fq 'padding = { x = 22, y = 22 }' "$MAIN_CONFIG"
-grep -Fq 'opacity = 0.85' "$MAIN_CONFIG"
-grep -Fq 'decorations = "Buttonless"' "$MAIN_CONFIG"
-grep -Eq '^size = 12([.]0+)?$' "$MAIN_CONFIG"
-grep -Fq '"~/.config/alacritty/themes/themes/wombat.toml"' "$MAIN_CONFIG"
+/usr/bin/python3 - "$AUTH_CONFIG" "$MAIN_CONFIG" <<'PY'
+from pathlib import Path
+import sys
+import tomllib
 
-grep -Fq 'padding = { x = 22, y = 22 }' "$AUTH_CONFIG"
-grep -Fq 'opacity = 0.85' "$AUTH_CONFIG"
-grep -Fq 'decorations = "Buttonless"' "$AUTH_CONFIG"
-grep -Eq '^size = 12([.]0+)?$' "$AUTH_CONFIG"
+auth_path = Path(sys.argv[1])
+main_path = Path(sys.argv[2])
+auth = tomllib.loads(auth_path.read_text(encoding="utf-8"))
+main = tomllib.loads(main_path.read_text(encoding="utf-8"))
 
-# Trusted embedded Wombat palette. Do not load the user's live theme file in
-# the authentication process.
-grep -Fq 'background = "#1f1f1f"' "$AUTH_CONFIG"
-grep -Fq 'foreground = "#e5e1d8"' "$AUTH_CONFIG"
-grep -Fq 'magenta = "#ef88ff"' "$AUTH_CONFIG"
-grep -Fq 'green = "#bde97c"' "$AUTH_CONFIG"
-grep -Fq 'bright_magenta = "#e5bdff"' "$AUTH_CONFIG"
-grep -Fq 'bright_green = "#e3f7a1"' "$AUTH_CONFIG"
+assert main["window"]["padding"] == {"x": 22, "y": 22}
+assert main["window"]["opacity"] == 0.85
+assert main["window"]["decorations"] == "Buttonless"
+assert main["font"]["size"] == 12.0
+assert "~/.config/alacritty/themes/themes/wombat.toml" in main["general"]["import"]
 
-# Authentication history stays disabled even though the normal terminal keeps
-# scrollback.
-grep -Fq 'history = 0' "$AUTH_CONFIG"
+assert auth["window"]["padding"] == {"x": 22, "y": 22}
+assert auth["window"]["opacity"] == 0.85
+assert auth["window"]["decorations"] == "Buttonless"
+assert auth["font"]["size"] == 12.0
+assert auth["scrolling"]["history"] == 0
 
-if grep -Eq '(^|[[:space:]])import[[:space:]]*=|~/[.]config|/home/' "$AUTH_CONFIG"; then
-    echo 'authentication Alacritty config must not import user-writable files' >&2
-    exit 1
-fi
+assert auth["colors"]["primary"] == {
+    "background": "#1f1f1f",
+    "foreground": "#e5e1d8",
+}
+assert auth["colors"]["normal"] == {
+    "black": "#000000",
+    "red": "#f7786d",
+    "green": "#bde97c",
+    "yellow": "#efdfac",
+    "blue": "#6ebaf8",
+    "magenta": "#ef88ff",
+    "cyan": "#90fdf8",
+    "white": "#e5e1d8",
+}
+assert auth["colors"]["bright"] == {
+    "black": "#b4b4b4",
+    "red": "#f99f92",
+    "green": "#e3f7a1",
+    "yellow": "#f2e9bf",
+    "blue": "#b3d2ff",
+    "magenta": "#e5bdff",
+    "cyan": "#c2fefa",
+    "white": "#ffffff",
+}
+
+text = auth_path.read_text(encoding="utf-8")
+assert "import =" not in text
+assert "~/.config" not in text
+assert "/home/" not in text
+PY
 
 echo 'Polkit Alacritty appearance contract passed.'
