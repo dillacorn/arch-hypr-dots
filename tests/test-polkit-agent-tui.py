@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 import importlib.util
 from pathlib import Path
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 TUI_PATH = ROOT / "config/hypr/scripts/awtarchy-polkit-agent/tui.py"
+MODULE_NAME = "awtarchy_polkit_tui"
 
-spec = importlib.util.spec_from_file_location("awtarchy_polkit_tui", TUI_PATH)
+spec = importlib.util.spec_from_file_location(MODULE_NAME, TUI_PATH)
 if spec is None or spec.loader is None:
     raise SystemExit("could not load terminal TUI module")
 module = importlib.util.module_from_spec(spec)
+sys.modules[MODULE_NAME] = module
 spec.loader.exec_module(module)
 
 
