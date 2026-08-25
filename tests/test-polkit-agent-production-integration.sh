@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-# Production integration contract for replacing polkit-gnome with Awtarchy's agent.
+# Production integration contract for replacing polkit-gnome with Awtarchy's terminal agent.
 
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 RUNTIME="${ROOT_DIR}/local/share/awtarchy/awtarchy-runtime.sh"
 HYPR="${ROOT_DIR}/config/hypr/hyprland.lua"
-LAUNCHER="${ROOT_DIR}/config/hypr/scripts/awtarchy-polkit-agent/launcher.sh"
-SERVICE="${ROOT_DIR}/config/hypr/scripts/awtarchy-polkit-agent/awtarchy-polkit-agent.service"
+AGENT_DIR="${ROOT_DIR}/config/hypr/scripts/awtarchy-polkit-agent"
+LAUNCHER="${AGENT_DIR}/launcher.sh"
+AGENT="${AGENT_DIR}/agent.py"
+TUI="${AGENT_DIR}/tui.py"
+TERMINAL_CONFIG="${AGENT_DIR}/alacritty.toml"
+SERVICE="${AGENT_DIR}/awtarchy-polkit-agent.service"
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
@@ -40,21 +44,22 @@ require_order() {
     (( first_line < second_line )) || fail "$file has unsafe ordering: $first must precede $second"
 }
 
-for file in "$RUNTIME" "$HYPR" "$LAUNCHER" "$SERVICE"; do
+for file in "$RUNTIME" "$HYPR" "$LAUNCHER" "$AGENT" "$TUI" "$TERMINAL_CONFIG" "$SERVICE"; do
     [[ -f $file ]] || fail "missing $file"
 done
 
 bash -n "$RUNTIME"
 bash -n "$LAUNCHER"
+/usr/bin/python3 -m py_compile "$AGENT" "$TUI"
 
 # Hyprland owns session timing: import the Wayland/Hyprland environment first,
 # then restart the supervised Awtarchy agent. GNOME must not also autostart.
 require_contains "$HYPR" 'hl.exec_cmd("/usr/bin/systemctl --user restart awtarchy-polkit-agent.service")'
 reject_contains "$HYPR" '/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1'
 
-# Fresh installs must explicitly install PolicyKit itself, not rely on an
-# unrelated package dependency, and must not pull the retired GNOME agent.
-require_contains "$RUNTIME" '"Utilities:upower polkit gnome-keyring '
+# Fresh installs must explicitly install both PolicyKit and PyGObject rather
+# than rely on unrelated transitive dependencies. GNOME is retired.
+require_contains "$RUNTIME" '"Utilities:upower polkit python-gobject gnome-keyring '
 reject_contains "$RUNTIME" 'Utilities:upower polkit-gnome '
 
 # The real runtime/service are installed root-owned outside HOME from the
@@ -66,7 +71,11 @@ require_contains "$RUNTIME" 'install -m 0644 -o root -g root'
 require_contains "$RUNTIME" 'install -m 0755 -o root -g root'
 require_contains "$RUNTIME" 'install_awtarchy_polkit_agent_runtime "$REPO_DIR"'
 require_contains "$RUNTIME" 'install_awtarchy_polkit_agent_runtime "$repo_dir"'
-reject_contains "$RUNTIME" '${HOME_DIR}/.config/hypr/scripts/awtarchy-polkit-agent/shell.qml'
+require_contains "$RUNTIME" 'agent.py'
+require_contains "$RUNTIME" 'tui.py'
+require_contains "$RUNTIME" 'alacritty.toml'
+reject_contains "$RUNTIME" 'shell.qml'
+reject_contains "$RUNTIME" 'window-guard.sh'
 
 # Preserve customized Hyprland configs by migrating only the exact retired
 # Awtarchy GNOME line when the normal three-way update keeps the local file.
@@ -75,10 +84,13 @@ require_contains "$RUNTIME" '/usr/lib/polkit-gnome/polkit-gnome-authentication-a
 require_contains "$RUNTIME" '/usr/bin/systemctl --user restart awtarchy-polkit-agent.service'
 
 # Activation must stop only the exact GNOME binary, start the supervised agent,
-# verify Quickshell is the service MainPID, and restore GNOME on activation failure.
+# verify Alacritty is the service MainPID, verify the root-owned Python child,
+# and restore GNOME on activation failure.
 require_contains "$RUNTIME" 'activate_awtarchy_polkit_agent()'
 require_contains "$RUNTIME" 'AWTARCHY_GNOME_POLKIT_BIN="/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"'
 require_contains "$RUNTIME" '/proc/${pid}/exe'
+require_contains "$RUNTIME" '/usr/bin/alacritty'
+require_contains "$RUNTIME" '/usr/bin/python3'
 require_contains "$RUNTIME" 'systemctl --user start "$AWTARCHY_POLKIT_SERVICE_NAME"'
 require_contains "$RUNTIME" 'restore_legacy_polkit_gnome'
 
@@ -104,4 +116,4 @@ reject_contains "$SERVICE" 'WantedBy=default.target'
 # Runtime trust checks must parse stat output independently of the global IFS.
 require_contains "$LAUNCHER" "IFS=' ' read -r uid mode type"
 
-printf '%s\n' 'Polkit production integration contract passed'
+printf '%s\n' 'terminal Polkit production integration contract passed'
