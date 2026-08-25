@@ -11,6 +11,14 @@ APP_ID="awtarchy-polkit-agent-concept"
 SCRIPT_PATH="$(readlink -f -- "${BASH_SOURCE[0]}" 2>/dev/null || printf '%s' "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd -- "$(dirname -- "$SCRIPT_PATH")" 2>/dev/null && pwd -P)"
 
+# Review geometry. The prototype always opens at this logical-pixel size under Hyprland.
+WINDOW_WIDTH=900
+WINDOW_HEIGHT=520
+WINDOW_SIZE_TOLERANCE=4
+GEOMETRY_WATCH_INTERVAL=0.75
+HYPRCTL_BIN="${HYPRCTL_BIN:-hyprctl}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+
 C_RESET=$'\033[0m'
 C_BOLD=$'\033[1m'
 C_DIM=$'\033[2m'
@@ -26,6 +34,9 @@ FOCUS=0
 SHOW_DETAILS=1
 DEMO_PASSWORD=""
 STATUS_MSG="Visual prototype only. Input is discarded; do not enter your real password."
+GEOMETRY_WATCH_PID=""
+WINDOW_RESIZED=0
+READ_KEY_VALUE=""
 
 PASSWORD_ROW=0
 DETAILS_ROW=0
@@ -40,13 +51,24 @@ usage() {
         'Usage: awtarchy-polkit-agent-concept.sh [--tui|--print]' \
         '' \
         'Without arguments, opens the concept in the preferred terminal.' \
-        '--tui    Run interactively in the current terminal.' \
+        '--tui    Internal/current-terminal mode used by the spawned review window.' \
         '--print  Print a static noninteractive preview.' \
         '' \
+        "Hyprland review geometry: ${WINDOW_WIDTH}x${WINDOW_HEIGHT}, floating and centered." \
         'This is a visual prototype only. It never talks to polkitd.'
 }
 
+stop_geometry_watch() {
+    if [[ ${GEOMETRY_WATCH_PID:-} =~ ^[1-9][0-9]*$ ]]; then
+        kill -TERM -- "$GEOMETRY_WATCH_PID" 2>/dev/null || true
+        wait "$GEOMETRY_WATCH_PID" 2>/dev/null || true
+    fi
+    GEOMETRY_WATCH_PID=""
+}
+
 cleanup_terminal() {
+    stop_geometry_watch
+
     if (( UI_ACTIVE == 0 )); then
         return 0
     fi
@@ -77,6 +99,167 @@ ui_enter() {
     printf '\033[?1049h\033[2J\033[H\033[?1000h\033[?1006h\033[?25l' >&3
     stty -echo -icanon min 1 time 0 <&3
     UI_ACTIVE=1
+}
+
+hyprland_geometry_available() {
+    [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] || return 1
+    command -v -- "$HYPRCTL_BIN" >/dev/null 2>&1 || return 1
+    command -v -- "$PYTHON_BIN" >/dev/null 2>&1 || return 1
+    return 0
+}
+
+query_concept_window_state() {
+    local clients_json
+
+    hyprland_geometry_available || return 1
+    clients_json="$("$HYPRCTL_BIN" -j clients 2>/dev/null)" || return 1
+    [[ -n $clients_json ]] || return 1
+
+    "$PYTHON_BIN" - "$APP_ID" "$clients_json" <<'PY'
+import json
+import sys
+
+app_id = sys.argv[1]
+try:
+    clients = json.loads(sys.argv[2])
+except (IndexError, json.JSONDecodeError):
+    raise SystemExit(1)
+
+if not isinstance(clients, list):
+    raise SystemExit(1)
+
+matches = []
+for client in clients:
+    if not isinstance(client, dict) or not client.get("mapped", True):
+        continue
+
+    identity_fields = (
+        client.get("class"),
+        client.get("initialClass"),
+        client.get("title"),
+        client.get("initialTitle"),
+    )
+    if app_id not in identity_fields:
+        continue
+
+    address = str(client.get("address") or "")
+    size = client.get("size")
+    at = client.get("at")
+    if not address.startswith("0x") or not isinstance(size, list) or len(size) != 2:
+        continue
+    if not all(isinstance(value, (int, float)) for value in size):
+        continue
+    if not isinstance(at, list) or len(at) != 2 or not all(isinstance(value, (int, float)) for value in at):
+        at = [0, 0]
+
+    matches.append((
+        int(client.get("focusHistoryID", 999999)),
+        address,
+        bool(client.get("floating", False)),
+        int(size[0]),
+        int(size[1]),
+        int(at[0]),
+        int(at[1]),
+        bool(client.get("visible", True)),
+    ))
+
+if not matches:
+    raise SystemExit(1)
+
+# focusHistoryID 0 is the most recently focused window. This keeps repeated
+# prototype launches from manipulating an older concept window.
+matches.sort(key=lambda item: item[0])
+_, address, floating, width, height, x, y, visible = matches[0]
+print(f"{address}\t{str(floating).lower()}\t{width}\t{height}\t{x}\t{y}\t{str(visible).lower()}")
+PY
+}
+
+window_size_is_correct() {
+    local width="$1" height="$2" dw dh
+    [[ $width =~ ^[0-9]+$ && $height =~ ^[0-9]+$ ]] || return 1
+
+    dw=$((width - WINDOW_WIDTH))
+    dh=$((height - WINDOW_HEIGHT))
+    (( dw < 0 )) && dw=$((-dw))
+    (( dh < 0 )) && dh=$((-dh))
+
+    (( dw <= WINDOW_SIZE_TOLERANCE && dh <= WINDOW_SIZE_TOLERANCE ))
+}
+
+enforce_window_geometry() {
+    local address="$1" lua
+    [[ $address =~ ^0x[0-9A-Fa-f]+$ ]] || return 1
+
+    printf -v lua \
+        'local w="address:%s"; hl.dispatch(hl.dsp.window.float({ action = "set", window = w })); hl.dispatch(hl.dsp.window.resize({ x = %d, y = %d, relative = false, window = w })); hl.dispatch(hl.dsp.window.center({ window = w }))' \
+        "$address" "$WINDOW_WIDTH" "$WINDOW_HEIGHT"
+
+    "$HYPRCTL_BIN" eval "$lua" >/dev/null 2>&1
+}
+
+correct_window_geometry_if_needed() {
+    local state address floating width height x y visible
+
+    state="$(query_concept_window_state)" || return 1
+    IFS=$'\t' read -r address floating width height x y visible <<<"$state"
+
+    if [[ $floating != true ]] || ! window_size_is_correct "$width" "$height"; then
+        enforce_window_geometry "$address" || return 1
+        return 0
+    fi
+
+    return 2
+}
+
+prepare_review_geometry() {
+    local attempt state address floating width height x y visible
+
+    hyprland_geometry_available || return 0
+
+    for attempt in {1..60}; do
+        if state="$(query_concept_window_state 2>/dev/null)"; then
+            IFS=$'\t' read -r address floating width height x y visible <<<"$state"
+            if enforce_window_geometry "$address"; then
+                # Give the terminal emulator a moment to receive its resize before
+                # entering the alternate-screen UI.
+                sleep 0.08
+                return 0
+            fi
+        fi
+        sleep 0.05
+    done
+
+    return 1
+}
+
+geometry_watch_loop() {
+    local appeared=0 misses=0 rc=0
+
+    hyprland_geometry_available || return 0
+
+    while true; do
+        correct_window_geometry_if_needed
+        rc=$?
+        case "$rc" in
+            0|2)
+                appeared=1
+                misses=0
+                ;;
+            *)
+                if (( appeared == 1 )); then
+                    ((misses++))
+                    (( misses >= 4 )) && return 0
+                fi
+                ;;
+        esac
+        sleep "$GEOMETRY_WATCH_INTERVAL"
+    done
+}
+
+start_geometry_watch() {
+    hyprland_geometry_available || return 0
+    geometry_watch_loop &
+    GEOMETRY_WATCH_PID=$!
 }
 
 term_cols() {
@@ -148,9 +331,10 @@ render() {
     printf '\033[H\033[2J' >&3
 
     if (( cols < 64 || lines < 20 )); then
-        print_at 2 2 "${C_YELLOW}${C_BOLD}Terminal is too small for this concept.${C_RESET}"
-        print_at 4 2 "Resize to at least 64 columns × 20 rows."
-        print_at 6 2 "Esc closes the prototype."
+        print_at 2 2 "${C_YELLOW}${C_BOLD}Review window is below the minimum terminal cell size.${C_RESET}"
+        print_at 4 2 "The geometry watcher will restore ${WINDOW_WIDTH}x${WINDOW_HEIGHT}."
+        print_at 6 2 "If your terminal font is unusually large, reduce its font size for this prototype."
+        print_at 8 2 "Esc closes the prototype."
         return 0
     fi
 
@@ -203,15 +387,16 @@ render() {
 
 read_key() {
     local key="" next=""
+    READ_KEY_VALUE=""
 
     IFS= read -rsn1 key <&3 || return 1
     if [[ "$key" != $'\033' ]]; then
-        printf '%s' "$key"
+        READ_KEY_VALUE="$key"
         return 0
     fi
 
     if ! IFS= read -rsn1 -t 0.04 next <&3; then
-        printf '%s' "$key"
+        READ_KEY_VALUE="$key"
         return 0
     fi
     key+="$next"
@@ -233,7 +418,8 @@ read_key() {
         fi
     fi
 
-    printf '%s' "$key"
+    READ_KEY_VALUE="$key"
+    return 0
 }
 
 parse_mouse_event() {
@@ -300,12 +486,23 @@ run_tui() {
     local key="" mouse_status=0
 
     open_tty || return 1
+    prepare_review_geometry || true
     ui_enter
+    start_geometry_watch
     trap cleanup_terminal EXIT
+    trap 'WINDOW_RESIZED=1' WINCH
 
     while true; do
+        WINDOW_RESIZED=0
         render
-        key="$(read_key || true)"
+
+        if ! read_key; then
+            if (( WINDOW_RESIZED == 1 )); then
+                continue
+            fi
+            continue
+        fi
+        key="$READ_KEY_VALUE"
         [[ -n "$key" ]] || continue
 
         if handle_mouse_event "$key"; then
@@ -336,7 +533,7 @@ run_tui() {
                     DEMO_PASSWORD="${DEMO_PASSWORD%?}"
                 fi
                 ;;
-            ''|$'\r'|$'\n')
+            $'\r'|$'\n')
                 case "$FOCUS" in
                     0)
                         STATUS_MSG='Demo input captured locally. Select Authenticate to preview the action state.'
@@ -361,6 +558,7 @@ run_tui() {
         esac
     done
 
+    trap - WINCH
     cleanup_terminal
     trap - EXIT
     return 0
