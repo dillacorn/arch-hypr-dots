@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Awtarchy PolicyKit terminal UI concept.
-# Visual prototype only: this does not register a PolicyKit agent or authenticate anything.
+# Visual layout prototype only; the real authentication implementation is separate.
 
 set -u
 set -o pipefail
@@ -11,7 +11,6 @@ APP_ID="awtarchy-polkit-agent-concept"
 SCRIPT_PATH="$(readlink -f -- "${BASH_SOURCE[0]}" 2>/dev/null || printf '%s' "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd -- "$(dirname -- "$SCRIPT_PATH")" 2>/dev/null && pwd -P)"
 
-# Review geometry. The prototype always opens at this logical-pixel size under Hyprland.
 WINDOW_WIDTH=900
 WINDOW_HEIGHT=520
 WINDOW_SIZE_TOLERANCE=4
@@ -31,9 +30,9 @@ C_REVERSE=$'\033[7m'
 TTY_STATE=""
 UI_ACTIVE=0
 FOCUS=0
-SHOW_DETAILS=1
-DEMO_PASSWORD=""
-STATUS_MSG="Visual prototype only. Input is discarded; do not enter your real password."
+SHOW_DETAILS=0
+PASSWORD_LENGTH=0
+STATUS_MSG=""
 GEOMETRY_WATCH_PID=""
 WINDOW_RESIZED=0
 READ_KEY_VALUE=""
@@ -45,6 +44,10 @@ CANCEL_X1=0
 CANCEL_X2=0
 AUTH_X1=0
 AUTH_X2=0
+MOUSE_BUTTON=-1
+MOUSE_X=0
+MOUSE_Y=0
+MOUSE_RELEASE=0
 
 usage() {
     printf '%s\n' \
@@ -54,8 +57,7 @@ usage() {
         '--tui    Internal/current-terminal mode used by the spawned review window.' \
         '--print  Print a static noninteractive preview.' \
         '' \
-        "Hyprland review geometry: ${WINDOW_WIDTH}x${WINDOW_HEIGHT}, floating and centered." \
-        'This is a visual prototype only. It never talks to polkitd.'
+        "Hyprland review geometry: ${WINDOW_WIDTH}x${WINDOW_HEIGHT}, floating and centered."
 }
 
 stop_geometry_watch() {
@@ -73,7 +75,7 @@ cleanup_terminal() {
         return 0
     fi
 
-    if [[ -n "$TTY_STATE" ]]; then
+    if [[ -n $TTY_STATE ]]; then
         stty "$TTY_STATE" <&3 2>/dev/null || true
     fi
     printf '\033[?1000l\033[?1006l\033[?25h\033[0m\033[?1049l' >&3 2>/dev/null || true
@@ -87,12 +89,10 @@ open_tty() {
     }
 
     TTY_STATE="$(stty -g <&3 2>/dev/null || true)"
-    [[ -n "$TTY_STATE" ]] || {
+    [[ -n $TTY_STATE ]] || {
         printf '%s\n' 'awtarchy-polkit-agent-concept: could not read terminal state' >&2
         return 1
     }
-
-    return 0
 }
 
 ui_enter() {
@@ -105,7 +105,6 @@ hyprland_geometry_available() {
     [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] || return 1
     command -v -- "$HYPRCTL_BIN" >/dev/null 2>&1 || return 1
     command -v -- "$PYTHON_BIN" >/dev/null 2>&1 || return 1
-    return 0
 }
 
 query_concept_window_state() {
@@ -166,8 +165,6 @@ for client in clients:
 if not matches:
     raise SystemExit(1)
 
-# focusHistoryID 0 is the most recently focused window. This keeps repeated
-# prototype launches from manipulating an older concept window.
 matches.sort(key=lambda item: item[0])
 _, address, floating, width, height, x, y, visible = matches[0]
 print(f"{address}\t{str(floating).lower()}\t{width}\t{height}\t{x}\t{y}\t{str(visible).lower()}")
@@ -220,8 +217,6 @@ prepare_review_geometry() {
         if state="$(query_concept_window_state 2>/dev/null)"; then
             IFS=$'\t' read -r address floating width height x y visible <<<"$state"
             if enforce_window_geometry "$address"; then
-                # Give the terminal emulator a moment to receive its resize before
-                # entering the alternate-screen UI.
                 sleep 0.08
                 return 0
             fi
@@ -265,14 +260,14 @@ start_geometry_watch() {
 term_cols() {
     local cols
     cols="$(tput cols 2>/dev/null || printf '80')"
-    [[ "$cols" =~ ^[0-9]+$ ]] || cols=80
+    [[ $cols =~ ^[0-9]+$ ]] || cols=80
     printf '%s\n' "$cols"
 }
 
 term_lines() {
     local lines
     lines="$(tput lines 2>/dev/null || printf '24')"
-    [[ "$lines" =~ ^[0-9]+$ ]] || lines=24
+    [[ $lines =~ ^[0-9]+$ ]] || lines=24
     printf '%s\n' "$lines"
 }
 
@@ -304,15 +299,14 @@ focus_wrap() {
 }
 
 password_field_text() {
-    local cols="$1" stars="" field_width=40 content pad
+    local cols="$1" stars="" field_width=40 visible_count pad content
     (( cols < 72 )) && field_width=28
     (( cols > 100 )) && field_width=46
 
-    if (( ${#DEMO_PASSWORD} > 0 )); then
-        stars="$(repeat_char '•' "${#DEMO_PASSWORD}")"
-    fi
-    (( ${#stars} > field_width )) && stars="${stars: -field_width}"
-    pad=$((field_width - ${#stars}))
+    visible_count=$PASSWORD_LENGTH
+    (( visible_count > field_width )) && visible_count=$field_width
+    (( visible_count > 0 )) && stars="$(repeat_char '•' "$visible_count")"
+    pad=$((field_width - visible_count))
     content="${stars}$(repeat_char ' ' "$pad")"
 
     if (( FOCUS == 0 )); then
@@ -320,6 +314,14 @@ password_field_text() {
     else
         printf '[%s]' "$content"
     fi
+}
+
+render_password_field_only() {
+    local cols field left=3
+    (( PASSWORD_ROW > 0 )) || return 0
+    cols="$(term_cols)"
+    field="$(password_field_text "$cols")"
+    print_at "$PASSWORD_ROW" "$left" "Password:  ${field}"
 }
 
 render() {
@@ -333,8 +335,8 @@ render() {
     if (( cols < 64 || lines < 20 )); then
         print_at 2 2 "${C_YELLOW}${C_BOLD}Review window is below the minimum terminal cell size.${C_RESET}"
         print_at 4 2 "The geometry watcher will restore ${WINDOW_WIDTH}x${WINDOW_HEIGHT}."
-        print_at 6 2 "If your terminal font is unusually large, reduce its font size for this prototype."
-        print_at 8 2 "Esc closes the prototype."
+        print_at 6 2 'Reduce terminal font size if the fixed review window cannot fit the layout.'
+        print_at 8 2 'Esc closes the prototype.'
         return 0
     fi
 
@@ -380,7 +382,9 @@ render() {
     print_at "$row" "$AUTH_X1" "$(focus_wrap 3 "$auth" "$C_GREEN")"
     ((row += 2))
 
-    print_at "$row" "$left" "${C_YELLOW}${STATUS_MSG}${C_RESET}"
+    if [[ -n $STATUS_MSG ]]; then
+        print_at "$row" "$left" "${C_YELLOW}${STATUS_MSG}${C_RESET}"
+    fi
     ((row += 2))
     print_at "$row" "$left" "${C_DIM}Tab/Shift+Tab: move   Enter: activate   Mouse: click   Esc: cancel${C_RESET}"
 }
@@ -390,7 +394,7 @@ read_key() {
     READ_KEY_VALUE=""
 
     IFS= read -rsn1 key <&3 || return 1
-    if [[ "$key" != $'\033' ]]; then
+    if [[ $key != $'\033' ]]; then
         READ_KEY_VALUE="$key"
         return 0
     fi
@@ -401,25 +405,24 @@ read_key() {
     fi
     key+="$next"
 
-    if [[ "$next" == '[' ]]; then
+    if [[ $next == '[' ]]; then
         if IFS= read -rsn1 -t 0.04 next <&3; then
             key+="$next"
-            if [[ "$next" == '<' ]]; then
+            if [[ $next == '<' ]]; then
                 while IFS= read -rsn1 -t 0.04 next <&3; do
                     key+="$next"
-                    [[ "$next" == 'M' || "$next" == 'm' ]] && break
+                    [[ $next == 'M' || $next == 'm' ]] && break
                 done
-            elif [[ "$next" =~ [0-9] ]]; then
+            elif [[ $next =~ [0-9] ]]; then
                 while IFS= read -rsn1 -t 0.04 next <&3; do
                     key+="$next"
-                    [[ "$next" == '~' || "$next" =~ [A-Za-z] ]] && break
+                    [[ $next == '~' || $next =~ [A-Za-z] ]] && break
                 done
             fi
         fi
     fi
 
     READ_KEY_VALUE="$key"
-    return 0
 }
 
 parse_mouse_event() {
@@ -429,24 +432,24 @@ parse_mouse_event() {
     MOUSE_Y=0
     MOUSE_RELEASE=0
 
-    [[ "$event" == $'\033[<'* ]] || return 1
+    [[ $event == $'\033[<'* ]] || return 1
     suffix="${event: -1}"
-    [[ "$suffix" == 'M' || "$suffix" == 'm' ]] || return 1
+    [[ $suffix == 'M' || $suffix == 'm' ]] || return 1
     body="${event#$'\033[<'}"
     body="${body%?}"
     IFS=';' read -r MOUSE_BUTTON MOUSE_X MOUSE_Y <<<"$body"
-    [[ "$MOUSE_BUTTON" =~ ^[0-9]+$ && "$MOUSE_X" =~ ^[0-9]+$ && "$MOUSE_Y" =~ ^[0-9]+$ ]] || return 1
-    [[ "$suffix" == 'm' ]] && MOUSE_RELEASE=1
-    return 0
+    [[ $MOUSE_BUTTON =~ ^[0-9]+$ && $MOUSE_X =~ ^[0-9]+$ && $MOUSE_Y =~ ^[0-9]+$ ]] || return 1
+    [[ $suffix == 'm' ]] && MOUSE_RELEASE=1
 }
 
 simulate_authentication() {
-    STATUS_MSG='Authenticating… visual demo only.'
+    STATUS_MSG='Authenticating…'
     render
-    sleep 0.45
-    DEMO_PASSWORD=""
-    STATUS_MSG='Authenticate selected. No PolicyKit request or credential was sent.'
+    sleep 0.35
+    PASSWORD_LENGTH=0
+    STATUS_MSG='Authenticate selected.'
     FOCUS=0
+    render
 }
 
 handle_mouse_event() {
@@ -459,12 +462,14 @@ handle_mouse_event() {
 
     if (( MOUSE_Y == PASSWORD_ROW )); then
         FOCUS=0
+        render
         return 0
     fi
 
     if (( MOUSE_Y == DETAILS_ROW )); then
         FOCUS=1
         SHOW_DETAILS=$((1 - SHOW_DETAILS))
+        render
         return 0
     fi
 
@@ -492,24 +497,28 @@ run_tui() {
     trap cleanup_terminal EXIT
     trap 'WINDOW_RESIZED=1' WINCH
 
+    render
+
     while true; do
         WINDOW_RESIZED=0
-        render
 
         if ! read_key; then
             if (( WINDOW_RESIZED == 1 )); then
-                continue
+                render
             fi
             continue
         fi
         key="$READ_KEY_VALUE"
-        [[ -n "$key" ]] || continue
+        [[ -n $key ]] || continue
 
-        if handle_mouse_event "$key"; then
-            continue
-        else
-            mouse_status=$?
-            (( mouse_status == 2 )) && break
+        if [[ $key == $'\033[<'* ]]; then
+            if handle_mouse_event "$key"; then
+                continue
+            else
+                mouse_status=$?
+                (( mouse_status == 2 )) && break
+                continue
+            fi
         fi
 
         case "$key" in
@@ -518,28 +527,31 @@ run_tui() {
                 ;;
             $'\t')
                 FOCUS=$(( (FOCUS + 1) % 4 ))
+                render
                 ;;
-            $'\033[Z')
+            $'\033[Z'|$'\033[D')
                 FOCUS=$(( (FOCUS + 3) % 4 ))
-                ;;
-            $'\033[D')
-                FOCUS=$(( (FOCUS + 3) % 4 ))
+                render
                 ;;
             $'\033[C')
                 FOCUS=$(( (FOCUS + 1) % 4 ))
+                render
                 ;;
             $'\177'|$'\b')
-                if (( FOCUS == 0 && ${#DEMO_PASSWORD} > 0 )); then
-                    DEMO_PASSWORD="${DEMO_PASSWORD%?}"
+                if (( FOCUS == 0 && PASSWORD_LENGTH > 0 )); then
+                    ((PASSWORD_LENGTH--))
+                    render_password_field_only
                 fi
                 ;;
             $'\r'|$'\n')
                 case "$FOCUS" in
                     0)
-                        STATUS_MSG='Demo input captured locally. Select Authenticate to preview the action state.'
+                        STATUS_MSG='Select Authenticate to preview the action state.'
+                        render
                         ;;
                     1)
                         SHOW_DETAILS=$((1 - SHOW_DETAILS))
+                        render
                         ;;
                     2)
                         break
@@ -550,9 +562,9 @@ run_tui() {
                 esac
                 ;;
             *)
-                if (( FOCUS == 0 )) && [[ ${#key} -eq 1 && "$key" != $'\033' ]]; then
-                    DEMO_PASSWORD+="$key"
-                    STATUS_MSG='Visual prototype only. Input is discarded; do not enter your real password.'
+                if (( FOCUS == 0 )) && [[ ${#key} -eq 1 ]]; then
+                    ((PASSWORD_LENGTH++))
+                    render_password_field_only
                 fi
                 ;;
         esac
@@ -561,7 +573,6 @@ run_tui() {
     trap - WINCH
     cleanup_terminal
     trap - EXIT
-    return 0
 }
 
 print_static() {
@@ -572,20 +583,16 @@ print_static() {
         '' \
         'Password:  [                                      ]' \
         ''
-    printf '%s▼ Details:%s\n' "$C_ACCENT" "$C_RESET"
-    printf '  Action:      org.freedesktop.policykit.exec\n'
-    printf '  Vendor:      The polkit project\n'
-    printf '  Description: Run programs as another user\n'
-    printf '  Identity:    unix-user:%s\n\n' "${USER:-user}"
+    printf '%s▶ Details:%s\n\n' "$C_ACCENT" "$C_RESET"
     printf '              %s[ Cancel ]%s      %s[ Authenticate ]%s\n\n' "$C_RED" "$C_RESET" "$C_GREEN" "$C_RESET"
-    printf '%sVisual prototype only. No PolicyKit request is sent.%s\n' "$C_YELLOW" "$C_RESET"
+    printf '%s\n' 'Tab/Shift+Tab: move   Enter: activate   Mouse: click   Esc: cancel'
 }
 
 launch_with_terminal() {
     local helper="${SCRIPT_DIR}/default_terminal.sh" terminal_name=""
     local -a terminal_args=()
 
-    if [[ -x "$helper" ]]; then
+    if [[ -x $helper ]]; then
         "$helper" --class "$APP_ID" -- "$SCRIPT_PATH" --tui >/dev/null 2>&1 &
         return 0
     fi
@@ -642,8 +649,6 @@ launch_with_terminal() {
             "${terminal_args[@]}" -e "$SCRIPT_PATH" --tui >/dev/null 2>&1 &
             ;;
     esac
-
-    return 0
 }
 
 main() {
@@ -668,6 +673,6 @@ main() {
     esac
 }
 
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
     main "$@"
 fi
