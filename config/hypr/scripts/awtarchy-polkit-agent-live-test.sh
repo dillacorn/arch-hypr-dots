@@ -113,7 +113,7 @@ verify_root_directory() {
         && ! /usr/bin/sudo /usr/bin/test -L "$path" \
         || fail "missing or unsafe root-owned directory: $path" || return 1
 
-    read -r uid mode type < <(/usr/bin/sudo /usr/bin/stat -Lc '%u %a %F' -- "$path") || return 1
+    IFS=' ' read -r uid mode type < <(/usr/bin/sudo /usr/bin/stat -Lc '%u %a %F' -- "$path") || return 1
     [[ $uid == 0 && $type == directory ]] \
         || fail "directory is not root-owned: $path" || return 1
 
@@ -129,7 +129,7 @@ verify_installed_file() {
         && ! /usr/bin/sudo /usr/bin/test -L "$path" \
         || fail "missing or unsafe installed file: $path" || return 1
 
-    read -r uid mode type < <(/usr/bin/sudo /usr/bin/stat -Lc '%u %a %F' -- "$path") || return 1
+    IFS=' ' read -r uid mode type < <(/usr/bin/sudo /usr/bin/stat -Lc '%u %a %F' -- "$path") || return 1
     [[ $uid == 0 && $mode == "$expected_mode" && $type == 'regular file' ]] \
         || fail "unexpected owner/mode/type for installed file: $path" || return 1
 }
