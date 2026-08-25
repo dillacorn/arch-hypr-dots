@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 
+# One-shot branch patch helper. Deleted by the gated workflow after use.
 runtime_path = Path("local/share/awtarchy/awtarchy-runtime.sh")
 text = runtime_path.read_text(encoding="utf-8")
 
