@@ -64,7 +64,6 @@ jobs:
         run: |
           bash -n local/share/awtarchy/awtarchy-runtime.sh
           bash -n config/hypr/scripts/awtarchy-polkit-agent/launcher.sh
-          bash -n config/hypr/scripts/awtarchy-polkit-agent-live-test.sh
           bash -n config/hypr/scripts/quickshell_theme_apply.sh
           python3 -m py_compile config/hypr/scripts/awtarchy-polkit-agent/agent.py config/hypr/scripts/awtarchy-polkit-agent/tui.py
       - name: Terminal TUI parser
