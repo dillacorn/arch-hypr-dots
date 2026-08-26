@@ -105,6 +105,7 @@ EOF
 
 chmod 0755 "${fakebin}/"* "${config_home}/hypr/scripts/quickshell_bar_restore.sh"
 
+# shellcheck disable=SC2016 # Intentionally match the literal production assignment.
 grep -Fq 'export XDG_RUNTIME_DIR="$RUNTIME_DIR"' "$HELPER" \
     || fail 'Hypridle restart helper does not export its runtime fallback to the child process'
 
