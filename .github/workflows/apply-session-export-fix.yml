@@ -1,0 +1,67 @@
+name: Apply session export fix
+
+on:
+  pull_request:
+    types: [reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.ref == 'fix-update-session-environment' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: fix-update-session-environment
+          fetch-depth: 0
+
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Export recovered session variables
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('local/share/awtarchy/awtarchy-runtime.sh')
+          text = path.read_text()
+          keys = (
+              'WAYLAND_DISPLAY',
+              'HYPRLAND_INSTANCE_SIGNATURE',
+              'XDG_SESSION_ID',
+              'XDG_CURRENT_DESKTOP',
+              'XDG_SESSION_DESKTOP',
+              'XDG_SESSION_TYPE',
+          )
+          for key in keys:
+              old = f'[[ -n "${{{key}:-}}" ]] || {key}="$value"'
+              new = f'[[ -n "${{{key}:-}}" ]] || export {key}="$value"'
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one recovery assignment for {key}, found {count}')
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+
+          rm -f .github/workflows/apply-session-export-fix.yml
+
+      - name: Validate focused fix
+        run: |
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n config/hypr/scripts/hypridle_restart.sh
+          bash -n tests/test-polkit-agent-session-binding.sh
+          bash -n tests/test-hypridle-restart.sh
+          shellcheck config/hypr/scripts/hypridle_restart.sh tests/test-hypridle-restart.sh tests/test-polkit-agent-session-binding.sh
+          bash tests/test-polkit-agent-session-binding.sh
+          bash tests/test-hypridle-restart.sh
+          git diff --check
+
+      - name: Commit completed fix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add local/share/awtarchy/awtarchy-runtime.sh tests/test-polkit-agent-session-binding.sh .github/workflows/apply-session-export-fix.yml
+          git commit -m 'Export recovered updater session environment'
+          git push origin HEAD:fix-update-session-environment
