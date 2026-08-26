@@ -13,6 +13,18 @@ env:
   PYTHONPYCACHEPREFIX: /tmp/awtarchy-pycache
 
 jobs:
+  updater-migration-debug:
+    if: github.event_name == 'push' && github.event.head_commit.message == 'Debug updater migration integration'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Install fixture dependency
+        run: sudo apt-get update && sudo apt-get install -y lua5.4
+      - name: Trace updater migration fixture
+        run: bash -x tests/test-quickshell-updater-migration.sh
+
   polkit-contracts:
     runs-on: ubuntu-latest
     steps:
