@@ -369,6 +369,21 @@ Before Git writes, verify repository, current branch/ref, remote state, and the 
 
 ## Releases and tags
 
+### Standard stable release notes
+
+Unless the user explicitly requests a different format, inspect the latest published stable release and preserve its overall release-page structure and level of detail. Do not reduce a new stable release to only a changelog.
+
+A normal Awtarchy stable release body should include:
+
+- the release title and a short overview of the release;
+- a **Getting started** section that keeps the fresh-Arch explanation, recommends the official `archinstall` guided installer while allowing a normal manual Arch installation, and includes the current copy/paste installation commands;
+- an **Existing Awtarchy users** update command using `awtarchy update`;
+- feature/change sections appropriate to the release;
+- a **Validation** section grounded in tests and CI that actually passed for the release target;
+- a final **Post-release updates** section containing a version-specific placeholder such as `_Placeholder for possible tested post-release patches to vX.Y.Z._`.
+
+Keep installation directions, useful links, and the post-release placeholder when carrying the prior stable release structure forward unless they are demonstrably obsolete or the user asks to remove them. Verify the complete published release body after creation.
+
 A GitHub release, Git tag, branch, release notes body, and repository documentation are different targets.
 
 When working on a release:
