@@ -41,4 +41,12 @@ require_contains "$HYPR" 'systemctl --user import-environment'
 
 require_contains "$RUNTIME" 'XDG_SESSION_ID'
 
+# Update/reset commands can run after privilege transitions that no longer carry
+# the graphical shell environment. Recover the allowlisted session variables
+# from the target user's systemd manager before deciding that no live Hyprland
+# session exists.
+require_contains "$RUNTIME" 'awtarchy_polkit_recover_session_environment()'
+require_contains "$RUNTIME" '/usr/bin/systemctl --user show-environment'
+require_contains "$RUNTIME" 'awtarchy_polkit_recover_session_environment || return 2'
+
 printf '%s\n' 'terminal Polkit graphical-session binding contract passed'
