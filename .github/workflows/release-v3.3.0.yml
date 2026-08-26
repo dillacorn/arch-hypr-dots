@@ -1,0 +1,115 @@
+name: Publish Awtarchy v3.3.0
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  publish-v3-3-0:
+    name: Publish and verify v3.3.0
+    if: github.event.pull_request.title == 'Trigger v3.3.0 release' && github.event.pull_request.head.ref == 'v3-3-0-release-trigger' && github.event.pull_request.base.ref == 'main'
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out guarded release bridge
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+
+      - name: Publish, verify, and remove the one-use bridge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: 8fb4ea02c774f56787c3dc85c26f872d9f7596a5
+          TARGET_TREE: 8edfdb76e6578d0e0ef2b30a0db6bef2893e351d
+          PREVIOUS_TAG_SHA: 8fffb63c431854aded9d862c58737ca1395ffb12
+          RELEASE_TAG: v3.3.0
+          RELEASE_NAME: Awtarchy v3.3.0 Quickshell
+          NOTES_FILE: .github/release-v3.3.0-notes.md
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          test "$(git rev-parse "${TARGET_SHA}^{tree}")" = "$TARGET_TREE"
+          test "$(git rev-parse origin/main)" = "$TARGET_SHA"
+          git merge-base --is-ancestor "$TARGET_SHA" HEAD
+          git diff --quiet "$TARGET_SHA" HEAD -- . \
+            ':(exclude).github/workflows/release-v3.3.0.yml' \
+            ':(exclude).github/release-v3.3.0-notes.md'
+
+          test "$(git ls-remote origin refs/tags/v3.2.2 | awk '{print $1}')" = "$PREVIOUS_TAG_SHA"
+          gh release view v3.2.2 --repo "$GITHUB_REPOSITORY" --json name,targetCommitish,isDraft,isPrerelease >previous-release.json
+          jq -e --arg target "$PREVIOUS_TAG_SHA" '
+            .name == "Awtarchy v3.2.2 Quickshell"
+            and .targetCommitish == $target
+            and .isDraft == false
+            and .isPrerelease == false
+          ' previous-release.json >/dev/null
+
+          runs_json="$(mktemp)"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${TARGET_SHA}&event=push&per_page=100" >"$runs_json"
+          for workflow in \
+            'Validate Awtarchy' \
+            'Validate PolicyKit Agent' \
+            'Validate Anonymous Failure Reporting'
+          do
+            jq -e --arg workflow "$workflow" '
+              [.workflow_runs[] | select(.name == $workflow and .head_sha == env.TARGET_SHA)]
+              | length > 0
+              and all(.[]; .status == "completed" and .conclusion == "success")
+            ' "$runs_json" >/dev/null || {
+              echo "Required main workflow is not green: ${workflow}" >&2
+              false
+            }
+          done
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "${RELEASE_TAG} tag already exists; refusing to recreate it." >&2
+            false
+          fi
+
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "${RELEASE_TAG} release already exists; refusing to replace it." >&2
+            false
+          fi
+
+          grep -Fq '# Awtarchy v3.3.0 Quickshell' "$NOTES_FILE"
+          grep -Fq '## Getting started' "$NOTES_FILE"
+          grep -Fq 'sudo ./awtarchy-install.sh' "$NOTES_FILE"
+          grep -Fq 'awtarchy update' "$NOTES_FILE"
+          grep -Fq '## Awtarchy terminal PolicyKit authentication' "$NOTES_FILE"
+          grep -Fq '## Migration and rollback safety' "$NOTES_FILE"
+          grep -Fq '## Validation' "$NOTES_FILE"
+          grep -Fq '## Post-release updates' "$NOTES_FILE"
+          grep -Fq '_Placeholder for possible tested post-release patches to v3.3.0._' "$NOTES_FILE"
+
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$TARGET_SHA" \
+            --title "$RELEASE_NAME" \
+            --latest \
+            --notes-file "$NOTES_FILE"
+
+          test "$(git ls-remote origin "refs/tags/${RELEASE_TAG}" | awk '{print $1}')" = "$TARGET_SHA"
+
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json name,targetCommitish,isDraft,isPrerelease,body,url >verified-release.json
+          jq -e --arg target "$TARGET_SHA" --arg name "$RELEASE_NAME" '
+            .name == $name
+            and .targetCommitish == $target
+            and .isDraft == false
+            and .isPrerelease == false
+          ' verified-release.json >/dev/null
+          jq -j '.body' verified-release.json >verified-release.md
+          cmp --silent "$NOTES_FILE" verified-release.md
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name)" = "$RELEASE_TAG"
+          release_url="$(jq -r '.url' verified-release.json)"
+
+          gh pr close "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --delete-branch \
+            --comment "${RELEASE_TAG} published and verified: ${release_url}"
+
+          printf 'Published and verified %s at %s\n' "$RELEASE_TAG" "$release_url"
