@@ -35,9 +35,11 @@ LAST_RUNTIME_PAYLOAD=""
 LAST_CATCHUP_TARGET=""
 LAST_CATCHUP_AT=0
 TMP_FILE=""
+ACTION_FILE=""
 
 cleanup() {
     [[ -z "$TMP_FILE" ]] || rm -f -- "$TMP_FILE"
+    [[ -z "$ACTION_FILE" ]] || rm -f -- "$ACTION_FILE"
 }
 
 trap cleanup EXIT
@@ -200,9 +202,42 @@ open_release_page() {
     xdg-open "https://github.com/${REPOSITORY}/releases/tag/${target}" >/dev/null 2>&1 || true
 }
 
+record_stable_notification() {
+    local target="$1" catchup_target="${2:-}" catchup_at="${3:-0}"
+
+    valid_stable_tag "$target" || return 1
+    if [[ -n $catchup_target ]]; then
+        valid_stable_tag "$catchup_target" || return 1
+        valid_epoch "$catchup_at" || return 1
+    fi
+
+    if [[ ${AWTARCHY_UPDATE_NOTIFY_FOREGROUND:-0} == 1 ]]; then
+        load_state
+        LAST_STABLE_TARGET="$target"
+        if [[ -n $catchup_target ]]; then
+            LAST_CATCHUP_TARGET="$catchup_target"
+            LAST_CATCHUP_AT="$catchup_at"
+        fi
+        save_state
+        return 0
+    fi
+
+    (
+        flock -x 8
+        load_state
+        LAST_STABLE_TARGET="$target"
+        if [[ -n $catchup_target ]]; then
+            LAST_CATCHUP_TARGET="$catchup_target"
+            LAST_CATCHUP_AT="$catchup_at"
+        fi
+        save_state
+    ) 8>"$NOTIFICATION_LOCK_FILE"
+}
+
 notify_and_handle() {
     local kind="$1" title="$2" body="$3" action_id="$4" action_label="$5" command="$6"
-    local release_target="${7:-}" action notification_id="" reported_id
+    local release_target="${7:-}" catchup_target="${8:-}" catchup_at="${9:-0}"
+    local action notification_id="" reported_id notify_pid notify_status=0
     local -a active_notify_args notify_args=(
         notify-send
         --app-name=Awtarchy
@@ -223,21 +258,33 @@ notify_and_handle() {
             if valid_notification_id "$notification_id"; then
                 active_notify_args+=(--replace-id="$notification_id")
             fi
-            TMP_FILE="$(mktemp "${NOTIFICATION_STATE_FILE}.action.XXXXXX")"
-            chmod 0600 "$TMP_FILE"
-            reported_id="$(
+            ACTION_FILE="$(mktemp "${NOTIFICATION_STATE_FILE}.action.XXXXXX")"
+            chmod 0600 "$ACTION_FILE"
+            reported_id=""
+            notify_status=0
+            coproc AWTARCHY_NOTIFY {
                 "${active_notify_args[@]}" \
                     --selected-action-fd=3 \
                     "$title" "$body" \
-                    3>"$TMP_FILE" 2>/dev/null || true
-            )"
-            if valid_notification_id "$reported_id"; then
-                notification_id="$reported_id"
+                    3>"$ACTION_FILE" 2>/dev/null
+            }
+            notify_pid="$AWTARCHY_NOTIFY_PID"
+            if IFS= read -r reported_id <&"${AWTARCHY_NOTIFY[0]}"; then
+                if valid_notification_id "$reported_id"; then
+                    notification_id="$reported_id"
+                    record_stable_notification \
+                        "$release_target" "$catchup_target" "$catchup_at" || true
+                fi
             fi
-            action="$(<"$TMP_FILE")"
-            rm -f -- "$TMP_FILE"
-            TMP_FILE=""
+            wait "$notify_pid" || notify_status=$?
+            action="$(<"$ACTION_FILE")"
+            rm -f -- "$ACTION_FILE"
+            ACTION_FILE=""
 
+            if (( notify_status != 0 )); then
+                action=""
+                break
+            fi
             if [[ $action == release ]]; then
                 open_release_page "$release_target"
                 valid_notification_id "$notification_id" || action=""
@@ -256,15 +303,17 @@ notify_and_handle() {
 
 show_notification() {
     local kind="$1" title="$2" body="$3" action_id="$4" action_label="$5" command="$6"
-    local release_target="${7:-}"
+    local release_target="${7:-}" catchup_target="${8:-}" catchup_at="${9:-0}"
     command -v notify-send >/dev/null 2>&1 || return 0
 
     if [[ ${AWTARCHY_UPDATE_NOTIFY_FOREGROUND:-0} == 1 ]]; then
         notify_and_handle \
-            "$kind" "$title" "$body" "$action_id" "$action_label" "$command" "$release_target"
+            "$kind" "$title" "$body" "$action_id" "$action_label" "$command" \
+            "$release_target" "$catchup_target" "$catchup_at"
     else
         notify_and_handle \
-            "$kind" "$title" "$body" "$action_id" "$action_label" "$command" "$release_target" \
+            "$kind" "$title" "$body" "$action_id" "$action_label" "$command" \
+            "$release_target" "$catchup_target" "$catchup_at" \
             9>&- </dev/null >/dev/null 2>&1 &
     fi
 }
@@ -313,6 +362,7 @@ print(installed_index - target_index)
 
 check_stable_release() {
     local installed="$1" target="$2" enabled="$3" releases_json behind
+    local catchup_target="" catchup_at=0
 
     releases_json="$(api_get "${API_ROOT}/releases?per_page=100" 2>/dev/null)" || return 1
     behind="$(stable_release_position "$releases_json" "$target" "$installed" 2>/dev/null)" || return 1
@@ -326,17 +376,15 @@ check_stable_release() {
             && NOW - LAST_CATCHUP_AT < CATCHUP_INTERVAL )); then
             return 0
         fi
-        LAST_CATCHUP_TARGET="$target"
-        LAST_CATCHUP_AT="$NOW"
+        catchup_target="$target"
+        catchup_at="$NOW"
     fi
 
-    LAST_STABLE_TARGET="$target"
-    save_state
     show_notification \
         "Update" \
         "New Awtarchy Update" \
         "${installed} → ${target}"$'\n'"Run: awtarchy update" \
-        "update" "Update ↑" "update" "$target"
+        "update" "Update ↑" "update" "$target" "$catchup_target" "$catchup_at"
 }
 
 check_maintenance_refresh() {
@@ -379,6 +427,7 @@ check_maintenance_refresh() {
 }
 
 check_for_updates() {
+    local check_mode="$1"
     local config_tag latest_json latest_tag enabled check_interval
 
     config_tag="$(read_field "$CONFIG_VERSION_FILE" tag 2>/dev/null || true)"
@@ -398,8 +447,10 @@ check_for_updates() {
 
     NOW="${AWTARCHY_UPDATE_NOTIFY_NOW:-$(date +%s)}"
     valid_epoch "$NOW" || return 0
-    if (( LAST_CHECK > 0 && NOW >= LAST_CHECK && NOW - LAST_CHECK < check_interval )); then
-        return 0
+    if [[ $check_mode != login || $enabled != true ]]; then
+        if (( LAST_CHECK > 0 && NOW >= LAST_CHECK && NOW - LAST_CHECK < check_interval )); then
+            return 0
+        fi
     fi
     LAST_CHECK="$NOW"
     save_state
@@ -423,15 +474,19 @@ check_for_updates() {
 }
 
 main() {
+    local check_mode
+
     if [[ ${1:-} == run-stable-update && $# -eq 3 ]]; then
         run_stable_update "$2" "$3"
         return
     fi
 
-    [[ ${1:-} == check && $# -eq 1 ]] || {
-        printf 'usage: %s check\n' "${0##*/}" >&2
+    if [[ $# -eq 1 && ( $1 == check || $1 == login ) ]]; then
+        check_mode="$1"
+    else
+        printf 'usage: %s {check|login}\n' "${0##*/}" >&2
         return 2
-    }
+    fi
 
     command -v curl >/dev/null 2>&1 || return 0
     command -v jq >/dev/null 2>&1 || return 0
@@ -444,7 +499,7 @@ main() {
     exec 9>"$NOTIFICATION_LOCK_FILE"
     flock -n 9 || return 0
     load_state
-    check_for_updates
+    check_for_updates "$check_mode"
 }
 
 main "$@"
