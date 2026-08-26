@@ -1,19 +1,21 @@
 name: Apply submap runtime-state fix
 
 on:
-  push:
-    branches: [fix-submap-runtime-state]
+  pull_request:
+    branches: [main]
+    types: [opened, reopened]
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.repository == 'dillacorn/awtarchy' && github.ref == 'refs/heads/fix-submap-runtime-state'
+    if: github.repository == 'dillacorn/awtarchy' && github.event.pull_request.head.ref == 'fix-submap-runtime-state'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
+          ref: fix-submap-runtime-state
           fetch-depth: 0
 
       - name: Patch remaining submap state consumers
