@@ -35,6 +35,7 @@ jobs:
       - name: Managed history
         run: |
           history='local/share/awtarchy/quickshell-managed-history.sha256'
+          missing=0
           for entry in \
             'config/hypr/scripts/quickshell_update_notifications.sh|.config/hypr/scripts/quickshell_update_notifications.sh' \
             'config/quickshell/awtarchy/shell.qml|.config/quickshell/awtarchy/shell.qml'; do
@@ -43,6 +44,7 @@ jobs:
             hash="$(sha256sum "$source_path" | awk '{print $1}')"
             if ! grep -Fq "${hash}"$'\t'"${managed_path}" "$history"; then
               printf 'Missing managed history entry: %s\t%s\n' "$hash" "$managed_path" >&2
-              false
+              missing=1
             fi
           done
+          (( missing == 0 ))
