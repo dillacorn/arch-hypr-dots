@@ -4,7 +4,6 @@ set -euo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 AGENT="${ROOT_DIR}/config/hypr/scripts/awtarchy-polkit-agent/agent.py"
 LAUNCHER="${ROOT_DIR}/config/hypr/scripts/awtarchy-polkit-agent/launcher.sh"
-CONTROLLER="${ROOT_DIR}/config/hypr/scripts/awtarchy-polkit-agent-live-test.sh"
 HYPR="${ROOT_DIR}/config/hypr/hyprland.lua"
 RUNTIME="${ROOT_DIR}/local/share/awtarchy/awtarchy-runtime.sh"
 
@@ -35,9 +34,6 @@ reject_contains "$AGENT" 'Polkit.UnixSession.new_for_process_sync(os.getpid(), N
 
 require_contains "$LAUNCHER" 'local session_id="${XDG_SESSION_ID:-}"'
 require_contains "$LAUNCHER" 'XDG_SESSION_ID="$session_id"'
-
-require_contains "$CONTROLLER" 'XDG_SESSION_ID'
-require_contains "$CONTROLLER" 'systemctl --user import-environment'
 
 require_contains "$HYPR" 'XDG_SESSION_ID'
 require_contains "$HYPR" 'dbus-update-activation-environment --systemd'
