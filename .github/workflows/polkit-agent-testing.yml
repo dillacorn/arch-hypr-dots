@@ -26,6 +26,8 @@ jobs:
         run: python3 tests/test-polkit-agent-tui.py
       - name: Authentication feedback contract
         run: python3 tests/test-polkit-agent-auth-feedback.py
+      - name: Transient frontend contract
+        run: python3 tests/test-polkit-agent-transient-frontend.py
       - name: Password retry contract
         run: bash tests/test-polkit-agent-password-retry.sh
       - name: Alacritty appearance contract
