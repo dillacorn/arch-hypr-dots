@@ -14,7 +14,7 @@ env:
 
 jobs:
   updater-migration-debug:
-    if: github.event_name == 'push' && github.event.head_commit.message == 'Debug updater migration integration'
+    if: github.event_name == 'push' && github.event.head_commit.message == 'Capture updater migration failure'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
@@ -22,8 +22,14 @@ jobs:
           fetch-depth: 0
       - name: Install fixture dependency
         run: sudo apt-get update && sudo apt-get install -y lua5.4
-      - name: Trace updater migration fixture
-        run: bash -x tests/test-quickshell-updater-migration.sh
+      - name: Capture updater migration fixture failure
+        run: |
+          set +e
+          AWTARCHY_TEST_KEEP_TMP=1 bash -x tests/test-quickshell-updater-migration.sh
+          rc=$?
+          printf '\n=== updater fixture diagnostics ===\n'
+          find /tmp -maxdepth 2 -type f -name update.out -print -exec sh -c 'printf "\n--- %s ---\n" "$1"; cat "$1"' _ {} \;
+          exit "$rc"
 
   polkit-contracts:
     runs-on: ubuntu-latest
