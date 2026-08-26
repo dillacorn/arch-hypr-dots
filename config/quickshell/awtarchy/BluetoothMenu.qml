@@ -21,6 +21,7 @@ Singleton {
     property int textScaleOverride: -1
     property int iconScaleOverride: -1
     property int captureAllowedOverride: -1
+    property int actualAdapterEnabled: -1
     property bool privacyRemapPending: false
     property string settingsMessage: ""
     property var savedView: ({
@@ -42,7 +43,8 @@ Singleton {
         || (adapters.length > 0 ? adapters[0] : null)
     readonly property bool available: adapters.length > 0 && adapter !== null
     readonly property int adapterState: adapter ? adapter.state : BluetoothAdapterState.Disabled
-    readonly property bool adapterEnabled: adapter !== null && adapter.enabled
+    readonly property bool adapterEnabled: actualAdapterEnabled >= 0
+        ? actualAdapterEnabled === 1 : adapter !== null && adapter.enabled
     readonly property bool adapterDiscovering: adapter !== null && adapter.discovering
     readonly property bool adapterBlocked: adapter !== null
         && adapter.state === BluetoothAdapterState.Blocked
@@ -143,6 +145,21 @@ Singleton {
         return lines.join("\n");
     }
 
+    function refreshActualAdapterPower() {
+        if (!bluetoothPowerProbe.running)
+            bluetoothPowerProbe.exec([bluetoothStateScript, "actual"]);
+    }
+
+    function applyActualAdapterPower(text) {
+        const state = String(text || "").trim();
+        if (state === "enabled")
+            actualAdapterEnabled = 1;
+        else if (state === "disabled")
+            actualAdapterEnabled = 0;
+        else
+            actualAdapterEnabled = -1;
+    }
+
     function toggleAdapter() {
         const current = adapter;
         if (!current) {
@@ -150,7 +167,7 @@ Singleton {
             return;
         }
 
-        const enableRequested = !current.enabled
+        const enableRequested = !adapterEnabled
             || current.state === BluetoothAdapterState.Blocked;
         if (enableRequested) {
             actionMessage = "Enabling Bluetooth…";
@@ -175,12 +192,14 @@ Singleton {
             return;
         }
         current.enabled = true;
+        actualAdapterEnabled = 1;
+        refreshActualAdapterPower();
         actionMessage = "Bluetooth enabled";
     }
 
     function toggleDiscovery() {
         const current = adapter;
-        if (!current || !current.enabled)
+        if (!current || !adapterEnabled)
             return;
         const nextDiscovering = !current.discovering;
         current.discovering = nextDiscovering;
@@ -280,7 +299,7 @@ Singleton {
         if (wasVisible)
             Qt.callLater(() => root.positionWindow());
         const current = adapter;
-        if (current && current.enabled)
+        if (current && adapterEnabled)
             current.discovering = true;
     }
 
@@ -490,6 +509,8 @@ Singleton {
     onAvailableChanged: {
         if (!available && (bluetoothWindow.visible || openPreparing))
             close();
+        if (available)
+            refreshActualAdapterPower();
     }
 
     Component.onCompleted: bluetoothRestore.exec([bluetoothStateScript, "restore"])
@@ -503,6 +524,19 @@ Singleton {
         }
     }
 
+    Connections {
+        target: root.adapter
+        function onStateChanged() {
+            if (!root.adapter)
+                return;
+            if (root.adapter.state === BluetoothAdapterState.Enabled)
+                root.actualAdapterEnabled = 1;
+            else if (root.adapter.state === BluetoothAdapterState.Disabled
+                || root.adapter.state === BluetoothAdapterState.Blocked)
+                root.actualAdapterEnabled = 0;
+        }
+    }
+
     Process {
         id: prepareProcess
         onExited: root.finishPreparedOpen()
@@ -513,8 +547,10 @@ Singleton {
         onExited: (exitCode, exitStatus) => {
             if (exitCode !== 0) {
                 root.actionMessage = "Failed to enable Bluetooth";
+                root.refreshActualAdapterPower();
                 return;
             }
+            root.actualAdapterEnabled = 1;
             rfkillRetry.restart();
         }
     }
@@ -522,13 +558,24 @@ Singleton {
     Process {
         id: bluetoothDisable
         onExited: (exitCode, exitStatus) => {
+            if (exitCode === 0)
+                root.actualAdapterEnabled = 0;
             root.actionMessage = exitCode === 0
                 ? "Bluetooth disabled" : "Failed to disable Bluetooth";
+            root.refreshActualAdapterPower();
         }
     }
 
     Process {
         id: bluetoothRestore
+        onExited: root.refreshActualAdapterPower()
+    }
+
+    Process {
+        id: bluetoothPowerProbe
+        stdout: StdioCollector {
+            onStreamFinished: root.applyActualAdapterPower(text)
+        }
     }
 
     Process {
