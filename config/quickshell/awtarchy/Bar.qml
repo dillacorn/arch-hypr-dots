@@ -108,17 +108,9 @@ PanelWindow {
         return ignored.indexOf(cls) < 0;
     }
 
-    function internalServiceWindow(toplevel) {
-        if (!toplevel)
-            return false;
-        const ipc = toplevel.lastIpcObject || {};
-        const cls = String(ipc.class || ipc.initialClass || "").toLowerCase();
-        return cls === "awtarchy-polkit-agent";
-    }
-
     function scratchpadCount() {
         return Hyprland.toplevels.values.filter(toplevel =>
-            toplevel.workspace && toplevel.workspace.id < 0 && !bar.internalServiceWindow(toplevel)).length;
+            toplevel.workspace && toplevel.workspace.id < 0).length;
     }
 
     function privacyLabel() {

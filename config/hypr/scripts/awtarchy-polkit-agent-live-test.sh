@@ -439,50 +439,54 @@ import_desktop_environment() {
         || fail 'could not refresh the systemd user-manager desktop environment' || return 1
 }
 
-process_has_agent_command() {
-    local root_pid="$1" expected_python child parent children_raw child_exe
-    local -a queue=() children=() argv=()
+verify_service_process() {
+    local pid resolved expected_python
+    local -a argv=()
 
+    pid="$(/usr/bin/systemctl --user show -p MainPID --value "$SERVICE_NAME" 2>/dev/null)" || return 1
+    [[ $pid =~ ^[1-9][0-9]*$ ]] || return 1
     expected_python="$(/usr/bin/readlink -f -- /usr/bin/python3 2>/dev/null)" || return 1
-    queue=("$root_pid")
+    resolved="$(/usr/bin/readlink -f -- "/proc/${pid}/exe" 2>/dev/null)" || return 1
+    [[ $resolved == "$expected_python" ]] || return 1
+    mapfile -d '' -t argv <"/proc/${pid}/cmdline" 2>/dev/null || return 1
+    [[ ${argv[0]:-} == /usr/bin/python3 \
+        && ${argv[1]:-} == -I \
+        && ${argv[2]:-} == "${RUNTIME_DIR}/agent.py" ]]
+}
 
-    while ((${#queue[@]} > 0)); do
-        parent="${queue[0]}"
-        queue=("${queue[@]:1}")
-        children_raw=""
-        if [[ -r /proc/${parent}/task/${parent}/children ]]; then
-            IFS= read -r children_raw <"/proc/${parent}/task/${parent}/children" || true
-        fi
-        children=()
-        IFS=' ' read -r -a children <<<"$children_raw"
-        for child in "${children[@]}"; do
-            [[ $child =~ ^[1-9][0-9]*$ ]] || continue
-            queue+=("$child")
-            child_exe="$(/usr/bin/readlink -f -- "/proc/${child}/exe" 2>/dev/null)" || continue
-            [[ $child_exe == "$expected_python" ]] || continue
-            argv=()
-            mapfile -d '' -t argv <"/proc/${child}/cmdline" 2>/dev/null || continue
-            if [[ ${argv[0]:-} == /usr/bin/python3 \
-                && ${argv[1]:-} == -I \
-                && ${argv[2]:-} == "${RUNTIME_DIR}/agent.py" ]];
-            then
+frontend_process_exists() {
+    local proc pid resolved expected_alacritty i
+    local -a argv=()
+
+    expected_alacritty="$(/usr/bin/readlink -f -- /usr/bin/alacritty 2>/dev/null)" || return 1
+    for proc in /proc/[0-9]*; do
+        pid="${proc##*/}"
+        [[ -r ${proc}/status && -r ${proc}/cmdline ]] || continue
+        [[ "$(/usr/bin/awk '/^Uid:/{print $2; exit}' "${proc}/status" 2>/dev/null)" == "$UID" ]] || continue
+        resolved="$(/usr/bin/readlink -f -- "${proc}/exe" 2>/dev/null)" || continue
+        [[ $resolved == "$expected_alacritty" ]] || continue
+        argv=()
+        mapfile -d '' -t argv <"${proc}/cmdline" 2>/dev/null || continue
+        for ((i = 0; i + 1 < ${#argv[@]}; i++)); do
+            if [[ ${argv[i]} == --class && ${argv[i + 1]} == awtarchy-polkit-agent,awtarchy-polkit-agent ]]; then
                 return 0
             fi
         done
     done
-
     return 1
 }
 
-verify_service_process() {
-    local pid resolved expected_alacritty
+verify_no_idle_frontend() {
+    ! frontend_process_exists
+}
 
-    pid="$(/usr/bin/systemctl --user show -p MainPID --value "$SERVICE_NAME" 2>/dev/null)" || return 1
-    [[ $pid =~ ^[1-9][0-9]*$ ]] || return 1
-    expected_alacritty="$(/usr/bin/readlink -f -- /usr/bin/alacritty 2>/dev/null)" || return 1
-    resolved="$(/usr/bin/readlink -f -- "/proc/${pid}/exe" 2>/dev/null)" || return 1
-    [[ $resolved == "$expected_alacritty" ]] || return 1
-    process_has_agent_command "$pid"
+wait_for_frontend_exit() {
+    local attempt
+    for attempt in {1..80}; do
+        verify_no_idle_frontend && return 0
+        /usr/bin/sleep 0.05
+    done
+    fail 'transient authentication terminal remained alive after the PolicyKit request'
 }
 
 stop_awtarchy_agent() {
@@ -505,10 +509,10 @@ show_startup_diagnostics() {
 
     fail "startup diagnostics: ActiveState=${active:-unknown} SubState=${substate:-unknown} Result=${result:-unknown} MainPID=${main_pid:-0} ExecMainStatus=${main_status:-unknown} NRestarts=${restarts:-unknown}"
     fail "startup diagnostics: MainPID executable=${executable}"
-    if [[ $main_pid =~ ^[1-9][0-9]*$ ]] && process_has_agent_command "$main_pid"; then
-        fail 'startup diagnostics: Python agent child is present but full service verification failed'
+    if [[ $main_pid =~ ^[1-9][0-9]*$ ]] && verify_service_process; then
+        fail 'startup diagnostics: headless Python backend is present but another startup check failed'
     else
-        fail 'startup diagnostics: Python agent child was not found under the service MainPID'
+        fail 'startup diagnostics: headless Python backend MainPID verification failed'
     fi
 
     /usr/bin/journalctl --user -u "$SERVICE_NAME" -b --no-pager -n 30 >&2 || true
@@ -553,13 +557,13 @@ start_awtarchy_agent() {
     # test agent stable.
     /usr/bin/sleep 1.5
     restarts="$(/usr/bin/systemctl --user show -p NRestarts --value "$SERVICE_NAME" 2>/dev/null || printf 'unknown')"
-    if [[ ! $restarts =~ ^[0-9]+$ || $restarts -ne 0 ]] || ! verify_service_process; then
+    if [[ ! $restarts =~ ^[0-9]+$ || $restarts -ne 0 ]] || ! verify_service_process || ! verify_no_idle_frontend; then
         show_startup_diagnostics
         rollback_to_gnome
         return 1
     fi
 
-    note 'Awtarchy terminal PolicyKit agent is running from the root-owned runtime.'
+    note 'Awtarchy PolicyKit backend is running headless from the root-owned runtime.'
 }
 
 install_test_runtime() {
@@ -628,9 +632,14 @@ show_status() {
     fi
 
     if [[ $active == 'active/running' ]] && verify_service_process; then
-        printf '%s\n' 'Process tree: verified Alacritty -> python3 -I agent.py'
+        printf '%s\n' 'Process: verified headless python3 -I agent.py'
+        if verify_no_idle_frontend; then
+            printf '%s\n' 'Idle authentication terminal: absent'
+        else
+            printf '%s\n' 'Idle authentication terminal: unexpectedly present'
+        fi
     elif [[ $active == 'active/running' ]]; then
-        printf '%s\n' 'Process tree: invalid'
+        printf '%s\n' 'Process: invalid'
     fi
 }
 
@@ -645,7 +654,7 @@ trigger_test() {
     else
         verify_installed_runtime || return 1
         verify_service_process || {
-            fail 'service is active but the Alacritty/Python agent process tree is invalid'
+            fail 'service is active but the headless Python agent process is invalid'
             return 1
         }
         gnome_is_active && {
@@ -659,6 +668,8 @@ trigger_test() {
     note 'Enter your real password in the Awtarchy terminal authentication window.'
 
     /usr/bin/pkexec --disable-internal-agent /usr/bin/true || rc=$?
+    wait_for_frontend_exit || return 1
+    verify_service_process || fail 'headless PolicyKit backend stopped after authentication' || return 1
     case "$rc" in
         0)
             note 'Authentication completed successfully.'

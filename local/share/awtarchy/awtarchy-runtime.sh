@@ -3221,13 +3221,17 @@ awtarchy_polkit_process_tree_has_agent() {
 }
 
 awtarchy_polkit_verify_service_process() {
-  local pid resolved expected_alacritty
+  local pid resolved expected_python
+  local -a argv=()
   pid="$(awtarchy_polkit_user_command /usr/bin/systemctl --user show -p MainPID --value "$AWTARCHY_POLKIT_SERVICE_NAME" 2>/dev/null)" || return 1
   [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
-  expected_alacritty="$(/usr/bin/readlink -f -- /usr/bin/alacritty 2>/dev/null)" || return 1
+  expected_python="$(/usr/bin/readlink -f -- /usr/bin/python3 2>/dev/null)" || return 1
   resolved="$(/usr/bin/readlink -f -- "/proc/${pid}/exe" 2>/dev/null)" || return 1
-  [[ "$resolved" == "$expected_alacritty" ]] || return 1
-  awtarchy_polkit_process_tree_has_agent "$pid"
+  [[ "$resolved" == "$expected_python" ]] || return 1
+  mapfile -d '' -t argv <"/proc/${pid}/cmdline" 2>/dev/null || return 1
+  [[ "${argv[0]:-}" == /usr/bin/python3 \
+    && "${argv[1]:-}" == -I \
+    && "${argv[2]:-}" == "${AWTARCHY_POLKIT_RUNTIME_DIR}/agent.py" ]]
 }
 
 activate_awtarchy_polkit_agent() {
