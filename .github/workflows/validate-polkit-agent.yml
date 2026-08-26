@@ -13,54 +13,6 @@ env:
   PYTHONPYCACHEPREFIX: /tmp/awtarchy-pycache
 
 jobs:
-  finalize-integration-bookkeeping:
-    if: github.event_name == 'push' && github.event.head_commit.message == 'Finalize PolicyKit integration bookkeeping'
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-        with:
-          fetch-depth: 0
-
-      - name: Finalize managed history and release guidance
-        run: |
-          python3 - <<'PY'
-          from hashlib import sha256
-          from pathlib import Path
-
-          history = Path('local/share/awtarchy/quickshell-managed-history.sha256')
-          text = history.read_text(encoding='utf-8')
-          kept = [
-              line for line in text.splitlines()
-              if '\t./quickshell/' not in line and '\t./hypr/scripts/' not in line
-          ]
-          bar = Path('config/quickshell/awtarchy/Bar.qml')
-          entry = f"{sha256(bar.read_bytes()).hexdigest()}\t.config/quickshell/awtarchy/Bar.qml"
-          if entry not in kept:
-              kept.append(entry)
-          history.write_text('\n'.join(kept) + '\n', encoding='utf-8')
-
-          agents = Path('AGENTS.md')
-          agents_text = agents.read_text(encoding='utf-8')
-          marker = '## Releases and tags\n\n'
-          guidance = '''## Releases and tags\n\n### Standard stable release notes\n\nUnless the user explicitly requests a different format, inspect the latest published stable release and preserve its overall release-page structure and level of detail. Do not reduce a new stable release to only a changelog.\n\nA normal Awtarchy stable release body should include:\n\n- the release title and a short overview of the release;\n- a **Getting started** section that keeps the fresh-Arch explanation, recommends the official `archinstall` guided installer while allowing a normal manual Arch installation, and includes the current copy/paste installation commands;\n- an **Existing Awtarchy users** update command using `awtarchy update`;\n- feature/change sections appropriate to the release;\n- a **Validation** section grounded in tests and CI that actually passed for the release target;\n- a final **Post-release updates** section containing a version-specific placeholder such as `_Placeholder for possible tested post-release patches to vX.Y.Z._`.\n\nKeep installation directions, useful links, and the post-release placeholder when carrying the prior stable release structure forward unless they are demonstrably obsolete or the user asks to remove them. Verify the complete published release body after creation.\n\n'''
-          if '### Standard stable release notes\n' not in agents_text:
-              if marker not in agents_text:
-                  raise SystemExit('AGENTS.md release section marker not found')
-              agents_text = agents_text.replace(marker, guidance, 1)
-              agents.write_text(agents_text, encoding='utf-8')
-          PY
-          git diff --check
-
-      - name: Commit finalized bookkeeping
-        run: |
-          git config user.name 'dillacorn'
-          git config user.email '28743863+dillacorn@users.noreply.github.com'
-          git add AGENTS.md local/share/awtarchy/quickshell-managed-history.sha256
-          git diff --cached --quiet || git commit -m 'Record PolicyKit integration bookkeeping'
-          git push origin HEAD:polkit-agent-concept-testing
-
   polkit-contracts:
     runs-on: ubuntu-latest
     steps:
