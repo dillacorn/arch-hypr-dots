@@ -18,20 +18,29 @@ if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" && -S "${RUNTIME_DIR}/bus" ]]; then
 fi
 
 recover_user_manager_session_environment() {
-    local line key value current
+    local line key value
 
     command -v systemctl >/dev/null 2>&1 || return 0
     while IFS= read -r line; do
         [[ "$line" == *=* ]] || continue
         key="${line%%=*}"
         value="${line#*=}"
+        [[ -n "$value" ]] || continue
         case "$key" in
-            WAYLAND_DISPLAY|HYPRLAND_INSTANCE_SIGNATURE|XDG_CURRENT_DESKTOP|XDG_SESSION_DESKTOP|XDG_SESSION_TYPE)
-                current="${!key:-}"
-                if [[ -z "$current" && -n "$value" ]]; then
-                    printf -v "$key" '%s' "$value"
-                    export "$key"
-                fi
+            WAYLAND_DISPLAY)
+                [[ -n "${WAYLAND_DISPLAY:-}" ]] || export WAYLAND_DISPLAY="$value"
+                ;;
+            HYPRLAND_INSTANCE_SIGNATURE)
+                [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || export HYPRLAND_INSTANCE_SIGNATURE="$value"
+                ;;
+            XDG_CURRENT_DESKTOP)
+                [[ -n "${XDG_CURRENT_DESKTOP:-}" ]] || export XDG_CURRENT_DESKTOP="$value"
+                ;;
+            XDG_SESSION_DESKTOP)
+                [[ -n "${XDG_SESSION_DESKTOP:-}" ]] || export XDG_SESSION_DESKTOP="$value"
+                ;;
+            XDG_SESSION_TYPE)
+                [[ -n "${XDG_SESSION_TYPE:-}" ]] || export XDG_SESSION_TYPE="$value"
                 ;;
         esac
     done < <(systemctl --user show-environment 2>/dev/null || true)
