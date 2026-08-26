@@ -13,6 +13,63 @@ env:
   PYTHONPYCACHEPREFIX: /tmp/awtarchy-pycache
 
 jobs:
+  refresh-managed-history:
+    if: github.event_name == 'push' && github.event.head_commit.message == 'Refresh managed stock hashes'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Record current managed stock hashes
+        run: |
+          python3 - <<'PY'
+          from hashlib import sha256
+          from pathlib import Path
+
+          root = Path('.')
+          history = root / 'local/share/awtarchy/quickshell-managed-history.sha256'
+          paths = list((root / 'config/quickshell/awtarchy').glob('*'))
+          scripts = root / 'config/hypr/scripts'
+          paths += [
+              p for p in scripts.iterdir()
+              if p.is_file() and (
+                  p.name.startswith('quickshell')
+                  or p.name in {'ddc_brightness.sh', 'hypr-ddc-brightness.sh'}
+              )
+          ]
+          paths = sorted(p for p in paths if p.is_file())
+          text = history.read_text(encoding='utf-8')
+          lines = set(text.splitlines())
+          added = []
+          for path in paths:
+              rel = '.' + str(path).removeprefix('config').replace('local/share/', 'local/share/') if False else None
+              if str(path).startswith('config/'):
+                  home_rel = '.' + str(path)[len('config'):]
+              else:
+                  continue
+              entry = f"{sha256(path.read_bytes()).hexdigest()}\t{home_rel}"
+              if entry not in lines:
+                  added.append(entry)
+                  lines.add(entry)
+          if added:
+              if text and not text.endswith('\n'):
+                  text += '\n'
+              history.write_text(text + '\n'.join(added) + '\n', encoding='utf-8')
+              print(f'Added {len(added)} managed stock hashes.')
+              for entry in added:
+                  print(entry)
+          else:
+              print('Managed stock hashes already current.')
+          PY
+          git diff --check
+      - name: Commit managed history
+        run: |
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add local/share/awtarchy/quickshell-managed-history.sha256
+          git diff --cached --quiet || git commit -m 'Record current managed stock hashes'
+          git push origin HEAD:polkit-agent-concept-testing
+
   polkit-contracts:
     runs-on: ubuntu-latest
     steps:
