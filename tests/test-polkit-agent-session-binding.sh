@@ -44,9 +44,16 @@ require_contains "$RUNTIME" 'XDG_SESSION_ID'
 # Update/reset commands can run after privilege transitions that no longer carry
 # the graphical shell environment. Recover the allowlisted session variables
 # from the target user's systemd manager before deciding that no live Hyprland
-# session exists.
+# session exists. Recovered values must be exported so later updater children,
+# including hyprctl reload, inherit the same live-session environment.
 require_contains "$RUNTIME" 'awtarchy_polkit_recover_session_environment()'
 require_contains "$RUNTIME" '/usr/bin/systemctl --user show-environment'
 require_contains "$RUNTIME" 'awtarchy_polkit_recover_session_environment || return 2'
+require_contains "$RUNTIME" 'export WAYLAND_DISPLAY="$value"'
+require_contains "$RUNTIME" 'export HYPRLAND_INSTANCE_SIGNATURE="$value"'
+require_contains "$RUNTIME" 'export XDG_SESSION_ID="$value"'
+require_contains "$RUNTIME" 'export XDG_CURRENT_DESKTOP="$value"'
+require_contains "$RUNTIME" 'export XDG_SESSION_DESKTOP="$value"'
+require_contains "$RUNTIME" 'export XDG_SESSION_TYPE="$value"'
 
 printf '%s\n' 'terminal Polkit graphical-session binding contract passed'
