@@ -4,7 +4,7 @@
 [Desktop Entry]
 Type=Application
 Name=vm mode submap (no binds)
-Exec=/bin/sh -c "echo vm > /tmp/hypr-submap; notify-send -a Hyprland -t 1000 'vm submap: ON'; hyprctl dispatch submap vm"
+Exec=/bin/sh -c "state_dir=${XDG_RUNTIME_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}}; mkdir -p -- \"$state_dir\"; echo vm > \"$state_dir/awtarchy-hypr-submap\"; notify-send -a Hyprland -t 1000 'vm submap: ON'; hyprctl dispatch submap vm"
 Icon=utilities-terminal
 Terminal=false
 Categories=Utility;
