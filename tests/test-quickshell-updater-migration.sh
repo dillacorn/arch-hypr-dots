@@ -155,7 +155,73 @@ set -euo pipefail
 if [[ ${1:-} == -v ]]; then
   exit 0
 fi
-exec "$@"
+
+[[ ${1:-} == -- ]] && shift
+cmd="${1:-}"
+[[ -n $cmd ]] || exit 2
+shift
+
+test_root="${AWTARCHY_TEST_POLKIT_ROOT:-${AWTARCHY_TEST_TARGET_HOME:?}.polkit-root}"
+mapped=()
+policykit_path=0
+for arg in "$@"; do
+  case "$arg" in
+    /usr/local/libexec/awtarchy*|/usr/local/lib/systemd/user*)
+      mapped+=("${test_root}${arg}")
+      policykit_path=1
+      ;;
+    "${test_root}"/usr/local/libexec/awtarchy*|"${test_root}"/usr/local/lib/systemd/user*)
+      mapped+=("$arg")
+      policykit_path=1
+      ;;
+    *)
+      mapped+=("$arg")
+      ;;
+  esac
+done
+
+if (( policykit_path == 1 )); then
+  case "$cmd" in
+    /usr/bin/install)
+      filtered=()
+      set -- "${mapped[@]}"
+      while (( $# )); do
+        case "$1" in
+-o|-g)
+  shift
+  (( $# )) || exit 2
+  shift
+  ;;
+*)
+  filtered+=("$1")
+  shift
+  ;;
+        esac
+      done
+      exec "$cmd" "${filtered[@]}"
+      ;;
+    /usr/bin/stat)
+      output="$("$cmd" "${mapped[@]}")"
+      wants_owner=0
+      for arg in "${mapped[@]}"; do
+        [[ $arg == '%u %a %F' ]] && wants_owner=1
+      done
+      if (( wants_owner == 1 )); then
+        printf '0 %s
+' "${output#* }"
+      else
+        printf '%s
+' "$output"
+      fi
+      exit 0
+      ;;
+    *)
+      exec "$cmd" "${mapped[@]}"
+      ;;
+  esac
+fi
+
+exec "$cmd" "${mapped[@]}"
 EOF
 
 cat >"${fakebin}/curl" <<'EOF'
@@ -832,6 +898,16 @@ assert_absent "$home/.local/state/awtarchy/git-testing"
 env "${update_env[@]}" "$installed_launcher" git update \
   --branch "$TEST_BRANCH" --commit "$TEST_COMMIT" \
   >"${TMP}/update.out" 2>&1
+
+polkit_test_root="${home}.polkit-root"
+assert_file "${polkit_test_root}/usr/local/libexec/awtarchy/polkit-agent/agent.py"
+assert_file "${polkit_test_root}/usr/local/libexec/awtarchy/polkit-agent/tui.py"
+assert_file "${polkit_test_root}/usr/local/libexec/awtarchy/polkit-agent/alacritty.toml"
+assert_file "${polkit_test_root}/usr/local/libexec/awtarchy/polkit-agent/launcher"
+assert_file "${polkit_test_root}/usr/local/lib/systemd/user/awtarchy-polkit-agent.service"
+grep -Fq 'Installed root-owned Awtarchy terminal PolicyKit authentication runtime.' \
+  "${TMP}/update.out" \
+  || fail "updater did not stage the PolicyKit runtime through the privileged install path"
 
 grep -Fq -- \
   '-Rns --noconfirm waybar-git fuzzel wlogout mako wofi network-manager-applet blueman' \
