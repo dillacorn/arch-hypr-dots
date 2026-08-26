@@ -73,13 +73,8 @@ jobs:
                   raise SystemExit('PolicyKit insertion marker not found')
               text = text.replace(marker, '\n' + helper + marker, 1)
 
-          old = '''  [[ -S "${runtime_dir}/bus" && -n "${WAYLAND_DISPLAY:-}" && -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" && -n "${XDG_SESSION_ID:-}" ]] || return 2
-          awtarchy_polkit_verify_runtime || return 1
-          '''
-          new = '''  awtarchy_polkit_recover_session_environment || return 2
-          [[ -S "${runtime_dir}/bus" && -n "${WAYLAND_DISPLAY:-}" && -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" && -n "${XDG_SESSION_ID:-}" ]] || return 2
-          awtarchy_polkit_verify_runtime || return 1
-          '''
+          old = '[[ -S "${runtime_dir}/bus" && -n "${WAYLAND_DISPLAY:-}" && -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" && -n "${XDG_SESSION_ID:-}" ]] || return 2\n  awtarchy_polkit_verify_runtime || return 1'
+          new = 'awtarchy_polkit_recover_session_environment || return 2\n  [[ -S "${runtime_dir}/bus" && -n "${WAYLAND_DISPLAY:-}" && -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" && -n "${XDG_SESSION_ID:-}" ]] || return 2\n  awtarchy_polkit_verify_runtime || return 1'
           if 'awtarchy_polkit_recover_session_environment || return 2' not in text:
               if old not in text:
                   raise SystemExit('PolicyKit activation marker not found')
