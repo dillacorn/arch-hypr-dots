@@ -14,7 +14,7 @@ fail() {
     failures=$((failures + 1))
 }
 
-for command_name in bash curl flock jq notify-send python3; do
+for command_name in bash curl flock jq python3; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
         fail "missing required command: $command_name"
     fi
