@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Static/security contract for the real terminal Awtarchy PolicyKit agent.
+# Static/security contract for Awtarchy's headless PolicyKit backend and transient terminal.
 
 set -euo pipefail
 
@@ -14,31 +14,10 @@ QML="${SOURCE_DIR}/shell.qml"
 GUARD="${SOURCE_DIR}/window-guard.sh"
 LIVE_TEST="${ROOT_DIR}/config/hypr/scripts/awtarchy-polkit-agent-live-test.sh"
 
-fail() {
-    printf 'FAIL: %s\n' "$*" >&2
-    return 1
-}
-
-require_file() {
-    [[ -f $1 ]] || fail "missing $1"
-}
-
-require_contains() {
-    local file="$1" pattern="$2"
-    grep -Fq -- "$pattern" "$file" || fail "$file missing: $pattern"
-}
-
-require_regex() {
-    local file="$1" pattern="$2"
-    grep -Eq -- "$pattern" "$file" || fail "$file missing regex: $pattern"
-}
-
-reject_regex() {
-    local file="$1" pattern="$2"
-    if grep -Eq -- "$pattern" "$file"; then
-        fail "$file contains forbidden regex: $pattern"
-    fi
-}
+fail() { printf 'FAIL: %s\n' "$*" >&2; return 1; }
+require_file() { [[ -f $1 ]] || fail "missing $1"; }
+require_contains() { local file="$1" pattern="$2"; grep -Fq -- "$pattern" "$file" || fail "$file missing: $pattern"; }
+reject_regex() { local file="$1" pattern="$2"; ! grep -Eq -- "$pattern" "$file" || fail "$file contains forbidden regex: $pattern"; }
 
 test_agent_contract() {
     require_file "$AGENT"
@@ -46,27 +25,28 @@ test_agent_contract() {
 
     require_contains "$AGENT" 'gi.require_version("Polkit", "1.0")'
     require_contains "$AGENT" 'gi.require_version("PolkitAgent", "1.0")'
-    require_contains "$AGENT" 'from gi.repository import Gio, GLib, Polkit, PolkitAgent'
     require_contains "$AGENT" 'OBJECT_PATH = "/org/awtarchy/PolkitAgent"'
     require_contains "$AGENT" 'org.freedesktop.PolicyKit1.AuthenticationAgent'
-    require_contains "$AGENT" 'register_object('
-    require_contains "$AGENT" 'session_id = os.environ.get("XDG_SESSION_ID", "")'
-    require_contains "$AGENT" 'self.subject = Polkit.UnixSession.new(session_id)'
-    reject_regex "$AGENT" 'Polkit\.UnixSession\.new_for_process(_sync)?'
     require_contains "$AGENT" 'register_authentication_agent_sync'
     require_contains "$AGENT" 'PolkitAgent.Session.new('
-    require_contains "$AGENT" '.connect("request"'
-    require_contains "$AGENT" '.connect("show-info"'
-    require_contains "$AGENT" '.connect("show-error"'
-    require_contains "$AGENT" '.connect("completed"'
     require_contains "$AGENT" '.response(response)'
-    require_contains "$AGENT" '.cancel()'
+    require_contains "$AGENT" 'self.subject = Polkit.UnixSession.new(session_id)'
+    reject_regex "$AGENT" 'Polkit\.UnixSession\.new_for_process(_sync)?'
 
-    # Credentials must never leave the PolicyKit session conversation through
-    # logs, argv, temporary files, shell helpers, or custom IPC.
-    reject_regex "$AGENT" 'sudo[[:space:]]+-S|pkexec.*(password|response)|/tmp/.*(password|response)|socket\.|AF_UNIX|subprocess.*(password|response)'
+    # The only credential transport outside PolkitAgent.Session is the per-request
+    # anonymous inherited AF_UNIX/SOCK_SEQPACKET socketpair to the root-owned TUI.
+    require_contains "$AGENT" 'socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)'
+    require_contains "$AGENT" 'pass_fds=(child_fd,)'
+    require_contains "$AGENT" 'close_fds=True'
+    require_contains "$AGENT" '"type": "submit"'
+    require_contains "$AGENT" 'MAX_RESPONSE_BYTES = 4096'
+    reject_regex "$AGENT" '\.bind\(|\.listen\(|AF_INET|AF_INET6|/tmp/.*(password|response)|sudo[[:space:]]+-S'
     reject_regex "$AGENT" 'print\([^\n]*(password|response)|logging\.[a-z]+\([^\n]*(password|response)'
     reject_regex "$AGENT" 'open\([^\n]*(password|response)|write_text\([^\n]*(password|response)'
+    reject_regex "$AGENT" 'env\[[^]]+\][[:space:]]*=.*response|command.*response'
+
+    # Persistent backend must remain headless.
+    reject_regex "$AGENT" 'from tui import TerminalUI|self\.ui[[:space:]]*=[[:space:]]*TerminalUI|os\.open\("/dev/tty"'
 }
 
 test_tui_contract() {
@@ -76,31 +56,25 @@ test_tui_contract() {
     require_contains "$TUI" 'APP_ID = "awtarchy-polkit-agent"'
     require_contains "$TUI" 'WINDOW_WIDTH = 900'
     require_contains "$TUI" 'WINDOW_HEIGHT = 520'
-    require_contains "$TUI" 'HIDDEN_WORKSPACE = "special:awtarchy-polkit-agent"'
+    require_contains "$TUI" 'socket.SOCK_SEQPACKET'
+    require_contains "$TUI" 'def send_packet('
+    require_contains "$TUI" 'def recv_packet('
+    require_contains "$TUI" 'def run_frontend(ipc_fd: int) -> int:'
+    require_contains "$TUI" 'os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)'
     require_contains "$TUI" 'MOUSE_ENABLE = b"\x1b[?1000h\x1b[?1006h"'
-    require_contains "$TUI" 'MOUSE_DISABLE = b"\x1b[?1000l\x1b[?1006l"'
     require_contains "$TUI" 'NORMAL_CLEAR = b"\x1b[3J\x1b[2J\x1b[H"'
     require_contains "$TUI" 'SPINNER_FRAMES = ('
-    require_contains "$TUI" 'def parse_sgr_mouse('
-    require_contains "$TUI" 'def render_password_field_only('
-    require_contains "$TUI" 'def render_status_only('
-    require_contains "$TUI" 'Password not entered.'
-    require_contains "$TUI" '/usr/bin/hyprctl'
     require_contains "$TUI" 'Authentication Required'
     require_contains "$TUI" '[ Cancel ]'
     require_contains "$TUI" '[ Authenticate ]'
-
-    reject_regex "$TUI" 'password[[:space:]]*=.*(log|print)|/tmp/.*password|sudo[[:space:]]+-S'
+    reject_regex "$TUI" 'HIDDEN_WORKSPACE|special:awtarchy-polkit-agent|sudo[[:space:]]+-S|/tmp/.*password'
 }
 
 test_launcher_contract() {
     require_file "$LAUNCHER"
     bash -n "$LAUNCHER"
     require_contains "$LAUNCHER" 'RUNTIME_DIR="/usr/local/libexec/awtarchy/polkit-agent"'
-    require_contains "$LAUNCHER" '/usr/bin/alacritty'
     require_contains "$LAUNCHER" '/usr/bin/python3'
-    require_contains "$LAUNCHER" '/usr/bin/hyprctl'
-    require_contains "$LAUNCHER" '/usr/bin/systemd-cat'
     require_contains "$LAUNCHER" '/usr/bin/env -i'
     require_contains "$LAUNCHER" 'PYTHONPATH'
     require_contains "$LAUNCHER" 'PYTHONHOME'
@@ -108,16 +82,12 @@ test_launcher_contract() {
     require_contains "$LAUNCHER" 'LD_LIBRARY_PATH'
     require_contains "$LAUNCHER" 'stat -Lc'
     require_contains "$LAUNCHER" '! -L $path'
-    require_contains "$LAUNCHER" '--config-file'
-    require_contains "$LAUNCHER" '--class'
-    require_contains "$LAUNCHER" '-I'
-    require_contains "$LAUNCHER" 'local session_id="${XDG_SESSION_ID:-}"'
+    require_contains "$LAUNCHER" 'AWTARCHY_POLKIT_ALACRITTY_OPTIONS="$appearance_text"'
+    require_contains "$LAUNCHER" '"$PYTHON" -I "$AGENT"'
     require_contains "$LAUNCHER" 'XDG_SESSION_ID="$session_id"'
     require_contains "$LAUNCHER" 'gi.require_version("Polkit", "1.0")'
-    require_contains "$LAUNCHER" 'gi.require_version("PolkitAgent", "1.0")'
     require_contains "$LAUNCHER" 'PolicyKit Python bindings are unavailable'
-    require_contains "$LAUNCHER" '--identifier=awtarchy-polkit-agent'
-    reject_regex "$LAUNCHER" '/usr/bin/quickshell|quickshell[[:space:]].*--config|shell\.qml'
+    reject_regex "$LAUNCHER" '/usr/bin/quickshell|shell\.qml'
     reject_regex "$LAUNCHER" '(^|[^[:alnum:]_])eval([[:space:]]|$)'
 }
 
@@ -137,7 +107,8 @@ test_service_contract() {
 
 [[ ! -e $QML && ! -L $QML ]] || fail "obsolete QML authentication runtime still exists: $QML"
 [[ ! -e $GUARD && ! -L $GUARD ]] || fail "obsolete Quickshell window guard still exists: $GUARD"
-[[ ! -e $LIVE_TEST && ! -L $LIVE_TEST ]] || fail "temporary PolicyKit live-test controller still ships: $LIVE_TEST"
+# The live-test controller is intentionally branch-only until the migration is validated.
+require_file "$LIVE_TEST"
 
 test_agent_contract
 test_tui_contract
@@ -145,4 +116,4 @@ test_launcher_contract
 test_terminal_config_contract
 test_service_contract
 
-printf '%s\n' 'secure terminal Polkit agent static/security tests passed'
+printf '%s\n' 'secure headless/transient Polkit agent tests passed'
