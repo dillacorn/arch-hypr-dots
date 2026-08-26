@@ -53,9 +53,10 @@ bash -n "$LAUNCHER"
 /usr/bin/python3 -m py_compile "$AGENT" "$TUI"
 
 # Hyprland owns session timing: import the Wayland/Hyprland environment first,
-# then restart the supervised Awtarchy agent. GNOME must not also autostart.
+# then restart the supervised headless Awtarchy agent. GNOME must not also autostart.
 require_contains "$HYPR" 'hl.exec_cmd("/usr/bin/systemctl --user restart awtarchy-polkit-agent.service")'
 reject_contains "$HYPR" '/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1'
+reject_contains "$HYPR" 'special:awtarchy-polkit-agent'
 
 # Fresh installs must explicitly install both PolicyKit and PyGObject rather
 # than rely on unrelated transitive dependencies. GNOME is retired.
@@ -88,15 +89,24 @@ require_contains "$RUNTIME" '/usr/lib/polkit-gnome/polkit-gnome-authentication-a
 require_contains "$RUNTIME" '/usr/bin/systemctl --user restart awtarchy-polkit-agent.service'
 
 # Activation must stop only the exact GNOME binary, start the supervised agent,
-# verify Alacritty is the service MainPID, verify the root-owned Python child,
-# and restore GNOME on activation failure.
+# verify the isolated Python backend itself is MainPID, and restore GNOME on failure.
 require_contains "$RUNTIME" 'activate_awtarchy_polkit_agent()'
 require_contains "$RUNTIME" 'AWTARCHY_GNOME_POLKIT_BIN="/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"'
 require_contains "$RUNTIME" '/proc/${pid}/exe'
-require_contains "$RUNTIME" '/usr/bin/alacritty'
-require_contains "$RUNTIME" '/usr/bin/python3'
+require_contains "$RUNTIME" 'expected_python="$(/usr/bin/readlink -f -- /usr/bin/python3 2>/dev/null)"'
+require_contains "$RUNTIME" 'mapfile -d '\''\'\''' -t argv'
+require_contains "$RUNTIME" '"${AWTARCHY_POLKIT_RUNTIME_DIR}/agent.py"'
 require_contains "$RUNTIME" 'systemctl --user start "$AWTARCHY_POLKIT_SERVICE_NAME"'
 require_contains "$RUNTIME" 'restore_legacy_polkit_gnome'
+
+# The backend owns PolicyKit registration while idle; Alacritty is created only
+# for an active request over an anonymous inherited socketpair.
+require_contains "$AGENT" 'socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)'
+require_contains "$AGENT" 'pass_fds=(child_fd,)'
+require_contains "$AGENT" 'frontend_process'
+require_contains "$AGENT" 'frontend_socket'
+require_contains "$LAUNCHER" 'AWTARCHY_POLKIT_ALACRITTY_OPTIONS="$appearance_text"'
+reject_contains "$LAUNCHER" '-e "$SYSTEMD_CAT"'
 
 # Only remove polkit-gnome when Awtarchy recorded ownership of the package.
 require_contains "$RUNTIME" 'remove_legacy_polkit_gnome_package()'
@@ -120,4 +130,4 @@ reject_contains "$SERVICE" 'WantedBy=default.target'
 # Runtime trust checks must parse stat output independently of the global IFS.
 require_contains "$LAUNCHER" "IFS=' ' read -r uid mode type"
 
-printf '%s\n' 'terminal Polkit production integration contract passed'
+printf '%s\n' 'headless/transient terminal Polkit production integration contract passed'
