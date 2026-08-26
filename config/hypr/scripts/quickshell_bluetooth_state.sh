@@ -18,7 +18,7 @@ if [[ ! "$BLUETOOTH_POWER_RETRY_SECONDS" =~ ^[0-9]+$ ]]; then
 fi
 
 usage() {
-    printf 'usage: quickshell_bluetooth_state.sh set <enabled|disabled> | restore | status\n' >&2
+    printf 'usage: quickshell_bluetooth_state.sh set <enabled|disabled> | restore | status | actual\n' >&2
     exit 2
 }
 
@@ -47,6 +47,25 @@ wait_for_controller() {
         compgen -G "${BLUETOOTH_CLASS_DIR}/hci*" >/dev/null && return 0
         sleep 0.1
     done
+    return 1
+}
+
+read_actual_power() {
+    local output=""
+
+    need_bluetoothctl
+    wait_for_controller || return 1
+    output="$(timeout 5 bluetoothctl show 2>/dev/null)" || return 1
+
+    if grep -Eq '^[[:space:]]*Powered:[[:space:]]*yes[[:space:]]*$' <<<"$output"; then
+        printf 'enabled\n'
+        return 0
+    fi
+    if grep -Eq '^[[:space:]]*Powered:[[:space:]]*no[[:space:]]*$' <<<"$output"; then
+        printf 'disabled\n'
+        return 0
+    fi
+
     return 1
 }
 
@@ -140,6 +159,10 @@ case "$command_name" in
         if ! read_state; then
             printf 'unset\n'
         fi
+        ;;
+    actual)
+        [[ $# -eq 1 ]] || usage
+        read_actual_power
         ;;
     *) usage ;;
 esac
