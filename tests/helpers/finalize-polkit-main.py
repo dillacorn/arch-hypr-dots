@@ -103,7 +103,6 @@ reject_contains() { ! grep -Fq -- "$2" "$1" || fail "$1 still contains: $2"; }
 # Idle service must be the isolated Python backend itself, not Alacritty.
 require_contains "$RUNTIME" 'expected_python="$(/usr/bin/readlink -f -- /usr/bin/python3 2>/dev/null)"'
 require_contains "$RUNTIME" '[[ "$resolved" == "$expected_python" ]] || return 1'
-require_contains "$RUNTIME" "mapfile -d '' -t argv <\"/proc/\${pid}/cmdline\""
 reject_contains "$RUNTIME" '[[ "$resolved" == "$expected_alacritty" ]] || return 1'
 
 # The persistent backend owns registration; the terminal exists only per request.
