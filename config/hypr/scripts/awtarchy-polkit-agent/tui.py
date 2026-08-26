@@ -1,22 +1,28 @@
 #!/usr/bin/env python3
-"""Terminal UI and Hyprland window control for Awtarchy's PolicyKit agent."""
+"""Transient terminal frontend for Awtarchy's PolicyKit authentication agent."""
 
 from __future__ import annotations
 
+import argparse
 from dataclasses import dataclass
 import json
 import os
 import re
+import selectors
+import socket
 import subprocess
 import termios
 import textwrap
+import time
 from typing import Callable, Optional
 
 APP_ID = "awtarchy-polkit-agent"
 WINDOW_WIDTH = 900
 WINDOW_HEIGHT = 520
-HIDDEN_WORKSPACE = "special:awtarchy-polkit-agent"
 HYPRCTL = "/usr/bin/hyprctl"
+SYSTEMD_CAT = "/usr/bin/systemd-cat"
+MAX_PACKET_BYTES = 65536
+SPINNER_INTERVAL = 0.09
 
 ESC = b"\x1b"
 ALT_ENTER = b"\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l"
@@ -25,10 +31,6 @@ MOUSE_ENABLE = b"\x1b[?1000h\x1b[?1006h"
 MOUSE_DISABLE = b"\x1b[?1000l\x1b[?1006l"
 NORMAL_CLEAR = b"\x1b[3J\x1b[2J\x1b[H"
 SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
-
-def spinner_text(index: int) -> str:
-    return f"Authenticating {SPINNER_FRAMES[index % len(SPINNER_FRAMES)]}"
-
 
 C_RESET = "\x1b[0m"
 C_BOLD = "\x1b[1m"
@@ -41,6 +43,63 @@ C_REVERSE = "\x1b[7m"
 
 _SGR_MOUSE = re.compile(rb"^\x1b\[<(\d+);(\d+);(\d+)([Mm])$")
 _SGR_MOUSE_PREFIX = re.compile(rb"^\x1b\[<[0-9;]*$")
+
+
+class ProtocolError(RuntimeError):
+    """Malformed or unsafe frontend/backend IPC packet."""
+
+
+def spinner_text(index: int) -> str:
+    return f"Authenticating {SPINNER_FRAMES[index % len(SPINNER_FRAMES)]}"
+
+
+def send_packet(sock: socket.socket, payload: dict) -> None:
+    """Send one bounded JSON object over an AF_UNIX SOCK_SEQPACKET socket."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("type"), str):
+        raise ProtocolError("IPC packet must be a typed object")
+    try:
+        data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ProtocolError("IPC packet is not JSON serializable") from exc
+    if not data or len(data) > MAX_PACKET_BYTES:
+        raise ProtocolError("IPC packet exceeds maximum size")
+    sent = sock.send(data)
+    if sent != len(data):
+        raise ProtocolError("IPC packet was not sent atomically")
+
+
+def recv_packet(sock: socket.socket) -> dict:
+    """Receive one bounded JSON object from an AF_UNIX SOCK_SEQPACKET socket."""
+    data, _ancillary, flags, _address = sock.recvmsg(MAX_PACKET_BYTES)
+    if not data:
+        raise EOFError("IPC peer closed")
+    if flags & socket.MSG_TRUNC:
+        raise ProtocolError("IPC packet exceeds maximum size")
+    try:
+        payload = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ProtocolError("IPC packet is not valid UTF-8 JSON") from exc
+    if not isinstance(payload, dict) or not isinstance(payload.get("type"), str):
+        raise ProtocolError("IPC packet must be a typed object")
+    return payload
+
+
+def journal_message(priority: str, message: str) -> None:
+    """Write non-secret transient-frontend diagnostics to the user journal."""
+    try:
+        subprocess.run(
+            [SYSTEMD_CAT, "--identifier=awtarchy-polkit-agent-tui", f"--priority={priority}"],
+            input=f"{message}\n",
+            text=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"},
+            timeout=2.0,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass
 
 
 @dataclass(frozen=True)
@@ -149,7 +208,7 @@ class InputParser:
 
 
 class TerminalUI:
-    """Approved terminal authentication UI plus exact-window Hyprland control."""
+    """Terminal authentication UI plus exact-window Hyprland control."""
 
     def __init__(
         self,
@@ -260,6 +319,13 @@ class TerminalUI:
         matches.sort(key=lambda item: int(item.get("focusHistoryID", 999999)))
         return matches[0]
 
+    def _wait_for_window(self) -> None:
+        for _ in range(50):
+            if self._window() is not None:
+                return
+            time.sleep(0.04)
+        raise RuntimeError("Awtarchy PolicyKit terminal window did not appear")
+
     def _active_workspace(self) -> str:
         try:
             payload = json.loads(self._hypr("-j", "activeworkspace", capture=True))
@@ -302,16 +368,6 @@ class TerminalUI:
             )
         self._hypr("eval", "; ".join(commands))
 
-    def prime_hidden(self) -> None:
-        """Hide the service terminal after Alacritty maps it."""
-        for _ in range(50):
-            if self._window() is not None:
-                self._move_window(HIDDEN_WORKSPACE, focus=False)
-                return
-            import time
-            time.sleep(0.04)
-        raise RuntimeError("Awtarchy PolicyKit terminal did not appear")
-
     def show_request(
         self,
         *,
@@ -337,6 +393,7 @@ class TerminalUI:
         self.spinner_index = 0
         self.focus = 0
         self.details_expanded = False
+        self._wait_for_window()
         workspace = self._active_workspace()
         self._move_window(workspace, focus=True)
         self._enter_raw()
@@ -349,23 +406,21 @@ class TerminalUI:
         self.spinner_index = 0
         self.visible = False
         self._leave_raw()
-        try:
-            if self._window() is not None:
-                self._move_window(HIDDEN_WORKSPACE, focus=False)
-        except RuntimeError:
-            pass
 
     def set_prompt(self, prompt: str, echo_on: bool) -> None:
         self.clear_secret()
         self.prompt = (prompt or "Password:").strip() or "Password:"
         self.echo_on = bool(echo_on)
-        self.status = ""
-        self.status_error = False
+        if not self.authenticating:
+            self.status = ""
+            self.status_error = False
         self.focus = 0
         if self.visible:
             self.render()
 
     def set_status(self, message: str) -> None:
+        self.authenticating = False
+        self.spinner_index = 0
         self.status = message or ""
         self.status_error = False
         if self.visible:
@@ -373,6 +428,8 @@ class TerminalUI:
 
     def set_error(self, message: str) -> None:
         self.clear_secret()
+        self.authenticating = False
+        self.spinner_index = 0
         self.status = message or "Authentication failed."
         self.status_error = True
         self.focus = 0
@@ -572,6 +629,7 @@ class TerminalUI:
             self.set_error("Input is not valid UTF-8.")
             return
         self.clear_secret()
+        self.set_authenticating(True)
         self.on_submit(response)
         response = ""
 
@@ -652,3 +710,122 @@ class TerminalUI:
         elif y == self.button_row and self.auth_x1 <= x <= self.auth_x2:
             self.focus = 3
             self._submit()
+
+
+def _string(value: object, fallback: str = "") -> str:
+    return value if isinstance(value, str) else fallback
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def run_frontend(ipc_fd: int) -> int:
+    """Run one short-lived authentication frontend over an inherited socket FD."""
+    if ipc_fd < 3:
+        raise ProtocolError("invalid inherited IPC descriptor")
+
+    ipc = socket.socket(fileno=ipc_fd)
+    if ipc.family != socket.AF_UNIX or ipc.getsockopt(socket.SOL_SOCKET, socket.SO_TYPE) != socket.SOCK_SEQPACKET:
+        ipc.close()
+        raise ProtocolError("inherited IPC descriptor is not an AF_UNIX SOCK_SEQPACKET socket")
+    ipc.set_inheritable(False)
+    ipc.setblocking(False)
+
+    def frontend_send(payload: dict) -> None:
+        send_packet(ipc, payload)
+
+    ui = TerminalUI(
+        on_submit=lambda response: frontend_send({"type": "submit", "response": response}),
+        on_cancel=lambda: frontend_send({"type": "cancel"}),
+        on_identity_cycle=lambda delta: frontend_send({"type": "identity-cycle", "delta": delta}),
+    )
+    selector = selectors.DefaultSelector()
+    selector.register(ipc, selectors.EVENT_READ, "ipc")
+    selector.register(ui.tty_fd, selectors.EVENT_READ, "tty")
+    next_spinner = time.monotonic() + SPINNER_INTERVAL
+    next_escape_flush = time.monotonic() + 0.045
+
+    try:
+        while True:
+            now = time.monotonic()
+            timeout = max(0.0, min(next_spinner, next_escape_flush) - now)
+            for key, _mask in selector.select(timeout):
+                if key.data == "tty":
+                    if ui.visible:
+                        for event in ui.read_input():
+                            ui.handle_event(event)
+                    continue
+
+                while True:
+                    try:
+                        packet = recv_packet(ipc)
+                    except BlockingIOError:
+                        break
+                    except EOFError:
+                        return 0
+
+                    packet_type = packet["type"]
+                    if packet_type == "show-request":
+                        identities = _string_list(packet.get("identities"))
+                        index = packet.get("identity_index", 0)
+                        if not isinstance(index, int):
+                            raise ProtocolError("invalid identity index")
+                        ui.show_request(
+                            action_id=_string(packet.get("action_id")),
+                            message=_string(packet.get("message"), "Authentication is required."),
+                            vendor=_string(packet.get("vendor"), "Unavailable"),
+                            description=_string(packet.get("description"), "Unavailable"),
+                            identities=identities,
+                            identity_index=index,
+                        )
+                        frontend_send({"type": "ready"})
+                    elif packet_type == "prompt":
+                        echo_on = packet.get("echo_on", False)
+                        if not isinstance(echo_on, bool):
+                            raise ProtocolError("invalid prompt echo mode")
+                        ui.set_prompt(_string(packet.get("prompt"), "Password:"), echo_on)
+                    elif packet_type == "status":
+                        ui.set_status(_string(packet.get("message")))
+                    elif packet_type == "error":
+                        ui.set_error(_string(packet.get("message"), "Authentication failed."))
+                    elif packet_type == "identity-index":
+                        index = packet.get("index")
+                        if not isinstance(index, int):
+                            raise ProtocolError("invalid identity index")
+                        ui.set_identity_index(index)
+                    elif packet_type == "close":
+                        return 0
+                    else:
+                        raise ProtocolError("unsupported backend packet type")
+
+            now = time.monotonic()
+            if now >= next_escape_flush:
+                if ui.visible:
+                    ui.flush_pending_input()
+                next_escape_flush = now + 0.045
+            if now >= next_spinner:
+                if ui.authenticating:
+                    ui.advance_spinner()
+                next_spinner = now + SPINNER_INTERVAL
+    finally:
+        selector.close()
+        ui.close()
+        ipc.close()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--ipc-fd", required=True, type=int)
+    args = parser.parse_args()
+    try:
+        return run_frontend(args.ipc_fd)
+    except Exception as exc:
+        journal_message("err", f"transient frontend failed: {type(exc).__name__}: {exc}")
+        return 78
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
