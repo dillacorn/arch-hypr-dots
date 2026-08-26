@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - fix-update-notification-login-check
     paths:
       - config/hypr/scripts/quickshell_update_notifications.sh
       - config/quickshell/awtarchy/shell.qml
@@ -20,7 +19,7 @@ on:
       - .github/workflows/validate-update-notification-login-regression.yml
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   regression:
@@ -33,20 +32,6 @@ jobs:
           bash -n tests/test-update-notification-login-regression.sh
       - name: Update notification regression
         run: bash tests/test-update-notification-login-regression.sh
-      - name: Refresh managed history on testing branch
-        if: github.event_name == 'push' && github.ref == 'refs/heads/fix-update-notification-login-check'
-        run: |
-          history='local/share/awtarchy/quickshell-managed-history.sha256'
-          for entry in \
-            'config/hypr/scripts/quickshell_update_notifications.sh|.config/hypr/scripts/quickshell_update_notifications.sh' \
-            'config/quickshell/awtarchy/shell.qml|.config/quickshell/awtarchy/shell.qml'; do
-            source_path="${entry%%|*}"
-            managed_path="${entry#*|}"
-            hash="$(sha256sum "$source_path" | awk '{print $1}')"
-            if ! grep -Fq "${hash}"$'\t'"${managed_path}" "$history"; then
-              printf '%s\t%s\n' "$hash" "$managed_path" >>"$history"
-            fi
-          done
       - name: Managed history
         run: |
           history='local/share/awtarchy/quickshell-managed-history.sha256'
@@ -63,14 +48,3 @@ jobs:
             fi
           done
           (( missing == 0 ))
-      - name: Commit refreshed managed history
-        if: github.event_name == 'push' && github.ref == 'refs/heads/fix-update-notification-login-check'
-        run: |
-          if git diff --quiet -- local/share/awtarchy/quickshell-managed-history.sha256; then
-            return 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add local/share/awtarchy/quickshell-managed-history.sha256
-          git commit -m 'Update Quickshell managed history for notification fix'
-          git push origin HEAD:fix-update-notification-login-check
