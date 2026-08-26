@@ -98,11 +98,11 @@ hl.permission("/usr/(bin|local/bin)/hyprpm", "plugin", "allow")
 -- ───────────────────────────────────────────────────────────────────────────────
 
 hl.on("hyprland.start", function()
-    hl.exec_cmd("dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP HYPRLAND_INSTANCE_SIGNATURE XDG_SESSION_TYPE")
-    hl.exec_cmd("systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP HYPRLAND_INSTANCE_SIGNATURE XDG_SESSION_TYPE")
+    hl.exec_cmd("dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP HYPRLAND_INSTANCE_SIGNATURE XDG_SESSION_ID XDG_SESSION_TYPE")
+    hl.exec_cmd("systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP HYPRLAND_INSTANCE_SIGNATURE XDG_SESSION_ID XDG_SESSION_TYPE")
 
     hl.exec_cmd("sh -lc '$HOME/.config/hypr/scripts/portal_fixup.sh'")
-    hl.exec_cmd("/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1")
+    hl.exec_cmd("/usr/bin/systemctl --user restart awtarchy-polkit-agent.service")
 
     -- hl.exec_cmd("~/.config/hypr/scripts/last_to_load_recorder.sh &")
     hl.exec_cmd("~/.config/hypr/scripts/quickshell.sh start &")
@@ -352,6 +352,14 @@ hl.window_rule({
     decorate = false,
     no_shadow = true,
     no_follow_mouse = true,
+})
+
+-- Internal PolicyKit terminal: map directly to its private parking workspace.
+-- The PolicyKit terminal exists only while an authentication request is active.
+hl.window_rule({
+    name = "awtarchy-polkit-agent-auth",
+    match = { class = "awtarchy-polkit-agent" },
+    float = true,
 })
 
 -- ───────────────────────────────────────────────────────────────────────────────

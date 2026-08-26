@@ -170,4 +170,14 @@ finally:
 PY
 
 printf '%s\n' "$name" >"$STATE_DIR/active-theme"
+
+# The PolicyKit terminal uses a trusted root-owned base config plus sanitized
+# visual overrides from the user's current Alacritty config. Restart the hidden
+# agent after a theme change so its next prompt reflects the new theme.
+if command -v systemctl >/dev/null 2>&1 \
+    && systemctl --user is-active --quiet awtarchy-polkit-agent.service 2>/dev/null;
+then
+    systemctl --user try-restart awtarchy-polkit-agent.service >/dev/null 2>&1 || true
+fi
+
 command -v hyprctl >/dev/null 2>&1 && hyprctl reload >/dev/null 2>&1 || true

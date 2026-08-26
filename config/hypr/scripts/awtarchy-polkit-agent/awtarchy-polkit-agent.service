@@ -1,0 +1,13 @@
+[Unit]
+Description=Awtarchy PolicyKit Authentication Agent
+After=graphical-session-pre.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/libexec/awtarchy/polkit-agent/launcher
+StandardOutput=journal
+StandardError=journal
+Restart=on-failure
+RestartPreventExitStatus=78
+RestartSec=2s
+TimeoutStopSec=5s

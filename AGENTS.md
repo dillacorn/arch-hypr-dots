@@ -123,6 +123,41 @@ Important current state owners include:
 
 Before adding new persistent or shared UI state, inspect the existing singleton/state owner first. Do not create a second source of truth for behavior an existing state object already owns.
 
+### PolicyKit authentication
+
+Awtarchy owns its desktop PolicyKit authentication agent instead of delegating that role to `polkit-gnome`.
+
+Repository sources:
+
+- `config/hypr/scripts/awtarchy-polkit-agent/agent.py`: persistent headless system-bus registration and the PolicyKit/PAM authentication conversation.
+- `config/hypr/scripts/awtarchy-polkit-agent/tui.py`: short-lived real terminal authentication UI, keyboard/mouse handling, and exact-window Hyprland lifecycle.
+- `config/hypr/scripts/awtarchy-polkit-agent/launcher.sh`: validates the trusted runtime, sanitizes current-user Alacritty appearance values, and starts the isolated headless Python backend.
+- `config/hypr/scripts/awtarchy-polkit-agent/alacritty.toml`: root-owned fallback terminal configuration for transient authentication windows.
+- `config/hypr/scripts/awtarchy-polkit-agent/awtarchy-polkit-agent.service`: supervised headless user service.
+
+Installed trusted runtime:
+
+- `/usr/local/libexec/awtarchy/polkit-agent/`
+- `/usr/local/lib/systemd/user/awtarchy-polkit-agent.service`
+
+Important invariants:
+
+- `polkit` and `python-gobject` are explicit Arch package dependencies. `polkit-gnome` is retired and may exist only as a controlled migration fallback.
+- The persistent service is a headless `python3 -I .../agent.py` backend. Alacritty must not exist merely because the PolicyKit agent is idle.
+- The real authentication frontend is a dedicated transient Alacritty terminal. Quickshell/QML does not participate in authentication and must not be reintroduced as an authentication backend/frontend without an explicit architecture change.
+- The Python backend exports `org.freedesktop.PolicyKit1.AuthenticationAgent` on the system bus and uses `PolkitAgent.Session` for the PAM conversation.
+- Each active request creates one anonymous inherited `AF_UNIX` `SOCK_SEQPACKET` socketpair between the root-owned backend and root-owned TUI. It has no filesystem path, listener, or reusable endpoint. The submitted response travels TUI -> anonymous socketpair -> `PolkitAgent.Session.response()` and nowhere else.
+- Never log, persist, shell-expand, write to temporary files, pass in argv/environment, send through `sudo -S`, expose through a named/filesystem socket, or otherwise duplicate authentication responses.
+- Hyprland starts/restarts `awtarchy-polkit-agent.service` after the Wayland/Hyprland session environment exists. Do not globally enable the unit at `default.target` where it can race `WAYLAND_DISPLAY`, `HYPRLAND_INSTANCE_SIGNATURE`, or `XDG_SESSION_ID` setup.
+- Authentication Python, launcher code, TUI code, and fallback Alacritty configuration must run from the root-owned, non-user-writable runtime under `/usr/local`. Do not execute the live agent from `~/.config`, and do not add user-controlled Python/library/plugin search paths to the agent process.
+- User Alacritty configuration may influence only explicitly sanitized visual appearance values. Shell commands, bindings, environment entries, plugins, and other executable configuration must never enter the authentication runtime.
+- During authentication, target/focus/resize only the exact `awtarchy-polkit-agent` window. On success, cancellation, final denial, frontend crash, or backend cancellation, the transient TUI/Alacritty process must terminate completely. Do not park it on a special workspace or expose it as a scratchpad/task window.
+- Preserve the approved terminal behavior: fixed 900x520 geometry, Details collapsed initially, targeted password-field/status redraws, SGR mouse support, keyboard navigation, three password attempts, real PAM status/error messages, and an `Authenticating` spinner with no artificial success delay.
+- Backend diagnostics belong in the user journal. Python warnings/tracebacks must not appear in the authentication terminal's normal buffer.
+- Migration must stop only the exact retired GNOME agent binary, verify the supervised headless Python backend, and restore GNOME when activation fails.
+- Automatic `polkit-gnome` package removal is allowed only when Awtarchy recorded ownership of that package, live activation succeeded, and every rollback-capable update validation/cleanup step has already completed.
+- Changes to this architecture require the focused PolicyKit contracts under `tests/` and permanent CI validation to remain aligned with the implementation.
+
 ### Runtime and integration helpers
 
 `config/hypr/scripts/`
@@ -333,6 +368,21 @@ Before Git writes, verify repository, current branch/ref, remote state, and the 
 - Preserve unrelated working changes.
 
 ## Releases and tags
+
+### Standard stable release notes
+
+Unless the user explicitly requests a different format, inspect the latest published stable release and preserve its overall release-page structure and level of detail. Do not reduce a new stable release to only a changelog.
+
+A normal Awtarchy stable release body should include:
+
+- the release title and a short overview of the release;
+- a **Getting started** section that keeps the fresh-Arch explanation, recommends the official `archinstall` guided installer while allowing a normal manual Arch installation, and includes the current copy/paste installation commands;
+- an **Existing Awtarchy users** update command using `awtarchy update`;
+- feature/change sections appropriate to the release;
+- a **Validation** section grounded in tests and CI that actually passed for the release target;
+- a final **Post-release updates** section containing a version-specific placeholder such as `_Placeholder for possible tested post-release patches to vX.Y.Z._`.
+
+Keep installation directions, useful links, and the post-release placeholder when carrying the prior stable release structure forward unless they are demonstrably obsolete or the user asks to remove them. Verify the complete published release body after creation.
 
 A GitHub release, Git tag, branch, release notes body, and repository documentation are different targets.
 
