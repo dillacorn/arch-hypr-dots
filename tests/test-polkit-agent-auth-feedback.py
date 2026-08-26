@@ -55,26 +55,29 @@ def test_authenticating_state_clears_secret_and_animates() -> None:
 
 def test_runtime_output_is_not_attached_to_auth_tty() -> None:
     launcher = LAUNCHER_PATH.read_text(encoding="utf-8")
-    assert 'SYSTEMD_CAT="/usr/bin/systemd-cat"' in launcher
-    assert 'verify_system_binary "$SYSTEMD_CAT"' in launcher
-    assert '-e "$SYSTEMD_CAT"' in launcher
-    assert '--identifier=awtarchy-polkit-agent' in launcher
+    tui = TUI_PATH.read_text(encoding="utf-8")
+    assert 'AWTARCHY_POLKIT_ALACRITTY_OPTIONS="$appearance_text"' in launcher
     assert '"$PYTHON" -I "$AGENT"' in launcher
+    assert '-e "$SYSTEMD_CAT"' not in launcher
+    assert 'SYSTEMD_CAT = "/usr/bin/systemd-cat"' in tui
+    assert '--identifier=awtarchy-polkit-agent-tui' in tui
+    assert 'stdout=subprocess.DEVNULL' in tui
+    assert 'stderr=subprocess.DEVNULL' in tui
 
 
-def test_agent_drives_spinner_around_pam_response() -> None:
+def test_transient_tui_owns_spinner_while_backend_checks_pam() -> None:
+    tui = TUI_PATH.read_text(encoding="utf-8")
     agent = AGENT_PATH.read_text(encoding="utf-8")
-    assert "def _start_auth_feedback(self)" in agent
-    assert "def _stop_auth_feedback(self)" in agent
-    assert "GLib.timeout_add(" in agent
-    assert "self.ui.set_authenticating(True)" in agent
-    assert "self.ui.advance_spinner()" in agent
-    assert "self.ui.set_authenticating(False)" in agent
+    assert "self.set_authenticating(True)" in tui
+    assert "if ui.authenticating:" in tui
+    assert "ui.advance_spinner()" in tui
+    assert "def _start_auth_feedback(self)" not in agent
+    assert "self.ui.advance_spinner()" not in agent
 
 
 if __name__ == "__main__":
     test_spinner_frames_wrap()
     test_authenticating_state_clears_secret_and_animates()
     test_runtime_output_is_not_attached_to_auth_tty()
-    test_agent_drives_spinner_around_pam_response()
+    test_transient_tui_owns_spinner_while_backend_checks_pam()
     print("Polkit authentication feedback tests passed")
