@@ -9,14 +9,18 @@ agent="$repo_root/config/hypr/scripts/awtarchy-polkit-agent/agent.py"
     exit 1
 }
 
-# PyGObject does not consistently expose g_unix_fd_add() as
-# GLib.unix_fd_add. Use the long-standing IOChannel API instead.
-grep -Fq 'GLib.IOChannel.unix_new(self.ui.tty_fd)' "$agent"
-grep -Fq '.add_watch(conditions, self._on_tty_ready)' "$agent"
+# The headless backend watches only the anonymous frontend socket. It must not
+# own or poll /dev/tty; the transient frontend handles terminal input itself.
+grep -Fq 'GLib.IOChannel.unix_new(parent_sock.fileno())' "$agent"
+grep -Fq '.add_watch(conditions, self._on_frontend_io)' "$agent"
 
+if grep -Fq 'self.ui.tty_fd' "$agent" || grep -Fq 'def _on_tty_ready' "$agent"; then
+    printf '%s\n' 'headless agent still contains direct TTY watch state' >&2
+    exit 1
+fi
 if grep -Fq 'GLib.unix_fd_add' "$agent"; then
     printf '%s\n' 'agent must not depend on GLib.unix_fd_add' >&2
     exit 1
 fi
 
-printf '%s\n' 'Polkit GLib TTY watch contract passed.'
+printf '%s\n' 'Polkit GLib frontend-socket watch contract passed.'
