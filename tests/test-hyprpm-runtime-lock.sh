@@ -22,6 +22,9 @@ cat >"$fakebin/hyprpm" <<'EOF_HYPRPM'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"${TEST_HYPRPM_LOG:?}"
+if [[ ${TEST_HYPRPM_FAIL_RELOAD:-0} == 1 && ${1:-} == reload ]]; then
+  exit 1
+fi
 EOF_HYPRPM
 chmod 0755 "$fakebin/hyprpm"
 
@@ -41,6 +44,28 @@ env -u HYPRLAND_INSTANCE_SIGNATURE \
 
 [[ ! -s "$hyprpm_log" ]] \
   || fail 'per-user runtime lock did not suppress live hyprpm reconciliation'
+
+# The explicit repair path must also be able to create the per-user lock when
+# the session directory does not already exist.
+rm -rf -- "$runtime/awtarchy"
+: >"$hyprpm_log"
+
+env -u HYPRLAND_INSTANCE_SIGNATURE \
+  PATH="$fakebin:$PATH" \
+  HOME="$home" \
+  USER=tester \
+  XDG_RUNTIME_DIR="$runtime" \
+  XDG_CACHE_HOME="$home/.cache" \
+  XDG_STATE_HOME="$home/.local/state" \
+  HYPRPM_AUTO_LIVE_RELOAD=1 \
+  TEST_HYPRPM_FAIL_RELOAD=1 \
+  TEST_HYPRPM_LOG="$hyprpm_log" \
+  bash "$AUTO_RELOAD"
+
+[[ -f "$runtime/awtarchy/hyprpm-auto-reload.lock" ]] \
+  || fail 'explicit live reconcile could not create its per-user runtime lock'
+[[ "$(cat "$runtime/awtarchy/hyprpm-auto-reload.lock")" =~ ^[0-9]+$ ]] \
+  || fail 'per-user runtime lock did not contain a timestamp'
 
 ! grep -Fq '/tmp/hyprpm-auto-reload.lock' "$AUTO_RELOAD" \
   || fail 'hyprpm live-reconcile lock still defaults to shared /tmp state'
