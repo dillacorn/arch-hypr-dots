@@ -3138,6 +3138,44 @@ awtarchy_polkit_user_command() {
   fi
 }
 
+awtarchy_polkit_recover_session_environment() {
+  local line key value
+
+  if [[ -n "${WAYLAND_DISPLAY:-}" && -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" && -n "${XDG_SESSION_ID:-}" ]]; then
+    return 0
+  fi
+
+  while IFS= read -r line; do
+    [[ "$line" == *=* ]] || continue
+    key="${line%%=*}"
+    value="${line#*=}"
+    [[ -n "$value" ]] || continue
+
+    case "$key" in
+      WAYLAND_DISPLAY)
+        [[ -n "${WAYLAND_DISPLAY:-}" ]] || WAYLAND_DISPLAY="$value"
+        ;;
+      HYPRLAND_INSTANCE_SIGNATURE)
+        [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || HYPRLAND_INSTANCE_SIGNATURE="$value"
+        ;;
+      XDG_SESSION_ID)
+        [[ -n "${XDG_SESSION_ID:-}" ]] || XDG_SESSION_ID="$value"
+        ;;
+      XDG_CURRENT_DESKTOP)
+        [[ -n "${XDG_CURRENT_DESKTOP:-}" ]] || XDG_CURRENT_DESKTOP="$value"
+        ;;
+      XDG_SESSION_DESKTOP)
+        [[ -n "${XDG_SESSION_DESKTOP:-}" ]] || XDG_SESSION_DESKTOP="$value"
+        ;;
+      XDG_SESSION_TYPE)
+        [[ -n "${XDG_SESSION_TYPE:-}" ]] || XDG_SESSION_TYPE="$value"
+        ;;
+    esac
+  done < <(awtarchy_polkit_user_command /usr/bin/systemctl --user show-environment 2>/dev/null || true)
+
+  [[ -n "${WAYLAND_DISPLAY:-}" && -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" && -n "${XDG_SESSION_ID:-}" ]]
+}
+
 awtarchy_polkit_get_gnome_pids() {
   local target_uid pid resolved
   target_uid="$(awtarchy_polkit_target_uid)" || return 1
@@ -3239,6 +3277,7 @@ activate_awtarchy_polkit_agent() {
   target_uid="$(awtarchy_polkit_target_uid)" || return 1
   runtime_dir="/run/user/${target_uid}"
 
+  awtarchy_polkit_recover_session_environment || return 2
   [[ -S "${runtime_dir}/bus" && -n "${WAYLAND_DISPLAY:-}" && -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" && -n "${XDG_SESSION_ID:-}" ]] || return 2
   awtarchy_polkit_verify_runtime || return 1
 
