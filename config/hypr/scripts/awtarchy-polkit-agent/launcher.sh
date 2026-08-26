@@ -249,7 +249,6 @@ main() {
     local session_id="${XDG_SESSION_ID:-}"
     local runtime_from_env="${XDG_RUNTIME_DIR:-}"
     local lang_value="${LANG:-C.UTF-8}"
-    local -a appearance_args=()
 
     verify_system_binary "$ALACRITTY" || return 1
     verify_system_binary "$PYTHON" || return 1
@@ -288,15 +287,8 @@ main() {
     # fixed-key --option overrides; shell commands, bindings, env and other
     # executable configuration never enter the authentication terminal.
     appearance_text="$(collect_appearance_options "${home_dir}/.config/alacritty/alacritty.toml" "$home_dir" 2>/dev/null || true)"
-    if [[ -n $appearance_text ]]; then
-        while IFS= read -r option; do
-            [[ -n $option ]] || continue
-            appearance_args+=(--option "$option")
-        done <<<"$appearance_text"
-    fi
-
-    # Fail before Alacritty owns stderr so missing PyGObject/PolicyKit bindings
-    # are visible in the systemd journal instead of flashing in a closing PTY.
+    # Fail before the persistent backend starts so missing PyGObject/PolicyKit
+    # bindings are visible immediately in the systemd user journal.
     if ! /usr/bin/env -i \
         PATH=/usr/bin:/bin \
         LANG=C.UTF-8 \
@@ -322,13 +314,7 @@ main() {
         XDG_CURRENT_DESKTOP=Hyprland \
         XDG_SESSION_DESKTOP=Hyprland \
         XDG_SESSION_TYPE=wayland \
-        "$ALACRITTY" \
-        --config-file "$TERMINAL_CONFIG" \
-        "${appearance_args[@]}" \
-        --class "$APP_ID,$APP_ID" \
-        --title "$APP_ID" \
-        -e "$SYSTEMD_CAT" \
-        --identifier=awtarchy-polkit-agent \
+        AWTARCHY_POLKIT_ALACRITTY_OPTIONS="$appearance_text" \
         "$PYTHON" -I "$AGENT"
 }
 
