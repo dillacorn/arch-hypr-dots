@@ -22,9 +22,9 @@ ShellRoot {
     property string barDragCandidate: ""
     property string barDropTarget: ""
 
-    function runUpdateNotificationCheck() {
+    function runUpdateNotificationCheck(mode) {
         if (!updateNotificationCheck.running)
-            updateNotificationCheck.exec([updateNotificationsScript, "check"]);
+            updateNotificationCheck.exec([updateNotificationsScript, mode]);
     }
 
     function validBarEdge(edge) {
@@ -183,7 +183,7 @@ ShellRoot {
         interval: 30000
         repeat: false
         running: true
-        onTriggered: root.runUpdateNotificationCheck()
+        onTriggered: root.runUpdateNotificationCheck("login")
     }
 
     Timer {
@@ -191,7 +191,7 @@ ShellRoot {
         interval: 21600000
         repeat: true
         running: true
-        onTriggered: root.runUpdateNotificationCheck()
+        onTriggered: root.runUpdateNotificationCheck("check")
     }
 
     Process {
