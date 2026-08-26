@@ -1,0 +1,52 @@
+name: Validate Bluetooth State
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - config/hypr/scripts/quickshell_bluetooth_state.sh
+      - config/quickshell/awtarchy/BluetoothMenu.qml
+      - local/share/awtarchy/quickshell-managed-history.sha256
+      - tests/test-bluetooth-state-persistence.sh
+      - .github/workflows/validate-bluetooth-state.yml
+  pull_request:
+    paths:
+      - config/hypr/scripts/quickshell_bluetooth_state.sh
+      - config/quickshell/awtarchy/BluetoothMenu.qml
+      - local/share/awtarchy/quickshell-managed-history.sha256
+      - tests/test-bluetooth-state-persistence.sh
+      - .github/workflows/validate-bluetooth-state.yml
+
+permissions:
+  contents: read
+
+jobs:
+  bluetooth-state:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Bash syntax
+        run: |
+          bash -n config/hypr/scripts/quickshell_bluetooth_state.sh
+          bash -n tests/test-bluetooth-state-persistence.sh
+      - name: ShellCheck
+        run: shellcheck config/hypr/scripts/quickshell_bluetooth_state.sh tests/test-bluetooth-state-persistence.sh
+      - name: Bluetooth persistence and state sync
+        run: bash tests/test-bluetooth-state-persistence.sh
+      - name: Managed history
+        run: |
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          missing=0
+          for entry in \
+            'config/hypr/scripts/quickshell_bluetooth_state.sh|.config/hypr/scripts/quickshell_bluetooth_state.sh' \
+            'config/quickshell/awtarchy/BluetoothMenu.qml|.config/quickshell/awtarchy/BluetoothMenu.qml'; do
+            source_path="${entry%%|*}"
+            managed_path="${entry#*|}"
+            hash="$(sha256sum "$source_path" | awk '{print $1}')"
+            if ! grep -Fq "${hash}"$'\t'"${managed_path}" "$history"; then
+              printf 'Missing managed history entry: %s\t%s\n' "$hash" "$managed_path" >&2
+              missing=1
+            fi
+          done
+          (( missing == 0 ))

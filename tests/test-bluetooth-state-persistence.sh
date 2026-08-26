@@ -58,6 +58,7 @@ printf '%s\n' 0 >"$BLUETOOTH_POWER_FAILURES_FILE"
 grep -Fxq 'disabled' "$state_file"
 grep -Fxq 'unblock bluetooth' "$RFKILL_LOG"
 grep -Fxq 'power off' "$BLUETOOTHCTL_LOG"
+[[ "$("$HELPER" actual)" == disabled ]]
 if grep -Fxq 'block bluetooth' "$RFKILL_LOG"; then
     printf '%s\n' 'Disabling Bluetooth still rfkill-blocks the controller and can hide the HCI device.' >&2
     exit 1
@@ -68,6 +69,7 @@ fi
 "$HELPER" restore
 grep -Fxq 'unblock bluetooth' "$RFKILL_LOG"
 grep -Fxq 'power off' "$BLUETOOTHCTL_LOG"
+[[ "$("$HELPER" actual)" == disabled ]]
 
 : >"$RFKILL_LOG"
 : >"$BLUETOOTHCTL_LOG"
@@ -75,6 +77,7 @@ grep -Fxq 'power off' "$BLUETOOTHCTL_LOG"
 grep -Fxq 'enabled' "$state_file"
 grep -Fxq 'unblock bluetooth' "$RFKILL_LOG"
 grep -Fxq 'power on' "$BLUETOOTHCTL_LOG"
+[[ "$("$HELPER" actual)" == enabled ]]
 
 printf 'invalid\n' >"$state_file"
 : >"$RFKILL_LOG"
@@ -94,14 +97,20 @@ AWTARCHY_BLUETOOTH_POWER_RETRY_SECONDS=2 "$HELPER" restore
 [[ "$(<"$BLUETOOTH_POWER_STATE_FILE")" == no ]]
 [[ "$(grep -Fxc 'power off' "$BLUETOOTHCTL_LOG")" -eq 2 ]]
 grep -Fxq 'show' "$BLUETOOTHCTL_LOG"
+[[ "$("$HELPER" actual)" == disabled ]]
 
 grep -Fq 'Component.onCompleted: bluetoothRestore.exec([bluetoothStateScript, "restore"])' "$MENU"
 grep -Fq 'bluetoothEnable.exec([bluetoothStateScript, "set", "enabled"]);' "$MENU"
 grep -Fq 'bluetoothDisable.exec([bluetoothStateScript, "set", "disabled"]);' "$MENU"
+grep -Fq 'property int actualAdapterEnabled: -1' "$MENU"
+grep -Fq 'actualAdapterEnabled >= 0' "$MENU"
+grep -Fq 'bluetoothPowerProbe.exec([bluetoothStateScript, "actual"])' "$MENU"
+grep -Fq 'id: bluetoothPowerProbe' "$MENU"
+grep -Fq 'stdout: StdioCollector' "$MENU"
 grep -Fq 'signal.pidfd_send_signal(pidfd, signal.SIGTERM)' "$MANAGER"
 if grep -Fq 'signal.SIGKILL' "$MANAGER" || grep -Fq 'kill -KILL' "$MANAGER"; then
     printf '%s\n' 'Quickshell updater still contains a SIGKILL fallback.' >&2
     exit 1
 fi
 
-printf '%s\n' 'Bluetooth persistence/self-lockout regression test: PASS'
+printf '%s\n' 'Bluetooth persistence/state-sync regression test: PASS'
