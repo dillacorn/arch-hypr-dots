@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - fix-update-notification-login-check
     paths:
       - config/hypr/scripts/quickshell_update_notifications.sh
       - config/quickshell/awtarchy/shell.qml
