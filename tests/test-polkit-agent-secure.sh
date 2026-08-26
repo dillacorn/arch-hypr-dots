@@ -10,9 +10,9 @@ TUI="${SOURCE_DIR}/tui.py"
 TERMINAL_CONFIG="${SOURCE_DIR}/alacritty.toml"
 LAUNCHER="${SOURCE_DIR}/launcher.sh"
 SERVICE="${SOURCE_DIR}/awtarchy-polkit-agent.service"
-CONTROLLER="${ROOT_DIR}/config/hypr/scripts/awtarchy-polkit-agent-live-test.sh"
 QML="${SOURCE_DIR}/shell.qml"
 GUARD="${SOURCE_DIR}/window-guard.sh"
+LIVE_TEST="${ROOT_DIR}/config/hypr/scripts/awtarchy-polkit-agent-live-test.sh"
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
@@ -79,8 +79,11 @@ test_tui_contract() {
     require_contains "$TUI" 'HIDDEN_WORKSPACE = "special:awtarchy-polkit-agent"'
     require_contains "$TUI" 'MOUSE_ENABLE = b"\x1b[?1000h\x1b[?1006h"'
     require_contains "$TUI" 'MOUSE_DISABLE = b"\x1b[?1000l\x1b[?1006l"'
+    require_contains "$TUI" 'NORMAL_CLEAR = b"\x1b[3J\x1b[2J\x1b[H"'
+    require_contains "$TUI" 'SPINNER_FRAMES = ('
     require_contains "$TUI" 'def parse_sgr_mouse('
     require_contains "$TUI" 'def render_password_field_only('
+    require_contains "$TUI" 'def render_status_only('
     require_contains "$TUI" 'Password not entered.'
     require_contains "$TUI" '/usr/bin/hyprctl'
     require_contains "$TUI" 'Authentication Required'
@@ -97,6 +100,7 @@ test_launcher_contract() {
     require_contains "$LAUNCHER" '/usr/bin/alacritty'
     require_contains "$LAUNCHER" '/usr/bin/python3'
     require_contains "$LAUNCHER" '/usr/bin/hyprctl'
+    require_contains "$LAUNCHER" '/usr/bin/systemd-cat'
     require_contains "$LAUNCHER" '/usr/bin/env -i'
     require_contains "$LAUNCHER" 'PYTHONPATH'
     require_contains "$LAUNCHER" 'PYTHONHOME'
@@ -112,6 +116,7 @@ test_launcher_contract() {
     require_contains "$LAUNCHER" 'gi.require_version("Polkit", "1.0")'
     require_contains "$LAUNCHER" 'gi.require_version("PolkitAgent", "1.0")'
     require_contains "$LAUNCHER" 'PolicyKit Python bindings are unavailable'
+    require_contains "$LAUNCHER" '--identifier=awtarchy-polkit-agent'
     reject_regex "$LAUNCHER" '/usr/bin/quickshell|quickshell[[:space:]].*--config|shell\.qml'
     reject_regex "$LAUNCHER" '(^|[^[:alnum:]_])eval([[:space:]]|$)'
 }
@@ -130,41 +135,14 @@ test_service_contract() {
     reject_regex "$SERVICE" '%h/|HOME=|EnvironmentFile=|WantedBy=default.target'
 }
 
-test_controller_contract() {
-    require_file "$CONTROLLER"
-    bash -n "$CONTROLLER"
-    require_contains "$CONTROLLER" 'RUNTIME_DIR="/usr/local/libexec/awtarchy/polkit-agent"'
-    require_contains "$CONTROLLER" 'USER_UNIT_DIR="/usr/local/lib/systemd/user"'
-    require_contains "$CONTROLLER" 'GNOME_BIN="/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"'
-    require_contains "$CONTROLLER" 'install -m 0644 -o root -g root'
-    require_contains "$CONTROLLER" 'install -m 0755 -o root -g root'
-    require_contains "$CONTROLLER" 'systemctl --user daemon-reload'
-    require_contains "$CONTROLLER" 'systemctl --user start "$SERVICE_NAME"'
-    require_contains "$CONTROLLER" 'XDG_SESSION_ID'
-    require_contains "$CONTROLLER" 'restore_gnome'
-    require_contains "$CONTROLLER" '/usr/bin/pkcheck --revoke-temp'
-    require_contains "$CONTROLLER" '/usr/bin/pkexec --disable-internal-agent /usr/bin/true'
-    require_contains "$CONTROLLER" '/usr/bin/readlink -f -- "/proc/${pid}/exe"'
-    require_contains "$CONTROLLER" 'verify_installed_runtime'
-    require_contains "$CONTROLLER" 'rollback_to_gnome'
-    require_contains "$CONTROLLER" '/usr/bin/alacritty'
-    require_contains "$CONTROLLER" '/usr/bin/python3'
-    require_contains "$CONTROLLER" 'ensure_test_prerequisites'
-    require_contains "$CONTROLLER" 'python-gobject'
-    require_contains "$CONTROLLER" '/usr/bin/pacman -S --needed --noconfirm'
-
-    # Testing must not uninstall GNOME or rewrite permanent Hyprland autostart.
-    reject_regex "$CONTROLLER" 'pacman[[:space:]].*-R|hyprland\.lua|sed[[:space:]].*polkit-gnome'
-}
-
 [[ ! -e $QML && ! -L $QML ]] || fail "obsolete QML authentication runtime still exists: $QML"
 [[ ! -e $GUARD && ! -L $GUARD ]] || fail "obsolete Quickshell window guard still exists: $GUARD"
+[[ ! -e $LIVE_TEST && ! -L $LIVE_TEST ]] || fail "temporary PolicyKit live-test controller still ships: $LIVE_TEST"
 
 test_agent_contract
 test_tui_contract
 test_launcher_contract
 test_terminal_config_contract
 test_service_contract
-test_controller_contract
 
 printf '%s\n' 'secure terminal Polkit agent static/security tests passed'
