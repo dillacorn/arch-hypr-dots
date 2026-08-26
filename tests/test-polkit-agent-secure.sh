@@ -12,7 +12,6 @@ LAUNCHER="${SOURCE_DIR}/launcher.sh"
 SERVICE="${SOURCE_DIR}/awtarchy-polkit-agent.service"
 QML="${SOURCE_DIR}/shell.qml"
 GUARD="${SOURCE_DIR}/window-guard.sh"
-LIVE_TEST="${ROOT_DIR}/config/hypr/scripts/awtarchy-polkit-agent-live-test.sh"
 
 fail() { printf 'FAIL: %s\n' "$*" >&2; return 1; }
 require_file() { [[ -f $1 ]] || fail "missing $1"; }
@@ -109,9 +108,6 @@ test_service_contract() {
 
 [[ ! -e $QML && ! -L $QML ]] || fail "obsolete QML authentication runtime still exists: $QML"
 [[ ! -e $GUARD && ! -L $GUARD ]] || fail "obsolete Quickshell window guard still exists: $GUARD"
-# The live-test controller is intentionally branch-only until the migration is validated.
-require_file "$LIVE_TEST"
-
 test_agent_contract
 test_tui_contract
 test_launcher_contract

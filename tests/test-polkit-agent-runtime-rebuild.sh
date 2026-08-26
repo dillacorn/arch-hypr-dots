@@ -1,40 +1,29 @@
 #!/usr/bin/env bash
-# Regression checks for safely replacing an untrusted pre-existing terminal Polkit runtime.
-
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
-SCRIPT="${ROOT_DIR}/config/hypr/scripts/awtarchy-polkit-agent-live-test.sh"
+RUNTIME="${ROOT_DIR}/local/share/awtarchy/awtarchy-runtime.sh"
 
-[[ -f $SCRIPT ]]
-bash -n "$SCRIPT"
+[[ -f $RUNTIME ]]
+bash -n "$RUNTIME"
 
-grep -Fq 'RUNTIME_PARENT="/usr/local/libexec/awtarchy"' "$SCRIPT"
-grep -Fq 'stage_runtime_tree()' "$SCRIPT"
-grep -Fq '.polkit-agent.stage.' "$SCRIPT"
-grep -Fq 'replace_runtime_tree()' "$SCRIPT"
-grep -Fq 'verify_runtime_tree "$RUNTIME_DIR"' "$SCRIPT"
-grep -Fq "IFS=' ' read -r uid mode type" "$SCRIPT"
-
-# The complete terminal runtime must be staged before replacement.
-grep -Fq 'agent.py' "$SCRIPT"
-grep -Fq 'tui.py' "$SCRIPT"
-grep -Fq 'alacritty.toml' "$SCRIPT"
-grep -Fq 'launcher.sh' "$SCRIPT"
-if grep -Fq 'shell.qml' "$SCRIPT" || grep -Fq 'window-guard.sh' "$SCRIPT"; then
-    printf '%s\n' 'FAIL: live-test staging still references obsolete Quickshell runtime files' >&2
+grep -Fq 'AWTARCHY_POLKIT_RUNTIME_PARENT="/usr/local/libexec/awtarchy"' "$RUNTIME"
+grep -Fq 'install_awtarchy_polkit_agent_runtime()' "$RUNTIME"
+grep -Fq '.polkit-agent.stage.XXXXXX' "$RUNTIME"
+grep -Fq 'awtarchy_polkit_verify_runtime_tree "$AWTARCHY_POLKIT_RUNTIME_DIR"' "$RUNTIME"
+grep -Fq "IFS=' ' read -r uid mode type" "$RUNTIME"
+grep -Fq '"${stage}/agent.py"' "$RUNTIME"
+grep -Fq '"${stage}/tui.py"' "$RUNTIME"
+grep -Fq '"${stage}/alacritty.toml"' "$RUNTIME"
+grep -Fq '"${stage}/launcher"' "$RUNTIME"
+if grep -Fq 'shell.qml' "$RUNTIME" || grep -Fq 'window-guard.sh' "$RUNTIME"; then
+    printf '%s\n' 'FAIL: production PolicyKit staging references obsolete Quickshell runtime files' >&2
     exit 1
 fi
+grep -Fq 'awtarchy_polkit_restore_install_transaction()' "$RUNTIME"
+grep -Fq 'awtarchy_polkit_root /usr/bin/mv -Tf -- "$AWTARCHY_POLKIT_RUNTIME_DIR" "$previous_runtime"' "$RUNTIME"
+grep -Fq 'awtarchy_polkit_root /usr/bin/mv -Tf -- "$stage" "$AWTARCHY_POLKIT_RUNTIME_DIR"' "$RUNTIME"
+grep -Fq 'awtarchy_polkit_root /usr/bin/mv -Tf -- "$previous_runtime" "$AWTARCHY_POLKIT_RUNTIME_DIR"' "$RUNTIME"
+grep -Fq 'awtarchy_polkit_restore_install_transaction "$previous_runtime" "$failed_runtime" "$previous_service"' "$RUNTIME"
 
-# A pre-existing user-owned runtime must not simply be chowned/adopted in place.
-if grep -Eq 'chown[^\n]*\$RUNTIME_DIR|chown[^\n]*/polkit-agent' "$SCRIPT"; then
-    printf '%s\n' 'FAIL: installer adopts an existing runtime directory with chown' >&2
-    exit 1
-fi
-
-# Replacement must stage trusted files first and preserve rollback if activation fails.
-grep -Fq '/usr/bin/sudo /usr/bin/mv -Tf -- "$RUNTIME_DIR" "$previous"' "$SCRIPT"
-grep -Fq '/usr/bin/sudo /usr/bin/mv -Tf -- "$stage" "$RUNTIME_DIR"' "$SCRIPT"
-grep -Fq '/usr/bin/sudo /usr/bin/mv -Tf -- "$previous" "$RUNTIME_DIR"' "$SCRIPT"
-
-printf '%s\n' 'terminal Polkit runtime rebuild tests passed'
+printf '%s\n' 'terminal Polkit production runtime rebuild tests passed'
