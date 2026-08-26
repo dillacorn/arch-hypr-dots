@@ -1,15 +1,15 @@
 name: Apply session export fix
 
 on:
-  pull_request:
-    types: [reopened]
+  push:
+    branches: [fix-update-session-environment]
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.event.pull_request.head.ref == 'fix-update-session-environment' && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.repository == 'dillacorn/awtarchy'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
