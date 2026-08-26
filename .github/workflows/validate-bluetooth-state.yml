@@ -50,35 +50,3 @@ jobs:
             fi
           done
           (( missing == 0 ))
-
-  record-managed-history:
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.number == 66 &&
-      github.event.pull_request.head.ref == 'fix-bluetooth-quickshell-state-sync'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-        with:
-          ref: fix-bluetooth-quickshell-state-sync
-      - name: Append exact Bluetooth managed hashes
-        run: |
-          history='local/share/awtarchy/quickshell-managed-history.sha256'
-          helper_hash='c2c7e2323ec1ae593d33fa37e43685588c93555c7f37fb55e789079b92bc1b94'
-          menu_hash='a4b3aa7d152c67a76e89e778665cf21a113c0343e801ae6153ebfe65950f307d'
-          {
-            printf '\n# 2026-08-26 Bluetooth Quickshell power-state synchronization.\n'
-            printf '%s\t%s\n' "$helper_hash" '.config/hypr/scripts/quickshell_bluetooth_state.sh'
-            printf '%s\t%s\n' "$menu_hash" '.config/quickshell/awtarchy/BluetoothMenu.qml'
-          } >>"$history"
-          git diff --check
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add "$history"
-          if git diff --cached --quiet; then
-            exit 0
-          fi
-          git commit -m 'Record Bluetooth state-sync managed hashes'
-          git push origin HEAD:fix-bluetooth-quickshell-state-sync
