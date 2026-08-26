@@ -1,0 +1,107 @@
+name: Apply update session environment fix
+
+on:
+  pull_request:
+    types: [reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.ref == 'fix-update-session-environment' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: fix-update-session-environment
+          fetch-depth: 0
+
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Apply PolicyKit session recovery
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('local/share/awtarchy/awtarchy-runtime.sh')
+          text = path.read_text()
+
+          helper = r'''awtarchy_polkit_recover_session_environment() {
+            local line key value
+
+            if [[ -n "${WAYLAND_DISPLAY:-}" && -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" && -n "${XDG_SESSION_ID:-}" ]]; then
+              return 0
+            fi
+
+            while IFS= read -r line; do
+              [[ "$line" == *=* ]] || continue
+              key="${line%%=*}"
+              value="${line#*=}"
+              [[ -n "$value" ]] || continue
+
+              case "$key" in
+                WAYLAND_DISPLAY)
+                  [[ -n "${WAYLAND_DISPLAY:-}" ]] || WAYLAND_DISPLAY="$value"
+                  ;;
+                HYPRLAND_INSTANCE_SIGNATURE)
+                  [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || HYPRLAND_INSTANCE_SIGNATURE="$value"
+                  ;;
+                XDG_SESSION_ID)
+                  [[ -n "${XDG_SESSION_ID:-}" ]] || XDG_SESSION_ID="$value"
+                  ;;
+                XDG_CURRENT_DESKTOP)
+                  [[ -n "${XDG_CURRENT_DESKTOP:-}" ]] || XDG_CURRENT_DESKTOP="$value"
+                  ;;
+                XDG_SESSION_DESKTOP)
+                  [[ -n "${XDG_SESSION_DESKTOP:-}" ]] || XDG_SESSION_DESKTOP="$value"
+                  ;;
+                XDG_SESSION_TYPE)
+                  [[ -n "${XDG_SESSION_TYPE:-}" ]] || XDG_SESSION_TYPE="$value"
+                  ;;
+              esac
+            done < <(awtarchy_polkit_user_command /usr/bin/systemctl --user show-environment 2>/dev/null || true)
+
+            [[ -n "${WAYLAND_DISPLAY:-}" && -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" && -n "${XDG_SESSION_ID:-}" ]]
+          }
+          '''
+
+          marker = '\nawtarchy_polkit_get_gnome_pids() {'
+          if 'awtarchy_polkit_recover_session_environment()' not in text:
+              if marker not in text:
+                  raise SystemExit('PolicyKit insertion marker not found')
+              text = text.replace(marker, '\n' + helper + marker, 1)
+
+          old = '''  [[ -S "${runtime_dir}/bus" && -n "${WAYLAND_DISPLAY:-}" && -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" && -n "${XDG_SESSION_ID:-}" ]] || return 2
+          awtarchy_polkit_verify_runtime || return 1
+          '''
+          new = '''  awtarchy_polkit_recover_session_environment || return 2
+          [[ -S "${runtime_dir}/bus" && -n "${WAYLAND_DISPLAY:-}" && -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" && -n "${XDG_SESSION_ID:-}" ]] || return 2
+          awtarchy_polkit_verify_runtime || return 1
+          '''
+          if 'awtarchy_polkit_recover_session_environment || return 2' not in text:
+              if old not in text:
+                  raise SystemExit('PolicyKit activation marker not found')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+          rm -f .github/workflows/apply-update-session-environment.yml
+
+      - name: Validate focused fix
+        run: |
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n tests/test-polkit-agent-session-binding.sh
+          shellcheck local/share/awtarchy/awtarchy-runtime.sh tests/test-polkit-agent-session-binding.sh
+          bash tests/test-polkit-agent-session-binding.sh
+          git diff --check
+
+      - name: Commit completed fix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add local/share/awtarchy/awtarchy-runtime.sh tests/test-polkit-agent-session-binding.sh .github/workflows/apply-update-session-environment.yml
+          git commit -m 'Recover updater PolicyKit session environment'
+          git push origin HEAD:fix-update-session-environment
