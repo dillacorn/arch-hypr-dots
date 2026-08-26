@@ -222,7 +222,7 @@ record_stable_notification() {
         return 0
     fi
 
-    (
+    {
         flock -x 8
         load_state
         LAST_STABLE_TARGET="$target"
@@ -231,7 +231,7 @@ record_stable_notification() {
             LAST_CATCHUP_AT="$catchup_at"
         fi
         save_state
-    ) 8>"$NOTIFICATION_LOCK_FILE"
+    } 8>"$NOTIFICATION_LOCK_FILE"
 }
 
 notify_and_handle() {
