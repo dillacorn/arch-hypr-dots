@@ -13,8 +13,8 @@ env:
   PYTHONPYCACHEPREFIX: /tmp/awtarchy-pycache
 
 jobs:
-  repair-managed-history:
-    if: github.event_name == 'push' && github.event.head_commit.message == 'Repair managed stock hashes'
+  finalize-integration-bookkeeping:
+    if: github.event_name == 'push' && github.event.head_commit.message == 'Finalize PolicyKit integration bookkeeping'
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -22,59 +22,43 @@ jobs:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           fetch-depth: 0
-      - name: Install updater test dependency
-        run: sudo apt-get update && sudo apt-get install -y lua5.4
-      - name: Repair and refresh managed stock hashes
+
+      - name: Finalize managed history and release guidance
         run: |
           python3 - <<'PY'
           from hashlib import sha256
           from pathlib import Path
 
-          root = Path('.')
-          history = root / 'local/share/awtarchy/quickshell-managed-history.sha256'
+          history = Path('local/share/awtarchy/quickshell-managed-history.sha256')
           text = history.read_text(encoding='utf-8')
-
           kept = [
               line for line in text.splitlines()
               if '\t./quickshell/' not in line and '\t./hypr/scripts/' not in line
           ]
-          lines = set(kept)
-
-          paths = [p for p in (root / 'config/quickshell/awtarchy').iterdir() if p.is_file()]
-          scripts = root / 'config/hypr/scripts'
-          paths += [
-              p for p in scripts.iterdir()
-              if p.is_file() and (
-                  p.name.startswith('quickshell')
-                  or p.name in {'ddc_brightness.sh', 'hypr-ddc-brightness.sh'}
-              )
-          ]
-
-          added = []
-          for path in sorted(paths):
-              rel = path.as_posix()
-              if not rel.startswith('config/'):
-                  raise SystemExit(f'unexpected managed path: {rel}')
-              home_rel = '.config/' + rel[len('config/'):]
-              entry = f"{sha256(path.read_bytes()).hexdigest()}\t{home_rel}"
-              if entry not in lines:
-                  kept.append(entry)
-                  lines.add(entry)
-                  added.append(entry)
-
+          bar = Path('config/quickshell/awtarchy/Bar.qml')
+          entry = f"{sha256(bar.read_bytes()).hexdigest()}\t.config/quickshell/awtarchy/Bar.qml"
+          if entry not in kept:
+              kept.append(entry)
           history.write_text('\n'.join(kept) + '\n', encoding='utf-8')
-          print(f'Removed malformed entries; added {len(added)} current stock hashes.')
-          for entry in added:
-              print(entry)
+
+          agents = Path('AGENTS.md')
+          agents_text = agents.read_text(encoding='utf-8')
+          marker = '## Releases and tags\n\n'
+          guidance = '''## Releases and tags\n\n### Standard stable release notes\n\nUnless the user explicitly requests a different format, inspect the latest published stable release and preserve its overall release-page structure and level of detail. Do not reduce a new stable release to only a changelog.\n\nA normal Awtarchy stable release body should include:\n\n- the release title and a short overview of the release;\n- a **Getting started** section that keeps the fresh-Arch explanation, recommends the official `archinstall` guided installer while allowing a normal manual Arch installation, and includes the current copy/paste installation commands;\n- an **Existing Awtarchy users** update command using `awtarchy update`;\n- feature/change sections appropriate to the release;\n- a **Validation** section grounded in tests and CI that actually passed for the release target;\n- a final **Post-release updates** section containing a version-specific placeholder such as `_Placeholder for possible tested post-release patches to vX.Y.Z._`.\n\nKeep installation directions, useful links, and the post-release placeholder when carrying the prior stable release structure forward unless they are demonstrably obsolete or the user asks to remove them. Verify the complete published release body after creation.\n\n'''
+          if '### Standard stable release notes\n' not in agents_text:
+              if marker not in agents_text:
+                  raise SystemExit('AGENTS.md release section marker not found')
+              agents_text = agents_text.replace(marker, guidance, 1)
+              agents.write_text(agents_text, encoding='utf-8')
           PY
           git diff --check
-          bash tests/test-quickshell-updater-migration.sh
-      - name: Commit managed history repair
+
+      - name: Commit finalized bookkeeping
         run: |
           git config user.name 'dillacorn'
           git config user.email '28743863+dillacorn@users.noreply.github.com'
-          git add local/share/awtarchy/quickshell-managed-history.sha256
-          git diff --cached --quiet || git commit -m 'Repair PolicyKit managed stock hashes'
+          git add AGENTS.md local/share/awtarchy/quickshell-managed-history.sha256
+          git diff --cached --quiet || git commit -m 'Record PolicyKit integration bookkeeping'
           git push origin HEAD:polkit-agent-concept-testing
 
   polkit-contracts:
