@@ -10,6 +10,7 @@ on:
       - local/share/awtarchy/quickshell-managed-history.sha256
       - tests/test-bluetooth-state-persistence.sh
       - .github/workflows/validate-bluetooth-state.yml
+      - .github/release-v3.3.2.md
   pull_request:
     paths:
       - config/hypr/scripts/quickshell_bluetooth_state.sh
@@ -17,6 +18,7 @@ on:
       - local/share/awtarchy/quickshell-managed-history.sha256
       - tests/test-bluetooth-state-persistence.sh
       - .github/workflows/validate-bluetooth-state.yml
+      - .github/release-v3.3.2.md
 
 permissions:
   contents: read
@@ -50,3 +52,52 @@ jobs:
             fi
           done
           (( missing == 0 ))
+
+  publish_v332:
+    needs: bluetooth-state
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.ref == 'release-v3.3.2-helper' &&
+      github.event.pull_request.title == 'Publish Awtarchy v3.3.2 release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: d283cd7ac730a5c9f3e1d80c780341cb3599114b
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Verify release target
+        run: |
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)" = "$TARGET_SHA"
+          if gh release view v3.3.2 >/dev/null 2>&1; then
+            printf 'v3.3.2 already exists; refusing to recreate it.\n' >&2
+            false
+          fi
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.3.2" >/dev/null 2>&1; then
+            printf 'v3.3.2 tag already exists; refusing to move or reuse it.\n' >&2
+            false
+          fi
+          printf 'Previous release: '
+          gh release view v3.3.1 --json name,targetCommitish --jq '.name + " -> " + .targetCommitish'
+          printf 'Previous tag SHA: %s\n' "$(git rev-list -n1 v3.3.1)"
+          printf 'New release target: %s\n' "$TARGET_SHA"
+      - name: Publish v3.3.2
+        run: |
+          gh release create v3.3.2 \
+            --target "$TARGET_SHA" \
+            --title 'Awtarchy v3.3.2 Quickshell' \
+            --notes-file .github/release-v3.3.2.md
+      - name: Verify published release
+        run: |
+          release_json="$(gh release view v3.3.2 --json name,tagName,targetCommitish,isDraft,isPrerelease,url)"
+          test "$(jq -r .name <<<"$release_json")" = 'Awtarchy v3.3.2 Quickshell'
+          test "$(jq -r .tagName <<<"$release_json")" = 'v3.3.2'
+          test "$(jq -r .targetCommitish <<<"$release_json")" = "$TARGET_SHA"
+          test "$(jq -r .isDraft <<<"$release_json")" = 'false'
+          test "$(jq -r .isPrerelease <<<"$release_json")" = 'false'
+          tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.3.2" --jq .object.sha)"
+          test "$tag_sha" = "$TARGET_SHA"
+          printf '%s\n' "$release_json"
