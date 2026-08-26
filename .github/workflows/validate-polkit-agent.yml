@@ -13,6 +13,69 @@ env:
   PYTHONPYCACHEPREFIX: /tmp/awtarchy-pycache
 
 jobs:
+  repair-managed-history:
+    if: github.event_name == 'push' && github.event.head_commit.message == 'Repair managed stock hashes'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Repair and refresh managed stock hashes
+        run: |
+          python3 - <<'PY'
+          from hashlib import sha256
+          from pathlib import Path
+
+          root = Path('.')
+          history = root / 'local/share/awtarchy/quickshell-managed-history.sha256'
+          text = history.read_text(encoding='utf-8')
+
+          # Remove malformed entries produced by the previous bulk-refresh helper.
+          kept = [
+              line for line in text.splitlines()
+              if '\t./quickshell/' not in line and '\t./hypr/scripts/' not in line
+          ]
+          lines = set(kept)
+
+          paths = [p for p in (root / 'config/quickshell/awtarchy').iterdir() if p.is_file()]
+          scripts = root / 'config/hypr/scripts'
+          paths += [
+              p for p in scripts.iterdir()
+              if p.is_file() and (
+                  p.name.startswith('quickshell')
+                  or p.name in {'ddc_brightness.sh', 'hypr-ddc-brightness.sh'}
+              )
+          ]
+
+          added = []
+          for path in sorted(paths):
+              rel = path.as_posix()
+              if not rel.startswith('config/'):
+                  raise SystemExit(f'unexpected managed path: {rel}')
+              home_rel = '.config/' + rel[len('config/'):]
+              entry = f"{sha256(path.read_bytes()).hexdigest()}\t{home_rel}"
+              if entry not in lines:
+                  kept.append(entry)
+                  lines.add(entry)
+                  added.append(entry)
+
+          history.write_text('\n'.join(kept) + '\n', encoding='utf-8')
+          print(f'Removed malformed entries; added {len(added)} current stock hashes.')
+          for entry in added:
+              print(entry)
+          PY
+          git diff --check
+          bash tests/test-quickshell-updater-migration.sh
+      - name: Commit managed history repair
+        run: |
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add local/share/awtarchy/quickshell-managed-history.sha256
+          git diff --cached --quiet || git commit -m 'Repair PolicyKit managed stock hashes'
+          git push origin HEAD:polkit-agent-concept-testing
+
   polkit-contracts:
     runs-on: ubuntu-latest
     steps:
