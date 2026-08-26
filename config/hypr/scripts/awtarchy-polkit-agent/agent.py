@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Awtarchy terminal PolicyKit authentication agent."""
+"""Awtarchy headless PolicyKit authentication agent."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import os
 import pwd
 import re
 import signal
+import socket
 import subprocess
 import sys
 from typing import Any, Optional
@@ -24,7 +25,7 @@ if RUNTIME_DIR not in sys.path:
     # only path restored here is the verified root-owned Awtarchy runtime.
     sys.path.insert(0, RUNTIME_DIR)
 
-from tui import TerminalUI
+from tui import ProtocolError, recv_packet, send_packet
 
 OBJECT_PATH = "/org/awtarchy/PolkitAgent"
 INTERFACE_NAME = "org.freedesktop.PolicyKit1.AuthenticationAgent"
@@ -32,8 +33,15 @@ ERROR_FAILED = "org.freedesktop.PolicyKit1.Error.Failed"
 ERROR_CANCELLED = "org.freedesktop.PolicyKit1.Error.Cancelled"
 PKACTION = "/usr/bin/pkaction"
 SYSTEMD_CAT = "/usr/bin/systemd-cat"
+ALACRITTY = "/usr/bin/alacritty"
+PYTHON = "/usr/bin/python3"
+TUI = f"{RUNTIME_DIR}/tui.py"
+TERMINAL_CONFIG = f"{RUNTIME_DIR}/alacritty.toml"
+APP_ID = "awtarchy-polkit-agent"
+APPEARANCE_ENV = "AWTARCHY_POLKIT_ALACRITTY_OPTIONS"
 SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 MAX_AUTH_ATTEMPTS = 3
+MAX_RESPONSE_BYTES = 4096
 
 INTROSPECTION_XML = """
 <node>
@@ -55,14 +63,10 @@ INTROSPECTION_XML = """
 
 
 def journal_message(priority: str, message: str) -> None:
-    """Write non-secret startup diagnostics to the user journal."""
+    """Write non-secret diagnostics to the user journal."""
     try:
         subprocess.run(
-            [
-                SYSTEMD_CAT,
-                "--identifier=awtarchy-polkit-agent",
-                f"--priority={priority}",
-            ],
+            [SYSTEMD_CAT, "--identifier=awtarchy-polkit-agent", f"--priority={priority}"],
             input=f"{message}\n",
             text=True,
             stdout=subprocess.DEVNULL,
@@ -75,7 +79,7 @@ def journal_message(priority: str, message: str) -> None:
         pass
 
 
-class TerminalPolkitAgent:
+class AwtarchyPolkitAgent:
     def __init__(self) -> None:
         self.loop = GLib.MainLoop()
         self.connection: Optional[Gio.DBusConnection] = None
@@ -96,14 +100,18 @@ class TerminalPolkitAgent:
         self.cancel_requested = False
         self.auth_attempts = 0
         self.last_session_error = ""
+        self.last_prompt = "Password:"
+        self.last_echo_on = False
         self.retry_limit_reached = False
-        self.auth_feedback_source = 0
 
-        self.ui = TerminalUI(
-            on_submit=self._submit_response,
-            on_cancel=self._cancel_from_ui,
-            on_identity_cycle=self._cycle_identity,
-        )
+        self.frontend_socket: Optional[socket.socket] = None
+        self.frontend_channel: Optional[GLib.IOChannel] = None
+        self.frontend_watch_source = 0
+        self.frontend_process: Optional[subprocess.Popen] = None
+        self.frontend_poll_source = 0
+        self.frontend_kill_source = 0
+        self.frontend_expected_exit = False
+        self.frontend_ready = False
 
     @staticmethod
     def _agent_locale() -> str:
@@ -222,8 +230,7 @@ class TerminalPolkitAgent:
 
         # This process is supervised by systemd --user and may therefore live
         # outside the graphical session's session-*.scope. Register against the
-        # explicit logind session inherited from Hyprland instead of asking
-        # PolicyKit to infer a session from this service process PID.
+        # explicit logind session inherited from Hyprland.
         session_id = os.environ.get("XDG_SESSION_ID", "")
         if not SESSION_ID_RE.fullmatch(session_id):
             raise RuntimeError("XDG_SESSION_ID is unavailable or invalid")
@@ -239,38 +246,11 @@ class TerminalPolkitAgent:
             None,
         )
         self.registered = True
-        journal_message("info", "startup: PolicyKit authentication agent registered")
+        journal_message("info", "startup: PolicyKit authentication agent registered; terminal idle")
 
-        # Alacritty is already mapped by the time this child is running. Keep the
-        # registered agent alive but put its terminal on a private special
-        # workspace until PolicyKit starts a request.
-        self.ui.prime_hidden()
-        journal_message("info", "startup: authentication terminal hidden and ready")
-
-        conditions = GLib.IOCondition.IN | GLib.IOCondition.HUP | GLib.IOCondition.ERR
-        self.tty_channel = GLib.IOChannel.unix_new(self.ui.tty_fd)
-        self.tty_channel.set_close_on_unref(False)
-        self.tty_channel.add_watch(conditions, self._on_tty_ready)
-        GLib.timeout_add(45, self._flush_pending_escape)
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, self._on_signal)
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, self._on_signal)
-
         self.loop.run()
-
-    def _on_tty_ready(self, channel: GLib.IOChannel, condition: GLib.IOCondition) -> bool:
-        del channel
-        if condition & (GLib.IOCondition.HUP | GLib.IOCondition.ERR):
-            self.shutdown()
-            return False
-        for event in self.ui.read_input():
-            self.ui.handle_event(event)
-        return not self.shutting_down
-
-    def _flush_pending_escape(self) -> bool:
-        if self.shutting_down:
-            return False
-        self.ui.flush_pending_input()
-        return True
 
     def _on_signal(self) -> bool:
         self.shutdown()
@@ -296,6 +276,225 @@ class TerminalPolkitAgent:
             self._cancel_authentication(parameters, invocation)
         else:
             invocation.return_dbus_error(ERROR_FAILED, "Unsupported PolicyKit method")
+
+    @staticmethod
+    def _frontend_environment() -> dict[str, str]:
+        allowed = (
+            "HOME",
+            "USER",
+            "LOGNAME",
+            "PATH",
+            "LANG",
+            "LC_ALL",
+            "XDG_RUNTIME_DIR",
+            "DBUS_SESSION_BUS_ADDRESS",
+            "WAYLAND_DISPLAY",
+            "HYPRLAND_INSTANCE_SIGNATURE",
+            "XDG_SESSION_ID",
+            "XDG_CURRENT_DESKTOP",
+            "XDG_SESSION_DESKTOP",
+            "XDG_SESSION_TYPE",
+        )
+        return {key: os.environ[key] for key in allowed if key in os.environ}
+
+    @staticmethod
+    def _appearance_args() -> list[str]:
+        args: list[str] = []
+        raw = os.environ.get(APPEARANCE_ENV, "")
+        for option in raw.splitlines():
+            if not option or len(option) > 2048 or any(ord(char) < 0x20 for char in option):
+                continue
+            args.extend(("--option", option))
+        return args
+
+    def _spawn_frontend(self, request: dict) -> None:
+        if self.frontend_process is not None:
+            if self.frontend_process.poll() is None:
+                if self.frontend_expected_exit:
+                    try:
+                        self.frontend_process.terminate()
+                    except OSError:
+                        pass
+                else:
+                    raise RuntimeError("authentication terminal is already running")
+            self.frontend_process = None
+
+        parent_sock, child_sock = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+        try:
+            child_fd = child_sock.fileno()
+            command = [
+                ALACRITTY,
+                "--config-file",
+                TERMINAL_CONFIG,
+                *self._appearance_args(),
+                "--class",
+                f"{APP_ID},{APP_ID}",
+                "--title",
+                APP_ID,
+                "-e",
+                PYTHON,
+                "-I",
+                TUI,
+                "--ipc-fd",
+                str(child_fd),
+            ]
+            process = subprocess.Popen(
+                command,
+                env=self._frontend_environment(),
+                stdin=subprocess.DEVNULL,
+                close_fds=True,
+                pass_fds=(child_fd,),
+            )
+        except Exception:
+            parent_sock.close()
+            child_sock.close()
+            raise
+        child_sock.close()
+
+        parent_sock.setblocking(False)
+        self.frontend_socket = parent_sock
+        self.frontend_process = process
+        self.frontend_expected_exit = False
+        self.frontend_ready = False
+
+        conditions = GLib.IOCondition.IN | GLib.IOCondition.HUP | GLib.IOCondition.ERR
+        self.frontend_channel = GLib.IOChannel.unix_new(parent_sock.fileno())
+        self.frontend_channel.set_close_on_unref(False)
+        self.frontend_watch_source = self.frontend_channel.add_watch(conditions, self._on_frontend_io)
+        if not self.frontend_poll_source:
+            self.frontend_poll_source = GLib.timeout_add(100, self._poll_frontend_process)
+
+        if not self._frontend_send(request):
+            raise RuntimeError("could not initialize authentication terminal")
+
+    def _frontend_send(self, payload: dict) -> bool:
+        sock = self.frontend_socket
+        if sock is None:
+            return False
+        try:
+            send_packet(sock, payload)
+            return True
+        except (OSError, ProtocolError):
+            return False
+
+    def _drop_frontend_transport(self, *, remove_watch: bool = True) -> None:
+        if remove_watch and self.frontend_watch_source:
+            try:
+                GLib.source_remove(self.frontend_watch_source)
+            except Exception:
+                pass
+        self.frontend_watch_source = 0
+        self.frontend_channel = None
+        sock = self.frontend_socket
+        self.frontend_socket = None
+        if sock is not None:
+            try:
+                sock.close()
+            except OSError:
+                pass
+
+    def _close_frontend(self) -> None:
+        process = self.frontend_process
+        if process is not None and process.poll() is None:
+            self.frontend_expected_exit = True
+            self._frontend_send({"type": "close"})
+            if not self.frontend_kill_source:
+                self.frontend_kill_source = GLib.timeout_add(1000, self._kill_frontend_if_needed)
+        self._drop_frontend_transport()
+        self.frontend_ready = False
+
+    def _kill_frontend_if_needed(self) -> bool:
+        self.frontend_kill_source = 0
+        process = self.frontend_process
+        if process is not None and process.poll() is None:
+            try:
+                process.terminate()
+            except OSError:
+                pass
+        return GLib.SOURCE_REMOVE
+
+    def _poll_frontend_process(self) -> bool:
+        process = self.frontend_process
+        if process is None:
+            self.frontend_poll_source = 0
+            return GLib.SOURCE_REMOVE
+        if process.poll() is None:
+            return GLib.SOURCE_CONTINUE
+
+        expected = self.frontend_expected_exit
+        self.frontend_process = None
+        self.frontend_expected_exit = False
+        self.frontend_poll_source = 0
+        self._drop_frontend_transport()
+        if not expected and self.begin_invocation is not None and not self.cancel_requested:
+            journal_message("warning", "authentication terminal exited before request completion")
+            self._request_cancel()
+        return GLib.SOURCE_REMOVE
+
+    def _on_frontend_io(self, channel: GLib.IOChannel, condition: GLib.IOCondition) -> bool:
+        del channel
+        if condition & (GLib.IOCondition.HUP | GLib.IOCondition.ERR):
+            self.frontend_watch_source = 0
+            self._drop_frontend_transport(remove_watch=False)
+            if self.begin_invocation is not None and not self.frontend_expected_exit and not self.cancel_requested:
+                self._request_cancel()
+            return False
+
+        sock = self.frontend_socket
+        if sock is None:
+            self.frontend_watch_source = 0
+            return False
+
+        while True:
+            try:
+                packet = recv_packet(sock)
+            except BlockingIOError:
+                break
+            except EOFError:
+                self.frontend_watch_source = 0
+                self._drop_frontend_transport(remove_watch=False)
+                if self.begin_invocation is not None and not self.frontend_expected_exit and not self.cancel_requested:
+                    self._request_cancel()
+                return False
+            except (OSError, ProtocolError):
+                self.frontend_watch_source = 0
+                self._drop_frontend_transport(remove_watch=False)
+                if self.begin_invocation is not None and not self.cancel_requested:
+                    self._request_cancel()
+                return False
+
+            try:
+                self._handle_frontend_packet(packet)
+            except ProtocolError:
+                self.frontend_watch_source = 0
+                self._drop_frontend_transport(remove_watch=False)
+                if self.begin_invocation is not None and not self.cancel_requested:
+                    self._request_cancel()
+                return False
+        return self.frontend_socket is not None
+
+    def _handle_frontend_packet(self, packet: dict) -> None:
+        packet_type = packet.get("type")
+        if packet_type == "ready":
+            self.frontend_ready = True
+            return
+        if packet_type == "cancel":
+            self._request_cancel()
+            return
+        if packet_type == "identity-cycle":
+            delta = packet.get("delta")
+            if delta not in (-1, 1):
+                raise ProtocolError("invalid identity-cycle delta")
+            self._cycle_identity(int(delta))
+            return
+        if packet_type == "submit":
+            response = packet.get("response")
+            if not isinstance(response, str) or len(response.encode("utf-8")) > MAX_RESPONSE_BYTES:
+                raise ProtocolError("invalid authentication response")
+            self._submit_response(response)
+            response = ""
+            return
+        raise ProtocolError("unsupported frontend packet type")
 
     def _begin_authentication(
         self,
@@ -329,19 +528,23 @@ class TerminalPolkitAgent:
         self.cancel_requested = False
         self.auth_attempts = 0
         self.last_session_error = ""
+        self.last_prompt = "Password:"
+        self.last_echo_on = False
         self.retry_limit_reached = False
 
+        request = {
+            "type": "show-request",
+            "action_id": self.active_action_id,
+            "message": str(message or "Authentication is required."),
+            "vendor": vendor,
+            "description": description,
+            "identities": self.identity_labels,
+            "identity_index": self.identity_index,
+        }
         try:
-            self.ui.show_request(
-                action_id=self.active_action_id,
-                message=str(message or "Authentication is required."),
-                vendor=vendor,
-                description=description,
-                identities=self.identity_labels,
-                identity_index=self.identity_index,
-            )
+            self._spawn_frontend(request)
         except Exception as exc:
-            self._finish_request(cancelled=False, error=f"Could not show authentication terminal: {exc}")
+            self._finish_request(cancelled=False, error=f"Could not start authentication terminal: {exc}")
 
     def _cancel_authentication(
         self,
@@ -364,30 +567,11 @@ class TerminalPolkitAgent:
         if len(self.identity_objects) <= 1:
             return
         self.identity_index = (self.identity_index + delta) % len(self.identity_objects)
-        self.ui.set_identity_index(self.identity_index)
-
-    def _advance_auth_feedback(self) -> bool:
-        if self.begin_invocation is None or self.cancel_requested or not self.ui.authenticating:
-            self.auth_feedback_source = 0
-            return GLib.SOURCE_REMOVE
-        self.ui.advance_spinner()
-        return GLib.SOURCE_CONTINUE
-
-    def _start_auth_feedback(self) -> None:
-        self.ui.set_authenticating(True)
-        if not self.auth_feedback_source:
-            self.auth_feedback_source = GLib.timeout_add(90, self._advance_auth_feedback)
-
-    def _stop_auth_feedback(self) -> None:
-        if self.auth_feedback_source:
-            GLib.source_remove(self.auth_feedback_source)
-            self.auth_feedback_source = 0
-        self.ui.set_authenticating(False)
+        self._frontend_send({"type": "identity-index", "index": self.identity_index})
 
     def _submit_response(self, response: str) -> None:
         if self.begin_invocation is None or self.cancel_requested or self.retry_limit_reached:
             return
-        self._start_auth_feedback()
         if self.active_session is None:
             self.pending_response = response
             self._start_session()
@@ -415,24 +599,24 @@ class TerminalPolkitAgent:
     def _on_session_request(self, session: PolkitAgent.Session, request: str, echo_on: bool) -> None:
         if session is not self.active_session:
             return
-        self.ui.set_prompt(str(request), bool(echo_on))
+        self.last_prompt = str(request)
+        self.last_echo_on = bool(echo_on)
         if self.pending_response is not None:
             response = self.pending_response
             self.pending_response = None
-            self._start_auth_feedback()
             session.response(response)
             response = ""
+            return
+        self._frontend_send({"type": "prompt", "prompt": self.last_prompt, "echo_on": self.last_echo_on})
 
     def _on_session_info(self, session: PolkitAgent.Session, text: str) -> None:
         if session is self.active_session:
-            self._stop_auth_feedback()
-            self.ui.set_status(str(text))
+            self._frontend_send({"type": "status", "message": str(text)})
 
     def _on_session_error(self, session: PolkitAgent.Session, text: str) -> None:
         if session is self.active_session:
-            self._stop_auth_feedback()
             self.last_session_error = str(text).strip()
-            self.ui.set_error(self._friendly_auth_error())
+            self._frontend_send({"type": "error", "message": self._friendly_auth_error()})
 
     def _friendly_auth_error(self) -> str:
         message = self.last_session_error.strip()
@@ -448,14 +632,13 @@ class TerminalPolkitAgent:
             return "Incorrect password. Try again."
         if message:
             return message
-        if not self.ui.echo_on and "password" in self.ui.prompt.casefold():
+        if not self.last_echo_on and "password" in self.last_prompt.casefold():
             return "Incorrect password. Try again."
         return "Authentication failed. Try again."
 
     def _on_session_completed(self, session: PolkitAgent.Session, gained_authorization: bool) -> None:
         if session is not self.active_session:
             return
-        self._stop_auth_feedback()
         self.active_session = None
         self.pending_response = None
 
@@ -469,37 +652,37 @@ class TerminalPolkitAgent:
             self._finish_request(cancelled=True)
             return
 
-        self.ui.clear_secret()
         if self.auth_attempts < MAX_AUTH_ATTEMPTS:
-            self.ui.set_error(self._friendly_auth_error())
+            self._frontend_send({"type": "error", "message": self._friendly_auth_error()})
             return
 
         self.retry_limit_reached = True
-        self.ui.set_error(f"Authentication failed after {MAX_AUTH_ATTEMPTS} attempts.")
-        GLib.timeout_add(1200, self._finish_denied_after_retry_limit)
+        self._frontend_send(
+            {"type": "error", "message": f"Authentication failed after {MAX_AUTH_ATTEMPTS} attempts."}
+        )
+        GLib.timeout_add(1200, self._finish_denied_after_retry_limit, self.active_cookie)
 
-    def _finish_denied_after_retry_limit(self) -> bool:
-        if self.begin_invocation is not None and not self.cancel_requested:
+    def _finish_denied_after_retry_limit(self, cookie: str) -> bool:
+        if (
+            self.begin_invocation is not None
+            and not self.cancel_requested
+            and self.retry_limit_reached
+            and self.active_cookie == cookie
+        ):
             self._finish_request(cancelled=False)
         return GLib.SOURCE_REMOVE
-
-    def _cancel_from_ui(self) -> None:
-        self._request_cancel()
 
     def _request_cancel(self) -> None:
         if self.begin_invocation is None or self.cancel_requested:
             return
         self.cancel_requested = True
         self.pending_response = None
-        self._stop_auth_feedback()
-        self.ui.clear_secret()
         if self.active_session is not None:
             self.active_session.cancel()
         else:
             self._finish_request(cancelled=True)
 
     def _finish_request(self, *, cancelled: bool, error: str = "") -> None:
-        self._stop_auth_feedback()
         invocation = self.begin_invocation
         self.begin_invocation = None
         self.pending_response = None
@@ -512,8 +695,10 @@ class TerminalPolkitAgent:
         self.cancel_requested = False
         self.auth_attempts = 0
         self.last_session_error = ""
+        self.last_prompt = "Password:"
+        self.last_echo_on = False
         self.retry_limit_reached = False
-        self.ui.hide()
+        self._close_frontend()
 
         if invocation is None:
             return
@@ -536,6 +721,8 @@ class TerminalPolkitAgent:
                 except GLib.Error:
                     pass
             self._finish_request(cancelled=True)
+        else:
+            self._close_frontend()
 
         if self.registered and self.authority is not None and self.subject is not None:
             try:
@@ -548,14 +735,13 @@ class TerminalPolkitAgent:
             self.connection.unregister_object(self.registration_id)
             self.registration_id = 0
 
-        self.ui.close()
         if self.loop.is_running():
             self.loop.quit()
 
 
 def main() -> int:
     try:
-        agent = TerminalPolkitAgent()
+        agent = AwtarchyPolkitAgent()
         agent.start()
         return 0
     except Exception as exc:
