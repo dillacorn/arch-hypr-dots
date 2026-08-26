@@ -44,41 +44,11 @@ Important invariants:
 - Backend diagnostics belong in the user journal. Python warnings/tracebacks must not appear in the authentication terminal's normal buffer.
 - Migration must stop only the exact retired GNOME agent binary, verify the supervised headless Python backend, and restore GNOME when activation fails.
 - Automatic `polkit-gnome` package removal is allowed only when Awtarchy recorded ownership of that package, live activation succeeded, and every rollback-capable update validation/cleanup step has already completed.
-- Changes to this architecture require the focused PolicyKit contracts under `tests/` and the permanent validation workflow to remain aligned with the implementation.
+- Changes to this architecture require the focused PolicyKit contracts under `tests/` and permanent CI validation to remain aligned with the implementation.
 
 '''
 
-agents = ROOT / "AGENTS.md"
-replace_between(agents, "### PolicyKit authentication\n", "### Runtime and integration helpers\n", policy_section)
-
-validate = ROOT / ".github/workflows/validate-awtarchy.yml"
-validate_text = validate.read_text(encoding="utf-8")
-marker = "      - name: ShellCheck command code\n"
-polkit_step = '''      - name: PolicyKit agent contracts
-        env:
-          PYTHONPYCACHEPREFIX: /tmp/awtarchy-pycache
-        run: |
-          bash -n config/hypr/scripts/awtarchy-polkit-agent/launcher.sh
-          python3 -m py_compile config/hypr/scripts/awtarchy-polkit-agent/agent.py config/hypr/scripts/awtarchy-polkit-agent/tui.py
-          python3 tests/test-polkit-agent-tui.py
-          python3 tests/test-polkit-agent-auth-feedback.py
-          python3 tests/test-polkit-agent-transient-frontend.py
-          bash tests/test-polkit-agent-headless-idle.sh
-          bash tests/test-polkit-agent-password-retry.sh
-          bash tests/test-polkit-agent-alacritty-appearance.sh
-          bash tests/test-polkit-agent-internal-window-ui.sh
-          bash tests/test-polkit-agent-glib-watch.sh
-          bash tests/test-polkit-agent-hypr-dispatch.sh
-          bash tests/test-polkit-agent-session-binding.sh
-          bash tests/test-polkit-agent-startup-diagnostics.sh
-          bash tests/test-polkit-agent-production-integration.sh
-          bash tests/test-polkit-agent-secure.sh
-          bash tests/test-polkit-agent-runtime-rebuild.sh
-
-'''
-if "      - name: PolicyKit agent contracts\n" not in validate_text:
-    validate_text = validate_text.replace(marker, polkit_step + marker, 1)
-validate.write_text(validate_text, encoding="utf-8")
+replace_between(ROOT / "AGENTS.md", "### PolicyKit authentication\n", "### Runtime and integration helpers\n", policy_section)
 
 secure = ROOT / "tests/test-polkit-agent-secure.sh"
 secure_text = secure.read_text(encoding="utf-8")
@@ -86,8 +56,7 @@ secure_text = secure_text.replace('LIVE_TEST="${ROOT_DIR}/config/hypr/scripts/aw
 secure_text = secure_text.replace('# The live-test controller is intentionally branch-only until the migration is validated.\nrequire_file "$LIVE_TEST"\n\n', "")
 secure.write_text(secure_text, encoding="utf-8")
 
-headless = ROOT / "tests/test-polkit-agent-headless-idle.sh"
-headless.write_text('''#!/usr/bin/env bash
+(ROOT / "tests/test-polkit-agent-headless-idle.sh").write_text('''#!/usr/bin/env bash
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -100,18 +69,15 @@ fail() { printf 'FAIL: %s\\n' "$*" >&2; return 1; }
 require_contains() { grep -Fq -- "$2" "$1" || fail "$1 missing: $2"; }
 reject_contains() { ! grep -Fq -- "$2" "$1" || fail "$1 still contains: $2"; }
 
-# Idle service must be the isolated Python backend itself, not Alacritty.
 require_contains "$RUNTIME" 'expected_python="$(/usr/bin/readlink -f -- /usr/bin/python3 2>/dev/null)"'
 require_contains "$RUNTIME" '[[ "$resolved" == "$expected_python" ]] || return 1'
 reject_contains "$RUNTIME" '[[ "$resolved" == "$expected_alacritty" ]] || return 1'
 
-# The persistent backend owns registration; the terminal exists only per request.
 require_contains "$AGENT" 'socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)'
 require_contains "$AGENT" 'self.frontend_process: Optional[subprocess.Popen] = None'
 require_contains "$AGENT" 'def _spawn_frontend(self, request: dict) -> None:'
 require_contains "$AGENT" 'def _close_frontend(self) -> None:'
 
-# There is no persistent/private authentication workspace anymore.
 reject_contains "$HYPR" 'special:awtarchy-polkit-agent'
 reject_contains "$BAR" 'internalServiceWindow'
 require_contains "$BAR" 'toplevel.workspace && toplevel.workspace.id < 0).length'
@@ -119,8 +85,7 @@ require_contains "$BAR" 'toplevel.workspace && toplevel.workspace.id < 0).length
 printf '%s\\n' 'headless Polkit idle contract passed'
 ''', encoding="utf-8")
 
-startup = ROOT / "tests/test-polkit-agent-startup-diagnostics.sh"
-startup.write_text('''#!/usr/bin/env bash
+(ROOT / "tests/test-polkit-agent-startup-diagnostics.sh").write_text('''#!/usr/bin/env bash
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -128,20 +93,9 @@ AGENT="${ROOT_DIR}/config/hypr/scripts/awtarchy-polkit-agent/agent.py"
 LAUNCHER="${ROOT_DIR}/config/hypr/scripts/awtarchy-polkit-agent/launcher.sh"
 SERVICE="${ROOT_DIR}/config/hypr/scripts/awtarchy-polkit-agent/awtarchy-polkit-agent.service"
 
-fail() {
-    printf 'FAIL: %s\\n' "$*" >&2
-    return 1
-}
-
-require_contains() {
-    local file="$1" pattern="$2"
-    grep -Fq -- "$pattern" "$file" || fail "$file missing: $pattern"
-}
-
-reject_contains() {
-    local file="$1" pattern="$2"
-    ! grep -Fq -- "$pattern" "$file" || fail "$file still contains: $pattern"
-}
+fail() { printf 'FAIL: %s\\n' "$*" >&2; return 1; }
+require_contains() { grep -Fq -- "$2" "$1" || fail "$1 missing: $2"; }
+reject_contains() { ! grep -Fq -- "$2" "$1" || fail "$1 still contains: $2"; }
 
 require_contains "$AGENT" 'SYSTEMD_CAT = "/usr/bin/systemd-cat"'
 require_contains "$AGENT" 'def journal_message(priority: str, message: str) -> None:'
@@ -150,7 +104,6 @@ require_contains "$AGENT" 'authentication terminal exited before request complet
 require_contains "$AGENT" 'fatal startup:'
 require_contains "$AGENT" 'except Exception as exc:'
 reject_contains "$AGENT" 'startup: authentication terminal hidden and ready'
-
 require_contains "$LAUNCHER" 'PolicyKit Python bindings are unavailable; install polkit and python-gobject.'
 require_contains "$LAUNCHER" '"$PYTHON" -I "$AGENT"'
 require_contains "$SERVICE" 'StandardOutput=journal'
@@ -159,10 +112,7 @@ require_contains "$SERVICE" 'StandardError=journal'
 printf '%s\\n' 'headless Polkit startup diagnostics contract passed'
 ''', encoding="utf-8")
 
-rebuild = ROOT / "tests/test-polkit-agent-runtime-rebuild.sh"
-rebuild.write_text('''#!/usr/bin/env bash
-# Regression checks for safely replacing a pre-existing PolicyKit runtime.
-
+(ROOT / "tests/test-polkit-agent-runtime-rebuild.sh").write_text('''#!/usr/bin/env bash
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -176,8 +126,6 @@ grep -Fq 'install_awtarchy_polkit_agent_runtime()' "$RUNTIME"
 grep -Fq '.polkit-agent.stage.XXXXXX' "$RUNTIME"
 grep -Fq 'awtarchy_polkit_verify_runtime_tree "$AWTARCHY_POLKIT_RUNTIME_DIR"' "$RUNTIME"
 grep -Fq "IFS=' ' read -r uid mode type" "$RUNTIME"
-
-# The complete trusted runtime must be staged before replacement.
 grep -Fq '"${stage}/agent.py"' "$RUNTIME"
 grep -Fq '"${stage}/tui.py"' "$RUNTIME"
 grep -Fq '"${stage}/alacritty.toml"' "$RUNTIME"
@@ -186,8 +134,6 @@ if grep -Fq 'shell.qml' "$RUNTIME" || grep -Fq 'window-guard.sh' "$RUNTIME"; the
     printf '%s\\n' 'FAIL: production PolicyKit staging references obsolete Quickshell runtime files' >&2
     exit 1
 fi
-
-# Existing runtime/service trees are replaced transactionally and restored on failure.
 grep -Fq 'awtarchy_polkit_restore_install_transaction()' "$RUNTIME"
 grep -Fq 'awtarchy_polkit_root /usr/bin/mv -Tf -- "$AWTARCHY_POLKIT_RUNTIME_DIR" "$previous_runtime"' "$RUNTIME"
 grep -Fq 'awtarchy_polkit_root /usr/bin/mv -Tf -- "$stage" "$AWTARCHY_POLKIT_RUNTIME_DIR"' "$RUNTIME"
