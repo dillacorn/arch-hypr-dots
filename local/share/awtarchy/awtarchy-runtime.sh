@@ -3153,22 +3153,22 @@ awtarchy_polkit_recover_session_environment() {
 
     case "$key" in
       WAYLAND_DISPLAY)
-        [[ -n "${WAYLAND_DISPLAY:-}" ]] || WAYLAND_DISPLAY="$value"
+        [[ -n "${WAYLAND_DISPLAY:-}" ]] || export WAYLAND_DISPLAY="$value"
         ;;
       HYPRLAND_INSTANCE_SIGNATURE)
-        [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || HYPRLAND_INSTANCE_SIGNATURE="$value"
+        [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || export HYPRLAND_INSTANCE_SIGNATURE="$value"
         ;;
       XDG_SESSION_ID)
-        [[ -n "${XDG_SESSION_ID:-}" ]] || XDG_SESSION_ID="$value"
+        [[ -n "${XDG_SESSION_ID:-}" ]] || export XDG_SESSION_ID="$value"
         ;;
       XDG_CURRENT_DESKTOP)
-        [[ -n "${XDG_CURRENT_DESKTOP:-}" ]] || XDG_CURRENT_DESKTOP="$value"
+        [[ -n "${XDG_CURRENT_DESKTOP:-}" ]] || export XDG_CURRENT_DESKTOP="$value"
         ;;
       XDG_SESSION_DESKTOP)
-        [[ -n "${XDG_SESSION_DESKTOP:-}" ]] || XDG_SESSION_DESKTOP="$value"
+        [[ -n "${XDG_SESSION_DESKTOP:-}" ]] || export XDG_SESSION_DESKTOP="$value"
         ;;
       XDG_SESSION_TYPE)
-        [[ -n "${XDG_SESSION_TYPE:-}" ]] || XDG_SESSION_TYPE="$value"
+        [[ -n "${XDG_SESSION_TYPE:-}" ]] || export XDG_SESSION_TYPE="$value"
         ;;
     esac
   done < <(awtarchy_polkit_user_command /usr/bin/systemctl --user show-environment 2>/dev/null || true)
