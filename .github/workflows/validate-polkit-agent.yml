@@ -13,8 +13,10 @@ env:
   PYTHONPYCACHEPREFIX: /tmp/awtarchy-pycache
 
 jobs:
-  updater-migration-debug:
-    if: github.event_name == 'push' && github.event.head_commit.message == 'Capture updater migration failure'
+  update-updater-fixture:
+    if: github.event_name == 'push' && github.event.head_commit.message == 'Model PolicyKit updater fixture'
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
@@ -22,14 +24,128 @@ jobs:
           fetch-depth: 0
       - name: Install fixture dependency
         run: sudo apt-get update && sudo apt-get install -y lua5.4
-      - name: Capture updater migration fixture failure
+      - name: Model root-owned PolicyKit installation in updater fixture
         run: |
-          set +e
-          AWTARCHY_TEST_KEEP_TMP=1 bash -x tests/test-quickshell-updater-migration.sh
-          rc=$?
-          printf '\n=== updater fixture diagnostics ===\n'
-          find /tmp -maxdepth 2 -type f -name update.out -print -exec sh -c 'printf "\n--- %s ---\n" "$1"; cat "$1"' _ {} \;
-          exit "$rc"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('tests/test-quickshell-updater-migration.sh')
+          text = path.read_text(encoding='utf-8')
+
+          old_sudo = '''cat >"${fakebin}/sudo" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          if [[ ${1:-} == -v ]]; then
+            exit 0
+          fi
+          exec "$@"
+          EOF'''.replace('          ', '')
+
+          new_sudo = '''cat >"${fakebin}/sudo" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          if [[ ${1:-} == -v ]]; then
+            exit 0
+          fi
+
+          [[ ${1:-} == -- ]] && shift
+          cmd="${1:-}"
+          [[ -n $cmd ]] || exit 2
+          shift
+
+          test_root="${AWTARCHY_TEST_POLKIT_ROOT:-${AWTARCHY_TEST_TARGET_HOME:?}.polkit-root}"
+          mapped=()
+          policykit_path=0
+          for arg in "$@"; do
+            case "$arg" in
+              /usr/local/libexec/awtarchy*|/usr/local/lib/systemd/user*)
+                mapped+=("${test_root}${arg}")
+                policykit_path=1
+                ;;
+              *)
+                mapped+=("$arg")
+                ;;
+            esac
+          done
+
+          if (( policykit_path == 1 )); then
+            case "$cmd" in
+              /usr/bin/install)
+                filtered=()
+                set -- "${mapped[@]}"
+                while (( $# )); do
+                  case "$1" in
+                    -o|-g)
+                      shift
+                      (( $# )) || exit 2
+                      shift
+                      ;;
+                    *)
+                      filtered+=("$1")
+                      shift
+                      ;;
+                  esac
+                done
+                exec "$cmd" "${filtered[@]}"
+                ;;
+              /usr/bin/stat)
+                output="$("$cmd" "${mapped[@]}")"
+                wants_owner=0
+                for arg in "${mapped[@]}"; do
+                  [[ $arg == '%u %a %F' ]] && wants_owner=1
+                done
+                if (( wants_owner == 1 )); then
+                  printf '0 %s\n' "${output#* }"
+                else
+                  printf '%s\n' "$output"
+                fi
+                exit 0
+                ;;
+              *)
+                exec "$cmd" "${mapped[@]}"
+                ;;
+            esac
+          fi
+
+          exec "$cmd" "${mapped[@]}"
+          EOF'''.replace('          ', '')
+
+          if text.count(old_sudo) != 1:
+              raise SystemExit('expected one updater fake sudo block')
+          text = text.replace(old_sudo, new_sudo, 1)
+
+          needle = '''env "${update_env[@]}" "$installed_launcher" git update \\
+            --branch "$TEST_BRANCH" --commit "$TEST_COMMIT" \\
+            >"${TMP}/update.out" 2>&1
+          '''.replace('          ', '')
+          assertions = needle + '''
+          polkit_test_root="${home}.polkit-root"
+          assert_file "${polkit_test_root}/usr/local/libexec/awtarchy/polkit-agent/agent.py"
+          assert_file "${polkit_test_root}/usr/local/libexec/awtarchy/polkit-agent/tui.py"
+          assert_file "${polkit_test_root}/usr/local/libexec/awtarchy/polkit-agent/alacritty.toml"
+          assert_file "${polkit_test_root}/usr/local/libexec/awtarchy/polkit-agent/launcher"
+          assert_file "${polkit_test_root}/usr/local/lib/systemd/user/awtarchy-polkit-agent.service"
+          grep -Fq 'Installed root-owned Awtarchy terminal PolicyKit authentication runtime.' \\
+            "${TMP}/update.out" \\
+            || fail "updater did not stage the PolicyKit runtime through the privileged install path"
+          '''.replace('          ', '')
+          if text.count(needle) != 1:
+              raise SystemExit('expected one primary updater invocation')
+          text = text.replace(needle, assertions, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+          git diff --check
+          bash -n tests/test-quickshell-updater-migration.sh
+          bash tests/test-quickshell-updater-migration.sh
+
+      - name: Commit updater fixture coverage
+        run: |
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add tests/test-quickshell-updater-migration.sh
+          git diff --cached --quiet || git commit -m 'Model PolicyKit install in updater migration tests'
+          git push origin HEAD:polkit-agent-concept-testing
 
   polkit-contracts:
     runs-on: ubuntu-latest
