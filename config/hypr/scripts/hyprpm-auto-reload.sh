@@ -41,7 +41,8 @@ UPDATE_TIMEOUT_SECONDS="${HYPRPM_UPDATE_TIMEOUT_SECONDS:-600}"
 LIVE_RELOAD="${HYPRPM_AUTO_LIVE_RELOAD:-0}"
 UPDATE_ON_FAILURE="${HYPRPM_AUTO_UPDATE_ON_FAILURE:-1}"
 
-mkdir -p "$LOG_DIR" "$STATE_DIR" 2>/dev/null || true
+mkdir -p "$LOG_DIR" "$STATE_DIR" "$SESSION_DIR" 2>/dev/null || true
+chmod 700 "$SESSION_DIR" 2>/dev/null || true
 
 ts() { date +"%Y-%m-%d %H:%M:%S"; }
 
