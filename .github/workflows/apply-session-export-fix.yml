@@ -16,27 +16,13 @@ jobs:
 
       - name: Export recovered session variables
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('local/share/awtarchy/awtarchy-runtime.sh')
-          text = path.read_text()
-          keys = (
-              'WAYLAND_DISPLAY',
-              'HYPRLAND_INSTANCE_SIGNATURE',
-              'XDG_SESSION_ID',
-              'XDG_CURRENT_DESKTOP',
-              'XDG_SESSION_DESKTOP',
-              'XDG_SESSION_TYPE',
-          )
-          for key in keys:
-              old = f'[[ -n "${{{key}:-}}" ]] || {key}="$value"'
-              new = f'[[ -n "${{{key}:-}}" ]] || export {key}="$value"'
-              if text.count(old) != 1:
-                  raise SystemExit(f'unexpected recovery assignment count for {key}')
-              text = text.replace(old, new, 1)
-          path.write_text(text)
-          PY
+          file=local/share/awtarchy/awtarchy-runtime.sh
+          sed -i 's/|| WAYLAND_DISPLAY="$value"/|| export WAYLAND_DISPLAY="$value"/' "$file"
+          sed -i 's/|| HYPRLAND_INSTANCE_SIGNATURE="$value"/|| export HYPRLAND_INSTANCE_SIGNATURE="$value"/' "$file"
+          sed -i 's/|| XDG_SESSION_ID="$value"/|| export XDG_SESSION_ID="$value"/' "$file"
+          sed -i 's/|| XDG_CURRENT_DESKTOP="$value"/|| export XDG_CURRENT_DESKTOP="$value"/' "$file"
+          sed -i 's/|| XDG_SESSION_DESKTOP="$value"/|| export XDG_SESSION_DESKTOP="$value"/' "$file"
+          sed -i 's/|| XDG_SESSION_TYPE="$value"/|| export XDG_SESSION_TYPE="$value"/' "$file"
           rm -f .github/workflows/apply-session-export-fix.yml
 
       - name: Validate
