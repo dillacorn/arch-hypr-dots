@@ -1,0 +1,33 @@
+name: Validate Update Notification Login Regression
+
+on:
+  push:
+    branches:
+      - main
+      - fix-update-notification-login-check
+    paths:
+      - config/hypr/scripts/quickshell_update_notifications.sh
+      - config/quickshell/awtarchy/shell.qml
+      - tests/test-update-notification-login-regression.sh
+      - .github/workflows/validate-update-notification-login-regression.yml
+  pull_request:
+    paths:
+      - config/hypr/scripts/quickshell_update_notifications.sh
+      - config/quickshell/awtarchy/shell.qml
+      - tests/test-update-notification-login-regression.sh
+      - .github/workflows/validate-update-notification-login-regression.yml
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Bash syntax
+        run: |
+          bash -n config/hypr/scripts/quickshell_update_notifications.sh
+          bash -n tests/test-update-notification-login-regression.sh
+      - name: Update notification regression
+        run: bash tests/test-update-notification-login-regression.sh
