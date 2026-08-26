@@ -194,8 +194,7 @@ jobs:
             config/hypr/scripts/toggle_mouse_submap.sh \
             config/quickshell/awtarchy/Bar.qml \
             local/share/applications/vm_submap.desktop \
-            local/share/applications/noalt_submap.desktop \
-            tests/test-bar-control-actions.sh
+            local/share/applications/noalt_submap.desktop
 
       - name: Commit completed fix
         run: |
