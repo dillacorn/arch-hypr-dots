@@ -7,6 +7,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
+import "ClipboardLoadState.js" as ClipboardLoadState
 import "FlyoutEdgeLayout.js" as FlyoutEdgeLayout
 
 Singleton {
@@ -40,6 +41,17 @@ Singleton {
     property bool panelPresented: false
     readonly property int panelFadeDuration: 140
     property var flyoutScreen: null
+    property bool listLoading: false
+    property string listError: ""
+    property bool listStopping: false
+    property bool listRestartPending: false
+    property var thumbnailQueue: []
+    property var thumbnailKnown: ({})
+    property bool thumbnailStopping: false
+    property int activeThumbnailIndex: -1
+    property string activeThumbnailPath: ""
+    property int deletingEntryIndex: -1
+    property real deleteViewportY: 0
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string backend: configHome + "/hypr/scripts/quickshell_clipboard.sh"
@@ -143,7 +155,7 @@ Singleton {
         clipboardWindow.visible = true;
         if (wasVisible)
             Qt.callLater(() => root.positionWindow());
-        listProcess.running = true;
+        beginListLoad();
         Qt.callLater(() => {
             clipboardList.positionViewAtBeginning();
             search.forceActiveFocus();
@@ -213,6 +225,20 @@ Singleton {
         openPreparing = false;
         if (prepareProcess.running)
             prepareProcess.running = false;
+        listRestartPending = false;
+        if (listProcess.running && !listStopping) {
+            listStopping = true;
+            listProcess.running = false;
+        }
+        if (thumbnailProcess.running && !thumbnailStopping) {
+            thumbnailStopping = true;
+            thumbnailProcess.running = false;
+        }
+        listLoading = false;
+        thumbnailQueue = [];
+        thumbnailKnown = ({});
+        activeThumbnailIndex = -1;
+        activeThumbnailPath = "";
         if (settingsDirty)
             discardDraft();
         clipboardWindow.visible = false;
@@ -358,6 +384,50 @@ Singleton {
         close();
     }
 
+    function clipboardWindowVisible() {
+        return clipboardWindow.visible;
+    }
+
+    function deleteEntry(entry) {
+        if (!entry || deleteProcess.running)
+            return;
+        deletingEntryIndex = entry.index;
+        deleteViewportY = clipboardList.contentY;
+        deleteProcess.exec([backend, "delete", String(entry.index)]);
+    }
+
+    function finishDelete(exitCode) {
+        const deletedIndex = deletingEntryIndex;
+        const savedY = deleteViewportY;
+        deletingEntryIndex = -1;
+        deleteViewportY = 0;
+
+        if (exitCode !== 0 || !clipboardWindowVisible() || deletedIndex < 0)
+            return;
+
+        entries = ClipboardLoadState.removeRecord(entries, deletedIndex);
+        thumbnailQueue = thumbnailQueue.filter(index => index !== deletedIndex);
+        const nextKnown = Object.assign({}, thumbnailKnown);
+        delete nextKnown[String(deletedIndex)];
+        thumbnailKnown = nextKnown;
+
+        Qt.callLater(() => {
+            const minY = clipboardList.originY;
+            const maxY = Math.max(minY,
+                minY + clipboardList.contentHeight - clipboardList.height);
+            clipboardList.contentY = Math.max(minY, Math.min(maxY, savedY));
+
+            if (clipboardList.count === 0)
+                clipboardList.currentIndex = -1;
+            else if (clipboardList.currentIndex < 0)
+                clipboardList.currentIndex = 0;
+            else if (clipboardList.currentIndex >= clipboardList.count)
+                clipboardList.currentIndex = clipboardList.count - 1;
+
+            search.forceActiveFocus();
+        });
+    }
+
     function openDetail(entry) {
         if (!entry || entry.binary)
             return;
@@ -410,14 +480,109 @@ Singleton {
 
     function filteredEntries() {
         const query = search.text.trim().toLowerCase();
-        const scored = entries.map(entry => ({
-            entry: entry,
-            score: fuzzyScore(String(entry.label || "").toLowerCase(), query)
-        })).filter(item => item.score >= 0);
+        const useGlob = query.indexOf("*") >= 0;
+        const scored = entries.map(entry => {
+            const label = String(entry.label || "").toLowerCase();
+            return {
+                entry: entry,
+                score: useGlob
+                    ? (ClipboardLoadState.globMatch(label, query) ? 0 : -1)
+                    : fuzzyScore(label, query)
+            };
+        }).filter(item => item.score >= 0);
 
-        if (query.length > 0)
+        if (query.length > 0 && !useGlob)
             scored.sort((a, b) => b.score - a.score);
         return scored.map(item => item.entry);
+    }
+
+    function beginListLoad() {
+        const transition = ClipboardLoadState.requestListLoad(
+            listProcess.running, listStopping);
+        listRestartPending = transition.restartPending;
+
+        if (transition.stopNow) {
+            listStopping = true;
+            listProcess.running = false;
+        }
+        if (transition.startNow)
+            startListLoadNow();
+    }
+
+    function startListLoadNow() {
+        if (!clipboardWindow.visible) {
+            listLoading = false;
+            listRestartPending = false;
+            return;
+        }
+
+        if (thumbnailProcess.running && !thumbnailStopping) {
+            thumbnailStopping = true;
+            thumbnailProcess.running = false;
+        }
+
+        entries = [];
+        listError = "";
+        listLoading = true;
+        listStopping = false;
+        listRestartPending = false;
+        thumbnailQueue = [];
+        thumbnailKnown = ({});
+        activeThumbnailIndex = -1;
+        activeThumbnailPath = "";
+        clipboardList.currentIndex = -1;
+        listProcess.running = true;
+    }
+
+    function finishListProcess(exitCode) {
+        const transition = ClipboardLoadState.finishListLoad(
+            listRestartPending, clipboardWindow.visible);
+        listStopping = false;
+        listRestartPending = false;
+        listLoading = transition.keepLoading;
+
+        if (transition.startNext) {
+            Qt.callLater(() => root.startListLoadNow());
+            return;
+        }
+        if (exitCode !== 0 && listError.length === 0)
+            listError = "Clipboard history could not be loaded";
+    }
+
+    function appendClipboardRecord(line) {
+        const nextEntries = ClipboardLoadState.appendRecord(entries, line);
+        if (nextEntries.length === entries.length) {
+            console.warn("Awtarchy clipboard record parse failed:", String(line));
+            return;
+        }
+
+        const firstEntry = entries.length === 0;
+        entries = nextEntries;
+        if (firstEntry) {
+            clipboardList.currentIndex = 0;
+            Qt.callLater(() => clipboardList.positionViewAtBeginning());
+        }
+    }
+
+    function queueThumbnail(index) {
+        const nextState = ClipboardLoadState.enqueueThumbnail(
+            thumbnailQueue, thumbnailKnown, index);
+        thumbnailQueue = nextState.queue;
+        thumbnailKnown = nextState.known;
+        runNextThumbnail();
+    }
+
+    function runNextThumbnail() {
+        if (thumbnailProcess.running || thumbnailStopping
+                || thumbnailQueue.length === 0
+                || !clipboardWindow.visible)
+            return;
+
+        activeThumbnailIndex = thumbnailQueue[0];
+        thumbnailQueue = thumbnailQueue.slice(1);
+        activeThumbnailPath = "";
+        thumbnailProcess.exec(
+            [root.backend, "thumb", String(root.activeThumbnailIndex)]);
     }
 
     IpcHandler {
@@ -435,17 +600,33 @@ Singleton {
     Process {
         id: listProcess
         command: [root.backend, "list"]
-        stdout: StdioCollector {
+        stdout: SplitParser {
+            onRead: line => root.appendClipboardRecord(line)
+        }
+        stderr: StdioCollector {
             onStreamFinished: {
-                try {
-                    root.entries = JSON.parse(text.trim() || "[]");
-                    clipboardList.currentIndex = root.entries.length > 0 ? 0 : -1;
-                    Qt.callLater(() => clipboardList.positionViewAtBeginning());
-                } catch (error) {
-                    console.warn("Awtarchy clipboard list parse failed:", error);
-                    root.entries = [];
-                }
+                const detail = text.trim();
+                if (detail.length > 0)
+                    root.listError = detail.split("\n")[0];
             }
+        }
+        onExited: (exitCode, exitStatus) => root.finishListProcess(exitCode)
+    }
+
+    Process {
+        id: thumbnailProcess
+        stdout: StdioCollector {
+            onStreamFinished: root.activeThumbnailPath = text.trim()
+        }
+        onExited: (exitCode, exitStatus) => {
+            root.thumbnailStopping = false;
+            if (exitCode === 0 && root.activeThumbnailPath.length > 0) {
+                root.entries = ClipboardLoadState.updateThumbnail(
+                    root.entries, root.activeThumbnailIndex, root.activeThumbnailPath);
+            }
+            root.activeThumbnailIndex = -1;
+            root.activeThumbnailPath = "";
+            Qt.callLater(() => root.runNextThumbnail());
         }
     }
 
@@ -475,6 +656,11 @@ Singleton {
     }
 
     Process { id: selectProcess }
+
+    Process {
+        id: deleteProcess
+        onExited: (exitCode, exitStatus) => root.finishDelete(exitCode)
+    }
 
     Process {
         id: stateWriter
@@ -763,16 +949,25 @@ Singleton {
                     }
                 }
 
-                ListView {
-                    id: clipboardList
+                Item {
+                    id: clipboardContent
                     Layout.row: root.bottomEdgeLayout ? 0 : 2
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    visible: !root.detailOpen
-                    model: ScriptModel { values: root.filteredEntries() }
+
+                    ListView {
+                        id: clipboardList
+                        anchors.fill: parent
+                        visible: !root.detailOpen
+                    model: ScriptModel {
+                        objectProp: "index"
+                        values: root.filteredEntries()
+                    }
                     clip: true
                     currentIndex: count > 0 ? 0 : -1
                     boundsBehavior: Flickable.StopAtBounds
+                    reuseItems: true
+                    cacheBuffer: 0
                     verticalLayoutDirection: root.bottomEdgeLayout
                         ? ListView.BottomToTop : ListView.TopToBottom
 
@@ -781,6 +976,7 @@ Singleton {
                         required property var modelData
                         required property int index
                         width: ListView.view.width
+                        opacity: 0
                         readonly property string thumbnailPath: modelData && modelData.thumb
                             ? String(modelData.thumb) : ""
                         readonly property bool hasThumbnail: thumbnailPath.length > 0
@@ -790,17 +986,44 @@ Singleton {
                             Math.min(160, Math.round(96 * root.effectiveIconScale / 100)))
                         readonly property color previewBackground: ListView.isCurrentItem
                             ? Theme.focus
-                            : ((rowMouse.containsMouse || viewMouse.containsMouse)
+                            : ((rowMouse.containsMouse || viewMouse.containsMouse
+                                    || deleteMouse.containsMouse)
                                 ? Theme.subtleHover : Theme.popupBackground)
                         height: hasThumbnail
                             ? thumbnailSize + 20
                             : Math.max(40, Math.round(44 * root.effectiveTextScale / 100))
                         color: previewBackground
 
+                        function queueThumbnailIfNeeded() {
+                            if (modelData && modelData.binary === true
+                                    && thumbnailPath.length === 0)
+                                root.queueThumbnail(modelData.index);
+                        }
+
+                        Component.onCompleted: {
+                            queueThumbnailIfNeeded();
+                            opacity = 1;
+                        }
+                        onModelDataChanged: queueThumbnailIfNeeded()
+
+                        Behavior on opacity {
+                            enabled: FlyoutManager.animationsEnabled
+                            SequentialAnimation {
+                                PauseAnimation {
+                                    duration: Math.min(Math.max(row.index, 0), 12) * 18
+                                }
+                                NumberAnimation {
+                                    duration: 110
+                                    easing.type: Easing.OutCubic
+                                }
+                            }
+                        }
+
                         RowLayout {
                             anchors.fill: parent
                             anchors.leftMargin: 10
                             anchors.rightMargin: (clipboardScrollBar.visible ? 20 : 10)
+                                + (deleteButton.visible ? 36 : 0)
                                 + (viewButton.visible ? 36 : 0)
                             spacing: 12
 
@@ -837,6 +1060,7 @@ Singleton {
                             anchors.bottom: parent.bottom
                             anchors.right: parent.right
                             anchors.rightMargin: (clipboardScrollBar.visible ? 20 : 10)
+                                + (deleteButton.visible ? 36 : 0)
                                 + (viewButton.visible ? 36 : 0)
                             width: Math.min(56, Math.max(32, row.width * 0.08))
                             z: 8
@@ -875,11 +1099,12 @@ Singleton {
                             id: viewButton
                             visible: Boolean(row.modelData)
                                 && row.modelData.binary === false
-                                && (rowMouse.containsMouse || viewMouse.containsMouse)
+                                && (rowMouse.containsMouse || viewMouse.containsMouse
+                                    || deleteMouse.containsMouse)
                             width: 28
                             height: 28
                             anchors.right: parent.right
-                            anchors.rightMargin: clipboardScrollBar.visible ? 18 : 7
+                            anchors.rightMargin: (clipboardScrollBar.visible ? 18 : 7) + 36
                             anchors.verticalCenter: parent.verticalCenter
                             color: viewMouse.containsMouse ? Theme.focus : Theme.active
                             border.width: 1
@@ -906,6 +1131,43 @@ Singleton {
                                 }
                             }
                         }
+
+                        Rectangle {
+                            id: deleteButton
+                            visible: Boolean(row.modelData)
+                                && (rowMouse.containsMouse || viewMouse.containsMouse
+                                    || deleteMouse.containsMouse)
+                            width: 28
+                            height: 28
+                            anchors.right: parent.right
+                            anchors.rightMargin: clipboardScrollBar.visible ? 18 : 7
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: deleteMouse.containsMouse ? Theme.urgent : Theme.active
+                            border.width: 1
+                            border.color: deleteMouse.containsMouse ? Theme.urgent : Theme.focus
+                            z: 21
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "×"
+                                color: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Math.max(11,
+                                    Math.round(14 * root.effectiveIconScale / 100))
+                            }
+
+                            MouseArea {
+                                id: deleteMouse
+                                anchors.fill: parent
+                                enabled: !deleteProcess.running
+                                hoverEnabled: true
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onClicked: mouse => {
+                                    root.deleteEntry(row.modelData);
+                                    mouse.accepted = true;
+                                }
+                            }
+                        }
                     }
 
                     ListScrollBar {
@@ -918,11 +1180,72 @@ Singleton {
                     }
                 }
 
-                Item {
-                    Layout.row: root.bottomEdgeLayout ? 0 : 2
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    visible: root.detailOpen
+                    Item {
+                        id: clipboardStatus
+                        anchors.fill: parent
+                        visible: !root.detailOpen
+                            && (root.entries.length === 0 || clipboardList.count === 0)
+                    z: 12
+
+                    Text {
+                        id: loadingLabel
+                        anchors.centerIn: parent
+                        visible: root.listLoading && root.entries.length === 0
+                        text: "Loading clipboard history…"
+                        color: Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Math.max(9,
+                            Math.round(12 * root.effectiveTextScale / 100))
+
+                        SequentialAnimation on opacity {
+                            running: loadingLabel.visible && FlyoutManager.animationsEnabled
+                            loops: Animation.Infinite
+                            NumberAnimation {
+                                from: 0.45
+                                to: 1
+                                duration: 520
+                                easing.type: Easing.InOutSine
+                            }
+                            NumberAnimation {
+                                from: 1
+                                to: 0.45
+                                duration: 520
+                                easing.type: Easing.InOutSine
+                            }
+                        }
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        visible: !root.listLoading && root.entries.length === 0
+                        text: root.listError.length > 0
+                            ? root.listError : "Clipboard history is empty"
+                        color: root.listError.length > 0 ? Theme.urgent : Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Math.max(9,
+                            Math.round(12 * root.effectiveTextScale / 100))
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.Wrap
+                        width: Math.max(1, parent.width - 40)
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        visible: !root.listLoading && root.entries.length > 0
+                            && clipboardList.count === 0
+                        text: "No clipboard matches"
+                        color: Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Math.max(9,
+                            Math.round(12 * root.effectiveTextScale / 100))
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                }
+
+                    Item {
+                        id: clipboardDetail
+                        anchors.fill: parent
+                        visible: root.detailOpen
 
                     GridLayout {
                         anchors.fill: parent
@@ -1063,6 +1386,7 @@ Singleton {
                             }
                         }
                     }
+                }
                 }
             }
         }
