@@ -1,0 +1,112 @@
+name: Apply Integration Clock Date Fix
+
+on:
+  push:
+    branches:
+      - integration/approved-quickshell-features-20260827
+    paths:
+      - .github/workflows/apply-integration-clock-date-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: integration/approved-quickshell-features-20260827
+          fetch-depth: 0
+
+      - name: Restore integrated clock date state handler
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('config/hypr/scripts/quickshell_application_state.sh')
+          text = path.read_text(encoding='utf-8')
+
+          if 'set_clock_date() {' in text:
+              raise SystemExit('set_clock_date() already exists; refusing duplicate insertion')
+          if '\n    set-clock-date)\n' in text:
+              raise SystemExit('set-clock-date case already exists; refusing duplicate insertion')
+
+          function_anchor = '''    commit_tmp
+          }
+
+          set_capture() {
+          '''
+          function_block = '''    commit_tmp
+          }
+
+          set_clock_date() {
+              local monitor="$1" value="$2" clock_date
+              [[ -n "$monitor" ]] || { printf 'monitor is required\\n' >&2; exit 2; }
+              clock_date="$(parse_bool "$value" 'clock date')"
+              new_tmp
+              jq \\
+                  --arg monitor "$monitor" \\
+                  --argjson clock_date "$clock_date" '
+                  .monitors = (if (.monitors | type) == "object" then .monitors else {} end)
+                  | .monitors[$monitor] = ((if (.monitors[$monitor] | type) == "object"
+                      then .monitors[$monitor] else {} end) + {clock_date:$clock_date})
+              ' "$STATE_FILE" >"$TMP_FILE"
+              commit_tmp
+          }
+
+          set_capture() {
+          '''
+          if text.count(function_anchor) != 1:
+              raise SystemExit(f'expected one set_capture insertion anchor, found {text.count(function_anchor)}')
+          text = text.replace(function_anchor, function_block, 1)
+
+          case_anchor = '''    set-update-notifications)
+                  [[ -n ${2:-} ]] || exit 2
+                  set_update_notifications "$2"
+                  ;;
+              set-notification-popup-limit)
+          '''
+          case_block = '''    set-update-notifications)
+                  [[ -n ${2:-} ]] || exit 2
+                  set_update_notifications "$2"
+                  ;;
+              set-clock-date)
+                  [[ -n ${2:-} && -n ${3:-} ]] || exit 2
+                  set_clock_date "$2" "$3"
+                  ;;
+              set-notification-popup-limit)
+          '''
+          if text.count(case_anchor) != 1:
+              raise SystemExit(f'expected one command-case insertion anchor, found {text.count(case_anchor)}')
+          text = text.replace(case_anchor, case_block, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          bash -n config/hypr/scripts/quickshell_application_state.sh
+          bash tests/test-clock-date-persistence.sh
+          bash tests/test-quick-settings-layout.sh
+          git diff --check
+
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          managed='.config/hypr/scripts/quickshell_application_state.sh'
+          digest="$(sha256sum config/hypr/scripts/quickshell_application_state.sh | awk '{print $1}')"
+          entry="${digest}"$'\t'"${managed}"
+          grep -Fqx -- "$entry" "$history" || printf '%s\n' "$entry" >>"$history"
+          printf 'Recorded integrated application-state SHA-256: %s\n' "$digest"
+
+          # Re-run the layout test after the managed-history update because it
+          # verifies the current stock hash contract.
+          bash tests/test-quick-settings-layout.sh
+
+      - name: Commit integrated fix
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add config/hypr/scripts/quickshell_application_state.sh local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'Restore clock date state handler in integration'
+          git push origin HEAD:integration/approved-quickshell-features-20260827
