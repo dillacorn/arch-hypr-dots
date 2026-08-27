@@ -33,7 +33,7 @@ contains "$QUICK_SETTINGS" '"reset-quick-settings-layout"' \
   'Reset Quick Settings does not restore the stock layout'
 contains "$FLYOUT_SETTINGS" 'signal layoutEditorRequested()' \
   'Quick Settings flyout settings do not expose the layout editor action'
-contains "$FLYOUT_SETTINGS" 'text: "Customize Layout…"' \
+contains "$FLYOUT_SETTINGS" 'label: "Customize Layout…"' \
   'Quick Settings flyout settings do not expose Customize Layout'
 contains "$LAYOUT_EDITOR" 'signal moveRequested(string sectionId, int delta)' \
   'layout editor does not expose section reordering'
