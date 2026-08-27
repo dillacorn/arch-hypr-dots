@@ -83,9 +83,9 @@ run_scale() {
 }
 
 status_json="$(run_scale status DP-1)"
-[[ $(jq -r '.scale' <<<"$status_json") == 1 ]] \
+jq -e '.scale == 1' <<<"$status_json" >/dev/null \
   || fail 'display scale status did not return the live scale'
-[[ $(jq -r '.width' <<<"$status_json") == 1920 && $(jq -r '.height' <<<"$status_json") == 1080 ]] \
+jq -e '.width == 1920 and .height == 1080' <<<"$status_json" >/dev/null \
   || fail 'display scale status did not return the current monitor dimensions'
 
 # Existing explicit monitor: change only its scale and preserve the rest of the rule.
@@ -147,7 +147,7 @@ do
   fi
   digest="$(sha256sum "$source_file" | awk '{print $1}')"
   grep -Fq -- "$digest"$'\t'"$rel" "$HISTORY" \
-    || fail "managed history is missing current display-scale stock hash for $rel"
+    || fail "managed history is missing current display-scale stock hash $digest for $rel"
 done
 
 printf '%s\n' 'PASS: Quick Settings display scale is focused-display-only, persistent, validated, and rollback-safe.'
