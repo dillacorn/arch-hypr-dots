@@ -20,6 +20,8 @@ contains "$BAR_SETTINGS" 'function displayScaleValid(value)' \
   'display scale presets are not checked against the current monitor resolution'
 contains "$BAR_SETTINGS" '"bash", root.displayScaleScript, "status", root.monitorName' \
   'Bar Appearance does not refresh the current display scale'
+contains "$BAR_SETTINGS" '|| Math.abs(displayScale - scale) < 0.001)' \
+  'the active display scale is not ignored before invoking the persistence helper'
 contains "$SCALE_SCRIPT" 'hyprctl reload' \
   'display scale persistence does not reload Hyprland'
 contains "$SCALE_SCRIPT" 'hyprctl configerrors' \
@@ -88,16 +90,6 @@ jq -e '.scale == 1' <<<"$status_json" >/dev/null \
 jq -e '.width == 1920 and .height == 1080' <<<"$status_json" >/dev/null \
   || fail 'display scale status did not return the current monitor dimensions'
 
-# Selecting the live scale is a no-op: do not rewrite or reload Hyprland.
-cp "$TMP/hyprland.lua" "$TMP/before-noop.lua"
-: >"$TMP/hyprctl.log"
-run_scale set DP-1 1 >/dev/null
-cmp -s "$TMP/hyprland.lua" "$TMP/before-noop.lua" \
-  || fail 'unchanged display scale rewrote hyprland.lua'
-if grep -Fqx 'reload' "$TMP/hyprctl.log"; then
-  fail 'unchanged display scale unnecessarily reloaded Hyprland'
-fi
-
 # Existing explicit monitor: change only its scale and preserve the rest of the rule.
 run_scale set DP-1 1.25
 contains "$TMP/hyprland.lua" 'output = "DP-1", mode = "1920x1080@144", position = "0x0", scale = 1.25, vrr = 1' \
@@ -151,11 +143,7 @@ for rel in \
   .config/hypr/scripts/quickshell_display_scale.sh \
   .config/quickshell/awtarchy/BarSettingsSection.qml
 do
-  if [[ $rel == .config/* ]]; then
-    source_file="${ROOT}/config/${rel#.config/}"
-  else
-    source_file="${ROOT}/${rel}"
-  fi
+  source_file="${ROOT}/config/${rel#.config/}"
   digest="$(sha256sum "$source_file" | awk '{print $1}')"
   if ! grep -Fq -- "$digest"$'\t'"$rel" "$HISTORY"; then
     printf 'MISSING_HISTORY_HASH: %s\t%s\n' "$digest" "$rel" >&2
