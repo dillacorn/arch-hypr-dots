@@ -10,6 +10,7 @@ on:
       - local/share/awtarchy/quickshell-managed-history.sha256
       - tests/test-bluetooth-state-persistence.sh
       - .github/workflows/validate-bluetooth-state.yml
+      - .github/release-v3.3.3.md
   pull_request:
     paths:
       - config/hypr/scripts/quickshell_bluetooth_state.sh
@@ -17,6 +18,7 @@ on:
       - local/share/awtarchy/quickshell-managed-history.sha256
       - tests/test-bluetooth-state-persistence.sh
       - .github/workflows/validate-bluetooth-state.yml
+      - .github/release-v3.3.3.md
 
 permissions:
   contents: read
@@ -50,3 +52,78 @@ jobs:
             fi
           done
           (( missing == 0 ))
+
+  publish_v333:
+    needs: bluetooth-state
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.ref == 'release-v3.3.3-helper' &&
+      github.event.pull_request.title == 'Publish Awtarchy v3.3.3 release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: 4dc404135f9c718185d5ca4311f1d3372b11138a
+      PREVIOUS_SHA: d283cd7ac730a5c9f3e1d80c780341cb3599114b
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Verify release target
+        run: |
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)" = "$TARGET_SHA"
+          if gh release view v3.3.3 >/dev/null 2>&1; then
+            printf 'v3.3.3 already exists; refusing to recreate it.\n' >&2
+            false
+          fi
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.3.3" >/dev/null 2>&1; then
+            printf 'v3.3.3 tag already exists; refusing to move or reuse it.\n' >&2
+            false
+          fi
+          test "$(git rev-list -n1 v3.3.2)" = "$PREVIOUS_SHA"
+          previous_json="$(gh release view v3.3.2 --json name,tagName,targetCommitish,isDraft,isPrerelease)"
+          test "$(jq -r .tagName <<<"$previous_json")" = 'v3.3.2'
+          test "$(jq -r .isDraft <<<"$previous_json")" = 'false'
+          test "$(jq -r .isPrerelease <<<"$previous_json")" = 'false'
+          previous_tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.3.2" --jq .object.sha)"
+          test "$previous_tag_sha" = "$PREVIOUS_SHA"
+          runs_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${TARGET_SHA}&event=push&per_page=100")"
+          for required in 'Validate Awtarchy' 'Validate PolicyKit Agent'; do
+            jq -e --arg name "$required" '.workflow_runs | any(.name == $name and .conclusion == "success")' <<<"$runs_json" >/dev/null
+          done
+          mapfile -t helper_changes < <(git diff --name-only "$TARGET_SHA"...HEAD | sort)
+          expected_changes=(
+            '.github/release-v3.3.3.md'
+            '.github/workflows/validate-bluetooth-state.yml'
+          )
+          test "${helper_changes[*]}" = "${expected_changes[*]}"
+          printf 'Previous release: %s\n' "$(jq -r '.name + " -> " + .targetCommitish' <<<"$previous_json")"
+          printf 'Previous tag SHA: %s\n' "$previous_tag_sha"
+          printf 'New release target: %s\n' "$TARGET_SHA"
+      - name: Publish v3.3.3
+        run: |
+          gh release create v3.3.3 \
+            --target "$TARGET_SHA" \
+            --title 'Awtarchy v3.3.3 Technical Resolve' \
+            --notes-file .github/release-v3.3.3.md
+      - name: Verify published release
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v3.3.3" > /tmp/release-v3.3.3.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          release = json.loads(Path('/tmp/release-v3.3.3.json').read_text())
+          expected_body = Path('.github/release-v3.3.3.md').read_text()
+          assert release['name'] == 'Awtarchy v3.3.3 Technical Resolve'
+          assert release['tag_name'] == 'v3.3.3'
+          assert release['target_commitish'] == '4dc404135f9c718185d5ca4311f1d3372b11138a'
+          assert release['draft'] is False
+          assert release['prerelease'] is False
+          assert release['body'] == expected_body
+          print(release['html_url'])
+          PY
+          tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.3.3" --jq .object.sha)"
+          test "$tag_sha" = "$TARGET_SHA"
+          printf 'Verified v3.3.3 tag SHA: %s\n' "$tag_sha"
