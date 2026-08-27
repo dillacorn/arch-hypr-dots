@@ -12,8 +12,8 @@ HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 contains() { grep -Fq -- "$2" "$1" || fail "$3"; }
 
-DEFAULT_ORDER='["brightness","output-volume","power-mode","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","title-bars"]'
-CUSTOM_ORDER='["bar","brightness","power-mode","output-volume","display-effects","submap","wallpaper","awtarchy","title-bars","numlock","scheduler","smtty"]'
+DEFAULT_ORDER='["brightness","output-volume","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","title-bars"]'
+CUSTOM_ORDER='["bar","brightness","output-volume","display-effects","submap","wallpaper","awtarchy","title-bars","numlock","scheduler","smtty"]'
 HIDDEN='["scheduler","smtty"]'
 
 [[ -f $LAYOUT_EDITOR ]] || fail 'Quick Settings layout editor component is missing'
@@ -42,8 +42,18 @@ contains "$LAYOUT_EDITOR" 'signal moveRequested(string sectionId, int delta)' \
 contains "$LAYOUT_EDITOR" 'signal visibilityRequested(string sectionId, bool visible)' \
   'layout editor does not expose per-section visibility controls'
 
+if grep -Fq 'quickSettingsSectionRow("power-mode")' "$QUICK_SETTINGS"; then
+  fail 'inert Power Mode compatibility host is still exposed as a customizable section'
+fi
+if grep -Fq '"power-mode",' "$BAR_STATE"; then
+  fail 'BarState still includes inert Power Mode in the default Quick Settings section order'
+fi
+if grep -Fq '"power-mode"' "$STATE_SCRIPT"; then
+  fail 'application-state validator still accepts inert Power Mode as a Quick Settings section'
+fi
+
 for section in \
-  brightness output-volume power-mode bar display-effects submap \
+  brightness output-volume bar display-effects submap \
   wallpaper awtarchy smtty scheduler numlock title-bars
 do
   contains "$QUICK_SETTINGS" "quickSettingsSectionRow(\"${section}\")" \
@@ -94,8 +104,9 @@ jq -e '
 
 cp "$STATE_FILE" "$TMP/before-invalid.json"
 for invalid_order in \
-  '["brightness","brightness","power-mode","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","title-bars"]' \
-  '["brightness","output-volume","power-mode","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","unknown"]'
+  '["brightness","brightness","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","title-bars"]' \
+  '["brightness","output-volume","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","unknown"]' \
+  '["brightness","output-volume","power-mode","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","title-bars"]'
 do
   if run_state save-quick-settings-layout DP-1 "$invalid_order" '[]' >/dev/null 2>&1; then
     fail 'invalid Quick Settings section order was accepted'
@@ -135,4 +146,4 @@ done
 [[ $missing_history -eq 0 ]] \
   || fail 'managed history is missing current Quick Settings layout stock hashes'
 
-printf '%s\n' 'PASS: Quick Settings layout customization is per-display, reorderable, hideable, copyable, resettable, and updater-safe.'
+printf '%s\n' 'PASS: Quick Settings layout customization covers the 11 real sections per display without the inert Power Mode compatibility host.'
