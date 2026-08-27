@@ -176,6 +176,11 @@ set_scale() {
     scale_compatible "$width" "$height" "$scale" \
         || fail "display scale $scale is incompatible with ${width}x${height} on $monitor"
 
+    if jq -e --argjson requested "$scale" '.scale == $requested' <<<"$status" >/dev/null; then
+        printf '%s\n' "$status"
+        return 0
+    fi
+
     existing_errors="$(hyprctl configerrors 2>&1)" \
         || fail 'could not validate the current Hyprland configuration'
     has_config_errors "$existing_errors" \
