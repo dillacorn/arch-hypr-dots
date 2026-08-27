@@ -46,6 +46,20 @@ function updateThumbnail(entries, index, path) {
     });
 }
 
+function removeRecord(entries, index) {
+    var current = Array.isArray(entries) ? entries : [];
+    var requestedIndex = Number(index);
+
+    if (!isFinite(requestedIndex)
+            || Math.floor(requestedIndex) !== requestedIndex
+            || requestedIndex < 0)
+        return current.slice();
+
+    return current.filter(function(entry) {
+        return !entry || entry.index !== requestedIndex;
+    });
+}
+
 function enqueueThumbnail(queue, known, index) {
     var nextQueue = Array.isArray(queue) ? queue.slice() : [];
     var nextKnown = Object.assign({}, known || {});
@@ -97,6 +111,7 @@ if (typeof module !== "undefined") {
         parseRecord: parseRecord,
         appendRecord: appendRecord,
         updateThumbnail: updateThumbnail,
+        removeRecord: removeRecord,
         enqueueThumbnail: enqueueThumbnail,
         globMatch: globMatch,
         requestListLoad: requestListLoad,
