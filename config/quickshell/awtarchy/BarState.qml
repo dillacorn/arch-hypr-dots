@@ -307,6 +307,11 @@ Singleton {
         return ["top", "bottom", "left", "right"].indexOf(pos) >= 0 ? pos : "top";
     }
 
+    function clockDateFor(name) {
+        const dependency = revision;
+        return monitorState(name).clock_date === true;
+    }
+
     function barSizeFor(name, vertical) {
         const dependency = revision;
         const override = liveBarSizes[name];

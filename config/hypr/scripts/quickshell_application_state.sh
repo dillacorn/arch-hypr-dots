@@ -268,6 +268,21 @@ set_update_notifications() {
     commit_tmp
 }
 
+set_clock_date() {
+    local monitor="$1" value="$2" clock_date
+    [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
+    clock_date="$(parse_bool "$value" 'clock date')"
+    new_tmp
+    jq \
+        --arg monitor "$monitor" \
+        --argjson clock_date "$clock_date" '
+        .monitors = (if (.monitors | type) == "object" then .monitors else {} end)
+        | .monitors[$monitor] = ((if (.monitors[$monitor] | type) == "object"
+            then .monitors[$monitor] else {} end) + {clock_date:$clock_date})
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
 set_capture() {
     local surface="$1" value="$2" surface_key capture
     surface_key="$(capture_key "$surface")"
@@ -603,6 +618,10 @@ case "$cmd" in
         [[ -n ${2:-} ]] || exit 2
         set_update_notifications "$2"
         ;;
+    set-clock-date)
+        [[ -n ${2:-} && -n ${3:-} ]] || exit 2
+        set_clock_date "$2" "$3"
+        ;;
     set-notification-popup-limit)
         [[ -n ${2:-} ]] || exit 2
         set_notification_popup_limit "$2"
@@ -650,7 +669,7 @@ case "$cmd" in
         reset_defaults
         ;;
     *)
-        printf 'usage: %s {save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-update-notifications <true|false>|set-notification-popup-limit <1-20>|set-notification-popup-position <MON> <automatic|top-left|top-center|top-right|bottom-left|bottom-center|bottom-right>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
+        printf 'usage: %s {save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-update-notifications <true|false>|set-clock-date <MON> <true|false>|set-notification-popup-limit <1-20>|set-notification-popup-position <MON> <automatic|top-left|top-center|top-right|bottom-left|bottom-center|bottom-right>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
         exit 2
         ;;
 esac
