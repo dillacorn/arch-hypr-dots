@@ -1,0 +1,44 @@
+name: PR78 Notification Refinement Writer
+
+on:
+  push:
+    branches:
+      - feature/notification-hide-history
+    paths:
+      - .github/scripts/pr78-refine-notifications.py
+      - .github/workflows/pr78-refine-notifications.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refine:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: feature/notification-hide-history
+          fetch-depth: 0
+
+      - name: Apply guarded notification refinement
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/pr78-refine-notifications.py
+          bash -n tests/test-notification-hide-history.sh
+          bash tests/test-notification-hide-history.sh
+          bash tests/test-flyout-edge-layout.sh
+          git diff --check
+
+      - name: Commit production refinement and remove temporary writer
+        run: |
+          set -Eeuo pipefail
+          rm -f \
+            .github/scripts/pr78-refine-notifications.py \
+            .github/workflows/pr78-refine-notifications.yml
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'Refine notification click and Clear animation'
+          git push origin HEAD:feature/notification-hide-history
