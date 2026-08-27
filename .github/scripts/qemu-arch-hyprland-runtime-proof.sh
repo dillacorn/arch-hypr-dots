@@ -105,15 +105,16 @@ qemu-system-x86_64 \
     -daemonize \
     >>"$QEMU_LOG" 2>&1
 
-SSH_OPTS=(
+SSH_COMMON_OPTS=(
     -i "$SSH_KEY"
-    -p "$SSH_PORT"
     -o StrictHostKeyChecking=no
     -o UserKnownHostsFile=/dev/null
     -o ConnectTimeout=4
     -o ServerAliveInterval=5
     -o ServerAliveCountMax=2
 )
+SSH_OPTS=("${SSH_COMMON_OPTS[@]}" -p "$SSH_PORT")
+SCP_OPTS=("${SSH_COMMON_OPTS[@]}" -P "$SSH_PORT")
 
 vm_ssh() {
     ssh "${SSH_OPTS[@]}" arch@127.0.0.1 "$@"
@@ -142,7 +143,7 @@ done
     exit 1
 }
 
-vm_ssh 'cloud-init status --wait >/dev/null 2>&1 || true'
+vm_ssh 'timeout 90 cloud-init status --wait >/dev/null 2>&1 || true'
 
 printf '%s\n' 'Installing runtime packages inside the real Arch guest...'
 vm_ssh 'sudo pacman -Syu --noconfirm --needed hyprland quickshell mesa mesa-utils seatd jq dbus wl-clipboard cliphist grim foot qt6-wayland ttf-dejavu procps-ng >/tmp/awtarchy-pacman.log 2>&1'
@@ -192,7 +193,7 @@ mkdir -p "$XDG_CACHE_HOME"
 exec dbus-run-session -- Hyprland --config "$HOME/.config/hypr/hyprland.lua"
 GUEST
 
-scp "${SSH_OPTS[@]}" "$WORK_DIR/start-hyprland.sh" arch@127.0.0.1:/tmp/start-hyprland.sh >/dev/null
+scp "${SCP_OPTS[@]}" "$WORK_DIR/start-hyprland.sh" arch@127.0.0.1:/tmp/start-hyprland.sh >/dev/null
 vm_ssh 'chmod 0755 /tmp/start-hyprland.sh; rm -rf /run/user/1000/hypr; setsid /tmp/start-hyprland.sh >/tmp/awtarchy-vm/hyprland.log 2>&1 </dev/null & echo $! >/tmp/awtarchy-vm/hyprland.pid'
 
 printf '%s\n' 'Waiting for Hyprland inside the QEMU guest...'
@@ -212,7 +213,7 @@ done
 
 if (( hypr_ready == 0 )); then
     vm_ssh 'cp /tmp/awtarchy-vm/hyprland.log /tmp/awtarchy-vm/hyprland-failure.log 2>/dev/null || true'
-    scp "${SSH_OPTS[@]}" -r arch@127.0.0.1:/tmp/awtarchy-vm/. "$ARTIFACT_DIR/" >/dev/null 2>&1 || true
+    scp "${SCP_OPTS[@]}" -r arch@127.0.0.1:/tmp/awtarchy-vm/. "$ARTIFACT_DIR/" >/dev/null 2>&1 || true
     printf '%s\n' 'QEMU guest did not reach a usable Hyprland monitor.' >&2
     exit 1
 fi
@@ -233,7 +234,7 @@ done
 
 if (( qs_ready == 0 )); then
     vm_ssh 'cp ~/.cache/awtarchy/quickshell.log /tmp/awtarchy-vm/quickshell.log 2>/dev/null || true'
-    scp "${SSH_OPTS[@]}" -r arch@127.0.0.1:/tmp/awtarchy-vm/. "$ARTIFACT_DIR/" >/dev/null 2>&1 || true
+    scp "${SCP_OPTS[@]}" -r arch@127.0.0.1:/tmp/awtarchy-vm/. "$ARTIFACT_DIR/" >/dev/null 2>&1 || true
     printf '%s\n' 'Quickshell did not become IPC-ready in the QEMU guest.' >&2
     exit 1
 fi
@@ -242,5 +243,5 @@ vm_ssh 'lock=$(find /run/user/1000/hypr -mindepth 2 -maxdepth 2 -name hyprland.l
 
 vm_ssh 'if test -f /tmp/awtarchy-vm/quickshell.log && grep -Eiq "QQmlApplicationEngine failed|QQmlComponent: Component is not ready|Type .* unavailable|module .* is not installed|SyntaxError:|ReferenceError:" /tmp/awtarchy-vm/quickshell.log; then grep -Ein "QQmlApplicationEngine failed|QQmlComponent: Component is not ready|Type .* unavailable|module .* is not installed|SyntaxError:|ReferenceError:" /tmp/awtarchy-vm/quickshell.log >&2; exit 1; fi'
 
-scp "${SSH_OPTS[@]}" -r arch@127.0.0.1:/tmp/awtarchy-vm/. "$ARTIFACT_DIR/" >/dev/null
+scp "${SCP_OPTS[@]}" -r arch@127.0.0.1:/tmp/awtarchy-vm/. "$ARTIFACT_DIR/" >/dev/null
 printf 'PASS: real QEMU Arch guest reached Hyprland + Awtarchy Quickshell runtime for %s\n' "$TARGET_REF"
