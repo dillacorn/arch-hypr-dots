@@ -1,4 +1,4 @@
-name: Integration Compose Diagnostic
+name: Integration Compose Approved Features
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
       - .github/workflows/integration-compose-diagnostic.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   compose:
@@ -18,7 +18,7 @@ jobs:
         with:
           ref: integration/approved-quickshell-features-20260827
           fetch-depth: 0
-      - name: Compose approved heads and report conflicts
+      - name: Compose and push approved heads
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -43,8 +43,8 @@ jobs:
             '+refs/heads/feature/persist-clock-date-state:refs/remotes/origin/feature/persist-clock-date-state' \
             '+refs/heads/feature/notification-hide-history:refs/remotes/origin/feature/notification-hide-history' \
             '+refs/heads/fix/fullscreen-bar-and-quick-settings-spacing:refs/remotes/origin/fix/fullscreen-bar-and-quick-settings-spacing'
-          git config user.name 'Awtarchy Integration Diagnostic'
-          git config user.email 'integration-diagnostic@invalid.local'
+          git config user.name 'Awtarchy Integration'
+          git config user.email 'integration@invalid.local'
 
           add_current_hash() {
             local source="$1" managed="$2" digest entry
@@ -71,7 +71,6 @@ jobs:
           from pathlib import Path
           import re
           import sys
-
           path = Path(sys.argv[1])
           text = path.read_text()
           pattern = re.compile(
@@ -81,12 +80,10 @@ jobs:
               r'(?P=indent)    active: quickSettingsWindow\.visible\n'
               r'(?P=indent)    textScale: root\.effectiveTextScale\n'
               r'(?P=indent)    iconScale: root\.effectiveIconScale\n'
-              r'(?P=indent)\}',
-              re.MULTILINE,
-          )
+              r'(?P=indent)\}', re.MULTILINE)
           matches = list(pattern.finditer(text))
           if len(matches) != 1:
-              raise SystemExit(f'expected exactly one #74 TitleBarsCard block, found {len(matches)}')
+              raise SystemExit(f'expected one #74 TitleBarsCard block, found {len(matches)}')
           indent = matches[0].group('indent')
           inner = indent + '    '
           child = inner + '    '
@@ -106,8 +103,7 @@ jobs:
               f'{child}textScale: root.effectiveTextScale\n'
               f'{child}iconScale: root.effectiveIconScale\n'
               f'{inner}}}\n'
-              f'{indent}}}'
-          )
+              f'{indent}}}')
           path.write_text(pattern.sub(replacement, text, count=1))
           PY
             git add -- "$quick_settings"
@@ -130,19 +126,14 @@ jobs:
           }
 
           resolve_74_79_quick_settings() {
-            # #74 owns the dynamic section model. Keep that file as the base,
-            # then apply #79's semantic spacing fix: the old PowerModeCard is
-            # compatibility-only and must not consume a customizable grid row.
             git show ":2:${quick_settings}" >"$quick_settings"
             python3 - "$quick_settings" "$bar_state" "$app_state" <<'PY'
           from pathlib import Path
           import re
           import sys
-
           quick = Path(sys.argv[1])
           bar_state = Path(sys.argv[2])
           app_state = Path(sys.argv[3])
-
           text = quick.read_text()
           power_pattern = re.compile(
               r'\n(?P<indent>[ \t]*)PowerModeCard \{\n'
@@ -151,14 +142,11 @@ jobs:
               r'(?P=indent)    active: quickSettingsWindow\.visible\n'
               r'(?P=indent)    textScale: root\.effectiveTextScale\n'
               r'(?P=indent)    iconScale: root\.effectiveIconScale\n'
-              r'(?P=indent)\}\n',
-              re.MULTILINE,
-          )
+              r'(?P=indent)\}\n', re.MULTILINE)
           matches = list(power_pattern.finditer(text))
           if len(matches) != 1:
-              raise SystemExit(f'expected exactly one dynamic PowerModeCard row, found {len(matches)}')
+              raise SystemExit(f'expected one dynamic PowerModeCard row, found {len(matches)}')
           text = power_pattern.sub('\n', text, count=1)
-
           outer_grid = '            GridLayout {\n                anchors.fill: parent\n                columns: 1\n'
           if text.count(outer_grid) != 1:
               raise SystemExit(f'expected one panel GridLayout anchor, found {text.count(outer_grid)}')
@@ -167,17 +155,13 @@ jobs:
               '                active: quickSettingsWindow.visible\n'
               '                textScale: root.effectiveTextScale\n'
               '                iconScale: root.effectiveIconScale\n'
-              '            }\n\n'
-          )
-          text = text.replace(outer_grid, compat + outer_grid, 1)
-          quick.write_text(text)
-
+              '            }\n\n')
+          quick.write_text(text.replace(outer_grid, compat + outer_grid, 1))
           bar = bar_state.read_text()
           token = '        "power-mode",\n'
           if bar.count(token) != 1:
               raise SystemExit(f'expected one power-mode default-order entry, found {bar.count(token)}')
           bar_state.write_text(bar.replace(token, '', 1))
-
           app = app_state.read_text()
           old_sections = 'QUICK_SETTINGS_SECTIONS_JSON=\'["brightness","output-volume","power-mode","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","title-bars"]\''
           new_sections = 'QUICK_SETTINGS_SECTIONS_JSON=\'["brightness","output-volume","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","title-bars"]\''
@@ -202,11 +186,7 @@ jobs:
             if [[ "$label" == '#75' ]]; then
               unexpected=0; have_history=0; have_quick=0
               for path in "${conflicts[@]}"; do
-                case "$path" in
-                  "$history") have_history=1 ;;
-                  "$quick_settings") have_quick=1 ;;
-                  *) unexpected=1 ;;
-                esac
+                case "$path" in "$history") have_history=1 ;; "$quick_settings") have_quick=1 ;; *) unexpected=1 ;; esac
               done
               if (( unexpected == 0 && have_history == 1 && have_quick == 1 )); then
                 resolve_history
@@ -221,11 +201,7 @@ jobs:
             if [[ "$label" == '#77' ]]; then
               unexpected=0; have_history=0; have_app=0
               for path in "${conflicts[@]}"; do
-                case "$path" in
-                  "$history") have_history=1 ;;
-                  "$app_state") have_app=1 ;;
-                  *) unexpected=1 ;;
-                esac
+                case "$path" in "$history") have_history=1 ;; "$app_state") have_app=1 ;; *) unexpected=1 ;; esac
               done
               if (( unexpected == 0 && have_history == 1 && have_app == 1 )); then
                 resolve_history
@@ -240,11 +216,7 @@ jobs:
             if [[ "$label" == '#79' ]]; then
               unexpected=0; have_history=0; have_quick=0
               for path in "${conflicts[@]}"; do
-                case "$path" in
-                  "$history") have_history=1 ;;
-                  "$quick_settings") have_quick=1 ;;
-                  *) unexpected=1 ;;
-                esac
+                case "$path" in "$history") have_history=1 ;; "$quick_settings") have_quick=1 ;; *) unexpected=1 ;; esac
               done
               if (( unexpected == 0 && have_history == 1 && have_quick == 1 )); then
                 resolve_history
@@ -265,9 +237,9 @@ jobs:
               continue
             fi
 
-            printf '\n=== unmerged diff ===\n'
             git diff --cc -- "${conflicts[@]}" || true
             exit 1
           done
 
-          printf '\nPASS: all approved heads compose with known resolutions only.\n'
+          printf '\nPASS: all approved heads composed.\n'
+          git push origin HEAD:integration/approved-quickshell-features-20260827
