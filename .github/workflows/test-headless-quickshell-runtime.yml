@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/test-headless-quickshell-runtime.yml'
       - '.github/scripts/headless-quickshell-runtime-smoke.sh'
+      - '.github/scripts/nested-cage-hyprland-runtime-proof.sh'
   workflow_dispatch:
 
 permissions:
@@ -177,7 +178,7 @@ jobs:
           printf '%s\n' 'PASS: #72-#75 compose with only the intentional #74/#75 Quick Settings integration.'
 
   headless-runtime:
-    name: Nested Weston GL runtime proof
+    name: Nested Cage runtime proof
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
@@ -189,13 +190,13 @@ jobs:
           TARGET_REF: feature/quick-settings-layout-customization
         run: |
           set -Eeuo pipefail
-          cp .github/scripts/headless-quickshell-runtime-smoke.sh /tmp/headless-quickshell-runtime-smoke.sh
-          chmod 0755 /tmp/headless-quickshell-runtime-smoke.sh
+          cp .github/scripts/nested-cage-hyprland-runtime-proof.sh /tmp/nested-cage-hyprland-runtime-proof.sh
+          chmod 0755 /tmp/nested-cage-hyprland-runtime-proof.sh
           git fetch origin "+refs/heads/${TARGET_REF}:refs/remotes/origin/${TARGET_REF}"
           git switch --detach "origin/${TARGET_REF}"
           printf 'Target: %s\n' "$TARGET_REF"
           git rev-parse HEAD
-      - name: Run nested software-rendered Hyprland and Quickshell
+      - name: Run Xvfb, Cage, Hyprland and Quickshell
         shell: bash
         env:
           TARGET_REF: feature/quick-settings-layout-customization
@@ -205,17 +206,16 @@ jobs:
           docker run --rm \
             -e "TARGET_REF=${TARGET_REF}" \
             -e ARTIFACT_DIR=/artifacts \
-            -e FORCE_NESTED_WESTON=1 \
             -v "$PWD:/repo:ro" \
-            -v "/tmp/headless-quickshell-runtime-smoke.sh:/runtime-smoke.sh:ro" \
+            -v "/tmp/nested-cage-hyprland-runtime-proof.sh:/runtime-proof.sh:ro" \
             -v "$PWD/runtime-artifacts:/artifacts" \
             archlinux:base-devel \
-            bash /runtime-smoke.sh
+            bash /runtime-proof.sh
       - name: Upload runtime evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nested-weston-gl-runtime-proof
+          name: nested-cage-runtime-proof
           path: runtime-artifacts/
           if-no-files-found: warn
           retention-days: 3
