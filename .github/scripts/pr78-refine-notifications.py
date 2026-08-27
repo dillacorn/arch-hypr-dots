@@ -43,20 +43,23 @@ notifications = notifications.replace(
     old_activation, "onActivated: root.activateNotification(notification)"
 )
 
-rename_pairs = (
-    ("clearFadeNotifications = []", "clearSlideNotifications = []"),
-    ("clearFadeIndex = 0", "clearSlideIndex = 0"),
-    ("root.clearFadeIndex", "root.clearSlideIndex"),
-    ("root.clearFadeNotifications", "root.clearSlideNotifications"),
-    ("clearFadeNotifications = [...root.clearFadeNotifications, notification]",
-     "clearSlideNotifications = [...root.clearSlideNotifications, notification]"),
-    ("clearFading: root.clearSlideNotifications.indexOf(notification) >= 0",
-     "clearSliding: root.clearSlideNotifications.indexOf(notification) >= 0"),
+# The two property declarations above are already renamed. Rename every remaining
+# use of the old Clear queue/index names together so partial replacements cannot
+# invalidate a later exact-match guard.
+notifications = notifications.replace("clearFadeNotifications", "clearSlideNotifications")
+notifications = notifications.replace("clearFadeIndex", "clearSlideIndex")
+
+old_clear_binding = "clearFading: root.clearSlideNotifications.indexOf(notification) >= 0"
+clear_binding_count = notifications.count(old_clear_binding)
+if clear_binding_count != 1:
+    raise SystemExit(
+        f"history Clear binding: expected exactly one match, found {clear_binding_count}"
+    )
+notifications = notifications.replace(
+    old_clear_binding,
+    "clearSliding: root.clearSlideNotifications.indexOf(notification) >= 0",
+    1,
 )
-for old, new in rename_pairs:
-    if old not in notifications:
-        raise SystemExit(f"missing expected Clear token: {old}")
-    notifications = notifications.replace(old, new)
 
 if "clearFade" in notifications or "clearFading" in notifications:
     raise SystemExit("stale fade-only Clear state remains in Notifications.qml")
