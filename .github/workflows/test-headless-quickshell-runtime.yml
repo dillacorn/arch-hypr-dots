@@ -22,6 +22,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
           refs=(
             feature/progressive-clipboard-loading
             feature/focused-display-scale
@@ -37,15 +38,39 @@ jobs:
           git switch --detach origin/main
           git config user.name 'Awtarchy Runtime Test'
           git config user.email 'runtime-test@invalid.local'
+
           for ref in "${refs[@]}"; do
             printf '\n=== merging %s ===\n' "$ref"
-            if ! git merge --no-edit --no-ff "origin/${ref}"; then
-              printf '\nConflicted paths:\n' >&2
-              git diff --name-only --diff-filter=U >&2 || true
-              git status --short >&2 || true
-              exit 1
+            if git merge --no-edit --no-ff "origin/${ref}"; then
+              continue
             fi
+
+            mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+            printf 'Conflicted paths:\n' >&2
+            printf '  %s\n' "${conflicts[@]}" >&2
+
+            # Every feature branch appends its own known-stock hashes to the same
+            # cumulative migration file. Resolve only that mechanically safe
+            # append-only collision; any production/source conflict remains fatal.
+            if [[ ${#conflicts[@]} -eq 1 && ${conflicts[0]} == "$history" ]]; then
+              git show ":2:${history}" >"${RUNNER_TEMP}/history-ours"
+              git show ":3:${history}" >"${RUNNER_TEMP}/history-theirs"
+              cp "${RUNNER_TEMP}/history-ours" "$history"
+              while IFS= read -r line || [[ -n "$line" ]]; do
+                if ! grep -Fqx -- "$line" "$history"; then
+                  printf '%s\n' "$line" >>"$history"
+                fi
+              done <"${RUNNER_TEMP}/history-theirs"
+              git add -- "$history"
+              git diff --check --cached
+              git commit --no-edit
+              continue
+            fi
+
+            git status --short >&2 || true
+            exit 1
           done
+
           git diff --check origin/main..HEAD
 
   headless-runtime:
@@ -79,6 +104,22 @@ jobs:
           git switch --detach "origin/${TARGET_REF}"
           printf 'Target: %s\n' "$TARGET_REF"
           git rev-parse HEAD
+      - name: Prepare software virtual DRM
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          printf '%s\n' 'Attempting VGEM virtual render device...'
+          if sudo modprobe vgem; then
+            printf '%s\n' 'VGEM loaded.'
+          else
+            printf '%s\n' 'VGEM unavailable; runtime harness will try nested Weston.'
+          fi
+          ls -la /dev/dri 2>/dev/null || true
+          for node in /dev/dri/card* /dev/dri/renderD*; do
+            [[ -e "$node" ]] || continue
+            udevadm info --query=property --name="$node" 2>/dev/null \
+              | grep -E '^(DEVNAME|DRIVER|ID_PATH|ID_MODEL)=' || true
+          done
       - name: Run live Hyprland and Quickshell in Arch container
         shell: bash
         env:
@@ -86,12 +127,19 @@ jobs:
         run: |
           set -Eeuo pipefail
           mkdir -p runtime-artifacts
-          docker run --rm --privileged \
-            -e TARGET_REF="$TARGET_REF" \
-            -e ARTIFACT_DIR=/artifacts \
-            -v "$PWD:/repo:ro" \
-            -v "/tmp/headless-quickshell-runtime-smoke.sh:/runtime-smoke.sh:ro" \
-            -v "$PWD/runtime-artifacts:/artifacts" \
+          docker_args=(
+            --rm
+            --privileged
+            -e "TARGET_REF=${TARGET_REF}"
+            -e ARTIFACT_DIR=/artifacts
+            -v "$PWD:/repo:ro"
+            -v "/tmp/headless-quickshell-runtime-smoke.sh:/runtime-smoke.sh:ro"
+            -v "$PWD/runtime-artifacts:/artifacts"
+          )
+          if [[ -d /dev/dri ]]; then
+            docker_args+=( -v /dev/dri:/dev/dri )
+          fi
+          docker run "${docker_args[@]}" \
             archlinux:base-devel \
             bash /runtime-smoke.sh
       - name: Upload runtime evidence
