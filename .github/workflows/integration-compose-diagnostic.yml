@@ -1,0 +1,143 @@
+name: Integration Compose Diagnostic
+
+on:
+  push:
+    branches:
+      - integration/approved-quickshell-features-20260827
+    paths:
+      - .github/workflows/integration-compose-diagnostic.yml
+
+permissions:
+  contents: read
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: integration/approved-quickshell-features-20260827
+          fetch-depth: 0
+      - name: Compose approved heads and report conflicts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          quick_settings='config/quickshell/awtarchy/QuickSettings.qml'
+          refs=(
+            '483c84c9399c6d9fa47b9e5df204475adcbc4276:#72'
+            'e683a20772cf6306f34d2456c6cba6c295219704:#73'
+            '70008a33496edf0c0807e978c06f882b3a2ace50:#74'
+            '3d5a48957f13b7bb137889ad281290f8339c5778:#75'
+            'e5eba00299e4c50f0b64ea3028b2b87214b8e7d4:#77'
+            '4b5d268a2c50de3afd471a980fa566fb129e2d49:#78'
+            '97ac1f41acaf07373a98f1787fa4452c1bc71a47:#79'
+          )
+          git fetch origin \
+            '+refs/heads/feature/progressive-clipboard-loading:refs/remotes/origin/feature/progressive-clipboard-loading' \
+            '+refs/heads/feature/focused-display-scale:refs/remotes/origin/feature/focused-display-scale' \
+            '+refs/heads/feature/quick-settings-layout-customization:refs/remotes/origin/feature/quick-settings-layout-customization' \
+            '+refs/heads/feature/floating-windows-default:refs/remotes/origin/feature/floating-windows-default' \
+            '+refs/heads/feature/persist-clock-date-state:refs/remotes/origin/feature/persist-clock-date-state' \
+            '+refs/heads/feature/notification-hide-history:refs/remotes/origin/feature/notification-hide-history' \
+            '+refs/heads/fix/fullscreen-bar-and-quick-settings-spacing:refs/remotes/origin/fix/fullscreen-bar-and-quick-settings-spacing'
+          git config user.name 'Awtarchy Integration Diagnostic'
+          git config user.email 'integration-diagnostic@invalid.local'
+
+          resolve_history() {
+            local ours="${RUNNER_TEMP}/history-ours"
+            local theirs="${RUNNER_TEMP}/history-theirs"
+            git show ":2:${history}" >"$ours"
+            git show ":3:${history}" >"$theirs"
+            cp "$ours" "$history"
+            while IFS= read -r line || [[ -n "$line" ]]; do
+              grep -Fqx -- "$line" "$history" || printf '%s\n' "$line" >>"$history"
+            done <"$theirs"
+            git add -- "$history"
+          }
+
+          resolve_74_75_quick_settings() {
+            git show ":2:${quick_settings}" >"$quick_settings"
+            python3 - "$quick_settings" <<'PY'
+          from pathlib import Path
+          import sys
+          path = Path(sys.argv[1])
+          text = path.read_text()
+          old = '''                        TitleBarsCard {
+                            Layout.row: root.quickSettingsSectionRow("title-bars")
+                            visible: root.quickSettingsSectionVisible("title-bars")
+                            active: quickSettingsWindow.visible
+                            textScale: root.effectiveTextScale
+                            iconScale: root.effectiveIconScale
+                        }
+          '''
+          new = '''                        ColumnLayout {
+                            Layout.row: root.quickSettingsSectionRow("title-bars")
+                            visible: root.quickSettingsSectionVisible("title-bars")
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            TitleBarsCard {
+                                active: quickSettingsWindow.visible
+                                textScale: root.effectiveTextScale
+                                iconScale: root.effectiveIconScale
+                            }
+
+                            FloatingWindowsCard {
+                                active: quickSettingsWindow.visible
+                                textScale: root.effectiveTextScale
+                                iconScale: root.effectiveIconScale
+                            }
+                        }
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one #74 TitleBarsCard block')
+          path.write_text(text.replace(old, new, 1))
+          PY
+            git add -- "$quick_settings"
+          }
+
+          for item in "${refs[@]}"; do
+            sha="${item%%:*}"
+            label="${item#*:}"
+            printf '\n=== merge %s %s ===\n' "$label" "$sha"
+            if git merge --no-edit --no-ff "$sha"; then
+              continue
+            fi
+            mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+            printf 'CONFLICTS %s:\n' "$label"
+            printf '  %s\n' "${conflicts[@]}"
+
+            if [[ "$label" == '#75' ]]; then
+              unexpected=0; have_history=0; have_quick=0
+              for path in "${conflicts[@]}"; do
+                case "$path" in
+                  "$history") have_history=1 ;;
+                  "$quick_settings") have_quick=1 ;;
+                  *) unexpected=1 ;;
+                esac
+              done
+              if (( unexpected == 0 && have_history == 1 && have_quick == 1 )); then
+                resolve_history
+                resolve_74_75_quick_settings
+                digest="$(sha256sum "$quick_settings" | awk '{print $1}')"
+                entry="${digest}"$'\t'".config/quickshell/awtarchy/QuickSettings.qml"
+                grep -Fqx -- "$entry" "$history" || printf '%s\n' "$entry" >>"$history"
+                git add -- "$history"
+                git commit --no-edit
+                continue
+              fi
+            fi
+
+            if [[ ${#conflicts[@]} -eq 1 && ${conflicts[0]} == "$history" ]]; then
+              resolve_history
+              git commit --no-edit
+              continue
+            fi
+
+            printf '\n=== unmerged diff ===\n'
+            git diff --cc -- "${conflicts[@]}" || true
+            exit 1
+          done
+
+          printf '\nPASS: all approved heads compose with known resolutions only.\n'
