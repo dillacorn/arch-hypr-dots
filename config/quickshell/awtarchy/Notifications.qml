@@ -19,6 +19,7 @@ Singleton {
     property int historyRevision: 0
     property bool clearInProgress: false
     property var clearQueue: []
+    property var clearVisualQueue: []
     property var clearFadeNotifications: []
     property int clearFadeIndex: 0
     property int clearVisualCount: 0
@@ -384,6 +385,7 @@ Singleton {
 
         const visualCount = Math.min(values.length, 10);
         clearQueue = [...server.trackedNotifications.values];
+        clearVisualQueue = values.slice();
         clearFadeNotifications = [];
         clearFadeIndex = 0;
         clearVisualCount = visualCount;
@@ -403,6 +405,7 @@ Singleton {
         }
 
         clearQueue = [];
+        clearVisualQueue = [];
         clearFadeNotifications = [];
         clearFadeIndex = 0;
         clearVisualCount = 0;
@@ -664,7 +667,7 @@ Singleton {
                 return;
             }
 
-            const notification = root.historyNotifications()[root.clearFadeIndex];
+            const notification = root.clearVisualQueue[root.clearFadeIndex];
             if (notification)
                 root.clearFadeNotifications = [...root.clearFadeNotifications, notification];
             root.clearFadeIndex++;
