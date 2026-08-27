@@ -119,7 +119,8 @@ qml = qml[: -len(old_tail)] + new_tail
 
 qml_path.write_text(qml)
 
-if qml.count('                Layout.row: root.bottomEdgeLayout ? 0 : 2') != 1:
+top_level_row = "                Layout.row: root.bottomEdgeLayout ? 0 : 2"
+if sum(line == top_level_row for line in qml.splitlines()) != 1:
     raise SystemExit("top-level clipboard GridLayout still has duplicate row assignments")
 if "ClipboardLoadState.globMatch(label, query)" not in qml:
     raise SystemExit("wildcard matcher was not wired into ClipboardMenu")
