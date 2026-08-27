@@ -240,7 +240,8 @@ Item {
 
     function setDisplayScale(value) {
         const scale = Number(value);
-        if (monitorName.length === 0 || scaleWriter.running || !displayScaleValid(scale))
+        if (monitorName.length === 0 || scaleWriter.running || !displayScaleValid(scale)
+                || Math.abs(displayScale - scale) < 0.001)
             return;
         pendingDisplayScale = scale;
         displayScaleError = "";
