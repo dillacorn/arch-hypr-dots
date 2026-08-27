@@ -28,7 +28,7 @@ contains "$BAR_SETTINGS" 'function applyCustomDisplayScale()' \
   'custom display scale editor has no apply path'
 contains "$BAR_SETTINGS" 'TextInput {' \
   'custom display scale editor has no numeric input'
-contains "$BAR_SETTINGS" 'text: "Apply"' \
+contains "$BAR_SETTINGS" 'label: "Apply"' \
   'custom display scale editor has no explicit Apply control'
 contains "$BAR_SETTINGS" '"bash", root.displayScaleScript, "set", root.monitorName' \
   'display scale action is not pinned to the current Quick Settings display'
