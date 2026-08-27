@@ -44,7 +44,7 @@ cleanup_list_producer() {
 
     if [[ -n "$producer_pid" ]] && kill -0 "$producer_pid" 2>/dev/null; then
         kill -TERM "$producer_pid" 2>/dev/null || true
-        for attempt in {1..20}; do
+        for (( attempt = 0; attempt < 20; attempt += 1 )); do
             kill -0 "$producer_pid" 2>/dev/null || break
             sleep 0.01
         done
