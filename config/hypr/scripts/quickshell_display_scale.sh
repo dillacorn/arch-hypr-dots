@@ -134,7 +134,7 @@ else:
     raise RuntimeError("no explicit or fallback hl.monitor rule is available")
 
 if updated == text:
-    raise RuntimeError("monitor rule did not change")
+    raise SystemExit(0)
 
 stat = path.stat()
 fd, temp_name = tempfile.mkstemp(prefix=".awtarchy-display-scale-", dir=str(path.parent))
