@@ -1,0 +1,219 @@
+name: Apply PR72 Runtime Follow-up
+
+on:
+  push:
+    branches:
+      - feature/progressive-clipboard-loading
+    paths:
+      - .github/workflows/pr72-runtime-followup-write.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: feature/progressive-clipboard-loading
+          fetch-depth: 0
+
+      - name: Apply approved clipboard changes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          helper_path = Path('config/quickshell/awtarchy/ClipboardLoadState.js')
+          helper = helper_path.read_text()
+          needle = '''function requestListLoad(processRunning, processStopping) {'''
+          insertion = r'''function globMatch(value, pattern) {
+              var text = String(value || "").toLowerCase();
+              var parts = String(pattern || "").toLowerCase().split("*");
+              var escaped = parts.map(function(part) {
+                  return part.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
+              });
+              return new RegExp("^" + escaped.join(".*") + "$").test(text);
+          }
+
+          '''
+          if 'function globMatch(value, pattern)' in helper:
+              raise SystemExit('globMatch already exists unexpectedly')
+          if helper.count(needle) != 1:
+              raise SystemExit('could not locate requestListLoad insertion point')
+          helper = helper.replace(needle, insertion + needle, 1)
+
+          export_old = '''        enqueueThumbnail: enqueueThumbnail,
+                  requestListLoad: requestListLoad,'''
+          export_new = '''        enqueueThumbnail: enqueueThumbnail,
+                  globMatch: globMatch,
+                  requestListLoad: requestListLoad,'''
+          if helper.count(export_old) != 1:
+              raise SystemExit('could not locate ClipboardLoadState export list')
+          helper = helper.replace(export_old, export_new, 1)
+          helper_path.write_text(helper)
+
+          qml_path = Path('config/quickshell/awtarchy/ClipboardMenu.qml')
+          qml = qml_path.read_text()
+
+          old_filter = '''    function filteredEntries() {
+                  const query = search.text.trim().toLowerCase();
+                  const scored = entries.map(entry => ({
+                      entry: entry,
+                      score: fuzzyScore(String(entry.label || "").toLowerCase(), query)
+                  })).filter(item => item.score >= 0);
+          
+                  if (query.length > 0)
+                      scored.sort((a, b) => b.score - a.score);
+                  return scored.map(item => item.entry);
+              }'''
+          new_filter = '''    function filteredEntries() {
+                  const query = search.text.trim().toLowerCase();
+                  const useGlob = query.indexOf("*") >= 0;
+                  const scored = entries.map(entry => {
+                      const label = String(entry.label || "").toLowerCase();
+                      return {
+                          entry: entry,
+                          score: useGlob
+                              ? (ClipboardLoadState.globMatch(label, query) ? 0 : -1)
+                              : fuzzyScore(label, query)
+                      };
+                  }).filter(item => item.score >= 0);
+          
+                  if (query.length > 0 && !useGlob)
+                      scored.sort((a, b) => b.score - a.score);
+                  return scored.map(item => item.entry);
+              }'''
+          if qml.count(old_filter) != 1:
+              raise SystemExit('could not locate filteredEntries implementation')
+          qml = qml.replace(old_filter, new_filter, 1)
+
+          old_duration = 'duration: Math.min(row.index, 12) * 18'
+          new_duration = 'duration: Math.min(Math.max(row.index, 0), 12) * 18'
+          if qml.count(old_duration) != 1:
+              raise SystemExit('could not locate clipboard row stagger duration')
+          qml = qml.replace(old_duration, new_duration, 1)
+
+          old_list_start = '''                ListView {
+                      id: clipboardList
+                      Layout.row: root.bottomEdgeLayout ? 0 : 2
+                      Layout.fillWidth: true
+                      Layout.fillHeight: true
+                      visible: !root.detailOpen'''
+          new_list_start = '''                Item {
+                      id: clipboardContent
+                      Layout.row: root.bottomEdgeLayout ? 0 : 2
+                      Layout.fillWidth: true
+                      Layout.fillHeight: true
+          
+                      ListView {
+                          id: clipboardList
+                          anchors.fill: parent
+                          visible: !root.detailOpen'''
+          if qml.count(old_list_start) != 1:
+              raise SystemExit('could not locate clipboard ListView layout block')
+          qml = qml.replace(old_list_start, new_list_start, 1)
+
+          old_status = '''                Item {
+                      Layout.row: root.bottomEdgeLayout ? 0 : 2
+                      Layout.fillWidth: true
+                      Layout.fillHeight: true
+                      visible: !root.detailOpen
+                          && (root.entries.length === 0 || clipboardList.count === 0)'''
+          new_status = '''                    Item {
+                          anchors.fill: parent
+                          visible: !root.detailOpen
+                              && (root.entries.length === 0 || clipboardList.count === 0)'''
+          if qml.count(old_status) != 1:
+              raise SystemExit('could not locate clipboard status overlay layout block')
+          qml = qml.replace(old_status, new_status, 1)
+
+          old_detail = '''                Item {
+                      Layout.row: root.bottomEdgeLayout ? 0 : 2
+                      Layout.fillWidth: true
+                      Layout.fillHeight: true
+                      visible: root.detailOpen'''
+          new_detail = '''                    Item {
+                          anchors.fill: parent
+                          visible: root.detailOpen'''
+          if qml.count(old_detail) != 1:
+              raise SystemExit('could not locate clipboard detail layout block')
+          qml = qml.replace(old_detail, new_detail, 1)
+
+          old_tail = '''                    }
+                  }
+              }
+          }
+      }
+          }'''
+          # Add one closing brace for clipboardContent immediately before the
+          # surrounding GridLayout closes. Work from the unique end-of-file tail.
+          if not qml.endswith('''                    }
+                  }
+              }
+          }
+      }
+          }\n'''):
+              raise SystemExit('unexpected ClipboardMenu.qml closing structure')
+          qml = qml[:-len('''                    }
+                  }
+              }
+          }
+      }
+          }\n''')] + '''                    }
+                  }
+              }
+          }
+      }
+          }
+          }\n'''
+
+          qml_path.write_text(qml)
+          PY
+
+          python3 <<'PY'
+          from hashlib import sha256
+          from pathlib import Path
+
+          history_path = Path('local/share/awtarchy/quickshell-managed-history.sha256')
+          history = history_path.read_text()
+          entries = [
+              ('config/quickshell/awtarchy/ClipboardLoadState.js', '.config/quickshell/awtarchy/ClipboardLoadState.js'),
+              ('config/quickshell/awtarchy/ClipboardMenu.qml', '.config/quickshell/awtarchy/ClipboardMenu.qml'),
+          ]
+          new_lines = []
+          for source, installed in entries:
+              digest = sha256(Path(source).read_bytes()).hexdigest()
+              line = f'{digest}\t{installed}'
+              if line not in history:
+                  new_lines.append(line)
+          if new_lines:
+              if not history.endswith('\n'):
+                  history += '\n'
+              history += '# 2026-08-27 clipboard wildcard search and runtime warning cleanup.\n'
+              history += '\n'.join(new_lines) + '\n'
+              history_path.write_text(history)
+          PY
+
+          bash tests/test-quickshell-clipboard-load-state.sh
+          bash tests/test-quickshell-clipboard-progressive.sh
+          bash tests/test-quickshell-clipboard-thumbnails.sh
+          bash tests/test-flyout-edge-layout.sh
+          git diff --check
+
+      - name: Commit production follow-up and remove temporary writer
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/pr72-runtime-followup-write.yml
+          git add \
+            config/quickshell/awtarchy/ClipboardLoadState.js \
+            config/quickshell/awtarchy/ClipboardMenu.qml \
+            local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'Fix clipboard wildcard search and QML warnings'
+          git push origin HEAD:feature/progressive-clipboard-loading
