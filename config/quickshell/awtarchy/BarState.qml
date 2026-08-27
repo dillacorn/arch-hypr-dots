@@ -54,6 +54,20 @@ Singleton {
     readonly property int defaultAppTextSize: 14
     readonly property int defaultAppIconSize: 18
     readonly property int defaultNotificationPopupLimit: 4
+    readonly property var defaultQuickSettingsSectionOrder: [
+        "brightness",
+        "output-volume",
+        "power-mode",
+        "bar",
+        "display-effects",
+        "submap",
+        "wallpaper",
+        "awtarchy",
+        "smtty",
+        "scheduler",
+        "numlock",
+        "title-bars"
+    ]
     property int revision: 0
     property int idleRevision: 0
 
@@ -228,6 +242,7 @@ Singleton {
             notification_views: {},
             notification_popup_positions: {},
             quick_settings_views: {},
+            quick_settings_layouts: {},
             network_views: {},
             bluetooth_views: {},
             battery_views: {},
@@ -256,6 +271,7 @@ Singleton {
                 "notification_views",
                 "notification_popup_positions",
                 "quick_settings_views",
+                "quick_settings_layouts",
                 "network_views",
                 "bluetooth_views",
                 "battery_views",
@@ -483,6 +499,38 @@ Singleton {
     function quickSettingsViewFor(name) {
         return flyoutViewFor("quick_settings_views", name,
             referenceQuickSettingsWidth, referenceQuickSettingsHeight);
+    }
+
+    function quickSettingsLayoutFor(name) {
+        const layouts = data().quick_settings_layouts || ({});
+        const raw = layouts[name] && typeof layouts[name] === "object"
+            && !Array.isArray(layouts[name]) ? layouts[name] : ({});
+        const defaults = defaultQuickSettingsSectionOrder;
+        const order = [];
+        const rawOrder = Array.isArray(raw.order) ? raw.order : [];
+
+        for (const value of rawOrder) {
+            const sectionId = String(value || "");
+            if (defaults.indexOf(sectionId) >= 0 && order.indexOf(sectionId) < 0)
+                order.push(sectionId);
+        }
+        for (const sectionId of defaults) {
+            if (order.indexOf(sectionId) < 0)
+                order.push(sectionId);
+        }
+
+        const hidden = [];
+        const rawHidden = Array.isArray(raw.hidden) ? raw.hidden : [];
+        for (const value of rawHidden) {
+            const sectionId = String(value || "");
+            if (defaults.indexOf(sectionId) >= 0 && hidden.indexOf(sectionId) < 0)
+                hidden.push(sectionId);
+        }
+
+        return ({
+            order: order,
+            hidden: hidden.length < order.length ? hidden : []
+        });
     }
 
     function networkViewFor(name) {

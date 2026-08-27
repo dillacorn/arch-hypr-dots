@@ -17,6 +17,8 @@ MAX_TEXT_SCALE=200
 MIN_ICON_SCALE=50
 MAX_ICON_SCALE=200
 SAVE_VERSION=2
+QUICK_SETTINGS_LAYOUT_SAVE_VERSION=1
+QUICK_SETTINGS_SECTIONS_JSON='["brightness","output-volume","power-mode","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","title-bars"]'
 TMP_FILE=""
 
 need() {
@@ -440,6 +442,95 @@ reset_flyout() {
     commit_tmp
 }
 
+validate_quick_settings_layout() {
+    local order_json="$1" hidden_json="$2"
+
+    if ! jq -e -n \
+        --argjson allowed "$QUICK_SETTINGS_SECTIONS_JSON" \
+        --argjson order "$order_json" \
+        --argjson hidden "$hidden_json" '
+        ($order | type) == "array"
+        and ($hidden | type) == "array"
+        and ($order | length) == ($allowed | length)
+        and ($order | unique | length) == ($allowed | length)
+        and (($order - $allowed) | length) == 0
+        and (($allowed - $order) | length) == 0
+        and ($hidden | unique | length) == ($hidden | length)
+        and (($hidden - $allowed) | length) == 0
+        and ($hidden | length) < ($allowed | length)
+    ' >/dev/null 2>&1; then
+        printf 'invalid Quick Settings layout\n' >&2
+        exit 2
+    fi
+}
+
+save_quick_settings_layout() {
+    local monitor="$1" order_json="$2" hidden_json="$3"
+    [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
+    validate_quick_settings_layout "$order_json" "$hidden_json"
+
+    new_tmp
+    jq \
+        --arg monitor "$monitor" \
+        --argjson order "$order_json" \
+        --argjson hidden "$hidden_json" \
+        --argjson save_version "$QUICK_SETTINGS_LAYOUT_SAVE_VERSION" '
+        .quick_settings_layouts = (if (.quick_settings_layouts | type) == "object"
+            then .quick_settings_layouts else {} end)
+        | .quick_settings_layouts[$monitor] = {
+            order:$order,
+            hidden:$hidden,
+            save_version:$save_version
+        }
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
+copy_quick_settings_layout() {
+    local order_json="$1" hidden_json="$2"
+    shift 2
+    local -a targets=("$@")
+    local targets_json
+
+    (( ${#targets[@]} > 0 )) || {
+        printf 'at least one target monitor is required\n' >&2
+        exit 2
+    }
+    validate_quick_settings_layout "$order_json" "$hidden_json"
+    targets_json="$(jq -cn --args '$ARGS.positional' -- "${targets[@]}")"
+
+    new_tmp
+    jq \
+        --argjson targets "$targets_json" \
+        --argjson order "$order_json" \
+        --argjson hidden "$hidden_json" \
+        --argjson save_version "$QUICK_SETTINGS_LAYOUT_SAVE_VERSION" '
+        .quick_settings_layouts = (if (.quick_settings_layouts | type) == "object"
+            then .quick_settings_layouts else {} end)
+        | .quick_settings_layouts = reduce $targets[] as $monitor
+            (.quick_settings_layouts;
+                .[$monitor] = {
+                    order:$order,
+                    hidden:$hidden,
+                    save_version:$save_version
+                })
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
+reset_quick_settings_layout() {
+    local monitor="$1"
+    [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
+
+    new_tmp
+    jq --arg monitor "$monitor" '
+        .quick_settings_layouts = (if (.quick_settings_layouts | type) == "object"
+            then .quick_settings_layouts else {} end)
+        | del(.quick_settings_layouts[$monitor])
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
 reset_monitor() {
     local monitor="$1"
     [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
@@ -623,6 +714,18 @@ case "$cmd" in
         [[ -n ${2:-} && -n ${3:-} ]] || exit 2
         set_capture "$2" "$3"
         ;;
+    save-quick-settings-layout)
+        [[ -n ${2:-} && -n ${3:-} && -n ${4:-} ]] || exit 2
+        save_quick_settings_layout "$2" "$3" "$4"
+        ;;
+    copy-quick-settings-layout)
+        [[ -n ${2:-} && -n ${3:-} && -n ${4:-} ]] || exit 2
+        copy_quick_settings_layout "$2" "$3" "${@:4}"
+        ;;
+    reset-quick-settings-layout)
+        [[ -n ${2:-} ]] || exit 2
+        reset_quick_settings_layout "$2"
+        ;;
     copy-view)
         [[ -n ${2:-} && -n ${3:-} && -n ${4:-} && -n ${5:-} && -n ${6:-} ]] || exit 2
         copy_view "$2" "$3" "$4" "$5" "${@:6}"
@@ -650,7 +753,7 @@ case "$cmd" in
         reset_defaults
         ;;
     *)
-        printf 'usage: %s {save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-update-notifications <true|false>|set-notification-popup-limit <1-20>|set-notification-popup-position <MON> <automatic|top-left|top-center|top-right|bottom-left|bottom-center|bottom-right>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
+        printf 'usage: %s {save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-update-notifications <true|false>|set-notification-popup-limit <1-20>|set-notification-popup-position <MON> <automatic|top-left|top-center|top-right|bottom-left|bottom-center|bottom-right>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|save-quick-settings-layout <MON> <order_json> <hidden_json>|copy-quick-settings-layout <order_json> <hidden_json> <MON>...|reset-quick-settings-layout <MON>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
         exit 2
         ;;
 esac

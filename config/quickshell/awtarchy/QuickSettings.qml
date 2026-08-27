@@ -36,6 +36,10 @@ Singleton {
     property string nightLightScheduleTemperatureDraft: "5000"
     property string nightLightScheduleError: ""
     property bool settingsOpen: false
+    property bool layoutEditorOpen: false
+    property var layoutOrderDraft: []
+    property var layoutHiddenDraft: []
+    property var savedLayout: ({ order: [], hidden: [] })
     property int panelWidthOverride: -1
     property int panelHeightOverride: -1
     property int textScaleOverride: -1
@@ -86,11 +90,14 @@ Singleton {
         ? iconScaleOverride : BarState.quickSettingsViewFor(activeMonitorName).iconScale
     readonly property bool captureAllowed: captureAllowedOverride >= 0
         ? captureAllowedOverride === 1 : BarState.captureAllowedFor("quick_settings")
+    readonly property bool layoutDirty: layoutSignature(layoutOrderDraft, layoutHiddenDraft)
+        !== layoutSignature(savedLayout.order, savedLayout.hidden)
     readonly property bool settingsDirty: savedView.width !== livePanelWidth
         || savedView.height !== livePanelHeight
         || savedView.textScale !== effectiveTextScale
         || savedView.iconScale !== effectiveIconScale
         || savedView.captureAllowed !== captureAllowed
+        || layoutDirty
     readonly property var brightnessStatus: statusData.brightness || ({})
     readonly property var barStatus: statusData.bar || ({})
     readonly property var nightLightStatus: statusData.night_light || ({})
@@ -236,6 +243,64 @@ Singleton {
         return Quickshell.screens
             .map(target => target ? target.name : "")
             .filter(name => name.length > 0 && name !== activeMonitorName);
+    }
+
+    function layoutSignature(order, hidden) {
+        const ordered = Array.isArray(order) ? order : [];
+        const hiddenValues = Array.isArray(hidden) ? hidden : [];
+        const normalizedHidden = ordered.filter(sectionId => hiddenValues.indexOf(sectionId) >= 0);
+        return JSON.stringify(ordered) + "|" + JSON.stringify(normalizedHidden);
+    }
+
+    function quickSettingsSectionVisible(sectionId) {
+        return layoutHiddenDraft.indexOf(sectionId) < 0;
+    }
+
+    function visibleQuickSettingsSectionOrder() {
+        return layoutOrderDraft.filter(sectionId => quickSettingsSectionVisible(sectionId));
+    }
+
+    function quickSettingsSectionRow(sectionId) {
+        const visibleOrder = visibleQuickSettingsSectionOrder();
+        const index = visibleOrder.indexOf(sectionId);
+        if (index < 0)
+            return 0;
+        return FlyoutEdgeLayout.sectionRow(bottomEdgeLayout, index, visibleOrder.length);
+    }
+
+    function moveQuickSettingsSection(sectionId, delta) {
+        const index = layoutOrderDraft.indexOf(sectionId);
+        const target = index + delta;
+        if (index < 0 || target < 0 || target >= layoutOrderDraft.length)
+            return;
+        const next = layoutOrderDraft.slice();
+        const moved = next.splice(index, 1)[0];
+        next.splice(target, 0, moved);
+        layoutOrderDraft = next;
+        Qt.callLater(() => alignContentToBar());
+    }
+
+    function setQuickSettingsSectionVisible(sectionId, visible) {
+        const currentlyVisible = quickSettingsSectionVisible(sectionId);
+        if (currentlyVisible === visible)
+            return;
+        if (!visible && visibleQuickSettingsSectionOrder().length <= 1)
+            return;
+        const next = layoutHiddenDraft.slice();
+        const index = next.indexOf(sectionId);
+        if (visible && index >= 0)
+            next.splice(index, 1);
+        else if (!visible && index < 0)
+            next.push(sectionId);
+        layoutHiddenDraft = next;
+        Qt.callLater(() => alignContentToBar());
+    }
+
+    function resetQuickSettingsLayoutDraft() {
+        layoutOrderDraft = BarState.defaultQuickSettingsSectionOrder.slice();
+        layoutHiddenDraft = [];
+        settingsMessage = "Stock Quick Settings layout restored in draft";
+        Qt.callLater(() => alignContentToBar());
     }
 
     function schedulerByName(name) {
@@ -457,6 +522,10 @@ Singleton {
         textScaleOverride = persisted.textScale;
         iconScaleOverride = persisted.iconScale;
         captureAllowedOverride = BarState.captureAllowedFor("quick_settings") ? 1 : 0;
+        const layout = BarState.quickSettingsLayoutFor(targetScreen.name);
+        layoutOrderDraft = layout.order.slice();
+        layoutHiddenDraft = layout.hidden.slice();
+        savedLayout = ({ order: layoutOrderDraft.slice(), hidden: layoutHiddenDraft.slice() });
         savedView = ({
             width: panelWidthOverride,
             height: panelHeightOverride,
@@ -474,6 +543,10 @@ Singleton {
             iconScale: effectiveIconScale,
             captureAllowed: captureAllowed
         });
+        savedLayout = ({
+            order: layoutOrderDraft.slice(),
+            hidden: layoutHiddenDraft.slice()
+        });
     }
 
     function discardDraft() {
@@ -482,6 +555,8 @@ Singleton {
         textScaleOverride = savedView.textScale;
         iconScaleOverride = savedView.iconScale;
         captureAllowedOverride = savedView.captureAllowed ? 1 : 0;
+        layoutOrderDraft = savedLayout.order.slice();
+        layoutHiddenDraft = savedLayout.hidden.slice();
         applyWindowSize(width, height);
     }
 
@@ -509,6 +584,10 @@ Singleton {
             String(effectiveTextScale), String(effectiveIconScale),
             captureAllowed ? "true" : "false"
         ]);
+        queueStateCommand([
+            "save-quick-settings-layout", activeMonitorName,
+            JSON.stringify(layoutOrderDraft), JSON.stringify(layoutHiddenDraft)
+        ]);
         panelWidthOverride = livePanelWidth;
         panelHeightOverride = livePanelHeight;
         acceptDraftAsSaved();
@@ -522,6 +601,9 @@ Singleton {
         textScaleOverride = 100;
         iconScaleOverride = 100;
         captureAllowedOverride = 0;
+        layoutOrderDraft = BarState.defaultQuickSettingsSectionOrder.slice();
+        layoutHiddenDraft = [];
+        savedLayout = ({ order: layoutOrderDraft.slice(), hidden: [] });
         applyWindowSize(BarState.defaultQuickSettingsWidth, BarState.defaultQuickSettingsHeight);
         savedView = ({
             width: panelWidthOverride,
@@ -532,6 +614,7 @@ Singleton {
         });
         privacyRemapPending = wasCaptureAllowed;
         queueStateCommand(["reset-flyout", "quick-settings", activeMonitorName]);
+        queueStateCommand(["reset-quick-settings-layout", activeMonitorName]);
         settingsMessage = "Quick Settings defaults restored for " + activeMonitorName;
     }
 
@@ -542,6 +625,11 @@ Singleton {
             "copy-flyout", "quick-settings",
             String(livePanelWidth), String(livePanelHeight),
             String(effectiveTextScale), String(effectiveIconScale),
+            ...targets
+        ]);
+        queueStateCommand([
+            "copy-quick-settings-layout",
+            JSON.stringify(layoutOrderDraft), JSON.stringify(layoutHiddenDraft),
             ...targets
         ]);
         settingsMessage = "Copied Quick Settings to " + targets.length
@@ -580,6 +668,7 @@ Singleton {
 
     function toggleSettings() {
         settingsOpen = !settingsOpen;
+        layoutEditorOpen = false;
         settingsPanel.resetCopySelection();
         settingsMessage = "";
     }
@@ -594,6 +683,7 @@ Singleton {
         placement = placementForScreen(targetScreen);
         brightnessTarget = targetScreen.name;
         settingsOpen = false;
+        layoutEditorOpen = false;
         settingsPanel.resetCopySelection();
         settingsMessage = "";
         schedulerEditorOpen = false;
@@ -616,6 +706,7 @@ Singleton {
         panelPresented = false;
         FlyoutManager.release("quick-settings");
         settingsOpen = false;
+        layoutEditorOpen = false;
         settingsPanel.resetCopySelection();
         settingsMessage = "";
         schedulerEditorOpen = false;
@@ -912,7 +1003,9 @@ Singleton {
                 Rectangle {
                     Layout.row: 1
                     Layout.fillWidth: true
-                    Layout.preferredHeight: root.settingsOpen ? settingsPanel.implicitHeight + 12 : 0
+                    Layout.preferredHeight: root.settingsOpen
+                        ? (root.layoutEditorOpen ? layoutEditor.implicitHeight : settingsPanel.implicitHeight) + 12
+                        : 0
                     visible: root.settingsOpen
                     color: Theme.popupButton
                     border.width: 0
@@ -922,6 +1015,7 @@ Singleton {
                         id: settingsPanel
                         anchors.fill: parent
                         anchors.margins: 6
+                        visible: !root.layoutEditorOpen
                         surfaceLabel: "Quick Settings"
                         monitorName: root.activeMonitorName
                         panelWidth: root.livePanelWidth
@@ -944,6 +1038,21 @@ Singleton {
                         onCaptureToggleRequested: root.toggleCaptureAllowed()
                         onCopyRequested: monitorNames => root.copyDisplaySettings(monitorNames)
                         onThemePickerRequested: root.openThemeMenu()
+                        onLayoutEditorRequested: root.layoutEditorOpen = true
+                    }
+
+                    QuickSettingsLayoutEditor {
+                        id: layoutEditor
+                        anchors.fill: parent
+                        anchors.margins: 6
+                        visible: root.layoutEditorOpen
+                        monitorName: root.activeMonitorName
+                        order: root.layoutOrderDraft
+                        hidden: root.layoutHiddenDraft
+                        onBackRequested: root.layoutEditorOpen = false
+                        onMoveRequested: (sectionId, delta) => root.moveQuickSettingsSection(sectionId, delta)
+                        onVisibilityRequested: (sectionId, visible) => root.setQuickSettingsSectionVisible(sectionId, visible)
+                        onResetRequested: root.resetQuickSettingsLayoutDraft()
                     }
                 }
 
@@ -969,7 +1078,8 @@ Singleton {
                         columnSpacing: 0
 
                         Rectangle {
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 0, 12)
+                            Layout.row: root.quickSettingsSectionRow("brightness")
+                            visible: root.quickSettingsSectionVisible("brightness")
                             Layout.fillWidth: true
                             Layout.preferredHeight: brightnessContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1102,7 +1212,8 @@ Singleton {
                         }
 
                         Rectangle {
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 1, 12)
+                            Layout.row: root.quickSettingsSectionRow("output-volume")
+                            visible: root.quickSettingsSectionVisible("output-volume")
                             Layout.fillWidth: true
                             Layout.preferredHeight: outputVolumeContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1232,14 +1343,16 @@ Singleton {
                         }
 
                         PowerModeCard {
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 2, 12)
+                            Layout.row: root.quickSettingsSectionRow("power-mode")
+                            visible: root.quickSettingsSectionVisible("power-mode")
                             active: quickSettingsWindow.visible
                             textScale: root.effectiveTextScale
                             iconScale: root.effectiveIconScale
                         }
 
                         Rectangle {
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 3, 12)
+                            Layout.row: root.quickSettingsSectionRow("bar")
+                            visible: root.quickSettingsSectionVisible("bar")
                             Layout.fillWidth: true
                             Layout.preferredHeight: barContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1296,7 +1409,8 @@ Singleton {
                         RowLayout {
                             id: nightLightVibranceRow
                             readonly property real cardHeight: Math.max(nightContent.implicitHeight, vibranceContent.implicitHeight) + 16
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 4, 12)
+                            Layout.row: root.quickSettingsSectionRow("display-effects")
+                            visible: root.quickSettingsSectionVisible("display-effects")
                             Layout.fillWidth: true
                             spacing: 8
 
@@ -1576,7 +1690,8 @@ Singleton {
                         }
 
                         Rectangle {
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 5, 12)
+                            Layout.row: root.quickSettingsSectionRow("submap")
+                            visible: root.quickSettingsSectionVisible("submap")
                             Layout.fillWidth: true
                             Layout.preferredHeight: submapContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1621,7 +1736,8 @@ Singleton {
                         }
 
                         Rectangle {
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 6, 12)
+                            Layout.row: root.quickSettingsSectionRow("wallpaper")
+                            visible: root.quickSettingsSectionVisible("wallpaper")
                             Layout.fillWidth: true
                             Layout.preferredHeight: wallpaperContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1667,7 +1783,8 @@ Singleton {
                         }
 
                         Rectangle {
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 7, 12)
+                            Layout.row: root.quickSettingsSectionRow("awtarchy")
+                            visible: root.quickSettingsSectionVisible("awtarchy")
                             Layout.fillWidth: true
                             Layout.preferredHeight: awtarchyContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1710,7 +1827,8 @@ Singleton {
                         }
 
                         Rectangle {
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 8, 12)
+                            Layout.row: root.quickSettingsSectionRow("smtty")
+                            visible: root.quickSettingsSectionVisible("smtty")
                             Layout.fillWidth: true
                             Layout.preferredHeight: smttyContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1752,7 +1870,8 @@ Singleton {
                         }
 
                         Rectangle {
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 9, 12)
+                            Layout.row: root.quickSettingsSectionRow("scheduler")
+                            visible: root.quickSettingsSectionVisible("scheduler")
                             Layout.fillWidth: true
                             Layout.preferredHeight: schedulerContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -2031,7 +2150,8 @@ Singleton {
                         }
 
                         Rectangle {
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 10, 12)
+                            Layout.row: root.quickSettingsSectionRow("numlock")
+                            visible: root.quickSettingsSectionVisible("numlock")
                             Layout.fillWidth: true
                             Layout.preferredHeight: numlockContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -2078,7 +2198,8 @@ Singleton {
                         }
 
               TitleBarsCard {
-                  Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 11, 12)
+                  Layout.row: root.quickSettingsSectionRow("title-bars")
+                  visible: root.quickSettingsSectionVisible("title-bars")
                   active: quickSettingsWindow.visible
                   textScale: root.effectiveTextScale
                   iconScale: root.effectiveIconScale

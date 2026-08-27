@@ -56,9 +56,10 @@ Item {
     signal captureToggleRequested()
     signal copyRequested(var monitorNames)
     signal themePickerRequested()
+    signal layoutEditorRequested()
 
     implicitHeight: copyOpen ? 104
-        : 139 + (surfaceLabel === "Quick Settings" ? barSection.implicitHeight + 6 : 0)
+        : 139 + (surfaceLabel === "Quick Settings" ? barSection.implicitHeight + 37 : 0)
 
     function targetSelected(name) {
         const dependency = copySelectionRevision;
@@ -470,6 +471,28 @@ Item {
             monitorName: root.monitorName
             monitorNames: [root.monitorName].concat(root.otherMonitorNames || [])
             onThemePickerRequested: root.themePickerRequested()
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 28
+            spacing: 6
+            visible: !root.copyOpen && root.surfaceLabel === "Quick Settings"
+
+            SettingsButton {
+                label: "Customize Layout…"
+                textSize: 9
+                onClicked: root.layoutEditorRequested()
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: "Show, hide, and reorder sections for this display"
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: 9
+                elide: Text.ElideRight
+            }
         }
 
         RowLayout {
