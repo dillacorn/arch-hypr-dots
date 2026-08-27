@@ -24,6 +24,39 @@ if "Layout.row:" in compat.group("body"):
 if "presentationEnabled: true" in compat.group("body"):
     raise SystemExit("FAIL: Quick Settings PowerModeCard compatibility instance can render")
 
+settings_column = re.search(
+    r"GridLayout \{\n\s*id: settingsColumn\n",
+    text,
+)
+if settings_column is None:
+    raise SystemExit("FAIL: Quick Settings settingsColumn GridLayout is missing")
+
+block_start = settings_column.start()
+brace_start = text.find("{", block_start)
+if brace_start < 0:
+    raise SystemExit("FAIL: could not locate settingsColumn opening brace")
+
+depth = 0
+block_end = None
+for index in range(brace_start, len(text)):
+    char = text[index]
+    if char == "{":
+        depth += 1
+    elif char == "}":
+        depth -= 1
+        if depth == 0:
+            block_end = index + 1
+            break
+
+if block_end is None:
+    raise SystemExit("FAIL: could not locate settingsColumn closing brace")
+
+settings_column_text = text[block_start:block_end]
+if re.search(r"\bPowerModeCard\s*\{", settings_column_text):
+    raise SystemExit(
+        "FAIL: inert PowerModeCard compatibility instance still participates in settingsColumn GridLayout"
+    )
+
 rows = [
     (int(index), int(count))
     for index, count in re.findall(
@@ -43,5 +76,5 @@ indices = sorted(index for index, _ in rows)
 if indices != list(range(11)):
     raise SystemExit(f"FAIL: Quick Settings section rows are not contiguous: {indices}")
 
-print("PASS: Quick Settings keeps its inert Power Mode compatibility host without reserving an extra section gap.")
+print("PASS: Quick Settings keeps its inert Power Mode compatibility host outside the visible section GridLayout.")
 PY
