@@ -674,3 +674,10 @@ ea4da6deba4851ce1400e99a14b482dca67ed0d604f7b55a9daec7fb0af765d4	.config/quicksh
 # 2026-08-27 preserve Clipboard viewport after per-entry deletion.
 aef6b4e6c7939e10a3ae5840e9c782bcc3cfe688350bf073ce536e55c885a755	.config/quickshell/awtarchy/ClipboardLoadState.js
 0f1bbf94ae931f443c77b340ab257d84ffb3b7fd27260ef7efe473b32760076c	.config/quickshell/awtarchy/ClipboardMenu.qml
+# 2026-08-27 focused display scale controls.
+29e07786e1fa78fbbbce777064f332a3a7456e104c0907e55d62756ab8314f0c	.config/hypr/scripts/quickshell_display_scale.sh
+16a5007c01017c00c7167b4f12aeac71afa19186f52244e74c903ebe1c3037ff	.config/hypr/scripts/quickshell_display_scale.sh
+ee23c0eb5a2c321bf79b22d990241f973c189b433c11ee31733de7af933c825b	.config/quickshell/awtarchy/BarSettingsSection.qml
+# 2026-08-27 custom focused-display scale input.
+da2ab8831a71c58daaf7fdb48dd60a7052df25c3c3602df9450e2054ace9efae	.config/hypr/scripts/quickshell_display_scale.sh
+967bd1194388eeb65c0c56e654ae24563f41d0b68f255014948de531c3da5eab	.config/quickshell/awtarchy/BarSettingsSection.qml
