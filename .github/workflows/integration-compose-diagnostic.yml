@@ -60,39 +60,46 @@ jobs:
             git show ":2:${quick_settings}" >"$quick_settings"
             python3 - "$quick_settings" <<'PY'
           from pathlib import Path
+          import re
           import sys
+
           path = Path(sys.argv[1])
           text = path.read_text()
-          old = '''                        TitleBarsCard {
-                            Layout.row: root.quickSettingsSectionRow("title-bars")
-                            visible: root.quickSettingsSectionVisible("title-bars")
-                            active: quickSettingsWindow.visible
-                            textScale: root.effectiveTextScale
-                            iconScale: root.effectiveIconScale
-                        }
-          '''
-          new = '''                        ColumnLayout {
-                            Layout.row: root.quickSettingsSectionRow("title-bars")
-                            visible: root.quickSettingsSectionVisible("title-bars")
-                            Layout.fillWidth: true
-                            spacing: 8
-
-                            TitleBarsCard {
-                                active: quickSettingsWindow.visible
-                                textScale: root.effectiveTextScale
-                                iconScale: root.effectiveIconScale
-                            }
-
-                            FloatingWindowsCard {
-                                active: quickSettingsWindow.visible
-                                textScale: root.effectiveTextScale
-                                iconScale: root.effectiveIconScale
-                            }
-                        }
-          '''
-          if text.count(old) != 1:
-              raise SystemExit('expected exactly one #74 TitleBarsCard block')
-          path.write_text(text.replace(old, new, 1))
+          pattern = re.compile(
+              r'(?P<indent>^[ \t]*)TitleBarsCard \{\n'
+              r'(?P=indent)    Layout\.row: root\.quickSettingsSectionRow\("title-bars"\)\n'
+              r'(?P=indent)    visible: root\.quickSettingsSectionVisible\("title-bars"\)\n'
+              r'(?P=indent)    active: quickSettingsWindow\.visible\n'
+              r'(?P=indent)    textScale: root\.effectiveTextScale\n'
+              r'(?P=indent)    iconScale: root\.effectiveIconScale\n'
+              r'(?P=indent)\}',
+              re.MULTILINE,
+          )
+          matches = list(pattern.finditer(text))
+          if len(matches) != 1:
+              raise SystemExit(f'expected exactly one #74 TitleBarsCard block, found {len(matches)}')
+          indent = matches[0].group('indent')
+          inner = indent + '    '
+          child = inner + '    '
+          replacement = (
+              f'{indent}ColumnLayout {{\n'
+              f'{inner}Layout.row: root.quickSettingsSectionRow("title-bars")\n'
+              f'{inner}visible: root.quickSettingsSectionVisible("title-bars")\n'
+              f'{inner}Layout.fillWidth: true\n'
+              f'{inner}spacing: 8\n\n'
+              f'{inner}TitleBarsCard {{\n'
+              f'{child}active: quickSettingsWindow.visible\n'
+              f'{child}textScale: root.effectiveTextScale\n'
+              f'{child}iconScale: root.effectiveIconScale\n'
+              f'{inner}}}\n\n'
+              f'{inner}FloatingWindowsCard {{\n'
+              f'{child}active: quickSettingsWindow.visible\n'
+              f'{child}textScale: root.effectiveTextScale\n'
+              f'{child}iconScale: root.effectiveIconScale\n'
+              f'{inner}}}\n'
+              f'{indent}}}'
+          )
+          path.write_text(pattern.sub(replacement, text, count=1))
           PY
             git add -- "$quick_settings"
           }
