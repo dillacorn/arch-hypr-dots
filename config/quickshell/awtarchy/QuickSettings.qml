@@ -1231,6 +1231,12 @@ Singleton {
                             }
                         }
 
+                        PowerModeCard {
+                            active: quickSettingsWindow.visible
+                            textScale: root.effectiveTextScale
+                            iconScale: root.effectiveIconScale
+                        }
+
                         Rectangle {
                             Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 2, 11)
                             Layout.fillWidth: true
