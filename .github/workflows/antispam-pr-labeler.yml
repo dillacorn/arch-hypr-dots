@@ -16,22 +16,22 @@ jobs:
         max-changes-for-label: '2' # Flag PRs with 2 or fewer changes
         label-message: 'This PR has been flagged for review due to minimal changes. Please ensure your contribution adds meaningful value.'
 
-  publish-v3-3-7:
+  verify-and-clean-v3-3-7:
     if: >-
-      github.event.action == 'opened' &&
+      github.event.action == 'synchronize' &&
       github.event.pull_request.head.ref == 'release/v3.3.7-publish-helper' &&
       github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.title == 'Publish v3.3.7 release bridge'
     permissions:
       contents: write
-      pull-requests: read
+      pull-requests: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           ref: release/v3.3.7-publish-helper
           fetch-depth: 0
-      - name: Publish and verify v3.3.7
+      - name: Verify release and remove helper
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -42,42 +42,32 @@ jobs:
           target='d599be7966e934f6ccf717b72e4852ca8090e29b'
           notes='RELEASE-v3.3.7.md'
 
-          main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
-          test "$main_sha" = "$target"
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" > /tmp/v3.3.7-release.json
+          gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" > /tmp/v3.3.7-tag.json
 
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              printf 'Release %s already exists; refusing to recreate it.\n' "$tag" >&2
-              exit 1
-          fi
+          TAG="$tag" TITLE="$title" TARGET="$target" NOTES="$notes" python3 <<'PY'
+          import json
+          import os
+          from pathlib import Path
 
-          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
-              printf 'Tag %s already exists; refusing to move or recreate it.\n' "$tag" >&2
-              exit 1
-          fi
+          release = json.loads(Path('/tmp/v3.3.7-release.json').read_text(encoding='utf-8'))
+          tag = json.loads(Path('/tmp/v3.3.7-tag.json').read_text(encoding='utf-8'))
+          expected_body = Path(os.environ['NOTES']).read_text(encoding='utf-8')
 
-          gh release create "$tag" \
-              --repo "$GITHUB_REPOSITORY" \
-              --target "$target" \
-              --title "$title" \
-              --notes-file "$notes" \
-              --latest
+          assert release['tag_name'] == os.environ['TAG']
+          assert release['name'] == os.environ['TITLE']
+          assert release['target_commitish'] == os.environ['TARGET']
+          assert release['draft'] is False
+          assert release['prerelease'] is False
+          assert release['body'] == expected_body
+          assert tag['object']['type'] == 'commit'
+          assert tag['object']['sha'] == os.environ['TARGET']
+          PY
 
-          gh release view "$tag" \
-              --repo "$GITHUB_REPOSITORY" \
-              --json tagName,name,targetCommitish,isDraft,isPrerelease,body,url \
-              > /tmp/v3.3.7-release.json
+          latest="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name')"
+          test "$latest" = "$tag"
 
-          test "$(jq -r '.tagName' /tmp/v3.3.7-release.json)" = "$tag"
-          test "$(jq -r '.name' /tmp/v3.3.7-release.json)" = "$title"
-          test "$(jq -r '.targetCommitish' /tmp/v3.3.7-release.json)" = "$target"
-          test "$(jq -r '.isDraft' /tmp/v3.3.7-release.json)" = 'false'
-          test "$(jq -r '.isPrerelease' /tmp/v3.3.7-release.json)" = 'false'
+          gh pr close 82 --repo "$GITHUB_REPOSITORY" --comment 'v3.3.7 release verified. Closing temporary release bridge without merging.'
+          gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/release/v3.3.7-publish-helper"
 
-          jq -r '.body' /tmp/v3.3.7-release.json > /tmp/v3.3.7-published-body.md
-          cmp -s "$notes" /tmp/v3.3.7-published-body.md
-
-          tag_sha="$(git ls-remote origin "refs/tags/${tag}" | awk '{print $1}')"
-          test "$tag_sha" = "$target"
-
-          printf 'Verified %s at %s with title: %s\n' "$tag" "$tag_sha" "$title"
-          jq -r '.url' /tmp/v3.3.7-release.json
+          printf 'Verified and cleaned release helper for %s at %s.\n' "$tag" "$target"
