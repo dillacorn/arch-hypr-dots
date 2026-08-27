@@ -1,0 +1,88 @@
+name: Apply Floating Windows Implementation
+
+on:
+  push:
+    branches:
+      - feature/floating-windows-default
+    paths:
+      - '.github/workflows/apply-floating-windows-implementation.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/floating-windows-default
+          fetch-depth: 0
+      - name: Apply exact guarded edits
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          hypr = Path('config/hypr/hyprland.lua')
+          text = hypr.read_text()
+          old = (
+              '-- ───────────────────────────────────────────────────────────────────────────────\n'
+              '-- RULES\n'
+              '-- ───────────────────────────────────────────────────────────────────────────────\n\n'
+              '-- Games: send to workspace 1, strip effects, fullscreen, allow tearing, keep awake\n'
+          )
+          new = (
+              '-- ───────────────────────────────────────────────────────────────────────────────\n'
+              '-- RULES\n'
+              '-- ───────────────────────────────────────────────────────────────────────────────\n\n'
+              'local awtarchy_floating_windows = false -- AWTARCHY_FLOATING_WINDOWS\n'
+              'if awtarchy_floating_windows then\n'
+              '    hl.window_rule({ match = { class = ".*" }, float = true })\n'
+              'end\n\n'
+              '-- Games: send to workspace 1, strip effects, fullscreen, allow tearing, keep awake\n'
+          )
+          if text.count(old) != 1:
+              raise SystemExit(f'hyprland.lua guard failed: expected one RULES anchor, found {text.count(old)}')
+          hypr.write_text(text.replace(old, new, 1))
+
+          quick = Path('config/quickshell/awtarchy/QuickSettings.qml')
+          text = quick.read_text()
+          old = (
+              '              TitleBarsCard {\n'
+              '                  Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 11, 12)\n'
+              '                  active: quickSettingsWindow.visible\n'
+              '                  textScale: root.effectiveTextScale\n'
+              '                  iconScale: root.effectiveIconScale\n'
+              '              }\n'
+          )
+          new = (
+              '              ColumnLayout {\n'
+              '                  Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 11, 12)\n'
+              '                  Layout.fillWidth: true\n'
+              '                  spacing: 8\n\n'
+              '                  TitleBarsCard {\n'
+              '                      active: quickSettingsWindow.visible\n'
+              '                      textScale: root.effectiveTextScale\n'
+              '                      iconScale: root.effectiveIconScale\n'
+              '                  }\n\n'
+              '                  FloatingWindowsCard {\n'
+              '                      active: quickSettingsWindow.visible\n'
+              '                      textScale: root.effectiveTextScale\n'
+              '                      iconScale: root.effectiveIconScale\n'
+              '                  }\n'
+              '              }\n'
+          )
+          if text.count(old) != 1:
+              raise SystemExit(f'QuickSettings.qml guard failed: expected one TitleBars anchor, found {text.count(old)}')
+          quick.write_text(text.replace(old, new, 1))
+          PY
+          git diff --check
+          git diff -- config/hypr/hyprland.lua config/quickshell/awtarchy/QuickSettings.qml
+      - name: Commit guarded edits
+        run: |
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add -- config/hypr/hyprland.lua config/quickshell/awtarchy/QuickSettings.qml
+          git diff --cached --quiet && exit 1
+          git commit -m 'feat: make floating windows an opt-in default'
+          git push origin HEAD:feature/floating-windows-default
