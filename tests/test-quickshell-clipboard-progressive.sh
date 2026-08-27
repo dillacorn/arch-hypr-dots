@@ -52,6 +52,10 @@ case "${1:-}" in
   decode)
     sed -E 's/^[0-9]+\t//'
     ;;
+  delete)
+    [[ -n "${AWTARCHY_CLIPBOARD_DELETE_FILE:-}" ]] || exit 24
+    cat >"$AWTARCHY_CLIPBOARD_DELETE_FILE"
+    ;;
   *)
     exit 2
     ;;
@@ -100,6 +104,37 @@ jq -s -e \
   "$output" >/dev/null \
   || fail 'clipboard history was not streamed newest-first'
 
+delete_capture="${TMPD}/deleted.raw"
+delete_raw=$'199\tolder clipboard entry'
+delete_key="$(printf '%s' "$delete_raw" | sha1sum | awk '{print $1}')"
+delete_thumb="${TMPD}/runtime/awtarchy-quickshell/clipboard-thumbs/${delete_key}.png"
+mkdir -p -- "$(dirname -- "$delete_thumb")"
+printf 'cached thumbnail\n' >"$delete_thumb"
+
+env \
+  PATH="${TMPD}/bin:${PATH}" \
+  XDG_RUNTIME_DIR="${TMPD}/runtime" \
+  AWTARCHY_CLIPBOARD_DELETE_FILE="$delete_capture" \
+  "$BACKEND" delete 1
+
+[[ -f "$delete_capture" ]] \
+  || fail 'clipboard delete action did not invoke cliphist delete'
+[[ "$(<"$delete_capture")" == "$delete_raw" ]] \
+  || fail 'clipboard delete action targeted the wrong raw cliphist entry'
+[[ ! -e "$delete_thumb" ]] \
+  || fail 'clipboard delete action left the deleted entry thumbnail cached'
+
+set +e
+env \
+  PATH="${TMPD}/bin:${PATH}" \
+  XDG_RUNTIME_DIR="${TMPD}/runtime" \
+  AWTARCHY_CLIPBOARD_DELETE_FILE="$delete_capture" \
+  "$BACKEND" delete 99 >/dev/null 2>&1
+invalid_delete_status=$?
+set -e
+[[ "$invalid_delete_status" -ne 0 ]] \
+  || fail 'clipboard delete accepted an index outside the captured list'
+
 failure_output="${TMPD}/failure.jsonl"
 failure_error="${TMPD}/failure.stderr"
 set +e
@@ -145,4 +180,4 @@ fi
 CLIPHIST_PID=""
 
 printf '%s\n' \
-  'PASS: clipboard history streams, reports failures, and cleans up its producer.'
+  'PASS: clipboard history streams, deletes exact entries, reports failures, and cleans up its producer.'
