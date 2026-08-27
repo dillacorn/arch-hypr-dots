@@ -216,4 +216,5 @@ done
 [[ $missing_history -eq 0 ]] \
   || fail 'managed history is missing current display-scale stock hashes'
 
+# Runtime retest remains visual: numeric labels, Custom editor, and focused-monitor UX.
 printf '%s\n' 'PASS: Quick Settings display scale supports safe presets and custom focused-display scaling with rollback protection.'
