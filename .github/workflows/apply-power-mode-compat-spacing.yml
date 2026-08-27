@@ -1,0 +1,66 @@
+name: Apply Power Mode Compatibility Spacing Patch
+
+on:
+  push:
+    branches:
+      - fix/fullscreen-bar-and-quick-settings-spacing
+    paths:
+      - '.github/workflows/apply-power-mode-compat-spacing.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: fix/fullscreen-bar-and-quick-settings-spacing
+          fetch-depth: 0
+
+      - name: Restore inert compatibility host without a layout row
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("config/quickshell/awtarchy/QuickSettings.qml")
+          text = path.read_text(encoding="utf-8")
+
+          if "PowerModeCard {" in text:
+              raise SystemExit("Quick Settings already contains a PowerModeCard instance")
+
+          anchor = (
+              "                        Rectangle {\n"
+              "                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 2, 11)\n"
+              "                            Layout.fillWidth: true\n"
+              "                            Layout.preferredHeight: barContent.implicitHeight + 16\n"
+          )
+          if text.count(anchor) != 1:
+              raise SystemExit("Quick Settings Bar row anchor did not match exactly once")
+
+          compatibility = (
+              "                        PowerModeCard {\n"
+              "                            active: quickSettingsWindow.visible\n"
+              "                            textScale: root.effectiveTextScale\n"
+              "                            iconScale: root.effectiveIconScale\n"
+              "                        }\n\n"
+          )
+
+          text = text.replace(anchor, compatibility + anchor, 1)
+          path.write_text(text, encoding="utf-8")
+          PY
+
+          git diff --check
+          bash tests/test-bar-fullscreen-visibility.sh
+          bash tests/test-quick-settings-spacing.sh
+          bash tests/test-battery-flyout.sh
+          git diff -- config/quickshell/awtarchy/QuickSettings.qml
+
+      - name: Commit compatibility correction
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add config/quickshell/awtarchy/QuickSettings.qml
+          git commit -m 'Preserve inert Power Mode compatibility host'
+          git push origin HEAD:fix/fullscreen-bar-and-quick-settings-spacing
