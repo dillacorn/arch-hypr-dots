@@ -59,7 +59,7 @@ XVFB_PID=""
 CAGE_PID=""
 HYPR_PID=""
 cleanup() {
-    qs -c awtarchy ipc call control quit >/dev/null 2>&1 || true
+    timeout 2 qs -c awtarchy ipc call control quit >/dev/null 2>&1 || true
     if [[ -n "$HYPR_PID" ]]; then
         kill "$HYPR_PID" >/dev/null 2>&1 || true
         wait "$HYPR_PID" >/dev/null 2>&1 || true
@@ -126,7 +126,7 @@ done
     exit 1
 }
 
-WAYLAND_DISPLAY="$CAGE_SOCKET" wayland-info >"$OUT/outer-wayland-info.txt" 2>&1 || {
+WAYLAND_DISPLAY="$CAGE_SOCKET" timeout 8 wayland-info >"$OUT/outer-wayland-info.txt" 2>&1 || {
     printf '%s\n' 'wayland-info could not inspect Cage.' >&2
     cat "$OUT/outer-wayland-info.txt" >&2
     exit 1
@@ -153,7 +153,7 @@ unset AQ_DRM_DEVICES
     printf 'WAYLAND_DISPLAY=%s\n' "$WAYLAND_DISPLAY"
     printf 'LIBGL_ALWAYS_SOFTWARE=%s\n' "$LIBGL_ALWAYS_SOFTWARE"
     printf '%s\n' '=== eglinfo ==='
-    eglinfo -B 2>&1 || true
+    timeout 8 eglinfo -B 2>&1 || true
 } >"$OUT/render-environment.txt"
 
 Hyprland --config "$HOME/.config/hypr/hyprland.lua" >"$HYPR_LOG" 2>&1 &
@@ -184,7 +184,7 @@ printf '%s\n' "$HYPRLAND_INSTANCE_SIGNATURE" >"$OUT/hyprland-instance.txt"
 printf '%s\n' "$WAYLAND_DISPLAY" >"$OUT/hyprland-wayland-display.txt"
 
 for _ in $(seq 1 120); do
-    if hyprctl -j monitors >"$OUT/monitors.json" 2>/dev/null && \
+    if timeout 3 hyprctl -j monitors >"$OUT/monitors.json" 2>/dev/null && \
         jq -e 'length > 0' "$OUT/monitors.json" >/dev/null 2>&1; then
         break
     fi
@@ -196,14 +196,14 @@ jq -e 'length > 0' "$OUT/monitors.json" >/dev/null || {
     exit 1
 }
 
-hyprctl configerrors >"$OUT/configerrors-initial.txt"
+timeout 5 hyprctl configerrors >"$OUT/configerrors-initial.txt"
 [[ ! -s "$OUT/configerrors-initial.txt" ]] || {
     printf '%s\n' 'Hyprland reported configuration errors:' >&2
     cat "$OUT/configerrors-initial.txt" >&2
     exit 1
 }
 
-"$HOME/.config/hypr/scripts/quickshell.sh" start >"$QS_LOG" 2>&1 || {
+timeout 12 "$HOME/.config/hypr/scripts/quickshell.sh" start >"$QS_LOG" 2>&1 || {
     cat "$QS_LOG" >&2
     [[ -f "$HOME/.cache/awtarchy/quickshell.log" ]] && cat "$HOME/.cache/awtarchy/quickshell.log" >&2
     exit 1
@@ -211,7 +211,7 @@ hyprctl configerrors >"$OUT/configerrors-initial.txt"
 
 QS_READY=0
 for _ in $(seq 1 180); do
-    if qs -c awtarchy ipc call control ping >/dev/null 2>&1; then
+    if timeout 2 qs -c awtarchy ipc call control ping >/dev/null 2>&1; then
         QS_READY=1
         break
     fi
@@ -223,18 +223,21 @@ done
     exit 1
 }
 
-qs -c awtarchy list --json >"$OUT/quickshell-instances.json"
-hyprctl -j layers >"$OUT/layers-before.json"
-"$HOME/.config/hypr/scripts/quickshell_quick_settings_toggle.sh"
+timeout 5 qs -c awtarchy list --json >"$OUT/quickshell-instances.json"
+timeout 5 hyprctl -j layers >"$OUT/layers-before.json"
+timeout 5 "$HOME/.config/hypr/scripts/quickshell_quick_settings_toggle.sh"
 sleep 1
-qs -c awtarchy ipc call control ping >/dev/null
-hyprctl -j layers >"$OUT/layers-quicksettings.json"
+timeout 2 qs -c awtarchy ipc call control ping >/dev/null
+timeout 5 hyprctl -j layers >"$OUT/layers-quicksettings.json"
 
 jq -e '[.. | objects | select((.namespace? // "") | contains("awtarchy"))] | length > 0' \
     "$OUT/layers-quicksettings.json" >/dev/null 2>&1 || true
 
-grim "$OUT/quicksettings.png" >/dev/null 2>&1 || true
-"$HOME/.config/hypr/scripts/quickshell_quick_settings_toggle.sh"
+# Nested Aquamarine currently has a frame-presentation regression that can make
+# screencopy clients wait forever. A screenshot is diagnostic evidence, not a
+# reason to hang the runtime validation job.
+timeout 5 grim "$OUT/quicksettings.png" >/dev/null 2>&1 || true
+timeout 5 "$HOME/.config/hypr/scripts/quickshell_quick_settings_toggle.sh"
 
 if [[ -f "$HOME/.cache/awtarchy/quickshell.log" ]]; then
     cp "$HOME/.cache/awtarchy/quickshell.log" "$OUT/quickshell.log"
@@ -245,9 +248,9 @@ if [[ -f "$HOME/.cache/awtarchy/quickshell.log" ]]; then
     fi
 fi
 
-hyprctl configerrors >"$OUT/configerrors-final.txt"
+timeout 5 hyprctl configerrors >"$OUT/configerrors-final.txt"
 [[ ! -s "$OUT/configerrors-final.txt" ]]
-qs -c awtarchy ipc call control ping >/dev/null
+timeout 2 qs -c awtarchy ipc call control ping >/dev/null
 printf 'PASS: Xvfb -> Cage -> Hyprland -> Quickshell runtime proof for %s\n' "$TARGET_REF"
 SESSION
 chmod 0755 /tmp/cage-runtime-session.sh
