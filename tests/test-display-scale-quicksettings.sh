@@ -136,6 +136,7 @@ cmp -s "$TMP/hyprland.lua" "$TMP/before-configerror.lua" \
   || fail 'Hyprland config error did not restore the original config'
 
 # Managed history must track the current stock files touched by this feature.
+missing_history=0
 for rel in \
   .config/hypr/scripts/quickshell_display_scale.sh \
   .config/quickshell/awtarchy/BarSettingsSection.qml
@@ -146,8 +147,12 @@ do
     source_file="${ROOT}/${rel}"
   fi
   digest="$(sha256sum "$source_file" | awk '{print $1}')"
-  grep -Fq -- "$digest"$'\t'"$rel" "$HISTORY" \
-    || fail "managed history is missing current display-scale stock hash $digest for $rel"
+  if ! grep -Fq -- "$digest"$'\t'"$rel" "$HISTORY"; then
+    printf 'MISSING_HISTORY_HASH: %s\t%s\n' "$digest" "$rel" >&2
+    missing_history=1
+  fi
 done
+[[ $missing_history -eq 0 ]] \
+  || fail 'managed history is missing current display-scale stock hashes'
 
 printf '%s\n' 'PASS: Quick Settings display scale is focused-display-only, persistent, validated, and rollback-safe.'
