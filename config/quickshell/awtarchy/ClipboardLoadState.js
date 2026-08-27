@@ -65,11 +65,31 @@ function enqueueThumbnail(queue, known, index) {
     return { queue: nextQueue, known: nextKnown };
 }
 
+function requestListLoad(processRunning, processStopping) {
+    var running = processRunning === true;
+    var stopping = processStopping === true;
+    return {
+        startNow: !running && !stopping,
+        stopNow: running && !stopping,
+        restartPending: running || stopping
+    };
+}
+
+function finishListLoad(restartPending, windowVisible) {
+    var startNext = restartPending === true && windowVisible === true;
+    return {
+        startNext: startNext,
+        keepLoading: startNext
+    };
+}
+
 if (typeof module !== "undefined") {
     module.exports = {
         parseRecord: parseRecord,
         appendRecord: appendRecord,
         updateThumbnail: updateThumbnail,
-        enqueueThumbnail: enqueueThumbnail
+        enqueueThumbnail: enqueueThumbnail,
+        requestListLoad: requestListLoad,
+        finishListLoad: finishListLoad
     };
 }

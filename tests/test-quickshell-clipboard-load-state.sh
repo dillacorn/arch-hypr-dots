@@ -37,6 +37,8 @@ assert.deepStrictEqual(helper.appendRecord(entries, "not json"), entries,
   "malformed clipboard records changed the current model");
 
 const withThumbnail = helper.updateThumbnail(entries, 1, "/tmp/cached.png");
+assert.deepStrictEqual(withThumbnail.map(entry => entry.index), [0, 1],
+  "thumbnail update changed the model identity or order");
 assert.strictEqual(withThumbnail[0].thumb, "",
   "thumbnail update changed the wrong clipboard entry");
 assert.strictEqual(withThumbnail[1].thumb, "/tmp/cached.png",
@@ -54,7 +56,37 @@ queueState = helper.enqueueThumbnail(queueState.queue, queueState.known, -1);
 assert.deepStrictEqual(queueState.queue, [1],
   "invalid thumbnail index was accepted");
 
-console.log("PASS: progressive clipboard model preserves order and deduplicates thumbnails.");
+let transition = helper.requestListLoad(false, false);
+assert.deepStrictEqual(transition, {
+  startNow: true,
+  stopNow: false,
+  restartPending: false
+}, "idle clipboard list did not start immediately");
+
+transition = helper.requestListLoad(true, false);
+assert.deepStrictEqual(transition, {
+  startNow: false,
+  stopNow: true,
+  restartPending: true
+}, "active clipboard list was restarted before its old process exited");
+
+transition = helper.requestListLoad(false, true);
+assert.deepStrictEqual(transition, {
+  startNow: false,
+  stopNow: false,
+  restartPending: true
+}, "clipboard reopen did not wait for the stopping process to exit");
+
+assert.deepStrictEqual(helper.finishListLoad(true, true), {
+  startNext: true,
+  keepLoading: true
+}, "pending clipboard restart was not continued after process exit");
+assert.deepStrictEqual(helper.finishListLoad(true, false), {
+  startNext: false,
+  keepLoading: false
+}, "closed clipboard restarted a stale list process");
+
+console.log("PASS: progressive clipboard model preserves stable rows and restart ordering.");
 NODE
 
 require_source 'import "ClipboardLoadState.js" as ClipboardLoadState' \
@@ -63,6 +95,8 @@ require_source 'stdout: SplitParser {' \
   'Clipboard list still waits for the complete process output'
 require_source 'onRead: line => root.appendClipboardRecord(line)' \
   'Clipboard list does not append records as they arrive'
+require_source 'ClipboardLoadState.requestListLoad(' \
+  'Clipboard list does not use the tested stop-before-restart lifecycle'
 require_source 'ClipboardLoadState.enqueueThumbnail(' \
   'Clipboard menu does not deduplicate lazy thumbnail requests'
 require_source '[root.backend, "thumb", String(root.activeThumbnailIndex)]' \
@@ -71,12 +105,16 @@ require_source 'reuseItems: true' \
   'Clipboard list does not recycle delegates while scrolling'
 require_source 'cacheBuffer: 0' \
   'Clipboard list eagerly instantiates rows outside the visible viewport'
+require_source 'objectProp: "index"' \
+  'Clipboard list has no stable key for in-place thumbnail updates'
 require_source 'visible: root.listLoading && root.entries.length === 0' \
   'Clipboard menu has no initial loading state'
 require_source 'text: "Loading clipboard history…"' \
   'Clipboard loading state has no user-visible label'
 require_source 'visible: !root.listLoading && root.entries.length === 0' \
   'Clipboard menu has no empty-history state'
+require_source 'text: "No clipboard matches"' \
+  'Clipboard menu leaves an empty search result blank'
 require_source 'Behavior on opacity {' \
   'Progressively loaded clipboard rows do not animate into view'
 require_source 'duration: Math.min(row.index, 12) * 18' \

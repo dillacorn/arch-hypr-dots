@@ -65,10 +65,16 @@ make_thumb() {
 }
 
 list_items() {
-    local raw label index=0
+    local raw label index=0 list_fd list_pid list_status=0
 
     : >"$RAW_FILE"
-    while (( index < LIST_LIMIT )) && IFS= read -r raw; do
+    coproc AWTARCHY_CLIPHIST_LIST {
+        CLIPHIST_PREVIEW_WIDTH="$PREVIEW_WIDTH" cliphist list
+    }
+    list_pid="$AWTARCHY_CLIPHIST_LIST_PID"
+    exec {list_fd}<&"${AWTARCHY_CLIPHIST_LIST[0]}"
+
+    while (( index < LIST_LIMIT )) && IFS= read -r raw <&"$list_fd"; do
         printf '%s\n' "$raw" >>"$RAW_FILE"
         label="$(printf '%s' "$raw" | strip_id_line)"
 
@@ -79,7 +85,17 @@ list_items() {
             '{index:$index,label:$label,thumb:"",binary:$binary}'
 
         ((index += 1)) || true
-    done < <(CLIPHIST_PREVIEW_WIDTH="$PREVIEW_WIDTH" cliphist list 2>/dev/null || true)
+    done
+
+    exec {list_fd}<&-
+    if (( index >= LIST_LIMIT )) && kill -0 "$list_pid" 2>/dev/null; then
+        kill "$list_pid" 2>/dev/null || true
+        wait "$list_pid" 2>/dev/null || true
+        return 0
+    fi
+
+    wait "$list_pid" || list_status=$?
+    return "$list_status"
 }
 
 decode_item() {

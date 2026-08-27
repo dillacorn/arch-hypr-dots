@@ -28,8 +28,12 @@ set -euo pipefail
 
 case "${1:-}" in
   list)
+    if [[ "${AWTARCHY_CLIPBOARD_FAIL_LIST:-0}" == 1 ]]; then
+      printf 'cliphist fixture: database unavailable\n' >&2
+      exit 23
+    fi
     printf '200\tnewest clipboard entry\n'
-    sleep 1
+    sleep 3
     printf '199\tolder clipboard entry\n'
     ;;
   decode)
@@ -57,7 +61,7 @@ env \
   "$BACKEND" list >"$output" &
 LIST_PID=$!
 
-for _ in {1..25}; do
+for _ in {1..200}; do
   [[ -s "$output" ]] && break
   sleep 0.01
 done
@@ -83,4 +87,21 @@ jq -s -e \
   "$output" >/dev/null \
   || fail 'clipboard history was not streamed newest-first'
 
-printf '%s\n' 'PASS: clipboard history streams newest-first before listing completes.'
+failure_output="${TMPD}/failure.jsonl"
+failure_error="${TMPD}/failure.stderr"
+set +e
+env \
+  PATH="${TMPD}/bin:${PATH}" \
+  XDG_RUNTIME_DIR="${TMPD}/runtime" \
+  AWTARCHY_CLIPBOARD_FAIL_LIST=1 \
+  LIST_LIMIT=10 \
+  "$BACKEND" list >"$failure_output" 2>"$failure_error"
+failure_status=$?
+set -e
+
+[[ "$failure_status" -eq 23 ]] \
+  || fail "clipboard backend swallowed cliphist list failure (status ${failure_status})"
+grep -Fq 'cliphist fixture: database unavailable' "$failure_error" \
+  || fail 'clipboard backend swallowed cliphist list diagnostics'
+
+printf '%s\n' 'PASS: clipboard history streams progressively and reports list failures.'

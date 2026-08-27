@@ -43,8 +43,11 @@ Singleton {
     property var flyoutScreen: null
     property bool listLoading: false
     property string listError: ""
+    property bool listStopping: false
+    property bool listRestartPending: false
     property var thumbnailQueue: []
     property var thumbnailKnown: ({})
+    property bool thumbnailStopping: false
     property int activeThumbnailIndex: -1
     property string activeThumbnailPath: ""
 
@@ -220,10 +223,15 @@ Singleton {
         openPreparing = false;
         if (prepareProcess.running)
             prepareProcess.running = false;
-        if (listProcess.running)
+        listRestartPending = false;
+        if (listProcess.running && !listStopping) {
+            listStopping = true;
             listProcess.running = false;
-        if (thumbnailProcess.running)
+        }
+        if (thumbnailProcess.running && !thumbnailStopping) {
+            thumbnailStopping = true;
             thumbnailProcess.running = false;
+        }
         listLoading = false;
         thumbnailQueue = [];
         thumbnailKnown = ({});
@@ -437,20 +445,56 @@ Singleton {
     }
 
     function beginListLoad() {
-        if (listProcess.running)
+        const transition = ClipboardLoadState.requestListLoad(
+            listProcess.running, listStopping);
+        listRestartPending = transition.restartPending;
+
+        if (transition.stopNow) {
+            listStopping = true;
             listProcess.running = false;
-        if (thumbnailProcess.running)
+        }
+        if (transition.startNow)
+            startListLoadNow();
+    }
+
+    function startListLoadNow() {
+        if (!clipboardWindow.visible) {
+            listLoading = false;
+            listRestartPending = false;
+            return;
+        }
+
+        if (thumbnailProcess.running && !thumbnailStopping) {
+            thumbnailStopping = true;
             thumbnailProcess.running = false;
+        }
 
         entries = [];
         listError = "";
         listLoading = true;
+        listStopping = false;
+        listRestartPending = false;
         thumbnailQueue = [];
         thumbnailKnown = ({});
         activeThumbnailIndex = -1;
         activeThumbnailPath = "";
         clipboardList.currentIndex = -1;
         listProcess.running = true;
+    }
+
+    function finishListProcess(exitCode) {
+        const transition = ClipboardLoadState.finishListLoad(
+            listRestartPending, clipboardWindow.visible);
+        listStopping = false;
+        listRestartPending = false;
+        listLoading = transition.keepLoading;
+
+        if (transition.startNext) {
+            Qt.callLater(() => root.startListLoadNow());
+            return;
+        }
+        if (exitCode !== 0 && listError.length === 0)
+            listError = "Clipboard history could not be loaded";
     }
 
     function appendClipboardRecord(line) {
@@ -477,7 +521,8 @@ Singleton {
     }
 
     function runNextThumbnail() {
-        if (thumbnailProcess.running || thumbnailQueue.length === 0
+        if (thumbnailProcess.running || thumbnailStopping
+                || thumbnailQueue.length === 0
                 || !clipboardWindow.visible)
             return;
 
@@ -513,11 +558,7 @@ Singleton {
                     root.listError = detail.split("\n")[0];
             }
         }
-        onExited: (exitCode, exitStatus) => {
-            root.listLoading = false;
-            if (exitCode !== 0 && root.listError.length === 0)
-                root.listError = "Clipboard history could not be loaded";
-        }
+        onExited: (exitCode, exitStatus) => root.finishListProcess(exitCode)
     }
 
     Process {
@@ -526,6 +567,7 @@ Singleton {
             onStreamFinished: root.activeThumbnailPath = text.trim()
         }
         onExited: (exitCode, exitStatus) => {
+            root.thumbnailStopping = false;
             if (exitCode === 0 && root.activeThumbnailPath.length > 0) {
                 root.entries = ClipboardLoadState.updateThumbnail(
                     root.entries, root.activeThumbnailIndex, root.activeThumbnailPath);
@@ -856,7 +898,10 @@ Singleton {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     visible: !root.detailOpen
-                    model: ScriptModel { values: root.filteredEntries() }
+                    model: ScriptModel {
+                        objectProp: "index"
+                        values: root.filteredEntries()
+                    }
                     clip: true
                     currentIndex: count > 0 ? 0 : -1
                     boundsBehavior: Flickable.StopAtBounds
@@ -1037,7 +1082,8 @@ Singleton {
                     Layout.row: root.bottomEdgeLayout ? 0 : 2
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    visible: !root.detailOpen && root.entries.length === 0
+                    visible: !root.detailOpen
+                        && (root.entries.length === 0 || clipboardList.count === 0)
                     z: 12
 
                     Text {
@@ -1080,6 +1126,18 @@ Singleton {
                         horizontalAlignment: Text.AlignHCenter
                         wrapMode: Text.Wrap
                         width: Math.max(1, parent.width - 40)
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        visible: !root.listLoading && root.entries.length > 0
+                            && clipboardList.count === 0
+                        text: "No clipboard matches"
+                        color: Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Math.max(9,
+                            Math.round(12 * root.effectiveTextScale / 100))
+                        horizontalAlignment: Text.AlignHCenter
                     }
                 }
 
