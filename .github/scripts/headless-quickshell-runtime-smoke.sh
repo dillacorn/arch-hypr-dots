@@ -8,7 +8,7 @@ OUT="${ARTIFACT_DIR}/${SAFE_TARGET}"
 mkdir -p "$OUT"
 
 pacman -Syu --noconfirm --needed \
-    hyprland quickshell jq python dbus mesa mesa-utils wl-clipboard cliphist grim foot weston \
+    hyprland quickshell jq python dbus mesa mesa-utils wl-clipboard cliphist grim foot weston wayland-utils \
     xdg-utils util-linux procps-ng libnotify qt6-wayland ttf-dejavu \
     >"$OUT/pacman.log" 2>&1
 
@@ -72,45 +72,64 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Prefer a real virtual DRM allocator. Mesa selects kms_swrast for VGEM when
-# software rendering is requested, while Hyprland is allowed to use a GPU that
-# has no physical KMS outputs. The resulting compositor creates HEADLESS-0.
-DRM_CARD="$(find /dev/dri -maxdepth 1 -type c -name 'card*' -print -quit 2>/dev/null || true)"
+DRM_CARD=""
+if [[ ${FORCE_NESTED_WESTON:-0} != 1 ]]; then
+    DRM_CARD="$(find /dev/dri -maxdepth 1 -type c -name 'card*' -print -quit 2>/dev/null || true)"
+fi
+
 if [[ -n "$DRM_CARD" ]]; then
     export AQ_DRM_DEVICES="$DRM_CARD"
     export LIBGL_ALWAYS_SOFTWARE=1
     printf 'direct-drm:%s\n' "$DRM_CARD" >"$OUT/backend-mode.txt"
 else
-    # Fallback: give Aquamarine a real outer Wayland compositor. Weston itself
-    # is fully software rendered and needs no host GPU.
+    # Aquamarine's nested Wayland backend requires a real Wayland compositor
+    # with dmabuf support. Weston headless + GL is software rendered by Mesa's
+    # llvmpipe here, but still uses the GL renderer rather than the pixman path.
     WESTON_SOCKET=wayland-awtarchy-ci
-    LIBGL_ALWAYS_SOFTWARE=1 weston \
+    export LIBGL_ALWAYS_SOFTWARE=1
+    weston \
         -B headless \
-        --renderer=pixman \
+        --renderer=gl \
         --socket="$WESTON_SOCKET" \
         --width=1920 \
         --height=1080 \
         --log="$WESTON_LOG" &
     WESTON_PID=$!
 
-    for _ in $(seq 1 100); do
+    for _ in $(seq 1 120); do
         [[ -S "$XDG_RUNTIME_DIR/$WESTON_SOCKET" ]] && break
         if ! kill -0 "$WESTON_PID" 2>/dev/null; then
-            printf '%s\n' 'Weston fallback exited before creating its Wayland socket.' >&2
+            printf '%s\n' 'Weston GL fallback exited before creating its Wayland socket.' >&2
             cat "$WESTON_LOG" >&2
             exit 1
         fi
         sleep 0.1
     done
     [[ -S "$XDG_RUNTIME_DIR/$WESTON_SOCKET" ]] || {
-        printf '%s\n' 'Timed out waiting for Weston fallback.' >&2
+        printf '%s\n' 'Timed out waiting for Weston GL fallback.' >&2
         cat "$WESTON_LOG" >&2
         exit 1
     }
 
+    WAYLAND_DISPLAY="$WESTON_SOCKET" wayland-info >"$OUT/outer-wayland-info.txt" 2>&1 || {
+        printf '%s\n' 'wayland-info could not inspect the outer Weston compositor.' >&2
+        cat "$OUT/outer-wayland-info.txt" >&2
+        exit 1
+    }
+
+    for required in wl_shm wl_seat xdg_wm_base zwp_linux_dmabuf_v1; do
+        if ! grep -Fq -- "$required" "$OUT/outer-wayland-info.txt"; then
+            printf 'Outer Weston is missing required Wayland global: %s\n' "$required" >&2
+            cat "$OUT/outer-wayland-info.txt" >&2
+            exit 1
+        fi
+    done
+
     export WAYLAND_DISPLAY="$WESTON_SOCKET"
-    unset LIBGL_ALWAYS_SOFTWARE
-    printf 'nested-wayland:%s\n' "$WESTON_SOCKET" >"$OUT/backend-mode.txt"
+    unset AQ_DRM_DEVICES
+    # Keep LIBGL_ALWAYS_SOFTWARE=1 so both Weston and nested Hyprland use Mesa
+    # software rendering instead of trying the Azure VM's unrelated DRM node.
+    printf 'nested-wayland-gl:%s\n' "$WESTON_SOCKET" >"$OUT/backend-mode.txt"
 fi
 
 {
@@ -191,7 +210,6 @@ fi
 qs -c awtarchy list --json >"$OUT/quickshell-instances.json"
 hyprctl -j layers >"$OUT/layers-before.json"
 
-# Open the real Quick Settings surface and verify the shell survives it.
 "$HOME/.config/hypr/scripts/quickshell_quick_settings_toggle.sh"
 sleep 0.8
 qs -c awtarchy ipc call control ping >/dev/null
@@ -315,5 +333,8 @@ SESSION
 chmod 0755 /tmp/runtime-session.sh
 chown tester:tester /tmp/runtime-session.sh "$OUT"
 
-runuser -u tester -- env TARGET_REF="$TARGET_REF" OUT="$OUT" \
+runuser -u tester -- env \
+    TARGET_REF="$TARGET_REF" \
+    OUT="$OUT" \
+    FORCE_NESTED_WESTON="${FORCE_NESTED_WESTON:-0}" \
     dbus-run-session -- /tmp/runtime-session.sh
