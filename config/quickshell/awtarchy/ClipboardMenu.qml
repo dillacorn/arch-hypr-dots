@@ -7,6 +7,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
+import "ClipboardLoadState.js" as ClipboardLoadState
 import "FlyoutEdgeLayout.js" as FlyoutEdgeLayout
 
 Singleton {
@@ -40,6 +41,12 @@ Singleton {
     property bool panelPresented: false
     readonly property int panelFadeDuration: 140
     property var flyoutScreen: null
+    property bool listLoading: false
+    property string listError: ""
+    property var thumbnailQueue: []
+    property var thumbnailKnown: ({})
+    property int activeThumbnailIndex: -1
+    property string activeThumbnailPath: ""
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string backend: configHome + "/hypr/scripts/quickshell_clipboard.sh"
@@ -143,7 +150,7 @@ Singleton {
         clipboardWindow.visible = true;
         if (wasVisible)
             Qt.callLater(() => root.positionWindow());
-        listProcess.running = true;
+        beginListLoad();
         Qt.callLater(() => {
             clipboardList.positionViewAtBeginning();
             search.forceActiveFocus();
@@ -213,6 +220,15 @@ Singleton {
         openPreparing = false;
         if (prepareProcess.running)
             prepareProcess.running = false;
+        if (listProcess.running)
+            listProcess.running = false;
+        if (thumbnailProcess.running)
+            thumbnailProcess.running = false;
+        listLoading = false;
+        thumbnailQueue = [];
+        thumbnailKnown = ({});
+        activeThumbnailIndex = -1;
+        activeThumbnailPath = "";
         if (settingsDirty)
             discardDraft();
         clipboardWindow.visible = false;
@@ -420,6 +436,58 @@ Singleton {
         return scored.map(item => item.entry);
     }
 
+    function beginListLoad() {
+        if (listProcess.running)
+            listProcess.running = false;
+        if (thumbnailProcess.running)
+            thumbnailProcess.running = false;
+
+        entries = [];
+        listError = "";
+        listLoading = true;
+        thumbnailQueue = [];
+        thumbnailKnown = ({});
+        activeThumbnailIndex = -1;
+        activeThumbnailPath = "";
+        clipboardList.currentIndex = -1;
+        listProcess.running = true;
+    }
+
+    function appendClipboardRecord(line) {
+        const nextEntries = ClipboardLoadState.appendRecord(entries, line);
+        if (nextEntries.length === entries.length) {
+            console.warn("Awtarchy clipboard record parse failed:", String(line));
+            return;
+        }
+
+        const firstEntry = entries.length === 0;
+        entries = nextEntries;
+        if (firstEntry) {
+            clipboardList.currentIndex = 0;
+            Qt.callLater(() => clipboardList.positionViewAtBeginning());
+        }
+    }
+
+    function queueThumbnail(index) {
+        const nextState = ClipboardLoadState.enqueueThumbnail(
+            thumbnailQueue, thumbnailKnown, index);
+        thumbnailQueue = nextState.queue;
+        thumbnailKnown = nextState.known;
+        runNextThumbnail();
+    }
+
+    function runNextThumbnail() {
+        if (thumbnailProcess.running || thumbnailQueue.length === 0
+                || !clipboardWindow.visible)
+            return;
+
+        activeThumbnailIndex = thumbnailQueue[0];
+        thumbnailQueue = thumbnailQueue.slice(1);
+        activeThumbnailPath = "";
+        thumbnailProcess.exec(
+            [root.backend, "thumb", String(root.activeThumbnailIndex)]);
+    }
+
     IpcHandler {
         target: "clipboard"
         function toggle(): void { root.toggleFocused(); }
@@ -435,17 +503,36 @@ Singleton {
     Process {
         id: listProcess
         command: [root.backend, "list"]
-        stdout: StdioCollector {
+        stdout: SplitParser {
+            onRead: line => root.appendClipboardRecord(line)
+        }
+        stderr: StdioCollector {
             onStreamFinished: {
-                try {
-                    root.entries = JSON.parse(text.trim() || "[]");
-                    clipboardList.currentIndex = root.entries.length > 0 ? 0 : -1;
-                    Qt.callLater(() => clipboardList.positionViewAtBeginning());
-                } catch (error) {
-                    console.warn("Awtarchy clipboard list parse failed:", error);
-                    root.entries = [];
-                }
+                const detail = text.trim();
+                if (detail.length > 0)
+                    root.listError = detail.split("\n")[0];
             }
+        }
+        onExited: (exitCode, exitStatus) => {
+            root.listLoading = false;
+            if (exitCode !== 0 && root.listError.length === 0)
+                root.listError = "Clipboard history could not be loaded";
+        }
+    }
+
+    Process {
+        id: thumbnailProcess
+        stdout: StdioCollector {
+            onStreamFinished: root.activeThumbnailPath = text.trim()
+        }
+        onExited: (exitCode, exitStatus) => {
+            if (exitCode === 0 && root.activeThumbnailPath.length > 0) {
+                root.entries = ClipboardLoadState.updateThumbnail(
+                    root.entries, root.activeThumbnailIndex, root.activeThumbnailPath);
+            }
+            root.activeThumbnailIndex = -1;
+            root.activeThumbnailPath = "";
+            Qt.callLater(() => root.runNextThumbnail());
         }
     }
 
@@ -773,6 +860,8 @@ Singleton {
                     clip: true
                     currentIndex: count > 0 ? 0 : -1
                     boundsBehavior: Flickable.StopAtBounds
+                    reuseItems: true
+                    cacheBuffer: 0
                     verticalLayoutDirection: root.bottomEdgeLayout
                         ? ListView.BottomToTop : ListView.TopToBottom
 
@@ -781,6 +870,7 @@ Singleton {
                         required property var modelData
                         required property int index
                         width: ListView.view.width
+                        opacity: 0
                         readonly property string thumbnailPath: modelData && modelData.thumb
                             ? String(modelData.thumb) : ""
                         readonly property bool hasThumbnail: thumbnailPath.length > 0
@@ -796,6 +886,31 @@ Singleton {
                             ? thumbnailSize + 20
                             : Math.max(40, Math.round(44 * root.effectiveTextScale / 100))
                         color: previewBackground
+
+                        function queueThumbnailIfNeeded() {
+                            if (modelData && modelData.binary === true
+                                    && thumbnailPath.length === 0)
+                                root.queueThumbnail(modelData.index);
+                        }
+
+                        Component.onCompleted: {
+                            queueThumbnailIfNeeded();
+                            opacity = 1;
+                        }
+                        onModelDataChanged: queueThumbnailIfNeeded()
+
+                        Behavior on opacity {
+                            enabled: FlyoutManager.animationsEnabled
+                            SequentialAnimation {
+                                PauseAnimation {
+                                    duration: Math.min(row.index, 12) * 18
+                                }
+                                NumberAnimation {
+                                    duration: 110
+                                    easing.type: Easing.OutCubic
+                                }
+                            }
+                        }
 
                         RowLayout {
                             anchors.fill: parent
@@ -915,6 +1030,56 @@ Singleton {
                         anchors.right: parent.right
                         flickable: clipboardList
                         z: 10
+                    }
+                }
+
+                Item {
+                    Layout.row: root.bottomEdgeLayout ? 0 : 2
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    visible: !root.detailOpen && root.entries.length === 0
+                    z: 12
+
+                    Text {
+                        id: loadingLabel
+                        anchors.centerIn: parent
+                        visible: root.listLoading && root.entries.length === 0
+                        text: "Loading clipboard history…"
+                        color: Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Math.max(9,
+                            Math.round(12 * root.effectiveTextScale / 100))
+
+                        SequentialAnimation on opacity {
+                            running: loadingLabel.visible && FlyoutManager.animationsEnabled
+                            loops: Animation.Infinite
+                            NumberAnimation {
+                                from: 0.45
+                                to: 1
+                                duration: 520
+                                easing.type: Easing.InOutSine
+                            }
+                            NumberAnimation {
+                                from: 1
+                                to: 0.45
+                                duration: 520
+                                easing.type: Easing.InOutSine
+                            }
+                        }
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        visible: !root.listLoading && root.entries.length === 0
+                        text: root.listError.length > 0
+                            ? root.listError : "Clipboard history is empty"
+                        color: root.listError.length > 0 ? Theme.urgent : Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Math.max(9,
+                            Math.round(12 * root.effectiveTextScale / 100))
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.Wrap
+                        width: Math.max(1, parent.width - 40)
                     }
                 }
 

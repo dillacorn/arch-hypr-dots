@@ -11,7 +11,6 @@ RAW_FILE="${RUNTIME_DIR}/clipboard.raw"
 THUMB_DIR="${RUNTIME_DIR}/clipboard-thumbs"
 LIST_LIMIT="${LIST_LIMIT:-60}"
 PREVIEW_WIDTH="${PREVIEW_WIDTH:-1000}"
-THUMB_LIMIT="${THUMB_LIMIT:-30}"
 THUMB_SIZE="${THUMB_SIZE:-512}"
 DECODE_TIMEOUT="${DECODE_TIMEOUT:-0.70s}"
 
@@ -31,7 +30,6 @@ need sha1sum
 need timeout
 need sed
 need grep
-need head
 
 strip_id_line() {
     sed -E 's/^[0-9]+\t//'
@@ -67,39 +65,21 @@ make_thumb() {
 }
 
 list_items() {
-    local raw label thumb made=0 index=0 tmp_json
+    local raw label index=0
 
-    CLIPHIST_PREVIEW_WIDTH="$PREVIEW_WIDTH" cliphist list 2>/dev/null \
-        | head -n "$LIST_LIMIT" >"$RAW_FILE" || true
-    [[ -s "$RAW_FILE" ]] || { printf '[]\n'; return 0; }
-
-    tmp_json="${RUNTIME_DIR}/clipboard.jsonl"
-    : >"$tmp_json"
-
-    while IFS= read -r raw; do
+    : >"$RAW_FILE"
+    while (( index < LIST_LIMIT )) && IFS= read -r raw; do
+        printf '%s\n' "$raw" >>"$RAW_FILE"
         label="$(printf '%s' "$raw" | strip_id_line)"
-        thumb=""
-
-        if is_binary_row "$raw" && (( made < THUMB_LIMIT )); then
-            if thumb="$(make_thumb "$raw" 2>/dev/null)"; then
-                ((made += 1)) || true
-            else
-                thumb=""
-            fi
-        fi
 
         jq -cn \
             --argjson index "$index" \
             --arg label "$label" \
-            --arg thumb "$thumb" \
             --argjson binary "$(is_binary_row "$raw" && printf true || printf false)" \
-            '{index:$index,label:$label,thumb:$thumb,binary:$binary}' >>"$tmp_json"
+            '{index:$index,label:$label,thumb:"",binary:$binary}'
 
         ((index += 1)) || true
-    done <"$RAW_FILE"
-
-    jq -s '.' "$tmp_json"
-    rm -f -- "$tmp_json"
+    done < <(CLIPHIST_PREVIEW_WIDTH="$PREVIEW_WIDTH" cliphist list 2>/dev/null || true)
 }
 
 decode_item() {
@@ -114,6 +94,20 @@ decode_item() {
     is_binary_row "$raw" && exit 3
 
     cliphist decode <<<"$raw"
+}
+
+thumbnail_item() {
+    local index="${1:-}"
+    local raw
+
+    [[ "$index" =~ ^[0-9]+$ ]] || exit 2
+    [[ -r "$RAW_FILE" ]] || exit 1
+
+    raw="$(sed -n "$((index + 1))p" "$RAW_FILE")"
+    [[ -n "$raw" ]] || exit 1
+    is_binary_row "$raw" || exit 3
+
+    make_thumb "$raw"
 }
 
 select_item() {
@@ -132,9 +126,10 @@ select_item() {
 case "${1:-list}" in
     list) list_items ;;
     decode) decode_item "${2:-}" ;;
+    thumb) thumbnail_item "${2:-}" ;;
     select) select_item "${2:-}" ;;
     *)
-        printf 'usage: %s [list|decode INDEX|select INDEX]\n' "$0" >&2
+        printf 'usage: %s [list|decode INDEX|thumb INDEX|select INDEX]\n' "$0" >&2
         exit 2
         ;;
 esac

@@ -42,6 +42,7 @@ jobs:
           bash -n config/hypr/scripts/gif_capture.sh
           bash -n config/hypr/scripts/quickshell.sh
           bash -n config/hypr/scripts/quickshell_application_state.sh
+          bash -n config/hypr/scripts/quickshell_clipboard.sh
           bash -n config/hypr/scripts/quickshell_update_notifications.sh
           bash -n config/hypr/scripts/quickshell_bar_restore.sh
           bash -n config/hypr/scripts/quickshell_battery_care.sh
@@ -94,6 +95,9 @@ jobs:
           bash -n tests/test-power-profile-inline-auth.sh
           bash -n tests/test-quickshell-backend-readiness.sh
           bash -n tests/test-quickshell-capture-privacy.sh
+          bash -n tests/test-quickshell-clipboard-load-state.sh
+          bash -n tests/test-quickshell-clipboard-progressive.sh
+          bash -n tests/test-quickshell-clipboard-thumbnails.sh
           bash -n tests/test-quickshell-process-lifecycle.sh
           bash -n tests/test-quickshell-production-readiness.sh
           bash -n tests/test-quickshell-updater-migration.sh
@@ -133,6 +137,7 @@ jobs:
             config/hypr/scripts/quickshell_bar_restore.sh \
             config/hypr/scripts/quickshell_battery_care.sh \
             config/hypr/scripts/quickshell_battery_health.sh \
+            config/hypr/scripts/quickshell_clipboard.sh \
             config/hypr/scripts/quickshell_launcher_position.sh \
             config/hypr/scripts/quickshell_update_notifications.sh \
             config/hypr/scripts/quickshell_notification_layout_demo.sh \
@@ -177,6 +182,9 @@ jobs:
             tests/test-power-profile-helper-update.sh \
             tests/test-power-profile-inline-auth.sh \
             tests/test-quickshell-backend-readiness.sh \
+            tests/test-quickshell-clipboard-load-state.sh \
+            tests/test-quickshell-clipboard-progressive.sh \
+            tests/test-quickshell-clipboard-thumbnails.sh \
             tests/test-quickshell-process-lifecycle.sh \
             tests/test-quickshell-updater-migration.sh \
             tests/test-hyprbars-quicksettings.sh \
@@ -241,6 +249,9 @@ jobs:
           bash tests/test-power-profile-inline-auth.sh
           bash tests/test-quickshell-backend-readiness.sh
           bash tests/test-quickshell-capture-privacy.sh
+          bash tests/test-quickshell-clipboard-load-state.sh
+          bash tests/test-quickshell-clipboard-progressive.sh
+          bash tests/test-quickshell-clipboard-thumbnails.sh
           bash tests/test-quickshell-process-lifecycle.sh
           bash tests/test-quickshell-production-readiness.sh
           bash tests/test-hyprbars-quicksettings.sh
