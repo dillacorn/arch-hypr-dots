@@ -3139,7 +3139,12 @@ awtarchy_polkit_user_command() {
 }
 
 awtarchy_polkit_recover_session_environment() {
-  local line key value
+  local target_uid runtime_dir line key value
+  target_uid="$(awtarchy_polkit_target_uid)" || return 1
+  runtime_dir="/run/user/${target_uid}"
+  [[ -d "$runtime_dir" && -S "${runtime_dir}/bus" ]] || return 1
+  export XDG_RUNTIME_DIR="$runtime_dir"
+  export DBUS_SESSION_BUS_ADDRESS="unix:path=${runtime_dir}/bus"
 
   if [[ -n "${WAYLAND_DISPLAY:-}" && -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" && -n "${XDG_SESSION_ID:-}" ]]; then
     return 0
@@ -7954,6 +7959,7 @@ main() {
   need_cmd sha256sum
 
   init_target_user
+  awtarchy_polkit_recover_session_environment || true
   acquire_lock
   curl_headers
 
