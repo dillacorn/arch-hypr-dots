@@ -1,0 +1,59 @@
+name: Apply Floating Windows Game Rule
+
+on:
+  push:
+    branches:
+      - feature/floating-windows-default
+    paths:
+      - '.github/workflows/apply-floating-windows-game-rule.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/floating-windows-default
+      - name: Apply exact game exception
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('config/hypr/hyprland.lua')
+          text = path.read_text()
+          old = '''local awtarchy_floating_windows = false -- AWTARCHY_FLOATING_WINDOWS
+if awtarchy_floating_windows then
+    hl.window_rule({ match = { class = ".*" }, float = true })
+end
+
+-- Games: send to workspace 1, strip effects, fullscreen, allow tearing, keep awake
+-- Note: Proton/Wine windows often have class like "game.exe" (not "Wine"), so we also match *.exe.
+local games = "^(steam_app_.*|lutris_game_class|minigalaxy|playnite_game_class|gamescope|chiaki|moonlight|com\\\\.moonlight_stream\\\\.Moonlight|.*\\\\.exe)$"
+'''
+          new = '''local awtarchy_floating_windows = false -- AWTARCHY_FLOATING_WINDOWS
+
+-- Games: send to workspace 1, strip effects, fullscreen, allow tearing, keep awake
+-- Note: Proton/Wine windows often have class like "game.exe" (not "Wine"), so we also match *.exe.
+local games = "^(steam_app_.*|lutris_game_class|minigalaxy|playnite_game_class|gamescope|chiaki|moonlight|com\\\\.moonlight_stream\\\\.Moonlight|.*\\\\.exe)$"
+
+if awtarchy_floating_windows then
+    hl.window_rule({ match = { class = ".*" }, float = true })
+    hl.window_rule({ match = { class = games }, tile = true })
+end
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'hyprland.lua guard failed: expected one floating/game block, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          git diff --check
+          git diff -- config/hypr/hyprland.lua
+      - name: Commit exact game exception
+        run: |
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add -- config/hypr/hyprland.lua
+          git diff --cached --quiet && exit 1
+          git commit -m 'fix: keep games tiled with floating default'
+          git push origin HEAD:feature/floating-windows-default
