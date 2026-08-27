@@ -46,6 +46,16 @@ assert.strictEqual(withThumbnail[1].thumb, "/tmp/cached.png",
 assert.strictEqual(entries[1].thumb, "",
   "thumbnail update mutated the prior model in place");
 
+const afterDelete = helper.removeRecord(withThumbnail, 1);
+assert.deepStrictEqual(afterDelete.map(entry => entry.index), [0],
+  "in-place clipboard deletion did not remove exactly the requested stable entry");
+assert.deepStrictEqual(withThumbnail.map(entry => entry.index), [0, 1],
+  "in-place clipboard deletion mutated the prior model");
+assert.notStrictEqual(afterDelete, withThumbnail,
+  "in-place clipboard deletion did not return an independently owned list");
+assert.deepStrictEqual(helper.removeRecord(withThumbnail, 99), withThumbnail,
+  "deleting an absent clipboard index changed the model");
+
 let queueState = helper.enqueueThumbnail([], {}, 1);
 assert.deepStrictEqual(queueState.queue, [1],
   "binary clipboard entry was not queued for lazy thumbnail loading");
@@ -105,7 +115,7 @@ assert.deepStrictEqual(helper.finishListLoad(true, false), {
   keepLoading: false
 }, "closed clipboard restarted a stale list process");
 
-console.log("PASS: progressive clipboard model preserves stable rows, wildcard matching, and restart ordering.");
+console.log("PASS: progressive clipboard model preserves stable rows, in-place deletion, wildcard matching, and restart ordering.");
 NODE
 
 require_source 'import "ClipboardLoadState.js" as ClipboardLoadState' \
@@ -150,18 +160,49 @@ require_source 'id: clipboardDetail' \
   'Clipboard detail surface is not inside the shared clipboard content container'
 require_source 'function deleteEntry(entry)' \
   'Clipboard menu has no per-entry delete action'
+require_source 'deletingEntryIndex = entry.index;' \
+  'Clipboard delete action does not remember the stable backend row index'
+require_source 'deleteViewportY = clipboardList.contentY;' \
+  'Clipboard delete action does not capture the current viewport'
 require_source 'deleteProcess.exec([backend, "delete", String(entry.index)]);' \
   'Clipboard delete action does not target the stable backend row index'
+require_source 'ClipboardLoadState.removeRecord(entries, deletedIndex)' \
+  'Successful clipboard deletion does not remove only the deleted live row'
+require_source 'clipboardList.contentY = Math.max(minY, Math.min(maxY, savedY));' \
+  'Clipboard deletion does not restore the prior viewport after the model update'
 require_source 'id: deleteProcess' \
   'Clipboard deletion does not use a dedicated process lifecycle'
-require_source 'if (exitCode === 0 && root.clipboardWindowVisible())' \
-  'Clipboard deletion does not preserve the open flyout before refreshing'
-require_source 'root.beginListLoad();' \
-  'Clipboard deletion does not refresh the progressive list after success'
+require_source 'onExited: (exitCode, exitStatus) => root.finishDelete(exitCode)' \
+  'Clipboard deletion does not use the in-place completion path'
 require_source 'id: deleteButton' \
   'Clipboard rows have no permanent-delete control'
 require_source 'root.deleteEntry(row.modelData);' \
   'Clipboard row delete control is not wired to the selected model entry'
+
+python3 - "$QML" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+text = Path(sys.argv[1]).read_text()
+match = re.search(r'Process \{\n\s+id: deleteProcess(?P<body>.*?)\n\s+\}', text, re.S)
+if not match:
+    raise SystemExit('FAIL: could not isolate clipboard delete process')
+if 'beginListLoad' in match.group('body'):
+    raise SystemExit('FAIL: clipboard deletion still reloads the full list and resets the viewport')
+
+finish = re.search(r'function finishDelete\(exitCode\) \{(?P<body>.*?)\n    \}', text, re.S)
+if not finish:
+    raise SystemExit('FAIL: clipboard menu has no in-place delete completion function')
+if 'beginListLoad' in finish.group('body'):
+    raise SystemExit('FAIL: in-place clipboard delete completion still performs a full list reload')
+
+open_block = re.search(r'function finishPreparedOpen\(\) \{(?P<body>.*?)\n    \}', text, re.S)
+if not open_block or 'clipboardList.positionViewAtBeginning();' not in open_block.group('body'):
+    raise SystemExit('FAIL: normal clipboard opening no longer starts at the configured edge')
+
+print('PASS: deletion preserves the live viewport while normal opening still starts at the configured edge.')
+PY
 
 # Real-session diagnostics exposed both failures this section guards: recycled
 # delegates produced negative animation durations, and list/status/detail items
@@ -176,4 +217,4 @@ if grep -A5 -F 'id: clipboardDetail' "$QML" | grep -Fq 'Layout.row:'; then
   fail 'Clipboard detail surface still participates directly in the outer GridLayout'
 fi
 
-# Per-entry deletion is permanent and must preserve the flyout while refreshing.
+printf '%s\n' 'Clipboard progressive-load regression test passed.'
