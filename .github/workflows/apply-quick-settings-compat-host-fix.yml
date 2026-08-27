@@ -24,7 +24,6 @@ jobs:
           python3 -c 'from pathlib import Path; p=Path("config/quickshell/awtarchy/QuickSettings.qml"); t=p.read_text(encoding="utf-8"); old="                        PowerModeCard {\n                            active: quickSettingsWindow.visible\n                            textScale: root.effectiveTextScale\n                            iconScale: root.effectiveIconScale\n                        }\n"; anchor="            GridLayout {\n                anchors.fill: parent\n                columns: 1\n"; compat="            PowerModeCard {\n                active: quickSettingsWindow.visible\n                textScale: root.effectiveTextScale\n                iconScale: root.effectiveIconScale\n            }\n\n"; assert t.count(old)==1, t.count(old); assert t.count(anchor)==1, t.count(anchor); t=t.replace(old, "", 1); t=t.replace(anchor, compat+anchor, 1); p.write_text(t, encoding="utf-8")'
           bash tests/test-bar-fullscreen-visibility.sh
           bash tests/test-quick-settings-spacing.sh
-          bash tests/test-hyprbars-quicksettings.sh
           git diff --check
           history='local/share/awtarchy/quickshell-managed-history.sha256'
           path='.config/quickshell/awtarchy/QuickSettings.qml'
@@ -32,6 +31,7 @@ jobs:
           entry="${digest}"$'\t'"${path}"
           grep -Fxq -- "$entry" "$history" || printf '%s\n' "$entry" >> "$history"
           printf 'Recorded QuickSettings.qml SHA-256: %s\n' "$digest"
+          bash tests/test-hyprbars-quicksettings.sh
       - name: Commit fix
         run: |
           set -Eeuo pipefail
