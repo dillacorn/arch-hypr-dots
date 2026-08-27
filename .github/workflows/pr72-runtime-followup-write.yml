@@ -23,6 +23,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          # The patcher owns exact-match guards; focused tests verify behavior.
           python3 .github/pr72-runtime-followup.py
           bash tests/test-quickshell-clipboard-load-state.sh
           bash tests/test-quickshell-clipboard-progressive.sh
