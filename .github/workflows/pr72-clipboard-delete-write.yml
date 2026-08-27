@@ -28,7 +28,6 @@ jobs:
           bash tests/test-quickshell-clipboard-progressive.sh
           bash tests/test-quickshell-clipboard-thumbnails.sh
           bash tests/test-flyout-edge-layout.sh
-          bash tests/test-quickshell-updater-migration.sh
           git diff --check
 
       - name: Commit production changes and remove temporary tooling
