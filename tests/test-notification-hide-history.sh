@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
+# Runtime contract: body clicks preserve history; Clear visibly slides cards out.
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 NOTIFICATIONS="${ROOT}/config/quickshell/awtarchy/Notifications.qml"
 CARD="${ROOT}/config/quickshell/awtarchy/NotificationCard.qml"
