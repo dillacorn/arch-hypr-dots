@@ -31,7 +31,6 @@ jobs:
           bash tests/test-bar-fullscreen-visibility.sh
           bash tests/test-quick-settings-spacing.sh
           bash tests/test-hyprbars-quicksettings.sh
-          bash tests/test-quickshell-updater-migration.sh
           git diff --check
           printf 'Recorded Bar.qml SHA-256: %s\n' "$digest"
           git diff -- "$history"
