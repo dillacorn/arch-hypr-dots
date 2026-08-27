@@ -4,8 +4,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/test-headless-quickshell-runtime.yml'
-      - '.github/scripts/headless-quickshell-runtime-smoke.sh'
-      - '.github/scripts/nested-cage-hyprland-runtime-proof.sh'
+      - '.github/scripts/qemu-arch-hyprland-runtime-proof.sh'
   workflow_dispatch:
 
 permissions:
@@ -177,45 +176,46 @@ jobs:
 
           printf '%s\n' 'PASS: #72-#75 compose with only the intentional #74/#75 Quick Settings integration.'
 
-  headless-runtime:
-    name: Nested Cage runtime proof
+  qemu-runtime:
+    name: Real Arch QEMU runtime proof
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           fetch-depth: 0
+      - name: Install QEMU runtime tools
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 qemu-utils cloud-image-utils openssh-client
       - name: Preserve harness and check out exact feature head
         shell: bash
         env:
           TARGET_REF: feature/quick-settings-layout-customization
         run: |
           set -Eeuo pipefail
-          cp .github/scripts/nested-cage-hyprland-runtime-proof.sh /tmp/nested-cage-hyprland-runtime-proof.sh
-          chmod 0755 /tmp/nested-cage-hyprland-runtime-proof.sh
+          cp .github/scripts/qemu-arch-hyprland-runtime-proof.sh /tmp/qemu-arch-hyprland-runtime-proof.sh
+          chmod 0755 /tmp/qemu-arch-hyprland-runtime-proof.sh
           git fetch origin "+refs/heads/${TARGET_REF}:refs/remotes/origin/${TARGET_REF}"
           git switch --detach "origin/${TARGET_REF}"
           printf 'Target: %s\n' "$TARGET_REF"
           git rev-parse HEAD
-      - name: Run Xvfb, Cage, Hyprland and Quickshell
+      - name: Boot Arch VM and run Hyprland plus Quickshell
         shell: bash
         env:
           TARGET_REF: feature/quick-settings-layout-customization
         run: |
           set -Eeuo pipefail
           mkdir -p runtime-artifacts
-          docker run --rm \
-            -e "TARGET_REF=${TARGET_REF}" \
-            -e ARTIFACT_DIR=/artifacts \
-            -v "$PWD:/repo:ro" \
-            -v "/tmp/nested-cage-hyprland-runtime-proof.sh:/runtime-proof.sh:ro" \
-            -v "$PWD/runtime-artifacts:/artifacts" \
-            archlinux:base-devel \
-            bash /runtime-proof.sh
+          timeout --signal=TERM --kill-after=20s 17m \
+            env TARGET_REF="$TARGET_REF" ARTIFACT_DIR="$PWD/runtime-artifacts" \
+            /tmp/qemu-arch-hyprland-runtime-proof.sh
       - name: Upload runtime evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nested-cage-runtime-proof
+          name: qemu-arch-runtime-proof
           path: runtime-artifacts/
           if-no-files-found: warn
           retention-days: 3
