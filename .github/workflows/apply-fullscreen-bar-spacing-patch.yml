@@ -1,0 +1,111 @@
+name: Apply Fullscreen Bar Spacing Patch
+
+on:
+  push:
+    branches:
+      - fix/fullscreen-bar-and-quick-settings-spacing
+    paths:
+      - '.github/workflows/apply-fullscreen-bar-spacing-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: fix/fullscreen-bar-and-quick-settings-spacing
+          fetch-depth: 0
+
+      - name: Apply exact source changes
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          bar_path = Path("config/quickshell/awtarchy/Bar.qml")
+          bar = bar_path.read_text(encoding="utf-8")
+
+          old_visible = "    visible: monitorName.length > 0 && BarState.enabledFor(monitorName)\n"
+          new_visible = (
+              "    visible: monitorName.length > 0\n"
+              "        && BarState.enabledFor(monitorName)\n"
+              "        && !workspaceFullscreenForMonitor(monitorName)\n"
+          )
+          if bar.count(old_visible) != 1:
+              raise SystemExit("Bar.qml visibility target did not match exactly once")
+
+          focus_anchor = "    function focusWorkspace(selector) {\n"
+          fullscreen_helper = (
+              "    function workspaceFullscreenForMonitor(name) {\n"
+              "        return Hyprland.workspaces.values.some(workspace =>\n"
+              "            workspace.monitor && workspace.monitor.name === name\n"
+              "                && workspace.active && workspace.hasFullscreen);\n"
+              "    }\n\n"
+          )
+          if bar.count(focus_anchor) != 1:
+              raise SystemExit("Bar.qml focusWorkspace anchor did not match exactly once")
+          if "function workspaceFullscreenForMonitor(name)" in bar:
+              raise SystemExit("Bar.qml fullscreen helper already exists")
+
+          bar = bar.replace(old_visible, new_visible, 1)
+          bar = bar.replace(focus_anchor, fullscreen_helper + focus_anchor, 1)
+          bar_path.write_text(bar, encoding="utf-8")
+
+          quick_path = Path("config/quickshell/awtarchy/QuickSettings.qml")
+          quick = quick_path.read_text(encoding="utf-8")
+          power_block = (
+              "                        PowerModeCard {\n"
+              "                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 2, 12)\n"
+              "                            active: quickSettingsWindow.visible\n"
+              "                            textScale: root.effectiveTextScale\n"
+              "                            iconScale: root.effectiveIconScale\n"
+              "                        }\n\n"
+          )
+          if quick.count(power_block) != 1:
+              raise SystemExit("QuickSettings.qml PowerModeCard target did not match exactly once")
+
+          row_re = re.compile(
+              r"FlyoutEdgeLayout\.sectionRow\(root\.bottomEdgeLayout,\s*(\d+),\s*12\)"
+          )
+          before = [int(value) for value in row_re.findall(quick)]
+          if sorted(before) != list(range(12)):
+              raise SystemExit(f"Unexpected Quick Settings row map before patch: {before}")
+
+          quick = quick.replace(power_block, "", 1)
+
+          def normalize_row(match: re.Match[str]) -> str:
+              index = int(match.group(1))
+              if index == 2:
+                  raise SystemExit("Dead Power Mode row remained after block removal")
+              new_index = index if index < 2 else index - 1
+              return f"FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, {new_index}, 11)"
+
+          quick = row_re.sub(normalize_row, quick)
+
+          normalized_re = re.compile(
+              r"FlyoutEdgeLayout\.sectionRow\(root\.bottomEdgeLayout,\s*(\d+),\s*11\)"
+          )
+          after = [int(value) for value in normalized_re.findall(quick)]
+          if sorted(after) != list(range(11)):
+              raise SystemExit(f"Unexpected Quick Settings row map after patch: {after}")
+          if "PowerModeCard {" in quick:
+              raise SystemExit("Quick Settings still contains PowerModeCard after patch")
+
+          quick_path.write_text(quick, encoding="utf-8")
+          PY
+
+          git diff --check
+          bash tests/test-bar-fullscreen-visibility.sh
+          bash tests/test-quick-settings-spacing.sh
+          git diff -- config/quickshell/awtarchy/Bar.qml config/quickshell/awtarchy/QuickSettings.qml
+
+      - name: Commit exact source changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add config/quickshell/awtarchy/Bar.qml config/quickshell/awtarchy/QuickSettings.qml
+          git commit -m 'Fix fullscreen bar restore and Quick Settings spacing'
+          git push origin HEAD:fix/fullscreen-bar-and-quick-settings-spacing
