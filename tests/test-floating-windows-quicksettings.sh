@@ -104,6 +104,83 @@ run_helper() {
 [[ "$(run_helper status)" == "disabled" ]] \
   || fail 'stock Floating Windows status is not disabled'
 
+# Existing Awtarchy users normally update in preserve mode, so their customized
+# hyprland.lua can predate this feature. The card must still report Disabled and
+# Enable must safely bootstrap only the small feature block without requiring a
+# clean-slate overwrite of the user's configuration.
+LEGACY_LUA="${TMP}/legacy-hyprland.lua"
+python3 - "$HYPR_LUA" "$LEGACY_LUA" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1]).read_text(encoding="utf-8")
+source = source.replace(
+    'local awtarchy_floating_windows = false -- AWTARCHY_FLOATING_WINDOWS\n\n',
+    '',
+    1,
+)
+source = source.replace(
+    'if awtarchy_floating_windows then\n'
+    '    hl.window_rule({ match = { class = ".*" }, float = true })\n'
+    '    hl.window_rule({ match = { class = games }, tile = true })\n'
+    'end\n',
+    '',
+    1,
+)
+Path(sys.argv[2]).write_text(source, encoding="utf-8")
+PY
+LEGACY_BEFORE="${TMP}/legacy-before.lua"
+cp -- "$LEGACY_LUA" "$LEGACY_BEFORE"
+
+run_legacy_helper() {
+  HYPRLAND_LUA="$LEGACY_LUA" \
+  HYPRCTL="$FAKE_HYPRCTL" \
+  FAKE_HYPRCTL_LOG="$HYPRCTL_LOG" \
+  FAKE_CONFIGERROR_COUNT="$CONFIGERROR_COUNT" \
+  "$HELPER" "$@"
+}
+
+[[ "$(run_legacy_helper status)" == "disabled" ]] \
+  || fail 'preserved pre-feature hyprland.lua is not treated as disabled'
+[[ "$(run_legacy_helper set off)" == "disabled" ]] \
+  || fail 'disabling an unbootstrapped preserved config did not remain disabled'
+cmp -s "$LEGACY_LUA" "$LEGACY_BEFORE" \
+  || fail 'disabling an unbootstrapped preserved config modified hyprland.lua'
+
+printf '0\n' >"$CONFIGERROR_COUNT"
+[[ "$(run_legacy_helper set on)" == "enabled" ]] \
+  || fail 'enabling Floating Windows did not bootstrap a preserved pre-feature config'
+contains "$LEGACY_LUA" 'local awtarchy_floating_windows = true -- AWTARCHY_FLOATING_WINDOWS' \
+  'preserve-mode bootstrap did not persist the enabled marker'
+contains "$LEGACY_LUA" 'hl.window_rule({ match = { class = ".*" }, float = true })' \
+  'preserve-mode bootstrap did not add the native float rule'
+contains "$LEGACY_LUA" 'hl.window_rule({ match = { class = games }, tile = true })' \
+  'preserve-mode bootstrap did not preserve the game tiling override'
+
+LEGACY_NORMALIZED="${TMP}/legacy-normalized.lua"
+python3 - "$LEGACY_LUA" "$LEGACY_NORMALIZED" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1]).read_text(encoding="utf-8")
+source = source.replace(
+    'local awtarchy_floating_windows = true -- AWTARCHY_FLOATING_WINDOWS\n\n',
+    '',
+    1,
+)
+source = source.replace(
+    'if awtarchy_floating_windows then\n'
+    '    hl.window_rule({ match = { class = ".*" }, float = true })\n'
+    '    hl.window_rule({ match = { class = games }, tile = true })\n'
+    'end\n',
+    '',
+    1,
+)
+Path(sys.argv[2]).write_text(source, encoding="utf-8")
+PY
+cmp -s "$LEGACY_NORMALIZED" "$LEGACY_BEFORE" \
+  || fail 'preserve-mode bootstrap changed unrelated hyprland.lua content'
+
 before_enable="${TMP}/before-enable.lua"
 cp -- "$TEST_LUA" "$before_enable"
 [[ "$(run_helper set on)" == "enabled" ]] \
@@ -177,4 +254,4 @@ do
 done
 (( missing_history == 0 )) || fail 'managed history is missing current Floating Windows stock hashes'
 
-printf '%s\n' 'PASS: Floating Windows is opt-in, persistent, native, and rollback-safe.'
+printf '%s\n' 'PASS: Floating Windows is opt-in, persistent, native, preserve-mode compatible, and rollback-safe.'
