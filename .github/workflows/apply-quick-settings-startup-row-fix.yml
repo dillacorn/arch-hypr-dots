@@ -28,17 +28,19 @@ jobs:
 
           path = Path('config/quickshell/awtarchy/QuickSettings.qml')
           text = path.read_text(encoding='utf-8')
-          old = '''    function visibleQuickSettingsSectionOrder() {
-              return layoutOrderDraft.filter(sectionId => quickSettingsSectionVisible(sectionId));
-          }
-          '''
-          new = '''    function visibleQuickSettingsSectionOrder() {
-              const ordered = layoutOrderDraft.length > 0
-                  ? layoutOrderDraft
-                  : BarState.defaultQuickSettingsSectionOrder;
-              return ordered.filter(sectionId => quickSettingsSectionVisible(sectionId));
-          }
-          '''
+          old = (
+              "    function visibleQuickSettingsSectionOrder() {\n"
+              "        return layoutOrderDraft.filter(sectionId => quickSettingsSectionVisible(sectionId));\n"
+              "    }\n"
+          )
+          new = (
+              "    function visibleQuickSettingsSectionOrder() {\n"
+              "        const ordered = layoutOrderDraft.length > 0\n"
+              "            ? layoutOrderDraft\n"
+              "            : BarState.defaultQuickSettingsSectionOrder;\n"
+              "        return ordered.filter(sectionId => quickSettingsSectionVisible(sectionId));\n"
+              "    }\n"
+          )
           if text.count(old) != 1:
               raise SystemExit(f'expected one startup order function, found {text.count(old)}')
           path.write_text(text.replace(old, new, 1), encoding='utf-8')
