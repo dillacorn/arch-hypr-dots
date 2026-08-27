@@ -57,6 +57,7 @@ jobs:
     needs: bluetooth-state
     if: >-
       github.event_name == 'pull_request' &&
+      github.event.action != 'reopened' &&
       github.event.pull_request.head.ref == 'release-v3.3.3-helper' &&
       github.event.pull_request.title == 'Publish Awtarchy v3.3.3 release'
     runs-on: ubuntu-latest
@@ -127,3 +128,29 @@ jobs:
           tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.3.3" --jq .object.sha)"
           test "$tag_sha" = "$TARGET_SHA"
           printf 'Verified v3.3.3 tag SHA: %s\n' "$tag_sha"
+
+  cleanup_v333_helper:
+    needs: bluetooth-state
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action == 'reopened' &&
+      github.event.pull_request.head.ref == 'release-v3.3.3-helper' &&
+      github.event.pull_request.title == 'Publish Awtarchy v3.3.3 release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: 4dc404135f9c718185d5ca4311f1d3372b11138a
+    steps:
+      - name: Verify published release before cleanup
+        run: |
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)" = "$TARGET_SHA"
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v3.3.3")"
+          test "$(jq -r .tag_name <<<"$release_json")" = 'v3.3.3'
+          test "$(jq -r .target_commitish <<<"$release_json")" = "$TARGET_SHA"
+          test "$(jq -r .draft <<<"$release_json")" = 'false'
+          test "$(jq -r .prerelease <<<"$release_json")" = 'false'
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.3.3" --jq .object.sha)" = "$TARGET_SHA"
+      - name: Delete release helper branch
+        run: gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/release-v3.3.3-helper"
