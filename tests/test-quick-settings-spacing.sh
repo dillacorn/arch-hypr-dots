@@ -24,6 +24,8 @@ if "Layout.row:" in compat.group("body"):
 if "presentationEnabled: true" in compat.group("body"):
     raise SystemExit("FAIL: Quick Settings PowerModeCard compatibility instance can render")
 
+# Invisible QML layout children can still be auto-placed, so the compatibility
+# instance must live completely outside the visible settingsColumn GridLayout.
 settings_column = re.search(
     r"GridLayout \{\n\s*id: settingsColumn\n",
     text,
