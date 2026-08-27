@@ -1,61 +1,32 @@
-name: Append Quick Settings Layout Managed Hashes
+name: Validate Quick Settings Layout
 
 on:
   pull_request:
     paths:
       - '.github/workflows/validate-quick-settings-layout.yml'
+      - 'config/hypr/scripts/quickshell_application_state.sh'
+      - 'config/quickshell/awtarchy/BarState.qml'
+      - 'config/quickshell/awtarchy/FlyoutSettings.qml'
+      - 'config/quickshell/awtarchy/QuickSettings.qml'
+      - 'config/quickshell/awtarchy/QuickSettingsLayoutEditor.qml'
+      - 'local/share/awtarchy/quickshell-managed-history.sha256'
+      - 'tests/test-quick-settings-layout.sh'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  append-managed-hashes:
-    if: github.event_name == 'pull_request' && github.head_ref == 'feature/quick-settings-layout-customization'
+  quick-settings-layout:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-        with:
-          ref: feature/quick-settings-layout-customization
-          fetch-depth: 0
-      - name: Append verified managed stock hashes
-        shell: bash
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+      - name: Validate Quick Settings layout customization
         run: |
-          set -Eeuo pipefail
-          history='local/share/awtarchy/quickshell-managed-history.sha256'
-          comment='# 2026-08-27 per-display Quick Settings layout customization.'
-          lines=(
-            $'d28a406a3dcb0deb7dd220a3d402f60d5d0cf9ac04a6cf4b68cef14e81e83f33\t.config/hypr/scripts/quickshell_application_state.sh'
-            $'b4e4c3f60bc4c28498d62d982286d02ce07eb3a328febdbf90d4cac9d0e40c61\t.config/quickshell/awtarchy/BarState.qml'
-            $'6520c24e3c8ea1f71a90e1646918a64b8f51225d2553631bb007fa05e2581ba1\t.config/quickshell/awtarchy/FlyoutSettings.qml'
-            $'1323c0b124ac6f4be426a7ed7dd0599953ba03a256bcff413a7f1750b61d30f3\t.config/quickshell/awtarchy/QuickSettings.qml'
-            $'0ac2e55a254d0b0cc8d43ea56a1ae6a6373d79a8b280e359dfafb0cdbf018ea3\t.config/quickshell/awtarchy/QuickSettingsLayoutEditor.qml'
-          )
-
-          changed=0
-          if ! grep -Fqx -- "$comment" "$history"; then
-            printf '\n%s\n' "$comment" >>"$history"
-            changed=1
-          fi
-          for line in "${lines[@]}"; do
-            if ! grep -Fqx -- "$line" "$history"; then
-              printf '%s\n' "$line" >>"$history"
-              changed=1
-            fi
-          done
-
-          for line in "${lines[@]}"; do
-            grep -Fqx -- "$line" "$history"
-          done
-          git diff --check
-
-          if (( changed == 0 )); then
-            printf '%s\n' 'Managed hashes already recorded.'
-            exit 0
-          fi
-
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- "$history"
-          git commit -m 'Record Quick Settings layout stock hashes'
-          git push origin HEAD:feature/quick-settings-layout-customization
+          bash -n config/hypr/scripts/quickshell_application_state.sh
+          bash -n tests/test-quick-settings-layout.sh
+          shellcheck config/hypr/scripts/quickshell_application_state.sh
+          shellcheck tests/test-quick-settings-layout.sh
+          bash tests/test-quick-settings-layout.sh
