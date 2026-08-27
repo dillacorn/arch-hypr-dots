@@ -144,6 +144,17 @@ require_source 'duration: Math.min(Math.max(row.index, 0), 12) * 18' \
   'Clipboard row animation can still receive a negative recycled delegate index'
 require_source 'id: clipboardContent' \
   'Clipboard list and status/detail surfaces do not share one layout cell container'
+require_source 'id: clipboardStatus' \
+  'Clipboard status overlay is not inside the shared clipboard content container'
+require_source 'id: clipboardDetail' \
+  'Clipboard detail surface is not inside the shared clipboard content container'
 
-[[ "$(grep -c '^                Layout.row: root.bottomEdgeLayout ? 0 : 2$' "$QML")" -eq 1 ]] \
-  || fail 'Clipboard top-level grid still assigns multiple children to the same row'
+if grep -A5 -F 'id: clipboardList' "$QML" | grep -Fq 'Layout.row:'; then
+  fail 'Clipboard ListView still participates directly in the outer GridLayout'
+fi
+if grep -A5 -F 'id: clipboardStatus' "$QML" | grep -Fq 'Layout.row:'; then
+  fail 'Clipboard status overlay still participates directly in the outer GridLayout'
+fi
+if grep -A5 -F 'id: clipboardDetail' "$QML" | grep -Fq 'Layout.row:'; then
+  fail 'Clipboard detail surface still participates directly in the outer GridLayout'
+fi
