@@ -969,7 +969,7 @@ Singleton {
                         columnSpacing: 0
 
                         Rectangle {
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 0, 12)
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 0, 11)
                             Layout.fillWidth: true
                             Layout.preferredHeight: brightnessContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1102,7 +1102,7 @@ Singleton {
                         }
 
                         Rectangle {
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 1, 12)
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 1, 11)
                             Layout.fillWidth: true
                             Layout.preferredHeight: outputVolumeContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1231,15 +1231,8 @@ Singleton {
                             }
                         }
 
-                        PowerModeCard {
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 2, 12)
-                            active: quickSettingsWindow.visible
-                            textScale: root.effectiveTextScale
-                            iconScale: root.effectiveIconScale
-                        }
-
                         Rectangle {
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 3, 12)
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 2, 11)
                             Layout.fillWidth: true
                             Layout.preferredHeight: barContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1296,7 +1289,7 @@ Singleton {
                         RowLayout {
                             id: nightLightVibranceRow
                             readonly property real cardHeight: Math.max(nightContent.implicitHeight, vibranceContent.implicitHeight) + 16
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 4, 12)
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 3, 11)
                             Layout.fillWidth: true
                             spacing: 8
 
@@ -1576,7 +1569,7 @@ Singleton {
                         }
 
                         Rectangle {
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 5, 12)
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 4, 11)
                             Layout.fillWidth: true
                             Layout.preferredHeight: submapContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1621,7 +1614,7 @@ Singleton {
                         }
 
                         Rectangle {
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 6, 12)
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 5, 11)
                             Layout.fillWidth: true
                             Layout.preferredHeight: wallpaperContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1667,7 +1660,7 @@ Singleton {
                         }
 
                         Rectangle {
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 7, 12)
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 6, 11)
                             Layout.fillWidth: true
                             Layout.preferredHeight: awtarchyContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1710,7 +1703,7 @@ Singleton {
                         }
 
                         Rectangle {
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 8, 12)
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 7, 11)
                             Layout.fillWidth: true
                             Layout.preferredHeight: smttyContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -1752,7 +1745,7 @@ Singleton {
                         }
 
                         Rectangle {
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 9, 12)
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 8, 11)
                             Layout.fillWidth: true
                             Layout.preferredHeight: schedulerContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -2031,7 +2024,7 @@ Singleton {
                         }
 
                         Rectangle {
-                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 10, 12)
+                            Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 9, 11)
                             Layout.fillWidth: true
                             Layout.preferredHeight: numlockContent.implicitHeight + 16
                             color: Theme.popupButton
@@ -2078,7 +2071,7 @@ Singleton {
                         }
 
               TitleBarsCard {
-                  Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 11, 12)
+                  Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 10, 11)
                   active: quickSettingsWindow.visible
                   textScale: root.effectiveTextScale
                   iconScale: root.effectiveIconScale

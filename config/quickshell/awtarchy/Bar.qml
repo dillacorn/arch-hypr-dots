@@ -35,7 +35,9 @@ PanelWindow {
     property date now: new Date()
     property bool wsDrawerOpen: false
 
-    visible: monitorName.length > 0 && BarState.enabledFor(monitorName)
+    visible: monitorName.length > 0
+        && BarState.enabledFor(monitorName)
+        && !workspaceFullscreenForMonitor(monitorName)
     color: Theme.background
     aboveWindows: true
     focusable: false
@@ -57,6 +59,12 @@ PanelWindow {
     readonly property string wiremixScript: configHome + "/hypr/scripts/wiremix-toggle.sh"
     readonly property string volumeScript: configHome + "/hypr/scripts/quickshell_volume.sh"
     readonly property string mouseSubmapScript: configHome + "/hypr/scripts/toggle_mouse_submap.sh"
+
+    function workspaceFullscreenForMonitor(name) {
+        return Hyprland.workspaces.values.some(workspace =>
+            workspace.monitor && workspace.monitor.name === name
+                && workspace.active && workspace.hasFullscreen);
+    }
 
     function focusWorkspace(selector) {
         Quickshell.execDetached([
