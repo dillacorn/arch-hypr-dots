@@ -19,34 +19,7 @@ jobs:
           ref: feature/floating-windows-default
       - name: Apply exact game exception
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('config/hypr/hyprland.lua')
-          text = path.read_text()
-          old = '''local awtarchy_floating_windows = false -- AWTARCHY_FLOATING_WINDOWS
-if awtarchy_floating_windows then
-    hl.window_rule({ match = { class = ".*" }, float = true })
-end
-
--- Games: send to workspace 1, strip effects, fullscreen, allow tearing, keep awake
--- Note: Proton/Wine windows often have class like "game.exe" (not "Wine"), so we also match *.exe.
-local games = "^(steam_app_.*|lutris_game_class|minigalaxy|playnite_game_class|gamescope|chiaki|moonlight|com\\\\.moonlight_stream\\\\.Moonlight|.*\\\\.exe)$"
-'''
-          new = '''local awtarchy_floating_windows = false -- AWTARCHY_FLOATING_WINDOWS
-
--- Games: send to workspace 1, strip effects, fullscreen, allow tearing, keep awake
--- Note: Proton/Wine windows often have class like "game.exe" (not "Wine"), so we also match *.exe.
-local games = "^(steam_app_.*|lutris_game_class|minigalaxy|playnite_game_class|gamescope|chiaki|moonlight|com\\\\.moonlight_stream\\\\.Moonlight|.*\\\\.exe)$"
-
-if awtarchy_floating_windows then
-    hl.window_rule({ match = { class = ".*" }, float = true })
-    hl.window_rule({ match = { class = games }, tile = true })
-end
-'''
-          if text.count(old) != 1:
-              raise SystemExit(f'hyprland.lua guard failed: expected one floating/game block, found {text.count(old)}')
-          path.write_text(text.replace(old, new, 1))
-          PY
+          python3 .github/scripts/apply-floating-windows-game-rule.py
           git diff --check
           git diff -- config/hypr/hyprland.lua
       - name: Commit exact game exception
