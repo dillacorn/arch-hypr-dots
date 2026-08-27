@@ -13,11 +13,29 @@ contains() { grep -Fq -- "$2" "$1" || fail "$3"; }
 contains "$BAR_SETTINGS" 'text: "Display scale"' \
   'Bar Appearance does not expose a display scale row'
 contains "$BAR_SETTINGS" 'readonly property var displayScalePresets: [1, 1.25, 1.5, 2]' \
-  'display scale presets are not the approved 100/125/150/200 percent choices'
+  'display scale presets changed unexpectedly'
+contains "$BAR_SETTINGS" 'function displayScaleLabel(value)' \
+  'display scale presets are not presented as Hyprland scale factors'
+contains "$BAR_SETTINGS" 'label: root.displayScaleLabel(Number(modelData))' \
+  'display scale preset buttons do not show literal scale factors'
+contains "$BAR_SETTINGS" 'label: "Custom"' \
+  'display scale row has no Custom control'
+contains "$BAR_SETTINGS" 'property bool customScaleOpen: false' \
+  'custom display scale editor has no explicit open state'
+contains "$BAR_SETTINGS" 'property string customScaleText:' \
+  'custom display scale editor has no editable value'
+contains "$BAR_SETTINGS" 'function applyCustomDisplayScale()' \
+  'custom display scale editor has no apply path'
+contains "$BAR_SETTINGS" 'TextInput {' \
+  'custom display scale editor has no numeric input'
+contains "$BAR_SETTINGS" 'text: "Apply"' \
+  'custom display scale editor has no explicit Apply control'
 contains "$BAR_SETTINGS" '"bash", root.displayScaleScript, "set", root.monitorName' \
   'display scale action is not pinned to the current Quick Settings display'
 contains "$BAR_SETTINGS" 'function displayScaleValid(value)' \
-  'display scale presets are not checked against the current monitor resolution'
+  'display scale choices are not checked against the current monitor resolution'
+contains "$BAR_SETTINGS" 'scale < 1 || scale > 4' \
+  'custom display scale UI does not enforce the approved 1.0-4.0 safety range'
 contains "$BAR_SETTINGS" '"bash", root.displayScaleScript, "status", root.monitorName' \
   'Bar Appearance does not refresh the current display scale'
 contains "$BAR_SETTINGS" '|| Math.abs(displayScale - scale) < 0.001)' \
@@ -26,8 +44,15 @@ contains "$SCALE_SCRIPT" 'hyprctl reload' \
   'display scale persistence does not reload Hyprland'
 contains "$SCALE_SCRIPT" 'hyprctl configerrors' \
   'display scale persistence does not validate the reloaded Hyprland config'
-contains "$SCALE_SCRIPT" '1|1.25|1.5|2)' \
-  'display scale helper does not restrict writes to the approved presets'
+if grep -Fq '1|1.25|1.5|2)' "$SCALE_SCRIPT"; then
+  fail 'display scale helper is still restricted to the original preset whitelist'
+fi
+contains "$SCALE_SCRIPT" "Decimal" \
+  'display scale helper does not use exact decimal validation for custom scales'
+contains "$SCALE_SCRIPT" 'Decimal("1")' \
+  'display scale helper does not enforce the minimum custom scale'
+contains "$SCALE_SCRIPT" 'Decimal("4")' \
+  'display scale helper does not enforce the maximum custom scale'
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -102,31 +127,58 @@ cmp -s "$TMP/hyprland.lua" "$TMP/before-drift-reconcile.lua" \
   || fail 'persisted display scale was not reapplied exactly once after live-state drift'
 
 # Existing explicit monitor: change only its scale and preserve the rest of the rule.
-run_scale set DP-1 1.25
+run_scale set DP-1 1.25 >/dev/null
 contains "$TMP/hyprland.lua" 'output = "DP-1", mode = "1920x1080@144", position = "0x0", scale = 1.25, vrr = 1' \
   'explicit monitor scale was not persisted without disturbing its other fields'
 contains "$TMP/hyprland.lua" 'output = "DP-2"' \
   'changing the focused display removed another display rule'
 
+# Custom scale: 1920x1080 / 1.2 = 1600x900, so this must be accepted and persisted.
+run_scale set DP-1 1.2 >/dev/null
+contains "$TMP/hyprland.lua" 'output = "DP-1", mode = "1920x1080@144", position = "0x0", scale = 1.2, vrr = 1' \
+  'valid custom display scale 1.2 was not persisted'
+
 # Missing explicit monitor: clone the fallback rule and change only output + scale.
-run_scale set DP-3 1.5
+run_scale set DP-3 1.5 >/dev/null
 contains "$TMP/hyprland.lua" 'output = "DP-3", mode = "preferred", position = "auto", scale = 1.5, vrr = 0' \
   'display without an explicit rule did not receive a safe clone of the fallback rule'
 
-# Unsupported presets must be rejected without changing the config.
 cp "$TMP/hyprland.lua" "$TMP/before-invalid.lua"
-if run_scale set DP-1 1.33 >/dev/null 2>&1; then
-  fail 'unsupported display scale 1.33 was accepted'
-fi
-cmp -s "$TMP/hyprland.lua" "$TMP/before-invalid.lua" \
-  || fail 'invalid display scale modified hyprland.lua'
 
-# Presets that would create fractional logical pixels must be rejected.
-if run_scale set DP-2 1.5 >/dev/null 2>&1; then
-  fail 'resolution-incompatible display scale was accepted'
+# Values below the safety range must be rejected without changing the config.
+if run_scale set DP-1 0.8 >/dev/null 2>&1; then
+  fail 'display scale below 1.0 was accepted'
 fi
 cmp -s "$TMP/hyprland.lua" "$TMP/before-invalid.lua" \
-  || fail 'resolution-incompatible display scale modified hyprland.lua'
+  || fail 'below-range display scale modified hyprland.lua'
+
+# Values above the safety range must be rejected without changing the config.
+if run_scale set DP-1 4.1 >/dev/null 2>&1; then
+  fail 'display scale above 4.0 was accepted'
+fi
+cmp -s "$TMP/hyprland.lua" "$TMP/before-invalid.lua" \
+  || fail 'above-range display scale modified hyprland.lua'
+
+# Non-numeric input must be rejected without changing the config.
+if run_scale set DP-1 nope >/dev/null 2>&1; then
+  fail 'non-numeric display scale was accepted'
+fi
+cmp -s "$TMP/hyprland.lua" "$TMP/before-invalid.lua" \
+  || fail 'non-numeric display scale modified hyprland.lua'
+
+# Numerically valid scales that create fractional logical pixels must be rejected.
+if run_scale set DP-1 1.4 >/dev/null 2>&1; then
+  fail 'resolution-incompatible custom display scale was accepted'
+fi
+cmp -s "$TMP/hyprland.lua" "$TMP/before-invalid.lua" \
+  || fail 'resolution-incompatible custom display scale modified hyprland.lua'
+
+# A preset can also be incompatible with a monitor resolution and must still be rejected.
+if run_scale set DP-2 1.5 >/dev/null 2>&1; then
+  fail 'resolution-incompatible preset display scale was accepted'
+fi
+cmp -s "$TMP/hyprland.lua" "$TMP/before-invalid.lua" \
+  || fail 'resolution-incompatible preset display scale modified hyprland.lua'
 
 # Reload failure must restore the exact pre-change config and attempt a rollback reload.
 cp "$TMP/hyprland.lua" "$TMP/before-failure.lua"
@@ -164,4 +216,4 @@ done
 [[ $missing_history -eq 0 ]] \
   || fail 'managed history is missing current display-scale stock hashes'
 
-printf '%s\n' 'PASS: Quick Settings display scale is focused-display-only, persistent, validated, and rollback-safe.'
+printf '%s\n' 'PASS: Quick Settings display scale supports safe presets and custom focused-display scaling with rollback protection.'
