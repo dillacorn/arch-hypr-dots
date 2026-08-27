@@ -8,21 +8,29 @@ fail() {
     return 1
 }
 
-valid_scale() {
-    case "${1:-}" in
-        1|1.25|1.5|2) return 0 ;;
-        *) return 1 ;;
-    esac
-}
+normalize_scale() {
+    local raw="${1:-}"
 
-scale_ratio() {
-    case "${1:-}" in
-        1) printf '%s\n' '1 1' ;;
-        1.25) printf '%s\n' '5 4' ;;
-        1.5) printf '%s\n' '3 2' ;;
-        2) printf '%s\n' '2 1' ;;
-        *) return 1 ;;
-    esac
+    command -v python3 >/dev/null 2>&1 || return 1
+
+    python3 - "$raw" <<'PY'
+from decimal import Decimal, InvalidOperation
+import sys
+
+raw = sys.argv[1].strip()
+try:
+    value = Decimal(raw)
+except (InvalidOperation, ValueError):
+    raise SystemExit(1)
+
+if not value.is_finite() or value < Decimal("1") or value > Decimal("4"):
+    raise SystemExit(1)
+
+normalized = format(value.normalize(), "f")
+if "." in normalized:
+    normalized = normalized.rstrip("0").rstrip(".")
+print(normalized)
+PY
 }
 
 monitor_status() {
@@ -46,12 +54,28 @@ scale_compatible() {
     local width="$1"
     local height="$2"
     local scale="$3"
-    local numerator denominator
 
-    read -r numerator denominator < <(scale_ratio "$scale") || return 1
-    (( width > 0 && height > 0 )) || return 1
-    (( (width * denominator) % numerator == 0 )) || return 1
-    (( (height * denominator) % numerator == 0 ))
+    command -v python3 >/dev/null 2>&1 || return 1
+
+    python3 - "$width" "$height" "$scale" <<'PY'
+from decimal import Decimal, InvalidOperation
+import sys
+
+try:
+    width = Decimal(sys.argv[1])
+    height = Decimal(sys.argv[2])
+    scale = Decimal(sys.argv[3])
+except (InvalidOperation, ValueError):
+    raise SystemExit(1)
+
+if width <= 0 or height <= 0 or scale <= 0:
+    raise SystemExit(1)
+
+for pixels in (width, height):
+    logical = pixels / scale
+    if logical != logical.to_integral_value():
+        raise SystemExit(1)
+PY
 }
 
 has_config_errors() {
@@ -163,10 +187,14 @@ rollback_config() {
 set_scale() {
     local monitor="$1"
     local scale="$2"
-    local status width height existing_errors post_errors backup
+    local status width height existing_errors post_errors backup normalized_scale
 
     [[ -n $monitor ]] || fail 'monitor name is required'
-    valid_scale "$scale" || fail "unsupported display scale: $scale"
+    if ! normalized_scale="$(normalize_scale "$scale")"; then
+        fail "unsupported display scale: $scale (expected 1.0-4.0)"
+        return 1
+    fi
+    scale="$normalized_scale"
     [[ -f $HYPR_LUA ]] || fail "Hyprland config is missing: $HYPR_LUA"
     [[ -r $HYPR_LUA && -w $HYPR_LUA ]] || fail "Hyprland config is not readable and writable: $HYPR_LUA"
 
