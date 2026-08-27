@@ -145,5 +145,5 @@ require_source 'duration: Math.min(Math.max(row.index, 0), 12) * 18' \
 require_source 'id: clipboardContent' \
   'Clipboard list and status/detail surfaces do not share one layout cell container'
 
-[[ "$(grep -Fc '                Layout.row: root.bottomEdgeLayout ? 0 : 2' "$QML")" -eq 1 ]] \
+[[ "$(grep -c '^                Layout.row: root.bottomEdgeLayout ? 0 : 2$' "$QML")" -eq 1 ]] \
   || fail 'Clipboard top-level grid still assigns multiple children to the same row'
