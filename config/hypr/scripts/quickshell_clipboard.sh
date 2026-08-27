@@ -13,6 +13,8 @@ LIST_LIMIT="${LIST_LIMIT:-60}"
 PREVIEW_WIDTH="${PREVIEW_WIDTH:-1000}"
 THUMB_SIZE="${THUMB_SIZE:-512}"
 DECODE_TIMEOUT="${DECODE_TIMEOUT:-0.70s}"
+LIST_PRODUCER_PID=""
+LIST_PRODUCER_FD=""
 
 mkdir -p "$RUNTIME_DIR" "$THUMB_DIR"
 
@@ -30,6 +32,36 @@ need sha1sum
 need timeout
 need sed
 need grep
+
+cleanup_list_producer() {
+    local attempt producer_pid="${LIST_PRODUCER_PID:-}"
+
+    trap - EXIT HUP INT TERM
+    if [[ -n "${LIST_PRODUCER_FD:-}" ]]; then
+        exec {LIST_PRODUCER_FD}<&- 2>/dev/null || true
+        LIST_PRODUCER_FD=""
+    fi
+
+    if [[ -n "$producer_pid" ]] && kill -0 "$producer_pid" 2>/dev/null; then
+        kill -TERM "$producer_pid" 2>/dev/null || true
+        for attempt in {1..20}; do
+            kill -0 "$producer_pid" 2>/dev/null || break
+            sleep 0.01
+        done
+        kill -KILL "$producer_pid" 2>/dev/null || true
+    fi
+    if [[ -n "$producer_pid" ]]; then
+        wait "$producer_pid" 2>/dev/null || true
+    fi
+    LIST_PRODUCER_PID=""
+}
+
+arm_list_producer_cleanup() {
+    trap cleanup_list_producer EXIT
+    trap 'cleanup_list_producer; exit 129' HUP
+    trap 'cleanup_list_producer; exit 130' INT
+    trap 'cleanup_list_producer; exit 143' TERM
+}
 
 strip_id_line() {
     sed -E 's/^[0-9]+\t//'
@@ -65,16 +97,19 @@ make_thumb() {
 }
 
 list_items() {
-    local raw label index=0 list_fd list_pid list_status=0
+    local raw label index=0 list_status=0
 
     : >"$RAW_FILE"
+    arm_list_producer_cleanup
     coproc AWTARCHY_CLIPHIST_LIST {
-        CLIPHIST_PREVIEW_WIDTH="$PREVIEW_WIDTH" cliphist list
+        export CLIPHIST_PREVIEW_WIDTH="$PREVIEW_WIDTH"
+        exec cliphist list
     }
-    list_pid="$AWTARCHY_CLIPHIST_LIST_PID"
-    exec {list_fd}<&"${AWTARCHY_CLIPHIST_LIST[0]}"
+    LIST_PRODUCER_PID="$AWTARCHY_CLIPHIST_LIST_PID"
+    exec {LIST_PRODUCER_FD}<&"${AWTARCHY_CLIPHIST_LIST[0]}"
 
-    while (( index < LIST_LIMIT )) && IFS= read -r raw <&"$list_fd"; do
+    while (( index < LIST_LIMIT )) \
+            && IFS= read -r raw <&"$LIST_PRODUCER_FD"; do
         printf '%s\n' "$raw" >>"$RAW_FILE"
         label="$(printf '%s' "$raw" | strip_id_line)"
 
@@ -87,14 +122,17 @@ list_items() {
         ((index += 1)) || true
     done
 
-    exec {list_fd}<&-
-    if (( index >= LIST_LIMIT )) && kill -0 "$list_pid" 2>/dev/null; then
-        kill "$list_pid" 2>/dev/null || true
-        wait "$list_pid" 2>/dev/null || true
+    exec {LIST_PRODUCER_FD}<&-
+    LIST_PRODUCER_FD=""
+    if (( index >= LIST_LIMIT )) \
+            && kill -0 "$LIST_PRODUCER_PID" 2>/dev/null; then
+        cleanup_list_producer
         return 0
     fi
 
-    wait "$list_pid" || list_status=$?
+    wait "$LIST_PRODUCER_PID" || list_status=$?
+    LIST_PRODUCER_PID=""
+    trap - EXIT HUP INT TERM
     return "$list_status"
 }
 

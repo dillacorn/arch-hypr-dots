@@ -5,11 +5,16 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND="${ROOT}/config/hypr/scripts/quickshell_clipboard.sh"
 TMPD="$(mktemp -d)"
 LIST_PID=""
+CLIPHIST_PID=""
 
 cleanup() {
   if [[ -n "$LIST_PID" ]] && kill -0 "$LIST_PID" 2>/dev/null; then
     kill "$LIST_PID" 2>/dev/null || true
     wait "$LIST_PID" 2>/dev/null || true
+  fi
+  if [[ -n "$CLIPHIST_PID" ]] && kill -0 "$CLIPHIST_PID" 2>/dev/null; then
+    kill "$CLIPHIST_PID" 2>/dev/null || true
+    wait "$CLIPHIST_PID" 2>/dev/null || true
   fi
   rm -rf -- "$TMPD"
 }
@@ -28,11 +33,19 @@ set -euo pipefail
 
 case "${1:-}" in
   list)
+    if [[ -n "${AWTARCHY_CLIPBOARD_PID_FILE:-}" ]]; then
+      printf '%s\n' "$$" >"$AWTARCHY_CLIPBOARD_PID_FILE"
+    fi
     if [[ "${AWTARCHY_CLIPBOARD_FAIL_LIST:-0}" == 1 ]]; then
       printf 'cliphist fixture: database unavailable\n' >&2
       exit 23
     fi
     printf '200\tnewest clipboard entry\n'
+    if [[ "${AWTARCHY_CLIPBOARD_HANG_LIST:-0}" == 1 ]]; then
+      while true; do
+        sleep 1
+      done
+    fi
     sleep 3
     printf '199\tolder clipboard entry\n'
     ;;
@@ -104,4 +117,32 @@ set -e
 grep -Fq 'cliphist fixture: database unavailable' "$failure_error" \
   || fail 'clipboard backend swallowed cliphist list diagnostics'
 
-printf '%s\n' 'PASS: clipboard history streams progressively and reports list failures.'
+slow_output="${TMPD}/slow.jsonl"
+cliphist_pid_file="${TMPD}/cliphist.pid"
+env \
+  PATH="${TMPD}/bin:${PATH}" \
+  XDG_RUNTIME_DIR="${TMPD}/runtime" \
+  AWTARCHY_CLIPBOARD_HANG_LIST=1 \
+  AWTARCHY_CLIPBOARD_PID_FILE="$cliphist_pid_file" \
+  LIST_LIMIT=10 \
+  "$BACKEND" list >"$slow_output" &
+LIST_PID=$!
+
+for _ in {1..200}; do
+  [[ -s "$cliphist_pid_file" && -s "$slow_output" ]] && break
+  sleep 0.01
+done
+[[ -s "$cliphist_pid_file" && -s "$slow_output" ]] \
+  || fail 'slow clipboard fixture did not start for termination test'
+CLIPHIST_PID="$(<"$cliphist_pid_file")"
+kill "$LIST_PID"
+wait "$LIST_PID" 2>/dev/null || true
+LIST_PID=""
+
+if kill -0 "$CLIPHIST_PID" 2>/dev/null; then
+  fail 'terminating clipboard backend left the cliphist producer running'
+fi
+CLIPHIST_PID=""
+
+printf '%s\n' \
+  'PASS: clipboard history streams, reports failures, and cleans up its producer.'
