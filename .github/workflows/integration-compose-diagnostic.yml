@@ -24,6 +24,7 @@ jobs:
           set -Eeuo pipefail
           history='local/share/awtarchy/quickshell-managed-history.sha256'
           quick_settings='config/quickshell/awtarchy/QuickSettings.qml'
+          app_state='config/hypr/scripts/quickshell_application_state.sh'
           refs=(
             '483c84c9399c6d9fa47b9e5df204475adcbc4276:#72'
             'e683a20772cf6306f34d2456c6cba6c295219704:#73'
@@ -104,6 +105,22 @@ jobs:
             git add -- "$quick_settings"
           }
 
+          resolve_74_77_app_state() {
+            git show ":2:${app_state}" >"$app_state"
+            python3 - "$app_state" <<'PY'
+          from pathlib import Path
+          import sys
+          path = Path(sys.argv[1])
+          text = path.read_text()
+          old = '|set-update-notifications <true|false>|set-notification-popup-limit <1-20>'
+          new = '|set-update-notifications <true|false>|set-clock-date <MON> <true|false>|set-notification-popup-limit <1-20>'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one usage insertion point, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+            git add -- "$app_state"
+          }
+
           for item in "${refs[@]}"; do
             sha="${item%%:*}"
             label="${item#*:}"
@@ -129,6 +146,27 @@ jobs:
                 resolve_74_75_quick_settings
                 digest="$(sha256sum "$quick_settings" | awk '{print $1}')"
                 entry="${digest}"$'\t'".config/quickshell/awtarchy/QuickSettings.qml"
+                grep -Fqx -- "$entry" "$history" || printf '%s\n' "$entry" >>"$history"
+                git add -- "$history"
+                git commit --no-edit
+                continue
+              fi
+            fi
+
+            if [[ "$label" == '#77' ]]; then
+              unexpected=0; have_history=0; have_app=0
+              for path in "${conflicts[@]}"; do
+                case "$path" in
+                  "$history") have_history=1 ;;
+                  "$app_state") have_app=1 ;;
+                  *) unexpected=1 ;;
+                esac
+              done
+              if (( unexpected == 0 && have_history == 1 && have_app == 1 )); then
+                resolve_history
+                resolve_74_77_app_state
+                digest="$(sha256sum "$app_state" | awk '{print $1}')"
+                entry="${digest}"$'\t'".config/hypr/scripts/quickshell_application_state.sh"
                 grep -Fqx -- "$entry" "$history" || printf '%s\n' "$entry" >>"$history"
                 git add -- "$history"
                 git commit --no-edit
