@@ -39,9 +39,10 @@ set -euo pipefail
 printf '%s\n' "$*" >>"${HYPRCTL_LOG:?}"
 case "$*" in
   '-j monitors'|'monitors -j')
-    cat <<'JSON'
+    dp1_scale="${HYPRCTL_DP1_SCALE:-1.0}"
+    cat <<JSON
 [
-  {"name":"DP-1","focused":true,"disabled":false,"width":1920,"height":1080,"scale":1.0},
+  {"name":"DP-1","focused":true,"disabled":false,"width":1920,"height":1080,"scale":${dp1_scale}},
   {"name":"DP-2","focused":false,"disabled":false,"width":2560,"height":1440,"scale":1.25},
   {"name":"DP-3","focused":false,"disabled":false,"width":1920,"height":1080,"scale":1.0}
 ]
@@ -81,6 +82,7 @@ run_scale() {
     PATH="$TMP/bin:$PATH" \
     HYPRLAND_LUA="$TMP/hyprland.lua" \
     HYPRCTL_LOG="$TMP/hyprctl.log" \
+    HYPRCTL_DP1_SCALE="${HYPRCTL_DP1_SCALE:-1.0}" \
     bash "$SCALE_SCRIPT" "$@"
 }
 
@@ -89,6 +91,15 @@ jq -e '.scale == 1' <<<"$status_json" >/dev/null \
   || fail 'display scale status did not return the live scale'
 jq -e '.width == 1920 and .height == 1080' <<<"$status_json" >/dev/null \
   || fail 'display scale status did not return the current monitor dimensions'
+
+# Persisted target already matches, but live state drifted: reload the persisted rule without rewriting it.
+cp "$TMP/hyprland.lua" "$TMP/before-drift-reconcile.lua"
+: >"$TMP/hyprctl.log"
+HYPRCTL_DP1_SCALE=1.25 run_scale set DP-1 1 >/dev/null
+cmp -s "$TMP/hyprland.lua" "$TMP/before-drift-reconcile.lua" \
+  || fail 'reconciling live display scale drift rewrote an already-correct hyprland.lua'
+[[ "$(grep -Fxc 'reload' "$TMP/hyprctl.log")" -eq 1 ]] \
+  || fail 'persisted display scale was not reapplied exactly once after live-state drift'
 
 # Existing explicit monitor: change only its scale and preserve the rest of the rule.
 run_scale set DP-1 1.25
