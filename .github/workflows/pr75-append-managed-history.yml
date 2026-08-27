@@ -1,0 +1,40 @@
+name: Append PR75 managed history
+
+on:
+  push:
+    branches: [feature/floating-windows-default]
+    paths:
+      - '.github/workflows/pr75-append-managed-history.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  append:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/floating-windows-default
+      - name: Append current helper hash and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          rel='.config/hypr/scripts/quickshell_floating_windows.sh'
+          digest="$(sha256sum config/hypr/scripts/quickshell_floating_windows.sh | awk '{print $1}')"
+          expected='6532043db6b154caa8b3eeb801cbc9cd78f1fed8564ec295640e3f475df61911'
+          [[ "$digest" == "$expected" ]]
+          entry="${digest}"$'\t'"${rel}"
+          grep -Fqx -- "$entry" "$history" || printf '%s\n' "$entry" >> "$history"
+          bash tests/test-floating-windows-quicksettings.sh
+      - name: Commit history and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/pr75-append-managed-history.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'Record Floating Windows preserve-mode helper hash'
+          git push origin HEAD:feature/floating-windows-default
