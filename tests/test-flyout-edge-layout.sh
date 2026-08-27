@@ -77,7 +77,9 @@ for flyout in "${flyouts[@]}"; do
     "${flyout} does not move its controls beside a bottom bar"
 done
 
-require_source "${QML_DIR}/QuickSettings.qml" 'FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout' \
+require_source "${QML_DIR}/QuickSettings.qml" 'function quickSettingsSectionRow(sectionId)' \
+  'Quick Settings does not route dynamic section rows through an edge-aware helper'
+require_source "${QML_DIR}/QuickSettings.qml" 'return FlyoutEdgeLayout.sectionRow(bottomEdgeLayout, index, visibleOrder.length);' \
   'Quick Settings sections do not reverse beside a bottom bar'
 require_source "${QML_DIR}/NetworkMenu.qml" 'FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout' \
   'Network sections do not reverse beside a bottom bar'
