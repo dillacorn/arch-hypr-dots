@@ -87,7 +87,6 @@ jobs:
 
           bash -n config/hypr/scripts/quickshell_application_state.sh
           bash tests/test-clock-date-persistence.sh
-          bash tests/test-quick-settings-layout.sh
           git diff --check
 
           history='local/share/awtarchy/quickshell-managed-history.sha256'
@@ -97,8 +96,6 @@ jobs:
           grep -Fqx -- "$entry" "$history" || printf '%s\n' "$entry" >>"$history"
           printf 'Recorded integrated application-state SHA-256: %s\n' "$digest"
 
-          # Re-run the layout test after the managed-history update because it
-          # verifies the current stock hash contract.
           bash tests/test-quick-settings-layout.sh
 
       - name: Commit integrated fix
