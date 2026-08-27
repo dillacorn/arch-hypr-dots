@@ -149,6 +149,9 @@ require_source 'id: clipboardStatus' \
 require_source 'id: clipboardDetail' \
   'Clipboard detail surface is not inside the shared clipboard content container'
 
+# Real-session diagnostics exposed both failures this section guards: recycled
+# delegates produced negative animation durations, and list/status/detail items
+# competed for one outer GridLayout cell.
 if grep -A5 -F 'id: clipboardList' "$QML" | grep -Fq 'Layout.row:'; then
   fail 'Clipboard ListView still participates directly in the outer GridLayout'
 fi
