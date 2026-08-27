@@ -2,39 +2,30 @@
 set -Eeuo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-BACKEND="${ROOT}/config/hypr/scripts/hypr_quicksettings.sh"
+SCALE_SCRIPT="${ROOT}/config/hypr/scripts/quickshell_display_scale.sh"
 BAR_SETTINGS="${ROOT}/config/quickshell/awtarchy/BarSettingsSection.qml"
-FLYOUT_SETTINGS="${ROOT}/config/quickshell/awtarchy/FlyoutSettings.qml"
-QUICK_SETTINGS="${ROOT}/config/quickshell/awtarchy/QuickSettings.qml"
 HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
 
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 contains() { grep -Fq -- "$2" "$1" || fail "$3"; }
 
+[[ -f $SCALE_SCRIPT ]] || fail 'display scale helper is missing'
 contains "$BAR_SETTINGS" 'text: "Display scale"' \
   'Bar Appearance does not expose a display scale row'
 contains "$BAR_SETTINGS" 'readonly property var displayScalePresets: [1, 1.25, 1.5, 2]' \
   'display scale presets are not the approved 100/125/150/200 percent choices'
-contains "$BAR_SETTINGS" '"--action", "display-scale", root.monitorName' \
+contains "$BAR_SETTINGS" '"bash", root.displayScaleScript, "set", root.monitorName' \
   'display scale action is not pinned to the current Quick Settings display'
 contains "$BAR_SETTINGS" 'function displayScaleValid(value)' \
   'display scale presets are not checked against the current monitor resolution'
-contains "$FLYOUT_SETTINGS" 'property real displayScale: 1' \
-  'Flyout Settings does not receive the live display scale'
-contains "$FLYOUT_SETTINGS" 'displayScale: root.displayScale' \
-  'Bar Appearance does not receive the live display scale'
-contains "$QUICK_SETTINGS" 'function activeMonitorStatus()' \
-  'Quick Settings does not resolve live status for its active display'
-contains "$QUICK_SETTINGS" 'displayScale: Number(root.activeMonitorStatus().scale || 1)' \
-  'Quick Settings does not pass the focused display scale into Bar Appearance'
-contains "$BACKEND" 'display-scale)' \
-  'Quick Settings backend does not expose a display-scale action'
-contains "$BACKEND" 'scale:((.scale // 1) | tonumber)' \
-  'Quick Settings status does not report each monitor scale'
-contains "$BACKEND" 'hyprctl reload' \
+contains "$BAR_SETTINGS" '"bash", root.displayScaleScript, "status", root.monitorName' \
+  'Bar Appearance does not refresh the current display scale'
+contains "$SCALE_SCRIPT" 'hyprctl reload' \
   'display scale persistence does not reload Hyprland'
-contains "$BACKEND" 'hyprctl configerrors' \
+contains "$SCALE_SCRIPT" 'hyprctl configerrors' \
   'display scale persistence does not validate the reloaded Hyprland config'
+contains "$SCALE_SCRIPT" '1|1.25|1.5|2)' \
+  'display scale helper does not restrict writes to the approved presets'
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -58,7 +49,9 @@ JSON
     [[ ${HYPRCTL_RELOAD_FAIL:-0} != 1 ]]
     ;;
   'configerrors')
-    [[ ${HYPRCTL_CONFIG_ERROR:-0} != 1 ]] || printf '%s\n' 'mock config error'
+    if [[ ${HYPRCTL_CONFIG_ERROR:-0} == 1 ]] && grep -Fqx 'reload' "${HYPRCTL_LOG:?}"; then
+      printf '%s\n' 'mock config error'
+    fi
     ;;
   *)
     exit 0
@@ -79,48 +72,53 @@ hl.monitor({
     vrr = 0,
 })
 EOF_LUA
-cp "$TMP/hyprland.lua" "$TMP/original.lua"
 : >"$TMP/hyprctl.log"
 
-run_backend() {
+run_scale() {
   env \
     PATH="$TMP/bin:$PATH" \
     HYPRLAND_LUA="$TMP/hyprland.lua" \
     HYPRCTL_LOG="$TMP/hyprctl.log" \
-    "$@" \
-    "$BACKEND"
+    bash "$SCALE_SCRIPT" "$@"
 }
 
+status_json="$(run_scale status DP-1)"
+[[ $(jq -r '.scale' <<<"$status_json") == 1 ]] \
+  || fail 'display scale status did not return the live scale'
+[[ $(jq -r '.width' <<<"$status_json") == 1920 && $(jq -r '.height' <<<"$status_json") == 1080 ]] \
+  || fail 'display scale status did not return the current monitor dimensions'
+
 # Existing explicit monitor: change only its scale and preserve the rest of the rule.
-env PATH="$TMP/bin:$PATH" HYPRLAND_LUA="$TMP/hyprland.lua" HYPRCTL_LOG="$TMP/hyprctl.log" \
-  "$BACKEND" --action display-scale DP-1 1.25
+run_scale set DP-1 1.25
 contains "$TMP/hyprland.lua" 'output = "DP-1", mode = "1920x1080@144", position = "0x0", scale = 1.25, vrr = 1' \
   'explicit monitor scale was not persisted without disturbing its other fields'
 contains "$TMP/hyprland.lua" 'output = "DP-2"' \
   'changing the focused display removed another display rule'
-contains "$TMP/hyprland.lua" 'scale = 1.25,' \
-  'multiline monitor rule was unexpectedly rewritten while changing another display'
 
 # Missing explicit monitor: clone the fallback rule and change only output + scale.
-env PATH="$TMP/bin:$PATH" HYPRLAND_LUA="$TMP/hyprland.lua" HYPRCTL_LOG="$TMP/hyprctl.log" \
-  "$BACKEND" --action display-scale DP-3 1.5
+run_scale set DP-3 1.5
 contains "$TMP/hyprland.lua" 'output = "DP-3", mode = "preferred", position = "auto", scale = 1.5, vrr = 0' \
   'display without an explicit rule did not receive a safe clone of the fallback rule'
 
 # Unsupported presets must be rejected without changing the config.
 cp "$TMP/hyprland.lua" "$TMP/before-invalid.lua"
-if env PATH="$TMP/bin:$PATH" HYPRLAND_LUA="$TMP/hyprland.lua" HYPRCTL_LOG="$TMP/hyprctl.log" \
-    "$BACKEND" --action display-scale DP-1 1.33 >/dev/null 2>&1; then
+if run_scale set DP-1 1.33 >/dev/null 2>&1; then
   fail 'unsupported display scale 1.33 was accepted'
 fi
 cmp -s "$TMP/hyprland.lua" "$TMP/before-invalid.lua" \
   || fail 'invalid display scale modified hyprland.lua'
 
+# Presets that would create fractional logical pixels must be rejected.
+if run_scale set DP-2 1.5 >/dev/null 2>&1; then
+  fail 'resolution-incompatible display scale was accepted'
+fi
+cmp -s "$TMP/hyprland.lua" "$TMP/before-invalid.lua" \
+  || fail 'resolution-incompatible display scale modified hyprland.lua'
+
 # Reload failure must restore the exact pre-change config and attempt a rollback reload.
 cp "$TMP/hyprland.lua" "$TMP/before-failure.lua"
 : >"$TMP/hyprctl.log"
-if env PATH="$TMP/bin:$PATH" HYPRLAND_LUA="$TMP/hyprland.lua" HYPRCTL_LOG="$TMP/hyprctl.log" HYPRCTL_RELOAD_FAIL=1 \
-    "$BACKEND" --action display-scale DP-1 1 >/dev/null 2>&1; then
+if HYPRCTL_RELOAD_FAIL=1 run_scale set DP-1 1 >/dev/null 2>&1; then
   fail 'display scale action succeeded even though Hyprland reload failed'
 fi
 cmp -s "$TMP/hyprland.lua" "$TMP/before-failure.lua" \
@@ -130,8 +128,8 @@ cmp -s "$TMP/hyprland.lua" "$TMP/before-failure.lua" \
 
 # A post-reload config error must also roll back the persisted file.
 cp "$TMP/hyprland.lua" "$TMP/before-configerror.lua"
-if env PATH="$TMP/bin:$PATH" HYPRLAND_LUA="$TMP/hyprland.lua" HYPRCTL_LOG="$TMP/hyprctl.log" HYPRCTL_CONFIG_ERROR=1 \
-    "$BACKEND" --action display-scale DP-1 1 >/dev/null 2>&1; then
+: >"$TMP/hyprctl.log"
+if HYPRCTL_CONFIG_ERROR=1 run_scale set DP-1 1 >/dev/null 2>&1; then
   fail 'display scale action succeeded despite Hyprland config errors'
 fi
 cmp -s "$TMP/hyprland.lua" "$TMP/before-configerror.lua" \
@@ -139,14 +137,13 @@ cmp -s "$TMP/hyprland.lua" "$TMP/before-configerror.lua" \
 
 # Managed history must track the current stock files touched by this feature.
 for rel in \
-  .config/hypr/scripts/hypr_quicksettings.sh \
-  .config/quickshell/awtarchy/BarSettingsSection.qml \
-  .config/quickshell/awtarchy/FlyoutSettings.qml \
-  .config/quickshell/awtarchy/QuickSettings.qml
+  .config/hypr/scripts/quickshell_display_scale.sh \
+  .config/quickshell/awtarchy/BarSettingsSection.qml
 do
-  source_file="${ROOT}/${rel#.}"
   if [[ $rel == .config/* ]]; then
     source_file="${ROOT}/config/${rel#.config/}"
+  else
+    source_file="${ROOT}/${rel}"
   fi
   digest="$(sha256sum "$source_file" | awk '{print $1}')"
   grep -Fq -- "$digest"$'\t'"$rel" "$HISTORY" \
