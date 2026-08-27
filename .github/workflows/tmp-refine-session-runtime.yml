@@ -18,6 +18,9 @@ jobs:
           ref: fix-update-session-environment
           fetch-depth: 0
 
+      - name: Install focused test dependency
+        run: sudo apt-get update && sudo apt-get install -y lua5.4
+
       - name: Preserve valid caller runtime environment
         run: |
           python3 - <<'PY'
