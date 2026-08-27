@@ -17,6 +17,531 @@ permissions:
   contents: read
 
 jobs:
+  apply-feature:
+    if: github.event_name == 'pull_request' && github.head_ref == 'feature/quick-settings-layout-customization'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/quick-settings-layout-customization
+          fetch-depth: 0
+      - name: Apply guarded implementation patch
+        run: |
+          if grep -Fq 'function quickSettingsLayoutFor(name)' config/quickshell/awtarchy/BarState.qml; then
+            echo 'Quick Settings layout implementation already applied.'
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one guarded match, found {count}: {old[:90]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # BarState owns the persisted, normalized per-monitor layout.
+          path = 'config/quickshell/awtarchy/BarState.qml'
+          replace_once(path,
+              '    readonly property int defaultNotificationPopupLimit: 4\n',
+              '''    readonly property int defaultNotificationPopupLimit: 4
+    readonly property var defaultQuickSettingsSectionOrder: [
+        "brightness",
+        "output-volume",
+        "power-mode",
+        "bar",
+        "display-effects",
+        "submap",
+        "wallpaper",
+        "awtarchy",
+        "smtty",
+        "scheduler",
+        "numlock",
+        "title-bars"
+    ]
+''')
+          replace_once(path,
+              '            quick_settings_views: {},\n            network_views: {},\n',
+              '            quick_settings_views: {},\n            quick_settings_layouts: {},\n            network_views: {},\n')
+          replace_once(path,
+              '                "quick_settings_views",\n                "network_views",\n',
+              '                "quick_settings_views",\n                "quick_settings_layouts",\n                "network_views",\n')
+          replace_once(path,
+              '    function networkViewFor(name) {\n',
+              '''    function quickSettingsLayoutFor(name) {
+        const layouts = data().quick_settings_layouts || ({});
+        const raw = layouts[name] && typeof layouts[name] === "object"
+            && !Array.isArray(layouts[name]) ? layouts[name] : ({});
+        const defaults = defaultQuickSettingsSectionOrder;
+        const order = [];
+        const rawOrder = Array.isArray(raw.order) ? raw.order : [];
+        for (const value of rawOrder) {
+            const sectionId = String(value || "");
+            if (defaults.indexOf(sectionId) >= 0 && order.indexOf(sectionId) < 0)
+                order.push(sectionId);
+        }
+        for (const sectionId of defaults) {
+            if (order.indexOf(sectionId) < 0)
+                order.push(sectionId);
+        }
+
+        const hidden = [];
+        const rawHidden = Array.isArray(raw.hidden) ? raw.hidden : [];
+        for (const value of rawHidden) {
+            const sectionId = String(value || "");
+            if (defaults.indexOf(sectionId) >= 0 && hidden.indexOf(sectionId) < 0)
+                hidden.push(sectionId);
+        }
+
+        return ({
+            order: order,
+            hidden: hidden.length < order.length ? hidden : []
+        });
+    }
+
+    function networkViewFor(name) {
+''')
+
+          # Locked state writer validates and persists/copies/resets layouts.
+          path = 'config/hypr/scripts/quickshell_application_state.sh'
+          replace_once(path,
+              'SAVE_VERSION=2\nTMP_FILE=""\n',
+              '''SAVE_VERSION=2
+QUICK_SETTINGS_LAYOUT_SAVE_VERSION=1
+QUICK_SETTINGS_SECTIONS_JSON='["brightness","output-volume","power-mode","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","title-bars"]'
+TMP_FILE=""
+''')
+          replace_once(path,
+              '\nreset_monitor() {\n',
+              '''
+validate_quick_settings_layout() {
+    local order_json="$1" hidden_json="$2"
+
+    if ! jq -e -n \
+        --argjson allowed "$QUICK_SETTINGS_SECTIONS_JSON" \
+        --argjson order "$order_json" \
+        --argjson hidden "$hidden_json" '
+        ($order | type) == "array"
+        and ($hidden | type) == "array"
+        and ($order | length) == ($allowed | length)
+        and ($order | unique | length) == ($allowed | length)
+        and (($order - $allowed) | length) == 0
+        and (($allowed - $order) | length) == 0
+        and ($hidden | unique | length) == ($hidden | length)
+        and (($hidden - $allowed) | length) == 0
+        and ($hidden | length) < ($allowed | length)
+    ' >/dev/null 2>&1; then
+        printf 'invalid Quick Settings layout\n' >&2
+        exit 2
+    fi
+}
+
+save_quick_settings_layout() {
+    local monitor="$1" order_json="$2" hidden_json="$3"
+    [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
+    validate_quick_settings_layout "$order_json" "$hidden_json"
+
+    new_tmp
+    jq \
+        --arg monitor "$monitor" \
+        --argjson order "$order_json" \
+        --argjson hidden "$hidden_json" \
+        --argjson save_version "$QUICK_SETTINGS_LAYOUT_SAVE_VERSION" '
+        .quick_settings_layouts = (if (.quick_settings_layouts | type) == "object"
+            then .quick_settings_layouts else {} end)
+        | .quick_settings_layouts[$monitor] = {
+            order:$order,
+            hidden:$hidden,
+            save_version:$save_version
+        }
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
+copy_quick_settings_layout() {
+    local order_json="$1" hidden_json="$2"
+    shift 2
+    local -a targets=("$@")
+    local targets_json
+
+    (( ${#targets[@]} > 0 )) || { printf 'at least one target monitor is required\n' >&2; exit 2; }
+    validate_quick_settings_layout "$order_json" "$hidden_json"
+    targets_json="$(jq -cn --args '$ARGS.positional' -- "${targets[@]}")"
+
+    new_tmp
+    jq \
+        --argjson targets "$targets_json" \
+        --argjson order "$order_json" \
+        --argjson hidden "$hidden_json" \
+        --argjson save_version "$QUICK_SETTINGS_LAYOUT_SAVE_VERSION" '
+        .quick_settings_layouts = (if (.quick_settings_layouts | type) == "object"
+            then .quick_settings_layouts else {} end)
+        | .quick_settings_layouts = reduce $targets[] as $monitor
+            (.quick_settings_layouts;
+                .[$monitor] = {
+                    order:$order,
+                    hidden:$hidden,
+                    save_version:$save_version
+                })
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
+reset_quick_settings_layout() {
+    local monitor="$1"
+    [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
+
+    new_tmp
+    jq --arg monitor "$monitor" '
+        .quick_settings_layouts = (if (.quick_settings_layouts | type) == "object"
+            then .quick_settings_layouts else {} end)
+        | del(.quick_settings_layouts[$monitor])
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
+reset_monitor() {
+''')
+          replace_once(path,
+              '    copy-view)\n',
+              '''    save-quick-settings-layout)
+        [[ -n ${2:-} && -n ${3:-} && -n ${4:-} ]] || exit 2
+        save_quick_settings_layout "$2" "$3" "$4"
+        ;;
+    copy-quick-settings-layout)
+        [[ -n ${2:-} && -n ${3:-} && -n ${4:-} ]] || exit 2
+        copy_quick_settings_layout "$2" "$3" "${@:4}"
+        ;;
+    reset-quick-settings-layout)
+        [[ -n ${2:-} ]] || exit 2
+        reset_quick_settings_layout "$2"
+        ;;
+    copy-view)
+''')
+          replace_once(path,
+              '|set-capture <TYPE> <true|false>|lock-size',
+              '|set-capture <TYPE> <true|false>|save-quick-settings-layout <MON> <order_json> <hidden_json>|copy-quick-settings-layout <order_json> <hidden_json> <MON>...|reset-quick-settings-layout <MON>|lock-size')
+
+          # Flyout settings opens a Quick Settings-only layout editor.
+          path = 'config/quickshell/awtarchy/FlyoutSettings.qml'
+          replace_once(path,
+              '    signal themePickerRequested()\n\n    implicitHeight: copyOpen ? 104\n        : 139 + (surfaceLabel === "Quick Settings" ? barSection.implicitHeight + 6 : 0)\n',
+              '''    signal themePickerRequested()
+    signal layoutEditorRequested()
+
+    implicitHeight: copyOpen ? 104
+        : 139 + (surfaceLabel === "Quick Settings" ? barSection.implicitHeight + 37 : 0)
+''')
+          copy_marker = '''        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 28
+            spacing: 6
+            visible: !root.copyOpen
+
+            Rectangle {
+                Layout.preferredWidth: 142
+'''
+          layout_row = '''        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 28
+            spacing: 6
+            visible: !root.copyOpen && root.surfaceLabel === "Quick Settings"
+
+            SettingsButton {
+                label: "Customize Layout…"
+                textSize: 9
+                onClicked: root.layoutEditorRequested()
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: "Show, hide, and reorder sections for this display"
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: 9
+                elide: Text.ElideRight
+            }
+        }
+
+'''
+          replace_once(path, copy_marker, layout_row + copy_marker)
+
+          # Quick Settings keeps live layout drafts alongside the existing view draft.
+          path = 'config/quickshell/awtarchy/QuickSettings.qml'
+          replace_once(path,
+              '    property bool settingsOpen: false\n',
+              '''    property bool settingsOpen: false
+    property bool layoutEditorOpen: false
+    property var layoutOrderDraft: []
+    property var layoutHiddenDraft: []
+    property var savedLayout: ({ order: [], hidden: [] })
+''')
+          replace_once(path,
+              '    readonly property bool settingsDirty: savedView.width !== livePanelWidth\n',
+              '''    readonly property bool layoutDirty: layoutSignature(layoutOrderDraft, layoutHiddenDraft)
+        !== layoutSignature(savedLayout.order, savedLayout.hidden)
+    readonly property bool settingsDirty: savedView.width !== livePanelWidth
+''')
+          replace_once(path,
+              '        || savedView.captureAllowed !== captureAllowed\n',
+              '        || savedView.captureAllowed !== captureAllowed\n        || layoutDirty\n')
+          replace_once(path,
+              '    function schedulerByName(name) {\n',
+              '''    function layoutSignature(order, hidden) {
+        const ordered = Array.isArray(order) ? order : [];
+        const hiddenValues = Array.isArray(hidden) ? hidden : [];
+        const normalizedHidden = ordered.filter(sectionId => hiddenValues.indexOf(sectionId) >= 0);
+        return JSON.stringify(ordered) + "|" + JSON.stringify(normalizedHidden);
+    }
+
+    function quickSettingsSectionVisible(sectionId) {
+        return layoutHiddenDraft.indexOf(sectionId) < 0;
+    }
+
+    function visibleQuickSettingsSectionOrder() {
+        return layoutOrderDraft.filter(sectionId => quickSettingsSectionVisible(sectionId));
+    }
+
+    function quickSettingsSectionRow(sectionId) {
+        const visibleOrder = visibleQuickSettingsSectionOrder();
+        const index = visibleOrder.indexOf(sectionId);
+        if (index < 0)
+            return 0;
+        return FlyoutEdgeLayout.sectionRow(bottomEdgeLayout, index, visibleOrder.length);
+    }
+
+    function moveQuickSettingsSection(sectionId, delta) {
+        const index = layoutOrderDraft.indexOf(sectionId);
+        const target = index + delta;
+        if (index < 0 || target < 0 || target >= layoutOrderDraft.length)
+            return;
+        const next = layoutOrderDraft.slice();
+        const moved = next.splice(index, 1)[0];
+        next.splice(target, 0, moved);
+        layoutOrderDraft = next;
+        Qt.callLater(() => alignContentToBar());
+    }
+
+    function setQuickSettingsSectionVisible(sectionId, visible) {
+        const currentlyVisible = quickSettingsSectionVisible(sectionId);
+        if (currentlyVisible === visible)
+            return;
+        if (!visible && visibleQuickSettingsSectionOrder().length <= 1)
+            return;
+        const next = layoutHiddenDraft.slice();
+        const index = next.indexOf(sectionId);
+        if (visible && index >= 0)
+            next.splice(index, 1);
+        else if (!visible && index < 0)
+            next.push(sectionId);
+        layoutHiddenDraft = next;
+        Qt.callLater(() => alignContentToBar());
+    }
+
+    function resetQuickSettingsLayoutDraft() {
+        layoutOrderDraft = BarState.defaultQuickSettingsSectionOrder.slice();
+        layoutHiddenDraft = [];
+        settingsMessage = "Stock Quick Settings layout restored in draft";
+        Qt.callLater(() => alignContentToBar());
+    }
+
+    function schedulerByName(name) {
+''')
+          replace_once(path,
+              '        captureAllowedOverride = BarState.captureAllowedFor("quick_settings") ? 1 : 0;\n        savedView = ({\n',
+              '''        captureAllowedOverride = BarState.captureAllowedFor("quick_settings") ? 1 : 0;
+        const layout = BarState.quickSettingsLayoutFor(targetScreen.name);
+        layoutOrderDraft = layout.order.slice();
+        layoutHiddenDraft = layout.hidden.slice();
+        savedLayout = ({ order: layoutOrderDraft.slice(), hidden: layoutHiddenDraft.slice() });
+        savedView = ({
+''')
+          replace_once(path,
+              '''        savedView = ({
+            width: livePanelWidth,
+            height: livePanelHeight,
+            textScale: effectiveTextScale,
+            iconScale: effectiveIconScale,
+            captureAllowed: captureAllowed
+        });
+    }
+
+    function discardDraft() {
+''',
+              '''        savedView = ({
+            width: livePanelWidth,
+            height: livePanelHeight,
+            textScale: effectiveTextScale,
+            iconScale: effectiveIconScale,
+            captureAllowed: captureAllowed
+        });
+        savedLayout = ({
+            order: layoutOrderDraft.slice(),
+            hidden: layoutHiddenDraft.slice()
+        });
+    }
+
+    function discardDraft() {
+''')
+          replace_once(path,
+              '''        captureAllowedOverride = savedView.captureAllowed ? 1 : 0;
+        applyWindowSize(width, height);
+    }
+''',
+              '''        captureAllowedOverride = savedView.captureAllowed ? 1 : 0;
+        layoutOrderDraft = savedLayout.order.slice();
+        layoutHiddenDraft = savedLayout.hidden.slice();
+        applyWindowSize(width, height);
+    }
+''')
+          replace_once(path,
+              '''        queueStateCommand([
+            "save-flyout", "quick-settings", activeMonitorName,
+            String(livePanelWidth), String(livePanelHeight),
+            String(effectiveTextScale), String(effectiveIconScale),
+            captureAllowed ? "true" : "false"
+        ]);
+''',
+              '''        queueStateCommand([
+            "save-flyout", "quick-settings", activeMonitorName,
+            String(livePanelWidth), String(livePanelHeight),
+            String(effectiveTextScale), String(effectiveIconScale),
+            captureAllowed ? "true" : "false"
+        ]);
+        queueStateCommand([
+            "save-quick-settings-layout", activeMonitorName,
+            JSON.stringify(layoutOrderDraft), JSON.stringify(layoutHiddenDraft)
+        ]);
+''')
+          replace_once(path,
+              '''        captureAllowedOverride = 0;
+        applyWindowSize(BarState.defaultQuickSettingsWidth, BarState.defaultQuickSettingsHeight);
+        savedView = ({
+''',
+              '''        captureAllowedOverride = 0;
+        layoutOrderDraft = BarState.defaultQuickSettingsSectionOrder.slice();
+        layoutHiddenDraft = [];
+        savedLayout = ({ order: layoutOrderDraft.slice(), hidden: [] });
+        applyWindowSize(BarState.defaultQuickSettingsWidth, BarState.defaultQuickSettingsHeight);
+        savedView = ({
+''')
+          replace_once(path,
+              '        queueStateCommand(["reset-flyout", "quick-settings", activeMonitorName]);\n',
+              '        queueStateCommand(["reset-flyout", "quick-settings", activeMonitorName]);\n        queueStateCommand(["reset-quick-settings-layout", activeMonitorName]);\n')
+          replace_once(path,
+              '''        queueStateCommand([
+            "copy-flyout", "quick-settings",
+            String(livePanelWidth), String(livePanelHeight),
+            String(effectiveTextScale), String(effectiveIconScale),
+            ...targets
+        ]);
+''',
+              '''        queueStateCommand([
+            "copy-flyout", "quick-settings",
+            String(livePanelWidth), String(livePanelHeight),
+            String(effectiveTextScale), String(effectiveIconScale),
+            ...targets
+        ]);
+        queueStateCommand([
+            "copy-quick-settings-layout",
+            JSON.stringify(layoutOrderDraft), JSON.stringify(layoutHiddenDraft),
+            ...targets
+        ]);
+''')
+          replace_once(path,
+              '''    function toggleSettings() {
+        settingsOpen = !settingsOpen;
+        settingsPanel.resetCopySelection();
+        settingsMessage = "";
+    }
+''',
+              '''    function toggleSettings() {
+        settingsOpen = !settingsOpen;
+        layoutEditorOpen = false;
+        settingsPanel.resetCopySelection();
+        settingsMessage = "";
+    }
+''')
+          replace_once(path,
+              '        settingsOpen = false;\n        settingsPanel.resetCopySelection();\n',
+              '        settingsOpen = false;\n        layoutEditorOpen = false;\n        settingsPanel.resetCopySelection();\n')
+          # The close path has the same sequence later in the file.
+          replace_once(path,
+              '        settingsOpen = false;\n        settingsPanel.resetCopySelection();\n        settingsMessage = "";\n        schedulerEditorOpen = false;\n',
+              '        settingsOpen = false;\n        layoutEditorOpen = false;\n        settingsPanel.resetCopySelection();\n        settingsMessage = "";\n        schedulerEditorOpen = false;\n')
+          replace_once(path,
+              '                    Layout.preferredHeight: root.settingsOpen ? settingsPanel.implicitHeight + 12 : 0\n',
+              '''                    Layout.preferredHeight: root.settingsOpen
+                        ? (root.layoutEditorOpen ? layoutEditor.implicitHeight : settingsPanel.implicitHeight) + 12
+                        : 0
+''')
+          replace_once(path,
+              '''                    FlyoutSettings {
+                        id: settingsPanel
+                        anchors.fill: parent
+''',
+              '''                    FlyoutSettings {
+                        id: settingsPanel
+                        anchors.fill: parent
+                        visible: !root.layoutEditorOpen
+''')
+          replace_once(path,
+              '''                        onCopyRequested: monitorNames => root.copyDisplaySettings(monitorNames)
+                        onThemePickerRequested: root.openThemeMenu()
+                    }
+                }
+
+                Flickable {
+''',
+              '''                        onCopyRequested: monitorNames => root.copyDisplaySettings(monitorNames)
+                        onThemePickerRequested: root.openThemeMenu()
+                        onLayoutEditorRequested: root.layoutEditorOpen = true
+                    }
+
+                    QuickSettingsLayoutEditor {
+                        id: layoutEditor
+                        anchors.fill: parent
+                        visible: root.layoutEditorOpen
+                        monitorName: root.activeMonitorName
+                        order: root.layoutOrderDraft
+                        hidden: root.layoutHiddenDraft
+                        onBackRequested: root.layoutEditorOpen = false
+                        onMoveRequested: (sectionId, delta) => root.moveQuickSettingsSection(sectionId, delta)
+                        onVisibilityRequested: (sectionId, visible) => root.setQuickSettingsSectionVisible(sectionId, visible)
+                        onResetRequested: root.resetQuickSettingsLayoutDraft()
+                    }
+                }
+
+                Flickable {
+''')
+
+          section_ids = [
+              'brightness', 'output-volume', 'power-mode', 'bar', 'display-effects', 'submap',
+              'wallpaper', 'awtarchy', 'smtty', 'scheduler', 'numlock', 'title-bars'
+          ]
+          for index, section_id in enumerate(section_ids):
+              old = f'Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, {index}, 12)'
+              new = f'Layout.row: root.quickSettingsSectionRow("{section_id}")\n                            visible: root.quickSettingsSectionVisible("{section_id}")'
+              replace_once(path, old, new)
+          PY
+
+          git diff --check
+          bash -n config/hypr/scripts/quickshell_application_state.sh
+          shellcheck config/hypr/scripts/quickshell_application_state.sh
+          git config user.name 'Awtarchy Layout Patch'
+          git config user.email 'actions@users.noreply.github.com'
+          git add config/hypr/scripts/quickshell_application_state.sh \
+            config/quickshell/awtarchy/BarState.qml \
+            config/quickshell/awtarchy/FlyoutSettings.qml \
+            config/quickshell/awtarchy/QuickSettings.qml
+          git commit -m 'Implement Quick Settings layout customization'
+          git push origin HEAD:feature/quick-settings-layout-customization
+
   quick-settings-layout:
     runs-on: ubuntu-latest
     steps:
