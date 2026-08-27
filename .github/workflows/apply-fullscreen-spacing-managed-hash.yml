@@ -1,0 +1,47 @@
+name: Apply Fullscreen Spacing Managed Hash
+
+on:
+  push:
+    branches:
+      - fix/fullscreen-bar-and-quick-settings-spacing
+    paths:
+      - '.github/workflows/apply-fullscreen-spacing-managed-hash.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: fix/fullscreen-bar-and-quick-settings-spacing
+          fetch-depth: 0
+
+      - name: Record exact final Quick Settings stock hash
+        run: |
+          set -Eeuo pipefail
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          expected='006ab4a89e8bf87d74478cc94c71e612267f9db02da0220aad3cdbb9d8d1ac9d'
+          actual="$(sha256sum config/quickshell/awtarchy/QuickSettings.qml | awk '{print $1}')"
+          [[ "$actual" == "$expected" ]] || {
+            printf 'Unexpected QuickSettings.qml hash: %s\n' "$actual" >&2
+            return 1
+          }
+          entry="${expected}"$'\t''.config/quickshell/awtarchy/QuickSettings.qml'
+          grep -Fxq -- "$entry" "$history" || printf '%s\n' "$entry" >> "$history"
+
+          bash tests/test-hyprbars-quicksettings.sh
+          bash tests/test-bar-fullscreen-visibility.sh
+          bash tests/test-quick-settings-spacing.sh
+          git diff --check
+          git diff -- "$history"
+
+      - name: Commit managed history
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'Record fullscreen spacing Quick Settings stock hash'
+          git push origin HEAD:fix/fullscreen-bar-and-quick-settings-spacing
