@@ -56,6 +56,25 @@ queueState = helper.enqueueThumbnail(queueState.queue, queueState.known, -1);
 assert.deepStrictEqual(queueState.queue, [1],
   "invalid thumbnail index was accepted");
 
+assert.strictEqual(helper.globMatch("awtarchy-text", "awtarchy*"), true,
+  "trailing wildcard did not match a clipboard label prefix");
+assert.strictEqual(helper.globMatch("prefix-awtarchy-text", "awtarchy*"), false,
+  "trailing wildcard ignored the requested prefix anchor");
+assert.strictEqual(helper.globMatch("text-awtarchy", "*awtarchy"), true,
+  "leading wildcard did not match a clipboard label suffix");
+assert.strictEqual(helper.globMatch("text-awtarchy-suffix", "*awtarchy"), false,
+  "leading wildcard ignored the requested suffix anchor");
+assert.strictEqual(helper.globMatch("before-awtarchy-after", "*awtarchy*"), true,
+  "leading and trailing wildcards did not match text containing the query");
+assert.strictEqual(helper.globMatch("awtZZZarchy", "awt*archy"), true,
+  "middle wildcard did not match arbitrary text");
+assert.strictEqual(helper.globMatch("AWTARCHY-TEXT", "awtarchy*"), true,
+  "wildcard matching was not case-insensitive");
+assert.strictEqual(helper.globMatch("awtarchy[1]-text", "awtarchy[1]*"), true,
+  "wildcard search treated regex metacharacters as executable syntax");
+assert.strictEqual(helper.globMatch("anything at all", "*"), true,
+  "a wildcard-only query did not match all clipboard labels");
+
 let transition = helper.requestListLoad(false, false);
 assert.deepStrictEqual(transition, {
   startNow: true,
@@ -86,7 +105,7 @@ assert.deepStrictEqual(helper.finishListLoad(true, false), {
   keepLoading: false
 }, "closed clipboard restarted a stale list process");
 
-console.log("PASS: progressive clipboard model preserves stable rows and restart ordering.");
+console.log("PASS: progressive clipboard model preserves stable rows, wildcard matching, and restart ordering.");
 NODE
 
 require_source 'import "ClipboardLoadState.js" as ClipboardLoadState' \
@@ -99,6 +118,10 @@ require_source 'ClipboardLoadState.requestListLoad(' \
   'Clipboard list does not use the tested stop-before-restart lifecycle'
 require_source 'ClipboardLoadState.enqueueThumbnail(' \
   'Clipboard menu does not deduplicate lazy thumbnail requests'
+require_source 'ClipboardLoadState.globMatch(' \
+  'Clipboard wildcard searches do not use the tested glob matcher'
+require_source 'query.indexOf("*") >= 0' \
+  'Clipboard search does not switch to glob semantics when a wildcard is present'
 require_source '[root.backend, "thumb", String(root.activeThumbnailIndex)]' \
   'Clipboard menu does not request thumbnails through the lazy backend action'
 require_source 'reuseItems: true' \
@@ -117,5 +140,10 @@ require_source 'text: "No clipboard matches"' \
   'Clipboard menu leaves an empty search result blank'
 require_source 'Behavior on opacity {' \
   'Progressively loaded clipboard rows do not animate into view'
-require_source 'duration: Math.min(row.index, 12) * 18' \
-  'Clipboard row animation does not visibly progress newest-first'
+require_source 'duration: Math.min(Math.max(row.index, 0), 12) * 18' \
+  'Clipboard row animation can still receive a negative recycled delegate index'
+require_source 'id: clipboardContent' \
+  'Clipboard list and status/detail surfaces do not share one layout cell container'
+
+[[ "$(grep -Fc 'Layout.row: root.bottomEdgeLayout ? 0 : 2' "$QML")" -eq 1 ]] \
+  || fail 'Clipboard content still assigns multiple GridLayout children to the same row'
