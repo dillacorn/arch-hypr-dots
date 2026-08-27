@@ -1,0 +1,102 @@
+name: Apply Quick Settings Compatibility Host Fix
+
+on:
+  push:
+    branches:
+      - fix/fullscreen-bar-and-quick-settings-spacing
+    paths:
+      - '.github/workflows/apply-quick-settings-compat-host-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: fix/fullscreen-bar-and-quick-settings-spacing
+          fetch-depth: 0
+
+      - name: Move compatibility host outside section GridLayout
+        run: |
+          set -Eeuo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('config/quickshell/awtarchy/QuickSettings.qml')
+          text = path.read_text(encoding='utf-8')
+
+          old = '''                        PowerModeCard {
+                              active: quickSettingsWindow.visible
+                              textScale: root.effectiveTextScale
+                              iconScale: root.effectiveIconScale
+                          }
+
+          '''
+          if old not in text:
+              old = '''                        PowerModeCard {
+                              active: quickSettingsWindow.visible
+                              textScale: root.effectiveTextScale
+                              iconScale: root.effectiveIconScale
+                          }
+'''
+
+          # Use the exact current formatting from the branch.
+          exact = '''                        PowerModeCard {
+                              active: quickSettingsWindow.visible
+                              textScale: root.effectiveTextScale
+                              iconScale: root.effectiveIconScale
+                          }
+'''
+          if exact not in text:
+              exact = '''                        PowerModeCard {
+                            active: quickSettingsWindow.visible
+                            textScale: root.effectiveTextScale
+                            iconScale: root.effectiveIconScale
+                        }
+'''
+          if text.count(exact) != 1:
+              raise SystemExit(f'expected exactly one compatibility PowerModeCard block, found {text.count(exact)}')
+
+          text = text.replace(exact, '', 1)
+
+          anchor = '''            GridLayout {
+                anchors.fill: parent
+                columns: 1
+'''
+          if text.count(anchor) != 1:
+              raise SystemExit(f'expected exactly one panel GridLayout anchor, found {text.count(anchor)}')
+
+          compat = '''            PowerModeCard {
+                active: quickSettingsWindow.visible
+                textScale: root.effectiveTextScale
+                iconScale: root.effectiveIconScale
+            }
+
+'''
+          text = text.replace(anchor, compat + anchor, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          bash tests/test-bar-fullscreen-visibility.sh
+          bash tests/test-quick-settings-spacing.sh
+          bash tests/test-hyprbars-quicksettings.sh
+          git diff --check
+
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          path='.config/quickshell/awtarchy/QuickSettings.qml'
+          digest="$(sha256sum config/quickshell/awtarchy/QuickSettings.qml | awk '{print $1}')"
+          entry="${digest}"$'\t'"${path}"
+          grep -Fxq -- "$entry" "$history" || printf '%s\n' "$entry" >> "$history"
+          printf 'Recorded QuickSettings.qml SHA-256: %s\n' "$digest"
+
+      - name: Commit fix
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add config/quickshell/awtarchy/QuickSettings.qml local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'Keep Power Mode compatibility host out of Quick Settings layout'
+          git push origin HEAD:fix/fullscreen-bar-and-quick-settings-spacing
