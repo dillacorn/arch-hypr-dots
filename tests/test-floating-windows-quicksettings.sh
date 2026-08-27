@@ -110,6 +110,11 @@ cp -- "$TEST_LUA" "$before_enable"
   || fail 'enabling Floating Windows did not report enabled'
 contains "$TEST_LUA" 'local awtarchy_floating_windows = true -- AWTARCHY_FLOATING_WINDOWS' \
   'enabling Floating Windows did not persist the true marker'
+# A fresh helper process must recover the enabled state from hyprland.lua rather
+# than relying on transient Quickshell/session state. This is what preserves the
+# user's preference across relogins and reboots.
+[[ "$(run_helper status)" == "enabled" ]] \
+  || fail 'enabled Floating Windows state was not recovered from persisted hyprland.lua'
 normalized="${TMP}/normalized.lua"
 sed 's/local awtarchy_floating_windows = true -- AWTARCHY_FLOATING_WINDOWS/local awtarchy_floating_windows = false -- AWTARCHY_FLOATING_WINDOWS/' \
   "$TEST_LUA" >"$normalized"
