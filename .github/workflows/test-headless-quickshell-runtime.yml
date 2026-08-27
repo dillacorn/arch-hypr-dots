@@ -74,20 +74,8 @@ jobs:
           git diff --check origin/main..HEAD
 
   headless-runtime:
-    name: Headless runtime - ${{ matrix.name }}
+    name: Headless runtime backend proof
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: clipboard
-            ref: feature/progressive-clipboard-loading
-          - name: display-scale
-            ref: feature/focused-display-scale
-          - name: quick-settings-layout
-            ref: feature/quick-settings-layout-customization
-          - name: floating-windows
-            ref: feature/floating-windows-default
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
@@ -95,7 +83,7 @@ jobs:
       - name: Preserve harness and check out exact feature head
         shell: bash
         env:
-          TARGET_REF: ${{ matrix.ref }}
+          TARGET_REF: feature/quick-settings-layout-customization
         run: |
           set -Eeuo pipefail
           cp .github/scripts/headless-quickshell-runtime-smoke.sh /tmp/headless-quickshell-runtime-smoke.sh
@@ -104,49 +92,66 @@ jobs:
           git switch --detach "origin/${TARGET_REF}"
           printf 'Target: %s\n' "$TARGET_REF"
           git rev-parse HEAD
-      - name: Prepare software virtual DRM
+      - name: Prepare VGEM software virtual DRM
         shell: bash
         run: |
           set -Eeuo pipefail
-          printf '%s\n' 'Attempting VGEM virtual render device...'
-          if sudo modprobe vgem; then
-            printf '%s\n' 'VGEM loaded.'
-          else
-            printf '%s\n' 'VGEM unavailable; runtime harness will try nested Weston.'
+          before="${RUNNER_TEMP}/dri-before"
+          after="${RUNNER_TEMP}/dri-after"
+          find /dev/dri -maxdepth 1 -type c -name 'card*' -print 2>/dev/null | sort >"$before" || true
+
+          if ! sudo modprobe vgem 2>/dev/null; then
+            printf '%s\n' 'VGEM is not in the runner base module set; installing matching Azure extra modules.'
+            sudo apt-get update
+            sudo apt-get install -y "linux-modules-extra-$(uname -r)"
+            sudo modprobe vgem
           fi
-          ls -la /dev/dri 2>/dev/null || true
-          for node in /dev/dri/card* /dev/dri/renderD*; do
-            [[ -e "$node" ]] || continue
-            udevadm info --query=property --name="$node" 2>/dev/null \
-              | grep -E '^(DEVNAME|DRIVER|ID_PATH|ID_MODEL)=' || true
-          done
+
+          find /dev/dri -maxdepth 1 -type c -name 'card*' -print 2>/dev/null | sort >"$after" || true
+          VGEM_CARD="$(comm -13 "$before" "$after" | head -n1)"
+
+          if [[ -z "$VGEM_CARD" ]]; then
+            for node in /dev/dri/card*; do
+              [[ -e "$node" ]] || continue
+              name="$(basename "$node")"
+              driver="$(basename "$(readlink -f "/sys/class/drm/${name}/device/driver" 2>/dev/null)" 2>/dev/null || true)"
+              if [[ "$driver" == vgem ]]; then
+                VGEM_CARD="$node"
+                break
+              fi
+            done
+          fi
+
+          [[ -n "$VGEM_CARD" && -e "$VGEM_CARD" ]] || {
+            printf '%s\n' 'VGEM loaded but its DRM card could not be identified.' >&2
+            ls -la /dev/dri >&2 || true
+            exit 1
+          }
+
+          printf 'VGEM_CARD=%s\n' "$VGEM_CARD" | tee -a "$GITHUB_ENV"
+          ls -la /dev/dri
+          udevadm info --query=all --name="$VGEM_CARD" || true
       - name: Run live Hyprland and Quickshell in Arch container
         shell: bash
         env:
-          TARGET_REF: ${{ matrix.ref }}
+          TARGET_REF: feature/quick-settings-layout-customization
         run: |
           set -Eeuo pipefail
           mkdir -p runtime-artifacts
-          docker_args=(
-            --rm
-            --privileged
-            -e "TARGET_REF=${TARGET_REF}"
-            -e ARTIFACT_DIR=/artifacts
-            -v "$PWD:/repo:ro"
-            -v "/tmp/headless-quickshell-runtime-smoke.sh:/runtime-smoke.sh:ro"
-            -v "$PWD/runtime-artifacts:/artifacts"
-          )
-          if [[ -d /dev/dri ]]; then
-            docker_args+=( -v /dev/dri:/dev/dri )
-          fi
-          docker run "${docker_args[@]}" \
+          docker run --rm \
+            --device "$VGEM_CARD:$VGEM_CARD" \
+            -e "TARGET_REF=${TARGET_REF}" \
+            -e ARTIFACT_DIR=/artifacts \
+            -v "$PWD:/repo:ro" \
+            -v "/tmp/headless-quickshell-runtime-smoke.sh:/runtime-smoke.sh:ro" \
+            -v "$PWD/runtime-artifacts:/artifacts" \
             archlinux:base-devel \
-            bash /runtime-smoke.sh
+            bash -lc 'chmod a+rw /dev/dri/card* 2>/dev/null || true; exec bash /runtime-smoke.sh'
       - name: Upload runtime evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: headless-runtime-${{ matrix.name }}
+          name: headless-runtime-backend-proof
           path: runtime-artifacts/
           if-no-files-found: warn
           retention-days: 3
