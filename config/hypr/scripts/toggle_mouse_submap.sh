@@ -3,7 +3,10 @@
 
 set -euo pipefail
 
-SUBMAP_FILE="/tmp/hypr-submap"
+SUBMAP_STATE_DIR="${XDG_RUNTIME_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}}"
+SUBMAP_FILE="${HYPR_SUBMAP_STATE_FILE:-${SUBMAP_STATE_DIR}/awtarchy-hypr-submap}"
+
+mkdir -p -- "$(dirname -- "$SUBMAP_FILE")"
 
 enter_mouse() {
   printf '%s\n' mouse > "$SUBMAP_FILE"

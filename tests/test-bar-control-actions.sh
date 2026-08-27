@@ -6,9 +6,8 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 MOUSE_SCRIPT="${AWTARCHY_TEST_MOUSE_SCRIPT:-${ROOT}/config/hypr/scripts/toggle_mouse_submap.sh}"
 VOLUME_SCRIPT="${AWTARCHY_TEST_VOLUME_SCRIPT:-${ROOT}/config/hypr/scripts/quickshell_volume.sh}"
 TMP="$(mktemp -d)"
-SUBMAP_FILE="/tmp/hypr-submap"
-SUBMAP_BACKUP="${TMP}/hypr-submap.backup"
-submap_existed=false
+SUBMAP_RUNTIME="${TMP}/submap-runtime"
+SUBMAP_FILE="${SUBMAP_RUNTIME}/awtarchy-hypr-submap"
 volume_pids=()
 
 cleanup() {
@@ -19,10 +18,6 @@ cleanup() {
     kill "$volume_pid" >/dev/null 2>&1 || true
     wait "$volume_pid" 2>/dev/null || true
   done
-  rm -f -- "$SUBMAP_FILE"
-  if [[ $submap_existed == true ]]; then
-    cp -a -- "$SUBMAP_BACKUP" "$SUBMAP_FILE"
-  fi
   rm -rf -- "$TMP"
 }
 trap cleanup EXIT
@@ -32,17 +27,11 @@ fail() {
   exit 1
 }
 
-if [[ -e $SUBMAP_FILE || -L $SUBMAP_FILE ]]; then
-  cp -a -- "$SUBMAP_FILE" "$SUBMAP_BACKUP"
-  submap_existed=true
-fi
-rm -f -- "$SUBMAP_FILE"
-
 fakebin="${TMP}/mouse-bin"
 config_home="${TMP}/config"
 hyprctl_log="${TMP}/hyprctl.log"
 runtime_marker="${TMP}/runtime-rules-ran"
-mkdir -p "$fakebin" "${config_home}/hypr/scripts"
+mkdir -p "$fakebin" "${config_home}/hypr/scripts" "$SUBMAP_RUNTIME"
 
 cat >"${fakebin}/hyprctl" <<'EOF'
 #!/usr/bin/env bash
@@ -65,6 +54,27 @@ cat >"${config_home}/hypr/scripts/quickshell_runtime_rules.sh" <<'EOF'
 EOF
 chmod 0755 "${config_home}/hypr/scripts/quickshell_runtime_rules.sh"
 
+for submap_source in \
+  "$MOUSE_SCRIPT" \
+  "${ROOT}/config/hypr/scripts/hypr_quicksettings_core.sh" \
+  "${ROOT}/config/hypr/hyprland.lua" \
+  "${ROOT}/config/quickshell/awtarchy/Bar.qml" \
+  "${ROOT}/local/share/applications/vm_submap.desktop" \
+  "${ROOT}/local/share/applications/noalt_submap.desktop"
+do
+  ! grep -Fq '/tmp/hypr-submap' "$submap_source" \
+    || fail "${submap_source#"${ROOT}/"} still uses shared /tmp submap state"
+  grep -Fq 'awtarchy-hypr-submap' "$submap_source" \
+    || fail "${submap_source#"${ROOT}/"} does not use the per-user submap state"
+done
+
+if command -v desktop-file-validate >/dev/null 2>&1; then
+  desktop-file-validate \
+    "${ROOT}/local/share/applications/vm_submap.desktop" \
+    "${ROOT}/local/share/applications/noalt_submap.desktop"
+fi
+
+XDG_RUNTIME_DIR="$SUBMAP_RUNTIME" \
 PATH="${fakebin}:$PATH" \
   XDG_CONFIG_HOME="$config_home" \
   HYPRCTL_LOG="$hyprctl_log" \
@@ -81,7 +91,8 @@ fi
 grep -Fxq 'dispatch hl.dsp.submap("mouse")' "$hyprctl_log" \
   || fail "mouse mode did not dispatch the declared mouse submap"
 
-PATH="${fakebin}:$PATH" \
+XDG_RUNTIME_DIR="$SUBMAP_RUNTIME" \
+  PATH="${fakebin}:$PATH" \
   XDG_CONFIG_HOME="$config_home" \
   HYPRCTL_LOG="$hyprctl_log" \
   RUNTIME_RULES_MARKER="$runtime_marker" \

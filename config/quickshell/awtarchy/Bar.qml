@@ -49,6 +49,10 @@ PanelWindow {
     anchors.right: position === "right" || !vertical
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
+    readonly property string runtimeHome: Quickshell.env("XDG_RUNTIME_DIR")
+        || Quickshell.env("XDG_CACHE_HOME")
+        || (Quickshell.env("HOME") + "/.cache")
+    readonly property string submapStatePath: Quickshell.env("HYPR_SUBMAP_STATE_FILE") || (runtimeHome + "/awtarchy-hypr-submap")
     readonly property string ddcScript: configHome + "/hypr/scripts/ddc_brightness.sh"
     readonly property string wiremixScript: configHome + "/hypr/scripts/wiremix-toggle.sh"
     readonly property string volumeScript: configHome + "/hypr/scripts/quickshell_volume.sh"
@@ -243,7 +247,7 @@ PanelWindow {
 
     FileView {
         id: submapFile
-        path: "/tmp/hypr-submap"
+        path: bar.submapStatePath
         blockLoading: false
         watchChanges: true
         printErrors: false

@@ -511,7 +511,7 @@ hl.gesture({ fingers = 3, direction = "horizontal", action = "workspace" })
 local mod = "ALT"
 local super = "SUPER"
 local tempalt = "ALT"
-local submap_file = "/tmp/hypr-submap"
+local submap_file = '${HYPR_SUBMAP_STATE_FILE:-${XDG_RUNTIME_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}}/awtarchy-hypr-submap}'
 
 -- ───────────────────────────────────────────────────────────────────────────────
 -- LAUNCHERS / COMMANDS
@@ -579,11 +579,11 @@ local smtty_O = "~/.config/hypr/scripts/launch_handler.sh smtty-O \"~/.config/hy
 
 -- Submap references (Toggle on)  [write name to file on entry]
 local function _submap_on_cmd(name)
-    return "sh -c 'echo " .. name .. " > /tmp/hypr-submap; notify-send -a Hyprland -t 1000 \"" .. name .. " mode: ON\"; hyprctl dispatch \"hl.dsp.submap(\\\"" .. name .. "\\\")\"'"
+    return "sh -c 'state_file=\"" .. submap_file .. "\"; mkdir -p -- \"$(dirname -- \"$state_file\")\"; printf \"%s\\n\" \"" .. name .. "\" > \"$state_file\"; notify-send -a Hyprland -t 1000 \"" .. name .. " mode: ON\"; hyprctl dispatch \"hl.dsp.submap(\\\"" .. name .. "\\\")\"'"
 end
 
 local function _submap_off_cmd(name)
-    return "sh -c 'truncate -s 0 /tmp/hypr-submap; notify-send -a Hyprland -t 1000 \"" .. name .. " mode: OFF\"; hyprctl dispatch \"hl.dsp.submap(\\\"reset\\\")\"'"
+    return "sh -c 'state_file=\"" .. submap_file .. "\"; mkdir -p -- \"$(dirname -- \"$state_file\")\"; : > \"$state_file\"; notify-send -a Hyprland -t 1000 \"" .. name .. " mode: OFF\"; hyprctl dispatch \"hl.dsp.submap(\\\"reset\\\")\"'"
 end
 
 local noalt_on = _submap_on_cmd("noalt")

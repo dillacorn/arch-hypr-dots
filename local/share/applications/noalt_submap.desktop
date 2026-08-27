@@ -4,7 +4,7 @@
 [Desktop Entry]
 Type=Application
 Name=noalt submap (disable alt navigation)
-Exec=/bin/sh -c "echo noalt > /tmp/hypr-submap; notify-send -a Hyprland -t 1000 'noalt submap: ON'; hyprctl dispatch submap noalt"
+Exec=/bin/sh -c "state_dir=\\${XDG_RUNTIME_DIR:-\\${XDG_CACHE_HOME:-\\$HOME/.cache}}; mkdir -p -- \"\\$state_dir\"; echo noalt > \"\\$state_dir/awtarchy-hypr-submap\"; notify-send -a Hyprland -t 1000 'noalt submap: ON'; hyprctl dispatch 'hl.dsp.submap(\"noalt\")'"
 Icon=utilities-terminal
 Terminal=false
 Categories=Utility;
