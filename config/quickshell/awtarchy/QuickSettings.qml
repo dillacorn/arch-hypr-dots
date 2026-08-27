@@ -836,6 +836,12 @@ Singleton {
                 onPressed: mouse => mouse.accepted = true
             }
 
+            PowerModeCard {
+                active: quickSettingsWindow.visible
+                textScale: root.effectiveTextScale
+                iconScale: root.effectiveIconScale
+            }
+
             GridLayout {
                 anchors.fill: parent
                 columns: 1
@@ -1231,11 +1237,6 @@ Singleton {
                             }
                         }
 
-                        PowerModeCard {
-                            active: quickSettingsWindow.visible
-                            textScale: root.effectiveTextScale
-                            iconScale: root.effectiveIconScale
-                        }
 
                         Rectangle {
                             Layout.row: FlyoutEdgeLayout.sectionRow(root.bottomEdgeLayout, 2, 11)
