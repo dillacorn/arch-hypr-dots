@@ -148,6 +148,20 @@ require_source 'id: clipboardStatus' \
   'Clipboard status overlay is not inside the shared clipboard content container'
 require_source 'id: clipboardDetail' \
   'Clipboard detail surface is not inside the shared clipboard content container'
+require_source 'function deleteEntry(entry)' \
+  'Clipboard menu has no per-entry delete action'
+require_source 'deleteProcess.exec([backend, "delete", String(entry.index)]);' \
+  'Clipboard delete action does not target the stable backend row index'
+require_source 'id: deleteProcess' \
+  'Clipboard deletion does not use a dedicated process lifecycle'
+require_source 'if (exitCode === 0 && root.clipboardWindowVisible())' \
+  'Clipboard deletion does not preserve the open flyout before refreshing'
+require_source 'root.beginListLoad();' \
+  'Clipboard deletion does not refresh the progressive list after success'
+require_source 'id: deleteButton' \
+  'Clipboard rows have no permanent-delete control'
+require_source 'root.deleteEntry(row.modelData);' \
+  'Clipboard row delete control is not wired to the selected model entry'
 
 # Real-session diagnostics exposed both failures this section guards: recycled
 # delegates produced negative animation durations, and list/status/detail items
