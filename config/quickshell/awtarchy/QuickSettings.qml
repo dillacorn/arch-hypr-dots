@@ -257,7 +257,10 @@ Singleton {
     }
 
     function visibleQuickSettingsSectionOrder() {
-        return layoutOrderDraft.filter(sectionId => quickSettingsSectionVisible(sectionId));
+        const ordered = layoutOrderDraft.length > 0
+            ? layoutOrderDraft
+            : BarState.defaultQuickSettingsSectionOrder;
+        return ordered.filter(sectionId => quickSettingsSectionVisible(sectionId));
     }
 
     function quickSettingsSectionRow(sectionId) {

@@ -11,6 +11,7 @@ on:
       - 'config/quickshell/awtarchy/QuickSettingsLayoutEditor.qml'
       - 'local/share/awtarchy/quickshell-managed-history.sha256'
       - 'tests/test-quick-settings-layout.sh'
+      - 'tests/test-quick-settings-startup-rows.sh'
   workflow_dispatch:
 
 permissions:
@@ -27,6 +28,9 @@ jobs:
         run: |
           bash -n config/hypr/scripts/quickshell_application_state.sh
           bash -n tests/test-quick-settings-layout.sh
+          bash -n tests/test-quick-settings-startup-rows.sh
           shellcheck config/hypr/scripts/quickshell_application_state.sh
           shellcheck tests/test-quick-settings-layout.sh
+          shellcheck tests/test-quick-settings-startup-rows.sh
           bash tests/test-quick-settings-layout.sh
+          bash tests/test-quick-settings-startup-rows.sh
