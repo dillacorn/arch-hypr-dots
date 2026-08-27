@@ -169,7 +169,7 @@ source = source.replace(
     1,
 )
 source = source.replace(
-    'if awtarchy_floating_windows then\n'
+    '\nif awtarchy_floating_windows then\n'
     '    hl.window_rule({ match = { class = ".*" }, float = true })\n'
     '    hl.window_rule({ match = { class = games }, tile = true })\n'
     'end\n',
