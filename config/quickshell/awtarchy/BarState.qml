@@ -57,7 +57,6 @@ Singleton {
     readonly property var defaultQuickSettingsSectionOrder: [
         "brightness",
         "output-volume",
-        "power-mode",
         "bar",
         "display-effects",
         "submap",

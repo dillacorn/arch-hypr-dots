@@ -927,6 +927,12 @@ Singleton {
                 onPressed: mouse => mouse.accepted = true
             }
 
+            PowerModeCard {
+                active: quickSettingsWindow.visible
+                textScale: root.effectiveTextScale
+                iconScale: root.effectiveIconScale
+            }
+
             GridLayout {
                 anchors.fill: parent
                 columns: 1
@@ -1342,13 +1348,6 @@ Singleton {
                             }
                         }
 
-                        PowerModeCard {
-                            Layout.row: root.quickSettingsSectionRow("power-mode")
-                            visible: root.quickSettingsSectionVisible("power-mode")
-                            active: quickSettingsWindow.visible
-                            textScale: root.effectiveTextScale
-                            iconScale: root.effectiveIconScale
-                        }
 
                         Rectangle {
                             Layout.row: root.quickSettingsSectionRow("bar")

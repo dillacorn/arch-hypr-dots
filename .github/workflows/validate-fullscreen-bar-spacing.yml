@@ -1,0 +1,29 @@
+name: Validate Fullscreen Bar and Quick Settings Spacing
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/validate-fullscreen-bar-spacing.yml'
+      - 'config/quickshell/awtarchy/Bar.qml'
+      - 'config/quickshell/awtarchy/QuickSettings.qml'
+      - 'tests/test-bar-fullscreen-visibility.sh'
+      - 'tests/test-quick-settings-spacing.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fullscreen-bar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Validate fullscreen bar visibility
+        run: bash tests/test-bar-fullscreen-visibility.sh
+
+  quick-settings-spacing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Validate Quick Settings section spacing
+        run: bash tests/test-quick-settings-spacing.sh

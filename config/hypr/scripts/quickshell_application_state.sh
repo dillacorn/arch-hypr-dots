@@ -18,7 +18,7 @@ MIN_ICON_SCALE=50
 MAX_ICON_SCALE=200
 SAVE_VERSION=2
 QUICK_SETTINGS_LAYOUT_SAVE_VERSION=1
-QUICK_SETTINGS_SECTIONS_JSON='["brightness","output-volume","power-mode","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","title-bars"]'
+QUICK_SETTINGS_SECTIONS_JSON='["brightness","output-volume","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","title-bars"]'
 TMP_FILE=""
 
 need() {
