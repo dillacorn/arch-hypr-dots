@@ -14,12 +14,19 @@ Item {
     property string targetKey: "current"
     property var commandQueue: []
     property string message: ""
+    property real displayScale: 1
+    property int monitorPixelWidth: 0
+    property int monitorPixelHeight: 0
+    property real pendingDisplayScale: 1
+    property string displayScaleError: ""
 
     signal themePickerRequested()
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
         || (Quickshell.env("HOME") + "/.config")
     readonly property string managerScript: configHome + "/hypr/scripts/quickshell.sh"
+    readonly property string displayScaleScript: configHome + "/hypr/scripts/quickshell_display_scale.sh"
+    readonly property var displayScalePresets: [1, 1.25, 1.5, 2]
 
     implicitHeight: active ? controls.implicitHeight + 12 : 0
 
@@ -209,11 +216,87 @@ Item {
         enqueue("settextscale", next);
     }
 
+    function displayScalePercent(value) {
+        return Math.round(Number(value) * 100) + "%";
+    }
+
+    function displayScaleValid(value) {
+        const scale = Number(value);
+        const width = Number(monitorPixelWidth);
+        const height = Number(monitorPixelHeight);
+        if (!Number.isFinite(scale) || scale <= 0 || width <= 0 || height <= 0)
+            return false;
+        const logicalWidth = width / scale;
+        const logicalHeight = height / scale;
+        return Math.abs(logicalWidth - Math.round(logicalWidth)) < 0.0001
+            && Math.abs(logicalHeight - Math.round(logicalHeight)) < 0.0001;
+    }
+
+    function refreshDisplayScale() {
+        if (!active || monitorName.length === 0 || scaleStatusRunner.running || scaleWriter.running)
+            return;
+        scaleStatusRunner.exec(["bash", root.displayScaleScript, "status", root.monitorName]);
+    }
+
+    function setDisplayScale(value) {
+        const scale = Number(value);
+        if (monitorName.length === 0 || scaleWriter.running || !displayScaleValid(scale))
+            return;
+        pendingDisplayScale = scale;
+        displayScaleError = "";
+        message = "Display scale " + displayScalePercent(scale) + " · " + monitorName;
+        scaleWriter.exec(["bash", root.displayScaleScript, "set", root.monitorName, String(scale)]);
+    }
+
+    onMonitorNameChanged: refreshDisplayScale()
+    onActiveChanged: {
+        if (active)
+            refreshDisplayScale();
+    }
+
     Process {
         id: writer
         onExited: {
             BarState.refresh();
             root.runNextCommand();
+        }
+    }
+
+    Process {
+        id: scaleStatusRunner
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    const status = JSON.parse(text.trim());
+                    root.displayScale = Number(status.scale || 1);
+                    root.monitorPixelWidth = Number(status.width || 0);
+                    root.monitorPixelHeight = Number(status.height || 0);
+                } catch (error) {
+                    root.monitorPixelWidth = 0;
+                    root.monitorPixelHeight = 0;
+                }
+            }
+        }
+    }
+
+    Process {
+        id: scaleWriter
+        stderr: StdioCollector {
+            onStreamFinished: root.displayScaleError = text.trim()
+        }
+        onExited: (exitCode, exitStatus) => {
+            if (exitCode === 0) {
+                root.displayScale = root.pendingDisplayScale;
+                root.message = "Display scale " + root.displayScalePercent(root.displayScale)
+                    + " · " + root.monitorName;
+                root.refreshDisplayScale();
+                return;
+            }
+            const errorText = root.displayScaleError.length > 0
+                ? root.displayScaleError.split("\n")[0]
+                : "Display scale change failed";
+            root.message = errorText;
+            root.refreshDisplayScale();
         }
     }
 
@@ -276,6 +359,46 @@ Item {
                     label: "Reset"
                     textSize: 9
                     onClicked: root.resetAppearance()
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 26
+                spacing: 5
+
+                Text {
+                    Layout.preferredWidth: 78
+                    text: "Display scale"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                }
+
+                Repeater {
+                    model: root.displayScalePresets
+                    delegate: SettingsButton {
+                        required property var modelData
+
+                        label: root.displayScalePercent(Number(modelData))
+                        textSize: 9
+                        horizontalPadding: 10
+                        active: Math.abs(root.displayScale - Number(modelData)) < 0.001
+                        available: !scaleWriter.running
+                            && root.displayScaleValid(Number(modelData))
+                        onClicked: root.setDisplayScale(Number(modelData))
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Text {
+                    text: root.monitorName.length > 0 ? "Focused · " + root.monitorName : "Focused display"
+                    color: Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 9
+                    elide: Text.ElideMiddle
+                    Layout.maximumWidth: 120
                 }
             }
 
