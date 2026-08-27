@@ -50,22 +50,16 @@ jobs:
               raise SystemExit(f"expected one recovery-function anchor, found {text.count(old)}")
           text = text.replace(old, new, 1)
 
-          old = '''start_quickshell_update_shell() {
-            command -v hyprctl >/dev/null 2>&1 || return 0
-            [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || return 0
-
-            local manager="${HOME_DIR}/.config/hypr/scripts/quickshell.sh"
+          old = '''  init_target_user
+            acquire_lock
           '''
-          new = '''start_quickshell_update_shell() {
-            command -v hyprctl >/dev/null 2>&1 || return 0
-            awtarchy_polkit_recover_session_environment || return 1
-            [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || return 0
-
-            local manager="${HOME_DIR}/.config/hypr/scripts/quickshell.sh"
+          new = '''  init_target_user
+            awtarchy_polkit_recover_session_environment || true
+            acquire_lock
           '''
 
           if text.count(old) != 1:
-              raise SystemExit(f"expected one Quickshell-start anchor, found {text.count(old)}")
+              raise SystemExit(f"expected one updater initialization anchor, found {text.count(old)}")
           path.write_text(text.replace(old, new, 1), encoding="utf-8")
           PY
 
@@ -85,5 +79,3 @@ jobs:
           git rm .github/workflows/tmp-fix-session-runtime.yml
           git commit -m "Recover updater runtime environment"
           git push origin HEAD:fix-update-session-environment
-
-# Existing helper trigger commit.
