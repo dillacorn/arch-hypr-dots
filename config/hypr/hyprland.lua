@@ -1156,6 +1156,11 @@ end)
 -- RULES
 -- ───────────────────────────────────────────────────────────────────────────────
 
+local awtarchy_floating_windows = false -- AWTARCHY_FLOATING_WINDOWS
+if awtarchy_floating_windows then
+    hl.window_rule({ match = { class = ".*" }, float = true })
+end
+
 -- Games: send to workspace 1, strip effects, fullscreen, allow tearing, keep awake
 -- Note: Proton/Wine windows often have class like "game.exe" (not "Wine"), so we also match *.exe.
 local games = "^(steam_app_.*|lutris_game_class|minigalaxy|playnite_game_class|gamescope|chiaki|moonlight|com\\.moonlight_stream\\.Moonlight|.*\\.exe)$"
