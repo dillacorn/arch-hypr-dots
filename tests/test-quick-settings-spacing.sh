@@ -59,24 +59,39 @@ if re.search(r"\bPowerModeCard\s*\{", settings_column_text):
         "FAIL: inert PowerModeCard compatibility instance still participates in settingsColumn GridLayout"
     )
 
-rows = [
-    (int(index), int(count))
-    for index, count in re.findall(
-        r"Layout\.row:\s*FlyoutEdgeLayout\.sectionRow\(root\.bottomEdgeLayout,\s*(\d+),\s*(\d+)\)",
-        text,
-    )
+expected = [
+    "brightness",
+    "output-volume",
+    "bar",
+    "display-effects",
+    "submap",
+    "wallpaper",
+    "awtarchy",
+    "smtty",
+    "scheduler",
+    "numlock",
+    "title-bars",
 ]
+row_sections = re.findall(
+    r'Layout\.row:\s*root\.quickSettingsSectionRow\("([^"]+)"\)',
+    settings_column_text,
+)
+visible_sections = re.findall(
+    r'visible:\s*root\.quickSettingsSectionVisible\("([^"]+)"\)',
+    settings_column_text,
+)
 
-if not rows:
-    raise SystemExit("FAIL: no Quick Settings section rows were found")
+if row_sections != expected:
+    raise SystemExit(
+        f"FAIL: Quick Settings dynamic section rows are not the expected contiguous real-section sequence: {row_sections}"
+    )
+if visible_sections != expected:
+    raise SystemExit(
+        f"FAIL: Quick Settings visibility bindings do not match the real-section sequence: {visible_sections}"
+    )
 
-counts = {count for _, count in rows}
-if counts != {11}:
-    raise SystemExit(f"FAIL: Quick Settings section row counts are not normalized to 11: {sorted(counts)}")
+if 'FlyoutEdgeLayout.sectionRow(bottomEdgeLayout, index, visibleOrder.length)' not in text:
+    raise SystemExit("FAIL: dynamic Quick Settings rows no longer compact visible sections for top/bottom layout")
 
-indices = sorted(index for index, _ in rows)
-if indices != list(range(11)):
-    raise SystemExit(f"FAIL: Quick Settings section rows are not contiguous: {indices}")
-
-print("PASS: Quick Settings keeps its inert Power Mode compatibility host outside the visible section GridLayout.")
+print("PASS: Quick Settings keeps the inert Power Mode compatibility host outside the grid and dynamically packs the 11 real sections without a dead gap.")
 PY
