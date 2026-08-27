@@ -75,13 +75,19 @@ require_source "$NOTIFICATIONS" 'clearFading: root.clearFadeNotifications.indexO
 require_source "$NOTIFICATIONS" 'values[i].dismiss();' \
     'animated Clear no longer permanently removes notification history'
 
+# Clear uses a dedicated opacity multiplier so normal swipe opacity stays immediate.
 require_source "$CARD" 'property bool clearFading: false' \
     'notification cards have no lightweight Clear fade state'
-require_source "$CARD" 'opacity: root.clearFading ? 0 :' \
-    'notification Clear state does not fade cards out'
-require_source "$CARD" 'Behavior on opacity {' \
-    'notification Clear fade is not animated'
+require_source "$CARD" 'property real clearOpacity: clearFading ? 0 : 1' \
+    'notification cards do not isolate Clear opacity from swipe opacity'
+require_source "$CARD" 'opacity: root.clearOpacity * Math.max(0.45, 1 - Math.min(0.55,' \
+    'notification Clear opacity is not composed with the existing swipe opacity'
+require_source "$CARD" 'Behavior on clearOpacity {' \
+    'notification Clear fade is not isolated to the Clear animation state'
 require_source "$CARD" 'duration: 110' \
     'notification Clear fade duration changed unexpectedly'
+if grep -Fq 'Behavior on opacity {' "$CARD"; then
+    fail 'notification Clear animation adds latency to normal swipe opacity changes'
+fi
 
 printf '%s\n' 'Notification popup hiding and staggered Clear regression test passed.'
