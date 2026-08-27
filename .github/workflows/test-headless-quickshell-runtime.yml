@@ -18,26 +18,101 @@ jobs:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           fetch-depth: 0
-      - name: Merge feature branches in release order
+      - name: Compose all four feature branches and run combined tests
         shell: bash
         run: |
           set -Eeuo pipefail
+
           history='local/share/awtarchy/quickshell-managed-history.sha256'
+          quick_settings='config/quickshell/awtarchy/QuickSettings.qml'
           refs=(
             feature/progressive-clipboard-loading
             feature/focused-display-scale
             feature/quick-settings-layout-customization
             feature/floating-windows-default
           )
+
           git fetch origin \
             '+refs/heads/feature/progressive-clipboard-loading:refs/remotes/origin/feature/progressive-clipboard-loading' \
             '+refs/heads/feature/focused-display-scale:refs/remotes/origin/feature/focused-display-scale' \
             '+refs/heads/feature/quick-settings-layout-customization:refs/remotes/origin/feature/quick-settings-layout-customization' \
             '+refs/heads/feature/floating-windows-default:refs/remotes/origin/feature/floating-windows-default' \
             '+refs/heads/main:refs/remotes/origin/main'
+
           git switch --detach origin/main
-          git config user.name 'Awtarchy Runtime Test'
-          git config user.email 'runtime-test@invalid.local'
+          git config user.name 'Awtarchy Integration Test'
+          git config user.email 'integration-test@invalid.local'
+
+          resolve_history_conflict() {
+            local ours="${RUNNER_TEMP}/history-ours"
+            local theirs="${RUNNER_TEMP}/history-theirs"
+            git show ":2:${history}" >"$ours"
+            git show ":3:${history}" >"$theirs"
+            cp "$ours" "$history"
+            while IFS= read -r line || [[ -n "$line" ]]; do
+              if ! grep -Fqx -- "$line" "$history"; then
+                printf '%s\n' "$line" >>"$history"
+              fi
+            done <"$theirs"
+            git add -- "$history"
+          }
+
+          resolve_floating_layout_conflict() {
+            # #74 owns dynamic section ordering. #75 adds Floating Windows beside
+            # Title Bars. Compose them as one reorderable/show-hide window-behavior
+            # section instead of choosing either branch's version.
+            git show ":2:${quick_settings}" >"$quick_settings"
+            python3 - "$quick_settings" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          text = path.read_text()
+          old = '''              TitleBarsCard {
+                            Layout.row: root.quickSettingsSectionRow("title-bars")
+                            visible: root.quickSettingsSectionVisible("title-bars")
+                            active: quickSettingsWindow.visible
+                            textScale: root.effectiveTextScale
+                            iconScale: root.effectiveIconScale
+                        }
+          '''
+          new = '''              ColumnLayout {
+                            Layout.row: root.quickSettingsSectionRow("title-bars")
+                            visible: root.quickSettingsSectionVisible("title-bars")
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            TitleBarsCard {
+                                active: quickSettingsWindow.visible
+                                textScale: root.effectiveTextScale
+                                iconScale: root.effectiveIconScale
+                            }
+
+                            FloatingWindowsCard {
+                                active: quickSettingsWindow.visible
+                                textScale: root.effectiveTextScale
+                                iconScale: root.effectiveIconScale
+                            }
+                        }
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one #74 TitleBarsCard block for integration composition')
+          path.write_text(text.replace(old, new, 1))
+          PY
+            git add -- "$quick_settings"
+
+            # The real eventual #74+#75 reconciliation needs the combined stock
+            # QuickSettings hash. Add it only to this synthetic tree so both
+            # updater-policy tests validate the composed state without changing
+            # either feature PR.
+            local digest
+            digest="$(sha256sum "$quick_settings" | awk '{print $1}')"
+            if ! grep -Fq -- "$digest"$'\t.config/quickshell/awtarchy/QuickSettings.qml' "$history"; then
+              printf '\n%s\n' '# synthetic CI hash for composed #74 + #75 QuickSettings.qml' >>"$history"
+              printf '%s\t%s\n' "$digest" '.config/quickshell/awtarchy/QuickSettings.qml' >>"$history"
+            fi
+            git add -- "$history"
+          }
 
           for ref in "${refs[@]}"; do
             printf '\n=== merging %s ===\n' "$ref"
@@ -49,32 +124,60 @@ jobs:
             printf 'Conflicted paths:\n' >&2
             printf '  %s\n' "${conflicts[@]}" >&2
 
-            # Every feature branch appends its own known-stock hashes to the same
-            # cumulative migration file. Resolve only that mechanically safe
-            # append-only collision; any production/source conflict remains fatal.
             if [[ ${#conflicts[@]} -eq 1 && ${conflicts[0]} == "$history" ]]; then
-              git show ":2:${history}" >"${RUNNER_TEMP}/history-ours"
-              git show ":3:${history}" >"${RUNNER_TEMP}/history-theirs"
-              cp "${RUNNER_TEMP}/history-ours" "$history"
-              while IFS= read -r line || [[ -n "$line" ]]; do
-                if ! grep -Fqx -- "$line" "$history"; then
-                  printf '%s\n' "$line" >>"$history"
-                fi
-              done <"${RUNNER_TEMP}/history-theirs"
-              git add -- "$history"
+              resolve_history_conflict
               git diff --check --cached
               git commit --no-edit
               continue
             fi
 
+            if [[ "$ref" == feature/floating-windows-default ]]; then
+              unexpected=0
+              have_history=0
+              have_quick=0
+              for path in "${conflicts[@]}"; do
+                case "$path" in
+                  "$history") have_history=1 ;;
+                  "$quick_settings") have_quick=1 ;;
+                  *) unexpected=1 ;;
+                esac
+              done
+              if (( unexpected == 0 && have_history == 1 && have_quick == 1 )); then
+                resolve_history_conflict
+                resolve_floating_layout_conflict
+                git diff --check --cached
+                git commit --no-edit
+                continue
+              fi
+            fi
+
+            printf '%s\n' 'Unexpected source conflict. Integration composition is not safe.' >&2
             git status --short >&2 || true
             exit 1
           done
 
+          test -z "$(git diff --name-only --diff-filter=U)"
           git diff --check origin/main..HEAD
 
+          tests=(
+            tests/test-quickshell-clipboard-load-state.sh
+            tests/test-quickshell-clipboard-progressive.sh
+            tests/test-quickshell-clipboard-thumbnails.sh
+            tests/test-display-scale-quicksettings.sh
+            tests/test-quick-settings-layout.sh
+            tests/test-floating-windows-quicksettings.sh
+            tests/test-flyout-edge-layout.sh
+          )
+          for test_file in "${tests[@]}"; do
+            printf '\n=== %s ===\n' "$test_file"
+            bash -n "$test_file"
+            bash "$test_file"
+          done
+
+          printf '%s\n' 'PASS: #72-#75 compose with only the intentional #74/#75 Quick Settings integration.'
+
   headless-runtime:
-    name: Headless runtime backend proof
+    name: Nested Weston GL runtime proof
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
@@ -92,46 +195,7 @@ jobs:
           git switch --detach "origin/${TARGET_REF}"
           printf 'Target: %s\n' "$TARGET_REF"
           git rev-parse HEAD
-      - name: Prepare VGEM software virtual DRM
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          before="${RUNNER_TEMP}/dri-before"
-          after="${RUNNER_TEMP}/dri-after"
-          find /dev/dri -maxdepth 1 -type c -name 'card*' -print 2>/dev/null | sort >"$before" || true
-
-          if ! sudo modprobe vgem 2>/dev/null; then
-            printf '%s\n' 'VGEM is not in the runner base module set; installing matching Azure extra modules.'
-            sudo apt-get update
-            sudo apt-get install -y "linux-modules-extra-$(uname -r)"
-            sudo modprobe vgem
-          fi
-
-          find /dev/dri -maxdepth 1 -type c -name 'card*' -print 2>/dev/null | sort >"$after" || true
-          VGEM_CARD="$(comm -13 "$before" "$after" | head -n1)"
-
-          if [[ -z "$VGEM_CARD" ]]; then
-            for node in /dev/dri/card*; do
-              [[ -e "$node" ]] || continue
-              name="$(basename "$node")"
-              driver="$(basename "$(readlink -f "/sys/class/drm/${name}/device/driver" 2>/dev/null)" 2>/dev/null || true)"
-              if [[ "$driver" == vgem ]]; then
-                VGEM_CARD="$node"
-                break
-              fi
-            done
-          fi
-
-          [[ -n "$VGEM_CARD" && -e "$VGEM_CARD" ]] || {
-            printf '%s\n' 'VGEM loaded but its DRM card could not be identified.' >&2
-            ls -la /dev/dri >&2 || true
-            exit 1
-          }
-
-          printf 'VGEM_CARD=%s\n' "$VGEM_CARD" | tee -a "$GITHUB_ENV"
-          ls -la /dev/dri
-          udevadm info --query=all --name="$VGEM_CARD" || true
-      - name: Run live Hyprland and Quickshell in Arch container
+      - name: Run nested software-rendered Hyprland and Quickshell
         shell: bash
         env:
           TARGET_REF: feature/quick-settings-layout-customization
@@ -139,19 +203,19 @@ jobs:
           set -Eeuo pipefail
           mkdir -p runtime-artifacts
           docker run --rm \
-            --device "$VGEM_CARD:$VGEM_CARD" \
             -e "TARGET_REF=${TARGET_REF}" \
             -e ARTIFACT_DIR=/artifacts \
+            -e FORCE_NESTED_WESTON=1 \
             -v "$PWD:/repo:ro" \
             -v "/tmp/headless-quickshell-runtime-smoke.sh:/runtime-smoke.sh:ro" \
             -v "$PWD/runtime-artifacts:/artifacts" \
             archlinux:base-devel \
-            bash -lc 'chmod a+rw /dev/dri/card* 2>/dev/null || true; exec bash /runtime-smoke.sh'
+            bash /runtime-smoke.sh
       - name: Upload runtime evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: headless-runtime-backend-proof
+          name: nested-weston-gl-runtime-proof
           path: runtime-artifacts/
           if-no-files-found: warn
           retention-days: 3
