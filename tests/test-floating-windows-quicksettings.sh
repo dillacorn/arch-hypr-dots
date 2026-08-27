@@ -15,8 +15,8 @@ absent() { ! grep -Fq -- "$2" "$1" || fail "$3"; }
 [[ -x "$HELPER" ]] || fail 'floating windows helper is missing or not executable'
 [[ -f "$CARD" ]] || fail 'Floating Windows Quick Settings card is missing'
 
-# The stock desktop stays tiled. Enabling the feature changes only the default
-# treatment of newly opened normal windows.
+# Stock Awtarchy remains tiled. The preference is opt-in and only changes the
+# default map-time treatment of newly opened normal windows.
 contains "$HYPR_LUA" 'local awtarchy_floating_windows = false -- AWTARCHY_FLOATING_WINDOWS' \
   'Floating Windows is not disabled by default in hyprland.lua'
 contains "$HYPR_LUA" 'if awtarchy_floating_windows then' \
@@ -24,23 +24,24 @@ contains "$HYPR_LUA" 'if awtarchy_floating_windows then' \
 contains "$HYPR_LUA" 'hl.window_rule({ match = { class = ".*" }, float = true })' \
   'hyprland.lua lacks the catch-all native floating rule'
 
-# Existing explicit Awtarchy rules must still win because Hyprland processes
-# anonymous rules top-to-bottom and the last matching effect takes precedence.
+# The global float rule must not undermine Awtarchy's fullscreen game workflow.
+# Keep games tiled underneath fullscreen, and keep later Steam force-tile rules.
 global_float_line="$(grep -nF 'hl.window_rule({ match = { class = ".*" }, float = true })' "$HYPR_LUA" | head -n1 | cut -d: -f1)"
+game_tile_line="$(grep -nF 'hl.window_rule({ match = { class = games }, tile = true })' "$HYPR_LUA" | head -n1 | cut -d: -f1)"
 game_fullscreen_line="$(grep -nF 'hl.window_rule({ match = { class = games }, fullscreen = true })' "$HYPR_LUA" | head -n1 | cut -d: -f1)"
 steam_tile_line="$(grep -nF 'title = "^(Steam)$" }, tile = true })' "$HYPR_LUA" | head -n1 | cut -d: -f1)"
-[[ -n "$global_float_line" && -n "$game_fullscreen_line" && -n "$steam_tile_line" ]] \
+[[ -n "$global_float_line" && -n "$game_tile_line" && -n "$game_fullscreen_line" && -n "$steam_tile_line" ]] \
   || fail 'could not locate Floating Windows precedence anchors'
-[[ "$global_float_line" -lt "$game_fullscreen_line" && "$global_float_line" -lt "$steam_tile_line" ]] \
-  || fail 'global Floating Windows rule must appear before explicit game/force-tile rules'
+[[ "$global_float_line" -lt "$game_tile_line" && "$game_tile_line" -lt "$game_fullscreen_line" \
+    && "$global_float_line" -lt "$steam_tile_line" ]] \
+  || fail 'global Floating Windows rule must preserve later game/force-tile rules'
 
-# Manual per-window floating/tile behavior remains available regardless of the
-# global preference.
+# Manual per-window control remains available with or without the preference.
 contains "$HYPR_LUA" '{ "SUPER + F", hl.dsp.window.float({ action = "toggle" }) },' \
   'existing SUPER+F per-window floating toggle changed or disappeared'
 
-# The control belongs immediately with the existing Title Bars control and is
-# clearly a native window behavior rather than another Hyprland plugin.
+# The native window-behavior control belongs directly beside the existing title
+# bar control and must not introduce another plugin or privileged workflow.
 contains "$QUICK_SETTINGS" 'TitleBarsCard {' \
   'existing Title Bars card disappeared'
 contains "$QUICK_SETTINGS" 'FloatingWindowsCard {' \
@@ -56,11 +57,9 @@ contains "$CARD" 'text: "Floating Windows"' \
 contains "$CARD" 'New windows open floating by default.' \
   'Floating Windows card does not explain enabled behavior'
 contains "$CARD" 'Existing windows keep their current state.' \
-  'Floating Windows card does not explain that the preference is map-time only'
-absent "$CARD" 'hyprpm' \
-  'Floating Windows incorrectly depends on HyprPM'
-absent "$CARD" 'sudo' \
-  'Floating Windows incorrectly requires sudo'
+  'Floating Windows card does not explain map-time behavior'
+absent "$CARD" 'hyprpm' 'Floating Windows incorrectly depends on HyprPM'
+absent "$CARD" 'sudo' 'Floating Windows incorrectly requires sudo'
 
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
@@ -88,9 +87,7 @@ case "${1:-}" in
     fi
     ;;
   reload)
-    if [[ ${FAKE_RELOAD_FAIL:-0} == 1 ]]; then
-      exit 1
-    fi
+    [[ ${FAKE_RELOAD_FAIL:-0} != 1 ]] || exit 1
     ;;
 esac
 FAKE
@@ -129,7 +126,7 @@ if run_helper set banana >/dev/null 2>&1; then
   fail 'invalid Floating Windows state was accepted'
 fi
 
-# Existing config errors are a hard stop before any write.
+# Existing Hyprland errors block writes.
 pre_error_before="${TMP}/pre-error-before.lua"
 cp -- "$TEST_LUA" "$pre_error_before"
 printf '0\n' >"$CONFIGERROR_COUNT"
@@ -139,7 +136,7 @@ fi
 cmp -s "$TEST_LUA" "$pre_error_before" \
   || fail 'pre-existing config error path modified hyprland.lua'
 
-# Reload failure restores the exact prior file.
+# Failed reload restores the exact prior file.
 printf '0\n' >"$CONFIGERROR_COUNT"
 if FAKE_RELOAD_FAIL=1 run_helper set on >/dev/null 2>&1; then
   fail 'Floating Windows reported success after Hyprland reload failed'
@@ -147,8 +144,7 @@ fi
 cmp -s "$TEST_LUA" "$pre_error_before" \
   || fail 'reload failure did not restore the exact prior hyprland.lua'
 
-# A config error introduced by the new setting also rolls back and reloads the
-# restored configuration.
+# A new config error after reload also restores and reloads the prior config.
 printf '0\n' >"$CONFIGERROR_COUNT"
 : >"$HYPRCTL_LOG"
 if FAKE_POST_CONFIG_ERRORS='new config error' run_helper set on >/dev/null 2>&1; then
@@ -160,8 +156,7 @@ reload_count="$(grep -c '^reload$' "$HYPRCTL_LOG" || true)"
 [[ "$reload_count" -ge 2 ]] \
   || fail 'rollback did not reload the restored Hyprland configuration'
 
-# Current managed Quickshell-era stock files must remain recognizable to the
-# updater. hyprland.lua is intentionally not part of this Quickshell hash list.
+# Quickshell-era stock files must remain recognizable to the updater.
 missing_history=0
 for rel in \
   .config/hypr/scripts/quickshell_floating_windows.sh \
