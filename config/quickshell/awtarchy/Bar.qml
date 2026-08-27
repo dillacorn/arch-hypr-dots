@@ -31,7 +31,8 @@ PanelWindow {
     property string brightnessText: ""
     property string brightnessTooltip: "Brightness unavailable"
     property int brightnessValue: -1
-    property bool clockDate: false
+    property bool clockDate: BarState.clockDateFor(monitorName)
+    property bool clockDatePersistPending: false
     property date now: new Date()
     property bool wsDrawerOpen: false
 
@@ -54,6 +55,7 @@ PanelWindow {
         || (Quickshell.env("HOME") + "/.cache")
     readonly property string submapStatePath: Quickshell.env("HYPR_SUBMAP_STATE_FILE") || (runtimeHome + "/awtarchy-hypr-submap")
     readonly property string ddcScript: configHome + "/hypr/scripts/ddc_brightness.sh"
+    readonly property string stateScript: configHome + "/hypr/scripts/quickshell_application_state.sh"
     readonly property string wiremixScript: configHome + "/hypr/scripts/wiremix-toggle.sh"
     readonly property string volumeScript: configHome + "/hypr/scripts/quickshell_volume.sh"
     readonly property string mouseSubmapScript: configHome + "/hypr/scripts/toggle_mouse_submap.sh"
@@ -223,6 +225,20 @@ PanelWindow {
         return clockDate ? base + "\n\n" + calendarText(now) : base;
     }
 
+    function persistClockDate() {
+        if (clockDateWriter.running) {
+            clockDatePersistPending = true;
+            return;
+        }
+        clockDatePersistPending = false;
+        clockDateWriter.exec([stateScript, "set-clock-date", monitorName, clockDate ? "true" : "false"]);
+    }
+
+    function toggleClockDate() {
+        clockDate = !clockDate;
+        persistClockDate();
+    }
+
     PwObjectTracker {
         objects: [Pipewire.defaultAudioSink, Pipewire.defaultAudioSource]
     }
@@ -234,6 +250,15 @@ PanelWindow {
         environment: ({ AWTARCHY_OUTPUT_NAME: bar.monitorName })
         stdout: SplitParser {
             onRead: line => bar.parseBrightness(line)
+        }
+    }
+
+    Process {
+        id: clockDateWriter
+        onExited: {
+            BarState.refresh();
+            if (bar.clockDatePersistPending)
+                bar.persistClockDate();
         }
     }
 
@@ -704,10 +729,10 @@ PanelWindow {
                 label: bar.clockDate ? " " + Qt.formatDateTime(bar.now, "ddd M/d") : " " + Qt.formatDateTime(bar.now, "HH:mm")
                 tooltip: bar.clockTooltip()
                 horizontalPadding: 6
-                onClicked: bar.clockDate = !bar.clockDate
-                onRightClicked: bar.clockDate = !bar.clockDate
-                onWheelUp: bar.clockDate = !bar.clockDate
-                onWheelDown: bar.clockDate = !bar.clockDate
+                onClicked: bar.toggleClockDate()
+                onRightClicked: bar.toggleClockDate()
+                onWheelUp: bar.toggleClockDate()
+                onWheelDown: bar.toggleClockDate()
             }
 
             BarControl {
@@ -926,10 +951,10 @@ PanelWindow {
                     ? "\n" + Qt.formatDateTime(bar.now, "ddd") + "\n" + Qt.formatDateTime(bar.now, "M/d")
                     : "\n" + Qt.formatDateTime(bar.now, "HH") + "\n" + Qt.formatDateTime(bar.now, "mm")
                 tooltip: bar.clockTooltip()
-                onClicked: bar.clockDate = !bar.clockDate
-                onRightClicked: bar.clockDate = !bar.clockDate
-                onWheelUp: bar.clockDate = !bar.clockDate
-                onWheelDown: bar.clockDate = !bar.clockDate
+                onClicked: bar.toggleClockDate()
+                onRightClicked: bar.toggleClockDate()
+                onWheelUp: bar.toggleClockDate()
+                onWheelDown: bar.toggleClockDate()
             }
 
             BarControl {
