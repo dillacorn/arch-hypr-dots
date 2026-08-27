@@ -96,4 +96,6 @@ if grep -Fq 'Behavior on opacity {' "$CARD"; then
     fail 'notification Clear animation adds latency to normal swipe opacity changes'
 fi
 
+# Final contract: keyboard hiding is reversible, explicit dismissal is permanent,
+# and Clear operates on the snapshot that existed when the user clicked it.
 printf '%s\n' 'Notification popup hiding and staggered Clear regression test passed.'
