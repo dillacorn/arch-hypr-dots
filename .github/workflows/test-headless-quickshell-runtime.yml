@@ -1,0 +1,104 @@
+name: Test Headless Hyprland Quickshell Runtime
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/test-headless-quickshell-runtime.yml'
+      - '.github/scripts/headless-quickshell-runtime-smoke.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  merge-compatibility:
+    name: Synthetic merge compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Merge feature branches in release order
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          refs=(
+            feature/progressive-clipboard-loading
+            feature/focused-display-scale
+            feature/quick-settings-layout-customization
+            feature/floating-windows-default
+          )
+          git fetch origin \
+            '+refs/heads/feature/progressive-clipboard-loading:refs/remotes/origin/feature/progressive-clipboard-loading' \
+            '+refs/heads/feature/focused-display-scale:refs/remotes/origin/feature/focused-display-scale' \
+            '+refs/heads/feature/quick-settings-layout-customization:refs/remotes/origin/feature/quick-settings-layout-customization' \
+            '+refs/heads/feature/floating-windows-default:refs/remotes/origin/feature/floating-windows-default' \
+            '+refs/heads/main:refs/remotes/origin/main'
+          git switch --detach origin/main
+          git config user.name 'Awtarchy Runtime Test'
+          git config user.email 'runtime-test@invalid.local'
+          for ref in "${refs[@]}"; do
+            printf '\n=== merging %s ===\n' "$ref"
+            if ! git merge --no-edit --no-ff "origin/${ref}"; then
+              printf '\nConflicted paths:\n' >&2
+              git diff --name-only --diff-filter=U >&2 || true
+              git status --short >&2 || true
+              exit 1
+            fi
+          done
+          git diff --check origin/main..HEAD
+
+  headless-runtime:
+    name: Headless runtime - ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: clipboard
+            ref: feature/progressive-clipboard-loading
+          - name: display-scale
+            ref: feature/focused-display-scale
+          - name: quick-settings-layout
+            ref: feature/quick-settings-layout-customization
+          - name: floating-windows
+            ref: feature/floating-windows-default
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Preserve harness and check out exact feature head
+        shell: bash
+        env:
+          TARGET_REF: ${{ matrix.ref }}
+        run: |
+          set -Eeuo pipefail
+          cp .github/scripts/headless-quickshell-runtime-smoke.sh /tmp/headless-quickshell-runtime-smoke.sh
+          chmod 0755 /tmp/headless-quickshell-runtime-smoke.sh
+          git fetch origin "+refs/heads/${TARGET_REF}:refs/remotes/origin/${TARGET_REF}"
+          git switch --detach "origin/${TARGET_REF}"
+          printf 'Target: %s\n' "$TARGET_REF"
+          git rev-parse HEAD
+      - name: Run live Hyprland and Quickshell in Arch container
+        shell: bash
+        env:
+          TARGET_REF: ${{ matrix.ref }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p runtime-artifacts
+          docker run --rm --privileged \
+            -e TARGET_REF="$TARGET_REF" \
+            -e ARTIFACT_DIR=/artifacts \
+            -v "$PWD:/repo:ro" \
+            -v "/tmp/headless-quickshell-runtime-smoke.sh:/runtime-smoke.sh:ro" \
+            -v "$PWD/runtime-artifacts:/artifacts" \
+            archlinux:base-devel \
+            bash /runtime-smoke.sh
+      - name: Upload runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: headless-runtime-${{ matrix.name }}
+          path: runtime-artifacts/
+          if-no-files-found: warn
+          retention-days: 3
