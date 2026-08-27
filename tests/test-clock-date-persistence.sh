@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
+# Integration contract: command dispatch, per-monitor state, and both bar orientations must stay aligned.
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_SCRIPT="${ROOT}/config/hypr/scripts/quickshell_application_state.sh"
 BAR_STATE="${ROOT}/config/quickshell/awtarchy/BarState.qml"
