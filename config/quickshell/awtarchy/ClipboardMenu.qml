@@ -382,6 +382,16 @@ Singleton {
         close();
     }
 
+    function clipboardWindowVisible() {
+        return clipboardWindow.visible;
+    }
+
+    function deleteEntry(entry) {
+        if (!entry || deleteProcess.running)
+            return;
+        deleteProcess.exec([backend, "delete", String(entry.index)]);
+    }
+
     function openDetail(entry) {
         if (!entry || entry.binary)
             return;
@@ -610,6 +620,16 @@ Singleton {
     }
 
     Process { id: selectProcess }
+
+    Process {
+        id: deleteProcess
+        onExited: (exitCode, exitStatus) => {
+            if (exitCode === 0 && root.clipboardWindowVisible()) {
+                root.beginListLoad();
+                Qt.callLater(() => search.forceActiveFocus());
+            }
+        }
+    }
 
     Process {
         id: stateWriter
@@ -935,7 +955,8 @@ Singleton {
                             Math.min(160, Math.round(96 * root.effectiveIconScale / 100)))
                         readonly property color previewBackground: ListView.isCurrentItem
                             ? Theme.focus
-                            : ((rowMouse.containsMouse || viewMouse.containsMouse)
+                            : ((rowMouse.containsMouse || viewMouse.containsMouse
+                                    || deleteMouse.containsMouse)
                                 ? Theme.subtleHover : Theme.popupBackground)
                         height: hasThumbnail
                             ? thumbnailSize + 20
@@ -971,6 +992,7 @@ Singleton {
                             anchors.fill: parent
                             anchors.leftMargin: 10
                             anchors.rightMargin: (clipboardScrollBar.visible ? 20 : 10)
+                                + (deleteButton.visible ? 36 : 0)
                                 + (viewButton.visible ? 36 : 0)
                             spacing: 12
 
@@ -1007,6 +1029,7 @@ Singleton {
                             anchors.bottom: parent.bottom
                             anchors.right: parent.right
                             anchors.rightMargin: (clipboardScrollBar.visible ? 20 : 10)
+                                + (deleteButton.visible ? 36 : 0)
                                 + (viewButton.visible ? 36 : 0)
                             width: Math.min(56, Math.max(32, row.width * 0.08))
                             z: 8
@@ -1045,11 +1068,12 @@ Singleton {
                             id: viewButton
                             visible: Boolean(row.modelData)
                                 && row.modelData.binary === false
-                                && (rowMouse.containsMouse || viewMouse.containsMouse)
+                                && (rowMouse.containsMouse || viewMouse.containsMouse
+                                    || deleteMouse.containsMouse)
                             width: 28
                             height: 28
                             anchors.right: parent.right
-                            anchors.rightMargin: clipboardScrollBar.visible ? 18 : 7
+                            anchors.rightMargin: (clipboardScrollBar.visible ? 18 : 7) + 36
                             anchors.verticalCenter: parent.verticalCenter
                             color: viewMouse.containsMouse ? Theme.focus : Theme.active
                             border.width: 1
@@ -1072,6 +1096,43 @@ Singleton {
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: mouse => {
                                     root.openDetail(row.modelData);
+                                    mouse.accepted = true;
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            id: deleteButton
+                            visible: Boolean(row.modelData)
+                                && (rowMouse.containsMouse || viewMouse.containsMouse
+                                    || deleteMouse.containsMouse)
+                            width: 28
+                            height: 28
+                            anchors.right: parent.right
+                            anchors.rightMargin: clipboardScrollBar.visible ? 18 : 7
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: deleteMouse.containsMouse ? Theme.urgent : Theme.active
+                            border.width: 1
+                            border.color: deleteMouse.containsMouse ? Theme.urgent : Theme.focus
+                            z: 21
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "×"
+                                color: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Math.max(11,
+                                    Math.round(14 * root.effectiveIconScale / 100))
+                            }
+
+                            MouseArea {
+                                id: deleteMouse
+                                anchors.fill: parent
+                                enabled: !deleteProcess.running
+                                hoverEnabled: true
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onClicked: mouse => {
+                                    root.deleteEntry(row.modelData);
                                     mouse.accepted = true;
                                 }
                             }
