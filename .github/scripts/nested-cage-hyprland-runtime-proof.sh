@@ -9,7 +9,7 @@ mkdir -p "$OUT"
 
 pacman -Syu --noconfirm --needed \
     hyprland quickshell jq python dbus mesa mesa-utils \
-    cage xorg-server-xvfb wayland-utils \
+    cage xorg-server-xvfb xorg-xwayland wayland-utils \
     wl-clipboard cliphist grim foot \
     xdg-utils util-linux procps-ng libnotify qt6-wayland ttf-dejavu \
     >"$OUT/pacman.log" 2>&1
@@ -96,11 +96,13 @@ done
 
 # WAYLAND_DISPLAY is deliberately unset for Cage so wlroots selects its X11
 # backend from DISPLAY. Cage then publishes the server socket name to its child.
+# Do not depend on Cage's newer -x option: the Arch package available to CI may
+# lag the upstream CLI, so XWayland is installed and allowed to initialize.
 env -u WAYLAND_DISPLAY \
     DISPLAY="$DISPLAY" \
     LIBGL_ALWAYS_SOFTWARE=1 \
     WLR_RENDERER_ALLOW_SOFTWARE=1 \
-    cage -D -x -- sh -c \
+    cage -D -- sh -c \
         'printf "%s\n" "$WAYLAND_DISPLAY" >"$XDG_RUNTIME_DIR/awtarchy-cage-socket-name"; exec sleep 300' \
         >"$CAGE_LOG" 2>&1 &
 CAGE_PID=$!
