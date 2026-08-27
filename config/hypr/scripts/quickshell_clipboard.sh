@@ -177,13 +177,29 @@ select_item() {
     cliphist decode <<<"$raw" | wl-copy -n
 }
 
+delete_item() {
+    local index="${1:-}"
+    local raw key
+
+    [[ "$index" =~ ^[0-9]+$ ]] || exit 2
+    [[ -r "$RAW_FILE" ]] || exit 1
+
+    raw="$(sed -n "$((index + 1))p" "$RAW_FILE")"
+    [[ -n "$raw" ]] || exit 1
+
+    cliphist delete <<<"$raw"
+    key="$(printf '%s' "$raw" | sha1sum | awk '{print $1}')"
+    rm -f -- "${THUMB_DIR}/${key}.png" "${THUMB_DIR}/${key}.tmp"
+}
+
 case "${1:-list}" in
     list) list_items ;;
     decode) decode_item "${2:-}" ;;
     thumb) thumbnail_item "${2:-}" ;;
     select) select_item "${2:-}" ;;
+    delete) delete_item "${2:-}" ;;
     *)
-        printf 'usage: %s [list|decode INDEX|thumb INDEX|select INDEX]\n' "$0" >&2
+        printf 'usage: %s [list|decode INDEX|thumb INDEX|select INDEX|delete INDEX]\n' "$0" >&2
         exit 2
         ;;
 esac
