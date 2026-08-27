@@ -25,6 +25,8 @@ contains "$QUICK_SETTINGS" 'function quickSettingsSectionRow(sectionId)' \
   'Quick Settings sections do not derive rows from the per-monitor layout'
 contains "$QUICK_SETTINGS" 'function quickSettingsSectionVisible(sectionId)' \
   'Quick Settings sections do not derive visibility from the per-monitor layout'
+contains "$QUICK_SETTINGS" 'FlyoutEdgeLayout.sectionRow(bottomEdgeLayout, index, visibleOrder.length)' \
+  'Quick Settings custom order no longer preserves existing top/bottom edge inversion'
 contains "$QUICK_SETTINGS" '"save-quick-settings-layout"' \
   'Quick Settings Save does not persist the current layout draft'
 contains "$QUICK_SETTINGS" '"copy-quick-settings-layout"' \
