@@ -175,3 +175,5 @@ fi
 if grep -A5 -F 'id: clipboardDetail' "$QML" | grep -Fq 'Layout.row:'; then
   fail 'Clipboard detail surface still participates directly in the outer GridLayout'
 fi
+
+# Per-entry deletion is permanent and must preserve the flyout while refreshing.
