@@ -1,0 +1,31 @@
+name: Validate Notification Hide History
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/validate-notification-hide-history.yml
+      - config/hypr/scripts/quickshell_notification_dismiss.sh
+      - config/quickshell/awtarchy/NotificationCard.qml
+      - config/quickshell/awtarchy/Notifications.qml
+      - tests/test-notification-hide-history.sh
+      - local/share/awtarchy/quickshell-managed-history.sha256
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Validate notification hide/history behavior
+        run: |
+          set -Eeuo pipefail
+          bash -n config/hypr/scripts/quickshell_notification_dismiss.sh
+          bash -n tests/test-notification-hide-history.sh
+          shellcheck config/hypr/scripts/quickshell_notification_dismiss.sh tests/test-notification-hide-history.sh
+          bash tests/test-notification-hide-history.sh
+          git diff --check

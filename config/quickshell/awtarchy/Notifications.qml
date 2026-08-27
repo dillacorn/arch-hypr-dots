@@ -17,6 +17,12 @@ Singleton {
     readonly property bool dnd: mutePopups
     property var popupNotifications: []
     property int historyRevision: 0
+    property bool clearInProgress: false
+    property var clearQueue: []
+    property var clearVisualQueue: []
+    property var clearSlideNotifications: []
+    property int clearSlideIndex: 0
+    property int clearVisualCount: 0
     property string placement: "center"
     readonly property bool bottomEdgeLayout: FlyoutEdgeLayout.isBottom(placement)
     property bool settingsOpen: false
@@ -289,6 +295,12 @@ Singleton {
             notification.expire();
     }
 
+    function hideFirstPopup() {
+        if (popupNotifications.length === 0)
+            return;
+        hidePopup(popupNotifications[0]);
+    }
+
     function hideAllPopups() {
         const visiblePopups = popupNotifications.slice();
         popupNotifications = [];
@@ -324,17 +336,17 @@ Singleton {
     function setDnd(value) { setPopupMute(value); }
     function toggleDnd() { togglePopupMute(); }
 
-    function activateOrDismiss(notification) {
+    function activateNotification(notification) {
         if (!notification)
             return;
         const actions = notification.actions || [];
         for (let i = 0; i < actions.length; ++i) {
             if (actions[i].identifier === "default") {
                 actions[i].invoke();
-                return;
+                break;
             }
         }
-        notification.dismiss();
+        hidePopup(notification);
     }
 
     function dismissNotification(notification) {
@@ -360,6 +372,44 @@ Singleton {
         const values = [...server.trackedNotifications.values];
         for (let i = 0; i < values.length; ++i)
             values[i].dismiss();
+        historyRevision++;
+    }
+
+    function beginClearAll() {
+        if (clearInProgress)
+            return;
+
+        const values = historyNotifications();
+        if (values.length === 0)
+            return;
+
+        const visualCount = Math.min(values.length, 10);
+        clearQueue = [...server.trackedNotifications.values];
+        clearVisualQueue = values.slice();
+        clearSlideNotifications = [];
+        clearSlideIndex = 0;
+        clearVisualCount = visualCount;
+        clearInProgress = true;
+        hideAllPopups();
+        clearStaggerTimer.restart();
+    }
+
+    function finishClearAll() {
+        if (!clearInProgress)
+            return;
+
+        const values = clearQueue.slice();
+        for (let i = 0; i < values.length; ++i) {
+            if (values[i] && values[i].tracked)
+                values[i].dismiss();
+        }
+
+        clearQueue = [];
+        clearVisualQueue = [];
+        clearSlideNotifications = [];
+        clearSlideIndex = 0;
+        clearVisualCount = 0;
+        clearInProgress = false;
         historyRevision++;
     }
 
@@ -605,6 +655,37 @@ Singleton {
             popupNotifications = popupNotifications.slice(0, effectivePopupLimit);
     }
 
+    Timer {
+        id: clearStaggerTimer
+        interval: 32
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: {
+            if (!root.clearInProgress || root.clearSlideIndex >= root.clearVisualCount) {
+                stop();
+                clearFinishTimer.restart();
+                return;
+            }
+
+            const notification = root.clearVisualQueue[root.clearSlideIndex];
+            if (notification)
+                root.clearSlideNotifications = [...root.clearSlideNotifications, notification];
+            root.clearSlideIndex++;
+
+            if (root.clearSlideIndex >= root.clearVisualCount) {
+                stop();
+                clearFinishTimer.restart();
+            }
+        }
+    }
+
+    Timer {
+        id: clearFinishTimer
+        interval: 120
+        repeat: false
+        onTriggered: root.finishClearAll()
+    }
+
     FileView {
         id: muteFile
         path: root.mutePath
@@ -627,6 +708,7 @@ Singleton {
         function toggleDnd(): void { root.togglePopupMute(); }
         function enable(): void { root.setPopupMute(false); }
         function disable(): void { root.setPopupMute(true); }
+        function hideFirstPopup(): void { root.hideFirstPopup(); }
         function dismissFirst(): void { root.dismissFirst(); }
         function dismissAll(): void { root.dismissAll(); }
         function dndEnabled(): bool { return root.mutePopups; }
@@ -777,7 +859,7 @@ Singleton {
                         onTriggered: root.hidePopup(popupCard.notification)
                     }
 
-                    onActivated: root.activateOrDismiss(notification)
+                    onActivated: root.activateNotification(notification)
                     onDismissRequested: root.dismissNotification(notification)
                     onNotificationClosed: {
                         root.removePopup(notification);
@@ -903,10 +985,10 @@ Singleton {
                             MouseArea {
                                 id: clearMouse
                                 anchors.fill: parent
-                                enabled: root.historyCount > 0
+                                enabled: root.historyCount > 0 && !root.clearInProgress
                                 hoverEnabled: enabled
                                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                onClicked: root.dismissAll()
+                                onClicked: root.beginClearAll()
                             }
                         }
 
@@ -1195,8 +1277,9 @@ Singleton {
                         textScale: root.effectiveTextScale
                         iconScale: root.effectiveIconScale
                         bodyLineLimit: 8
+                        clearSliding: root.clearSlideNotifications.indexOf(notification) >= 0
 
-                        onActivated: root.activateOrDismiss(notification)
+                        onActivated: root.activateNotification(notification)
                         onDismissRequested: root.dismissNotification(notification)
                         onNotificationClosed: root.historyRevision++
                     }

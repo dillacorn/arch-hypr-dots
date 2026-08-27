@@ -15,6 +15,9 @@ Rectangle {
     property int bodyLineLimit: 5
     property real swipeOffset: 0
     property bool swipeDismissing: false
+    property bool clearSliding: false
+    property real clearOffset: clearSliding ? Math.max(1, width) : 0
+    property real clearOpacity: clearSliding ? 0.88 : 1
     readonly property var notificationActions: notification && notification.actions
         ? notification.actions : []
 
@@ -28,11 +31,11 @@ Rectangle {
     border.width: 1
     border.color: Theme.active
     radius: 0
-    opacity: Math.max(0.45, 1 - Math.min(0.55,
+    opacity: root.clearOpacity * Math.max(0.45, 1 - Math.min(0.55,
         Math.abs(swipeOffset) / Math.max(1, width)))
 
     transform: Translate {
-        x: root.swipeOffset
+        x: root.swipeOffset + root.clearOffset
     }
 
     function finishSwipe() {
@@ -65,6 +68,20 @@ Rectangle {
             root.swipeOffset = 0;
             root.swipeDismissing = false;
             root.notificationClosed();
+        }
+    }
+
+    Behavior on clearOffset {
+        NumberAnimation {
+            duration: 110
+            easing.type: Easing.OutCubic
+        }
+    }
+
+    Behavior on clearOpacity {
+        NumberAnimation {
+            duration: 110
+            easing.type: Easing.OutCubic
         }
     }
 
