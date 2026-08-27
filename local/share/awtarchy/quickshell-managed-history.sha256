@@ -670,3 +670,7 @@ ea4da6deba4851ce1400e99a14b482dca67ed0d604f7b55a9daec7fb0af765d4	.config/quicksh
 # 2026-08-27 per-item Clipboard History deletion.
 2cf062cbfd05875185a79a368fe600f84a68346e576f69629a746305958fe354	.config/hypr/scripts/quickshell_clipboard.sh
 9559c13e332f44aeffa1c86351e46b0eef77f78e96647e72fce6618b4f91df41	.config/quickshell/awtarchy/ClipboardMenu.qml
+
+# 2026-08-27 preserve Clipboard viewport after per-entry deletion.
+aef6b4e6c7939e10a3ae5840e9c782bcc3cfe688350bf073ce536e55c885a755	.config/quickshell/awtarchy/ClipboardLoadState.js
+0f1bbf94ae931f443c77b340ab257d84ffb3b7fd27260ef7efe473b32760076c	.config/quickshell/awtarchy/ClipboardMenu.qml

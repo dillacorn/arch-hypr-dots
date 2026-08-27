@@ -50,6 +50,8 @@ Singleton {
     property bool thumbnailStopping: false
     property int activeThumbnailIndex: -1
     property string activeThumbnailPath: ""
+    property int deletingEntryIndex: -1
+    property real deleteViewportY: 0
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string backend: configHome + "/hypr/scripts/quickshell_clipboard.sh"
@@ -389,7 +391,41 @@ Singleton {
     function deleteEntry(entry) {
         if (!entry || deleteProcess.running)
             return;
+        deletingEntryIndex = entry.index;
+        deleteViewportY = clipboardList.contentY;
         deleteProcess.exec([backend, "delete", String(entry.index)]);
+    }
+
+    function finishDelete(exitCode) {
+        const deletedIndex = deletingEntryIndex;
+        const savedY = deleteViewportY;
+        deletingEntryIndex = -1;
+        deleteViewportY = 0;
+
+        if (exitCode !== 0 || !clipboardWindowVisible() || deletedIndex < 0)
+            return;
+
+        entries = ClipboardLoadState.removeRecord(entries, deletedIndex);
+        thumbnailQueue = thumbnailQueue.filter(index => index !== deletedIndex);
+        const nextKnown = Object.assign({}, thumbnailKnown);
+        delete nextKnown[String(deletedIndex)];
+        thumbnailKnown = nextKnown;
+
+        Qt.callLater(() => {
+            const minY = clipboardList.originY;
+            const maxY = Math.max(minY,
+                minY + clipboardList.contentHeight - clipboardList.height);
+            clipboardList.contentY = Math.max(minY, Math.min(maxY, savedY));
+
+            if (clipboardList.count === 0)
+                clipboardList.currentIndex = -1;
+            else if (clipboardList.currentIndex < 0)
+                clipboardList.currentIndex = 0;
+            else if (clipboardList.currentIndex >= clipboardList.count)
+                clipboardList.currentIndex = clipboardList.count - 1;
+
+            search.forceActiveFocus();
+        });
     }
 
     function openDetail(entry) {
@@ -623,12 +659,7 @@ Singleton {
 
     Process {
         id: deleteProcess
-        onExited: (exitCode, exitStatus) => {
-            if (exitCode === 0 && root.clipboardWindowVisible()) {
-                root.beginListLoad();
-                Qt.callLater(() => search.forceActiveFocus());
-            }
-        }
+        onExited: (exitCode, exitStatus) => root.finishDelete(exitCode)
     }
 
     Process {
