@@ -1,0 +1,56 @@
+name: Apply Floating Game Regression Test
+
+on:
+  push:
+    branches:
+      - feature/floating-windows-default
+    paths:
+      - '.github/workflows/apply-floating-windows-game-test.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/floating-windows-default
+      - name: Add exact regression assertion
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tests/test-floating-windows-quicksettings.sh')
+          text = path.read_text()
+          old = '''global_float_line="$(grep -nF 'hl.window_rule({ match = { class = ".*" }, float = true })' "$HYPR_LUA" | head -n1 | cut -d: -f1)"
+game_fullscreen_line="$(grep -nF 'hl.window_rule({ match = { class = games }, fullscreen = true })' "$HYPR_LUA" | head -n1 | cut -d: -f1)"
+steam_tile_line="$(grep -nF 'title = "^(Steam)$" }, tile = true })' "$HYPR_LUA" | head -n1 | cut -d: -f1)"
+[[ -n "$global_float_line" && -n "$game_fullscreen_line" && -n "$steam_tile_line" ]] \\
+  || fail 'could not locate Floating Windows precedence anchors'
+[[ "$global_float_line" -lt "$game_fullscreen_line" && "$global_float_line" -lt "$steam_tile_line" ]] \\
+  || fail 'global Floating Windows rule must appear before explicit game/force-tile rules'
+'''
+          new = '''global_float_line="$(grep -nF 'hl.window_rule({ match = { class = ".*" }, float = true })' "$HYPR_LUA" | head -n1 | cut -d: -f1)"
+game_tile_line="$(grep -nF 'hl.window_rule({ match = { class = games }, tile = true })' "$HYPR_LUA" | head -n1 | cut -d: -f1)"
+game_fullscreen_line="$(grep -nF 'hl.window_rule({ match = { class = games }, fullscreen = true })' "$HYPR_LUA" | head -n1 | cut -d: -f1)"
+steam_tile_line="$(grep -nF 'title = "^(Steam)$" }, tile = true })' "$HYPR_LUA" | head -n1 | cut -d: -f1)"
+[[ -n "$global_float_line" && -n "$game_tile_line" && -n "$game_fullscreen_line" && -n "$steam_tile_line" ]] \\
+  || fail 'could not locate Floating Windows precedence anchors'
+[[ "$global_float_line" -lt "$game_tile_line" && "$game_tile_line" -lt "$game_fullscreen_line" \\
+    && "$global_float_line" -lt "$steam_tile_line" ]] \\
+  || fail 'global Floating Windows rule must preserve later game/force-tile rules'
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'test guard failed: expected one precedence block, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          git diff --check
+      - name: Commit regression assertion
+        run: |
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add -- tests/test-floating-windows-quicksettings.sh
+          git diff --cached --quiet && exit 1
+          git commit -m 'test: keep games tiled with floating default'
+          git push origin HEAD:feature/floating-windows-default
