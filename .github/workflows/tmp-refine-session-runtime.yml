@@ -1,0 +1,66 @@
+name: Temporary Refine Session Runtime
+
+on:
+  push:
+    branches:
+      - fix-update-session-environment
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: fix-update-session-environment
+          fetch-depth: 0
+
+      - name: Preserve valid caller runtime environment
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("local/share/awtarchy/awtarchy-runtime.sh")
+          text = path.read_text(encoding="utf-8")
+          old = '''  local target_uid runtime_dir line key value
+            target_uid="$(awtarchy_polkit_target_uid)" || return 1
+            runtime_dir="/run/user/${target_uid}"
+            [[ -d "$runtime_dir" && -S "${runtime_dir}/bus" ]] || return 1
+            export XDG_RUNTIME_DIR="$runtime_dir"
+            export DBUS_SESSION_BUS_ADDRESS="unix:path=${runtime_dir}/bus"
+          '''
+          new = '''  local target_uid runtime_dir line key value
+            target_uid="$(awtarchy_polkit_target_uid)" || return 1
+            runtime_dir="/run/user/${target_uid}"
+            if [[ -z "${XDG_RUNTIME_DIR:-}" && -d "$runtime_dir" ]]; then
+              export XDG_RUNTIME_DIR="$runtime_dir"
+            fi
+            if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" && -S "${runtime_dir}/bus" ]]; then
+              export DBUS_SESSION_BUS_ADDRESS="unix:path=${runtime_dir}/bus"
+            fi
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected one runtime recovery block, found {text.count(old)}")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+
+      - name: Validate focused and integration regressions
+        run: |
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash tests/test-polkit-agent-session-binding.sh
+          bash tests/test-hypridle-restart.sh
+          bash tests/test-quickshell-updater-bootstrap.sh
+          bash tests/test-quickshell-updater-migration.sh
+          git diff --check
+
+      - name: Commit final refinement and remove helper
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add local/share/awtarchy/awtarchy-runtime.sh
+          git rm .github/workflows/tmp-refine-session-runtime.yml
+          git commit -m "Preserve updater runtime environment"
+          git push origin HEAD:fix-update-session-environment
