@@ -17,35 +17,6 @@ permissions:
   contents: read
 
 jobs:
-  cleanup-feature:
-    if: github.event_name == 'pull_request' && github.head_ref == 'feature/quick-settings-layout-customization'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-        with:
-          ref: feature/quick-settings-layout-customization
-          fetch-depth: 0
-      - name: Clean generated implementation formatting
-        env:
-          CLEANUP_GZIP_BASE64: H4sIAOkkkGoC/+1Y328iNxB+56+Yc9FlV8ePS/pSkRJdGtFTrmlyF7hIFUErZ9cEX429eE0IIvzvHXt3YSGQkLtI7UP3Ae3aM+PP4/lmPPS1GkJMzUDwG+DDWGkDn/GzVEoMNQya7ssjoZJ9flsfTGNdT0LNY5PUR2Me/p0MmBABjWPBQ2q4koFTrCUD4pcMuzdoIh3RjEaBHfGYDFXE5W2TjE2/+gsKooS2kna61ucy8sgdFTxCvcAtEyTMGFRJAkGnamw8H2aox2S0qnUtNUPRYKgkN0o7sQo4836J99M3+BXeg9JgtfG1UQJ8NOUJg/Y0MWzYuufGI6kH0t024IuFAe0MBqQwAHcfMw03QuGkVAb6aoxW2T0NjZiCkiEjbuGX7SyDDO9g34ej5q4Yo3F6DGwHtAirFApGZZCCb4ImZAdsDghqUIEujJgOviVKNkl5n8CARxGT+cABKTlZ3Pwb+DaCKoOqhGs3Zp9qlepbKwtUCDVhEZDyl6+nJ38E7Vanc3r+sY0vJ53Ti/N28Kl9cU426joMqLnEslkuxYaCBZAE9haSXmoBHsBMY+ZDswmEak2nZCFC8WC9TP95udycYPLWDJygV853uhjeojSWfDRmL9TO1auQS/qrFt6vy+cGUcOpPi2/3PpmeIvpLeiy+V3hPbKHXN3mgz04qkfsri7HQsDB0dv9QzADJhcGY82l6cMely7AN9PjWqKZtwcLJYYMg/Szz0tzTIn0bjdiZNknZcUKSw7WWfJzGjfdriUHKWeaBHo9eHiA2QJ5NgE8Ac0Qg2ZRhvcwA3oIc2fqaQqvUWWVDylhJZsEZhi7d+TtGpvyzRXBvj4xN0k6998xnWCVeZwrzo7/uvjaCdrHV63gqnXZPrUZY8nv2kZvJJj2PExQ3rbpIs3VzTcWmiXP7WOjbKttJjBbz+a2zizJ8LBNvJv7s4egZiurOB82UldWVmZSpzUy563OFf3VKBe/FmLzjD2k3O4cd1rB76dnLQJHpNz583P64QRCNRxy44ICaRCqePo69cGhHPB+TrNUrUoBi98tM0nTI+UPxC/MZRPORhqtngfl2U/ZePdDbw5HWN1939HnUQKgBvMGTQxWZpYZg+3U2pQKfpxkLm4K+0BfeLY+hjIN9gT2yseXH9u1WCXcXqmo2MMZNDMrbJP4O9HVMSdTQwvFdf/n7avw1t6cWDQOGeTe7faAJpDTeWXdbYAPV6Tcxp/IB8/nhV3ywwvyxCJf+N+TMNIr+UsL52vWxU1E2VrN/pPBFzHhPVs4vud08NKfNXu1ieaY0VyLZn+6DdeE9LALKTYK71wv00V8jV4FHvdyJYdyvXNcNot1OkGz4WBad7ew/BJWGw0Fao9Q0ck+2S8qYfs+hL4anh1uBPuN6uSE6mgjZ86cy2paTRqglTKpS3MMbTwqDPtLNfGIsbaqN2iM+Btpkz93POE3gj1h7yqVWLNpHY8h+S/v40fQIwdGtRAbXuPhgfjwpgn7WxrVPnl02A3kZ4xL4GXeFuPFnvNmFXtlJo37TwGG1ISDStZcz4qLzm3MuHgpRO8IgycWNGRWpGKJX8FGelOw/gM95x1hABEAAA==
-        run: |
-          printf '%s' "$CLEANUP_GZIP_BASE64" | base64 -d | gzip -d > /tmp/cleanup-quick-settings-layout.py
-          python3 /tmp/cleanup-quick-settings-layout.py
-          git diff --check
-          bash -n config/hypr/scripts/quickshell_application_state.sh
-          if git diff --quiet; then
-            echo 'Quick Settings layout formatting already clean.'
-            exit 0
-          fi
-          git config user.name 'Awtarchy Layout Patch'
-          git config user.email 'actions@users.noreply.github.com'
-          git add config/hypr/scripts/quickshell_application_state.sh \
-            config/quickshell/awtarchy/QuickSettings.qml
-          git commit -m 'Clean Quick Settings layout implementation'
-          git push origin HEAD:feature/quick-settings-layout-customization
-
   quick-settings-layout:
     runs-on: ubuntu-latest
     steps:
