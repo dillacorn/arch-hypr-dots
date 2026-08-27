@@ -1,5 +1,6 @@
 name: Validate Display Scale
 
+# Covers preset and custom focused-display scale behavior.
 on:
   pull_request:
     paths:
