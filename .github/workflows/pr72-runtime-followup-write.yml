@@ -1,0 +1,45 @@
+name: Apply PR72 Runtime Follow-up
+
+on:
+  push:
+    branches:
+      - feature/progressive-clipboard-loading
+    paths:
+      - .github/workflows/pr72-runtime-followup-write.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: feature/progressive-clipboard-loading
+          fetch-depth: 0
+
+      - name: Apply and validate approved clipboard follow-up
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 .github/pr72-runtime-followup.py
+          bash tests/test-quickshell-clipboard-load-state.sh
+          bash tests/test-quickshell-clipboard-progressive.sh
+          bash tests/test-quickshell-clipboard-thumbnails.sh
+          bash tests/test-flyout-edge-layout.sh
+          git diff --check
+
+      - name: Commit production changes and remove temporary tooling
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/pr72-runtime-followup.py
+          git rm .github/workflows/pr72-runtime-followup-write.yml
+          git add \
+            config/quickshell/awtarchy/ClipboardMenu.qml \
+            local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'Finish clipboard wildcard search and warning cleanup'
+          git push origin HEAD:feature/progressive-clipboard-loading
