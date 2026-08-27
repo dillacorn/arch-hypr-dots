@@ -77,6 +77,7 @@ old_status = '''                Item {
                     visible: !root.detailOpen
                         && (root.entries.length === 0 || clipboardList.count === 0)'''
 new_status = '''                    Item {
+                        id: clipboardStatus
                         anchors.fill: parent
                         visible: !root.detailOpen
                             && (root.entries.length === 0 || clipboardList.count === 0)'''
@@ -90,6 +91,7 @@ old_detail = '''                Item {
                     Layout.fillHeight: true
                     visible: root.detailOpen'''
 new_detail = '''                    Item {
+                        id: clipboardDetail
                         anchors.fill: parent
                         visible: root.detailOpen'''
 if qml.count(old_detail) != 1:
@@ -119,15 +121,20 @@ qml = qml[: -len(old_tail)] + new_tail
 
 qml_path.write_text(qml)
 
-top_level_row = "                Layout.row: root.bottomEdgeLayout ? 0 : 2"
-if sum(line == top_level_row for line in qml.splitlines()) != 1:
-    raise SystemExit("top-level clipboard GridLayout still has duplicate row assignments")
+for old_block, label in (
+    (old_list, "list"),
+    (old_status, "status overlay"),
+    (old_detail, "detail surface"),
+):
+    if old_block in qml:
+        raise SystemExit(f"clipboard {label} still participates directly in the outer GridLayout")
 if "ClipboardLoadState.globMatch(label, query)" not in qml:
     raise SystemExit("wildcard matcher was not wired into ClipboardMenu")
 if new_duration not in qml:
     raise SystemExit("row stagger duration was not clamped")
-if "id: clipboardContent" not in qml:
-    raise SystemExit("shared clipboard content container was not created")
+for marker in ("id: clipboardContent", "id: clipboardStatus", "id: clipboardDetail"):
+    if marker not in qml:
+        raise SystemExit(f"missing shared clipboard content marker: {marker}")
 
 history = history_path.read_text()
 managed = [
