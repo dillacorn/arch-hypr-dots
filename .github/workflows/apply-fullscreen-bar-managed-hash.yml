@@ -1,0 +1,45 @@
+name: Apply Fullscreen Bar Managed Hash
+
+on:
+  push:
+    branches:
+      - fix/fullscreen-bar-and-quick-settings-spacing
+    paths:
+      - '.github/workflows/apply-fullscreen-bar-managed-hash.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: fix/fullscreen-bar-and-quick-settings-spacing
+          fetch-depth: 0
+
+      - name: Record current Bar stock hash
+        run: |
+          set -Eeuo pipefail
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          path='.config/quickshell/awtarchy/Bar.qml'
+          digest="$(sha256sum config/quickshell/awtarchy/Bar.qml | awk '{print $1}')"
+          entry="${digest}"$'\t'"${path}"
+          grep -Fxq -- "$entry" "$history" || printf '%s\n' "$entry" >> "$history"
+
+          bash tests/test-bar-fullscreen-visibility.sh
+          bash tests/test-quick-settings-spacing.sh
+          bash tests/test-hyprbars-quicksettings.sh
+          bash tests/test-quickshell-updater-migration.sh
+          git diff --check
+          printf 'Recorded Bar.qml SHA-256: %s\n' "$digest"
+          git diff -- "$history"
+
+      - name: Commit managed history
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'Record fullscreen-aware Bar stock hash'
+          git push origin HEAD:fix/fullscreen-bar-and-quick-settings-spacing
