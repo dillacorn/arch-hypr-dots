@@ -56,10 +56,16 @@ require_source "$NOTIFICATIONS" 'onDismissRequested: root.dismissNotification(no
 # Clear is permanent but visually staggered and bounded.
 require_source "$NOTIFICATIONS" 'property bool clearInProgress: false' \
     'notification Clear has no serialized animation state'
+require_source "$NOTIFICATIONS" 'property var clearVisualQueue: []' \
+    'notification Clear does not capture a stable visual snapshot'
 require_source "$NOTIFICATIONS" 'property var clearFadeNotifications: []' \
     'notification Clear has no bounded fade queue'
 require_source "$NOTIFICATIONS" 'const visualCount = Math.min(values.length, 10);' \
     'notification Clear does not cap the animated staircase work'
+require_source "$NOTIFICATIONS" 'clearVisualQueue = values.slice();' \
+    'notification Clear does not freeze the visible history at click time'
+require_source "$NOTIFICATIONS" 'const notification = root.clearVisualQueue[root.clearFadeIndex];' \
+    'notification Clear rereads live history during the staircase animation'
 require_source "$NOTIFICATIONS" 'id: clearStaggerTimer' \
     'notification Clear has no staircase timer'
 require_source "$NOTIFICATIONS" 'interval: 32' \
