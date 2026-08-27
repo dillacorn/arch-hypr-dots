@@ -662,4 +662,5 @@ b465bb64df50378567c4f88834e01f8a2b58044fc1415fa6d749d8283f7b3f6c	.config/quicksh
 
 # 2026-08-27 focused display scale controls.
 29e07786e1fa78fbbbce777064f332a3a7456e104c0907e55d62756ab8314f0c	.config/hypr/scripts/quickshell_display_scale.sh
+16a5007c01017c00c7167b4f12aeac71afa19186f52244e74c903ebe1c3037ff	.config/hypr/scripts/quickshell_display_scale.sh
 ee23c0eb5a2c321bf79b22d990241f973c189b433c11ee31733de7af933c825b	.config/quickshell/awtarchy/BarSettingsSection.qml
