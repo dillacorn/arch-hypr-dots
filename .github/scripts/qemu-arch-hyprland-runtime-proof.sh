@@ -20,6 +20,7 @@ QEMU_LOG="$ARTIFACT_DIR/qemu-host.log"
 QEMU_PID_FILE="$WORK_DIR/qemu.pid"
 USER_DATA="$WORK_DIR/user-data"
 META_DATA="$WORK_DIR/meta-data"
+FAILURE_CONTEXT="$ARTIFACT_DIR/failure-context.txt"
 
 cleanup() {
     if [[ -f "$QEMU_PID_FILE" ]]; then
@@ -58,7 +59,7 @@ qemu-img resize -q "$GUEST_IMAGE" 16G
 ssh-keygen -q -t ed25519 -N '' -f "$SSH_KEY"
 PUBLIC_KEY="$(cat "${SSH_KEY}.pub")"
 
-cat >"$USER_DATA" <<EOF
+cat >"$USER_DATA" <<EOF_CLOUD
 #cloud-config
 users:
   - name: arch
@@ -75,17 +76,18 @@ growpart:
   mode: auto
   devices: ['/']
 resize_rootfs: true
-EOF
+EOF_CLOUD
 
-cat >"$META_DATA" <<'EOF'
+cat >"$META_DATA" <<'EOF_META'
 instance-id: awtarchy-qemu-runtime
 local-hostname: awtarchy-runtime
-EOF
+EOF_META
 
 cloud-localds "$SEED_IMAGE" "$USER_DATA" "$META_DATA"
 
 : >"$SERIAL_LOG"
 : >"$QEMU_LOG"
+: >"$FAILURE_CONTEXT"
 
 printf '%s\n' 'Starting QEMU Arch guest with virtio-gpu 2D device...'
 qemu-system-x86_64 \
@@ -120,6 +122,70 @@ vm_ssh() {
     ssh "${SSH_OPTS[@]}" arch@127.0.0.1 "$@"
 }
 
+qemu_alive() {
+    local qemu_pid=""
+    [[ -f "$QEMU_PID_FILE" ]] || return 1
+    qemu_pid="$(cat "$QEMU_PID_FILE" 2>/dev/null || true)"
+    [[ -n "$qemu_pid" ]] && kill -0 "$qemu_pid" 2>/dev/null
+}
+
+collect_failure_evidence() {
+    local stage="$1"
+    local guest_probe="$WORK_DIR/guest-failure-probe.txt"
+
+    {
+        printf 'stage=%s\n' "$stage"
+        date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
+        if qemu_alive; then
+            printf 'qemu_alive=yes\n'
+            ps -o pid,ppid,stat,etime,cmd -p "$(cat "$QEMU_PID_FILE")" 2>&1 || true
+        else
+            printf 'qemu_alive=no\n'
+        fi
+        printf '%s\n' '=== qemu host log ==='
+        cat "$QEMU_LOG" 2>&1 || true
+        printf '%s\n' '=== serial tail ==='
+        tail -n 300 "$SERIAL_LOG" 2>&1 || true
+    } >>"$FAILURE_CONTEXT" 2>&1
+
+    if vm_ssh 'set +e
+        mkdir -p /tmp/awtarchy-vm
+        {
+            echo "=== guest failure probe ==="
+            date -u
+            uname -a
+            id
+            echo "=== uptime ==="
+            uptime
+            echo "=== processes ==="
+            ps -ef | grep -E "Hyprland|dbus-run-session|seatd" | grep -v grep
+            echo "=== hypr runtime ==="
+            find /run/user/1000/hypr -maxdepth 3 -type f -o -type s 2>/dev/null
+            echo "=== dri ==="
+            ls -la /dev/dri 2>/dev/null
+            echo "=== input ==="
+            ls -la /dev/input 2>/dev/null
+            echo "=== seatd ==="
+            systemctl --no-pager --full status seatd.service
+            echo "=== kernel tail ==="
+            sudo dmesg | tail -n 200
+            echo "=== hyprland log ==="
+            tail -n 300 /tmp/awtarchy-vm/hyprland.log 2>/dev/null
+        } >/tmp/awtarchy-vm/failure-probe.txt 2>&1
+        cp /tmp/awtarchy-vm/hyprland.log /tmp/awtarchy-vm/hyprland-failure.log 2>/dev/null
+        exit 0' >"$guest_probe" 2>&1; then
+        cat "$guest_probe" >>"$FAILURE_CONTEXT" 2>&1 || true
+        scp "${SCP_OPTS[@]}" -r \
+            arch@127.0.0.1:/tmp/awtarchy-vm/. \
+            "$ARTIFACT_DIR/" >/dev/null 2>&1 || true
+    else
+        {
+            printf '%s\n' '=== guest SSH failure ==='
+            cat "$guest_probe" 2>&1 || true
+        } >>"$FAILURE_CONTEXT"
+    fi
+}
+
 printf '%s\n' 'Waiting for SSH/cloud-init...'
 ssh_ready=0
 for _ in $(seq 1 150); do
@@ -127,19 +193,16 @@ for _ in $(seq 1 150); do
         ssh_ready=1
         break
     fi
-    if [[ -f "$QEMU_PID_FILE" ]]; then
-        qemu_pid="$(cat "$QEMU_PID_FILE")"
-        if ! kill -0 "$qemu_pid" 2>/dev/null; then
-            printf '%s\n' 'QEMU exited before SSH became available.' >&2
-            tail -n 200 "$SERIAL_LOG" >&2 || true
-            exit 1
-        fi
+    if ! qemu_alive; then
+        printf '%s\n' 'QEMU exited before SSH became available.' >&2
+        collect_failure_evidence 'qemu-exited-before-ssh'
+        exit 1
     fi
     sleep 2
 done
 (( ssh_ready == 1 )) || {
     printf '%s\n' 'Timed out waiting for the Arch guest SSH service.' >&2
-    tail -n 200 "$SERIAL_LOG" >&2 || true
+    collect_failure_evidence 'ssh-timeout'
     exit 1
 }
 
@@ -154,8 +217,6 @@ tar -C . -czf - config/hypr config/quickshell \
     | ssh "${SSH_OPTS[@]}" arch@127.0.0.1 \
         'rm -rf ~/.config/hypr ~/.config/quickshell; mkdir -p ~/.config; tar -C ~ -xzf -; cp -a ~/config/hypr ~/.config/hypr; cp -a ~/config/quickshell ~/.config/quickshell; rm -rf ~/config'
 
-# Open a fresh SSH login after group membership changed so the runtime user has
-# the seat/video/render/input supplementary groups.
 vm_ssh 'id; test -S /run/seatd.sock; test -r ~/.config/hypr/hyprland.lua'
 
 vm_ssh 'mkdir -p /tmp/awtarchy-vm; {
@@ -168,10 +229,18 @@ vm_ssh 'mkdir -p /tmp/awtarchy-vm; {
         printf "%s: " "$node";
         udevadm info --query=property --name="$node" 2>/dev/null | grep -E "^(DRIVER|ID_PATH|DEVNAME)=" || true;
     done;
+    echo "=== /dev/input ==="; ls -la /dev/input || true;
     echo "=== modules ==="; lsmod | grep -E "virtio_gpu|drm" || true;
+    echo "=== seatd ==="; systemctl --no-pager --full status seatd.service || true;
 } >/tmp/awtarchy-vm/hardware.txt 2>&1'
-
 vm_ssh 'timeout 15 eglinfo -B >/tmp/awtarchy-vm/eglinfo.txt 2>&1 || true'
+
+# Preserve pre-Hyprland evidence immediately. If compositor startup crashes or
+# disconnects the guest, the GPU/seat/input baseline still reaches the artifact.
+scp "${SCP_OPTS[@]}" \
+    arch@127.0.0.1:/tmp/awtarchy-vm/hardware.txt \
+    arch@127.0.0.1:/tmp/awtarchy-vm/eglinfo.txt \
+    "$ARTIFACT_DIR/" >/dev/null 2>&1 || true
 
 cat >"$WORK_DIR/start-hyprland.sh" <<'GUEST'
 #!/usr/bin/env bash
@@ -203,17 +272,19 @@ for _ in $(seq 1 60); do
         hypr_ready=1
         break
     fi
-    if ! vm_ssh 'pid=$(cat /tmp/awtarchy-vm/hyprland.pid 2>/dev/null || true); test -n "$pid" && kill -0 "$pid" 2>/dev/null' >/dev/null 2>&1; then
+    if ! qemu_alive; then
+        printf '%s\n' 'QEMU exited while Hyprland was starting.' >&2
+        break
+    fi
+    if ! vm_ssh 'pgrep -x Hyprland >/dev/null 2>&1 || pgrep -f "Hyprland --config" >/dev/null 2>&1' >/dev/null 2>&1; then
         printf '%s\n' 'Hyprland exited before exposing a monitor in the QEMU guest.' >&2
-        vm_ssh 'tail -n 250 /tmp/awtarchy-vm/hyprland.log' >&2 || true
         break
     fi
     sleep 1
 done
 
 if (( hypr_ready == 0 )); then
-    vm_ssh 'cp /tmp/awtarchy-vm/hyprland.log /tmp/awtarchy-vm/hyprland-failure.log 2>/dev/null || true'
-    scp "${SCP_OPTS[@]}" -r arch@127.0.0.1:/tmp/awtarchy-vm/. "$ARTIFACT_DIR/" >/dev/null 2>&1 || true
+    collect_failure_evidence 'hyprland-not-ready'
     printf '%s\n' 'QEMU guest did not reach a usable Hyprland monitor.' >&2
     exit 1
 fi
@@ -233,8 +304,7 @@ for _ in $(seq 1 60); do
 done
 
 if (( qs_ready == 0 )); then
-    vm_ssh 'cp ~/.cache/awtarchy/quickshell.log /tmp/awtarchy-vm/quickshell.log 2>/dev/null || true'
-    scp "${SCP_OPTS[@]}" -r arch@127.0.0.1:/tmp/awtarchy-vm/. "$ARTIFACT_DIR/" >/dev/null 2>&1 || true
+    collect_failure_evidence 'quickshell-not-ready'
     printf '%s\n' 'Quickshell did not become IPC-ready in the QEMU guest.' >&2
     exit 1
 fi
