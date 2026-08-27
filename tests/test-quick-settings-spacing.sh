@@ -12,8 +12,17 @@ import sys
 path = pathlib.Path(sys.argv[1])
 text = path.read_text(encoding="utf-8")
 
-if "PowerModeCard {" in text:
-    raise SystemExit("FAIL: Quick Settings still reserves a dead PowerModeCard layout row")
+compat = re.search(
+    r"\n\s*PowerModeCard \{\n(?P<body>.*?)\n\s*\}\n",
+    text,
+    re.DOTALL,
+)
+if compat is None:
+    raise SystemExit("FAIL: inert Quick Settings PowerModeCard compatibility instance is missing")
+if "Layout.row:" in compat.group("body"):
+    raise SystemExit("FAIL: inert PowerModeCard compatibility instance still reserves a GridLayout row")
+if "presentationEnabled: true" in compat.group("body"):
+    raise SystemExit("FAIL: Quick Settings PowerModeCard compatibility instance can render")
 
 rows = [
     (int(index), int(count))
@@ -34,5 +43,5 @@ indices = sorted(index for index, _ in rows)
 if indices != list(range(11)):
     raise SystemExit(f"FAIL: Quick Settings section rows are not contiguous: {indices}")
 
-print("PASS: Quick Settings section rows are contiguous with one standard gap between cards.")
+print("PASS: Quick Settings keeps its inert Power Mode compatibility host without reserving an extra section gap.")
 PY
