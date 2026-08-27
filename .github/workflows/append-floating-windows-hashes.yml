@@ -1,0 +1,40 @@
+name: Record Floating Windows Stock Hashes
+
+on:
+  push:
+    branches: [feature/floating-windows-default]
+    paths: ['.github/workflows/append-floating-windows-hashes.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  append:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/floating-windows-default
+      - name: Append verified hashes
+        run: |
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          for entry in \
+            $'af79c5276f85fc4bd39ada127f83d4dacec1aba7ae453ade85ec99eda84a42c4\t.config/hypr/scripts/quickshell_floating_windows.sh' \
+            $'4e4766100c77460ee1b5ea48efa4103bd65adf3601d367fbf32f806168ccbcfc\t.config/quickshell/awtarchy/FloatingWindowsCard.qml' \
+            $'d3edffc81d7b78e3ab054ad8f2a8c38f2b5979c0eee2b2d21588dd5c8d48a5dc\t.config/quickshell/awtarchy/QuickSettings.qml'
+          do
+            ! grep -Fqx -- "$entry" "$history" || { echo "hash already present: $entry" >&2; exit 1; }
+          done
+          printf '\n# 2026-08-27 optional floating windows default.\n' >> "$history"
+          printf '%s\t%s\n' 'af79c5276f85fc4bd39ada127f83d4dacec1aba7ae453ade85ec99eda84a42c4' '.config/hypr/scripts/quickshell_floating_windows.sh' >> "$history"
+          printf '%s\t%s\n' '4e4766100c77460ee1b5ea48efa4103bd65adf3601d367fbf32f806168ccbcfc' '.config/quickshell/awtarchy/FloatingWindowsCard.qml' >> "$history"
+          printf '%s\t%s\n' 'd3edffc81d7b78e3ab054ad8f2a8c38f2b5979c0eee2b2d21588dd5c8d48a5dc' '.config/quickshell/awtarchy/QuickSettings.qml' >> "$history"
+          git diff --check -- "$history"
+      - name: Commit managed history
+        run: |
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add local/share/awtarchy/quickshell-managed-history.sha256
+          git diff --cached --quiet && exit 1
+          git commit -m 'chore: record floating windows stock hashes'
+          git push origin HEAD:feature/floating-windows-default
