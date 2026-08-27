@@ -445,7 +445,10 @@ reset_flyout() {
 validate_quick_settings_layout() {
     local order_json="$1" hidden_json="$2"
 
-    if ! jq -e -n         --argjson allowed "$QUICK_SETTINGS_SECTIONS_JSON"         --argjson order "$order_json"         --argjson hidden "$hidden_json" '
+    if ! jq -e -n \
+        --argjson allowed "$QUICK_SETTINGS_SECTIONS_JSON" \
+        --argjson order "$order_json" \
+        --argjson hidden "$hidden_json" '
         ($order | type) == "array"
         and ($hidden | type) == "array"
         and ($order | length) == ($allowed | length)
@@ -456,20 +459,22 @@ validate_quick_settings_layout() {
         and (($hidden - $allowed) | length) == 0
         and ($hidden | length) < ($allowed | length)
     ' >/dev/null 2>&1; then
-        printf 'invalid Quick Settings layout
-' >&2
+        printf 'invalid Quick Settings layout\n' >&2
         exit 2
     fi
 }
 
 save_quick_settings_layout() {
     local monitor="$1" order_json="$2" hidden_json="$3"
-    [[ -n "$monitor" ]] || { printf 'monitor is required
-' >&2; exit 2; }
+    [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
     validate_quick_settings_layout "$order_json" "$hidden_json"
 
     new_tmp
-    jq         --arg monitor "$monitor"         --argjson order "$order_json"         --argjson hidden "$hidden_json"         --argjson save_version "$QUICK_SETTINGS_LAYOUT_SAVE_VERSION" '
+    jq \
+        --arg monitor "$monitor" \
+        --argjson order "$order_json" \
+        --argjson hidden "$hidden_json" \
+        --argjson save_version "$QUICK_SETTINGS_LAYOUT_SAVE_VERSION" '
         .quick_settings_layouts = (if (.quick_settings_layouts | type) == "object"
             then .quick_settings_layouts else {} end)
         | .quick_settings_layouts[$monitor] = {
@@ -487,13 +492,19 @@ copy_quick_settings_layout() {
     local -a targets=("$@")
     local targets_json
 
-    (( ${#targets[@]} > 0 )) || { printf 'at least one target monitor is required
-' >&2; exit 2; }
+    (( ${#targets[@]} > 0 )) || {
+        printf 'at least one target monitor is required\n' >&2
+        exit 2
+    }
     validate_quick_settings_layout "$order_json" "$hidden_json"
     targets_json="$(jq -cn --args '$ARGS.positional' -- "${targets[@]}")"
 
     new_tmp
-    jq         --argjson targets "$targets_json"         --argjson order "$order_json"         --argjson hidden "$hidden_json"         --argjson save_version "$QUICK_SETTINGS_LAYOUT_SAVE_VERSION" '
+    jq \
+        --argjson targets "$targets_json" \
+        --argjson order "$order_json" \
+        --argjson hidden "$hidden_json" \
+        --argjson save_version "$QUICK_SETTINGS_LAYOUT_SAVE_VERSION" '
         .quick_settings_layouts = (if (.quick_settings_layouts | type) == "object"
             then .quick_settings_layouts else {} end)
         | .quick_settings_layouts = reduce $targets[] as $monitor
@@ -509,8 +520,7 @@ copy_quick_settings_layout() {
 
 reset_quick_settings_layout() {
     local monitor="$1"
-    [[ -n "$monitor" ]] || { printf 'monitor is required
-' >&2; exit 2; }
+    [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
 
     new_tmp
     jq --arg monitor "$monitor" '

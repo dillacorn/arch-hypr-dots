@@ -2199,7 +2199,7 @@ Singleton {
 
               TitleBarsCard {
                   Layout.row: root.quickSettingsSectionRow("title-bars")
-                            visible: root.quickSettingsSectionVisible("title-bars")
+                  visible: root.quickSettingsSectionVisible("title-bars")
                   active: quickSettingsWindow.visible
                   textScale: root.effectiveTextScale
                   iconScale: root.effectiveIconScale
