@@ -434,12 +434,18 @@ Singleton {
 
     function filteredEntries() {
         const query = search.text.trim().toLowerCase();
-        const scored = entries.map(entry => ({
-            entry: entry,
-            score: fuzzyScore(String(entry.label || "").toLowerCase(), query)
-        })).filter(item => item.score >= 0);
+        const useGlob = query.indexOf("*") >= 0;
+        const scored = entries.map(entry => {
+            const label = String(entry.label || "").toLowerCase();
+            return {
+                entry: entry,
+                score: useGlob
+                    ? (ClipboardLoadState.globMatch(label, query) ? 0 : -1)
+                    : fuzzyScore(label, query)
+            };
+        }).filter(item => item.score >= 0);
 
-        if (query.length > 0)
+        if (query.length > 0 && !useGlob)
             scored.sort((a, b) => b.score - a.score);
         return scored.map(item => item.entry);
     }
@@ -892,12 +898,16 @@ Singleton {
                     }
                 }
 
-                ListView {
-                    id: clipboardList
+                Item {
+                    id: clipboardContent
                     Layout.row: root.bottomEdgeLayout ? 0 : 2
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    visible: !root.detailOpen
+
+                    ListView {
+                        id: clipboardList
+                        anchors.fill: parent
+                        visible: !root.detailOpen
                     model: ScriptModel {
                         objectProp: "index"
                         values: root.filteredEntries()
@@ -948,7 +958,7 @@ Singleton {
                             enabled: FlyoutManager.animationsEnabled
                             SequentialAnimation {
                                 PauseAnimation {
-                                    duration: Math.min(row.index, 12) * 18
+                                    duration: Math.min(Math.max(row.index, 0), 12) * 18
                                 }
                                 NumberAnimation {
                                     duration: 110
@@ -1078,12 +1088,11 @@ Singleton {
                     }
                 }
 
-                Item {
-                    Layout.row: root.bottomEdgeLayout ? 0 : 2
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    visible: !root.detailOpen
-                        && (root.entries.length === 0 || clipboardList.count === 0)
+                    Item {
+                        id: clipboardStatus
+                        anchors.fill: parent
+                        visible: !root.detailOpen
+                            && (root.entries.length === 0 || clipboardList.count === 0)
                     z: 12
 
                     Text {
@@ -1141,11 +1150,10 @@ Singleton {
                     }
                 }
 
-                Item {
-                    Layout.row: root.bottomEdgeLayout ? 0 : 2
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    visible: root.detailOpen
+                    Item {
+                        id: clipboardDetail
+                        anchors.fill: parent
+                        visible: root.detailOpen
 
                     GridLayout {
                         anchors.fill: parent
@@ -1286,6 +1294,7 @@ Singleton {
                             }
                         }
                     }
+                }
                 }
             }
         }
