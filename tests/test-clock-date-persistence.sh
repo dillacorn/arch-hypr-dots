@@ -88,4 +88,5 @@ grep -Fq 'clockDatePersistPending = true' "$BAR_QML" \
 [[ $(grep -Fc 'onWheelDown: bar.toggleClockDate()' "$BAR_QML") -eq 2 ]] \
     || fail 'horizontal and vertical clocks do not share the persistent wheel-down toggle'
 
+# Keep restart/reboot persistence and per-monitor isolation as the permanent contract.
 printf '%s\n' 'Clock/date per-monitor persistence regression test passed.'
