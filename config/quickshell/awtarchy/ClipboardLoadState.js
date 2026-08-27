@@ -65,6 +65,15 @@ function enqueueThumbnail(queue, known, index) {
     return { queue: nextQueue, known: nextKnown };
 }
 
+function globMatch(value, pattern) {
+    var text = String(value || "").toLowerCase();
+    var parts = String(pattern || "").toLowerCase().split("*");
+    var escaped = parts.map(function(part) {
+        return part.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
+    });
+    return new RegExp("^" + escaped.join(".*") + "$").test(text);
+}
+
 function requestListLoad(processRunning, processStopping) {
     var running = processRunning === true;
     var stopping = processStopping === true;
@@ -89,6 +98,7 @@ if (typeof module !== "undefined") {
         appendRecord: appendRecord,
         updateThumbnail: updateThumbnail,
         enqueueThumbnail: enqueueThumbnail,
+        globMatch: globMatch,
         requestListLoad: requestListLoad,
         finishListLoad: finishListLoad
     };
