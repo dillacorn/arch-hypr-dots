@@ -1,0 +1,31 @@
+name: Validate Display Scale
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/validate-display-scale.yml'
+      - 'config/hypr/scripts/hypr_quicksettings.sh'
+      - 'config/quickshell/awtarchy/BarSettingsSection.qml'
+      - 'config/quickshell/awtarchy/FlyoutSettings.qml'
+      - 'config/quickshell/awtarchy/QuickSettings.qml'
+      - 'local/share/awtarchy/quickshell-managed-history.sha256'
+      - 'tests/test-display-scale-quicksettings.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  display-scale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Validate display scale controls
+        run: |
+          bash -n config/hypr/scripts/hypr_quicksettings.sh
+          bash -n tests/test-display-scale-quicksettings.sh
+          shellcheck -e SC2034,SC2153 config/hypr/scripts/hypr_quicksettings.sh
+          shellcheck tests/test-display-scale-quicksettings.sh
+          bash tests/test-display-scale-quicksettings.sh
