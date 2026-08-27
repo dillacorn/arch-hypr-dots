@@ -8,9 +8,19 @@ OUT="${ARTIFACT_DIR}/${SAFE_TARGET}"
 mkdir -p "$OUT"
 
 pacman -Syu --noconfirm --needed \
-    hyprland quickshell jq python dbus mesa wl-clipboard cliphist grim foot \
+    hyprland quickshell jq python dbus mesa mesa-utils wl-clipboard cliphist grim foot weston \
     xdg-utils util-linux procps-ng libnotify qt6-wayland ttf-dejavu \
     >"$OUT/pacman.log" 2>&1
+
+{
+    printf '%s\n' '=== /dev/dri ==='
+    ls -la /dev/dri 2>&1 || true
+    printf '%s\n' '=== DRM devices ==='
+    for node in /dev/dri/card* /dev/dri/renderD*; do
+        [[ -e "$node" ]] || continue
+        printf '%s\n' "$node"
+    done
+} >"$OUT/drm-devices.txt"
 
 id tester >/dev/null 2>&1 || useradd -m -u 1000 tester
 install -d -m 0700 -o tester -g tester /run/user/1000
@@ -37,43 +47,120 @@ export HYPRLAND_NO_SD_VARS=1
 export HYPRLAND_NO_RT=1
 export AQ_NO_KMS_REQUIREMENT=1
 export AQ_NO_MODIFIERS=1
-export LIBGL_ALWAYS_SOFTWARE=1
 export WLR_RENDERER_ALLOW_SOFTWARE=1
 export QT_QPA_PLATFORM=wayland
 
 HYPR_LOG="$OUT/hyprland.log"
 QS_LOG="$OUT/quickshell-manager.log"
+WESTON_LOG="$OUT/weston.log"
 : >"$HYPR_LOG"
 : >"$QS_LOG"
+: >"$WESTON_LOG"
 
-Hyprland --config "$HOME/.config/hypr/hyprland.lua" >"$HYPR_LOG" 2>&1 &
-HYPR_PID=$!
+WESTON_PID=""
+HYPR_PID=""
 cleanup() {
     qs -c awtarchy ipc call control quit >/dev/null 2>&1 || true
-    kill "$HYPR_PID" >/dev/null 2>&1 || true
-    wait "$HYPR_PID" >/dev/null 2>&1 || true
+    if [[ -n "$HYPR_PID" ]]; then
+        kill "$HYPR_PID" >/dev/null 2>&1 || true
+        wait "$HYPR_PID" >/dev/null 2>&1 || true
+    fi
+    if [[ -n "$WESTON_PID" ]]; then
+        kill "$WESTON_PID" >/dev/null 2>&1 || true
+        wait "$WESTON_PID" >/dev/null 2>&1 || true
+    fi
 }
 trap cleanup EXIT
 
+# Prefer a real virtual DRM allocator. Mesa selects kms_swrast for VGEM when
+# software rendering is requested, while Hyprland is allowed to use a GPU that
+# has no physical KMS outputs. The resulting compositor creates HEADLESS-0.
+DRM_CARD="$(find /dev/dri -maxdepth 1 -type c -name 'card*' -print -quit 2>/dev/null || true)"
+if [[ -n "$DRM_CARD" ]]; then
+    export AQ_DRM_DEVICES="$DRM_CARD"
+    export LIBGL_ALWAYS_SOFTWARE=1
+    printf 'direct-drm:%s\n' "$DRM_CARD" >"$OUT/backend-mode.txt"
+else
+    # Fallback: give Aquamarine a real outer Wayland compositor. Weston itself
+    # is fully software rendered and needs no host GPU.
+    WESTON_SOCKET=wayland-awtarchy-ci
+    LIBGL_ALWAYS_SOFTWARE=1 weston \
+        -B headless \
+        --renderer=pixman \
+        --socket="$WESTON_SOCKET" \
+        --width=1920 \
+        --height=1080 \
+        --log="$WESTON_LOG" &
+    WESTON_PID=$!
+
+    for _ in $(seq 1 100); do
+        [[ -S "$XDG_RUNTIME_DIR/$WESTON_SOCKET" ]] && break
+        if ! kill -0 "$WESTON_PID" 2>/dev/null; then
+            printf '%s\n' 'Weston fallback exited before creating its Wayland socket.' >&2
+            cat "$WESTON_LOG" >&2
+            exit 1
+        fi
+        sleep 0.1
+    done
+    [[ -S "$XDG_RUNTIME_DIR/$WESTON_SOCKET" ]] || {
+        printf '%s\n' 'Timed out waiting for Weston fallback.' >&2
+        cat "$WESTON_LOG" >&2
+        exit 1
+    }
+
+    export WAYLAND_DISPLAY="$WESTON_SOCKET"
+    unset LIBGL_ALWAYS_SOFTWARE
+    printf 'nested-wayland:%s\n' "$WESTON_SOCKET" >"$OUT/backend-mode.txt"
+fi
+
+{
+    printf '%s\n' '=== environment before Hyprland ==='
+    printf 'WAYLAND_DISPLAY=%s\n' "${WAYLAND_DISPLAY:-}"
+    printf 'AQ_DRM_DEVICES=%s\n' "${AQ_DRM_DEVICES:-}"
+    printf 'LIBGL_ALWAYS_SOFTWARE=%s\n' "${LIBGL_ALWAYS_SOFTWARE:-}"
+    printf '%s\n' '=== eglinfo ==='
+    eglinfo -B 2>&1 || true
+} >"$OUT/render-environment.txt"
+
+Hyprland --config "$HOME/.config/hypr/hyprland.lua" >"$HYPR_LOG" 2>&1 &
+HYPR_PID=$!
+
 LOCK=""
-for _ in $(seq 1 120); do
+for _ in $(seq 1 160); do
     LOCK="$(find "$XDG_RUNTIME_DIR/hypr" -mindepth 2 -maxdepth 2 -name hyprland.lock -print -quit 2>/dev/null || true)"
     [[ -n "$LOCK" ]] && break
     if ! kill -0 "$HYPR_PID" 2>/dev/null; then
         printf '%s\n' 'Hyprland exited before creating a runtime lock.' >&2
         cat "$HYPR_LOG" >&2
+        [[ -s "$WESTON_LOG" ]] && { printf '%s\n' '=== Weston ===' >&2; cat "$WESTON_LOG" >&2; }
         exit 1
     fi
     sleep 0.1
 done
-[[ -n "$LOCK" ]] || { printf '%s\n' 'Timed out waiting for Hyprland runtime lock.' >&2; cat "$HYPR_LOG" >&2; exit 1; }
+[[ -n "$LOCK" ]] || {
+    printf '%s\n' 'Timed out waiting for Hyprland runtime lock.' >&2
+    cat "$HYPR_LOG" >&2
+    exit 1
+}
 
 export HYPRLAND_INSTANCE_SIGNATURE="$(basename "$(dirname "$LOCK")")"
 export WAYLAND_DISPLAY="$(sed -n '2p' "$LOCK")"
 printf '%s\n' "$HYPRLAND_INSTANCE_SIGNATURE" >"$OUT/hyprland-instance.txt"
 printf '%s\n' "$WAYLAND_DISPLAY" >"$OUT/wayland-display.txt"
 
-hyprctl -j monitors >"$OUT/monitors-initial.json"
+for _ in $(seq 1 100); do
+    if hyprctl -j monitors >"$OUT/monitors-initial.json" 2>/dev/null && \
+        jq -e 'length > 0' "$OUT/monitors-initial.json" >/dev/null 2>&1; then
+        break
+    fi
+    sleep 0.1
+done
+jq -e 'length > 0' "$OUT/monitors-initial.json" >/dev/null || {
+    printf '%s\n' 'Hyprland started but never exposed an output.' >&2
+    cat "$HYPR_LOG" >&2
+    exit 1
+}
+
 hyprctl configerrors >"$OUT/configerrors-initial.txt"
 if [[ -s "$OUT/configerrors-initial.txt" ]]; then
     printf '%s\n' 'Hyprland reported config errors at startup:' >&2
@@ -88,7 +175,7 @@ fi
 }
 
 QS_READY=0
-for _ in $(seq 1 120); do
+for _ in $(seq 1 160); do
     if qs -c awtarchy ipc call control ping >/dev/null 2>&1; then
         QS_READY=1
         break
@@ -109,20 +196,17 @@ hyprctl -j layers >"$OUT/layers-before.json"
 sleep 0.8
 qs -c awtarchy ipc call control ping >/dev/null
 hyprctl -j layers >"$OUT/layers-quicksettings.json"
-grim "$OUT/quicksettings.png"
+grim "$OUT/quicksettings.png" || true
 "$HOME/.config/hypr/scripts/quickshell_quick_settings_toggle.sh"
 sleep 0.2
 
 case "$TARGET_REF" in
     feature/progressive-clipboard-loading)
-        # Ensure the real clipboard watcher exists even if unrelated CI-only
-        # session services prevented the normal Hyprland autostart from doing it.
         if ! pgrep -f 'wl-paste --type text --watch cliphist store' >/dev/null; then
             wl-paste --type text --watch cliphist store >/dev/null 2>&1 &
             sleep 0.2
         fi
 
-        # Drive real Wayland clipboard traffic through cliphist.
         for n in $(seq 1 80); do
             printf 'Awtarchy runtime clipboard item %03d' "$n" | wl-copy
             sleep 0.015
@@ -136,8 +220,8 @@ case "$TARGET_REF" in
         "$HOME/.config/hypr/scripts/quickshell_clipboard_toggle.sh"
         sleep 1
         qs -c awtarchy ipc call control ping >/dev/null
-        grim "$OUT/clipboard.png"
-        # Rapid close/reopen probes generation/process cleanup under a live compositor.
+        hyprctl -j layers >"$OUT/layers-clipboard.json"
+        grim "$OUT/clipboard.png" || true
         for _ in $(seq 1 4); do
             "$HOME/.config/hypr/scripts/quickshell_clipboard_toggle.sh"
             sleep 0.08
@@ -174,7 +258,8 @@ case "$TARGET_REF" in
         "$HOME/.config/hypr/scripts/quickshell_quick_settings_toggle.sh"
         sleep 0.8
         qs -c awtarchy ipc call control ping >/dev/null
-        grim "$OUT/quicksettings-custom-layout.png"
+        hyprctl -j layers >"$OUT/layers-custom-layout.json"
+        grim "$OUT/quicksettings-custom-layout.png" || true
         "$HOME/.config/hypr/scripts/quickshell_quick_settings_toggle.sh"
         ;;
 
@@ -213,7 +298,6 @@ case "$TARGET_REF" in
         ;;
 esac
 
-# Fail on runtime-level QML/config loader errors, while retaining complete logs.
 if [[ -f "$HOME/.cache/awtarchy/quickshell.log" ]]; then
     cp "$HOME/.cache/awtarchy/quickshell.log" "$OUT/quickshell.log"
     if grep -Eiq 'QQmlApplicationEngine failed|QQmlComponent: Component is not ready|Type .* unavailable|module .* is not installed|SyntaxError:|ReferenceError:' "$OUT/quickshell.log"; then
