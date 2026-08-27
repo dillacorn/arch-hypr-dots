@@ -1,0 +1,68 @@
+name: Apply Quick Settings Startup Row Fix V2
+
+on:
+  push:
+    branches:
+      - fix/quick-settings-startup-rows
+    paths:
+      - '.github/workflows/apply-quick-settings-startup-row-fix-v2.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: fix/quick-settings-startup-rows
+          fetch-depth: 0
+
+      - name: Apply startup row fallback
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('config/quickshell/awtarchy/QuickSettings.qml')
+          text = path.read_text(encoding='utf-8')
+          old = (
+              "    function visibleQuickSettingsSectionOrder() {\n"
+              "        return layoutOrderDraft.filter(sectionId => quickSettingsSectionVisible(sectionId));\n"
+              "    }\n"
+          )
+          new = (
+              "    function visibleQuickSettingsSectionOrder() {\n"
+              "        const ordered = layoutOrderDraft.length > 0\n"
+              "            ? layoutOrderDraft\n"
+              "            : BarState.defaultQuickSettingsSectionOrder;\n"
+              "        return ordered.filter(sectionId => quickSettingsSectionVisible(sectionId));\n"
+              "    }\n"
+          )
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one startup order function, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          managed='.config/quickshell/awtarchy/QuickSettings.qml'
+          digest="$(sha256sum config/quickshell/awtarchy/QuickSettings.qml | awk '{print $1}')"
+          entry="${digest}"$'\t'"${managed}"
+          grep -Fqx -- "$entry" "$history" || printf '%s\n' "$entry" >>"$history"
+          printf 'Recorded QuickSettings.qml SHA-256: %s\n' "$digest"
+
+          bash tests/test-quick-settings-startup-rows.sh
+          bash tests/test-quick-settings-layout.sh
+          git diff --check
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add config/quickshell/awtarchy/QuickSettings.qml local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'Fix Quick Settings startup row fallback'
+          git push origin HEAD:fix/quick-settings-startup-rows
