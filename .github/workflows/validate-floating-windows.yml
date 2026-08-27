@@ -1,0 +1,30 @@
+name: Validate Floating Windows
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/validate-floating-windows.yml'
+      - 'config/hypr/hyprland.lua'
+      - 'config/hypr/scripts/quickshell_floating_windows.sh'
+      - 'config/quickshell/awtarchy/FloatingWindowsCard.qml'
+      - 'config/quickshell/awtarchy/QuickSettings.qml'
+      - 'local/share/awtarchy/quickshell-managed-history.sha256'
+      - 'tests/test-floating-windows-quicksettings.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Test syntax
+        run: bash -n tests/test-floating-windows-quicksettings.sh
+      - name: ShellCheck test
+        run: shellcheck tests/test-floating-windows-quicksettings.sh
+      - name: Floating Windows regression
+        run: bash tests/test-floating-windows-quicksettings.sh
