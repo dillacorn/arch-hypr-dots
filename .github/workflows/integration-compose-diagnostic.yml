@@ -25,6 +25,7 @@ jobs:
           history='local/share/awtarchy/quickshell-managed-history.sha256'
           quick_settings='config/quickshell/awtarchy/QuickSettings.qml'
           app_state='config/hypr/scripts/quickshell_application_state.sh'
+          bar_state='config/quickshell/awtarchy/BarState.qml'
           refs=(
             '483c84c9399c6d9fa47b9e5df204475adcbc4276:#72'
             'e683a20772cf6306f34d2456c6cba6c295219704:#73'
@@ -44,6 +45,13 @@ jobs:
             '+refs/heads/fix/fullscreen-bar-and-quick-settings-spacing:refs/remotes/origin/fix/fullscreen-bar-and-quick-settings-spacing'
           git config user.name 'Awtarchy Integration Diagnostic'
           git config user.email 'integration-diagnostic@invalid.local'
+
+          add_current_hash() {
+            local source="$1" managed="$2" digest entry
+            digest="$(sha256sum "$source" | awk '{print $1}')"
+            entry="${digest}"$'\t'"${managed}"
+            grep -Fqx -- "$entry" "$history" || printf '%s\n' "$entry" >>"$history"
+          }
 
           resolve_history() {
             local ours="${RUNNER_TEMP}/history-ours"
@@ -121,6 +129,65 @@ jobs:
             git add -- "$app_state"
           }
 
+          resolve_74_79_quick_settings() {
+            # #74 owns the dynamic section model. Keep that file as the base,
+            # then apply #79's semantic spacing fix: the old PowerModeCard is
+            # compatibility-only and must not consume a customizable grid row.
+            git show ":2:${quick_settings}" >"$quick_settings"
+            python3 - "$quick_settings" "$bar_state" "$app_state" <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          quick = Path(sys.argv[1])
+          bar_state = Path(sys.argv[2])
+          app_state = Path(sys.argv[3])
+
+          text = quick.read_text()
+          power_pattern = re.compile(
+              r'\n(?P<indent>[ \t]*)PowerModeCard \{\n'
+              r'(?P=indent)    Layout\.row: root\.quickSettingsSectionRow\("power-mode"\)\n'
+              r'(?P=indent)    visible: root\.quickSettingsSectionVisible\("power-mode"\)\n'
+              r'(?P=indent)    active: quickSettingsWindow\.visible\n'
+              r'(?P=indent)    textScale: root\.effectiveTextScale\n'
+              r'(?P=indent)    iconScale: root\.effectiveIconScale\n'
+              r'(?P=indent)\}\n',
+              re.MULTILINE,
+          )
+          matches = list(power_pattern.finditer(text))
+          if len(matches) != 1:
+              raise SystemExit(f'expected exactly one dynamic PowerModeCard row, found {len(matches)}')
+          text = power_pattern.sub('\n', text, count=1)
+
+          outer_grid = '            GridLayout {\n                anchors.fill: parent\n                columns: 1\n'
+          if text.count(outer_grid) != 1:
+              raise SystemExit(f'expected one panel GridLayout anchor, found {text.count(outer_grid)}')
+          compat = (
+              '            PowerModeCard {\n'
+              '                active: quickSettingsWindow.visible\n'
+              '                textScale: root.effectiveTextScale\n'
+              '                iconScale: root.effectiveIconScale\n'
+              '            }\n\n'
+          )
+          text = text.replace(outer_grid, compat + outer_grid, 1)
+          quick.write_text(text)
+
+          bar = bar_state.read_text()
+          token = '        "power-mode",\n'
+          if bar.count(token) != 1:
+              raise SystemExit(f'expected one power-mode default-order entry, found {bar.count(token)}')
+          bar_state.write_text(bar.replace(token, '', 1))
+
+          app = app_state.read_text()
+          old_sections = 'QUICK_SETTINGS_SECTIONS_JSON=\'["brightness","output-volume","power-mode","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","title-bars"]\''
+          new_sections = 'QUICK_SETTINGS_SECTIONS_JSON=\'["brightness","output-volume","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","title-bars"]\''
+          if app.count(old_sections) != 1:
+              raise SystemExit(f'expected one Quick Settings section validator, found {app.count(old_sections)}')
+          app_state.write_text(app.replace(old_sections, new_sections, 1))
+          PY
+            git add -- "$quick_settings" "$bar_state" "$app_state"
+          }
+
           for item in "${refs[@]}"; do
             sha="${item%%:*}"
             label="${item#*:}"
@@ -144,9 +211,7 @@ jobs:
               if (( unexpected == 0 && have_history == 1 && have_quick == 1 )); then
                 resolve_history
                 resolve_74_75_quick_settings
-                digest="$(sha256sum "$quick_settings" | awk '{print $1}')"
-                entry="${digest}"$'\t'".config/quickshell/awtarchy/QuickSettings.qml"
-                grep -Fqx -- "$entry" "$history" || printf '%s\n' "$entry" >>"$history"
+                add_current_hash "$quick_settings" '.config/quickshell/awtarchy/QuickSettings.qml'
                 git add -- "$history"
                 git commit --no-edit
                 continue
@@ -165,9 +230,29 @@ jobs:
               if (( unexpected == 0 && have_history == 1 && have_app == 1 )); then
                 resolve_history
                 resolve_74_77_app_state
-                digest="$(sha256sum "$app_state" | awk '{print $1}')"
-                entry="${digest}"$'\t'".config/hypr/scripts/quickshell_application_state.sh"
-                grep -Fqx -- "$entry" "$history" || printf '%s\n' "$entry" >>"$history"
+                add_current_hash "$app_state" '.config/hypr/scripts/quickshell_application_state.sh'
+                git add -- "$history"
+                git commit --no-edit
+                continue
+              fi
+            fi
+
+            if [[ "$label" == '#79' ]]; then
+              unexpected=0; have_history=0; have_quick=0
+              for path in "${conflicts[@]}"; do
+                case "$path" in
+                  "$history") have_history=1 ;;
+                  "$quick_settings") have_quick=1 ;;
+                  *) unexpected=1 ;;
+                esac
+              done
+              if (( unexpected == 0 && have_history == 1 && have_quick == 1 )); then
+                resolve_history
+                resolve_74_79_quick_settings
+                add_current_hash "$quick_settings" '.config/quickshell/awtarchy/QuickSettings.qml'
+                add_current_hash "$bar_state" '.config/quickshell/awtarchy/BarState.qml'
+                add_current_hash "$app_state" '.config/hypr/scripts/quickshell_application_state.sh'
+                add_current_hash 'config/quickshell/awtarchy/Bar.qml' '.config/quickshell/awtarchy/Bar.qml'
                 git add -- "$history"
                 git commit --no-edit
                 continue
