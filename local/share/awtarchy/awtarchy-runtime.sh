@@ -3138,6 +3138,52 @@ awtarchy_polkit_user_command() {
   fi
 }
 
+awtarchy_polkit_recover_session_environment() {
+  local target_uid runtime_dir line key value
+  target_uid="$(awtarchy_polkit_target_uid)" || return 1
+  runtime_dir="/run/user/${target_uid}"
+  if [[ -z "${XDG_RUNTIME_DIR:-}" && -d "$runtime_dir" ]]; then
+    export XDG_RUNTIME_DIR="$runtime_dir"
+  fi
+  if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" && -S "${runtime_dir}/bus" ]]; then
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=${runtime_dir}/bus"
+  fi
+
+  if [[ -n "${WAYLAND_DISPLAY:-}" && -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" && -n "${XDG_SESSION_ID:-}" ]]; then
+    return 0
+  fi
+
+  while IFS= read -r line; do
+    [[ "$line" == *=* ]] || continue
+    key="${line%%=*}"
+    value="${line#*=}"
+    [[ -n "$value" ]] || continue
+
+    case "$key" in
+      WAYLAND_DISPLAY)
+        [[ -n "${WAYLAND_DISPLAY:-}" ]] || export WAYLAND_DISPLAY="$value"
+        ;;
+      HYPRLAND_INSTANCE_SIGNATURE)
+        [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || export HYPRLAND_INSTANCE_SIGNATURE="$value"
+        ;;
+      XDG_SESSION_ID)
+        [[ -n "${XDG_SESSION_ID:-}" ]] || export XDG_SESSION_ID="$value"
+        ;;
+      XDG_CURRENT_DESKTOP)
+        [[ -n "${XDG_CURRENT_DESKTOP:-}" ]] || export XDG_CURRENT_DESKTOP="$value"
+        ;;
+      XDG_SESSION_DESKTOP)
+        [[ -n "${XDG_SESSION_DESKTOP:-}" ]] || export XDG_SESSION_DESKTOP="$value"
+        ;;
+      XDG_SESSION_TYPE)
+        [[ -n "${XDG_SESSION_TYPE:-}" ]] || export XDG_SESSION_TYPE="$value"
+        ;;
+    esac
+  done < <(awtarchy_polkit_user_command /usr/bin/systemctl --user show-environment 2>/dev/null || true)
+
+  [[ -n "${WAYLAND_DISPLAY:-}" && -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" && -n "${XDG_SESSION_ID:-}" ]]
+}
+
 awtarchy_polkit_get_gnome_pids() {
   local target_uid pid resolved
   target_uid="$(awtarchy_polkit_target_uid)" || return 1
@@ -3239,6 +3285,7 @@ activate_awtarchy_polkit_agent() {
   target_uid="$(awtarchy_polkit_target_uid)" || return 1
   runtime_dir="/run/user/${target_uid}"
 
+  awtarchy_polkit_recover_session_environment || return 2
   [[ -S "${runtime_dir}/bus" && -n "${WAYLAND_DISPLAY:-}" && -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" && -n "${XDG_SESSION_ID:-}" ]] || return 2
   awtarchy_polkit_verify_runtime || return 1
 
@@ -7915,6 +7962,7 @@ main() {
   need_cmd sha256sum
 
   init_target_user
+  awtarchy_polkit_recover_session_environment || true
   acquire_lock
   curl_headers
 

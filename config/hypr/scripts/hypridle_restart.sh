@@ -12,6 +12,42 @@ CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 
+export XDG_RUNTIME_DIR="$RUNTIME_DIR"
+if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" && -S "${RUNTIME_DIR}/bus" ]]; then
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=${RUNTIME_DIR}/bus"
+fi
+
+recover_user_manager_session_environment() {
+    local line key value
+
+    command -v systemctl >/dev/null 2>&1 || return 0
+    while IFS= read -r line; do
+        [[ "$line" == *=* ]] || continue
+        key="${line%%=*}"
+        value="${line#*=}"
+        [[ -n "$value" ]] || continue
+        case "$key" in
+            WAYLAND_DISPLAY)
+                [[ -n "${WAYLAND_DISPLAY:-}" ]] || export WAYLAND_DISPLAY="$value"
+                ;;
+            HYPRLAND_INSTANCE_SIGNATURE)
+                [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || export HYPRLAND_INSTANCE_SIGNATURE="$value"
+                ;;
+            XDG_CURRENT_DESKTOP)
+                [[ -n "${XDG_CURRENT_DESKTOP:-}" ]] || export XDG_CURRENT_DESKTOP="$value"
+                ;;
+            XDG_SESSION_DESKTOP)
+                [[ -n "${XDG_SESSION_DESKTOP:-}" ]] || export XDG_SESSION_DESKTOP="$value"
+                ;;
+            XDG_SESSION_TYPE)
+                [[ -n "${XDG_SESSION_TYPE:-}" ]] || export XDG_SESSION_TYPE="$value"
+                ;;
+        esac
+    done < <(systemctl --user show-environment 2>/dev/null || true)
+}
+
+recover_user_manager_session_environment
+
 CONFIG_FILE="${HYPRIDLE_CONFIG:-${CONFIG_HOME}/hypr/hypridle.conf}"
 RESTORE_SCRIPT="${HYPRIDLE_RESTORE_SCRIPT:-${CONFIG_HOME}/hypr/scripts/quickshell_bar_restore.sh}"
 LOCK_FILE="${HYPRIDLE_RESTART_LOCK:-${RUNTIME_DIR}/awtarchy-hypridle-restart.lock}"
