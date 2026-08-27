@@ -2197,12 +2197,23 @@ Singleton {
                             }
                         }
 
-              TitleBarsCard {
+              ColumnLayout {
                   Layout.row: root.quickSettingsSectionRow("title-bars")
                   visible: root.quickSettingsSectionVisible("title-bars")
-                  active: quickSettingsWindow.visible
-                  textScale: root.effectiveTextScale
-                  iconScale: root.effectiveIconScale
+                  Layout.fillWidth: true
+                  spacing: 8
+
+                  TitleBarsCard {
+                      active: quickSettingsWindow.visible
+                      textScale: root.effectiveTextScale
+                      iconScale: root.effectiveIconScale
+                  }
+
+                  FloatingWindowsCard {
+                      active: quickSettingsWindow.visible
+                      textScale: root.effectiveTextScale
+                      iconScale: root.effectiveIconScale
+                  }
               }
           }
 
