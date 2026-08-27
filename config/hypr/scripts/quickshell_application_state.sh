@@ -270,6 +270,21 @@ set_update_notifications() {
     commit_tmp
 }
 
+set_clock_date() {
+    local monitor="$1" value="$2" clock_date
+    [[ -n "$monitor" ]] || { printf 'monitor is required\n' >&2; exit 2; }
+    clock_date="$(parse_bool "$value" 'clock date')"
+    new_tmp
+    jq \
+        --arg monitor "$monitor" \
+        --argjson clock_date "$clock_date" '
+        .monitors = (if (.monitors | type) == "object" then .monitors else {} end)
+        | .monitors[$monitor] = ((if (.monitors[$monitor] | type) == "object"
+            then .monitors[$monitor] else {} end) + {clock_date:$clock_date})
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
 set_capture() {
     local surface="$1" value="$2" surface_key capture
     surface_key="$(capture_key "$surface")"
@@ -693,6 +708,10 @@ case "$cmd" in
     set-update-notifications)
         [[ -n ${2:-} ]] || exit 2
         set_update_notifications "$2"
+        ;;
+    set-clock-date)
+        [[ -n ${2:-} && -n ${3:-} ]] || exit 2
+        set_clock_date "$2" "$3"
         ;;
     set-notification-popup-limit)
         [[ -n ${2:-} ]] || exit 2
