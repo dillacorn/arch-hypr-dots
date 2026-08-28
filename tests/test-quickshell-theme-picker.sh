@@ -55,6 +55,7 @@ require_picker 'palette.urgent' 'Theme cards do not preview urgent color'
 require_picker 'palette.charging' 'Theme cards do not preview charging color'
 require_picker 'palette.muted' 'Theme cards do not preview muted color'
 require_picker 'onClicked: root.selectIndex(card.index)' 'Theme card click no longer owns selection'
+require_picker '"Active theme: " + root.activeThemeName' 'ThemePicker header does not render active theme as one inline label'
 
 if grep -Fq "find '" "$PICKER"; then
     fail 'ThemePicker still uses the old filename find command'
@@ -62,6 +63,10 @@ fi
 
 if grep -Fq 'themeGrid.currentIndex = card.index' "$PICKER"; then
     fail 'Theme card hover directly overwrites GridView.currentIndex and breaks selected-index binding'
+fi
+
+if grep -Fq 'text: "Active theme"' "$PICKER"; then
+    fail 'ThemePicker still uses the overlapping two-line active-theme header block'
 fi
 
 apply_calls="$(grep -Fc 'applyProcess.exec(' "$PICKER" || true)"
