@@ -54,6 +54,7 @@ jobs:
           bash -n config/hypr/scripts/quickshell_runtime_rules.sh
           bash -n config/hypr/scripts/quickshell_sensitive_capture.sh
           bash -n config/hypr/scripts/quickshell_theme_apply.sh
+          bash -n config/hypr/scripts/quickshell_theme_catalog.sh
           bash -n config/hypr/scripts/quickshell_volume.sh
           bash -n config/hypr/scripts/quickshell_wireguard.sh
           bash -n config/hypr/scripts/usb_refresh_fixer.sh
@@ -101,6 +102,8 @@ jobs:
           bash -n tests/test-quickshell-clipboard-thumbnails.sh
           bash -n tests/test-quickshell-process-lifecycle.sh
           bash -n tests/test-quickshell-production-readiness.sh
+          bash -n tests/test-quickshell-theme-catalog.sh
+          bash -n tests/test-quickshell-theme-picker.sh
           bash -n tests/test-quickshell-updater-migration.sh
           bash -n tests/test-hyprbars-quicksettings.sh
           bash -n tests/test-network-bar-state.sh
@@ -145,6 +148,7 @@ jobs:
             config/hypr/scripts/quickshell_resume_recover.sh \
             config/hypr/scripts/quickshell_runtime_rules.sh \
             config/hypr/scripts/quickshell_sensitive_capture.sh \
+            config/hypr/scripts/quickshell_theme_catalog.sh \
             config/hypr/scripts/quickshell_volume.sh \
             config/hypr/scripts/quickshell_wireguard.sh \
             config/hypr/scripts/usb_refresh_fixer.sh \
@@ -188,6 +192,8 @@ jobs:
             tests/test-quickshell-clipboard-progressive.sh \
             tests/test-quickshell-clipboard-thumbnails.sh \
             tests/test-quickshell-process-lifecycle.sh \
+            tests/test-quickshell-theme-catalog.sh \
+            tests/test-quickshell-theme-picker.sh \
             tests/test-quickshell-updater-migration.sh \
             tests/test-hyprbars-quicksettings.sh \
             tests/test-network-bar-state.sh \
@@ -257,6 +263,8 @@ jobs:
           bash tests/test-quickshell-clipboard-thumbnails.sh
           bash tests/test-quickshell-process-lifecycle.sh
           bash tests/test-quickshell-production-readiness.sh
+          bash tests/test-quickshell-theme-catalog.sh
+          bash tests/test-quickshell-theme-picker.sh
           bash tests/test-hyprbars-quicksettings.sh
           bash tests/test-network-bar-state.sh
           python3 tests/test-config-noise-comparison.py
