@@ -1,0 +1,19 @@
+name: Validate Flyout Runtime Centering Testing
+
+on:
+  push:
+    branches: [feature/filter-quickshell-task-icons]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Bash syntax
+        run: bash -n tests/test-flyout-runtime-centering.sh
+      - name: Runtime flyout centering regression
+        run: bash tests/test-flyout-runtime-centering.sh
