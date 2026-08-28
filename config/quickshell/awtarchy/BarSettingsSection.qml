@@ -595,6 +595,10 @@ Item {
                     elide: Text.ElideRight
                 }
             }
+
+            BarIconSettings {
+                Layout.fillWidth: true
+            }
         }
     }
 }
