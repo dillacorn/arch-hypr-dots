@@ -21,7 +21,10 @@ jobs:
           shellcheck config/hypr/scripts/quickshell_application_state.sh
           bash -n tests/test-theme-picker-workspace-composition.sh
           shellcheck tests/test-theme-picker-workspace-composition.sh
+          bash -n tests/test-workspace-icon-packs.sh
+          shellcheck tests/test-workspace-icon-packs.sh
           bash tests/test-theme-picker-workspace-composition.sh
+          bash tests/test-workspace-icon-packs.sh
           bash tests/test-quickshell-theme-picker.sh
           bash tests/test-bar-icon-customization.sh
           git diff --check
