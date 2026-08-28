@@ -28,3 +28,83 @@ jobs:
           bash tests/test-quickshell-theme-picker.sh
           bash tests/test-bar-icon-customization.sh
           git diff --check
+
+  publish-v3-4-1:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.title == 'Publish Awtarchy v3.4.1' &&
+      github.event.pull_request.head.ref == 'release/v3.4.1-publish-bridge' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Publish exact v3.4.1 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: 9f83737623913bd4919eab07a7a065b618cb2503
+          TAG: v3.4.1
+          RELEASE_TITLE: Awtarchy v3.4.1 Quickshell
+        run: |
+          set -euo pipefail
+
+          remote_main="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          [[ "$remote_main" == "$TARGET_SHA" ]] || {
+            printf 'main moved: expected %s, found %s\n' "$TARGET_SHA" "${remote_main:-missing}" >&2
+            exit 1
+          }
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            printf 'Release %s already exists; refusing to recreate it.\n' "$TAG" >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            printf 'Tag %s already exists; refusing to move or recreate it.\n' "$TAG" >&2
+            exit 1
+          fi
+
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$TARGET_SHA" \
+            --title "$RELEASE_TITLE" \
+            --notes-file release-v3.4.1-notes.md
+
+          release_json="$(gh release view "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json tagName,name,isDraft,isPrerelease,targetCommitish,body,url)"
+
+          python3 - "$release_json" "$TAG" "$RELEASE_TITLE" "$TARGET_SHA" release-v3.4.1-notes.md <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          payload = json.loads(sys.argv[1])
+          expected_tag = sys.argv[2]
+          expected_name = sys.argv[3]
+          expected_target = sys.argv[4]
+          expected_body = Path(sys.argv[5]).read_text(encoding="utf-8").rstrip("\n")
+
+          if payload.get("tagName") != expected_tag:
+              raise SystemExit("release tag mismatch")
+          if payload.get("name") != expected_name:
+              raise SystemExit("release title mismatch")
+          if payload.get("isDraft") is not False or payload.get("isPrerelease") is not False:
+              raise SystemExit("release publication state mismatch")
+          if payload.get("targetCommitish") != expected_target:
+              raise SystemExit("release target mismatch")
+          if str(payload.get("body") or "").rstrip("\n") != expected_body:
+              raise SystemExit("release body mismatch")
+          PY
+
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          tag_commit="$(git rev-parse "$TAG^{commit}")"
+          [[ "$tag_commit" == "$TARGET_SHA" ]] || {
+            printf 'Tag %s points to %s instead of %s.\n' "$TAG" "$tag_commit" "$TARGET_SHA" >&2
+            exit 1
+          }
+
+          git push origin --delete "$GITHUB_HEAD_REF"
