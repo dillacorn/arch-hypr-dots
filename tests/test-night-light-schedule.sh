@@ -22,12 +22,56 @@ trap 'rm -rf -- "$TMPD"' EXIT
 export HOME="${TMPD}/home"
 export XDG_CONFIG_HOME="${HOME}/.config"
 export XDG_STATE_HOME="${HOME}/.local/state"
-mkdir -p -- "$XDG_CONFIG_HOME" "$XDG_STATE_HOME"
+mkdir -p -- "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$TMPD/bin"
 
 CONFIG_FILE="${XDG_CONFIG_HOME}/hypr/hyprsunset.conf"
 SCHEDULE_FILE="${XDG_STATE_HOME}/hyprsunset/schedule"
+export HYPRSUNSET_IDENTITY_FILE="$TMPD/hyprsunset-identity"
+export HYPRCTL_LOG="$TMPD/hyprctl.log"
+printf '%s\n' false >"$HYPRSUNSET_IDENTITY_FILE"
+: >"$HYPRCTL_LOG"
+
+cat >"$TMPD/bin/hyprctl" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"${HYPRCTL_LOG:?}"
+case "$*" in
+  'hyprsunset identity get')
+    cat "${HYPRSUNSET_IDENTITY_FILE:?}"
+    ;;
+  'hyprsunset identity')
+    printf '%s\n' true >"${HYPRSUNSET_IDENTITY_FILE:?}"
+    ;;
+  hyprsunset\ temperature\ *)
+    printf '%s\n' false >"${HYPRSUNSET_IDENTITY_FILE:?}"
+    ;;
+  *)
+    exit 2
+    ;;
+esac
+FAKE
+
+cat >"$TMPD/bin/date" <<'FAKE'
+#!/usr/bin/env bash
+if [[ "${1:-}" == '+%H:%M' ]]; then
+  printf '%s\n' '12:00'
+else
+  /usr/bin/date "$@"
+fi
+FAKE
+chmod 0755 "$TMPD/bin/hyprctl" "$TMPD/bin/date"
+export PATH="$TMPD/bin:$PATH"
 
 bash -n "$SCRIPT"
+
+# Hyprsunset's IPC query is authoritative. Awtarchy must use identity get rather
+# than inferring the current manual state from schedule time or saved fallback.
+status="$(bash "$SCRIPT" status)"
+grep -Fqx 'identity=false' <<<"$status" || fail 'status does not use Hyprsunset identity get for the live state'
+grep -Fxq 'hyprsunset identity get' "$HYPRCTL_LOG" || fail 'Hyprsunset identity get was not queried'
+if grep -Fxq -- '-j hyprsunset' "$HYPRCTL_LOG"; then
+  fail 'Night Light still uses the obsolete hyprctl -j hyprsunset state query'
+fi
 
 # Overnight schedules must persist exact 24-hour times, generate native
 # hyprsunset profiles, and identify that the end occurs on the next day.
@@ -40,6 +84,20 @@ contains "$CONFIG_FILE" 'time = 20:00' 'generated config is missing the enable t
 contains "$CONFIG_FILE" 'temperature = 4500' 'generated config is missing the scheduled temperature'
 contains "$CONFIG_FILE" 'time = 07:00' 'generated config is missing the disable time'
 contains "$CONFIG_FILE" 'identity = true' 'generated config does not restore identity at disable time'
+
+# The visible On/Off button is a manual override. With a schedule still enabled,
+# an actually-on Night Light must toggle off immediately without disabling the
+# saved schedule. The schedule can take control again at its next boundary.
+printf '%s\n' false >"$HYPRSUNSET_IDENTITY_FILE"
+: >"$HYPRCTL_LOG"
+bash "$SCRIPT" toggle >/dev/null
+[[ "$(<"$HYPRSUNSET_IDENTITY_FILE")" == true ]] \
+  || fail 'manual toggle did not turn Night Light off while its schedule remained enabled'
+grep -Fxq 'hyprsunset identity get' "$HYPRCTL_LOG" \
+  || fail 'manual toggle did not query the live Hyprsunset identity state'
+status="$(bash "$SCRIPT" status)"
+grep -Fqx 'schedule_enabled=1' <<<"$status" \
+  || fail 'manual Night Light toggle incorrectly disabled its schedule'
 
 status="$(bash "$SCRIPT" status)"
 grep -Fqx 'schedule_enabled=1' <<<"$status" || fail 'status does not report enabled schedule'
@@ -140,4 +198,4 @@ do
 done
 (( missing_history == 0 )) || fail 'managed history is missing current Night Light schedule stock hashes'
 
-printf '%s\n' 'PASS: Night Light supports safe daily enable/disable scheduling with a scheduled temperature.'
+printf '%s\n' 'PASS: Night Light supports safe daily scheduling and authoritative manual toggles.'

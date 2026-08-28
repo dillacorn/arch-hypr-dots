@@ -714,3 +714,7 @@ aa102596d1a39c055713d7ea920bce7585bf06daed8d327cec3767af9eed9c6e	.config/quicksh
 fc9d20e69385fc3da1586acd15b717655f06a47bebab1ad1d53fda573c65d120	.config/quickshell/awtarchy/Bar.qml
 6fc1df7c177cdb0597ff2c4f0cb098200f74c76dfc6a85229c49de99f00310a7	.config/hypr/scripts/quickshell_application_state.sh
 d8f56a516c35052a834d3c678012a7a71a4e083be86650d717a76e2ac5d7017b	.config/quickshell/awtarchy/QuickSettings.qml
+
+# 2026-08-28 Bluetooth live-state sync and Night Light toggle.
+1356d0609489d6aaeea014b3a97f8be8ac362fdbad8cb11a0c018c9d69250bc6	.config/quickshell/awtarchy/BluetoothMenu.qml
+37fa633153aacc055c7f0268491794f5b37fa622757e117fd2d96bfb815444fa	.config/hypr/scripts/hyprsunset_ctl.sh

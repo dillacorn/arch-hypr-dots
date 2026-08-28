@@ -107,6 +107,21 @@ grep -Fq 'actualAdapterEnabled >= 0' "$MENU"
 grep -Fq 'bluetoothPowerProbe.exec([bluetoothStateScript, "actual"])' "$MENU"
 grep -Fq 'id: bluetoothPowerProbe' "$MENU"
 grep -Fq 'stdout: StdioCollector' "$MENU"
+
+open_block="$(sed -n '/function openForScreen(targetScreen)/,/^    }/p' "$MENU")"
+grep -Fq 'refreshActualAdapterPower();' <<<"$open_block" || {
+    printf '%s\n' 'Bluetooth flyout does not refresh the authoritative BlueZ power state when opened.' >&2
+    exit 1
+}
+grep -Fq 'function onStateChanged() { root.refreshActualAdapterPower(); }' "$MENU" || {
+    printf '%s\n' 'Quickshell adapter state changes do not re-probe the authoritative BlueZ power state.' >&2
+    exit 1
+}
+if grep -Fq 'if (root.adapter.state === BluetoothAdapterState.Enabled)' "$MENU"; then
+    printf '%s\n' 'Bluetooth UI can overwrite the probed BlueZ power state with stale Quickshell adapter state.' >&2
+    exit 1
+fi
+
 grep -Fq 'signal.pidfd_send_signal(pidfd, signal.SIGTERM)' "$MANAGER"
 if grep -Fq 'signal.SIGKILL' "$MANAGER" || grep -Fq 'kill -KILL' "$MANAGER"; then
     printf '%s\n' 'Quickshell updater still contains a SIGKILL fallback.' >&2
