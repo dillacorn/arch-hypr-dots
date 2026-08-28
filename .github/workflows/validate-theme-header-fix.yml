@@ -5,30 +5,36 @@ on:
     branches: [feature/theme-revamp]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-      - name: Register ThemePicker managed hash
-        run: |
-          history='local/share/awtarchy/quickshell-managed-history.sha256'
-          entry='f80735b803b7c556028dbbf3cfde6c2bc429727fec11afffe03459b03a304ec3'
-          entry+=$'\t.config/quickshell/awtarchy/ThemePicker.qml'
-          if ! grep -Fxq "$entry" "$history"; then
-            printf '%s\n' "$entry" >>"$history"
-            git config user.name 'dillacorn'
-            git config user.email '28743863+dillacorn@users.noreply.github.com'
-            git add "$history"
-            git commit -m 'Register theme picker header hash'
-            git push origin HEAD:feature/theme-revamp
-          fi
+        with:
+          fetch-depth: 0
       - name: Install validation tools
-        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
-      - name: Theme picker header regression
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck lua5.4 qt6-declarative-dev-tools
+      - name: Theme picker validation
         run: |
+          bash -n config/hypr/scripts/quickshell_theme_catalog.sh
+          bash -n tests/test-quickshell-theme-catalog.sh
           bash -n tests/test-quickshell-theme-picker.sh
-          shellcheck tests/test-quickshell-theme-picker.sh
+          shellcheck config/hypr/scripts/quickshell_theme_catalog.sh tests/test-quickshell-theme-catalog.sh tests/test-quickshell-theme-picker.sh
+          /usr/lib/qt6/bin/qmlformat config/quickshell/awtarchy/ThemePicker.qml >/dev/null
+          bash tests/test-quickshell-theme-catalog.sh
           bash tests/test-quickshell-theme-picker.sh
+      - name: Related regressions
+        run: |
+          bash tests/test-quickshell-production-readiness.sh
+          bash tests/test-bluetooth-state-persistence.sh
+          bash tests/test-night-light-schedule.sh
+      - name: Updater migration
+        run: bash tests/test-quickshell-updater-migration.sh
+      - name: Diff integrity
+        run: |
+          git diff --check origin/main...HEAD
+          git diff --exit-code origin/main...HEAD -- config/quickshell/awtarchy/BluetoothMenu.qml
+          git diff --exit-code origin/main...HEAD -- config/hypr/scripts/hyprsunset_ctl.sh
+          git diff --exit-code origin/main...HEAD -- config/quickshell/awtarchy/Theme.qml
