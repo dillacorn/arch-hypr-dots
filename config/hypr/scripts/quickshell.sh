@@ -118,6 +118,8 @@ process_state_start_time() {
     IFS= read -r stat_line 2>/dev/null <"${PROC_ROOT}/${pid}/stat" || return 1
     [[ "$stat_line" == *') '* ]] || return 1
 
+    # Field 2 (comm) may contain spaces or parentheses. Remove it from the
+    # right, then field 1 is the process state and field 20 is starttime.
     stat_tail="${stat_line##*) }"
     IFS=' ' read -r -a stat_fields <<<"$stat_tail"
     (( ${#stat_fields[@]} >= 20 )) || return 1
@@ -141,6 +143,8 @@ pid_is_quickshell() {
     local pid="$1" executable
 
     executable="$(readlink "${PROC_ROOT}/${pid}/exe" 2>/dev/null)" || return 1
+    # Linux appends this suffix when a package upgrade unlinks the executable
+    # that the still-running process has mapped.
     executable="${executable% (deleted)}"
     [[ "${executable##*/}" == quickshell ]]
 }
@@ -249,7 +253,14 @@ start_shell() {
     local report_stage="${1:-start}"
     local stable_pings=0
 
+    # Multiple login/startup paths can legitimately ask for Quickshell at the
+    # same time. Serialize the readiness check and launch so they cannot create
+    # duplicate Awtarchy instances before IPC becomes available.
     flock -x 7
+
+    # start/restart do not otherwise need to hold the shared state lock while
+    # Quickshell constructs QML. Lock only the state normalization itself so a
+    # launcher/flyout state writer can never lose an update.
     flock -x 8
     ensure_state
     flock -u 8
@@ -263,6 +274,9 @@ start_shell() {
     nohup qs -c "$CONFIG_NAME" 7>&- 8>&- >>"$LOG_FILE" 2>&1 &
     disown 2>/dev/null || true
 
+    # A configuration can expose control IPC briefly and still fail during
+    # construction of another singleton. Require a short stable-ready window
+    # before reporting startup success.
     for _ in {1..100}; do
         if is_running; then
             ((stable_pings += 1))
@@ -291,6 +305,10 @@ stop_shell() {
     mapfile -t pids < <(instance_pids)
     (( ${#pids[@]} > 0 )) || return 0
 
+    # Do not use Quickshell's IPC teardown here. On some Qt/Quickshell builds
+    # it can crash while destructing the old shell and launch the crash reporter.
+    # SIGTERM is not registered by Quickshell's crash handler, so terminate the
+    # exact old Awtarchy instance directly and wait for it to disappear.
     for pid in "${pids[@]}"; do
         if ! IFS=' ' read -r state start_time < <(process_state_start_time "$pid"); then
             if [[ -d "${PROC_ROOT}/${pid}" ]]; then
@@ -330,6 +348,7 @@ stop_shell() {
     done
 
     (( signal_error == 0 )) || return 1
+
     wait_for_pids_stop "${identities[@]}" && return 0
 
     for identity in "${identities[@]}"; do
@@ -349,6 +368,8 @@ restart_shell() {
         *) report_stage=restart ;;
     esac
 
+    # A soft QML reload cannot reliably discover newly installed component
+    # files. Fully stop the current shell before starting the updated tree.
     stop_shell
     start_shell "$report_stage"
 }
@@ -518,6 +539,9 @@ reset_all() {
 toggle_mon() {
     local monitor="$1"
 
+    # A focused-monitor toggle must always be able to recover a visible bar.
+    # Older Hypridle logic used the global enabled flag, so clear that stale
+    # state before applying the per-monitor toggle.
     ensure_state
     if ! jq -e '.enabled == true' "$STATE_FILE" >/dev/null 2>&1; then
         set_global_enabled true
@@ -639,10 +663,15 @@ USAGE
 cmd="${1:-}"
 case "$cmd" in
     start|restart)
+        # start_shell takes the state lock only around normalization and uses a
+        # separate startup lock while Quickshell becomes ready.
         ;;
     stop|status|list-monitors|focused-monitor|""|-h|--help|help)
         ;;
     *)
+        # All remaining public commands can read/modify quickshell-state.json.
+        # Keep the entire read-modify-write sequence serialized with the same
+        # lock used by quickshell_application_state.sh.
         flock -x 8
         ;;
 esac
