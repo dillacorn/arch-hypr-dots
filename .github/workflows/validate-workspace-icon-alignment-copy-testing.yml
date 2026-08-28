@@ -18,7 +18,22 @@ jobs:
       - name: Install validation tools
         run: sudo apt-get update && sudo apt-get install -y jq shellcheck lua5.4
       - name: Apply approved workspace icon refinement
-        run: python3 tests/.tmp-workspace-icon-refinement.py
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("tests/.tmp-workspace-icon-refinement.py")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace(
+              "WORKSPACE_ICON_STYLES_JSON='[\"off\",\"awtarchy\",\"phases\",\"dots\",\"diamonds\",\"custom-symbol\"]' '''",
+              "WORKSPACE_ICON_STYLES_JSON='[\"off\",\"awtarchy\",\"phases\",\"dots\",\"diamonds\",\"custom-symbol\"]'\n'''",
+          )
+          text = text.replace(
+              "WORKSPACE_ICON_STYLES_JSON='[\"off\",\"awtarchy\",\"workflow\",\"phases\",\"custom-symbol\"]' '''",
+              "WORKSPACE_ICON_STYLES_JSON='[\"off\",\"awtarchy\",\"workflow\",\"phases\",\"custom-symbol\"]'\n'''",
+          )
+          path.write_text(text, encoding="utf-8")
+          PY
+          python3 tests/.tmp-workspace-icon-refinement.py
       - name: Validate approved refinement
         run: |
           bash -n config/hypr/scripts/quickshell_application_state.sh
