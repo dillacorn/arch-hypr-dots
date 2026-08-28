@@ -7,6 +7,7 @@ STATE_SCRIPT="${ROOT}/config/hypr/scripts/quickshell_application_state.sh"
 BAR_STATE="${ROOT}/config/quickshell/awtarchy/BarState.qml"
 BAR_QML="${ROOT}/config/quickshell/awtarchy/Bar.qml"
 BAR_SETTINGS="${ROOT}/config/quickshell/awtarchy/BarSettingsSection.qml"
+BAR_ICON_SETTINGS="${ROOT}/config/quickshell/awtarchy/BarIconSettings.qml"
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 
@@ -194,33 +195,37 @@ contains "$BAR_QML" 'label: BarState.workspaceVerticalLabelFor(modelData.id)' \
 [[ $(grep -Fc 'label: BarState.launcherIcon()' "$BAR_QML") -eq 2 ]] \
     || fail 'horizontal and vertical launcher buttons are not both state-driven'
 
-contains "$BAR_SETTINGS" 'readonly property string identityStateScript:' \
-    'Bar Appearance has no direct global identity-state writer path'
-contains "$BAR_SETTINGS" 'model: BarState.workspaceStylePresets' \
-    'Bar Appearance does not expose visual workspace presets'
-contains "$BAR_SETTINGS" 'model: BarState.launcherIconPresets' \
-    'Bar Appearance does not expose launcher presets'
-contains "$BAR_SETTINGS" 'id: identityWriter' \
-    'Bar Appearance has no serialized identity persistence process'
-contains "$BAR_SETTINGS" '"set-workspace-style"' \
+[[ -f "$BAR_ICON_SETTINGS" ]] \
+    || fail 'focused BarIconSettings component is missing'
+contains "$BAR_SETTINGS" 'BarIconSettings {' \
+    'existing Bar Appearance card does not host global icon customization'
+contains "$BAR_ICON_SETTINGS" 'readonly property string identityStateScript:' \
+    'Bar icon settings have no direct global identity-state writer path'
+contains "$BAR_ICON_SETTINGS" 'model: BarState.workspaceStylePresets' \
+    'Bar icon settings do not expose visual workspace presets'
+contains "$BAR_ICON_SETTINGS" 'model: BarState.launcherIconPresets' \
+    'Bar icon settings do not expose launcher presets'
+contains "$BAR_ICON_SETTINGS" 'id: identityWriter' \
+    'Bar icon settings have no serialized identity persistence process'
+contains "$BAR_ICON_SETTINGS" '"set-workspace-style"' \
     'workspace preset selection is not persisted'
-contains "$BAR_SETTINGS" '"set-workspace-custom-label"' \
+contains "$BAR_ICON_SETTINGS" '"set-workspace-custom-label"' \
     'global custom workspace symbol is not persisted'
-contains "$BAR_SETTINGS" '"set-workspace-override"' \
+contains "$BAR_ICON_SETTINGS" '"set-workspace-override"' \
     'per-workspace custom labels are not persisted'
-contains "$BAR_SETTINGS" '"clear-workspace-override"' \
+contains "$BAR_ICON_SETTINGS" '"clear-workspace-override"' \
     'per-workspace reset is missing'
-contains "$BAR_SETTINGS" '"set-launcher-icon"' \
+contains "$BAR_ICON_SETTINGS" '"set-launcher-icon"' \
     'custom launcher identity is not persisted'
-contains "$BAR_SETTINGS" '"reset-workspace-icons"' \
+contains "$BAR_ICON_SETTINGS" '"reset-workspace-icons"' \
     'workspace identity reset is missing'
-contains "$BAR_SETTINGS" '"reset-launcher-icon"' \
+contains "$BAR_ICON_SETTINGS" '"reset-launcher-icon"' \
     'launcher identity reset is missing'
-contains "$BAR_SETTINGS" '"reset-bar-icons"' \
+contains "$BAR_ICON_SETTINGS" '"reset-bar-icons"' \
     'combined icon reset is missing'
-contains "$BAR_SETTINGS" 'model: 10' \
-    'Bar Appearance does not expose workspace overrides 1 through 10'
-contains "$BAR_SETTINGS" 'property int workspaceId: index + 1' \
+contains "$BAR_ICON_SETTINGS" 'model: 10' \
+    'Bar icon settings do not expose workspace overrides 1 through 10'
+contains "$BAR_ICON_SETTINGS" 'property int workspaceId: index + 1' \
     'workspace override rows are not keyed to workspace number'
 
 reset_geometry_block="$(sed -n '/function resetAppearance()/,/function runNextCommand()/p' "$BAR_SETTINGS")"
