@@ -462,10 +462,14 @@ prompt_report() {
 }
 
 notify_pending() {
-    local count=0 path="" current_state="" previous_state="" tmp="" body=""
+    local count=0 path="" current_state="" previous_state="" tmp="" body="" notify_lock_fd=""
     local -a pending=()
 
     [[ -d "$REPORT_DIR" && ! -L "$REPORT_DIR" && -O "$REPORT_DIR" ]] || return 0
+    command -v flock >/dev/null 2>&1 || return 0
+    exec {notify_lock_fd}<"$REPORT_DIR" || return 0
+    flock -x "$notify_lock_fd" || return 0
+
     shopt -s nullglob
     local reports=("$REPORT_DIR"/*.json)
     shopt -u nullglob
