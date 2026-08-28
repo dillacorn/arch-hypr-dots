@@ -17,19 +17,25 @@ jobs:
           fetch-depth: 0
       - name: Install validation tools
         run: sudo apt-get update && sudo apt-get install -y jq shellcheck
-      - name: Apply production patch once
+      - name: Reconcile compatibility tests and managed hashes
         shell: bash
         env:
-          PATCH_GZ_B64: H4sIAKC/kWoC/80aTW/byPWuXzEZuBa1tmQ7aIFdeeUgyTqtWyc2Vu4Ghe0KI3EkMSE5CjmyrcoG2ktRoIe2wKK5FEVPPfTSope996fkL/QP9M0HySE51EcSb6OLyJn3PW/ee/OGw4gFaEL42Pf6yAsmLOLoFF5r+jmitZpLh/A/8cmA9lg4oA6nN3wbMd/dRiG93kY+6VO/0a4h+HlDMYFCxpEXIgGpxsUvIl5MUXcWcxoc3njcGeLAi2MvHCF6M6EDTl3U99ngdRvNJc073JDIEeXTSFFraUmcjP1eo1YTKqCOFN3BAxYOvdHOm6k3eB2Pqe/vkGtOosF4tnM2pgE9hXEatd4EPtAXRAFTEADaxO2JAYeGA+aCYB085cPm5wAHiuHhNBxwj4WIwN8V4VSSe0oi1/FCl940cFnxgETADDjgi1C8pzQiGlPepT6Vr04DzbFEAIEnEqFer9dyGFVc0Tw1MUjpxJImdY/EJOp0OqgEJn5kMvFnXQ0rSTqN/RyEMns2dpc+KRaSgZZBQd3VaonU2q4Wx1EW2RYGwWgr0XcL4WXmARRj/RJzCGAvjGkknrTDVDPHLHzqC3y3jSLGeMtUZQA2bemVtICW7V9AMKUTU2gg8DMni2grnvadCP/SuYg/a0TE9aZxGx7Pd5tfXG45j9oXLfXYeASjG0Azwhd7Gg7twrvSYuiTUdwBcs9/fnx2dHz04rAht0DrOvI4VS6sIMuOvPJeeUKiLgd132OjiHkW+jM0iRgsLp+hKxKhaxa9jiewIEfAtctnPj2Vqxy3F+4b5YoLCeaIoXNwLEljQDjx2UjtpRXIlORC56nLz9FrOmuDUwyHWIc8eDuRbzEJJj6F13e//haju+0SUmJTA/NxNpSi//dff/3Oij8Zk5jGBvZpMpCxfvvHd2//ZMUeer5P3abLuEHhmRxEX8lBg8ofFpLwSMBC10ImnTBI/dZKakBDTiMLqadywk7qd4ukit9MSUTLQnWT8YzQn/9mJRQHxPfLdLpi2ErmH4vk4ZFHwpFvkegsmzGI/dsu0wR2gCmMfs8Q//J3K2LghR4I3uyTyEB/rkbREzmaEfn2N/ZVmsacBc14FvSZby6SHM/7vBBDErjcXyP8J5tzK0sI6UZEHuxEFIutmMDpyJ4PC2m2yEcCkS2SGKDSS5zFgDJOuu0f+z67pq4jGZv5csgi5ABUzCFyiNCA2LA6bBQzrUjKCq0FxpUZWXHIQZmFTjSltrSrp4fEj2macO06vZgGfVD7MCR9cDzHFEnpAemfkojAuoBpXLCx02iBx/SM8dtb5MzvjKJAKMJnEwrKZ2CtlGcvVEx7VHGVmuI+Yz4lSWYuqLIKmf2C5D4dkQGYEXVho4Ujx0pD+Q5okMVeQxHNPaEkxEzBBJI5oaXBSwyeOsFHsrXChLoYSgiPS8pLVBZ7xtAbFxau2t1zTBrWdcqB3MOCCAFtRrcKI3NwNW7lSgoDVZFMkVY1miJst5aaK7lbkclCX3rGIsdzy750Rfyp8IQM2BVwebE1ECi9a1cXF9cw1g5m8+c8bQ0pDCrWYSn9Ak62+jZESC6D1y+LdpDqVIuhqyMrQe2SqVqycOrKrBaf60lF/lI657u3v8fVnPJZsRjnlSUVjGlKlTOPRQa1H7E0Tsun4Qhq8wO0ix4ldNor2qSUJYqay8VMNJc6XebiRNEbByyYsJimjJX8Hpy6r8RZa0D8e3JOLXgOT5FnwDny3ByHEz1W5ScJjmFcK9cErshTRSKTYym1PkI5R4IlK+8vWdB0ylvcJrJiaXrD5qYksEyHZGFAIi32lmLczt6hXvsn1uNL2Fp5KKhSbMvIrdUDSKozowhUfidsm1krgdN7XHSYFtRz0lOr4ucyH8q5XcE38hs0pdQulJ8G/21VrDWWBPxv9MJ9UpKLKjQVPFnSkF6/h+mTMFcZUj6GlZYysSpU7aNZh9E4mMhzkGhOMf9KOeQH9V3Gs0m0Ew8ib8JjowkjKkOot2RzCyon0YSJx2v2YF6efP2z7unjp4e9o6cnL3rds18cH3Z7P+2evOhY2i1qSxlIJnz9/CLN2xd4+yIpz+SzrKrkU9ZnkK8qLedm1NFeDuXbACaUOobLEfNcboIkJ2wFJA7G8sk4+SoeZrq+wJf15FCovFjovLXQUEJxKHIksZwBLLpprT81Vdf0b+PgLSxQOnXDIbZXKOrN07bYtOKsHcH2gtTmwWGH9mxHlPSU5DORsORYB2/s4eQW4QF69QY1KWqG6CLd4s0miUZaPLwh/3Fx+lUsWuWqSgeg6tU1MesbCcat6pY7G7oJ8KADKc/36+hgx6VXO+IZPTzY3NtHfEzDlMAECgA+RHUvlGojm0Xb6AfxRVjPJD/YfJgSoDceR+p16NUgBuYtrXdcwWyyepBmQ/qwrPuesbCPnMWgT8pk71bEwFsWNhL4jhhA+1ni2L2VsfgW3D4DkkMm1Gf52iDRPtNay4sC8EvUpzL2IhapQC+MYOpe0D/5aX40JoNk1/Z4MJHPwjnS1U76DXhDP2FUTykVT9od5Ihqp3QAR6Kz0UDyXNN/RQccyxUu4VNhivkdMHUzI9wWwRZ1RdCGuVjCH7pnj88Oe8+Ojg/BKfDG2fNT9aJWkwWBx6XmJbdYdUMt3IupQ1ZaubjlPiHrGmqAYeXD+5h19ZJVhThr11KVHp6qWkRFEKVVjLV0Vbq5UJ7k/L5aWane9orAKiX0ZMWyKk5SGcYpfMNe+t2v6IUtsypa5gv/LxutmW1VL3noUd+Ni6m2rqP4IHBFDFe3xwDeTNGbKkVBNE0dmoSubnXnsWtlZG3jbJedn4tkuzF/2G7eoUvZHCgEZWtKAiYPca0Qs/OsxLo0Cy3vdbnlwtUyhprXGpcR2naV21kDINeDOT4Y5y+ac18m4LlFGPSl/Du4FffEc+tKoC9lcpYZ8uC2yoIpISsT1XlsZrz27udiWHYHKedAIP6QDynK7UbdJqs8olQePU3s0tk5SRDpnXbxwmh/8V1PBd7HuvDRwDIMLWjpZZfGax7Li9Zdwz7WPvCKNvroF2MfbKeV4rNxBlLHfdV9Wth8ArFe5l2qdIlIwzdTOqVHLhwHPT5zzrFlC4ubVdmbBTlSglqY/3yHROdOEV7NA0yxdN/S0Ul1HdGS65jttNR+JD6PwUh/EHGZz52G5Els07I7Bv6JwhefUDQqWj+m+Jkjrm3ZLHrazStbGIvNu2ZiN1MHyMKz3mU1ofqqDlK4hrjcVrWBxfqp3+hr+8Z+fQU+OXOtziy1oslMoyOFrgUSrVwv5pAbaKnqUQ78Nbs+JjM25cYqq4GW6Iu89Fw+bstDZXEaQsQQ6jPq/oR6ozFvo4c/zCoKkBNyURv9qJaOnYn1yIclmXJKmuFsq2mfvhdpP39PafXuxoUbKZ9FbSS/S2tB0KajiE1DNwczZCGISQLPn2WQIX8mR8qQE++G+l3vV7SN9nbL07DIbkHVu0z8I04DNK+wjQmY1BZPppzDFsprnH58FeKSJZRkX+S/dBTf7cFoOUEVr3JyaOUvBcuxVLaUbZqupgCEvrU0eHAPKqjWeyGZrnUiTvaDcSbWxBFnoxFs+IhdLw9/2pF/7LM+8ZNoLMW21nj11VCKpU/d1u4kfBqrVVn+AWnAXLF4iytCvAiwWBbhski6qpIklotU7eDJFymitJLEviKciGILL0QzP2axohbEVZSkIWlVo8Pik/NSnZdUhTmGq9y954pF4QABjWMyEjUtPpTfFZLkRj2TXSclWHbwz30rvTvdkVrMrFz95RRoVNCulUcqmy0f13yV6ojf5qYRaDxdJcjt841oIzpSZUUv1Vokpsb3tSi2j9MXG9a6UpmXL1ut964Dzc2cfAy+6nn8f0QHESicMQAA
+          PATCH_GZ_B64: H4sIAJnAkWoC/6VVwYrbMBC9+ysGU4hNYwcKLWUhh24pJZdtaHKrS5DtSSxWtryS3MRd9t87kh0nTco2ITkoWJ735kkzb+ytlSyhZqYQPAVe1lIZmNOj59lNmLqHwDeojZ7YNUqZingmqyhrtJEl/80Ml1WsCz/0DO4MYSw0Vsjyld0IsMpkzqvN1G/MOvp4iLN/FFcLlmHgAf18IjaMVxoS/839p++r2edvD6vFl+Vy9vB1kfgwKmWO4g7umVoYZjDeSvWoayJYmFbgXKFGo0eQJEnld5R2GVE8WNVArw1p0ZBLqKQB3NVSI/ziumECBjaoeyaiGd8qbUbQ2+RlkkqjWSrwSKIDHOn0brrYxCeeaGCPtBWc+OdaT++INAvMbBMA1050jUpzbTC/5vZO81dNmRLP6wq6IFs9nnLBTXsmAXiVY420VEa0o4Hoaj2u5y+4lK6MNu4SLaHzWbxV3GDnFruM4dwzXkEcUrWDJ4XMmJjogimcsK1hKivayVPDs0ddoBBRySq2wTzqceRQ9u79B2Ki7IqjJqIf7gSBvYw13xyBD4TLAkuc0z6q+KkU/hj8+IrwcPz/FINhLuD/K/ZCcme/3lcX5jiDnKYq2lpNdKZ4TXPxQLJidS145kbiSjuhNBiP8l2Fo6Q/vX4oF0zbGe3hjspJsqh6+8K+Nmn5uh8jHSqm5tNbbtuHui+8c4caKN9OwW57a6lAy0ZlOIa+i6h1oe+bDpTzDX0NrIpOWN9egevNDhx2ytKWvhtBGMYF7jpUEDoKwSskgrX/3G2/JOa5T/eydxfpd2H2EFZCL7XTcCreRu5tcmypfcy/bPUH+8yGVwIHAAA=
         run: |
-          printf '%s' "$PATCH_GZ_B64" | base64 -d | gzip -d > /tmp/patch.py
-          python3 /tmp/patch.py
-      - name: Syntax and focused regression
+          printf '%s' "$PATCH_GZ_B64" | base64 -d | gzip -d > /tmp/reconcile.py
+          python3 /tmp/reconcile.py
+      - name: Focused validation
         run: |
           bash -n config/hypr/scripts/quickshell_application_state.sh
           shellcheck config/hypr/scripts/quickshell_application_state.sh
+          bash -n tests/test-theme-picker-workspace-composition.sh
+          shellcheck tests/test-theme-picker-workspace-composition.sh
           bash tests/test-theme-picker-workspace-composition.sh
-      - name: Commit production changes
+          bash tests/test-quickshell-theme-picker.sh
+          bash tests/test-bar-icon-customization.sh
+          bash tests/test-quickshell-updater-migration.sh
+          git diff --check
+      - name: Commit compatibility bookkeeping
         shell: bash
         run: |
           if git diff --quiet; then
@@ -38,13 +44,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
-              config/quickshell/awtarchy/ThemePicker.qml \
-              config/quickshell/awtarchy/BarState.qml \
-              config/quickshell/awtarchy/BarIconSettings.qml \
-              config/hypr/scripts/quickshell_application_state.sh
-          git commit -m 'Refine theme picker and workspace icon controls'
+              tests/test-bar-icon-customization.sh \
+              local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'Update workspace composition regressions'
           git push origin HEAD:feature/theme-picker-workspace-toggle-fixes
-      - name: Existing focused regressions
-        run: |
-          bash tests/test-quickshell-theme-picker.sh
-          bash tests/test-bar-icon-customization.sh
