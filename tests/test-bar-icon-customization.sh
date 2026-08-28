@@ -8,6 +8,7 @@ BAR_STATE="${ROOT}/config/quickshell/awtarchy/BarState.qml"
 BAR_QML="${ROOT}/config/quickshell/awtarchy/Bar.qml"
 BAR_SETTINGS="${ROOT}/config/quickshell/awtarchy/BarSettingsSection.qml"
 BAR_ICON_SETTINGS="${ROOT}/config/quickshell/awtarchy/BarIconSettings.qml"
+QUICK_SETTINGS="${ROOT}/config/quickshell/awtarchy/QuickSettings.qml"
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 
@@ -197,8 +198,17 @@ contains "$BAR_QML" 'label: BarState.workspaceVerticalLabelFor(modelData.id)' \
 
 [[ -f "$BAR_ICON_SETTINGS" ]] \
     || fail 'focused BarIconSettings component is missing'
-contains "$BAR_SETTINGS" 'BarIconSettings {' \
-    'existing Bar Appearance card does not host global icon customization'
+if grep -Fq 'BarIconSettings {' "$BAR_SETTINGS"; then
+    fail 'large icon editor is still hosted inside the non-scrolling flyout settings panel'
+fi
+contains "$QUICK_SETTINGS" 'property bool barIconEditorOpen: false' \
+    'Quick Settings does not own transient Bar icon editor expansion state'
+contains "$QUICK_SETTINGS" 'label: "Customize Icons…"' \
+    'Bar section does not expose the icon customization editor'
+contains "$QUICK_SETTINGS" 'BarIconSettings {' \
+    'Bar icon customization is not hosted inside the main scrolling Quick Settings content'
+contains "$QUICK_SETTINGS" 'visible: root.barIconEditorOpen' \
+    'Bar icon editor cannot collapse back to the compact Bar card'
 contains "$BAR_ICON_SETTINGS" 'readonly property string identityStateScript:' \
     'Bar icon settings have no direct global identity-state writer path'
 contains "$BAR_ICON_SETTINGS" 'model: BarState.workspaceStylePresets' \
@@ -233,4 +243,4 @@ if grep -Fq 'reset-bar-icons' <<<"$reset_geometry_block"; then
     fail 'existing monitor-targeted Reset was expanded to destructive global icon reset'
 fi
 
-printf '%s\n' 'PASS: bar icon identity persistence, resolver, rendering, and control contracts are validated.'
+printf '%s\n' 'PASS: bar icon identity persistence, resolver, rendering, and scroll-safe control contracts are validated.'
