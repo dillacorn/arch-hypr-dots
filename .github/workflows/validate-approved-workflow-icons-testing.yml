@@ -6,7 +6,7 @@ on:
       - feature/theme-picker-workspace-toggle-fixes
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate:
@@ -17,66 +17,20 @@ jobs:
           fetch-depth: 0
       - name: Install validation tools
         run: sudo apt-get update && sudo apt-get install -y jq shellcheck lua5.4
-      - name: Apply exact approved Workflow sequence
+      - name: Validate committed approved Workflow pack
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import hashlib
-
-          replacements = {
-              "config/quickshell/awtarchy/BarState.qml": [
-                  ('symbols: ["", "", "", "", "", "", "", "", "", ""]',
-                   'symbols: ["", "", "", "", "", "", "", "", "", ""]'),
-              ],
-              "tests/test-workspace-icon-packs.sh": [
-                  ('expected_workflow = ["", "", "", "", "", "", "", "", "", ""]',
-                   'expected_workflow = ["", "", "", "", "", "", "", "", "", ""]'),
-              ],
-              "tests/test-bar-icon-customization.sh": [
-                  ("'' '' '' '' '' '' '' '' '' ''",
-                   "'' '' '' '' '' '' '' '' '' ''"),
-              ],
-          }
-
-          for filename, pairs in replacements.items():
-              path = Path(filename)
-              text = path.read_text(encoding="utf-8")
-              for old, new in pairs:
-                  if old not in text:
-                      raise SystemExit(f"missing expected sequence in {filename}")
-                  text = text.replace(old, new, 1)
-              path.write_text(text, encoding="utf-8")
-
-          bar_state = Path("config/quickshell/awtarchy/BarState.qml")
-          digest = hashlib.sha256(bar_state.read_bytes()).hexdigest()
-          history = Path("local/share/awtarchy/quickshell-managed-history.sha256")
-          history_text = history.read_text(encoding="utf-8")
-          line = f"{digest}\t.config/quickshell/awtarchy/BarState.qml"
-          if line not in history_text:
-              if not history_text.endswith("\n"):
-                  history_text += "\n"
-              history_text += line + "\n"
-              history.write_text(history_text, encoding="utf-8")
-          PY
-      - name: Validate approved Workflow pack
-        run: |
+          bash -n config/hypr/scripts/quickshell_application_state.sh
+          shellcheck config/hypr/scripts/quickshell_application_state.sh
           bash -n tests/test-workspace-icon-packs.sh
           shellcheck tests/test-workspace-icon-packs.sh
           bash -n tests/test-bar-icon-customization.sh
           shellcheck tests/test-bar-icon-customization.sh
           bash tests/test-workspace-icon-packs.sh
           bash tests/test-theme-picker-workspace-composition.sh
+          bash tests/test-quickshell-theme-picker.sh
           bash tests/test-bar-icon-customization.sh
+          bash tests/test-bar-control-actions.sh
+          bash tests/test-bar-module-visibility.sh
+          bash tests/test-bar-task-icons.sh
           bash tests/test-quickshell-updater-migration.sh
-          git diff --check
-      - name: Commit exact approved Workflow sequence
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add \
-            config/quickshell/awtarchy/BarState.qml \
-            local/share/awtarchy/quickshell-managed-history.sha256 \
-            tests/test-workspace-icon-packs.sh \
-            tests/test-bar-icon-customization.sh
-          git commit -m 'Use approved Workflow workspace icons'
-          git push origin HEAD:feature/theme-picker-workspace-toggle-fixes
+          git diff --check origin/main...HEAD
