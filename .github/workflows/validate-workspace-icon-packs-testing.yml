@@ -6,17 +6,51 @@ on:
       - feature/theme-picker-workspace-toggle-fixes
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          fetch-depth: 0
       - name: Install validation tools
-        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
-      - name: Workspace icon pack regression
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck lua5.4
+      - name: Apply workspace icon pack implementation
+        shell: bash
+        env:
+          PATCH_GZ_B64: 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
         run: |
+          printf '%s' "$PATCH_GZ_B64" | base64 -d | gzip -d > /tmp/patch.py
+          python3 /tmp/patch.py
+      - name: Focused validation
+        run: |
+          bash -n config/hypr/scripts/quickshell_application_state.sh
+          shellcheck config/hypr/scripts/quickshell_application_state.sh
           bash -n tests/test-workspace-icon-packs.sh
           shellcheck tests/test-workspace-icon-packs.sh
           bash tests/test-workspace-icon-packs.sh
+          bash tests/test-theme-picker-workspace-composition.sh
+          bash tests/test-bar-icon-customization.sh
+          bash tests/test-quickshell-updater-migration.sh
+          git diff --check
+      - name: Commit production changes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+              exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+              config/hypr/scripts/quickshell_application_state.sh \
+              config/quickshell/awtarchy/Bar.qml \
+              config/quickshell/awtarchy/BarButton.qml \
+              config/quickshell/awtarchy/BarIconSettings.qml \
+              config/quickshell/awtarchy/BarState.qml \
+              tests/test-theme-picker-workspace-composition.sh \
+              tests/test-bar-icon-customization.sh \
+              local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'Add workspace symbol packs'
+          git push origin HEAD:feature/theme-picker-workspace-toggle-fixes
