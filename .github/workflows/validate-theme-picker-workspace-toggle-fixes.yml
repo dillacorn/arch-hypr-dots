@@ -6,14 +6,400 @@ on:
       - feature/theme-picker-workspace-toggle-fixes
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          fetch-depth: 0
       - name: Install validation tools
         run: sudo apt-get update && sudo apt-get install -y jq shellcheck
-      - name: Focused regression
-        run: bash tests/test-theme-picker-workspace-composition.sh
+      - name: Apply production patch once
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_once(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f"missing expected block: {label}")
+              return text.replace(old, new, 1)
+
+          # Theme Picker: square geometry and click-selected-again-to-apply.
+          path = Path("config/quickshell/awtarchy/ThemePicker.qml")
+          text = path.read_text(encoding="utf-8")
+          if "function activateThemeCard(index)" not in text:
+              marker = "\n    function resetSelection() {"
+              helper = """
+
+    function activateThemeCard(index) {
+        if (selectedIndex === index) {
+            applySelectedTheme();
+            return;
+        }
+        selectIndex(index);
+    }
+"""
+              text = replace_once(text, marker, helper + marker, "ThemePicker activation insertion")
+              text = replace_once(
+                  text,
+                  "onClicked: root.selectIndex(card.index)",
+                  "onClicked: root.activateThemeCard(card.index)",
+                  "ThemePicker card click")
+          text = re.sub(
+              r"^(\s*)radius:\s*[0-9]+(?:\.[0-9]+)?\s*$",
+              r"\1radius: 0",
+              text,
+              flags=re.MULTILINE)
+          path.write_text(text, encoding="utf-8")
+
+          # BarState: preserve the legacy workspace_style reader while adding
+          # independently persisted number visibility and icon style.
+          path = Path("config/quickshell/awtarchy/BarState.qml")
+          text = path.read_text(encoding="utf-8")
+          if "readonly property var workspaceIconStylePresets:" not in text:
+              marker = "    readonly property var workspaceStylePresets: [\n"
+              catalog = """    readonly property var workspaceIconStylePresets: [
+        { key: "off", label: "Off", sample: "—" },
+        { key: "awtarchy", label: "Awtarchy", sample: "󰞷" },
+        { key: "phases", label: "Phases", sample: "◐◑" },
+        { key: "filled-dot", label: "Filled Dot", sample: "●" },
+        { key: "filled-diamond", label: "Filled Diamond", sample: "◆" },
+        { key: "center-diamond", label: "Center Diamond", sample: "◈" },
+        { key: "filled-square", label: "Filled Square", sample: "■" },
+        { key: "small-square", label: "Small Square", sample: "▪" },
+        { key: "filled-triangle", label: "Filled Triangle", sample: "▲" },
+        { key: "spark", label: "Spark", sample: "✦" },
+        { key: "minimal-bar", label: "Minimal Bar", sample: "━" },
+        { key: "custom-symbol", label: "Custom", sample: "…" }
+    ];
+"""
+              text = replace_once(text, marker, catalog + marker, "workspace icon style catalog")
+
+              marker = "    function workspaceStyle() {\n"
+              helpers = """    function workspaceIconStyleAllowed(style) {
+        for (const preset of workspaceIconStylePresets) {
+            if (preset.key === style)
+                return true;
+        }
+        return false;
+    }
+
+    function workspaceNumbersEnabled() {
+        const appearance = data().bar_appearance || ({});
+        if (typeof appearance.workspace_numbers_enabled === "boolean")
+            return appearance.workspace_numbers_enabled;
+        const legacy = String(appearance.workspace_style || "awtarchy");
+        return legacy === "awtarchy" || legacy === "numbers";
+    }
+
+    function workspaceIconStyle() {
+        const appearance = data().bar_appearance || ({});
+        const explicitStyle = String(appearance.workspace_icon_style || "");
+        if (workspaceIconStyleAllowed(explicitStyle))
+            return explicitStyle;
+
+        const legacy = String(appearance.workspace_style || "awtarchy");
+        if (legacy === "numbers")
+            return "off";
+        if (legacy === "awtarchy" || legacy === "icons")
+            return "awtarchy";
+        if (workspaceIconStyleAllowed(legacy))
+            return legacy;
+        return "awtarchy";
+    }
+
+    function workspaceIconFor(id) {
+        const value = workspaceId(id);
+        if (value === 0)
+            return "";
+        const style = workspaceIconStyle();
+        if (style === "off")
+            return "";
+        if (style === "awtarchy")
+            return stockWorkspaceIconFor(value);
+        if (style === "phases")
+            return String(workspacePhaseSymbols[String(value)] || "○");
+        if (style === "custom-symbol") {
+            const custom = workspaceCustomLabel();
+            return custom.length > 0 ? custom : stockWorkspaceIconFor(value);
+        }
+        return String(workspaceStyleSymbols[style] || "");
+    }
+
+    function composeWorkspaceLabel(id, vertical) {
+        const value = workspaceId(id);
+        if (value === 0)
+            return String(id);
+        const override = workspaceOverrideFor(value);
+        if (override.length > 0)
+            return override;
+
+        const number = workspaceNumbersEnabled() ? String(value) : "";
+        const icon = workspaceIconFor(value);
+        if (number.length > 0 && icon.length > 0)
+            return vertical ? number + icon : number + " " + icon;
+        if (number.length > 0)
+            return number;
+        return icon;
+    }
+
+"""
+              text = replace_once(text, marker, helpers + marker, "composable workspace helpers")
+
+              old = """    function workspaceLabelFor(id) {
+        const override = workspaceOverrideFor(id);
+        return override.length > 0 ? override : workspaceStyleLabelFor(id, false);
+    }
+
+    function workspaceVerticalLabelFor(id) {
+        const override = workspaceOverrideFor(id);
+        return override.length > 0 ? override : workspaceStyleLabelFor(id, true);
+    }
+"""
+              new = """    function workspaceLabelFor(id) {
+        return composeWorkspaceLabel(id, false);
+    }
+
+    function workspaceVerticalLabelFor(id) {
+        return composeWorkspaceLabel(id, true);
+    }
+"""
+              text = replace_once(text, old, new, "workspace label resolvers")
+          path.write_text(text, encoding="utf-8")
+
+          # Persistent writer: add independent number/icon setters while keeping
+          # set-workspace-style available for older helpers and saved state.
+          path = Path("config/hypr/scripts/quickshell_application_state.sh")
+          text = path.read_text(encoding="utf-8")
+          if "WORKSPACE_ICON_STYLES_JSON=" not in text:
+              old = "WORKSPACE_STYLES_JSON='[\"awtarchy\",\"numbers\",\"icons\",\"filled-dot\",\"phases\",\"filled-diamond\",\"center-diamond\",\"filled-square\",\"small-square\",\"filled-triangle\",\"spark\",\"minimal-bar\",\"custom-symbol\"]'\n"
+              new = old + "WORKSPACE_ICON_STYLES_JSON='[\"off\",\"awtarchy\",\"phases\",\"filled-dot\",\"filled-diamond\",\"center-diamond\",\"filled-square\",\"small-square\",\"filled-triangle\",\"spark\",\"minimal-bar\",\"custom-symbol\"]'\n"
+              text = replace_once(text, old, new, "workspace icon style JSON")
+
+              marker = "set_workspace_style() {\n"
+              funcs = """validate_workspace_icon_style() {
+    local style="$1"
+    if ! jq -e -n \\
+        --arg style "$style" \\
+        --argjson allowed "$WORKSPACE_ICON_STYLES_JSON" \\
+        '$allowed | index($style) != null' >/dev/null 2>&1; then
+        printf 'invalid workspace icon style: %s\\n' "$style" >&2
+        exit 2
+    fi
+}
+
+set_workspace_numbers() {
+    local value="$1" enabled
+    case "$value" in
+        1|true|on) enabled=true ;;
+        0|false|off) enabled=false ;;
+        *)
+            printf 'workspace numbers must be true or false\\n' >&2
+            exit 2
+            ;;
+    esac
+    new_tmp
+    jq --argjson enabled "$enabled" '
+        .bar_appearance = (if (.bar_appearance | type) == "object" then .bar_appearance else {} end)
+        | .bar_appearance.workspace_numbers_enabled = $enabled
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
+set_workspace_icon_style() {
+    local style="$1"
+    validate_workspace_icon_style "$style"
+    new_tmp
+    jq --arg style "$style" '
+        .bar_appearance = (if (.bar_appearance | type) == "object" then .bar_appearance else {} end)
+        | .bar_appearance.workspace_icon_style = $style
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
+"""
+              text = replace_once(text, marker, funcs + marker, "workspace composition writer functions")
+
+              old = """        | del(
+            .bar_appearance.workspace_style,
+            .bar_appearance.workspace_custom_label,
+            .bar_appearance.workspace_overrides
+        )
+"""
+              new = """        | del(
+            .bar_appearance.workspace_style,
+            .bar_appearance.workspace_numbers_enabled,
+            .bar_appearance.workspace_icon_style,
+            .bar_appearance.workspace_custom_label,
+            .bar_appearance.workspace_overrides
+        )
+"""
+              text = replace_once(text, old, new, "workspace reset fields")
+
+              marker = "case \"$cmd\" in\n    set-workspace-style)\n"
+              commands = """case "$cmd" in
+    set-workspace-numbers)
+        [[ -n ${2:-} ]] || exit 2
+        set_workspace_numbers "$2"
+        ;;
+    set-workspace-icon-style)
+        [[ -n ${2:-} ]] || exit 2
+        set_workspace_icon_style "$2"
+        ;;
+    set-workspace-style)
+"""
+              text = replace_once(text, marker, commands, "workspace composition command dispatch")
+              text = text.replace(
+                  "{set-workspace-style <style>|",
+                  "{set-workspace-numbers <true|false>|set-workspace-icon-style <style>|set-workspace-style <legacy-style>|",
+                  1)
+          path.write_text(text, encoding="utf-8")
+
+          # Quick Settings icon editor: independent number toggle + icon style.
+          path = Path("config/quickshell/awtarchy/BarIconSettings.qml")
+          text = path.read_text(encoding="utf-8")
+          if "function workspaceIconStyleLabel()" not in text:
+              old = """    function workspaceStyleLabel() {
+        const style = BarState.workspaceStyle();
+        for (const preset of BarState.workspaceStylePresets) {
+            if (preset.key === style)
+                return preset.label;
+        }
+        return "Awtarchy";
+    }
+"""
+              new = """    function workspaceIconStyleLabel() {
+        const style = BarState.workspaceIconStyle();
+        for (const preset of BarState.workspaceIconStylePresets) {
+            if (preset.key === style)
+                return preset.label;
+        }
+        return "Awtarchy";
+    }
+"""
+              text = replace_once(text, old, new, "icon style label helper")
+
+              old = """    function setWorkspaceStyle(style) {
+        enqueueIdentity(["set-workspace-style", style], "Workspace style · " + style);
+    }
+"""
+              new = """    function setWorkspaceNumbers(enabled) {
+        enqueueIdentity(["set-workspace-numbers", enabled ? "on" : "off"],
+            "Workspace numbers · " + (enabled ? "On" : "Off"));
+    }
+
+    function setWorkspaceIconStyle(style) {
+        enqueueIdentity(["set-workspace-icon-style", style], "Workspace icons · " + style);
+    }
+"""
+              text = replace_once(text, old, new, "workspace composition setters")
+              text = replace_once(
+                  text,
+                  "enqueueIdentity([\"set-workspace-style\", \"custom-symbol\"],\n            \"Workspace style · Custom\");",
+                  "enqueueIdentity([\"set-workspace-icon-style\", \"custom-symbol\"],\n            \"Workspace icons · Custom\");",
+                  "custom symbol style persistence")
+
+              marker = """    RowLayout {
+        Layout.fillWidth: true
+        Layout.preferredHeight: 24
+        spacing: 5
+
+        Text {
+            text: "Workspace icons"
+"""
+              numbers = """    RowLayout {
+        Layout.fillWidth: true
+        Layout.preferredHeight: 28
+        spacing: 5
+
+        Text {
+            text: "Numbers"
+            color: Theme.foreground
+            font.family: Theme.fontFamily
+            font.pixelSize: 10
+            font.bold: true
+        }
+
+        Item { Layout.fillWidth: true }
+
+        SettingsButton {
+            label: "On"
+            textSize: 9
+            active: BarState.workspaceNumbersEnabled()
+            onClicked: root.setWorkspaceNumbers(true)
+        }
+
+        SettingsButton {
+            label: "Off"
+            textSize: 9
+            active: !BarState.workspaceNumbersEnabled()
+            onClicked: root.setWorkspaceNumbers(false)
+        }
+    }
+
+"""
+              text = replace_once(text, marker, numbers + marker, "Numbers toggle row")
+              text = replace_once(
+                  text,
+                  'text: "Global · " + root.workspaceStyleLabel()',
+                  'text: "Global · " + root.workspaceIconStyleLabel()',
+                  "workspace icon status label")
+              text = replace_once(
+                  text,
+                  "model: BarState.workspaceStylePresets",
+                  "model: BarState.workspaceIconStylePresets",
+                  "workspace icon preset model")
+              text = replace_once(
+                  text,
+                  "active: BarState.workspaceStyle() === modelData.key",
+                  "active: BarState.workspaceIconStyle() === modelData.key",
+                  "workspace icon active state")
+              old = """                onClicked: {
+                    if (modelData.key === "custom-symbol") {
+                        root.message = "Enter a custom workspace symbol below";
+                    } else {
+                        root.setWorkspaceStyle(modelData.key);
+                    }
+                }
+"""
+              new = """                onClicked: {
+                    if (modelData.key === "custom-symbol"
+                            && !BarState.identityLabelValid(root.customWorkspaceText)) {
+                        root.message = "Enter a custom workspace symbol below";
+                        return;
+                    }
+                    root.setWorkspaceIconStyle(modelData.key);
+                }
+"""
+              text = replace_once(text, old, new, "workspace icon preset click")
+          path.write_text(text, encoding="utf-8")
+          PY
+      - name: Syntax and focused regression
+        run: |
+          bash -n config/hypr/scripts/quickshell_application_state.sh
+          shellcheck config/hypr/scripts/quickshell_application_state.sh
+          bash tests/test-theme-picker-workspace-composition.sh
+      - name: Commit production changes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+              exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+              config/quickshell/awtarchy/ThemePicker.qml \
+              config/quickshell/awtarchy/BarState.qml \
+              config/quickshell/awtarchy/BarIconSettings.qml \
+              config/hypr/scripts/quickshell_application_state.sh
+          git commit -m 'Refine theme picker and workspace icon controls'
+          git push origin HEAD:feature/theme-picker-workspace-toggle-fixes
+      - name: Existing focused regressions
+        run: |
+          bash tests/test-quickshell-theme-picker.sh
+          bash tests/test-bar-icon-customization.sh
