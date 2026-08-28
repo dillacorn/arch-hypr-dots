@@ -14,8 +14,10 @@ contains() {
     grep -Fq -- "$2" "$1" || fail "$3"
 }
 
-contains "$BAR_QML" 'import QtQuick.Effects' \
-    'Bar task icons do not import the Qt Quick effect used for theme tinting'
+absent() {
+    ! grep -Fq -- "$2" "$1" || fail "$3"
+}
+
 contains "$BAR_QML" 'function toplevelIdentity(toplevel)' \
     'Bar task filtering does not normalize Wayland and Hyprland window identity'
 contains "$BAR_QML" 'toplevel.wayland.appId' \
@@ -27,15 +29,15 @@ contains "$BAR_QML" 'identity.title.indexOf("Awtarchy ") === 0' \
 contains "$BAR_QML" 'if (awtarchyOwnedToplevel(toplevel))' \
     'Awtarchy-owned flyouts are not rejected before task rendering'
 
-[[ $(grep -Fc 'layer.effect: MultiEffect {' "$BAR_QML") -eq 2 ]] \
-    || fail 'horizontal and vertical task icons are not both theme-tinted'
-[[ $(grep -Fc 'colorization: 1.0' "$BAR_QML") -eq 2 ]] \
-    || fail 'horizontal and vertical task icons do not both use full theme colorization'
-[[ $(grep -Fc 'colorizationColor: task.modelData.urgent ? Theme.dark : Theme.foreground' "$BAR_QML") -eq 2 ]] \
-    || fail 'task icon tint does not preserve urgent-state contrast on both bar orientations'
+absent "$BAR_QML" 'import QtQuick.Effects' \
+    'task icons should keep their native application colors instead of importing a tint effect'
+absent "$BAR_QML" 'layer.effect: MultiEffect {' \
+    'task icons are still being recolored instead of using native application colors'
+contains "$BAR_QML" 'source: bar.appIcon(task.modelData)' \
+    'task icons no longer render the application icon source'
 
 contains "$BAR_QML" 'acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton' \
-    'task icon mouse actions were removed while restyling task icons'
+    'task icon mouse actions were removed while fixing flyout filtering'
 contains "$BAR_QML" 'wayland.close();' \
     'task icon middle-click close behavior disappeared'
 contains "$BAR_QML" 'wayland.minimized = true;' \
@@ -43,4 +45,4 @@ contains "$BAR_QML" 'wayland.minimized = true;' \
 contains "$BAR_QML" 'wayland.activate();' \
     'task icon activation behavior disappeared'
 
-printf '%s\n' 'PASS: bar task icons exclude Awtarchy flyouts, follow the theme, and preserve window actions.'
+printf '%s\n' 'PASS: bar task icons exclude Awtarchy flyouts, keep native app colors, and preserve window actions.'
