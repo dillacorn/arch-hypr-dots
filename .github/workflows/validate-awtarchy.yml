@@ -49,6 +49,7 @@ jobs:
           bash -n config/hypr/scripts/quickshell_battery_health.sh
           bash -n config/hypr/scripts/quickshell_launcher_position.sh
           bash -n config/hypr/scripts/quickshell_notification_layout_demo.sh
+          bash -n config/hypr/scripts/quickshell_notifications_toggle.sh
           bash -n config/hypr/scripts/quickshell_ready_sound.sh
           bash -n config/hypr/scripts/quickshell_resume_recover.sh
           bash -n config/hypr/scripts/quickshell_runtime_rules.sh
@@ -90,6 +91,7 @@ jobs:
           bash -n tests/test-hypridle-restart.sh
           bash -n tests/test-flyout-toggle-debounce.sh
           bash -n tests/test-flyout-edge-layout.sh
+          bash -n tests/test-flyout-runtime-centering.sh
           bash -n tests/test-launcher-keyboard-focus.sh
           bash -n tests/test-desktop-candidate-validation.sh
           bash -n tests/test-lua-validation.sh
@@ -147,6 +149,7 @@ jobs:
             config/hypr/scripts/quickshell_launcher_position.sh \
             config/hypr/scripts/quickshell_update_notifications.sh \
             config/hypr/scripts/quickshell_notification_layout_demo.sh \
+            config/hypr/scripts/quickshell_notifications_toggle.sh \
             config/hypr/scripts/quickshell_resume_recover.sh \
             config/hypr/scripts/quickshell_runtime_rules.sh \
             config/hypr/scripts/quickshell_sensitive_capture.sh \
@@ -184,6 +187,7 @@ jobs:
             tests/test-hypridle-restart.sh \
             tests/test-flyout-toggle-debounce.sh \
             tests/test-flyout-edge-layout.sh \
+            tests/test-flyout-runtime-centering.sh \
             tests/test-launcher-keyboard-focus.sh \
             tests/test-desktop-candidate-validation.sh \
             tests/test-lua-validation.sh \
@@ -254,6 +258,7 @@ jobs:
           bash tests/test-hypridle-restart.sh
           bash tests/test-flyout-toggle-debounce.sh
           bash tests/test-flyout-edge-layout.sh
+          bash tests/test-flyout-runtime-centering.sh
           bash tests/test-launcher-keyboard-focus.sh
           bash tests/test-desktop-candidate-validation.sh
           python3 tests/test-keyring-pam-cleanup.py
