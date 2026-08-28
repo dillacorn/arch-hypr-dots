@@ -41,6 +41,16 @@ contains "$LAYOUT_EDITOR" 'signal moveRequested(string sectionId, int delta)' \
   'layout editor does not expose section reordering'
 contains "$LAYOUT_EDITOR" 'signal visibilityRequested(string sectionId, bool visible)' \
   'layout editor does not expose per-section visibility controls'
+contains "$LAYOUT_EDITOR" 'id: layoutFlick' \
+  'layout editor does not expose a bounded Flickable for its section list'
+contains "$LAYOUT_EDITOR" 'ListScrollBar {' \
+  'layout editor does not attach the shared visible scrollbar'
+contains "$LAYOUT_EDITOR" 'id: layoutScrollBar' \
+  'layout editor scrollbar has no stable id'
+contains "$LAYOUT_EDITOR" 'flickable: layoutFlick' \
+  'layout editor scrollbar is not bound to the section-list Flickable'
+contains "$LAYOUT_EDITOR" 'anchors.rightMargin: layoutScrollBar.visible ? layoutScrollBar.width : 0' \
+  'layout editor does not reserve row width while the scrollbar is visible'
 
 if grep -Fq 'quickSettingsSectionRow("power-mode")' "$QUICK_SETTINGS"; then
   fail 'inert Power Mode compatibility host is still exposed as a customizable section'
@@ -146,4 +156,4 @@ done
 [[ $missing_history -eq 0 ]] \
   || fail 'managed history is missing current Quick Settings layout stock hashes'
 
-printf '%s\n' 'PASS: Quick Settings layout customization covers the 11 real sections per display without the inert Power Mode compatibility host.'
+printf '%s\n' 'PASS: Quick Settings layout customization covers the 11 real sections per display with a visible shared scrollbar for overflow.'
