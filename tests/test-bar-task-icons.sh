@@ -21,6 +21,7 @@ absent() {
 contains "$BAR_QML" 'function isAwtarchyFlyout(toplevel)' \
     'Bar has no focused filter for Awtarchy flyout windows'
 for title in \
+    'Awtarchy Application Search' \
     'Awtarchy Clipboard History' \
     'Awtarchy Notification Center' \
     'Awtarchy Quick Settings' \
@@ -53,4 +54,4 @@ contains "$BAR_QML" 'wayland.minimized = true;' \
 contains "$BAR_QML" 'wayland.activate();' \
     'task icon activation behavior disappeared'
 
-printf '%s\n' 'PASS: Awtarchy flyouts stay out of the task strip and native application/tray icon colors are preserved.'
+printf '%s\n' 'PASS: Awtarchy launcher/flyouts stay out of the task strip and native application/tray icon colors are preserved.'
