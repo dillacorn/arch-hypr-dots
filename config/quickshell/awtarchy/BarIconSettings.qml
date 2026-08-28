@@ -9,6 +9,8 @@ ColumnLayout {
     id: root
 
     property var identityCommandQueue: []
+    property var clipboardQueue: []
+    property var activeClipboardCopy: null
     property string identityError: ""
     property string message: ""
     property string workspaceCopyFeedback: ""
@@ -34,41 +36,76 @@ ColumnLayout {
         return "Awtarchy";
     }
 
-    function copyText(text) {
-        if (!text || text.length === 0)
-            return false;
-        Quickshell.execDetached(["wl-copy", text]);
-        return true;
+    function enqueueClipboardCopy(text, kind, key, successText) {
+        const value = String(text || "");
+        if (value.length === 0)
+            return;
+        const queue = clipboardQueue.slice();
+        queue.push({
+            text: value,
+            kind: String(kind || ""),
+            key: String(key || ""),
+            successText: String(successText || "Copied")
+        });
+        clipboardQueue = queue;
+        runNextClipboardCopy();
+    }
+
+    function runNextClipboardCopy() {
+        if (clipboardWriter.running || activeClipboardCopy !== null
+                || clipboardQueue.length === 0)
+            return;
+        const next = clipboardQueue[0];
+        clipboardQueue = clipboardQueue.slice(1);
+        activeClipboardCopy = next;
+        clipboardWriter.exec(["wl-copy", "--type", "text/plain", "--", next.text]);
+    }
+
+    function completeClipboardCopy(next) {
+        if (next.kind === "workspace-symbol") {
+            copiedWorkspaceKey = next.key;
+            copiedWorkspacePack = "";
+            workspaceCopyFeedback = next.successText;
+            workspaceCopyFeedbackTimer.restart();
+        } else if (next.kind === "workspace-pack") {
+            copiedWorkspaceKey = "";
+            copiedWorkspacePack = next.key;
+            workspaceCopyFeedback = next.successText;
+            workspaceCopyFeedbackTimer.restart();
+        } else if (next.kind === "launcher") {
+            copiedLauncherValue = next.key;
+            launcherCopyFeedback = next.successText;
+            launcherCopyFeedbackTimer.restart();
+        }
+    }
+
+    function failClipboardCopy(next) {
+        if (!next)
+            return;
+        if (next.kind === "launcher") {
+            copiedLauncherValue = "";
+            launcherCopyFeedback = "Copy failed";
+            launcherCopyFeedbackTimer.restart();
+        } else {
+            copiedWorkspaceKey = "";
+            copiedWorkspacePack = "";
+            workspaceCopyFeedback = "Copy failed";
+            workspaceCopyFeedbackTimer.restart();
+        }
     }
 
     function copyWorkspaceSymbol(text, key) {
-        if (!copyText(text))
-            return;
-        copiedWorkspaceKey = key;
-        copiedWorkspacePack = "";
-        workspaceCopyFeedback = "Copied · " + text;
-        workspaceCopyFeedbackTimer.restart();
+        const value = String(text || "");
+        enqueueClipboardCopy(value, "workspace-symbol", key, "Copied · " + value);
     }
 
-    function copyWorkspacePack(pack) {
-        if (!pack || !Array.isArray(pack.symbols) || pack.symbols.length === 0)
-            return;
-        const text = pack.symbols.join(" ");
-        if (!copyText(text))
-            return;
-        copiedWorkspaceKey = "";
-        copiedWorkspacePack = String(pack.key || "");
-        workspaceCopyFeedback = "Copied all · " + pack.symbols.length + " symbols";
-        workspaceCopyFeedbackTimer.restart();
+    function copyWorkspacePack(styleKey, text) {
+        enqueueClipboardCopy(String(text || ""), "workspace-pack", styleKey, "Copied all");
     }
 
     function copyLauncherIcon(value) {
         const text = String(value || "");
-        if (!copyText(text))
-            return;
-        copiedLauncherValue = text;
-        launcherCopyFeedback = "Copied · " + text;
-        launcherCopyFeedbackTimer.restart();
+        enqueueClipboardCopy(text, "launcher", text, "Copied · " + text);
     }
 
     function enqueueIdentity(args, statusMessage) {
@@ -165,6 +202,21 @@ ColumnLayout {
         onTriggered: {
             root.launcherCopyFeedback = "";
             root.copiedLauncherValue = "";
+        }
+    }
+
+    Process {
+        id: clipboardWriter
+        onExited: (exitCode, exitStatus) => {
+            const next = root.activeClipboardCopy;
+            root.activeClipboardCopy = null;
+            if (next !== null) {
+                if (exitCode === 0)
+                    root.completeClipboardCopy(next);
+                else
+                    root.failClipboardCopy(next);
+            }
+            root.runNextClipboardCopy();
         }
     }
 
@@ -344,7 +396,9 @@ ColumnLayout {
                         textSize: 9
                         horizontalPadding: 8
                         active: root.copiedWorkspacePack === packRow.modelData.key
-                        onClicked: root.copyWorkspacePack(packRow.modelData)
+                        onClicked: root.copyWorkspacePack(
+                            String(packRow.modelData.key),
+                            packRow.modelData.symbols.join(" "))
                     }
                 }
             }
@@ -585,9 +639,11 @@ ColumnLayout {
                 }
 
                 SettingsButton {
-                    label: " Copy"
-                    textSize: 8
-                    horizontalPadding: 6
+                    Layout.preferredWidth: 30
+                    label: root.copiedLauncherValue === launcherPreset.modelData.value
+                        ? "✓" : ""
+                    textSize: 9
+                    horizontalPadding: 4
                     active: root.copiedLauncherValue === launcherPreset.modelData.value
                     onClicked: root.copyLauncherIcon(launcherPreset.modelData.value)
                 }

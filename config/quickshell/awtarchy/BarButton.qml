@@ -17,6 +17,7 @@ Rectangle {
     property int fontPixelSize: 0
     property bool workspaceButton: false
     property int workspaceGlyphSize: 0
+    property int workspaceGlyphYOffset: 0
     property bool hovered: false
     property int wheelActivationDelay: 0
     property bool wheelReady: wheelActivationDelay <= 0
@@ -142,6 +143,11 @@ Rectangle {
         return Theme.fontFamily;
     }
 
+    function workspacePartYOffset(part) {
+        return workspaceButton && !/^\d+$/.test(String(part))
+            ? workspaceGlyphYOffset : 0;
+    }
+
     function scaledIconSize(baseSize) {
         const scaled = Math.round(baseSize * iconScale);
         const maxForBar = Math.max(8, barThickness - 2);
@@ -226,6 +232,7 @@ Rectangle {
         Text {
             id: normalText
             anchors.centerIn: parent
+            anchors.verticalCenterOffset: root.workspacePartYOffset(root.displayLabel)
             visible: !root.useWorkspaceParts && !root.useHorizontalParts && !root.useVerticalParts
             text: root.displayLabel
             color: root.foreground
@@ -253,6 +260,7 @@ Rectangle {
                     Text {
                         id: tokenText
                         anchors.centerIn: parent
+                        anchors.verticalCenterOffset: root.workspacePartYOffset(String(parent.modelData))
                         text: String(parent.modelData)
                         color: root.foreground
                         font.family: root.partFontFamily(String(parent.modelData))

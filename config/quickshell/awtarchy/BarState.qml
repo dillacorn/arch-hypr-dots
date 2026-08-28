@@ -81,40 +81,36 @@ Singleton {
         "10": ""
     })
     readonly property var workspaceIconStylePresets: [
-        { key: "off", label: "Off", symbols: [], glyphSize: 18 },
+        { key: "off", label: "Off", symbols: [], glyphSize: 18, glyphYOffset: 0 },
         {
             key: "awtarchy",
             label: "Awtarchy",
             symbols: ["󰞷", "", "", "", "", "", "", "", "", ""],
-            glyphSize: 20
+            glyphSize: 20,
+            glyphYOffset: 0
+        },
+        {
+            key: "workflow",
+            label: "Workflow",
+            symbols: ["", "", "", "", "", "", "", "", "", ""],
+            glyphSize: 20,
+            glyphYOffset: -1
         },
         {
             key: "phases",
             label: "Phases",
             symbols: ["◐", "◑", "◒", "◓", "◔", "◕", "○", "●", "◉", "◎"],
-            glyphSize: 22
+            glyphSize: 22,
+            glyphYOffset: -2
         },
-        {
-            key: "dots",
-            label: "Dots",
-            symbols: ["●", "●", "●", "●", "●", "●", "●", "●", "●", "●"],
-            glyphSize: 20
-        },
-        {
-            key: "diamonds",
-            label: "Diamonds",
-            symbols: ["◆", "◆", "◆", "◆", "◆", "◆", "◆", "◆", "◆", "◆"],
-            glyphSize: 19
-        },
-        { key: "custom-symbol", label: "Custom", symbols: [], glyphSize: 18 }
+        { key: "custom-symbol", label: "Custom", symbols: [], glyphSize: 18, glyphYOffset: 0 }
     ];
     readonly property var workspaceStylePresets: [
         { key: "awtarchy", label: "Awtarchy", sample: "1󰞷" },
         { key: "numbers", label: "Numbers", sample: "1" },
         { key: "icons", label: "Icons", sample: "󰞷" },
+        { key: "workflow", label: "Workflow", sample: "" },
         { key: "phases", label: "Phases", sample: "◐◑" },
-        { key: "dots", label: "Dots", sample: "●" },
-        { key: "diamonds", label: "Diamonds", sample: "◆" },
         { key: "custom-symbol", label: "Custom", sample: "…" }
     ]
     readonly property var launcherIconPresets: [
@@ -126,17 +122,19 @@ Singleton {
         { label: "Circle", value: "●" }
     ]
     readonly property var workspaceLegacyStyleAliases: ({
-        "filled-dot": "dots",
-        "filled-diamond": "diamonds",
-        "center-diamond": "diamonds",
-        "filled-square": "diamonds",
-        "small-square": "diamonds",
-        "filled-triangle": "diamonds",
-        "spark": "dots",
-        "minimal-bar": "dots",
-        "squares": "diamonds",
-        "triangles": "diamonds",
-        "minimal": "dots"
+        "filled-dot": "workflow",
+        "filled-diamond": "workflow",
+        "center-diamond": "workflow",
+        "filled-square": "workflow",
+        "small-square": "workflow",
+        "filled-triangle": "workflow",
+        "spark": "workflow",
+        "minimal-bar": "workflow",
+        "dots": "workflow",
+        "diamonds": "workflow",
+        "squares": "workflow",
+        "triangles": "workflow",
+        "minimal": "workflow"
     })
 
 
@@ -456,6 +454,13 @@ Singleton {
         const pack = workspaceIconPackFor(workspaceIconStyle());
         const size = pack ? Number(pack.glyphSize) : 18;
         return Number.isFinite(size) ? Math.max(8, Math.round(size)) : 18;
+    }
+
+    function workspaceIconYOffset() {
+        const pack = workspaceIconPackFor(workspaceIconStyle());
+        const offset = pack ? Number(pack.glyphYOffset) : 0;
+        return Number.isFinite(offset)
+            ? Math.max(-4, Math.min(4, Math.round(offset))) : 0;
     }
 
     function workspaceIconFor(id) {

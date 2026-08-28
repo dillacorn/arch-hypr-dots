@@ -174,7 +174,7 @@ contains "$BAR_STATE" 'return "";' \
     'BarState launcher fallback is not the stock Awtarchy icon'
 
 for style in \
-    awtarchy numbers icons phases dots diamonds custom-symbol
+    awtarchy numbers icons workflow phases custom-symbol
 do
     contains "$BAR_STATE" "\"${style}\"" \
         "BarState preset catalog is missing ${style}"
@@ -185,7 +185,7 @@ for removed_style in \
     half-left half-right half-bottom half-top quarter-circle three-quarter-circle \
     hollow-diamond hollow-square hollow-triangle star hollow-star \
     filled-dot filled-diamond center-diamond filled-square small-square filled-triangle spark minimal-bar \
-    squares triangles minimal
+    dots diamonds squares triangles minimal
 do
     if grep -Fq "\"${removed_style}\"" "$STATE_SCRIPT"; then
         fail "state writer still accepts removed workspace style ${removed_style}"
@@ -194,18 +194,23 @@ done
 
 contains "$BAR_STATE" 'readonly property var workspaceLegacyStyleAliases:' \
     'BarState does not retain aliases for previously saved single-symbol styles'
-contains "$BAR_STATE" '"center-diamond": "diamonds"' \
+contains "$BAR_STATE" '"center-diamond": "workflow"' \
     'legacy center-diamond state does not migrate to the Diamonds pack'
-contains "$BAR_STATE" '"spark": "dots"' \
+contains "$BAR_STATE" '"spark": "workflow"' \
     'legacy Spark state does not migrate to a supported pack'
-contains "$BAR_STATE" '"squares": "diamonds"' \
+contains "$BAR_STATE" '"dots": "workflow"' \
+    'testing-branch Dots state does not migrate to Workflow'
+contains "$BAR_STATE" '"diamonds": "workflow"' \
+    'testing-branch Diamonds state does not migrate to Workflow'
+contains "$BAR_STATE" '"squares": "workflow"' \
     'testing-branch Squares state does not migrate to a supported pack'
-contains "$BAR_STATE" '"triangles": "diamonds"' \
+contains "$BAR_STATE" '"triangles": "workflow"' \
     'testing-branch Triangles state does not migrate to a supported pack'
-contains "$BAR_STATE" '"minimal": "dots"' \
+contains "$BAR_STATE" '"minimal": "workflow"' \
     'testing-branch Minimal state does not migrate to a supported pack'
 
-for symbol in '◐' '◑' '◒' '◓' '◔' '◕' '○' '●' '◉' '◎' '◆'
+for symbol in '◐' '◑' '◒' '◓' '◔' '◕' '○' '●' '◉' '◎' \
+    '' '' '' '' '' '' '' '' '' ''
 do
     contains "$BAR_STATE" "$symbol" \
         "BarState workspace packs are missing ${symbol}"
