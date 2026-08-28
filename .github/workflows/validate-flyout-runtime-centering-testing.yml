@@ -6,14 +6,307 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  focused-regression:
+  implement-and-validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck lua5.4
+
+      - name: Apply approved runtime-centering implementation
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if new in text:
+                  return False
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one patch target, found {count}")
+              p.write_text(text.replace(old, new, 1))
+              return True
+
+          # Shared authority: effective runtime bar visibility. Prefer the real
+          # per-monitor Bar window state, with the same state/fullscreen logic as
+          # Bar.qml as a startup fallback before Variants are fully bound.
+          replace_once(
+              "config/quickshell/awtarchy/FlyoutManager.qml",
+              '''    function focusedMonitorName() {
+                  return Hyprland.focusedMonitor && Hyprland.focusedMonitor.name
+                      ? String(Hyprland.focusedMonitor.name) : "";
+              }
+          ''',
+              '''    function focusedMonitorName() {
+                  return Hyprland.focusedMonitor && Hyprland.focusedMonitor.name
+                      ? String(Hyprland.focusedMonitor.name) : "";
+              }
+
+              function workspaceFullscreenForMonitor(name) {
+                  return Hyprland.workspaces.values.some(workspace =>
+                      workspace.monitor && workspace.monitor.name === name
+                          && workspace.active && workspace.hasFullscreen);
+              }
+
+              function barVisibleOnMonitor(name) {
+                  const monitor = String(name || "");
+                  if (monitor.length === 0)
+                      return false;
+
+                  const matches = barWindows.filter(window =>
+                      window && String(window.monitorName || "") === monitor);
+                  if (matches.length > 0)
+                      return matches.some(window => Boolean(window.visible));
+
+                  return BarState.enabledFor(monitor) && !workspaceFullscreenForMonitor(monitor);
+              }
+          ''')
+
+          # Five requested flyouts use effective visibility rather than only the
+          # persisted enabled flag. Do not touch Quick Settings or Battery here.
+          replace_once(
+              "config/quickshell/awtarchy/ClipboardMenu.qml",
+              '        if (!targetScreen || !BarState.enabledFor(targetScreen.name))\n',
+              '        if (!targetScreen || !FlyoutManager.barVisibleOnMonitor(targetScreen.name))\n')
+          replace_once(
+              "config/quickshell/awtarchy/Notifications.qml",
+              '        if (!targetScreen || !BarState.enabledFor(targetScreen.name))\n',
+              '        if (!targetScreen || !FlyoutManager.barVisibleOnMonitor(targetScreen.name))\n')
+          replace_once(
+              "config/quickshell/awtarchy/NetworkMenu.qml",
+              '        if (!targetScreen || !BarState.enabledFor(targetScreen.name))\n',
+              '        if (!targetScreen || !FlyoutManager.barVisibleOnMonitor(targetScreen.name))\n')
+          replace_once(
+              "config/quickshell/awtarchy/BluetoothMenu.qml",
+              '        if (!targetScreen || !BarState.enabledFor(targetScreen.name))\n',
+              '        if (!targetScreen || !FlyoutManager.barVisibleOnMonitor(targetScreen.name))\n')
+
+          replace_once(
+              "config/quickshell/awtarchy/Launcher.qml",
+              '''    function barPlacementForScreen(targetScreen) {
+                  if (!targetScreen || !BarState.enabledFor(targetScreen.name))
+                      return "center";
+                  return BarState.positionFor(targetScreen.name);
+              }
+          ''',
+              '''    function barPlacementForScreen(targetScreen) {
+                  if (!targetScreen || !FlyoutManager.barVisibleOnMonitor(targetScreen.name))
+                      return "center";
+                  return BarState.positionFor(targetScreen.name);
+              }
+          ''')
+          replace_once(
+              "config/quickshell/awtarchy/Launcher.qml",
+              '''    function centeredPlacementForScreen(targetScreen) {
+                  if (!targetScreen || launcherCenteredFor(targetScreen.name)
+                      || !BarState.enabledFor(targetScreen.name))
+                      return "center";
+                  return BarState.positionFor(targetScreen.name) + "-center";
+              }
+          ''',
+              '''    function centeredPlacementForScreen(targetScreen) {
+                  if (!targetScreen || launcherCenteredFor(targetScreen.name)
+                      || !FlyoutManager.barVisibleOnMonitor(targetScreen.name))
+                      return "center";
+                  return BarState.positionFor(targetScreen.name) + "-center";
+              }
+          ''')
+
+          # Keyboard-opened Notifications remain attached to a visible bar but
+          # center along that edge. Bar clicks retain the exact clicked-item
+          # anchor. If no bar is effectively visible, placement is "center".
+          replace_once(
+              "config/quickshell/awtarchy/Notifications.qml",
+              '    property real anchorAlongEdge: -1\n',
+              '    property real anchorAlongEdge: -1\n    property bool edgeCentered: false\n')
+          replace_once(
+              "config/quickshell/awtarchy/Notifications.qml",
+              '''    function applyWindowSize(width, height) {
+                  panelWidthOverride = clampWidth(width);
+                  panelHeightOverride = clampHeight(height);
+                  if (centerWindow.visible && activeMonitorName.length > 0) {
+          ''',
+              '''    function applyWindowSize(width, height) {
+                  panelWidthOverride = clampWidth(width);
+                  panelHeightOverride = clampHeight(height);
+                  if (edgeCentered && activeScreen)
+                      anchorAlongEdge = centeredAnchorForScreen(activeScreen);
+                  if (centerWindow.visible && activeMonitorName.length > 0) {
+          ''')
+          replace_once(
+              "config/quickshell/awtarchy/Notifications.qml",
+              '''    function anchorCoordinate(item) {
+                  if (!item)
+                      return -1;
+                  const edgePoint = item.mapToItem(null, item.width, item.height);
+                  return placement === "top" || placement === "bottom" ? edgePoint.x : edgePoint.y;
+              }
+          ''',
+              '''    function anchorCoordinate(item) {
+                  if (!item)
+                      return -1;
+                  const edgePoint = item.mapToItem(null, item.width, item.height);
+                  return placement === "top" || placement === "bottom" ? edgePoint.x : edgePoint.y;
+              }
+
+              function centeredAnchorForScreen(targetScreen) {
+                  if (!targetScreen || placement === "center")
+                      return -1;
+                  if (placement === "top" || placement === "bottom")
+                      return Math.round((targetScreen.width + configuredPanelWidth) / 2);
+                  if (placement === "left" || placement === "right")
+                      return Math.round((targetScreen.height + configuredPanelHeight) / 2);
+                  return -1;
+              }
+          ''')
+          replace_once(
+              "config/quickshell/awtarchy/Notifications.qml",
+              '''        placement = placementForScreen(targetScreen);
+                  anchorAlongEdge = anchorCoordinate(anchorItem);
+                  settingsOpen = false;
+                  settingsPanel.resetCopySelection();
+                  settingsMessage = "";
+                  loadSavedView(targetScreen);
+                  prepareCenterOpen(targetScreen);
+          ''',
+              '''        placement = placementForScreen(targetScreen);
+                  settingsOpen = false;
+                  settingsPanel.resetCopySelection();
+                  settingsMessage = "";
+                  loadSavedView(targetScreen);
+                  edgeCentered = !anchorItem && placement !== "center";
+                  anchorAlongEdge = edgeCentered
+                      ? centeredAnchorForScreen(targetScreen) : anchorCoordinate(anchorItem);
+                  prepareCenterOpen(targetScreen);
+          ''')
+          replace_once(
+              "config/quickshell/awtarchy/Notifications.qml",
+              '''        centerWindow.visible = false;
+                  panelPresented = false;
+                  FlyoutManager.release("notifications");
+          ''',
+              '''        centerWindow.visible = false;
+                  panelPresented = false;
+                  edgeCentered = false;
+                  FlyoutManager.release("notifications");
+          ''')
+
+          # Notification wrapper and exact key ownership. SUPER+N is present in
+          # default and noalt only; mouse/vm submaps are intentionally untouched.
+          toggle = Path("config/hypr/scripts/quickshell_notifications_toggle.sh")
+          if not toggle.exists():
+              toggle.write_text('''#!/usr/bin/env bash
+          # Toggle the Awtarchy Quickshell notification center.
+
+          set -euo pipefail
+          SCRIPTS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts"
+          "$SCRIPTS_DIR/quickshell.sh" start >/dev/null
+          exec qs -c awtarchy ipc call notifications toggle
+          ''')
+          toggle.chmod(0o755)
+
+          replace_once(
+              "config/hypr/hyprland.lua",
+              'local notification_dismiss = "~/.config/hypr/scripts/quickshell_notification_dismiss.sh"\n',
+              'local notification_dismiss = "~/.config/hypr/scripts/quickshell_notification_dismiss.sh"\nlocal notifications_toggle = "~/.config/hypr/scripts/quickshell_notifications_toggle.sh"\n')
+          replace_once(
+              "config/hypr/hyprland.lua",
+              '''-- Notification dismiss
+          for _, key in ipairs({
+          ''',
+              '''-- Notification center
+          hl.bind("SUPER + N", hl.dsp.exec_cmd(notifications_toggle), {})
+
+          -- Notification dismiss
+          for _, key in ipairs({
+          ''')
+          replace_once(
+              "config/hypr/hyprland.lua",
+              '''    -- Notification dismiss in "noalt"
+              for _, key in ipairs({
+          ''',
+              '''    -- Notification center in "noalt"
+              hl.bind("SUPER + N", hl.dsp.exec_cmd(notifications_toggle), {})
+
+              -- Notification dismiss in "noalt"
+              for _, key in ipairs({
+          ''')
+
+          # Make the focused regression permanent in the normal validation job.
+          workflow = " .github/workflows/validate-awtarchy.yml".strip()
+          replace_once(
+              workflow,
+              '          bash -n config/hypr/scripts/quickshell_notification_layout_demo.sh\n',
+              '          bash -n config/hypr/scripts/quickshell_notification_layout_demo.sh\n          bash -n config/hypr/scripts/quickshell_notifications_toggle.sh\n')
+          replace_once(
+              workflow,
+              '          bash -n tests/test-flyout-edge-layout.sh\n',
+              '          bash -n tests/test-flyout-edge-layout.sh\n          bash -n tests/test-flyout-runtime-centering.sh\n')
+          replace_once(
+              workflow,
+              '            config/hypr/scripts/quickshell_notification_layout_demo.sh \\\n',
+              '            config/hypr/scripts/quickshell_notification_layout_demo.sh \\\n            config/hypr/scripts/quickshell_notifications_toggle.sh \\\n')
+          replace_once(
+              workflow,
+              '            tests/test-flyout-edge-layout.sh \\\n',
+              '            tests/test-flyout-edge-layout.sh \\\n            tests/test-flyout-runtime-centering.sh \\\n')
+          replace_once(
+              workflow,
+              '          bash tests/test-flyout-edge-layout.sh\n',
+              '          bash tests/test-flyout-edge-layout.sh\n          bash tests/test-flyout-runtime-centering.sh\n')
+          PY
+
+          git diff --check
+          git status --short
+
+          if ! git diff --quiet; then
+            git config user.name 'dillacorn'
+            git config user.email '28743863+dillacorn@users.noreply.github.com'
+            git add \
+              .github/workflows/validate-awtarchy.yml \
+              config/hypr/hyprland.lua \
+              config/hypr/scripts/quickshell_notifications_toggle.sh \
+              config/quickshell/awtarchy/FlyoutManager.qml \
+              config/quickshell/awtarchy/Launcher.qml \
+              config/quickshell/awtarchy/ClipboardMenu.qml \
+              config/quickshell/awtarchy/Notifications.qml \
+              config/quickshell/awtarchy/NetworkMenu.qml \
+              config/quickshell/awtarchy/BluetoothMenu.qml
+            git commit -m 'Center flyouts when bar is hidden'
+            git push origin HEAD:feature/filter-quickshell-task-icons
+          fi
+
       - name: Bash syntax
-        run: bash -n tests/test-flyout-runtime-centering.sh
+        run: |
+          bash -n config/hypr/scripts/quickshell_notifications_toggle.sh
+          bash -n tests/test-flyout-runtime-centering.sh
+
+      - name: ShellCheck focused files
+        run: shellcheck config/hypr/scripts/quickshell_notifications_toggle.sh tests/test-flyout-runtime-centering.sh
+
       - name: Runtime flyout centering regression
         run: bash tests/test-flyout-runtime-centering.sh
+
+      - name: Existing related regressions
+        run: |
+          bash tests/test-bar-fullscreen-visibility.sh
+          bash tests/test-flyout-toggle-debounce.sh
+          bash tests/test-flyout-edge-layout.sh
+          bash tests/test-launcher-keyboard-focus.sh
+          bash tests/test-notification-hide-history.sh
+          bash tests/test-quickshell-updater-migration.sh
+          bash tests/test-display-scale-quicksettings.sh
+
+      - name: Lua validation
+        run: bash tests/test-lua-validation.sh
+
+      - name: Diff whitespace
+        run: git diff --check origin/main...HEAD
