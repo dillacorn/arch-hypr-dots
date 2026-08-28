@@ -11,7 +11,7 @@ set -euo pipefail
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/hyprsunset"
 OFFSET_FILE="$STATE_DIR/offset"       # offset from BASE_K (for compatibility + status)
 TEMP_FILE="$STATE_DIR/last_temp"      # last absolute temperature (K)
-ENABLED_FILE="$STATE_DIR/enabled"     # fallback when JSON/jq isn't available: 1=on, 0=off
+ENABLED_FILE="$STATE_DIR/enabled"     # fallback when live Hyprsunset state is unavailable: 1=on, 0=off
 SCHEDULE_FILE="$STATE_DIR/schedule"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hypr"
 CONFIG_FILE="$CONFIG_DIR/hyprsunset.conf"
@@ -38,8 +38,6 @@ notify() {
     notify-send -a "hyprsunset" -t 1400 "Night Light" "$msg" >/dev/null 2>&1 || true
   fi
 }
-
-have_jq() { command -v jq >/dev/null 2>&1; }
 
 read_int_file() {
   local file="$1" def="$2" v=""
@@ -268,17 +266,17 @@ enable_saved_schedule() {
   set_schedule "$SCHEDULE_START" "$SCHEDULE_END" "$SCHEDULE_TEMP"
 }
 
-# Best-effort: return "true" / "false" / "unknown"
+# Best-effort: return "true" / "false" / "unknown" from Hyprsunset IPC.
 get_identity_state() {
-  if have_jq && hyprctl -j hyprsunset >/dev/null 2>&1; then
-    # Some hyprctl -j outputs have a noisy prefix line; strip anything before the first '{'
-    local json
-    json="$(hyprctl -j hyprsunset 2>/dev/null | sed -n '0,/{/s/^[^{]*//;/{/,$p' || true)"
-    if [[ -n "$json" ]]; then
-      local v
-      v="$(jq -r '(.identity // "unknown")' <<<"$json" 2>/dev/null || true)"
-      [[ -n "$v" ]] && { printf '%s\n' "$v"; return 0; }
-    fi
+  local value=""
+  if command -v hyprctl >/dev/null 2>&1; then
+    value="$(hyprctl hyprsunset identity get 2>/dev/null | tr -d '\r\n' || true)"
+    case "$value" in
+      true|false)
+        printf '%s\n' "$value"
+        return 0
+        ;;
+    esac
   fi
   printf '%s\n' "unknown"
 }
