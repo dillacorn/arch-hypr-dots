@@ -64,7 +64,7 @@ for key in ("awtarchy", "workflow", "phases"):
         raise SystemExit(f"{key} must expose exactly 10 symbols, found {len(symbols)}")
     packs[key] = (symbols, int(match.group(2)), int(match.group(3)))
 
-expected_workflow = ["", "", "", "", "", "", "", "", "", ""]
+expected_workflow = ["", "", "", "", "", "", "", "", "", ""]
 if packs["workflow"][0] != expected_workflow:
     raise SystemExit(f"workflow pack is not the curated role-based set: {packs['workflow'][0]}")
 if len(set(packs["workflow"][0])) != 10:

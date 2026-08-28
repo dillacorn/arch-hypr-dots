@@ -210,7 +210,7 @@ contains "$BAR_STATE" '"minimal": "workflow"' \
     'testing-branch Minimal state does not migrate to a supported pack'
 
 for symbol in '◐' '◑' '◒' '◓' '◔' '◕' '○' '●' '◉' '◎' \
-    '' '' '' '' '' '' '' '' '' ''
+    '' '' '' '' '' '' '' '' '' ''
 do
     contains "$BAR_STATE" "$symbol" \
         "BarState workspace packs are missing ${symbol}"

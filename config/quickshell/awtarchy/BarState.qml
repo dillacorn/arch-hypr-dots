@@ -92,7 +92,7 @@ Singleton {
         {
             key: "workflow",
             label: "Workflow",
-            symbols: ["", "", "", "", "", "", "", "", "", ""],
+            symbols: ["", "", "", "", "", "", "", "", "", ""],
             glyphSize: 20,
             glyphYOffset: -1
         },
