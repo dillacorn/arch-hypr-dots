@@ -4,12 +4,17 @@ IFS=$'\n\t'
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_SCRIPT="${ROOT}/config/hypr/scripts/quickshell_application_state.sh"
+BAR_STATE="${ROOT}/config/quickshell/awtarchy/BarState.qml"
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
     exit 1
+}
+
+contains() {
+    grep -Fq -- "$2" "$1" || fail "$3"
 }
 
 CACHE_HOME="${TMP}/cache"
@@ -135,4 +140,43 @@ expect_rejected_unchanged '9-code-point custom label' set-workspace-custom-label
 expect_rejected_unchanged 'blank launcher label' set-launcher-icon '   '
 expect_rejected_unchanged '9-code-point launcher label' set-launcher-icon 'abcdefghi'
 
-printf '%s\n' 'PASS: bar icon identity persistence is global, validated, resettable, and preserves unrelated Quickshell state.'
+contains "$BAR_STATE" 'bar_appearance: {}' \
+    'BarState does not normalize bar identity state'
+contains "$BAR_STATE" 'readonly property var workspaceStylePresets:' \
+    'BarState does not own the workspace preset catalog'
+contains "$BAR_STATE" 'readonly property var launcherIconPresets:' \
+    'BarState does not own launcher icon presets'
+contains "$BAR_STATE" 'function workspaceStyle()' \
+    'BarState has no normalized workspace-style getter'
+contains "$BAR_STATE" 'function workspaceCustomLabel()' \
+    'BarState has no global custom workspace-label getter'
+contains "$BAR_STATE" 'function workspaceOverrideFor(id)' \
+    'BarState has no per-workspace override getter'
+contains "$BAR_STATE" 'function workspaceLabelFor(id)' \
+    'BarState has no horizontal workspace-label resolver'
+contains "$BAR_STATE" 'function workspaceVerticalLabelFor(id)' \
+    'BarState has no compact vertical workspace-label resolver'
+contains "$BAR_STATE" 'function launcherIcon()' \
+    'BarState has no launcher-icon resolver'
+contains "$BAR_STATE" 'return "";' \
+    'BarState launcher fallback is not the stock Awtarchy icon'
+
+for style in \
+    awtarchy numbers icons circled-numbers filled-dot hollow-dot bullet tiny-dot \
+    bullseye fisheye half-left half-right half-bottom half-top quarter-circle \
+    three-quarter-circle filled-diamond hollow-diamond center-diamond filled-square \
+    hollow-square small-square filled-triangle hollow-triangle star hollow-star spark \
+    minimal-bar custom-symbol
+do
+    contains "$BAR_STATE" "\"${style}\"" \
+        "BarState preset catalog is missing ${style}"
+done
+
+for symbol in '①' '⑩' '●' '○' '•' '◦' '◎' '◉' '◐' '◑' '◒' '◓' '◔' '◕' \
+    '◆' '◇' '◈' '■' '□' '▪' '▲' '△' '★' '☆' '✦' '━'
+do
+    contains "$BAR_STATE" "$symbol" \
+        "BarState preset catalog is missing ${symbol}"
+done
+
+printf '%s\n' 'PASS: bar icon identity persistence and resolver contracts are validated.'
