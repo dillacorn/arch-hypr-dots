@@ -1,0 +1,19 @@
+name: Validate Theme Picker Workspace Toggle Fixes
+
+on:
+  push:
+    branches:
+      - feature/theme-picker-workspace-toggle-fixes
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+      - name: Focused regression
+        run: bash tests/test-theme-picker-workspace-composition.sh
