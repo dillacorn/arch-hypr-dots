@@ -5,6 +5,7 @@ IFS=$'\n\t'
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_SCRIPT="${ROOT}/config/hypr/scripts/quickshell_application_state.sh"
 BAR_STATE="${ROOT}/config/quickshell/awtarchy/BarState.qml"
+BAR_QML="${ROOT}/config/quickshell/awtarchy/Bar.qml"
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 
@@ -179,4 +180,17 @@ do
         "BarState preset catalog is missing ${symbol}"
 done
 
-printf '%s\n' 'PASS: bar icon identity persistence and resolver contracts are validated.'
+if grep -Fq 'function workspaceIcon(id)' "$BAR_QML"; then
+    fail 'Bar still owns the old hardcoded workspace icon map'
+fi
+if grep -Fq 'workspaceIcon(modelData.id).replace(" ", "\\n")' "$BAR_QML"; then
+    fail 'vertical workspaces still stack the number and icon'
+fi
+contains "$BAR_QML" 'label: BarState.workspaceLabelFor(modelData.id)' \
+    'horizontal workspaces do not use the shared state resolver'
+contains "$BAR_QML" 'label: BarState.workspaceVerticalLabelFor(modelData.id)' \
+    'vertical workspaces do not use the compact single-row resolver'
+[[ $(grep -Fc 'label: BarState.launcherIcon()' "$BAR_QML") -eq 2 ]] \
+    || fail 'horizontal and vertical launcher buttons are not both state-driven'
+
+printf '%s\n' 'PASS: bar icon identity persistence, resolver, and rendering contracts are validated.'
