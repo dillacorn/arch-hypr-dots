@@ -134,9 +134,13 @@ PanelWindow {
 
     function barModuleVisible(name, module) {
         const state = BarState.monitorState(name) || ({});
-        const modules = state.modules && typeof state.modules === "object"
-            && !Array.isArray(state.modules) ? state.modules : ({});
-        return modules[module] !== false;
+        if (module === "cpu")
+            return state.show_cpu !== false;
+        if (module === "temperature")
+            return state.show_temp !== false;
+        if (module === "memory")
+            return state.show_memory !== false;
+        return true;
     }
 
     function scratchpadCount() {
