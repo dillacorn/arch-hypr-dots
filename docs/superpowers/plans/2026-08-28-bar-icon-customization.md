@@ -65,7 +65,7 @@ Expected: failure because the new persistence commands do not exist.
 Add to `quickshell_application_state.sh`:
 
 ```bash
-WORKSPACE_STYLES_JSON='["awtarchy","numbers","icons","circled-numbers","filled-dot","hollow-dot","bullet","tiny-dot","bullseye","fisheye","half-left","half-right","half-bottom","half-top","quarter-circle","three-quarter-circle","filled-diamond","hollow-diamond","center-diamond","filled-square","hollow-square","small-square","filled-triangle","hollow-triangle","star","hollow-star","spark","minimal-bar","custom-symbol"]'
+WORKSPACE_STYLES_JSON='["awtarchy","numbers","icons","filled-dot","phases","filled-diamond","center-diamond","filled-square","small-square","filled-triangle","spark","minimal-bar","custom-symbol"]'
 ```
 
 Add one shared label validator that uses Python 3 for Unicode-code-point/control validation rather than byte-counting Bash tools. It must return failure without modifying state when the value is invalid.
@@ -115,8 +115,10 @@ git commit -m "Add bar icon customization state"
 Assert `BarState.qml` contains the approved style keys and exact representative Unicode symbols:
 
 ```text
-① ⑩ ● ○ • ◦ ◎ ◉ ◐ ◑ ◒ ◓ ◔ ◕ ◆ ◇ ◈ ■ □ ▪ ▲ △ ★ ☆ ✦ ━
+● ◐ ◑ ◒ ◓ ◔ ◕ ○ ◉ ◎ ◆ ◈ ■ ▪ ▲ ✦ ━
 ```
+
+The `phases` preset is one sequential workspace style: workspaces 1–10 map to `◐ ◑ ◒ ◓ ◔ ◕ ○ ● ◉ ◎`. The circle variants used at positions 7–10 are part of that sequence, not separate global presets.
 
 Assert stock launcher fallback remains ``.
 

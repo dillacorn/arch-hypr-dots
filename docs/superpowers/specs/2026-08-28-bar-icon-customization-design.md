@@ -58,32 +58,18 @@ Built-in styles are:
 | `awtarchy` | Awtarchy | current number plus icon mapping |
 | `numbers` | Numbers | `1 2 3 …` |
 | `icons` | Icons | current Awtarchy icons without numbers |
-| `circled-numbers` | Circled Numbers | `① ② ③ … ⑩` |
 | `filled-dot` | Filled Dot | `●` |
-| `hollow-dot` | Hollow Dot | `○` |
-| `bullet` | Bullet | `•` |
-| `tiny-dot` | Tiny Dot | `◦` |
-| `bullseye` | Bullseye | `◎` |
-| `fisheye` | Fisheye | `◉` |
-| `half-left` | Half Left | `◐` |
-| `half-right` | Half Right | `◑` |
-| `half-bottom` | Half Bottom | `◒` |
-| `half-top` | Half Top | `◓` |
-| `quarter-circle` | Quarter Circle | `◔` |
-| `three-quarter-circle` | Three Quarter | `◕` |
+| `phases` | Phases | workspace 1–10 use `◐ ◑ ◒ ◓ ◔ ◕ ○ ● ◉ ◎` |
 | `filled-diamond` | Filled Diamond | `◆` |
-| `hollow-diamond` | Hollow Diamond | `◇` |
 | `center-diamond` | Center Diamond | `◈` |
 | `filled-square` | Filled Square | `■` |
-| `hollow-square` | Hollow Square | `□` |
 | `small-square` | Small Square | `▪` |
 | `filled-triangle` | Filled Triangle | `▲` |
-| `hollow-triangle` | Hollow Triangle | `△` |
-| `star` | Star | `★` |
-| `hollow-star` | Hollow Star | `☆` |
 | `spark` | Spark | `✦` |
 | `minimal-bar` | Minimal Bar | `━` |
 | `custom-symbol` | Custom | one user-supplied label for every workspace |
+
+The `phases` preset is sequential rather than a repeated-symbol style. Workspaces 1 through 10 map exactly to `◐`, `◑`, `◒`, `◓`, `◔`, `◕`, `○`, `●`, `◉`, and `◎` respectively.
 
 The geometric presets use normal Unicode symbols rather than Nerd Font private-use mappings. This makes the built-in styles stable even if Nerd Font icon mappings change. The custom fields remain available for users who explicitly want Nerd Font/private-use glyphs.
 
@@ -124,7 +110,7 @@ The application-launcher label becomes user-configurable.
 The Bar Appearance control provides:
 
 - the current Awtarchy `` glyph as the default and always-available preset;
-- a small curated set of additional launcher/menu glyph presets that are verified against Awtarchy's configured font before merge;
+- curated launcher presets for Awtarchy ``, Menu `☰`, Tux/Linux ``, Arch ``, Diamond `◆`, and Circle `●`;
 - a custom Unicode/Nerd Font text field using the shared 1-to-8-code-point contract;
 - a Reset action that restores the stock Awtarchy launcher glyph.
 
@@ -226,7 +212,7 @@ Resolution order for each workspace is:
 2. selected global workspace style;
 3. stock Awtarchy label as the final fallback.
 
-Global style behavior is defined by the preset table above. `circled-numbers` maps workspace IDs 1 through 10 to `①` through `⑩`. `custom-symbol` uses the valid saved global custom label; otherwise it falls back to the stock Awtarchy label for that workspace.
+Global style behavior is defined by the preset table above. `phases` maps workspace IDs 1 through 10 to `◐ ◑ ◒ ◓ ◔ ◕ ○ ● ◉ ◎`. `custom-symbol` uses the valid saved global custom label; otherwise it falls back to the stock Awtarchy label for that workspace.
 
 ### Horizontal bar
 
@@ -244,7 +230,7 @@ For the stock Awtarchy style, the vertical bar renders number plus icon as a com
 
 The previous separator-to-newline transformation is removed.
 
-Numbers, icons, circled numbers, geometric presets, the global custom symbol, and per-workspace overrides also render on one row. Custom input is not rewritten to introduce line breaks.
+Numbers, icons, the phases sequence, geometric presets, the global custom symbol, and per-workspace overrides also render on one row. Custom input is not rewritten to introduce line breaks.
 
 Custom labels remain bounded by the existing bar control geometry; they are not converted into unintended multi-line content.
 
@@ -298,10 +284,10 @@ Automated coverage verifies at minimum:
 
 - absent appearance state preserves stock horizontal Awtarchy labels and `` launcher glyph;
 - absent appearance state uses the new compact single-row stock Awtarchy label on vertical bars;
-- every built-in workspace preset resolves correctly for workspaces 1 through 10;
-- `circled-numbers` resolves to `①` through `⑩`;
-- the circle family resolves exactly to `●`, `○`, `•`, `◦`, `◎`, `◉`, `◐`, `◑`, `◒`, `◓`, `◔`, and `◕` for the corresponding styles;
-- diamond, square, triangle, star, spark, and minimal-bar presets resolve to their declared symbols;
+- every retained built-in workspace preset resolves correctly for workspaces 1 through 10;
+- `phases` resolves workspaces 1 through 10 exactly to `◐ ◑ ◒ ◓ ◔ ◕ ○ ● ◉ ◎`;
+- removed exploratory workspace styles are rejected by the writer and are absent from the preset catalog;
+- filled-dot, diamond, square, triangle, spark, and minimal-bar presets resolve to their declared symbols;
 - `custom-symbol` uses the global custom label;
 - `custom-symbol` with missing/invalid global label falls back to stock Awtarchy labels;
 - per-workspace override wins over every global style including `custom-symbol`;
@@ -324,19 +310,18 @@ Before merge, test in a real Hyprland/Quickshell session:
 
 1. Confirm a fresh/default horizontal bar looks the same as current Awtarchy.
 2. Confirm a fresh/default vertical bar renders stock workspace number+icon labels inline on one row.
-3. Cycle through every built-in workspace preset on a horizontal bar.
+3. Cycle through every retained built-in workspace preset on a horizontal bar.
 4. Repeat on a vertical bar and confirm every workspace label remains single-row.
-5. Specifically inspect `◐`, `◑`, `◒`, `◓`, `◔`, and `◕` at normal and increased icon/text scale.
-6. Test Circled Numbers through workspace 10.
-7. Test a single global custom workspace symbol.
-8. Set distinct overrides for several workspaces and move at least one workspace to another monitor.
-9. Confirm its override follows the workspace number rather than the monitor.
-10. Set and reset a custom launcher glyph.
-11. Restart Quickshell and confirm persistence.
-12. Log out/in and confirm persistence.
-13. Exercise individual Reset, workspace Reset All, launcher Reset, and Reset Bar Icons.
-14. Confirm existing bar thickness/icon-scale/text-scale/display-scale controls still work before and after identity changes.
-15. Confirm the existing monitor-targeted Reset still affects only its existing geometry/scale scope.
+5. Select Phases and confirm workspaces 1–10 display `◐ ◑ ◒ ◓ ◔ ◕ ○ ● ◉ ◎` in that order.
+6. Test a single global custom workspace symbol.
+7. Set distinct overrides for several workspaces and move at least one workspace to another monitor.
+8. Confirm its override follows the workspace number rather than the monitor.
+9. Test the Awtarchy, Menu, Tux/Linux, Arch, Diamond, and Circle launcher presets plus a custom launcher glyph.
+10. Restart Quickshell and confirm persistence.
+11. Log out/in and confirm persistence.
+12. Exercise individual Reset, workspace Reset All, launcher Reset, and Reset Bar Icons.
+13. Confirm existing bar thickness/icon-scale/text-scale/display-scale controls still work before and after identity changes.
+14. Confirm the existing monitor-targeted Reset still affects only its existing geometry/scale scope.
 
 ## Branch isolation
 
