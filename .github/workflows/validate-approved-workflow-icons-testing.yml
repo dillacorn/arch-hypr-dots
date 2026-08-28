@@ -6,25 +6,77 @@ on:
       - feature/theme-picker-workspace-toggle-fixes
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-      - name: Approved Workflow pack regression
+        with:
+          fetch-depth: 0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck lua5.4
+      - name: Apply exact approved Workflow sequence
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
+          import hashlib
 
-          text = Path("config/quickshell/awtarchy/BarState.qml").read_text(encoding="utf-8")
-          match = re.search(r'key:\s*"workflow".*?symbols:\s*\[([^]]+)\]', text, re.S)
-          if not match:
-              raise SystemExit("Workflow pack is missing")
-          symbols = re.findall(r'"([^"]*)"', match.group(1))
-          expected = ["", "", "", "", "", "", "", "", "", ""]
-          if symbols != expected:
-              raise SystemExit(f"Workflow pack differs from approved sequence: {symbols}")
+          replacements = {
+              "config/quickshell/awtarchy/BarState.qml": [
+                  ('symbols: ["", "", "", "", "", "", "", "", "", ""]',
+                   'symbols: ["", "", "", "", "", "", "", "", "", ""]'),
+              ],
+              "tests/test-workspace-icon-packs.sh": [
+                  ('expected_workflow = ["", "", "", "", "", "", "", "", "", ""]',
+                   'expected_workflow = ["", "", "", "", "", "", "", "", "", ""]'),
+              ],
+              "tests/test-bar-icon-customization.sh": [
+                  ("'' '' '' '' '' '' '' '' '' ''",
+                   "'' '' '' '' '' '' '' '' '' ''"),
+              ],
+          }
+
+          for filename, pairs in replacements.items():
+              path = Path(filename)
+              text = path.read_text(encoding="utf-8")
+              for old, new in pairs:
+                  if old not in text:
+                      raise SystemExit(f"missing expected sequence in {filename}")
+                  text = text.replace(old, new, 1)
+              path.write_text(text, encoding="utf-8")
+
+          bar_state = Path("config/quickshell/awtarchy/BarState.qml")
+          digest = hashlib.sha256(bar_state.read_bytes()).hexdigest()
+          history = Path("local/share/awtarchy/quickshell-managed-history.sha256")
+          history_text = history.read_text(encoding="utf-8")
+          line = f"{digest}\t.config/quickshell/awtarchy/BarState.qml"
+          if line not in history_text:
+              if not history_text.endswith("\n"):
+                  history_text += "\n"
+              history_text += line + "\n"
+              history.write_text(history_text, encoding="utf-8")
           PY
+      - name: Validate approved Workflow pack
+        run: |
+          bash -n tests/test-workspace-icon-packs.sh
+          shellcheck tests/test-workspace-icon-packs.sh
+          bash -n tests/test-bar-icon-customization.sh
+          shellcheck tests/test-bar-icon-customization.sh
+          bash tests/test-workspace-icon-packs.sh
+          bash tests/test-theme-picker-workspace-composition.sh
+          bash tests/test-bar-icon-customization.sh
+          bash tests/test-quickshell-updater-migration.sh
+          git diff --check
+      - name: Commit exact approved Workflow sequence
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            config/quickshell/awtarchy/BarState.qml \
+            local/share/awtarchy/quickshell-managed-history.sha256 \
+            tests/test-workspace-icon-packs.sh \
+            tests/test-bar-icon-customization.sh
+          git commit -m 'Use approved Workflow workspace icons'
+          git push origin HEAD:feature/theme-picker-workspace-toggle-fixes
