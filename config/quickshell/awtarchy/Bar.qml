@@ -76,14 +76,6 @@ PanelWindow {
         ]);
     }
 
-    function workspaceIcon(id) {
-        const icons = {
-            1: "1 󰞷", 2: "2 ", 3: "3 ", 4: "4 ", 5: "5 ",
-            6: "6 ", 7: "7 ", 8: "8 ", 9: "9 ", 10: "10 "
-        };
-        return icons[id] || String(id);
-    }
-
     function appIcon(toplevel) {
         if (!toplevel)
             return Quickshell.iconPath("application-x-executable", true);
@@ -319,7 +311,7 @@ PanelWindow {
             delegate: BarControl {
                 required property var modelData
                 vertical: false
-                label: bar.workspaceIcon(modelData.id)
+                label: BarState.workspaceLabelFor(modelData.id)
                 normalBackground: modelData.urgent ? Theme.urgent : (modelData.active ? Theme.subtleActive : "transparent")
                 foreground: modelData.urgent ? Theme.dark : Theme.foreground
                 tooltip: "Workspace " + modelData.name
@@ -343,7 +335,7 @@ PanelWindow {
                 required property var modelData
                 vertical: true
                 fixedWidth: bar.barSize
-                label: bar.workspaceIcon(modelData.id).replace(" ", "\n")
+                label: BarState.workspaceVerticalLabelFor(modelData.id)
                 normalBackground: modelData.urgent ? Theme.urgent : (modelData.active ? Theme.subtleActive : "transparent")
                 foreground: modelData.urgent ? Theme.dark : Theme.foreground
                 tooltip: "Workspace " + modelData.name
@@ -572,7 +564,7 @@ PanelWindow {
             spacing: 0
 
             BarControl {
-                label: ""
+                label: BarState.launcherIcon()
                 tooltip: "app-launcher"
                 hoverBackground: Theme.strongHover
                 onClicked: Launcher.openForScreen(bar.screen)
@@ -809,7 +801,7 @@ PanelWindow {
             spacing: 0
 
             BarControl {
-                vertical: true; fixedWidth: bar.barSize; label: ""; tooltip: "app-launcher"
+                vertical: true; fixedWidth: bar.barSize; label: BarState.launcherIcon(); tooltip: "app-launcher"
                 hoverBackground: Theme.strongHover
                 onClicked: Launcher.openForScreen(bar.screen)
                 onRightClicked: Launcher.openForScreen(bar.screen)
