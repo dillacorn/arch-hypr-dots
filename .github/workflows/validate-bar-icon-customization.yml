@@ -15,37 +15,62 @@ jobs:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           fetch-depth: 0
-      - name: Install migration dependency
-        run: sudo apt-get update && sudo apt-get install -y lua5.4
-      - name: Bash syntax
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y lua5.4 shellcheck
+      - name: Integrate permanent CI coverage
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/validate-awtarchy.yml')
+          text = path.read_text(encoding='utf-8')
+          if 'test-bar-icon-customization.sh' not in text:
+              replacements = [
+                  (
+                      '          bash -n tests/test-bar-control-actions.sh\n'
+                      '          bash -n tests/test-bar-wheel-input.sh',
+                      '          bash -n tests/test-bar-control-actions.sh\n'
+                      '          bash -n tests/test-bar-icon-customization.sh\n'
+                      '          bash -n tests/test-bar-wheel-input.sh',
+                  ),
+                  (
+                      '            tests/test-bar-control-actions.sh \\\n'
+                      '            tests/test-bar-wheel-input.sh \\',
+                      '            tests/test-bar-control-actions.sh \\\n'
+                      '            tests/test-bar-icon-customization.sh \\\n'
+                      '            tests/test-bar-wheel-input.sh \\',
+                  ),
+                  (
+                      '          bash tests/test-bar-control-actions.sh\n'
+                      '          bash tests/test-bar-wheel-input.sh',
+                      '          bash tests/test-bar-control-actions.sh\n'
+                      '          bash tests/test-bar-icon-customization.sh\n'
+                      '          bash tests/test-bar-wheel-input.sh',
+                  ),
+              ]
+              for old, new in replacements:
+                  if text.count(old) != 1:
+                      raise SystemExit(f'expected one permanent-CI insertion point: {old!r}')
+                  text = text.replace(old, new, 1)
+              path.write_text(text, encoding='utf-8')
+          PY
+          if ! git diff --quiet -- .github/workflows/validate-awtarchy.yml; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add .github/workflows/validate-awtarchy.yml
+            git commit -m 'Validate bar icon customization'
+            git push origin HEAD:feature/bar-icon-customization
+          fi
+      - name: Focused syntax and ShellCheck
         run: |
           bash -n config/hypr/scripts/quickshell_application_state.sh
           bash -n tests/test-bar-icon-customization.sh
-      - name: Bar icon persistence regression
+          shellcheck tests/test-bar-icon-customization.sh
+      - name: Focused regression
         run: bash tests/test-bar-icon-customization.sh
-      - name: Record managed stock hashes
-        run: |
-          history='local/share/awtarchy/quickshell-managed-history.sha256'
-          entries=(
-            $'904f19204ce44a0cc4dee4d0a730c34135cae832c318076fdfb9d2a78e4c21a4\t.config/hypr/scripts/quickshell_application_state.sh'
-            $'46bf0e512d585c506558f68da8760dc3e7d20f335c57c973f22ca3d35e241b3e\t.config/quickshell/awtarchy/BarState.qml'
-            $'dc0925f2c5a59dcf76824365d80b2a15a3e80b7c06069d8ab17109407aaff96d\t.config/quickshell/awtarchy/Bar.qml'
-            $'7299694c95b8e3abe84889b69233656b05bb9cb28c5e5f5d655c7d773971890e\t.config/quickshell/awtarchy/BarSettingsSection.qml'
-            $'b8e8fab6bf5c91776db2bfbe3944961bdb4ad38583bc44e2ff92164cd2230528\t.config/quickshell/awtarchy/BarIconSettings.qml'
-          )
-          changed=0
-          for entry in "${entries[@]}"; do
-            if ! grep -Fqx -- "$entry" "$history"; then
-              printf '%s\n' "$entry" >>"$history"
-              changed=1
-            fi
-          done
-          if (( changed == 1 )); then
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add "$history"
-            git commit -m 'Track bar icon managed hashes'
-            git push origin HEAD:feature/bar-icon-customization
-          fi
+      - name: Quickshell production readiness
+        run: bash tests/test-quickshell-production-readiness.sh
       - name: Quickshell updater migration
         run: bash tests/test-quickshell-updater-migration.sh
+      - name: Branch diff whitespace
+        run: git diff --check origin/main...HEAD
