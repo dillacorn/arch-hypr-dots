@@ -464,6 +464,7 @@ Singleton {
     function openForScreen(targetScreen) {
         if (!targetScreen || !available)
             return;
+        refreshActualAdapterPower();
         FlyoutManager.claim("bluetooth", targetScreen.name);
         flyoutScreen = targetScreen;
         if (!bluetoothWindow.visible)
@@ -526,15 +527,7 @@ Singleton {
 
     Connections {
         target: root.adapter
-        function onStateChanged() {
-            if (!root.adapter)
-                return;
-            if (root.adapter.state === BluetoothAdapterState.Enabled)
-                root.actualAdapterEnabled = 1;
-            else if (root.adapter.state === BluetoothAdapterState.Disabled
-                || root.adapter.state === BluetoothAdapterState.Blocked)
-                root.actualAdapterEnabled = 0;
-        }
+        function onStateChanged() { root.refreshActualAdapterPower(); }
     }
 
     Process {
