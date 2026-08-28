@@ -31,11 +31,11 @@ for command in getshowcpu getshowtemp getshowmemory setshowcpu setshowtemp setsh
     contains "$MANAGER" "$command" \
         "quickshell manager is missing ${command}"
 done
-contains "$MANAGER" 'set_monitor_stat_visibility "$2" show_cpu "$3"' \
+contains "$MANAGER" "set_monitor_stat_visibility \"\$2\" show_cpu \"\$3\"" \
     'CPU visibility is not persisted per monitor'
-contains "$MANAGER" 'set_monitor_stat_visibility "$2" show_temp "$3"' \
+contains "$MANAGER" "set_monitor_stat_visibility \"\$2\" show_temp \"\$3\"" \
     'CPU temperature visibility is not persisted per monitor'
-contains "$MANAGER" 'set_monitor_stat_visibility "$2" show_memory "$3"' \
+contains "$MANAGER" "set_monitor_stat_visibility \"\$2\" show_memory \"\$3\"" \
     'RAM visibility is not persisted per monitor'
 
 contains "$BAR_QML" 'function barModuleVisible(name, module)' \
