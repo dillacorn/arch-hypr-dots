@@ -1,0 +1,30 @@
+name: Validate Approved Workflow Icons Testing
+
+on:
+  push:
+    branches:
+      - feature/theme-picker-workspace-toggle-fixes
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Approved Workflow pack regression
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          text = Path("config/quickshell/awtarchy/BarState.qml").read_text(encoding="utf-8")
+          match = re.search(r'key:\s*"workflow".*?symbols:\s*\[([^]]+)\]', text, re.S)
+          if not match:
+              raise SystemExit("Workflow pack is missing")
+          symbols = re.findall(r'"([^"]*)"', match.group(1))
+          expected = ["", "", "", "", "", "", "", "", "", ""]
+          if symbols != expected:
+              raise SystemExit(f"Workflow pack differs from approved sequence: {symbols}")
+          PY
