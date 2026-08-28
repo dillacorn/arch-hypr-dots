@@ -19,8 +19,8 @@ MAX_ICON_SCALE=200
 SAVE_VERSION=2
 QUICK_SETTINGS_LAYOUT_SAVE_VERSION=1
 QUICK_SETTINGS_SECTIONS_JSON='["brightness","output-volume","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","title-bars"]'
-WORKSPACE_STYLES_JSON='["awtarchy","numbers","icons","phases","dots","diamonds","squares","triangles","minimal","custom-symbol"]'
-WORKSPACE_ICON_STYLES_JSON='["off","awtarchy","phases","dots","diamonds","squares","triangles","minimal","custom-symbol"]'
+WORKSPACE_STYLES_JSON='["awtarchy","numbers","icons","phases","dots","diamonds","custom-symbol"]'
+WORKSPACE_ICON_STYLES_JSON='["off","awtarchy","phases","dots","diamonds","custom-symbol"]'
 TMP_FILE=""
 
 need() {

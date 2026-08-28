@@ -174,7 +174,7 @@ contains "$BAR_STATE" 'return "";' \
     'BarState launcher fallback is not the stock Awtarchy icon'
 
 for style in \
-    awtarchy numbers icons phases dots diamonds squares triangles minimal custom-symbol
+    awtarchy numbers icons phases dots diamonds custom-symbol
 do
     contains "$BAR_STATE" "\"${style}\"" \
         "BarState preset catalog is missing ${style}"
@@ -184,7 +184,8 @@ for removed_style in \
     circled-numbers hollow-dot bullet tiny-dot bullseye fisheye \
     half-left half-right half-bottom half-top quarter-circle three-quarter-circle \
     hollow-diamond hollow-square hollow-triangle star hollow-star \
-    filled-dot filled-diamond center-diamond filled-square small-square filled-triangle spark minimal-bar
+    filled-dot filled-diamond center-diamond filled-square small-square filled-triangle spark minimal-bar \
+    squares triangles minimal
 do
     if grep -Fq "\"${removed_style}\"" "$STATE_SCRIPT"; then
         fail "state writer still accepts removed workspace style ${removed_style}"
@@ -195,11 +196,16 @@ contains "$BAR_STATE" 'readonly property var workspaceLegacyStyleAliases:' \
     'BarState does not retain aliases for previously saved single-symbol styles'
 contains "$BAR_STATE" '"center-diamond": "diamonds"' \
     'legacy center-diamond state does not migrate to the Diamonds pack'
-contains "$BAR_STATE" '"spark": "minimal"' \
+contains "$BAR_STATE" '"spark": "dots"' \
     'legacy Spark state does not migrate to a supported pack'
+contains "$BAR_STATE" '"squares": "diamonds"' \
+    'testing-branch Squares state does not migrate to a supported pack'
+contains "$BAR_STATE" '"triangles": "diamonds"' \
+    'testing-branch Triangles state does not migrate to a supported pack'
+contains "$BAR_STATE" '"minimal": "dots"' \
+    'testing-branch Minimal state does not migrate to a supported pack'
 
-for symbol in '◐' '◑' '◒' '◓' '◔' '◕' '○' '●' '◉' '◎' \
-    '◇' '◆' '◈' '□' '■' '▣' '△' '▲' '▶' '▼' '─' '━' '═'
+for symbol in '◐' '◑' '◒' '◓' '◔' '◕' '○' '●' '◉' '◎' '◆'
 do
     contains "$BAR_STATE" "$symbol" \
         "BarState workspace packs are missing ${symbol}"

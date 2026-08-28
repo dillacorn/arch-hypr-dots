@@ -92,37 +92,19 @@ Singleton {
             key: "phases",
             label: "Phases",
             symbols: ["◐", "◑", "◒", "◓", "◔", "◕", "○", "●", "◉", "◎"],
-            glyphSize: 20
+            glyphSize: 22
         },
         {
             key: "dots",
             label: "Dots",
-            symbols: ["○", "•", "●", "◉", "◎", "⊙", "◌", "◍", "●", "◉"],
+            symbols: ["●", "●", "●", "●", "●", "●", "●", "●", "●", "●"],
             glyphSize: 20
         },
         {
             key: "diamonds",
             label: "Diamonds",
-            symbols: ["◇", "◆", "◈", "◇", "◆", "◈", "◇", "◆", "◈", "◆"],
+            symbols: ["◆", "◆", "◆", "◆", "◆", "◆", "◆", "◆", "◆", "◆"],
             glyphSize: 19
-        },
-        {
-            key: "squares",
-            label: "Squares",
-            symbols: ["□", "▪", "■", "▣", "▫", "□", "▪", "■", "▣", "■"],
-            glyphSize: 19
-        },
-        {
-            key: "triangles",
-            label: "Triangles",
-            symbols: ["△", "▲", "▷", "▶", "▽", "▼", "◁", "◀", "△", "▲"],
-            glyphSize: 19
-        },
-        {
-            key: "minimal",
-            label: "Minimal",
-            symbols: ["─", "━", "═", "│", "┃", "║", "┄", "┅", "┈", "┉"],
-            glyphSize: 18
         },
         { key: "custom-symbol", label: "Custom", symbols: [], glyphSize: 18 }
     ];
@@ -131,11 +113,8 @@ Singleton {
         { key: "numbers", label: "Numbers", sample: "1" },
         { key: "icons", label: "Icons", sample: "󰞷" },
         { key: "phases", label: "Phases", sample: "◐◑" },
-        { key: "dots", label: "Dots", sample: "○●" },
-        { key: "diamonds", label: "Diamonds", sample: "◇◆" },
-        { key: "squares", label: "Squares", sample: "□■" },
-        { key: "triangles", label: "Triangles", sample: "△▲" },
-        { key: "minimal", label: "Minimal", sample: "─━" },
+        { key: "dots", label: "Dots", sample: "●" },
+        { key: "diamonds", label: "Diamonds", sample: "◆" },
         { key: "custom-symbol", label: "Custom", sample: "…" }
     ]
     readonly property var launcherIconPresets: [
@@ -150,11 +129,14 @@ Singleton {
         "filled-dot": "dots",
         "filled-diamond": "diamonds",
         "center-diamond": "diamonds",
-        "filled-square": "squares",
-        "small-square": "squares",
-        "filled-triangle": "triangles",
-        "spark": "minimal",
-        "minimal-bar": "minimal"
+        "filled-square": "diamonds",
+        "small-square": "diamonds",
+        "filled-triangle": "diamonds",
+        "spark": "dots",
+        "minimal-bar": "dots",
+        "squares": "diamonds",
+        "triangles": "diamonds",
+        "minimal": "dots"
     })
 
 

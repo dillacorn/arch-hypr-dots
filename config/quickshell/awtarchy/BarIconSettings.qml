@@ -11,6 +11,11 @@ ColumnLayout {
     property var identityCommandQueue: []
     property string identityError: ""
     property string message: ""
+    property string workspaceCopyFeedback: ""
+    property string launcherCopyFeedback: ""
+    property string copiedWorkspaceKey: ""
+    property string copiedWorkspacePack: ""
+    property string copiedLauncherValue: ""
     property string customWorkspaceText: BarState.workspaceCustomLabel()
     property string customLauncherText: BarState.launcherIcon()
 
@@ -31,9 +36,39 @@ ColumnLayout {
 
     function copyText(text) {
         if (!text || text.length === 0)
-            return;
+            return false;
         Quickshell.execDetached(["wl-copy", text]);
-        message = "Copied · " + text;
+        return true;
+    }
+
+    function copyWorkspaceSymbol(text, key) {
+        if (!copyText(text))
+            return;
+        copiedWorkspaceKey = key;
+        copiedWorkspacePack = "";
+        workspaceCopyFeedback = "Copied · " + text;
+        workspaceCopyFeedbackTimer.restart();
+    }
+
+    function copyWorkspacePack(pack) {
+        if (!pack || !Array.isArray(pack.symbols) || pack.symbols.length === 0)
+            return;
+        const text = pack.symbols.join(" ");
+        if (!copyText(text))
+            return;
+        copiedWorkspaceKey = "";
+        copiedWorkspacePack = String(pack.key || "");
+        workspaceCopyFeedback = "Copied all · " + pack.symbols.length + " symbols";
+        workspaceCopyFeedbackTimer.restart();
+    }
+
+    function copyLauncherIcon(value) {
+        const text = String(value || "");
+        if (!copyText(text))
+            return;
+        copiedLauncherValue = text;
+        launcherCopyFeedback = "Copied · " + text;
+        launcherCopyFeedbackTimer.restart();
     }
 
     function enqueueIdentity(args, statusMessage) {
@@ -112,6 +147,27 @@ ColumnLayout {
         enqueueIdentity(["reset-bar-icons"], "Bar icons reset to Awtarchy");
     }
 
+    Timer {
+        id: workspaceCopyFeedbackTimer
+        interval: 1500
+        repeat: false
+        onTriggered: {
+            root.workspaceCopyFeedback = "";
+            root.copiedWorkspaceKey = "";
+            root.copiedWorkspacePack = "";
+        }
+    }
+
+    Timer {
+        id: launcherCopyFeedbackTimer
+        interval: 1500
+        repeat: false
+        onTriggered: {
+            root.launcherCopyFeedback = "";
+            root.copiedLauncherValue = "";
+        }
+    }
+
     Process {
         id: identityWriter
         stderr: StdioCollector {
@@ -179,6 +235,14 @@ ColumnLayout {
             font.bold: true
         }
 
+        Text {
+            visible: root.workspaceCopyFeedback.length > 0
+            text: root.workspaceCopyFeedback
+            color: Theme.focus
+            font.family: Theme.fontFamily
+            font.pixelSize: 9
+        }
+
         Item { Layout.fillWidth: true }
 
         Text {
@@ -238,18 +302,24 @@ ColumnLayout {
                             model: packRow.modelData.symbols
 
                             delegate: Rectangle {
+                                id: symbolCell
+                                required property int index
                                 required property var modelData
+                                readonly property string copyKey: packRow.modelData.key + ":" + index
 
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 24
-                                color: symbolMouse.containsMouse ? Theme.subtleHover : "transparent"
+                                color: root.copiedWorkspaceKey === symbolCell.copyKey
+                                    ? Theme.subtleActive
+                                    : (symbolMouse.containsMouse ? Theme.subtleHover : "transparent")
                                 border.width: 1
-                                border.color: Theme.muted
+                                border.color: root.copiedWorkspaceKey === symbolCell.copyKey
+                                    ? Theme.focus : Theme.muted
                                 radius: 0
 
                                 Text {
                                     anchors.centerIn: parent
-                                    text: String(modelData)
+                                    text: String(symbolCell.modelData)
                                     color: Theme.foreground
                                     font.family: Theme.fontFamily
                                     font.pixelSize: Math.max(11, packRow.modelData.glyphSize - 2)
@@ -260,7 +330,8 @@ ColumnLayout {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: root.copyText(String(modelData))
+                                    onClicked: root.copyWorkspaceSymbol(
+                                        String(symbolCell.modelData), symbolCell.copyKey)
                                 }
                             }
                         }
@@ -268,10 +339,12 @@ ColumnLayout {
 
                     SettingsButton {
                         visible: packRow.modelData.symbols.length > 0
-                        label: ""
-                        textSize: 11
+                        label: root.copiedWorkspacePack === packRow.modelData.key
+                            ? "✓ Copied all" : " Copy all"
+                        textSize: 9
                         horizontalPadding: 8
-                        onClicked: root.copyText(packRow.modelData.symbols.join(" "))
+                        active: root.copiedWorkspacePack === packRow.modelData.key
+                        onClicked: root.copyWorkspacePack(packRow.modelData)
                     }
                 }
             }
@@ -330,6 +403,33 @@ ColumnLayout {
             label: "Reset Workspace Icons"
             textSize: 9
             onClicked: root.resetWorkspaceIcons()
+        }
+    }
+
+    RowLayout {
+        Layout.fillWidth: true
+        Layout.preferredHeight: 28
+        spacing: 5
+
+        Text {
+            text: "Find more icons"
+            color: Theme.muted
+            font.family: Theme.fontFamily
+            font.pixelSize: 9
+        }
+
+        Item { Layout.fillWidth: true }
+
+        SettingsButton {
+            label: "Nerd Fonts ↗"
+            textSize: 9
+            onClicked: Qt.openUrlExternally("https://www.nerdfonts.com/cheat-sheet")
+        }
+
+        SettingsButton {
+            label: "Unicode ↗"
+            textSize: 9
+            onClicked: Qt.openUrlExternally("https://symbl.cc/en/unicode/")
         }
     }
 
@@ -441,6 +541,14 @@ ColumnLayout {
             font.bold: true
         }
 
+        Text {
+            visible: root.launcherCopyFeedback.length > 0
+            text: root.launcherCopyFeedback
+            color: Theme.focus
+            font.family: Theme.fontFamily
+            font.pixelSize: 9
+        }
+
         Item { Layout.fillWidth: true }
 
         Text {
@@ -453,22 +561,36 @@ ColumnLayout {
 
     GridLayout {
         Layout.fillWidth: true
-        columns: 5
+        columns: 3
         columnSpacing: 4
         rowSpacing: 3
 
         Repeater {
             model: BarState.launcherIconPresets
 
-            delegate: SettingsButton {
+            delegate: RowLayout {
+                id: launcherPreset
                 required property var modelData
 
                 Layout.fillWidth: true
-                label: modelData.value + "  " + modelData.label
-                textSize: 9
-                horizontalPadding: 8
-                active: BarState.launcherIcon() === modelData.value
-                onClicked: root.setLauncherIcon(modelData.value)
+                spacing: 3
+
+                SettingsButton {
+                    Layout.fillWidth: true
+                    label: launcherPreset.modelData.value + "  " + launcherPreset.modelData.label
+                    textSize: 9
+                    horizontalPadding: 8
+                    active: BarState.launcherIcon() === launcherPreset.modelData.value
+                    onClicked: root.setLauncherIcon(launcherPreset.modelData.value)
+                }
+
+                SettingsButton {
+                    label: " Copy"
+                    textSize: 8
+                    horizontalPadding: 6
+                    active: root.copiedLauncherValue === launcherPreset.modelData.value
+                    onClicked: root.copyLauncherIcon(launcherPreset.modelData.value)
+                }
             }
         }
     }
