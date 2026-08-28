@@ -19,7 +19,7 @@ known Awtarchy failure
   -> Awtarchy Report Bot GitHub issue
 ```
 
-Noninteractive failure paths queue the report but never invent consent or spawn a terminal. The report remains local until a user explicitly submits or discards it. Once Quickshell becomes healthy again, Awtarchy may notify the user that sanitized reports are waiting. If Quickshell remains unavailable, opening the interactive `awtarchy` maintenance menu also surfaces any valid pending reports.
+Noninteractive failure paths queue the report but never invent consent or spawn a terminal. The report remains local until a user explicitly submits or discards it. Once Quickshell becomes healthy again, Awtarchy may notify the user that sanitized reports are waiting and directs the user to run `awtarchy report`. That command opens the existing Send / Review / Don't send flow, so the report can be inspected before any submission. Repeated startup paths are serialized and an unchanged pending-report state is notified only once. If Quickshell remains unavailable, opening the interactive `awtarchy` maintenance menu also surfaces any valid pending reports.
 
 ## Security invariants
 
