@@ -1,0 +1,32 @@
+name: Validate Bar Customization Testing
+
+on:
+  push:
+    branches: [feature/filter-quickshell-task-icons]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+      - name: Syntax and lint
+        run: |
+          bash -n config/hypr/scripts/quickshell.sh
+          bash -n tests/test-bar-task-icons.sh
+          bash -n tests/test-bar-module-visibility.sh
+          bash -n tests/test-display-scale-quicksettings.sh
+          shellcheck tests/test-bar-task-icons.sh tests/test-bar-module-visibility.sh
+          git diff --check origin/main...HEAD
+      - name: Focused bar tests
+        run: |
+          bash tests/test-bar-task-icons.sh
+          bash tests/test-bar-module-visibility.sh
+      - name: Existing display-scale regression
+        run: bash tests/test-display-scale-quicksettings.sh
