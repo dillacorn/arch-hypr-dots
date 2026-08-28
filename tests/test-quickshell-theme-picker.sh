@@ -4,8 +4,10 @@ IFS=$'\n\t'
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PICKER="${ROOT}/config/quickshell/awtarchy/ThemePicker.qml"
+CATALOG="${ROOT}/config/hypr/scripts/quickshell_theme_catalog.sh"
 QUICK_SETTINGS="${ROOT}/config/quickshell/awtarchy/QuickSettings.qml"
 THEME_SELECT="${ROOT}/config/hypr/scripts/theme_select.sh"
+MANAGED_HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
@@ -15,6 +17,14 @@ fail() {
 require_picker() {
     local needle="$1" message="$2"
     grep -Fq -- "$needle" "$PICKER" || fail "$message"
+}
+
+require_managed_hash() {
+    local file="$1" rel="$2" hash entry
+    hash="$(sha256sum "$file" | awk '{print $1}')"
+    entry="${hash}"$'\t'"${rel}"
+    grep -Fxq -- "$entry" "$MANAGED_HISTORY" \
+        || fail "managed history missing ${rel}: ${hash}"
 }
 
 require_picker 'quickshell_theme_catalog.sh' 'ThemePicker does not use the theme catalog helper'
@@ -74,5 +84,8 @@ fi
 if ! grep -Fq 'ipc call themes toggle' "$THEME_SELECT"; then
     fail 'theme_select.sh no longer uses the themes toggle IPC entrypoint'
 fi
+
+require_managed_hash "$PICKER" '.config/quickshell/awtarchy/ThemePicker.qml'
+require_managed_hash "$CATALOG" '.config/hypr/scripts/quickshell_theme_catalog.sh'
 
 printf '%s\n' 'Quickshell visual theme picker contract test passed.'
