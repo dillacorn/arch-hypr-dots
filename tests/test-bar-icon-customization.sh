@@ -80,8 +80,8 @@ expect_rejected_unchanged() {
         || fail "$label modified persistent state before rejection"
 }
 
-run_state set-workspace-style half-left
-jq -e '.bar_appearance.workspace_style == "half-left"' "$STATE_FILE" >/dev/null \
+run_state set-workspace-style phases
+jq -e '.bar_appearance.workspace_style == "phases"' "$STATE_FILE" >/dev/null \
     || fail 'workspace style was not persisted'
 assert_unrelated_state
 
@@ -90,17 +90,17 @@ jq -e '.bar_appearance.workspace_custom_label == "◐"' "$STATE_FILE" >/dev/null
     || fail 'global custom workspace label was not persisted'
 
 run_state set-workspace-override 1 '1◐'
-run_state set-workspace-override 10 '⑩'
+run_state set-workspace-override 10 '10◎'
 jq -e '
     .bar_appearance.workspace_overrides["1"] == "1◐"
-    and .bar_appearance.workspace_overrides["10"] == "⑩"
+    and .bar_appearance.workspace_overrides["10"] == "10◎"
 ' "$STATE_FILE" >/dev/null \
     || fail 'workspace overrides were not persisted by workspace number'
 
 run_state clear-workspace-override 1
 jq -e '
     (.bar_appearance.workspace_overrides["1"] | not)
-    and .bar_appearance.workspace_overrides["10"] == "⑩"
+    and .bar_appearance.workspace_overrides["10"] == "10◎"
 ' "$STATE_FILE" >/dev/null \
     || fail 'individual workspace override reset changed the wrong workspace'
 
@@ -108,8 +108,8 @@ run_state clear-workspace-overrides
 jq -e '(.bar_appearance.workspace_overrides | length) == 0' "$STATE_FILE" >/dev/null \
     || fail 'workspace override reset-all did not clear overrides'
 
-run_state set-launcher-icon '★'
-jq -e '.bar_appearance.launcher_icon == "★"' "$STATE_FILE" >/dev/null \
+run_state set-launcher-icon ''
+jq -e '.bar_appearance.launcher_icon == ""' "$STATE_FILE" >/dev/null \
     || fail 'launcher icon was not persisted'
 
 run_state reset-workspace-icons
@@ -117,7 +117,7 @@ jq -e '
     (.bar_appearance.workspace_style | not)
     and (.bar_appearance.workspace_custom_label | not)
     and (.bar_appearance.workspace_overrides | not)
-    and .bar_appearance.launcher_icon == "★"
+    and .bar_appearance.launcher_icon == ""
 ' "$STATE_FILE" >/dev/null \
     || fail 'workspace reset did not preserve launcher identity'
 
@@ -125,10 +125,10 @@ run_state reset-launcher-icon
 jq -e '(.bar_appearance.launcher_icon | not)' "$STATE_FILE" >/dev/null \
     || fail 'launcher reset did not restore stock state'
 
-run_state set-workspace-style three-quarter-circle
+run_state set-workspace-style phases
 run_state set-workspace-custom-label '◕'
-run_state set-workspace-override 4 '4◕'
-run_state set-launcher-icon '◆'
+run_state set-workspace-override 4 '4◓'
+run_state set-launcher-icon ''
 run_state reset-bar-icons
 jq -e '(.bar_appearance | not) or (.bar_appearance | length == 0)' "$STATE_FILE" >/dev/null \
     || fail 'Reset Bar Icons did not clear all identity state'
@@ -137,6 +137,14 @@ assert_unrelated_state
 expect_rejected_unchanged 'workspace 0' set-workspace-override 0 '●'
 expect_rejected_unchanged 'workspace 11' set-workspace-override 11 '●'
 expect_rejected_unchanged 'unknown workspace style' set-workspace-style not-a-style
+for removed_style in \
+    circled-numbers hollow-dot bullet tiny-dot bullseye fisheye \
+    half-left half-right half-bottom half-top quarter-circle three-quarter-circle \
+    hollow-diamond hollow-square hollow-triangle star hollow-star
+do
+    expect_rejected_unchanged "removed workspace style ${removed_style}" \
+        set-workspace-style "$removed_style"
+done
 expect_rejected_unchanged 'blank custom label' set-workspace-custom-label '   '
 expect_rejected_unchanged 'newline custom label' set-workspace-custom-label $'bad\nline'
 expect_rejected_unchanged 'C0 control custom label' set-workspace-custom-label $'bad\x01'
@@ -166,22 +174,52 @@ contains "$BAR_STATE" 'return "";' \
     'BarState launcher fallback is not the stock Awtarchy icon'
 
 for style in \
-    awtarchy numbers icons circled-numbers filled-dot hollow-dot bullet tiny-dot \
-    bullseye fisheye half-left half-right half-bottom half-top quarter-circle \
-    three-quarter-circle filled-diamond hollow-diamond center-diamond filled-square \
-    hollow-square small-square filled-triangle hollow-triangle star hollow-star spark \
-    minimal-bar custom-symbol
+    awtarchy numbers icons filled-dot phases filled-diamond center-diamond filled-square \
+    small-square filled-triangle spark minimal-bar custom-symbol
 do
     contains "$BAR_STATE" "\"${style}\"" \
         "BarState preset catalog is missing ${style}"
 done
 
-for symbol in '①' '⑩' '●' '○' '•' '◦' '◎' '◉' '◐' '◑' '◒' '◓' '◔' '◕' \
-    '◆' '◇' '◈' '■' '□' '▪' '▲' '△' '★' '☆' '✦' '━'
+for removed_style in \
+    circled-numbers hollow-dot bullet tiny-dot bullseye fisheye \
+    half-left half-right half-bottom half-top quarter-circle three-quarter-circle \
+    hollow-diamond hollow-square hollow-triangle star hollow-star
+do
+    if grep -Fq "\"${removed_style}\"" "$BAR_STATE"; then
+        fail "BarState still exposes removed workspace style ${removed_style}"
+    fi
+    if grep -Fq "\"${removed_style}\"" "$STATE_SCRIPT"; then
+        fail "state writer still accepts removed workspace style ${removed_style}"
+    fi
+done
+
+contains "$BAR_STATE" 'readonly property var workspacePhaseSymbols:' \
+    'BarState does not own the sequential phase-circle mapping'
+for phase_entry in \
+    '"1": "◐"' '"2": "◑"' '"3": "◒"' '"4": "◓"' '"5": "◔"' \
+    '"6": "◕"' '"7": "○"' '"8": "●"' '"9": "◉"' '"10": "◎"'
+do
+    contains "$BAR_STATE" "$phase_entry" \
+        "phase-circle sequence is missing ${phase_entry}"
+done
+contains "$BAR_STATE" 'if (style === "phases")' \
+    'workspace resolver does not handle the sequential phase-circle preset'
+
+for symbol in '●' '◐' '◑' '◒' '◓' '◔' '◕' '○' '◉' '◎' \
+    '◆' '◈' '■' '▪' '▲' '✦' '━'
 do
     contains "$BAR_STATE" "$symbol" \
-        "BarState preset catalog is missing ${symbol}"
+        "BarState refined preset catalog is missing ${symbol}"
 done
+
+contains "$BAR_STATE" '{ label: "Tux", value: "" }' \
+    'launcher presets are missing the Tux/Linux glyph'
+contains "$BAR_STATE" '{ label: "Arch", value: "" }' \
+    'launcher presets are missing the Arch glyph'
+if grep -Fq '{ label: "Grid", value: "⊞" }' "$BAR_STATE"; then
+    fail 'launcher presets still expose Grid'
+fi
 
 if grep -Fq 'function workspaceIcon(id)' "$BAR_QML"; then
     fail 'Bar still owns the old hardcoded workspace icon map'
@@ -243,4 +281,4 @@ if grep -Fq 'reset-bar-icons' <<<"$reset_geometry_block"; then
     fail 'existing monitor-targeted Reset was expanded to destructive global icon reset'
 fi
 
-printf '%s\n' 'PASS: bar icon identity persistence, resolver, rendering, and scroll-safe control contracts are validated.'
+printf '%s\n' 'PASS: bar icon identity persistence, refined presets, resolver, rendering, and scroll-safe control contracts are validated.'
