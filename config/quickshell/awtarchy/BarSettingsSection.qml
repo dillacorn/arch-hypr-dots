@@ -107,12 +107,13 @@ Item {
     }
 
     function rawModuleVisible(name, module) {
+        const state = BarState.monitorState(name) || ({});
         if (module === "cpu")
-            return BarState.cpuUsageVisibleFor(name);
+            return state.show_cpu !== false;
         if (module === "temperature")
-            return BarState.cpuTempVisibleFor(name);
+            return state.show_temp !== false;
         if (module === "memory")
-            return BarState.memoryUsageVisibleFor(name);
+            return state.show_memory !== false;
         return true;
     }
 
