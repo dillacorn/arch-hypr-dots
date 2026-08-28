@@ -15,3 +15,69 @@ jobs:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
         max-changes-for-label: '2' # Flag PRs with 2 or fewer changes
         label-message: 'This PR has been flagged for review due to minimal changes. Please ensure your contribution adds meaningful value.'
+
+  publish-v3-4-0:
+    if: >-
+      github.event.action == 'opened' &&
+      github.event.pull_request.head.ref == 'release/v3.4.0-publish-helper' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.title == 'Publish v3.4.0 release bridge'
+    permissions:
+      contents: write
+      pull-requests: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: release/v3.4.0-publish-helper
+          fetch-depth: 0
+      - name: Publish and verify v3.4.0
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+
+          tag='v3.4.0'
+          title='Awtarchy v3.4.0 Quickshell'
+          target='75ac399cb2d9142714c4184d41b75fc47062a8d1'
+          notes='RELEASE-v3.4.0.md'
+
+          main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          test "$main_sha" = "$target"
+
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              printf 'Release %s already exists; refusing to recreate it.\n' "$tag" >&2
+              exit 1
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+              printf 'Tag %s already exists; refusing to move or recreate it.\n' "$tag" >&2
+              exit 1
+          fi
+
+          gh release create "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$target" \
+              --title "$title" \
+              --notes-file "$notes" \
+              --latest
+
+          gh release view "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json tagName,name,targetCommitish,isDraft,isPrerelease,body,url \
+              > /tmp/v3.4.0-release.json
+
+          test "$(jq -r '.tagName' /tmp/v3.4.0-release.json)" = "$tag"
+          test "$(jq -r '.name' /tmp/v3.4.0-release.json)" = "$title"
+          test "$(jq -r '.targetCommitish' /tmp/v3.4.0-release.json)" = "$target"
+          test "$(jq -r '.isDraft' /tmp/v3.4.0-release.json)" = 'false'
+          test "$(jq -r '.isPrerelease' /tmp/v3.4.0-release.json)" = 'false'
+
+          jq -r '.body' /tmp/v3.4.0-release.json > /tmp/v3.4.0-published-body.md
+          cmp -s "$notes" /tmp/v3.4.0-published-body.md
+
+          tag_sha="$(git ls-remote origin "refs/tags/${tag}" | awk '{print $1}')"
+          test "$tag_sha" = "$target"
+
+          printf 'Verified %s at %s with title: %s\n' "$tag" "$tag_sha" "$title"
+          jq -r '.url' /tmp/v3.4.0-release.json
