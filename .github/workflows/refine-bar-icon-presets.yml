@@ -1,0 +1,104 @@
+name: Refine Bar Icon Presets
+
+on:
+  push:
+    branches: [feature/bar-icon-customization]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refine-presets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y lua5.4 shellcheck
+
+      - name: Add refined preset regression
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('tests/test-bar-icon-customization.sh')
+          text = path.read_text(encoding='utf-8')
+
+          text = text.replace(
+              'run_state set-workspace-style half-left\n'
+              'jq -e \'.bar_appearance.workspace_style == "half-left"\' "$STATE_FILE" >/dev/null \\\n'
+              '    || fail \'workspace style was not persisted\'',
+              'run_state set-workspace-style phases\n'
+              'jq -e \'.bar_appearance.workspace_style == "phases"\' "$STATE_FILE" >/dev/null \\\n'
+              '    || fail \'workspace style was not persisted\'',
+          )
+
+          text = text.replace(
+              'run_state set-workspace-style three-quarter-circle\n',
+              'run_state set-workspace-style phases\n',
+          )
+
+          marker = "expect_rejected_unchanged 'unknown workspace style' set-workspace-style not-a-style\n"
+          insertion = marker + """for removed_style in \\
+    circled-numbers hollow-dot bullet tiny-dot bullseye fisheye \\
+    half-left half-right half-bottom half-top quarter-circle three-quarter-circle \\
+    hollow-diamond hollow-square hollow-triangle star hollow-star\ndo\n    expect_rejected_unchanged \"removed workspace style ${removed_style}\" \\
+        set-workspace-style \"$removed_style\"\ndone\n"""
+          if marker not in text:
+              raise SystemExit('missing removed-style insertion point')
+          text = text.replace(marker, insertion, 1)
+
+          old_styles = """for style in \\
+    awtarchy numbers icons circled-numbers filled-dot hollow-dot bullet tiny-dot \\
+    bullseye fisheye half-left half-right half-bottom half-top quarter-circle \\
+    three-quarter-circle filled-diamond hollow-diamond center-diamond filled-square \\
+    hollow-square small-square filled-triangle hollow-triangle star hollow-star spark \\
+    minimal-bar custom-symbol\ndo\n    contains \"$BAR_STATE\" \"\\\"${style}\\\"\" \\
+        \"BarState preset catalog is missing ${style}\"\ndone\n\nfor symbol in '①' '⑩' '●' '○' '•' '◦' '◎' '◉' '◐' '◑' '◒' '◓' '◔' '◕' \\
+    '◆' '◇' '◈' '■' '□' '▪' '▲' '△' '★' '☆' '✦' '━'\ndo\n    contains \"$BAR_STATE\" \"$symbol\" \\
+        \"BarState preset catalog is missing ${symbol}\"\ndone\n"""
+
+          new_styles = """for style in \\
+    awtarchy numbers icons filled-dot phases filled-diamond center-diamond filled-square \\
+    small-square filled-triangle spark minimal-bar custom-symbol\ndo\n    contains \"$BAR_STATE\" \"\\\"${style}\\\"\" \\
+        \"BarState preset catalog is missing ${style}\"\ndone\n\nfor removed_style in \\
+    circled-numbers hollow-dot bullet tiny-dot bullseye fisheye \\
+    half-left half-right half-bottom half-top quarter-circle three-quarter-circle \\
+    hollow-diamond hollow-square hollow-triangle star hollow-star\ndo\n    if grep -Fq \"\\\"${removed_style}\\\"\" \"$BAR_STATE\"; then\n        fail \"BarState still exposes removed workspace style ${removed_style}\"\n    fi\n    if grep -Fq \"\\\"${removed_style}\\\"\" \"$STATE_SCRIPT\"; then\n        fail \"state writer still accepts removed workspace style ${removed_style}\"\n    fi\ndone\n\ncontains \"$BAR_STATE\" 'readonly property var workspacePhaseSymbols:' \\
+    'BarState does not own the sequential phase-circle mapping'\nfor phase_entry in \\
+    '\"1\": \"◐\"' '\"2\": \"◑\"' '\"3\": \"◒\"' '\"4\": \"◓\"' '\"5\": \"◔\"' \\
+    '\"6\": \"◕\"' '\"7\": \"○\"' '\"8\": \"●\"' '\"9\": \"◉\"' '\"10\": \"◎\"'\ndo\n    contains \"$BAR_STATE\" \"$phase_entry\" \\
+        \"phase-circle sequence is missing ${phase_entry}\"\ndone\ncontains \"$BAR_STATE\" 'if (style === \"phases\")' \\
+    'workspace resolver does not handle the sequential phase-circle preset'\n\nfor symbol in '●' '◐' '◑' '◒' '◓' '◔' '◕' '○' '◉' '◎' \\
+    '◆' '◈' '■' '▪' '▲' '✦' '━'\ndo\n    contains \"$BAR_STATE\" \"$symbol\" \\
+        \"BarState refined preset catalog is missing ${symbol}\"\ndone\n\ncontains \"$BAR_STATE\" '{ label: \"Tux\", value: \"\" }' \\
+    'launcher presets are missing the Tux/Linux glyph'\ncontains \"$BAR_STATE\" '{ label: \"Arch\", value: \"\" }' \\
+    'launcher presets are missing the Arch glyph'\nif grep -Fq '{ label: \"Grid\", value: \"⊞\" }' \"$BAR_STATE\"; then\n    fail 'launcher presets still expose Grid'\nfi\n"""
+
+          if old_styles not in text:
+              if new_styles not in text:
+                  raise SystemExit('missing preset-catalog replacement block')
+          else:
+              text = text.replace(old_styles, new_styles, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          if ! git diff --quiet -- tests/test-bar-icon-customization.sh; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add tests/test-bar-icon-customization.sh
+            git commit -m 'Test refined bar icon presets'
+            git push origin HEAD:feature/bar-icon-customization
+          fi
+
+      - name: Syntax and ShellCheck
+        run: |
+          bash -n tests/test-bar-icon-customization.sh
+          shellcheck tests/test-bar-icon-customization.sh
+
+      - name: Refined preset regression
+        run: bash tests/test-bar-icon-customization.sh
