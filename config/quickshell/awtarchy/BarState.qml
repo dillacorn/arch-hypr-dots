@@ -80,45 +80,17 @@ Singleton {
         "9": "",
         "10": ""
     })
-    readonly property var circledWorkspaceNumbers: ({
-        "1": "①",
-        "2": "②",
-        "3": "③",
-        "4": "④",
-        "5": "⑤",
-        "6": "⑥",
-        "7": "⑦",
-        "8": "⑧",
-        "9": "⑨",
-        "10": "⑩"
-    })
     readonly property var workspaceStylePresets: [
         { key: "awtarchy", label: "Awtarchy", sample: "1󰞷" },
         { key: "numbers", label: "Numbers", sample: "1" },
         { key: "icons", label: "Icons", sample: "󰞷" },
-        { key: "circled-numbers", label: "Circled Numbers", sample: "①" },
         { key: "filled-dot", label: "Filled Dot", sample: "●" },
-        { key: "hollow-dot", label: "Hollow Dot", sample: "○" },
-        { key: "bullet", label: "Bullet", sample: "•" },
-        { key: "tiny-dot", label: "Tiny Dot", sample: "◦" },
-        { key: "bullseye", label: "Bullseye", sample: "◎" },
-        { key: "fisheye", label: "Fisheye", sample: "◉" },
-        { key: "half-left", label: "Half Left", sample: "◐" },
-        { key: "half-right", label: "Half Right", sample: "◑" },
-        { key: "half-bottom", label: "Half Bottom", sample: "◒" },
-        { key: "half-top", label: "Half Top", sample: "◓" },
-        { key: "quarter-circle", label: "Quarter Circle", sample: "◔" },
-        { key: "three-quarter-circle", label: "Three Quarter", sample: "◕" },
+        { key: "phases", label: "Phases", sample: "◐◑" },
         { key: "filled-diamond", label: "Filled Diamond", sample: "◆" },
-        { key: "hollow-diamond", label: "Hollow Diamond", sample: "◇" },
         { key: "center-diamond", label: "Center Diamond", sample: "◈" },
         { key: "filled-square", label: "Filled Square", sample: "■" },
-        { key: "hollow-square", label: "Hollow Square", sample: "□" },
         { key: "small-square", label: "Small Square", sample: "▪" },
         { key: "filled-triangle", label: "Filled Triangle", sample: "▲" },
-        { key: "hollow-triangle", label: "Hollow Triangle", sample: "△" },
-        { key: "star", label: "Star", sample: "★" },
-        { key: "hollow-star", label: "Hollow Star", sample: "☆" },
         { key: "spark", label: "Spark", sample: "✦" },
         { key: "minimal-bar", label: "Minimal Bar", sample: "━" },
         { key: "custom-symbol", label: "Custom", sample: "…" }
@@ -126,36 +98,34 @@ Singleton {
     readonly property var launcherIconPresets: [
         { label: "Awtarchy", value: "" },
         { label: "Menu", value: "☰" },
-        { label: "Grid", value: "⊞" },
+        { label: "Tux", value: "" },
+        { label: "Arch", value: "" },
         { label: "Diamond", value: "◆" },
         { label: "Circle", value: "●" }
     ]
     readonly property var workspaceStyleSymbols: ({
         "filled-dot": "●",
-        "hollow-dot": "○",
-        "bullet": "•",
-        "tiny-dot": "◦",
-        "bullseye": "◎",
-        "fisheye": "◉",
-        "half-left": "◐",
-        "half-right": "◑",
-        "half-bottom": "◒",
-        "half-top": "◓",
-        "quarter-circle": "◔",
-        "three-quarter-circle": "◕",
         "filled-diamond": "◆",
-        "hollow-diamond": "◇",
         "center-diamond": "◈",
         "filled-square": "■",
-        "hollow-square": "□",
         "small-square": "▪",
         "filled-triangle": "▲",
-        "hollow-triangle": "△",
-        "star": "★",
-        "hollow-star": "☆",
         "spark": "✦",
         "minimal-bar": "━"
     })
+    readonly property var workspacePhaseSymbols: ({
+        "1": "◐",
+        "2": "◑",
+        "3": "◒",
+        "4": "◓",
+        "5": "◔",
+        "6": "◕",
+        "7": "○",
+        "8": "●",
+        "9": "◉",
+        "10": "◎"
+    })
+
 
     property int revision: 0
     property int idleRevision: 0
@@ -460,8 +430,8 @@ Singleton {
             const icon = stockWorkspaceIconFor(value);
             return icon.length > 0 ? icon : String(value);
         }
-        if (style === "circled-numbers")
-            return String(circledWorkspaceNumbers[String(value)] || value);
+        if (style === "phases")
+            return String(workspacePhaseSymbols[String(value)] || "○");
         if (style === "custom-symbol") {
             const custom = workspaceCustomLabel();
             return custom.length > 0 ? custom : stockWorkspaceLabelFor(value, vertical);

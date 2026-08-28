@@ -19,7 +19,7 @@ MAX_ICON_SCALE=200
 SAVE_VERSION=2
 QUICK_SETTINGS_LAYOUT_SAVE_VERSION=1
 QUICK_SETTINGS_SECTIONS_JSON='["brightness","output-volume","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","title-bars"]'
-WORKSPACE_STYLES_JSON='["awtarchy","numbers","icons","circled-numbers","filled-dot","hollow-dot","bullet","tiny-dot","bullseye","fisheye","half-left","half-right","half-bottom","half-top","quarter-circle","three-quarter-circle","filled-diamond","hollow-diamond","center-diamond","filled-square","hollow-square","small-square","filled-triangle","hollow-triangle","star","hollow-star","spark","minimal-bar","custom-symbol"]'
+WORKSPACE_STYLES_JSON='["awtarchy","numbers","icons","filled-dot","phases","filled-diamond","center-diamond","filled-square","small-square","filled-triangle","spark","minimal-bar","custom-symbol"]'
 TMP_FILE=""
 
 need() {
