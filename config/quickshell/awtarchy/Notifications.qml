@@ -36,6 +36,7 @@ Singleton {
     property string popupPositionDraft: "automatic"
     property string popupPreviewPosition: ""
     property real anchorAlongEdge: -1
+    property bool edgeCentered: false
     property string settingsMessage: ""
     property var savedView: ({
         width: BarState.defaultNotificationWidth,
@@ -114,7 +115,7 @@ Singleton {
     }
 
     function placementForScreen(targetScreen) {
-        if (!targetScreen || !BarState.enabledFor(targetScreen.name))
+        if (!targetScreen || !FlyoutManager.barVisibleOnMonitor(targetScreen.name))
             return "center";
         return BarState.positionFor(targetScreen.name);
     }
@@ -151,6 +152,8 @@ Singleton {
     function applyWindowSize(width, height) {
         panelWidthOverride = clampWidth(width);
         panelHeightOverride = clampHeight(height);
+        if (edgeCentered && activeScreen)
+            anchorAlongEdge = centeredAnchorForScreen(activeScreen);
         if (centerWindow.visible && activeMonitorName.length > 0) {
             Quickshell.execDetached([
                 positionScript, "notifications", activeMonitorName, placement, "resize",
@@ -222,6 +225,16 @@ Singleton {
             return -1;
         const edgePoint = item.mapToItem(null, item.width, item.height);
         return placement === "top" || placement === "bottom" ? edgePoint.x : edgePoint.y;
+    }
+
+    function centeredAnchorForScreen(targetScreen) {
+        if (!targetScreen || placement === "center")
+            return -1;
+        if (placement === "top" || placement === "bottom")
+            return Math.round((targetScreen.width + configuredPanelWidth) / 2);
+        if (placement === "left" || placement === "right")
+            return Math.round((targetScreen.height + configuredPanelHeight) / 2);
+        return -1;
     }
 
     function synchronousKey(notification) {
@@ -602,11 +615,13 @@ Singleton {
         if (!centerWindow.visible)
             centerWindow.screen = targetScreen;
         placement = placementForScreen(targetScreen);
-        anchorAlongEdge = anchorCoordinate(anchorItem);
         settingsOpen = false;
         settingsPanel.resetCopySelection();
         settingsMessage = "";
         loadSavedView(targetScreen);
+        edgeCentered = !anchorItem && placement !== "center";
+        anchorAlongEdge = edgeCentered
+            ? centeredAnchorForScreen(targetScreen) : anchorCoordinate(anchorItem);
         prepareCenterOpen(targetScreen);
     }
 
@@ -620,6 +635,7 @@ Singleton {
             discardDraft();
         centerWindow.visible = false;
         panelPresented = false;
+        edgeCentered = false;
         FlyoutManager.release("notifications");
         settingsOpen = false;
         settingsPanel.resetCopySelection();

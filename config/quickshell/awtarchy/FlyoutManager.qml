@@ -74,6 +74,25 @@ QtObject {
             ? String(Hyprland.focusedMonitor.name) : "";
     }
 
+    function workspaceFullscreenForMonitor(name) {
+        return Hyprland.workspaces.values.some(workspace =>
+            workspace.monitor && workspace.monitor.name === name
+                && workspace.active && workspace.hasFullscreen);
+    }
+
+    function barVisibleOnMonitor(name) {
+        const monitor = String(name || "");
+        if (monitor.length === 0)
+            return false;
+
+        const matches = barWindows.filter(window =>
+            window && String(window.monitorName || "") === monitor);
+        if (matches.length > 0)
+            return matches.some(window => Boolean(window.visible));
+
+        return BarState.enabledFor(monitor) && !workspaceFullscreenForMonitor(monitor);
+    }
+
     function armBar(monitorName) {
         const monitor = String(monitorName || "");
         if (monitor.length === 0)

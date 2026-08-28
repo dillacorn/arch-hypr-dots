@@ -295,7 +295,7 @@ Singleton {
     }
 
     function placementForScreen(targetScreen) {
-        if (!targetScreen || !BarState.enabledFor(targetScreen.name))
+        if (!targetScreen || !FlyoutManager.barVisibleOnMonitor(targetScreen.name))
             return "center";
         return BarState.positionFor(targetScreen.name);
     }
