@@ -35,9 +35,6 @@ jobs:
               p.write_text(text.replace(old, new, 1))
               return True
 
-          # Shared authority: effective runtime bar visibility. Prefer the real
-          # per-monitor Bar window state, with the same state/fullscreen logic as
-          # Bar.qml as a startup fallback before Variants are fully bound.
           replace_once(
               "config/quickshell/awtarchy/FlyoutManager.qml",
               '''    function focusedMonitorName() {
@@ -70,24 +67,16 @@ jobs:
               }
           ''')
 
-          # Five requested flyouts use effective visibility rather than only the
-          # persisted enabled flag. Do not touch Quick Settings or Battery here.
-          replace_once(
+          for path in (
               "config/quickshell/awtarchy/ClipboardMenu.qml",
-              '        if (!targetScreen || !BarState.enabledFor(targetScreen.name))\n',
-              '        if (!targetScreen || !FlyoutManager.barVisibleOnMonitor(targetScreen.name))\n')
-          replace_once(
               "config/quickshell/awtarchy/Notifications.qml",
-              '        if (!targetScreen || !BarState.enabledFor(targetScreen.name))\n',
-              '        if (!targetScreen || !FlyoutManager.barVisibleOnMonitor(targetScreen.name))\n')
-          replace_once(
               "config/quickshell/awtarchy/NetworkMenu.qml",
-              '        if (!targetScreen || !BarState.enabledFor(targetScreen.name))\n',
-              '        if (!targetScreen || !FlyoutManager.barVisibleOnMonitor(targetScreen.name))\n')
-          replace_once(
               "config/quickshell/awtarchy/BluetoothMenu.qml",
-              '        if (!targetScreen || !BarState.enabledFor(targetScreen.name))\n',
-              '        if (!targetScreen || !FlyoutManager.barVisibleOnMonitor(targetScreen.name))\n')
+          ):
+              replace_once(
+                  path,
+                  '        if (!targetScreen || !BarState.enabledFor(targetScreen.name))\n',
+                  '        if (!targetScreen || !FlyoutManager.barVisibleOnMonitor(targetScreen.name))\n')
 
           replace_once(
               "config/quickshell/awtarchy/Launcher.qml",
@@ -120,9 +109,6 @@ jobs:
               }
           ''')
 
-          # Keyboard-opened Notifications remain attached to a visible bar but
-          # center along that edge. Bar clicks retain the exact clicked-item
-          # anchor. If no bar is effectively visible, placement is "center".
           replace_once(
               "config/quickshell/awtarchy/Notifications.qml",
               '    property real anchorAlongEdge: -1\n',
@@ -199,8 +185,6 @@ jobs:
                   FlyoutManager.release("notifications");
           ''')
 
-          # Notification wrapper and exact key ownership. SUPER+N is present in
-          # default and noalt only; mouse/vm submaps are intentionally untouched.
           toggle = Path("config/hypr/scripts/quickshell_notifications_toggle.sh")
           if not toggle.exists():
               toggle.write_text('''#!/usr/bin/env bash
@@ -239,29 +223,6 @@ jobs:
               -- Notification dismiss in "noalt"
               for _, key in ipairs({
           ''')
-
-          # Make the focused regression permanent in the normal validation job.
-          workflow = " .github/workflows/validate-awtarchy.yml".strip()
-          replace_once(
-              workflow,
-              '          bash -n config/hypr/scripts/quickshell_notification_layout_demo.sh\n',
-              '          bash -n config/hypr/scripts/quickshell_notification_layout_demo.sh\n          bash -n config/hypr/scripts/quickshell_notifications_toggle.sh\n')
-          replace_once(
-              workflow,
-              '          bash -n tests/test-flyout-edge-layout.sh\n',
-              '          bash -n tests/test-flyout-edge-layout.sh\n          bash -n tests/test-flyout-runtime-centering.sh\n')
-          replace_once(
-              workflow,
-              '            config/hypr/scripts/quickshell_notification_layout_demo.sh \\\n',
-              '            config/hypr/scripts/quickshell_notification_layout_demo.sh \\\n            config/hypr/scripts/quickshell_notifications_toggle.sh \\\n')
-          replace_once(
-              workflow,
-              '            tests/test-flyout-edge-layout.sh \\\n',
-              '            tests/test-flyout-edge-layout.sh \\\n            tests/test-flyout-runtime-centering.sh \\\n')
-          replace_once(
-              workflow,
-              '          bash tests/test-flyout-edge-layout.sh\n',
-              '          bash tests/test-flyout-edge-layout.sh\n          bash tests/test-flyout-runtime-centering.sh\n')
           PY
 
           git diff --check
@@ -271,7 +232,6 @@ jobs:
             git config user.name 'dillacorn'
             git config user.email '28743863+dillacorn@users.noreply.github.com'
             git add \
-              .github/workflows/validate-awtarchy.yml \
               config/hypr/hyprland.lua \
               config/hypr/scripts/quickshell_notifications_toggle.sh \
               config/quickshell/awtarchy/FlyoutManager.qml \
