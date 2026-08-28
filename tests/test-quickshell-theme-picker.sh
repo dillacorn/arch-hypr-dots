@@ -8,6 +8,7 @@ CATALOG="${ROOT}/config/hypr/scripts/quickshell_theme_catalog.sh"
 QUICK_SETTINGS="${ROOT}/config/quickshell/awtarchy/QuickSettings.qml"
 THEME_SELECT="${ROOT}/config/hypr/scripts/theme_select.sh"
 MANAGED_HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
+managed_history_missing=0
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
@@ -23,8 +24,10 @@ require_managed_hash() {
     local file="$1" rel="$2" hash entry
     hash="$(sha256sum "$file" | awk '{print $1}')"
     entry="${hash}"$'\t'"${rel}"
-    grep -Fxq -- "$entry" "$MANAGED_HISTORY" \
-        || fail "managed history missing ${rel}: ${hash}"
+    if ! grep -Fxq -- "$entry" "$MANAGED_HISTORY"; then
+        printf 'FAIL: managed history missing %s: %s\n' "$rel" "$hash" >&2
+        managed_history_missing=1
+    fi
 }
 
 require_picker 'quickshell_theme_catalog.sh' 'ThemePicker does not use the theme catalog helper'
@@ -87,5 +90,6 @@ fi
 
 require_managed_hash "$PICKER" '.config/quickshell/awtarchy/ThemePicker.qml'
 require_managed_hash "$CATALOG" '.config/hypr/scripts/quickshell_theme_catalog.sh'
+(( managed_history_missing == 0 )) || exit 1
 
 printf '%s\n' 'Quickshell visual theme picker contract test passed.'
