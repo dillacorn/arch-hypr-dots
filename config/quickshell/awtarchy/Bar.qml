@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
@@ -105,13 +106,33 @@ PanelWindow {
         return Quickshell.iconPath("application-x-executable", true);
     }
 
+    function toplevelIdentity(toplevel) {
+        const ipc = toplevel ? (toplevel.lastIpcObject || {}) : {};
+        return {
+            appId: String(toplevel && toplevel.wayland ? (toplevel.wayland.appId || "") : "").toLowerCase(),
+            cls: String(ipc.class || "").toLowerCase(),
+            initialClass: String(ipc.initialClass || "").toLowerCase(),
+            title: String(toplevel && toplevel.title ? toplevel.title : (ipc.title || "")).trim()
+        };
+    }
+
+    function awtarchyOwnedToplevel(toplevel) {
+        const identity = toplevelIdentity(toplevel);
+        const ids = [identity.appId, identity.cls, identity.initialClass];
+        const quickshellOwned = ids.some(id => id.indexOf("quickshell") >= 0);
+        return quickshellOwned && identity.title.indexOf("Awtarchy ") === 0;
+    }
+
     function toplevelVisibleHere(toplevel) {
         if (!toplevel || !toplevel.monitor || toplevel.monitor.name !== monitorName)
             return false;
-        const ipc = toplevel.lastIpcObject || {};
-        const cls = String(ipc.class || ipc.initialClass || "").toLowerCase();
+        if (awtarchyOwnedToplevel(toplevel))
+            return false;
+
+        const identity = toplevelIdentity(toplevel);
+        const ids = [identity.appId, identity.cls, identity.initialClass];
         const ignored = ["tofi", "rofi", "hyprlock", "swaylock", "swww", "mpvpaper", "pulsemixer", "org.waytrogen.waytrogen", "org.pulseaudio.pavucontrol", "wiremix", "quickshell", "awtarchy-polkit-agent"];
-        return ignored.indexOf(cls) < 0;
+        return !ids.some(id => id.length > 0 && ignored.indexOf(id) >= 0);
     }
 
     function scratchpadCount() {
@@ -365,6 +386,11 @@ PanelWindow {
                     anchors.centerIn: parent
                     implicitSize: bar.smallIconSize
                     source: bar.appIcon(task.modelData)
+                    layer.enabled: true
+                    layer.effect: MultiEffect {
+                        colorization: 1.0
+                        colorizationColor: task.modelData.urgent ? Theme.dark : Theme.foreground
+                    }
                 }
 
                 BarTooltip {
@@ -417,7 +443,16 @@ PanelWindow {
                 height: bar.verticalItemSize
                 color: modelData.urgent ? Theme.urgent : (modelData.activated ? Theme.subtleActive : (taskMouse.containsMouse ? Theme.subtleHover : "transparent"))
 
-                IconImage { anchors.centerIn: parent; implicitSize: bar.smallIconSize; source: bar.appIcon(task.modelData) }
+                IconImage {
+                    anchors.centerIn: parent
+                    implicitSize: bar.smallIconSize
+                    source: bar.appIcon(task.modelData)
+                    layer.enabled: true
+                    layer.effect: MultiEffect {
+                        colorization: 1.0
+                        colorizationColor: task.modelData.urgent ? Theme.dark : Theme.foreground
+                    }
+                }
 
                 BarTooltip {
                     anchorItem: task
