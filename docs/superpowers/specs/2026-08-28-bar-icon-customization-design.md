@@ -8,7 +8,7 @@ Approved design for customizable Awtarchy bar workspace labels and application-l
 
 Allow users to customize how workspaces and the application-launcher entry appear on the Awtarchy bar without editing `Bar.qml` or other source files manually.
 
-The existing Awtarchy workspace labels and launcher glyph remain the default after upgrade.
+The existing Awtarchy workspace labels and launcher glyph remain the default after upgrade, except that vertical bars intentionally stop stacking the workspace number above its icon. Stock number-plus-icon labels render on one row in vertical mode, for example `1󰞷` rather than `1` above `󰞷`.
 
 ## Scope
 
@@ -19,8 +19,9 @@ This branch owns:
 - optional per-workspace label overrides for workspaces 1 through 10;
 - application-launcher glyph customization;
 - persistence and reset behavior for those choices;
-- Quick Settings controls for the feature;
-- horizontal and vertical bar rendering of the configured labels.
+- Quick Settings / Bar Appearance controls for the feature;
+- horizontal and vertical bar rendering of the configured labels;
+- removal of the existing vertical number/icon stacking behavior.
 
 This branch does not own:
 
@@ -40,24 +41,53 @@ This branch does not own:
 - horizontal workspaces render the returned label directly;
 - vertical workspaces currently transform the narrow no-break-space separator in the stock number-plus-icon label into a newline.
 
+`config/quickshell/awtarchy/BarSettingsSection.qml` already owns the Bar Appearance controls surfaced through Quick Settings, including thickness, icon/text scale, display scale, theme access, and reset behavior. Workspace/launcher identity controls belong in this component rather than creating a second competing Bar Appearance surface.
+
 Persistent Quickshell state already lives in `$XDG_CACHE_HOME/awtarchy/quickshell-state.json` or the `~/.cache` fallback. `BarState.qml` is the existing reader/state owner and `config/hypr/scripts/quickshell_application_state.sh` is the existing serialized writer.
 
 This feature extends those existing owners rather than introducing another state file or competing source of truth.
 
 ## Workspace presentation model
 
-The user chooses one global workspace style. Supported styles are:
+The user chooses one global workspace style. The initial/default style is `awtarchy`.
 
-- `awtarchy`: current Awtarchy number plus icon presentation;
-- `numbers`: workspace numbers only;
-- `icons`: current Awtarchy icons without workspace numbers;
-- `dots`: `●` for every workspace;
-- `diamonds`: `◆` for every workspace;
-- `custom-symbol`: one user-supplied label shown for every workspace that does not have an individual override.
+Built-in styles are:
 
-The initial/default style is `awtarchy`.
+| State key | Quick Settings label | Workspace appearance |
+| --- | --- | --- |
+| `awtarchy` | Awtarchy | current number plus icon mapping |
+| `numbers` | Numbers | `1 2 3 …` |
+| `icons` | Icons | current Awtarchy icons without numbers |
+| `circled-numbers` | Circled Numbers | `① ② ③ … ⑩` |
+| `filled-dot` | Filled Dot | `●` |
+| `hollow-dot` | Hollow Dot | `○` |
+| `bullet` | Bullet | `•` |
+| `tiny-dot` | Tiny Dot | `◦` |
+| `bullseye` | Bullseye | `◎` |
+| `fisheye` | Fisheye | `◉` |
+| `half-left` | Half Left | `◐` |
+| `half-right` | Half Right | `◑` |
+| `half-bottom` | Half Bottom | `◒` |
+| `half-top` | Half Top | `◓` |
+| `quarter-circle` | Quarter Circle | `◔` |
+| `three-quarter-circle` | Three Quarter | `◕` |
+| `filled-diamond` | Filled Diamond | `◆` |
+| `hollow-diamond` | Hollow Diamond | `◇` |
+| `center-diamond` | Center Diamond | `◈` |
+| `filled-square` | Filled Square | `■` |
+| `hollow-square` | Hollow Square | `□` |
+| `small-square` | Small Square | `▪` |
+| `filled-triangle` | Filled Triangle | `▲` |
+| `hollow-triangle` | Hollow Triangle | `△` |
+| `star` | Star | `★` |
+| `hollow-star` | Hollow Star | `☆` |
+| `spark` | Spark | `✦` |
+| `minimal-bar` | Minimal Bar | `━` |
+| `custom-symbol` | Custom | one user-supplied label for every workspace |
 
-The `●` and `◆` presets use normal Unicode geometric symbols rather than private-use glyphs so they are not dependent on a particular Nerd Font codepoint mapping.
+The geometric presets use normal Unicode symbols rather than Nerd Font private-use mappings. This makes the built-in styles stable even if Nerd Font icon mappings change. The custom fields remain available for users who explicitly want Nerd Font/private-use glyphs.
+
+The preset selector is visual. Each preset exposes its representative glyph or sample directly rather than requiring the user to infer the style from a text-only dropdown.
 
 ## Global custom workspace symbol
 
@@ -91,7 +121,7 @@ The writer must enforce this contract as well as the QML input surface so invali
 
 The application-launcher label becomes user-configurable.
 
-The Quick Settings control provides:
+The Bar Appearance control provides:
 
 - the current Awtarchy `` glyph as the default and always-available preset;
 - a small curated set of additional launcher/menu glyph presets that are verified against Awtarchy's configured font before merge;
@@ -122,24 +152,25 @@ Conceptual schema:
 
 Implementation requirements:
 
-- missing `bar_appearance` state behaves exactly like current Awtarchy;
+- missing `bar_appearance` state behaves like stock Awtarchy apart from the intentional vertical inline-label change;
 - malformed or wrong-type fields fall back independently rather than invalidating the entire Quickshell state;
 - valid unrelated state must survive all appearance writes;
 - state writes continue to use the existing lock-and-temporary-file pattern in `quickshell_application_state.sh`;
 - `BarState.qml` remains the single QML reader/state owner;
-- no direct ad-hoc JSON writes are added to `Bar.qml` or Quick Settings QML.
+- no direct ad-hoc JSON writes are added to `Bar.qml`, `BarSettingsSection.qml`, or `QuickSettings.qml`.
 
 ## State API
 
-`BarState.qml` should expose read helpers whose consumers do not need to understand the JSON schema directly.
+`BarState.qml` exposes normalized read helpers whose consumers do not need to understand the JSON schema directly.
 
-Expected responsibilities include equivalents of:
+Required responsibilities include equivalents of:
 
-- selected workspace style;
-- global custom workspace label;
-- workspace override lookup;
-- resolved launcher icon;
-- resolved workspace label or enough primitive state for one shared resolver.
+- `workspaceStyle()`;
+- `workspaceCustomLabel()`;
+- `workspaceOverrideFor(id)`;
+- `workspaceLabelFor(id)`;
+- `launcherIcon()`;
+- helper data for visual preset presentation where keeping the preset catalog in the state owner avoids duplication.
 
 The workspace label resolver has one source of truth used by horizontal and vertical bars.
 
@@ -155,18 +186,21 @@ Required operations are:
 - clear all workspace overrides;
 - set launcher icon;
 - reset launcher icon;
-- reset all bar appearance state to stock defaults.
+- reset workspace appearance;
+- reset all bar identity appearance state to stock defaults.
 
 All workspace IDs accepted by the writer are constrained to 1 through 10.
 
-## Quick Settings UX
+## Bar Appearance UX
 
-Quick Settings receives a `Bar Appearance` section or clearly named subsection within the existing bar-related settings surface.
+The existing `BarSettingsSection.qml` remains the Bar Appearance surface.
 
-The workspace controls contain:
+Its existing monitor-targeted geometry controls remain monitor-targeted. Workspace identity and launcher identity are global preferences, because workspace numbers move between monitors and the application launcher should not unexpectedly change identity when focus moves to another display.
 
-- a global style selector for Awtarchy, Numbers, Icons, Dots, Diamonds, and Custom Symbol;
-- a global custom-symbol field associated with the Custom Symbol style;
+The new workspace controls contain:
+
+- a visual preset grid containing every built-in workspace style;
+- a global custom-symbol field associated with the Custom style;
 - a workspace override editor for workspaces 1 through 10;
 - an individual Reset action for each workspace override;
 - a workspace Reset All action that clears the global custom label, clears all workspace overrides, and restores the global workspace style to `awtarchy`.
@@ -178,13 +212,13 @@ The launcher controls contain:
 - a custom glyph/text entry;
 - a Reset action that restores ``.
 
-The section also exposes one `Reset Bar Appearance` action that restores all workspace and launcher appearance state to stock Awtarchy defaults while preserving unrelated Quickshell settings.
+The existing Bar Appearance Reset must not silently gain destructive global identity behavior if it is operating on a monitor target. Global identity reset is exposed separately and clearly as `Reset Workspace Icons`, `Reset Launcher Icon`, or a combined `Reset Bar Icons` action.
 
-Appearance changes update the active Quickshell session immediately after persistence, following the existing state-refresh mechanism. The user does not need to restart Quickshell manually.
+Appearance changes update the active Quickshell session immediately after persistence, following the existing `BarState.refresh()` state-refresh mechanism. The user does not need to restart Quickshell manually.
 
 ## Rendering behavior
 
-The current `workspaceIcon(id)` behavior is replaced by a style-aware workspace-label resolver.
+The current hardcoded workspace label path becomes a style-aware workspace-label resolver.
 
 Resolution order for each workspace is:
 
@@ -192,18 +226,25 @@ Resolution order for each workspace is:
 2. selected global workspace style;
 3. stock Awtarchy label as the final fallback.
 
-Global style behavior is:
+Global style behavior is defined by the preset table above. `circled-numbers` maps workspace IDs 1 through 10 to `①` through `⑩`. `custom-symbol` uses the valid saved global custom label; otherwise it falls back to the stock Awtarchy label for that workspace.
 
-- `awtarchy`: stock number plus icon;
-- `numbers`: workspace number only;
-- `icons`: stock icon only;
-- `dots`: `●`;
-- `diamonds`: `◆`;
-- `custom-symbol`: valid saved global custom label, otherwise the stock Awtarchy label for that workspace.
+### Horizontal bar
 
-Horizontal and vertical bar paths consume the same resolved logical label.
+Stock Awtarchy labels preserve the current readable number/icon spacing used by the horizontal bar. All other presets and custom labels render as their resolved label without transformation.
 
-Vertical rendering must not blindly replace separator characters in arbitrary user input. Only stock Awtarchy number-plus-icon labels use the existing stacked number/icon presentation. Numbers, icons, dots, diamonds, the global custom symbol, and per-workspace overrides render as their resolved label without automatic separator rewriting.
+### Vertical bar
+
+Workspace labels never stack number and icon onto separate lines.
+
+For the stock Awtarchy style, the vertical bar renders number plus icon as a compact single-row label with no forced separator, for example:
+
+- workspace 1: `1󰞷`;
+- workspace 2: `2`;
+- workspace 3: `3`.
+
+The previous separator-to-newline transformation is removed.
+
+Numbers, icons, circled numbers, geometric presets, the global custom symbol, and per-workspace overrides also render on one row. Custom input is not rewritten to introduce line breaks.
 
 Custom labels remain bounded by the existing bar control geometry; they are not converted into unintended multi-line content.
 
@@ -213,7 +254,7 @@ The launcher button continues to open the existing launcher and preserves its cu
 
 ## Interaction with themes
 
-Bar appearance customization is independent user state and must not be overwritten by later theme changes.
+Bar identity customization is independent user state and must not be overwritten by later theme changes.
 
 A future theme may change color, foreground/background, terminal palette, and other theme-owned visual properties, but it must not replace:
 
@@ -222,7 +263,7 @@ A future theme may change color, foreground/background, terminal palette, and ot
 - workspace overrides;
 - launcher icon.
 
-This allows combinations such as a Catppuccin-style color theme with numbers-only workspaces, one custom symbol on every workspace, or a custom launcher glyph.
+This allows combinations such as a Catppuccin-style color theme with numbers-only workspaces, `◐` workspaces, or a custom launcher glyph.
 
 ## Reset semantics
 
@@ -231,9 +272,10 @@ Reset behavior is explicit:
 - workspace row Reset: remove only that workspace override;
 - workspace Reset All: remove the global custom workspace label, remove every workspace override, and set workspace style to `awtarchy`;
 - launcher Reset: restore the stock `` launcher glyph;
-- Reset Bar Appearance: perform the workspace Reset All behavior and launcher Reset together.
+- Reset Bar Icons: perform workspace Reset All and launcher Reset together;
+- existing monitor-targeted bar geometry Reset: continue resetting only the geometry/scale values it already owns.
 
-Reset does not change bar position, bar size, icon scale, flyout layout, theme colors, or any unrelated setting.
+Reset does not change wallpaper, theme colors, flyout layout, bar position, or unrelated state unless the existing geometry Reset is explicitly invoked for those existing bar geometry values.
 
 ## Error handling
 
@@ -242,7 +284,7 @@ Invalid persistent appearance data fails soft to stock values.
 The writer rejects:
 
 - workspace IDs outside 1 through 10;
-- workspace style names outside the six supported values;
+- workspace style names outside the supported preset state keys;
 - empty or whitespace-only custom labels;
 - custom labels longer than 8 Unicode code points;
 - embedded line breaks;
@@ -254,39 +296,47 @@ A failed write must not damage the existing state file. Existing temporary-file 
 
 Automated coverage verifies at minimum:
 
-- absent appearance state preserves current Awtarchy labels and `` launcher glyph;
-- each built-in workspace style resolves correctly for workspaces 1 through 10;
-- `dots` resolves to `●` and `diamonds` resolves to `◆`;
+- absent appearance state preserves stock horizontal Awtarchy labels and `` launcher glyph;
+- absent appearance state uses the new compact single-row stock Awtarchy label on vertical bars;
+- every built-in workspace preset resolves correctly for workspaces 1 through 10;
+- `circled-numbers` resolves to `①` through `⑩`;
+- the circle family resolves exactly to `●`, `○`, `•`, `◦`, `◎`, `◉`, `◐`, `◑`, `◒`, `◓`, `◔`, and `◕` for the corresponding styles;
+- diamond, square, triangle, star, spark, and minimal-bar presets resolve to their declared symbols;
 - `custom-symbol` uses the global custom label;
-- `custom-symbol` with missing/invalid global label falls back to the stock Awtarchy labels;
+- `custom-symbol` with missing/invalid global label falls back to stock Awtarchy labels;
 - per-workspace override wins over every global style including `custom-symbol`;
 - clearing an override returns to the global style;
 - launcher customization and reset work;
 - individual workspace reset works;
 - workspace Reset All restores stock workspace presentation and clears global/per-workspace custom values;
-- Reset Bar Appearance restores both workspace and launcher defaults without touching unrelated state;
+- Reset Bar Icons restores both workspace and launcher identity defaults without touching unrelated state;
 - appearance writes preserve unrelated Quickshell state;
 - malformed appearance JSON fields fail soft;
 - writer rejects invalid workspace IDs, styles, whitespace-only values, control characters, line breaks, and labels above 8 Unicode code points;
 - horizontal and vertical rendering use the shared resolved state rather than separate hardcoded mappings;
-- only stock Awtarchy number-plus-icon labels receive the vertical stacked transformation;
-- existing bar position, bar sizing, icon scaling, workspace focus, urgent/active state, click behavior, wheel behavior, and launcher-open behavior remain intact.
+- vertical workspace labels contain no newline-producing stock transformation;
+- stock vertical number-plus-icon output is inline, e.g. `1󰞷`, not stacked;
+- existing bar position, bar sizing, icon scaling, text scaling, display scaling, workspace focus, urgent/active state, click behavior, wheel behavior, launcher-open behavior, and theme access remain intact.
 
 ## Live validation
 
 Before merge, test in a real Hyprland/Quickshell session:
 
-1. Confirm a fresh/default state looks the same as current Awtarchy.
-2. Cycle through Awtarchy, Numbers, Icons, Dots, Diamonds, and Custom Symbol on a horizontal bar.
-3. Repeat on a vertical bar.
-4. Test a single global custom workspace symbol.
-5. Set distinct overrides for several workspaces and move at least one workspace to another monitor.
-6. Confirm its override follows the workspace number rather than the monitor.
-7. Set and reset a custom launcher glyph.
-8. Restart Quickshell and confirm persistence.
-9. Log out/in and confirm persistence.
-10. Exercise individual Reset, workspace Reset All, launcher Reset, and Reset Bar Appearance.
-11. Confirm existing bar-size/icon-scale controls still work before and after appearance changes.
+1. Confirm a fresh/default horizontal bar looks the same as current Awtarchy.
+2. Confirm a fresh/default vertical bar renders stock workspace number+icon labels inline on one row.
+3. Cycle through every built-in workspace preset on a horizontal bar.
+4. Repeat on a vertical bar and confirm every workspace label remains single-row.
+5. Specifically inspect `◐`, `◑`, `◒`, `◓`, `◔`, and `◕` at normal and increased icon/text scale.
+6. Test Circled Numbers through workspace 10.
+7. Test a single global custom workspace symbol.
+8. Set distinct overrides for several workspaces and move at least one workspace to another monitor.
+9. Confirm its override follows the workspace number rather than the monitor.
+10. Set and reset a custom launcher glyph.
+11. Restart Quickshell and confirm persistence.
+12. Log out/in and confirm persistence.
+13. Exercise individual Reset, workspace Reset All, launcher Reset, and Reset Bar Icons.
+14. Confirm existing bar thickness/icon-scale/text-scale/display-scale controls still work before and after identity changes.
+15. Confirm the existing monitor-targeted Reset still affects only its existing geometry/scale scope.
 
 ## Branch isolation
 
