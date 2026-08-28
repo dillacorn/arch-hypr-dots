@@ -9,6 +9,7 @@ STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
 CACHE_HOME="${XDG_CACHE_HOME:-${HOME}/.cache}"
 CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
 REPORT_DIR="${STATE_HOME}/awtarchy/reports"
+NOTIFY_STATE_FILE="${REPORT_DIR}/.notification-state"
 COMMAND_VERSION_FILE="${STATE_HOME}/awtarchy/command-version"
 CONFIG_VERSION_FILE="${STATE_HOME}/awtarchy/config-version"
 QUICKSHELL_LOG="${CACHE_HOME}/awtarchy/quickshell.log"
@@ -193,6 +194,14 @@ managed_report_path() {
     report_basename_allowed "$base" || return 2
     [[ "$path" == "$REPORT_DIR/$base" ]] || return 2
     [[ -f "$path" && ! -L "$path" && -O "$path" ]] || return 2
+}
+
+clear_notification_state() {
+    if [[ ! -e "$NOTIFY_STATE_FILE" && ! -L "$NOTIFY_STATE_FILE" ]]; then
+        return 0
+    fi
+    [[ -f "$NOTIFY_STATE_FILE" && ! -L "$NOTIFY_STATE_FILE" && -O "$NOTIFY_STATE_FILE" ]] || return 0
+    rm -f -- "$NOTIFY_STATE_FILE"
 }
 
 validate_pending_payload() {
@@ -383,6 +392,7 @@ submit_report() {
 
     issue_url="$(jq -r '.issue_url' <<<"$response" 2>/dev/null || true)"
     rm -f -- "$path"
+    clear_notification_state
     printf 'Awtarchy failure report sent: %s\n' "$issue_url"
 }
 
@@ -403,6 +413,7 @@ discard_report() {
     fi
     managed_report_path "$path" || return 2
     rm -f -- "$path"
+    clear_notification_state
 }
 
 interactive_terminal() {
@@ -451,26 +462,56 @@ prompt_report() {
 }
 
 notify_pending() {
-    local count=0 path=""
+    local count=0 path="" current_state="" previous_state="" tmp="" body="" notify_lock_fd=""
+    local -a pending=()
+
     [[ -d "$REPORT_DIR" && ! -L "$REPORT_DIR" && -O "$REPORT_DIR" ]] || return 0
+    command -v flock >/dev/null 2>&1 || return 0
+    exec {notify_lock_fd}<"$REPORT_DIR" || return 0
+    flock -x "$notify_lock_fd" || return 0
+
     shopt -s nullglob
     local reports=("$REPORT_DIR"/*.json)
     shopt -u nullglob
     for path in "${reports[@]}"; do
         managed_report_path "$path" || continue
-        ((count += 1))
+        pending+=("${path##*/}")
     done
-    (( count > 0 )) || return 0
+    count="${#pending[@]}"
+    if (( count == 0 )); then
+        clear_notification_state
+        return 0
+    fi
+
+    current_state="$(printf '%s\n' "${pending[@]}" | LC_ALL=C sort)"
+    if [[ -f "$NOTIFY_STATE_FILE" && ! -L "$NOTIFY_STATE_FILE" && -O "$NOTIFY_STATE_FILE" ]]; then
+        previous_state="$(cat -- "$NOTIFY_STATE_FILE" 2>/dev/null || true)"
+        [[ "$previous_state" == "$current_state" ]] && return 0
+    fi
+
     command -v notify-send >/dev/null 2>&1 || return 0
-    notify-send \
-        'Awtarchy failure report pending' \
-        "${count} sanitized failure report(s) are waiting. Run ~/.config/hypr/scripts/awtarchy_report_failure.sh pending to review." \
-        >/dev/null 2>&1 || true
+    if (( count == 1 )); then
+        body=$'A sanitized failure report is ready to review.\nRun: awtarchy report\nYou can review it before choosing whether to send it.'
+    else
+        body="${count} sanitized failure reports are ready to review."$'\nRun: awtarchy report\nYou can review each report before choosing whether to send it.'
+    fi
+
+    if notify-send 'Awtarchy detected a problem' "$body" >/dev/null 2>&1; then
+        tmp="${NOTIFY_STATE_FILE}.tmp.$$"
+        printf '%s\n' "$current_state" >"$tmp" || { rm -f -- "$tmp"; return 0; }
+        chmod 0600 -- "$tmp" || { rm -f -- "$tmp"; return 0; }
+        mv -f -- "$tmp" "$NOTIFY_STATE_FILE" || rm -f -- "$tmp"
+    fi
 }
 
 pending_reports() {
     local quiet_empty="${1:-0}"
-    [[ -d "$REPORT_DIR" && ! -L "$REPORT_DIR" && -O "$REPORT_DIR" ]] || return 0
+    if [[ ! -d "$REPORT_DIR" || -L "$REPORT_DIR" || ! -O "$REPORT_DIR" ]]; then
+        if (( quiet_empty == 0 )); then
+            printf 'No pending Awtarchy failure reports.\n'
+        fi
+        return 0
+    fi
     shopt -s nullglob
     local reports=("$REPORT_DIR"/*.json)
     shopt -u nullglob

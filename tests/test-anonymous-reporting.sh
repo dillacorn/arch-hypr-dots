@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="${ROOT}/config/hypr/scripts/awtarchy_report_failure.sh"
+LAUNCHER="${ROOT}/local/bin/awtarchy"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 HOME_DIR="$TMP/home"
@@ -43,12 +44,19 @@ if [[ ${CURL_PENDING:-0} == 1 ]]; then
 fi
 printf '{"ok":true,"created":true,"deduplicated":false,"issue_number":99,"issue_url":"https://github.com/dillacorn/awtarchy/issues/99"}\n'
 SH
+cat >"$BIN/notify-send" <<'SH'
+#!/usr/bin/env bash
+sleep "${NOTIFY_DELAY:-0}"
+printf '%q ' "$@" >>"$NOTIFY_CALLS"
+printf '\n' >>"$NOTIFY_CALLS"
+SH
 chmod +x "$BIN"/*
 
 export HOME="$HOME_DIR"
 export XDG_STATE_HOME="$STATE"
 export PATH="$BIN:/usr/bin:/bin"
 export CURL_CALLS="$TMP/curl.calls"
+export NOTIFY_CALLS="$TMP/notify.calls"
 export AWTARCHY_REPORT_NO_PROMPT=1
 
 grep -Fq 'public GitHub issue' "$SCRIPT" || {
@@ -65,6 +73,21 @@ fi
     exit 1
 }
 
+mkdir -p "$HOME_DIR/.config/hypr/scripts"
+cp -- "$SCRIPT" "$HOME_DIR/.config/hypr/scripts/awtarchy_report_failure.sh"
+chmod 0755 "$HOME_DIR/.config/hypr/scripts/awtarchy_report_failure.sh"
+report_command_output="$(
+    HOME="$HOME_DIR" \
+    XDG_CONFIG_HOME="$HOME_DIR/.config" \
+    XDG_STATE_HOME="$STATE" \
+    AWTARCHY_SKIP_UPDATE_CHECK=1 \
+    "$LAUNCHER" report
+)"
+grep -Fq 'No pending Awtarchy failure reports.' <<<"$report_command_output" || {
+    echo 'awtarchy report did not open the pending-report flow' >&2
+    exit 1
+}
+
 ATTEMPTED_VERSION='anonymous-crash-reporting-testing@fedcba9876543210fedcba9876543210fedcba98'
 export AWTARCHY_REPORT_CONFIG_VERSION_OVERRIDE="$ATTEMPTED_VERSION"
 bash "$SCRIPT" capture quickshell restart_after_update quickshell_not_ready
@@ -73,6 +96,41 @@ REPORT="$STATE/awtarchy/reports/quickshell--restart_after_update--quickshell_not
 [[ -f "$REPORT" ]]
 [[ "$(stat -c '%a' "$REPORT")" == 600 ]]
 [[ ! -e "$CURL_CALLS" ]]
+
+bash "$SCRIPT" notify-pending
+bash "$SCRIPT" notify-pending
+[[ "$(wc -l <"$NOTIFY_CALLS")" == 1 ]] || {
+    echo 'the same pending-report state produced duplicate notifications' >&2
+    exit 1
+}
+grep -Fq 'awtarchy report' "$NOTIFY_CALLS" || {
+    echo 'pending-report notification does not direct the user to awtarchy report' >&2
+    exit 1
+}
+if grep -Fq 'awtarchy_report_failure.sh' "$NOTIFY_CALLS"; then
+    echo 'pending-report notification exposes the internal reporting script' >&2
+    exit 1
+fi
+
+bash "$SCRIPT" capture quickshell start quickshell_not_ready
+SECOND_REPORT="$STATE/awtarchy/reports/quickshell--start--quickshell_not_ready.json"
+[[ -f "$SECOND_REPORT" ]]
+before_notify_count="$(wc -l <"$NOTIFY_CALLS")"
+export NOTIFY_DELAY=0.2
+bash "$SCRIPT" notify-pending &
+notify_pid_one=$!
+bash "$SCRIPT" notify-pending &
+notify_pid_two=$!
+wait "$notify_pid_one"
+wait "$notify_pid_two"
+unset NOTIFY_DELAY
+after_notify_count="$(wc -l <"$NOTIFY_CALLS")"
+[[ $((after_notify_count - before_notify_count)) == 1 ]] || {
+    echo 'concurrent pending-report checks produced duplicate notifications' >&2
+    exit 1
+}
+bash "$SCRIPT" discard "$SECOND_REPORT"
+[[ ! -e "$SECOND_REPORT" ]]
 
 jq -e --arg attempted "$ATTEMPTED_VERSION" '
   keys == [

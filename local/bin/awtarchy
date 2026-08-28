@@ -735,6 +735,13 @@ exec_runtime() {
   exec bash "$RUNTIME" "$@"
 }
 
+run_failure_reports() {
+  local report_helper="${TARGET_HOME}/.config/hypr/scripts/awtarchy_report_failure.sh"
+  [[ -f "$report_helper" && ! -L "$report_helper" && -O "$report_helper" ]] \
+    || die "Awtarchy failure reporting is unavailable. Run 'awtarchy update' to restore the managed reporting helper."
+  bash "$report_helper" pending
+}
+
 replace_quickshell_ui_from_baseline() {
   local rel="$1" baseline_root="$2" stamp="$3"
   local baseline="${baseline_root}/${rel}"
@@ -1105,6 +1112,7 @@ Usage:
   awtarchy update [--tag <tag>] [update options]
   awtarchy reset [--tag <tag>] [update options]
   awtarchy review [--tag <tag>]
+  awtarchy report
   awtarchy git
   awtarchy git review --branch <branch> [--commit <40-character-sha>]
   awtarchy git update --branch <branch> [--commit <40-character-sha>] [update options]
@@ -1139,6 +1147,12 @@ main() {
       (( $# == 0 )) || die "troubleshoot does not accept options."
       require_runtime
       AWTARCHY_TROUBLESHOOT_COMMAND=awtarchy exec bash "$RUNTIME" troubleshoot
+      ;;
+    report)
+      shift
+      (( $# == 0 )) || die "report does not accept options."
+      run_failure_reports
+      return 0
       ;;
     version)
       print_version_status
