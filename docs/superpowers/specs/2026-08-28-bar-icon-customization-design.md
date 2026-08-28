@@ -110,7 +110,7 @@ The application-launcher label becomes user-configurable.
 The Bar Appearance control provides:
 
 - the current Awtarchy `` glyph as the default and always-available preset;
-- curated launcher presets for Awtarchy ``, Menu `☰`, Tux/Linux ``, Arch ``, Diamond `◆`, and Circle `●`;
+- curated launcher presets for Awtarchy ``, Menu `☰`, Tux/Linux ``, Arch ``, Diamond `◆`, and Circle `●`;
 - a custom Unicode/Nerd Font text field using the shared 1-to-8-code-point contract;
 - a Reset action that restores the stock Awtarchy launcher glyph.
 

@@ -727,3 +727,6 @@ b8e8fab6bf5c91776db2bfbe3944961bdb4ad38583bc44e2ff92164cd2230528	.config/quicksh
 # 2026-08-28 refined bar icon presets.
 8d30f2be5707e93b6d4578b96c9cbe60331280b053ac5c0217a92c906de1203d	.config/hypr/scripts/quickshell_application_state.sh
 62b4acb5797085e3361be5aa58a23ff6e56b3d43f46cc88d0630d74d2130fb02	.config/quickshell/awtarchy/BarState.qml
+
+# 2026-08-28 Arch launcher Nerd Font glyph correction.
+340a8486beaeb6f09dbcb61a39137b98a7a0ba866875e6923d0b95deebed474e	.config/quickshell/awtarchy/BarState.qml

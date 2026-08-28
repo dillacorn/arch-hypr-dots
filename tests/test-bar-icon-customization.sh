@@ -128,7 +128,7 @@ jq -e '(.bar_appearance.launcher_icon | not)' "$STATE_FILE" >/dev/null \
 run_state set-workspace-style phases
 run_state set-workspace-custom-label '◕'
 run_state set-workspace-override 4 '4◓'
-run_state set-launcher-icon ''
+run_state set-launcher-icon ''
 run_state reset-bar-icons
 jq -e '(.bar_appearance | not) or (.bar_appearance | length == 0)' "$STATE_FILE" >/dev/null \
     || fail 'Reset Bar Icons did not clear all identity state'
@@ -215,7 +215,7 @@ done
 
 contains "$BAR_STATE" '{ label: "Tux", value: "" }' \
     'launcher presets are missing the Tux/Linux glyph'
-contains "$BAR_STATE" '{ label: "Arch", value: "" }' \
+contains "$BAR_STATE" '{ label: "Arch", value: "" }' \
     'launcher presets are missing the Arch glyph'
 if grep -Fq '{ label: "Grid", value: "⊞" }' "$BAR_STATE"; then
     fail 'launcher presets still expose Grid'

@@ -99,7 +99,7 @@ Singleton {
         { label: "Awtarchy", value: "" },
         { label: "Menu", value: "☰" },
         { label: "Tux", value: "" },
-        { label: "Arch", value: "" },
+        { label: "Arch", value: "" },
         { label: "Diamond", value: "◆" },
         { label: "Circle", value: "●" }
     ]
