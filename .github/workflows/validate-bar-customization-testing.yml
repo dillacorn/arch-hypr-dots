@@ -5,7 +5,7 @@ on:
     branches: [feature/filter-quickshell-task-icons]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
@@ -16,6 +16,25 @@ jobs:
           fetch-depth: 0
       - name: Install validation tools
         run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+      - name: Record managed stock hashes
+        env:
+          HISTORY: local/share/awtarchy/quickshell-managed-history.sha256
+        run: |
+          append_hash() {
+            local digest="$1" path="$2"
+            grep -Fq -- "$digest"$'\t'"$path" "$HISTORY" || printf '%s\t%s\n' "$digest" "$path" >>"$HISTORY"
+          }
+          append_hash af57ebb1ac2ff70eaebb8d4985921a3b09e70726ac395c52fd9e34cee510a07f .config/hypr/scripts/quickshell.sh
+          append_hash 99cc1c0ccb97efb119c985782827d2bd631ca14c81ec18b7f3bf7fb2b2b2b1d8 .config/quickshell/awtarchy/Bar.qml
+          append_hash 291ad97f54a1567f989da20cfa20df211f999d217ac3c6d4787dc4f6afbb8d04 .config/quickshell/awtarchy/BarSettingsSection.qml
+          if git diff --quiet -- "$HISTORY"; then
+            exit 0
+          fi
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add -- "$HISTORY"
+          git commit -m 'Record bar customization managed hashes'
+          git push origin HEAD:feature/filter-quickshell-task-icons
       - name: Syntax and lint
         run: |
           bash -n config/hypr/scripts/quickshell.sh
@@ -28,11 +47,8 @@ jobs:
         run: |
           bash tests/test-bar-task-icons.sh
           bash tests/test-bar-module-visibility.sh
-      - name: Managed file hashes
+          bash tests/test-bar-icon-customization.sh
+      - name: Updater regressions
         run: |
-          sha256sum \
-            config/hypr/scripts/quickshell.sh \
-            config/quickshell/awtarchy/Bar.qml \
-            config/quickshell/awtarchy/BarSettingsSection.qml
-      - name: Existing display-scale regression
-        run: bash tests/test-display-scale-quicksettings.sh
+          bash tests/test-display-scale-quicksettings.sh
+          bash tests/test-quickshell-updater-migration.sh
