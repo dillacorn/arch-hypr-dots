@@ -16,7 +16,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Install validation tools
-        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck lua5.4
       - name: Reconcile compatibility tests and managed hashes
         shell: bash
         env:
