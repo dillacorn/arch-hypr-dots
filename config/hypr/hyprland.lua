@@ -548,6 +548,7 @@ local bar_flip = "~/.config/hypr/scripts/quickshell_bar_flip.sh"
 local bar_rotate = "~/.config/hypr/scripts/quickshell_bar_rotate.sh"
 local toggle_animations = "~/.config/hypr/scripts/toggle_animations.sh"
 local notification_dismiss = "~/.config/hypr/scripts/quickshell_notification_dismiss.sh"
+local notifications_toggle = "~/.config/hypr/scripts/quickshell_notifications_toggle.sh"
 
 -- Themes / wallpaper
 local wallpicker = "~/.config/hypr/scripts/launch_handler.sh wallpicker \"alacritty --class wallpicker -e awtwall --resume\""
@@ -663,6 +664,9 @@ end
 -- Audio mixer
 hl.bind("ALT + V", hl.dsp.exec_cmd(wiremix), {})
 hl.bind("SUPER + V", hl.dsp.exec_cmd(wiremix), {})
+
+-- Notification center
+hl.bind("SUPER + N", hl.dsp.exec_cmd(notifications_toggle), {})
 
 -- Notification dismiss
 for _, key in ipairs({
@@ -906,6 +910,9 @@ hl.define_submap("noalt", function()
     -- Audio mixer in "noalt"
     hl.bind("ALT + V", hl.dsp.exec_cmd(wiremix), {})
     hl.bind("SUPER + V", hl.dsp.exec_cmd(wiremix), {})
+
+    -- Notification center in "noalt"
+    hl.bind("SUPER + N", hl.dsp.exec_cmd(notifications_toggle), {})
 
     -- Notification dismiss in "noalt"
     for _, key in ipairs({

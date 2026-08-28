@@ -102,7 +102,7 @@ Singleton {
     }
 
     function barPlacementForScreen(targetScreen) {
-        if (!targetScreen || !BarState.enabledFor(targetScreen.name))
+        if (!targetScreen || !FlyoutManager.barVisibleOnMonitor(targetScreen.name))
             return "center";
         return BarState.positionFor(targetScreen.name);
     }
@@ -115,7 +115,7 @@ Singleton {
 
     function centeredPlacementForScreen(targetScreen) {
         if (!targetScreen || launcherCenteredFor(targetScreen.name)
-            || !BarState.enabledFor(targetScreen.name))
+            || !FlyoutManager.barVisibleOnMonitor(targetScreen.name))
             return "center";
         return BarState.positionFor(targetScreen.name) + "-center";
     }

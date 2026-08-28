@@ -49,6 +49,7 @@ jobs:
           bash -n config/hypr/scripts/quickshell_battery_health.sh
           bash -n config/hypr/scripts/quickshell_launcher_position.sh
           bash -n config/hypr/scripts/quickshell_notification_layout_demo.sh
+          bash -n config/hypr/scripts/quickshell_notifications_toggle.sh
           bash -n config/hypr/scripts/quickshell_ready_sound.sh
           bash -n config/hypr/scripts/quickshell_resume_recover.sh
           bash -n config/hypr/scripts/quickshell_runtime_rules.sh
@@ -71,6 +72,8 @@ jobs:
           bash -n tests/test-awtarchy-update-notifications.sh
           bash -n tests/test-bar-control-actions.sh
           bash -n tests/test-bar-icon-customization.sh
+          bash -n tests/test-bar-module-visibility.sh
+          bash -n tests/test-bar-task-icons.sh
           bash -n tests/test-bar-wheel-input.sh
           bash -n tests/test-battery-state.sh
           bash -n tests/test-battery-flyout.sh
@@ -88,6 +91,7 @@ jobs:
           bash -n tests/test-hypridle-restart.sh
           bash -n tests/test-flyout-toggle-debounce.sh
           bash -n tests/test-flyout-edge-layout.sh
+          bash -n tests/test-flyout-runtime-centering.sh
           bash -n tests/test-launcher-keyboard-focus.sh
           bash -n tests/test-desktop-candidate-validation.sh
           bash -n tests/test-lua-validation.sh
@@ -145,6 +149,7 @@ jobs:
             config/hypr/scripts/quickshell_launcher_position.sh \
             config/hypr/scripts/quickshell_update_notifications.sh \
             config/hypr/scripts/quickshell_notification_layout_demo.sh \
+            config/hypr/scripts/quickshell_notifications_toggle.sh \
             config/hypr/scripts/quickshell_resume_recover.sh \
             config/hypr/scripts/quickshell_runtime_rules.sh \
             config/hypr/scripts/quickshell_sensitive_capture.sh \
@@ -164,6 +169,8 @@ jobs:
             tests/test-awtarchy-update-notifications.sh \
             tests/test-bar-control-actions.sh \
             tests/test-bar-icon-customization.sh \
+            tests/test-bar-module-visibility.sh \
+            tests/test-bar-task-icons.sh \
             tests/test-bar-wheel-input.sh \
             tests/test-battery-state.sh \
             tests/test-battery-flyout.sh \
@@ -180,6 +187,7 @@ jobs:
             tests/test-hypridle-restart.sh \
             tests/test-flyout-toggle-debounce.sh \
             tests/test-flyout-edge-layout.sh \
+            tests/test-flyout-runtime-centering.sh \
             tests/test-launcher-keyboard-focus.sh \
             tests/test-desktop-candidate-validation.sh \
             tests/test-lua-validation.sh \
@@ -231,6 +239,8 @@ jobs:
           bash tests/test-awtarchy-update-notifications.sh
           bash tests/test-bar-control-actions.sh
           bash tests/test-bar-icon-customization.sh
+          bash tests/test-bar-module-visibility.sh
+          bash tests/test-bar-task-icons.sh
           bash tests/test-bar-wheel-input.sh
           bash tests/test-battery-state.sh
           bash tests/test-battery-flyout.sh
@@ -248,6 +258,7 @@ jobs:
           bash tests/test-hypridle-restart.sh
           bash tests/test-flyout-toggle-debounce.sh
           bash tests/test-flyout-edge-layout.sh
+          bash tests/test-flyout-runtime-centering.sh
           bash tests/test-launcher-keyboard-focus.sh
           bash tests/test-desktop-candidate-validation.sh
           python3 tests/test-keyring-pam-cleanup.py

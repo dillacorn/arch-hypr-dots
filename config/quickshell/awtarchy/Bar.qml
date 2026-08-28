@@ -105,13 +105,43 @@ PanelWindow {
         return Quickshell.iconPath("application-x-executable", true);
     }
 
+    function isAwtarchyFlyout(toplevel) {
+        if (!toplevel)
+            return false;
+        const ipc = toplevel.lastIpcObject || {};
+        const title = String(toplevel.title || ipc.title || "");
+        const flyoutTitles = [
+            "Awtarchy Application Search",
+            "Awtarchy Clipboard History",
+            "Awtarchy Notification Center",
+            "Awtarchy Quick Settings",
+            "Awtarchy Network",
+            "Awtarchy Bluetooth",
+            "Awtarchy Battery"
+        ];
+        return flyoutTitles.indexOf(title) >= 0;
+    }
+
     function toplevelVisibleHere(toplevel) {
         if (!toplevel || !toplevel.monitor || toplevel.monitor.name !== monitorName)
+            return false;
+        if (isAwtarchyFlyout(toplevel))
             return false;
         const ipc = toplevel.lastIpcObject || {};
         const cls = String(ipc.class || ipc.initialClass || "").toLowerCase();
         const ignored = ["tofi", "rofi", "hyprlock", "swaylock", "swww", "mpvpaper", "pulsemixer", "org.waytrogen.waytrogen", "org.pulseaudio.pavucontrol", "wiremix", "quickshell", "awtarchy-polkit-agent"];
         return ignored.indexOf(cls) < 0;
+    }
+
+    function barModuleVisible(name, module) {
+        const state = BarState.monitorState(name) || ({});
+        if (module === "cpu")
+            return state.show_cpu !== false;
+        if (module === "temperature")
+            return state.show_temp !== false;
+        if (module === "memory")
+            return state.show_memory !== false;
+        return true;
     }
 
     function scratchpadCount() {
@@ -682,9 +712,21 @@ PanelWindow {
                 onRightClicked: SystemState.toggleIdle()
             }
 
-            BarControl { label: SystemState.cpuUsage + " "; tooltip: SystemState.cpuTooltip }
-            BarControl { label: SystemState.cpuTemp; tooltip: SystemState.temperatureTooltip }
-            BarControl { label: SystemState.memoryUsage + "  "; tooltip: "Memory usage: " + SystemState.memoryUsage + "%" }
+            BarControl {
+                visible: bar.barModuleVisible(bar.monitorName, "cpu")
+                label: SystemState.cpuUsage + " "
+                tooltip: SystemState.cpuTooltip
+            }
+            BarControl {
+                visible: bar.barModuleVisible(bar.monitorName, "temperature")
+                label: SystemState.cpuTemp
+                tooltip: SystemState.temperatureTooltip
+            }
+            BarControl {
+                visible: bar.barModuleVisible(bar.monitorName, "memory")
+                label: SystemState.memoryUsage + "  "
+                tooltip: "Memory usage: " + SystemState.memoryUsage + "%"
+            }
 
             BarControl {
                 label: bar.brightnessText
@@ -892,14 +934,25 @@ PanelWindow {
                 onClicked: SystemState.toggleIdle()
             }
 
-            BarControl { vertical: true; fixedWidth: bar.barSize; label: "\n" + SystemState.cpuUsage; tooltip: SystemState.cpuTooltip }
             BarControl {
+                visible: bar.barModuleVisible(bar.monitorName, "cpu")
+                vertical: true; fixedWidth: bar.barSize
+                label: "\n" + SystemState.cpuUsage
+                tooltip: SystemState.cpuTooltip
+            }
+            BarControl {
+                visible: bar.barModuleVisible(bar.monitorName, "temperature")
                 vertical: true; fixedWidth: bar.barSize
                 readonly property string temp: SystemState.cpuTemp
                 label: temp.length > 1 ? temp.slice(-1) + "\n" + temp.slice(0, -1) : temp
                 tooltip: SystemState.temperatureTooltip
             }
-            BarControl { vertical: true; fixedWidth: bar.barSize; label: "\n" + SystemState.memoryUsage; tooltip: "Memory usage: " + SystemState.memoryUsage + "%" }
+            BarControl {
+                visible: bar.barModuleVisible(bar.monitorName, "memory")
+                vertical: true; fixedWidth: bar.barSize
+                label: "\n" + SystemState.memoryUsage
+                tooltip: "Memory usage: " + SystemState.memoryUsage + "%"
+            }
 
             BarControl {
                 vertical: true; fixedWidth: bar.barSize

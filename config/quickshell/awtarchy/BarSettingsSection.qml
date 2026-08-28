@@ -106,6 +106,27 @@ Item {
         return Number.isFinite(value) ? Math.max(50, Math.min(200, Math.round(value))) : 100;
     }
 
+    function rawModuleVisible(name, module) {
+        const state = BarState.monitorState(name) || ({});
+        if (module === "cpu")
+            return state.show_cpu !== false;
+        if (module === "temperature")
+            return state.show_temp !== false;
+        if (module === "memory")
+            return state.show_memory !== false;
+        return true;
+    }
+
+    function moduleCommand(module) {
+        if (module === "cpu")
+            return "setshowcpu";
+        if (module === "temperature")
+            return "setshowtemp";
+        if (module === "memory")
+            return "setshowmemory";
+        return "";
+    }
+
     function commonValue(reader) {
         const targets = resolvedTargets();
         if (targets.length === 0)
@@ -139,6 +160,10 @@ Item {
     function textText() {
         const value = commonValue(rawTextScale);
         return value === null ? "Mixed" : value + "%";
+    }
+
+    function moduleVisibilityActive(module) {
+        return commonValue(name => rawModuleVisible(name, module)) === true;
     }
 
     function baseThickness() {
@@ -177,6 +202,21 @@ Item {
         runNextCommand();
     }
 
+    function toggleModuleVisibility(module, label) {
+        const command = moduleCommand(module);
+        const targets = resolvedTargets();
+        if (command.length === 0 || targets.length === 0)
+            return;
+        const current = commonValue(name => rawModuleVisible(name, module));
+        const nextValue = current === true ? false : true;
+        const next = commandQueue.slice();
+        for (const target of targets)
+            next.push([managerScript, command, target, nextValue ? "true" : "false"]);
+        commandQueue = next;
+        message = label + " " + (nextValue ? "visible" : "hidden");
+        runNextCommand();
+    }
+
     function resetAppearance() {
         const targets = resolvedTargets();
         if (targets.length === 0)
@@ -186,6 +226,9 @@ Item {
             next.push([managerScript, "setsize", target, "0"]);
             next.push([managerScript, "setscale", target, "100"]);
             next.push([managerScript, "settextscale", target, "100"]);
+            next.push([managerScript, "setshowcpu", target, "true"]);
+            next.push([managerScript, "setshowtemp", target, "true"]);
+            next.push([managerScript, "setshowmemory", target, "true"]);
         }
         commandQueue = next;
         message = "Resetting bar appearance…";
@@ -594,6 +637,46 @@ Item {
                     horizontalAlignment: Text.AlignRight
                     elide: Text.ElideRight
                 }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 26
+                spacing: 5
+
+                Text {
+                    Layout.preferredWidth: 78
+                    text: "System stats"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                }
+
+                SettingsButton {
+                    label: "CPU"
+                    textSize: 9
+                    horizontalPadding: 12
+                    active: root.moduleVisibilityActive("cpu")
+                    onClicked: root.toggleModuleVisibility("cpu", "CPU usage")
+                }
+
+                SettingsButton {
+                    label: "Temp"
+                    textSize: 9
+                    horizontalPadding: 12
+                    active: root.moduleVisibilityActive("temperature")
+                    onClicked: root.toggleModuleVisibility("temperature", "CPU temperature")
+                }
+
+                SettingsButton {
+                    label: "RAM"
+                    textSize: 9
+                    horizontalPadding: 12
+                    active: root.moduleVisibilityActive("memory")
+                    onClicked: root.toggleModuleVisibility("memory", "RAM usage")
+                }
+
+                Item { Layout.fillWidth: true }
             }
         }
     }

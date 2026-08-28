@@ -87,6 +87,9 @@ ensure_state() {
                     bar_size:0,
                     icon_scale:100,
                     text_scale:100,
+                    show_cpu:true,
+                    show_temp:true,
+                    show_memory:true,
                     last_horizontal:"top",
                     last_vertical:"right"
                 } * (.[$m] // {})))
@@ -409,6 +412,21 @@ gettextscale() {
     jq -r --arg monitor "$1" '(.monitors[$monitor].text_scale // 100) | tonumber' "$STATE_FILE"
 }
 
+getshowcpu() {
+    ensure_state
+    jq -r --arg monitor "$1" '(if .monitors[$monitor].show_cpu == null then true else .monitors[$monitor].show_cpu end) | if . then "true" else "false" end' "$STATE_FILE"
+}
+
+getshowtemp() {
+    ensure_state
+    jq -r --arg monitor "$1" '(if .monitors[$monitor].show_temp == null then true else .monitors[$monitor].show_temp end) | if . then "true" else "false" end' "$STATE_FILE"
+}
+
+getshowmemory() {
+    ensure_state
+    jq -r --arg monitor "$1" '(if .monitors[$monitor].show_memory == null then true else .monitors[$monitor].show_memory end) | if . then "true" else "false" end' "$STATE_FILE"
+}
+
 set_monitor_enabled() {
     local monitor="$1" enabled="$2" tmp
     case "$enabled" in
@@ -418,6 +436,22 @@ set_monitor_enabled() {
     ensure_state
     tmp="${STATE_FILE}.tmp.$$"
     jq --arg monitor "$monitor" --argjson enabled "$enabled" '.monitors[$monitor].enabled = $enabled' "$STATE_FILE" >"$tmp"
+    mv -f "$tmp" "$STATE_FILE"
+}
+
+set_monitor_stat_visibility() {
+    local monitor="$1" key="$2" enabled="$3" tmp
+    case "$key" in
+        show_cpu|show_temp|show_memory) ;;
+        *) printf 'quickshell.sh: invalid bar stat key: %s\n' "$key" >&2; exit 2 ;;
+    esac
+    case "$enabled" in
+        true|false) ;;
+        *) printf 'quickshell.sh: bar stat visibility must be true or false\n' >&2; exit 2 ;;
+    esac
+    ensure_state
+    tmp="${STATE_FILE}.tmp.$$"
+    jq --arg monitor "$monitor" --arg key "$key" --argjson enabled "$enabled" '.monitors[$monitor][$key] = $enabled' "$STATE_FILE" >"$tmp"
     mv -f "$tmp" "$STATE_FILE"
 }
 
@@ -484,6 +518,9 @@ reset_mon() {
             bar_size:0,
             icon_scale:100,
             text_scale:100,
+            show_cpu:true,
+            show_temp:true,
+            show_memory:true,
             last_horizontal:"top",
             last_vertical:"right"
         }
@@ -582,11 +619,17 @@ focused monitor:
   getsize-focused
   getscale-focused
   gettextscale-focused
+  getshowcpu-focused
+  getshowtemp-focused
+  getshowmemory-focused
   setenabled-focused <true|false>
   setpos-focused <top|bottom|left|right>
   setsize-focused <0|20-80>
   setscale-focused <50-200>
   settextscale-focused <50-200>
+  setshowcpu-focused <true|false>
+  setshowtemp-focused <true|false>
+  setshowmemory-focused <true|false>
   reset-focused
   flip-focused
   rotate-focused
@@ -598,15 +641,22 @@ per monitor:
   getsize <MON>
   getscale <MON>
   gettextscale <MON>
+  getshowcpu <MON>
+  getshowtemp <MON>
+  getshowmemory <MON>
   setenabled <MON> <true|false>
   setpos <MON> <top|bottom|left|right>
   setsize <MON> <0|20-80>
   setscale <MON> <50-200>
   settextscale <MON> <50-200>
+  setshowcpu <MON> <true|false>
+  setshowtemp <MON> <true|false>
+  setshowmemory <MON> <true|false>
   reset-mon <MON>
 
 bar_size 0 means Awtarchy defaults: 28px horizontal, 36px vertical.
 icon_scale and text_scale are percentages; 100 preserves the tuned defaults.
+CPU, temperature and memory modules are visible by default.
 USAGE
 }
 
@@ -649,6 +699,12 @@ case "$cmd" in
     getscale-focused) monitor="$(focused_monitor)"; getscale "$monitor" ;;
     gettextscale) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; gettextscale "$2" ;;
     gettextscale-focused) monitor="$(focused_monitor)"; gettextscale "$monitor" ;;
+    getshowcpu) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getshowcpu "$2" ;;
+    getshowcpu-focused) monitor="$(focused_monitor)"; getshowcpu "$monitor" ;;
+    getshowtemp) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getshowtemp "$2" ;;
+    getshowtemp-focused) monitor="$(focused_monitor)"; getshowtemp "$monitor" ;;
+    getshowmemory) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getshowmemory "$2" ;;
+    getshowmemory-focused) monitor="$(focused_monitor)"; getshowmemory "$monitor" ;;
     setenabled) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_enabled "$2" "$3" ;;
     setenabled-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; set_monitor_enabled "$monitor" "$2" ;;
     setpos) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; setpos "$2" "$3" ;;
@@ -659,6 +715,12 @@ case "$cmd" in
     setscale-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; setscale "$monitor" "$2" ;;
     settextscale) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; settextscale "$2" "$3" ;;
     settextscale-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; settextscale "$monitor" "$2" ;;
+    setshowcpu) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_stat_visibility "$2" show_cpu "$3" ;;
+    setshowcpu-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; set_monitor_stat_visibility "$monitor" show_cpu "$2" ;;
+    setshowtemp) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_stat_visibility "$2" show_temp "$3" ;;
+    setshowtemp-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; set_monitor_stat_visibility "$monitor" show_temp "$2" ;;
+    setshowmemory) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_stat_visibility "$2" show_memory "$3" ;;
+    setshowmemory-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; set_monitor_stat_visibility "$monitor" show_memory "$2" ;;
     reset-mon) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; reset_mon "$2" ;;
     reset-focused) monitor="$(focused_monitor)"; reset_mon "$monitor" ;;
     flip-focused) monitor="$(focused_monitor)"; flip_mon "$monitor" ;;
