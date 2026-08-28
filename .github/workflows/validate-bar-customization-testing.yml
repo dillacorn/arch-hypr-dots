@@ -15,7 +15,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Install validation tools
-        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck lua5.4
       - name: Record managed stock hashes
         env:
           HISTORY: local/share/awtarchy/quickshell-managed-history.sha256
