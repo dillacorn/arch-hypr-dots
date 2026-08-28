@@ -249,14 +249,16 @@ contains "$QUICK_SETTINGS" 'visible: root.barIconEditorOpen' \
     'Bar icon editor cannot collapse back to the compact Bar card'
 contains "$BAR_ICON_SETTINGS" 'readonly property string identityStateScript:' \
     'Bar icon settings have no direct global identity-state writer path'
-contains "$BAR_ICON_SETTINGS" 'model: BarState.workspaceStylePresets' \
-    'Bar icon settings do not expose visual workspace presets'
+contains "$BAR_ICON_SETTINGS" 'model: BarState.workspaceIconStylePresets' \
+    'Bar icon settings do not expose composable workspace icon presets'
 contains "$BAR_ICON_SETTINGS" 'model: BarState.launcherIconPresets' \
     'Bar icon settings do not expose launcher presets'
 contains "$BAR_ICON_SETTINGS" 'id: identityWriter' \
     'Bar icon settings have no serialized identity persistence process'
-contains "$BAR_ICON_SETTINGS" '"set-workspace-style"' \
-    'workspace preset selection is not persisted'
+contains "$BAR_ICON_SETTINGS" '"set-workspace-numbers"' \
+    'workspace number visibility is not persisted independently'
+contains "$BAR_ICON_SETTINGS" '"set-workspace-icon-style"' \
+    'workspace icon style is not persisted independently'
 contains "$BAR_ICON_SETTINGS" '"set-workspace-custom-label"' \
     'global custom workspace symbol is not persisted'
 contains "$BAR_ICON_SETTINGS" '"set-workspace-override"' \
