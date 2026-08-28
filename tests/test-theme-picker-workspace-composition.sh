@@ -91,9 +91,9 @@ jq -e '
 ' "$STATE_FILE" >/dev/null \
     || fail 'Numbers On was not persisted without damaging unrelated state'
 
-run_state set-workspace-icon-style filled-diamond
+run_state set-workspace-icon-style diamonds
 jq -e '
-    .bar_appearance.workspace_icon_style == "filled-diamond"
+    .bar_appearance.workspace_icon_style == "diamonds"
     and .unrelated.preserve == true
 ' "$STATE_FILE" >/dev/null \
     || fail 'Workspace icon style was not persisted without damaging unrelated state'

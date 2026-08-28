@@ -81,32 +81,61 @@ Singleton {
         "10": ""
     })
     readonly property var workspaceIconStylePresets: [
-        { key: "off", label: "Off", sample: "—" },
-        { key: "awtarchy", label: "Awtarchy", sample: "󰞷" },
-        { key: "phases", label: "Phases", sample: "◐◑" },
-        { key: "filled-dot", label: "Filled Dot", sample: "●" },
-        { key: "filled-diamond", label: "Filled Diamond", sample: "◆" },
-        { key: "center-diamond", label: "Center Diamond", sample: "◈" },
-        { key: "filled-square", label: "Filled Square", sample: "■" },
-        { key: "small-square", label: "Small Square", sample: "▪" },
-        { key: "filled-triangle", label: "Filled Triangle", sample: "▲" },
-        { key: "spark", label: "Spark", sample: "✦" },
-        { key: "minimal-bar", label: "Minimal Bar", sample: "━" },
-        { key: "custom-symbol", label: "Custom", sample: "…" }
+        { key: "off", label: "Off", symbols: [], glyphSize: 18 },
+        {
+            key: "awtarchy",
+            label: "Awtarchy",
+            symbols: ["󰞷", "", "", "", "", "", "", "", "", ""],
+            glyphSize: 20
+        },
+        {
+            key: "phases",
+            label: "Phases",
+            symbols: ["◐", "◑", "◒", "◓", "◔", "◕", "○", "●", "◉", "◎"],
+            glyphSize: 20
+        },
+        {
+            key: "dots",
+            label: "Dots",
+            symbols: ["○", "•", "●", "◉", "◎", "⊙", "◌", "◍", "●", "◉"],
+            glyphSize: 20
+        },
+        {
+            key: "diamonds",
+            label: "Diamonds",
+            symbols: ["◇", "◆", "◈", "◇", "◆", "◈", "◇", "◆", "◈", "◆"],
+            glyphSize: 19
+        },
+        {
+            key: "squares",
+            label: "Squares",
+            symbols: ["□", "▪", "■", "▣", "▫", "□", "▪", "■", "▣", "■"],
+            glyphSize: 19
+        },
+        {
+            key: "triangles",
+            label: "Triangles",
+            symbols: ["△", "▲", "▷", "▶", "▽", "▼", "◁", "◀", "△", "▲"],
+            glyphSize: 19
+        },
+        {
+            key: "minimal",
+            label: "Minimal",
+            symbols: ["─", "━", "═", "│", "┃", "║", "┄", "┅", "┈", "┉"],
+            glyphSize: 18
+        },
+        { key: "custom-symbol", label: "Custom", symbols: [], glyphSize: 18 }
     ];
     readonly property var workspaceStylePresets: [
         { key: "awtarchy", label: "Awtarchy", sample: "1󰞷" },
         { key: "numbers", label: "Numbers", sample: "1" },
         { key: "icons", label: "Icons", sample: "󰞷" },
-        { key: "filled-dot", label: "Filled Dot", sample: "●" },
         { key: "phases", label: "Phases", sample: "◐◑" },
-        { key: "filled-diamond", label: "Filled Diamond", sample: "◆" },
-        { key: "center-diamond", label: "Center Diamond", sample: "◈" },
-        { key: "filled-square", label: "Filled Square", sample: "■" },
-        { key: "small-square", label: "Small Square", sample: "▪" },
-        { key: "filled-triangle", label: "Filled Triangle", sample: "▲" },
-        { key: "spark", label: "Spark", sample: "✦" },
-        { key: "minimal-bar", label: "Minimal Bar", sample: "━" },
+        { key: "dots", label: "Dots", sample: "○●" },
+        { key: "diamonds", label: "Diamonds", sample: "◇◆" },
+        { key: "squares", label: "Squares", sample: "□■" },
+        { key: "triangles", label: "Triangles", sample: "△▲" },
+        { key: "minimal", label: "Minimal", sample: "─━" },
         { key: "custom-symbol", label: "Custom", sample: "…" }
     ]
     readonly property var launcherIconPresets: [
@@ -117,27 +146,15 @@ Singleton {
         { label: "Diamond", value: "◆" },
         { label: "Circle", value: "●" }
     ]
-    readonly property var workspaceStyleSymbols: ({
-        "filled-dot": "●",
-        "filled-diamond": "◆",
-        "center-diamond": "◈",
-        "filled-square": "■",
-        "small-square": "▪",
-        "filled-triangle": "▲",
-        "spark": "✦",
-        "minimal-bar": "━"
-    })
-    readonly property var workspacePhaseSymbols: ({
-        "1": "◐",
-        "2": "◑",
-        "3": "◒",
-        "4": "◓",
-        "5": "◔",
-        "6": "◕",
-        "7": "○",
-        "8": "●",
-        "9": "◉",
-        "10": "◎"
+    readonly property var workspaceLegacyStyleAliases: ({
+        "filled-dot": "dots",
+        "filled-diamond": "diamonds",
+        "center-diamond": "diamonds",
+        "filled-square": "squares",
+        "small-square": "squares",
+        "filled-triangle": "triangles",
+        "spark": "minimal",
+        "minimal-bar": "minimal"
     })
 
 
@@ -414,6 +431,14 @@ Singleton {
         return false;
     }
 
+    function normalizedWorkspaceIconStyle(style) {
+        const value = String(style || "");
+        if (workspaceIconStyleAllowed(value))
+            return value;
+        const alias = String(workspaceLegacyStyleAliases[value] || "");
+        return workspaceIconStyleAllowed(alias) ? alias : "";
+    }
+
     function workspaceNumbersEnabled() {
         const appearance = data().bar_appearance || ({});
         if (typeof appearance.workspace_numbers_enabled === "boolean")
@@ -424,17 +449,31 @@ Singleton {
 
     function workspaceIconStyle() {
         const appearance = data().bar_appearance || ({});
-        const explicitStyle = String(appearance.workspace_icon_style || "");
-        if (workspaceIconStyleAllowed(explicitStyle))
+        const explicitStyle = normalizedWorkspaceIconStyle(appearance.workspace_icon_style);
+        if (explicitStyle.length > 0)
             return explicitStyle;
         const legacy = String(appearance.workspace_style || "awtarchy");
         if (legacy === "numbers")
             return "off";
         if (legacy === "awtarchy" || legacy === "icons")
             return "awtarchy";
-        if (workspaceIconStyleAllowed(legacy))
-            return legacy;
-        return "awtarchy";
+        const normalizedLegacy = normalizedWorkspaceIconStyle(legacy);
+        return normalizedLegacy.length > 0 ? normalizedLegacy : "awtarchy";
+    }
+
+    function workspaceIconPackFor(style) {
+        const normalized = normalizedWorkspaceIconStyle(style);
+        for (const preset of workspaceIconStylePresets) {
+            if (preset.key === normalized)
+                return preset;
+        }
+        return null;
+    }
+
+    function workspaceIconPixelSize() {
+        const pack = workspaceIconPackFor(workspaceIconStyle());
+        const size = pack ? Number(pack.glyphSize) : 18;
+        return Number.isFinite(size) ? Math.max(8, Math.round(size)) : 18;
     }
 
     function workspaceIconFor(id) {
@@ -444,15 +483,14 @@ Singleton {
         const style = workspaceIconStyle();
         if (style === "off")
             return "";
-        if (style === "awtarchy")
-            return stockWorkspaceIconFor(value);
-        if (style === "phases")
-            return String(workspacePhaseSymbols[String(value)] || "○");
         if (style === "custom-symbol") {
             const custom = workspaceCustomLabel();
             return custom.length > 0 ? custom : stockWorkspaceIconFor(value);
         }
-        return String(workspaceStyleSymbols[style] || "");
+        const pack = workspaceIconPackFor(style);
+        if (!pack || !Array.isArray(pack.symbols))
+            return stockWorkspaceIconFor(value);
+        return String(pack.symbols[value - 1] || "");
     }
 
     function composeWorkspaceLabel(id, vertical) {
@@ -465,7 +503,7 @@ Singleton {
         const number = workspaceNumbersEnabled() ? String(value) : "";
         const icon = workspaceIconFor(value);
         if (number.length > 0 && icon.length > 0)
-            return vertical ? number + icon : number + " " + icon;
+            return number + (vertical ? " " : " ") + icon;
         if (number.length > 0)
             return number;
         return icon;
@@ -474,11 +512,11 @@ Singleton {
     function workspaceStyle() {
         const appearance = data().bar_appearance || ({});
         const value = String(appearance.workspace_style || "awtarchy");
-        for (const preset of workspaceStylePresets) {
-            if (preset.key === value)
-                return value;
-        }
-        return "awtarchy";
+        if (value === "awtarchy" || value === "numbers" || value === "icons"
+                || value === "custom-symbol")
+            return value;
+        const normalized = normalizedWorkspaceIconStyle(value);
+        return normalized.length > 0 ? normalized : "awtarchy";
     }
 
     function workspaceCustomLabel() {
@@ -509,13 +547,13 @@ Singleton {
             const icon = stockWorkspaceIconFor(value);
             return icon.length > 0 ? icon : String(value);
         }
-        if (style === "phases")
-            return String(workspacePhaseSymbols[String(value)] || "○");
         if (style === "custom-symbol") {
             const custom = workspaceCustomLabel();
             return custom.length > 0 ? custom : stockWorkspaceLabelFor(value, vertical);
         }
-        const symbol = String(workspaceStyleSymbols[style] || "");
+        const pack = workspaceIconPackFor(style);
+        const symbol = pack && Array.isArray(pack.symbols)
+            ? String(pack.symbols[value - 1] || "") : "";
         return symbol.length > 0 ? symbol : stockWorkspaceLabelFor(value, vertical);
     }
 

@@ -174,8 +174,7 @@ contains "$BAR_STATE" 'return "";' \
     'BarState launcher fallback is not the stock Awtarchy icon'
 
 for style in \
-    awtarchy numbers icons filled-dot phases filled-diamond center-diamond filled-square \
-    small-square filled-triangle spark minimal-bar custom-symbol
+    awtarchy numbers icons phases dots diamonds squares triangles minimal custom-symbol
 do
     contains "$BAR_STATE" "\"${style}\"" \
         "BarState preset catalog is missing ${style}"
@@ -184,33 +183,26 @@ done
 for removed_style in \
     circled-numbers hollow-dot bullet tiny-dot bullseye fisheye \
     half-left half-right half-bottom half-top quarter-circle three-quarter-circle \
-    hollow-diamond hollow-square hollow-triangle star hollow-star
+    hollow-diamond hollow-square hollow-triangle star hollow-star \
+    filled-dot filled-diamond center-diamond filled-square small-square filled-triangle spark minimal-bar
 do
-    if grep -Fq "\"${removed_style}\"" "$BAR_STATE"; then
-        fail "BarState still exposes removed workspace style ${removed_style}"
-    fi
     if grep -Fq "\"${removed_style}\"" "$STATE_SCRIPT"; then
         fail "state writer still accepts removed workspace style ${removed_style}"
     fi
 done
 
-contains "$BAR_STATE" 'readonly property var workspacePhaseSymbols:' \
-    'BarState does not own the sequential phase-circle mapping'
-for phase_entry in \
-    '"1": "◐"' '"2": "◑"' '"3": "◒"' '"4": "◓"' '"5": "◔"' \
-    '"6": "◕"' '"7": "○"' '"8": "●"' '"9": "◉"' '"10": "◎"'
-do
-    contains "$BAR_STATE" "$phase_entry" \
-        "phase-circle sequence is missing ${phase_entry}"
-done
-contains "$BAR_STATE" 'if (style === "phases")' \
-    'workspace resolver does not handle the sequential phase-circle preset'
+contains "$BAR_STATE" 'readonly property var workspaceLegacyStyleAliases:' \
+    'BarState does not retain aliases for previously saved single-symbol styles'
+contains "$BAR_STATE" '"center-diamond": "diamonds"' \
+    'legacy center-diamond state does not migrate to the Diamonds pack'
+contains "$BAR_STATE" '"spark": "minimal"' \
+    'legacy Spark state does not migrate to a supported pack'
 
-for symbol in '●' '◐' '◑' '◒' '◓' '◔' '◕' '○' '◉' '◎' \
-    '◆' '◈' '■' '▪' '▲' '✦' '━'
+for symbol in '◐' '◑' '◒' '◓' '◔' '◕' '○' '●' '◉' '◎' \
+    '◇' '◆' '◈' '□' '■' '▣' '△' '▲' '▶' '▼' '─' '━' '═'
 do
     contains "$BAR_STATE" "$symbol" \
-        "BarState refined preset catalog is missing ${symbol}"
+        "BarState workspace packs are missing ${symbol}"
 done
 
 contains "$BAR_STATE" '{ label: "Tux", value: "" }' \

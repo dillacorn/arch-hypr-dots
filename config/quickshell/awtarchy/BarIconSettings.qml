@@ -29,6 +29,13 @@ ColumnLayout {
         return "Awtarchy";
     }
 
+    function copyText(text) {
+        if (!text || text.length === 0)
+            return;
+        Quickshell.execDetached(["wl-copy", text]);
+        message = "Copied · " + text;
+    }
+
     function enqueueIdentity(args, statusMessage) {
         const next = identityCommandQueue.slice();
         next.push({ args: args, message: statusMessage || "" });
@@ -182,30 +189,90 @@ ColumnLayout {
         }
     }
 
-    GridLayout {
+    ColumnLayout {
         Layout.fillWidth: true
-        columns: 4
-        columnSpacing: 4
-        rowSpacing: 3
+        spacing: 4
 
         Repeater {
             model: BarState.workspaceIconStylePresets
 
-            delegate: SettingsButton {
+            delegate: Rectangle {
+                id: packRow
                 required property var modelData
 
                 Layout.fillWidth: true
-                label: modelData.sample + "  " + modelData.label
-                textSize: 9
-                horizontalPadding: 8
-                active: BarState.workspaceIconStyle() === modelData.key
-                onClicked: {
-                    if (modelData.key === "custom-symbol"
-                            && !BarState.identityLabelValid(root.customWorkspaceText)) {
-                        root.message = "Enter a custom workspace symbol below";
-                        return;
+                Layout.preferredHeight: packRow.modelData.symbols.length > 0 ? 34 : 28
+                color: BarState.workspaceIconStyle() === packRow.modelData.key
+                    ? Theme.subtleActive : "transparent"
+                border.width: 1
+                border.color: BarState.workspaceIconStyle() === packRow.modelData.key
+                    ? Theme.focus : Theme.muted
+                radius: 0
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 3
+                    spacing: 4
+
+                    SettingsButton {
+                        Layout.preferredWidth: 88
+                        label: packRow.modelData.label
+                        textSize: 9
+                        active: BarState.workspaceIconStyle() === packRow.modelData.key
+                        onClicked: {
+                            if (packRow.modelData.key === "custom-symbol"
+                                    && !BarState.identityLabelValid(root.customWorkspaceText)) {
+                                root.message = "Enter a custom workspace symbol below";
+                                return;
+                            }
+                            root.setWorkspaceIconStyle(packRow.modelData.key);
+                        }
                     }
-                    root.setWorkspaceIconStyle(modelData.key);
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        visible: packRow.modelData.symbols.length > 0
+
+                        Repeater {
+                            model: packRow.modelData.symbols
+
+                            delegate: Rectangle {
+                                required property var modelData
+
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 24
+                                color: symbolMouse.containsMouse ? Theme.subtleHover : "transparent"
+                                border.width: 1
+                                border.color: Theme.muted
+                                radius: 0
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: String(modelData)
+                                    color: Theme.foreground
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Math.max(11, packRow.modelData.glyphSize - 2)
+                                }
+
+                                MouseArea {
+                                    id: symbolMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.copyText(String(modelData))
+                                }
+                            }
+                        }
+                    }
+
+                    SettingsButton {
+                        visible: packRow.modelData.symbols.length > 0
+                        label: ""
+                        textSize: 11
+                        horizontalPadding: 8
+                        onClicked: root.copyText(packRow.modelData.symbols.join(" "))
+                    }
                 }
             }
         }
