@@ -80,6 +80,20 @@ Singleton {
         "9": "",
         "10": ""
     })
+    readonly property var workspaceIconStylePresets: [
+        { key: "off", label: "Off", sample: "—" },
+        { key: "awtarchy", label: "Awtarchy", sample: "󰞷" },
+        { key: "phases", label: "Phases", sample: "◐◑" },
+        { key: "filled-dot", label: "Filled Dot", sample: "●" },
+        { key: "filled-diamond", label: "Filled Diamond", sample: "◆" },
+        { key: "center-diamond", label: "Center Diamond", sample: "◈" },
+        { key: "filled-square", label: "Filled Square", sample: "■" },
+        { key: "small-square", label: "Small Square", sample: "▪" },
+        { key: "filled-triangle", label: "Filled Triangle", sample: "▲" },
+        { key: "spark", label: "Spark", sample: "✦" },
+        { key: "minimal-bar", label: "Minimal Bar", sample: "━" },
+        { key: "custom-symbol", label: "Custom", sample: "…" }
+    ];
     readonly property var workspaceStylePresets: [
         { key: "awtarchy", label: "Awtarchy", sample: "1󰞷" },
         { key: "numbers", label: "Numbers", sample: "1" },
@@ -392,6 +406,71 @@ Singleton {
         return vertical ? String(value) + icon : String(value) + " " + icon;
     }
 
+    function workspaceIconStyleAllowed(style) {
+        for (const preset of workspaceIconStylePresets) {
+            if (preset.key === style)
+                return true;
+        }
+        return false;
+    }
+
+    function workspaceNumbersEnabled() {
+        const appearance = data().bar_appearance || ({});
+        if (typeof appearance.workspace_numbers_enabled === "boolean")
+            return appearance.workspace_numbers_enabled;
+        const legacy = String(appearance.workspace_style || "awtarchy");
+        return legacy === "awtarchy" || legacy === "numbers";
+    }
+
+    function workspaceIconStyle() {
+        const appearance = data().bar_appearance || ({});
+        const explicitStyle = String(appearance.workspace_icon_style || "");
+        if (workspaceIconStyleAllowed(explicitStyle))
+            return explicitStyle;
+        const legacy = String(appearance.workspace_style || "awtarchy");
+        if (legacy === "numbers")
+            return "off";
+        if (legacy === "awtarchy" || legacy === "icons")
+            return "awtarchy";
+        if (workspaceIconStyleAllowed(legacy))
+            return legacy;
+        return "awtarchy";
+    }
+
+    function workspaceIconFor(id) {
+        const value = workspaceId(id);
+        if (value === 0)
+            return "";
+        const style = workspaceIconStyle();
+        if (style === "off")
+            return "";
+        if (style === "awtarchy")
+            return stockWorkspaceIconFor(value);
+        if (style === "phases")
+            return String(workspacePhaseSymbols[String(value)] || "○");
+        if (style === "custom-symbol") {
+            const custom = workspaceCustomLabel();
+            return custom.length > 0 ? custom : stockWorkspaceIconFor(value);
+        }
+        return String(workspaceStyleSymbols[style] || "");
+    }
+
+    function composeWorkspaceLabel(id, vertical) {
+        const value = workspaceId(id);
+        if (value === 0)
+            return String(id);
+        const override = workspaceOverrideFor(value);
+        if (override.length > 0)
+            return override;
+        const number = workspaceNumbersEnabled() ? String(value) : "";
+        const icon = workspaceIconFor(value);
+        if (number.length > 0 && icon.length > 0)
+            return vertical ? number + icon : number + " " + icon;
+        if (number.length > 0)
+            return number;
+        return icon;
+    }
+
     function workspaceStyle() {
         const appearance = data().bar_appearance || ({});
         const value = String(appearance.workspace_style || "awtarchy");
@@ -441,13 +520,11 @@ Singleton {
     }
 
     function workspaceLabelFor(id) {
-        const override = workspaceOverrideFor(id);
-        return override.length > 0 ? override : workspaceStyleLabelFor(id, false);
+        return composeWorkspaceLabel(id, false);
     }
 
     function workspaceVerticalLabelFor(id) {
-        const override = workspaceOverrideFor(id);
-        return override.length > 0 ? override : workspaceStyleLabelFor(id, true);
+        return composeWorkspaceLabel(id, true);
     }
 
     function launcherIcon() {

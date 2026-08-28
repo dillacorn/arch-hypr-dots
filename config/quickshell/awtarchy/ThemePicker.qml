@@ -56,6 +56,15 @@ Singleton {
         Qt.callLater(() => themeGrid.positionViewAtIndex(selectedIndex, GridView.Contain));
     }
 
+
+    function activateThemeCard(index) {
+        if (selectedIndex === index) {
+            applySelectedTheme();
+            return;
+        }
+        selectIndex(index);
+    }
+
     function resetSelection() {
         const values = filteredThemes();
         if (values.length === 0) {
@@ -202,8 +211,7 @@ Singleton {
             color: Theme.popupBackground
             border.width: 1
             border.color: Theme.muted
-            radius: 6
-
+            radius: 0
             MouseArea {
                 anchors.fill: parent
                 onPressed: mouse => mouse.accepted = true
@@ -234,8 +242,7 @@ Singleton {
                         color: Theme.active
                         border.width: 1
                         border.color: search.activeFocus ? Theme.foreground : Theme.muted
-                        radius: 4
-
+                        radius: 0
                         Text {
                             anchors.fill: parent
                             anchors.leftMargin: 10
@@ -341,8 +348,7 @@ Singleton {
                                 : (cardMouse.containsMouse ? Theme.hover : Theme.active)
                             border.width: card.selected ? 2 : 1
                             border.color: card.selected ? Theme.foreground : Theme.muted
-                            radius: 5
-
+                            radius: 0
                             ColumnLayout {
                                 anchors.fill: parent
                                 anchors.margins: 7
@@ -354,7 +360,7 @@ Singleton {
                                     color: card.palette.background
                                     border.width: 1
                                     border.color: card.palette.focus
-                                    radius: 3
+                                    radius: 0
                                     clip: true
 
                                     Rectangle {
@@ -402,8 +408,7 @@ Singleton {
                                         color: card.palette.active
                                         border.width: 2
                                         border.color: card.palette.focus
-                                        radius: 2
-
+                                        radius: 0
                                         Rectangle {
                                             anchors.left: parent.left
                                             anchors.right: parent.right
@@ -421,7 +426,7 @@ Singleton {
                                         color: card.palette.hover
                                         border.width: 1
                                         border.color: card.palette.muted
-                                        radius: 2
+                                        radius: 0
                                     }
                                 }
 
@@ -443,7 +448,7 @@ Singleton {
                                             Layout.fillWidth: true
                                             Layout.preferredHeight: 8
                                             color: modelData
-                                            radius: 1
+                                            radius: 0
                                         }
                                     }
                                 }
@@ -467,8 +472,7 @@ Singleton {
                                         Layout.preferredWidth: 48
                                         Layout.preferredHeight: 20
                                         color: Theme.charging
-                                        radius: 3
-
+                                        radius: 0
                                         Text {
                                             anchors.centerIn: parent
                                             text: "Active"
@@ -485,7 +489,7 @@ Singleton {
                                 id: cardMouse
                                 anchors.fill: parent
                                 hoverEnabled: true
-                                onClicked: root.selectIndex(card.index)
+                                onClicked: root.activateThemeCard(card.index)
                             }
                         }
                     }
@@ -562,8 +566,7 @@ Singleton {
                         color: cancelMouse.containsMouse ? Theme.hover : Theme.active
                         border.width: 1
                         border.color: Theme.muted
-                        radius: 4
-
+                        radius: 0
                         Text {
                             anchors.centerIn: parent
                             text: "Cancel"
@@ -587,7 +590,7 @@ Singleton {
                         color: applyMouse.containsMouse ? Theme.focus : Theme.active
                         border.width: 1
                         border.color: root.selectedTheme() ? Theme.foreground : Theme.muted
-                        radius: 4
+                        radius: 0
                         opacity: root.selectedTheme() ? 1 : 0.55
 
                         Text {

@@ -20,9 +20,9 @@ ColumnLayout {
 
     spacing: 3
 
-    function workspaceStyleLabel() {
-        const style = BarState.workspaceStyle();
-        for (const preset of BarState.workspaceStylePresets) {
+    function workspaceIconStyleLabel() {
+        const style = BarState.workspaceIconStyle();
+        for (const preset of BarState.workspaceIconStylePresets) {
             if (preset.key === style)
                 return preset.label;
         }
@@ -46,8 +46,13 @@ ColumnLayout {
         identityWriter.exec([identityStateScript, ...next.args]);
     }
 
-    function setWorkspaceStyle(style) {
-        enqueueIdentity(["set-workspace-style", style], "Workspace style · " + style);
+    function setWorkspaceNumbers(enabled) {
+        enqueueIdentity(["set-workspace-numbers", enabled ? "on" : "off"],
+            "Workspace numbers · " + (enabled ? "On" : "Off"));
+    }
+
+    function setWorkspaceIconStyle(style) {
+        enqueueIdentity(["set-workspace-icon-style", style], "Workspace icons · " + style);
     }
 
     function applyWorkspaceCustomLabel() {
@@ -57,8 +62,8 @@ ColumnLayout {
         }
         enqueueIdentity(["set-workspace-custom-label", customWorkspaceText],
             "Custom workspace symbol · " + customWorkspaceText);
-        enqueueIdentity(["set-workspace-style", "custom-symbol"],
-            "Workspace style · Custom");
+        enqueueIdentity(["set-workspace-icon-style", "custom-symbol"],
+            "Workspace icons · Custom");
     }
 
     function setWorkspaceOverride(workspaceId, value) {
@@ -126,6 +131,36 @@ ColumnLayout {
 
     RowLayout {
         Layout.fillWidth: true
+        Layout.preferredHeight: 28
+        spacing: 5
+
+        Text {
+            text: "Numbers"
+            color: Theme.foreground
+            font.family: Theme.fontFamily
+            font.pixelSize: 10
+            font.bold: true
+        }
+
+        Item { Layout.fillWidth: true }
+
+        SettingsButton {
+            label: "On"
+            textSize: 9
+            active: BarState.workspaceNumbersEnabled()
+            onClicked: root.setWorkspaceNumbers(true)
+        }
+
+        SettingsButton {
+            label: "Off"
+            textSize: 9
+            active: !BarState.workspaceNumbersEnabled()
+            onClicked: root.setWorkspaceNumbers(false)
+        }
+    }
+
+    RowLayout {
+        Layout.fillWidth: true
         Layout.preferredHeight: 24
         spacing: 5
 
@@ -140,7 +175,7 @@ ColumnLayout {
         Item { Layout.fillWidth: true }
 
         Text {
-            text: "Global · " + root.workspaceStyleLabel()
+            text: "Global · " + root.workspaceIconStyleLabel()
             color: Theme.muted
             font.family: Theme.fontFamily
             font.pixelSize: 9
@@ -154,7 +189,7 @@ ColumnLayout {
         rowSpacing: 3
 
         Repeater {
-            model: BarState.workspaceStylePresets
+            model: BarState.workspaceIconStylePresets
 
             delegate: SettingsButton {
                 required property var modelData
@@ -163,13 +198,14 @@ ColumnLayout {
                 label: modelData.sample + "  " + modelData.label
                 textSize: 9
                 horizontalPadding: 8
-                active: BarState.workspaceStyle() === modelData.key
+                active: BarState.workspaceIconStyle() === modelData.key
                 onClicked: {
-                    if (modelData.key === "custom-symbol") {
+                    if (modelData.key === "custom-symbol"
+                            && !BarState.identityLabelValid(root.customWorkspaceText)) {
                         root.message = "Enter a custom workspace symbol below";
-                    } else {
-                        root.setWorkspaceStyle(modelData.key);
+                        return;
                     }
+                    root.setWorkspaceIconStyle(modelData.key);
                 }
             }
         }
