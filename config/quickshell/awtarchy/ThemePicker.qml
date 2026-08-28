@@ -347,7 +347,8 @@ Singleton {
                         Rectangle {
                             anchors.fill: parent
                             anchors.margins: 6
-                            color: card.selected ? Theme.focus : Theme.active
+                            color: card.selected ? Theme.focus
+                                : (cardMouse.containsMouse ? Theme.hover : Theme.active)
                             border.width: card.selected ? 2 : 1
                             border.color: card.selected ? Theme.foreground : Theme.muted
                             radius: 5
@@ -491,12 +492,9 @@ Singleton {
                             }
 
                             MouseArea {
+                                id: cardMouse
                                 anchors.fill: parent
                                 hoverEnabled: true
-                                onEntered: {
-                                    if (!card.selected)
-                                        themeGrid.currentIndex = card.index;
-                                }
                                 onClicked: root.selectIndex(card.index)
                             }
                         }
