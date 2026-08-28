@@ -109,7 +109,7 @@ Singleton {
         { key: "awtarchy", label: "Awtarchy", sample: "1󰞷" },
         { key: "numbers", label: "Numbers", sample: "1" },
         { key: "icons", label: "Icons", sample: "󰞷" },
-        { key: "workflow", label: "Workflow", sample: "" },
+        { key: "workflow", label: "Workflow", sample: "" },
         { key: "phases", label: "Phases", sample: "◐◑" },
         { key: "custom-symbol", label: "Custom", sample: "…" }
     ]

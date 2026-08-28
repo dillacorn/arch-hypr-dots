@@ -88,6 +88,8 @@ do
         "legacy workspace style migration is missing ${alias}"
 done
 
+contains "$BAR_STATE" '{ key: "workflow", label: "Workflow", sample: "" }' \
+    'Workflow preview does not match the approved pack'
 contains "$BAR_STATE" 'function workspaceIconPackFor(style)' \
     'BarState has no pack lookup helper'
 contains "$BAR_STATE" 'function workspaceIconPixelSize()' \
