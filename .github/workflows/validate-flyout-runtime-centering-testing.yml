@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  implement-and-validate:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
@@ -19,228 +19,31 @@ jobs:
       - name: Install validation tools
         run: sudo apt-get update && sudo apt-get install -y shellcheck lua5.4
 
-      - name: Apply approved runtime-centering implementation
+      - name: Record current managed stock hashes
         run: |
-          python3 <<'PY'
-          from pathlib import Path
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          changed=0
 
-          def replace_once(path, old, new):
-              p = Path(path)
-              text = p.read_text()
-              if new in text:
-                  return False
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"{path}: expected one patch target, found {count}")
-              p.write_text(text.replace(old, new, 1))
-              return True
+          while IFS= read -r repo_path; do
+            repo_rel="${repo_path#./}"
+            entry="$(sha256sum "$repo_path" | awk '{print $1}')"$'\t'".${repo_rel}"
+            if ! grep -Fqx -- "$entry" "$history"; then
+              printf '%s\n' "$entry" >> "$history"
+              changed=1
+            fi
+          done < <(
+            {
+              find ./config/quickshell/awtarchy -maxdepth 1 -type f -print
+              find ./config/hypr/scripts -maxdepth 1 -type f \
+                \( -name 'quickshell*' -o -name 'ddc_brightness.sh' -o -name 'hypr-ddc-brightness.sh' \) -print
+            } | sort
+          )
 
-          replace_once(
-              "config/quickshell/awtarchy/FlyoutManager.qml",
-              '''    function focusedMonitorName() {
-                  return Hyprland.focusedMonitor && Hyprland.focusedMonitor.name
-                      ? String(Hyprland.focusedMonitor.name) : "";
-              }
-          ''',
-              '''    function focusedMonitorName() {
-                  return Hyprland.focusedMonitor && Hyprland.focusedMonitor.name
-                      ? String(Hyprland.focusedMonitor.name) : "";
-              }
-
-              function workspaceFullscreenForMonitor(name) {
-                  return Hyprland.workspaces.values.some(workspace =>
-                      workspace.monitor && workspace.monitor.name === name
-                          && workspace.active && workspace.hasFullscreen);
-              }
-
-              function barVisibleOnMonitor(name) {
-                  const monitor = String(name || "");
-                  if (monitor.length === 0)
-                      return false;
-
-                  const matches = barWindows.filter(window =>
-                      window && String(window.monitorName || "") === monitor);
-                  if (matches.length > 0)
-                      return matches.some(window => Boolean(window.visible));
-
-                  return BarState.enabledFor(monitor) && !workspaceFullscreenForMonitor(monitor);
-              }
-          ''')
-
-          for path in (
-              "config/quickshell/awtarchy/ClipboardMenu.qml",
-              "config/quickshell/awtarchy/Notifications.qml",
-              "config/quickshell/awtarchy/NetworkMenu.qml",
-              "config/quickshell/awtarchy/BluetoothMenu.qml",
-          ):
-              replace_once(
-                  path,
-                  '        if (!targetScreen || !BarState.enabledFor(targetScreen.name))\n',
-                  '        if (!targetScreen || !FlyoutManager.barVisibleOnMonitor(targetScreen.name))\n')
-
-          replace_once(
-              "config/quickshell/awtarchy/Launcher.qml",
-              '''    function barPlacementForScreen(targetScreen) {
-                  if (!targetScreen || !BarState.enabledFor(targetScreen.name))
-                      return "center";
-                  return BarState.positionFor(targetScreen.name);
-              }
-          ''',
-              '''    function barPlacementForScreen(targetScreen) {
-                  if (!targetScreen || !FlyoutManager.barVisibleOnMonitor(targetScreen.name))
-                      return "center";
-                  return BarState.positionFor(targetScreen.name);
-              }
-          ''')
-          replace_once(
-              "config/quickshell/awtarchy/Launcher.qml",
-              '''    function centeredPlacementForScreen(targetScreen) {
-                  if (!targetScreen || launcherCenteredFor(targetScreen.name)
-                      || !BarState.enabledFor(targetScreen.name))
-                      return "center";
-                  return BarState.positionFor(targetScreen.name) + "-center";
-              }
-          ''',
-              '''    function centeredPlacementForScreen(targetScreen) {
-                  if (!targetScreen || launcherCenteredFor(targetScreen.name)
-                      || !FlyoutManager.barVisibleOnMonitor(targetScreen.name))
-                      return "center";
-                  return BarState.positionFor(targetScreen.name) + "-center";
-              }
-          ''')
-
-          replace_once(
-              "config/quickshell/awtarchy/Notifications.qml",
-              '    property real anchorAlongEdge: -1\n',
-              '    property real anchorAlongEdge: -1\n    property bool edgeCentered: false\n')
-          replace_once(
-              "config/quickshell/awtarchy/Notifications.qml",
-              '''    function applyWindowSize(width, height) {
-                  panelWidthOverride = clampWidth(width);
-                  panelHeightOverride = clampHeight(height);
-                  if (centerWindow.visible && activeMonitorName.length > 0) {
-          ''',
-              '''    function applyWindowSize(width, height) {
-                  panelWidthOverride = clampWidth(width);
-                  panelHeightOverride = clampHeight(height);
-                  if (edgeCentered && activeScreen)
-                      anchorAlongEdge = centeredAnchorForScreen(activeScreen);
-                  if (centerWindow.visible && activeMonitorName.length > 0) {
-          ''')
-          replace_once(
-              "config/quickshell/awtarchy/Notifications.qml",
-              '''    function anchorCoordinate(item) {
-                  if (!item)
-                      return -1;
-                  const edgePoint = item.mapToItem(null, item.width, item.height);
-                  return placement === "top" || placement === "bottom" ? edgePoint.x : edgePoint.y;
-              }
-          ''',
-              '''    function anchorCoordinate(item) {
-                  if (!item)
-                      return -1;
-                  const edgePoint = item.mapToItem(null, item.width, item.height);
-                  return placement === "top" || placement === "bottom" ? edgePoint.x : edgePoint.y;
-              }
-
-              function centeredAnchorForScreen(targetScreen) {
-                  if (!targetScreen || placement === "center")
-                      return -1;
-                  if (placement === "top" || placement === "bottom")
-                      return Math.round((targetScreen.width + configuredPanelWidth) / 2);
-                  if (placement === "left" || placement === "right")
-                      return Math.round((targetScreen.height + configuredPanelHeight) / 2);
-                  return -1;
-              }
-          ''')
-          replace_once(
-              "config/quickshell/awtarchy/Notifications.qml",
-              '''        placement = placementForScreen(targetScreen);
-                  anchorAlongEdge = anchorCoordinate(anchorItem);
-                  settingsOpen = false;
-                  settingsPanel.resetCopySelection();
-                  settingsMessage = "";
-                  loadSavedView(targetScreen);
-                  prepareCenterOpen(targetScreen);
-          ''',
-              '''        placement = placementForScreen(targetScreen);
-                  settingsOpen = false;
-                  settingsPanel.resetCopySelection();
-                  settingsMessage = "";
-                  loadSavedView(targetScreen);
-                  edgeCentered = !anchorItem && placement !== "center";
-                  anchorAlongEdge = edgeCentered
-                      ? centeredAnchorForScreen(targetScreen) : anchorCoordinate(anchorItem);
-                  prepareCenterOpen(targetScreen);
-          ''')
-          replace_once(
-              "config/quickshell/awtarchy/Notifications.qml",
-              '''        centerWindow.visible = false;
-                  panelPresented = false;
-                  FlyoutManager.release("notifications");
-          ''',
-              '''        centerWindow.visible = false;
-                  panelPresented = false;
-                  edgeCentered = false;
-                  FlyoutManager.release("notifications");
-          ''')
-
-          toggle = Path("config/hypr/scripts/quickshell_notifications_toggle.sh")
-          if not toggle.exists():
-              toggle.write_text('''#!/usr/bin/env bash
-          # Toggle the Awtarchy Quickshell notification center.
-
-          set -euo pipefail
-          SCRIPTS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts"
-          "$SCRIPTS_DIR/quickshell.sh" start >/dev/null
-          exec qs -c awtarchy ipc call notifications toggle
-          ''')
-          toggle.chmod(0o755)
-
-          replace_once(
-              "config/hypr/hyprland.lua",
-              'local notification_dismiss = "~/.config/hypr/scripts/quickshell_notification_dismiss.sh"\n',
-              'local notification_dismiss = "~/.config/hypr/scripts/quickshell_notification_dismiss.sh"\nlocal notifications_toggle = "~/.config/hypr/scripts/quickshell_notifications_toggle.sh"\n')
-          replace_once(
-              "config/hypr/hyprland.lua",
-              '''-- Notification dismiss
-          for _, key in ipairs({
-          ''',
-              '''-- Notification center
-          hl.bind("SUPER + N", hl.dsp.exec_cmd(notifications_toggle), {})
-
-          -- Notification dismiss
-          for _, key in ipairs({
-          ''')
-          replace_once(
-              "config/hypr/hyprland.lua",
-              '''    -- Notification dismiss in "noalt"
-              for _, key in ipairs({
-          ''',
-              '''    -- Notification center in "noalt"
-              hl.bind("SUPER + N", hl.dsp.exec_cmd(notifications_toggle), {})
-
-              -- Notification dismiss in "noalt"
-              for _, key in ipairs({
-          ''')
-          PY
-
-          git diff --check
-          git status --short
-
-          if ! git diff --quiet; then
+          if (( changed == 1 )); then
             git config user.name 'dillacorn'
             git config user.email '28743863+dillacorn@users.noreply.github.com'
-            git add \
-              config/hypr/hyprland.lua \
-              config/hypr/scripts/quickshell_notifications_toggle.sh \
-              config/quickshell/awtarchy/FlyoutManager.qml \
-              config/quickshell/awtarchy/Launcher.qml \
-              config/quickshell/awtarchy/ClipboardMenu.qml \
-              config/quickshell/awtarchy/Notifications.qml \
-              config/quickshell/awtarchy/NetworkMenu.qml \
-              config/quickshell/awtarchy/BluetoothMenu.qml
-            git commit -m 'Center flyouts when bar is hidden'
+            git add "$history"
+            git commit -m 'Record flyout runtime managed hashes'
             git push origin HEAD:feature/filter-quickshell-task-icons
           fi
 
