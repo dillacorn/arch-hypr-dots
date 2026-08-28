@@ -63,7 +63,7 @@ contains "$BAR_SETTINGS" 'function copyText(text)' \
     'workspace icon settings have no clipboard helper'
 contains "$BAR_SETTINGS" '["wl-copy", text]' \
     'workspace icon settings do not use wl-copy for symbol copying'
-contains "$BAR_SETTINGS" 'model: modelData.symbols' \
+contains "$BAR_SETTINGS" 'model: packRow.modelData.symbols' \
     'workspace icon preset does not preview its complete symbol pack'
 contains "$BAR_SETTINGS" 'modelData.symbols.join(" ")' \
     'workspace icon preset has no whole-pack copy action'
