@@ -69,7 +69,7 @@ mkdir -p "$FAKE_BIN" "$(dirname -- "$STATE_FILE")" "$TMP/home"
 
 cat >"${FAKE_BIN}/qs" <<'SH'
 #!/usr/bin/env bash
-return 1 2>/dev/null || true
+:
 SH
 chmod +x "${FAKE_BIN}/qs"
 
