@@ -67,6 +67,96 @@ Singleton {
         "numlock",
         "title-bars"
     ]
+
+    readonly property var stockWorkspaceIcons: ({
+        "1": "󰞷",
+        "2": "",
+        "3": "",
+        "4": "",
+        "5": "",
+        "6": "",
+        "7": "",
+        "8": "",
+        "9": "",
+        "10": ""
+    })
+    readonly property var circledWorkspaceNumbers: ({
+        "1": "①",
+        "2": "②",
+        "3": "③",
+        "4": "④",
+        "5": "⑤",
+        "6": "⑥",
+        "7": "⑦",
+        "8": "⑧",
+        "9": "⑨",
+        "10": "⑩"
+    })
+    readonly property var workspaceStylePresets: [
+        { key: "awtarchy", label: "Awtarchy", sample: "1󰞷" },
+        { key: "numbers", label: "Numbers", sample: "1" },
+        { key: "icons", label: "Icons", sample: "󰞷" },
+        { key: "circled-numbers", label: "Circled Numbers", sample: "①" },
+        { key: "filled-dot", label: "Filled Dot", sample: "●" },
+        { key: "hollow-dot", label: "Hollow Dot", sample: "○" },
+        { key: "bullet", label: "Bullet", sample: "•" },
+        { key: "tiny-dot", label: "Tiny Dot", sample: "◦" },
+        { key: "bullseye", label: "Bullseye", sample: "◎" },
+        { key: "fisheye", label: "Fisheye", sample: "◉" },
+        { key: "half-left", label: "Half Left", sample: "◐" },
+        { key: "half-right", label: "Half Right", sample: "◑" },
+        { key: "half-bottom", label: "Half Bottom", sample: "◒" },
+        { key: "half-top", label: "Half Top", sample: "◓" },
+        { key: "quarter-circle", label: "Quarter Circle", sample: "◔" },
+        { key: "three-quarter-circle", label: "Three Quarter", sample: "◕" },
+        { key: "filled-diamond", label: "Filled Diamond", sample: "◆" },
+        { key: "hollow-diamond", label: "Hollow Diamond", sample: "◇" },
+        { key: "center-diamond", label: "Center Diamond", sample: "◈" },
+        { key: "filled-square", label: "Filled Square", sample: "■" },
+        { key: "hollow-square", label: "Hollow Square", sample: "□" },
+        { key: "small-square", label: "Small Square", sample: "▪" },
+        { key: "filled-triangle", label: "Filled Triangle", sample: "▲" },
+        { key: "hollow-triangle", label: "Hollow Triangle", sample: "△" },
+        { key: "star", label: "Star", sample: "★" },
+        { key: "hollow-star", label: "Hollow Star", sample: "☆" },
+        { key: "spark", label: "Spark", sample: "✦" },
+        { key: "minimal-bar", label: "Minimal Bar", sample: "━" },
+        { key: "custom-symbol", label: "Custom", sample: "…" }
+    ]
+    readonly property var launcherIconPresets: [
+        { label: "Awtarchy", value: "" },
+        { label: "Menu", value: "☰" },
+        { label: "Grid", value: "⊞" },
+        { label: "Diamond", value: "◆" },
+        { label: "Circle", value: "●" }
+    ]
+    readonly property var workspaceStyleSymbols: ({
+        "filled-dot": "●",
+        "hollow-dot": "○",
+        "bullet": "•",
+        "tiny-dot": "◦",
+        "bullseye": "◎",
+        "fisheye": "◉",
+        "half-left": "◐",
+        "half-right": "◑",
+        "half-bottom": "◒",
+        "half-top": "◓",
+        "quarter-circle": "◔",
+        "three-quarter-circle": "◕",
+        "filled-diamond": "◆",
+        "hollow-diamond": "◇",
+        "center-diamond": "◈",
+        "filled-square": "■",
+        "hollow-square": "□",
+        "small-square": "▪",
+        "filled-triangle": "▲",
+        "hollow-triangle": "△",
+        "star": "★",
+        "hollow-star": "☆",
+        "spark": "✦",
+        "minimal-bar": "━"
+    })
+
     property int revision: 0
     property int idleRevision: 0
 
@@ -245,7 +335,8 @@ Singleton {
             network_views: {},
             bluetooth_views: {},
             battery_views: {},
-            capture_allowed: {}
+            capture_allowed: {},
+            bar_appearance: {}
         });
     }
 
@@ -274,11 +365,16 @@ Singleton {
                 "network_views",
                 "bluetooth_views",
                 "battery_views",
-                "capture_allowed"
+                "capture_allowed",
+                "bar_appearance"
             ]) {
                 if (!parsed[key] || typeof parsed[key] !== "object" || Array.isArray(parsed[key]))
                     parsed[key] = {};
             }
+            if (!parsed.bar_appearance.workspace_overrides
+                    || typeof parsed.bar_appearance.workspace_overrides !== "object"
+                    || Array.isArray(parsed.bar_appearance.workspace_overrides))
+                parsed.bar_appearance.workspace_overrides = {};
             if (parsed.enabled === undefined)
                 parsed.enabled = true;
             if (parsed.update_notifications_enabled === undefined)
@@ -288,6 +384,108 @@ Singleton {
             console.warn("Awtarchy Quickshell: invalid shell state:", error);
             return emptyData();
         }
+    }
+
+    function identityLabelValid(value) {
+        if (typeof value !== "string")
+            return false;
+        const points = Array.from(value);
+        if (points.length < 1 || points.length > 8 || value.trim().length === 0)
+            return false;
+        if (value.indexOf("\n") >= 0 || value.indexOf("\r") >= 0)
+            return false;
+        for (const point of points) {
+            const code = point.codePointAt(0);
+            if ((code >= 0 && code <= 31) || (code >= 127 && code <= 159))
+                return false;
+        }
+        return true;
+    }
+
+    function workspaceId(id) {
+        const value = Math.round(Number(id));
+        return Number.isFinite(value) && value >= 1 && value <= 10 ? value : 0;
+    }
+
+    function stockWorkspaceIconFor(id) {
+        const value = workspaceId(id);
+        return value > 0 ? String(stockWorkspaceIcons[String(value)] || "") : "";
+    }
+
+    function stockWorkspaceLabelFor(id, vertical) {
+        const value = workspaceId(id);
+        if (value === 0)
+            return String(id);
+        const icon = stockWorkspaceIconFor(value);
+        if (icon.length === 0)
+            return String(value);
+        return vertical ? String(value) + icon : String(value) + " " + icon;
+    }
+
+    function workspaceStyle() {
+        const appearance = data().bar_appearance || ({});
+        const value = String(appearance.workspace_style || "awtarchy");
+        for (const preset of workspaceStylePresets) {
+            if (preset.key === value)
+                return value;
+        }
+        return "awtarchy";
+    }
+
+    function workspaceCustomLabel() {
+        const appearance = data().bar_appearance || ({});
+        const value = appearance.workspace_custom_label;
+        return identityLabelValid(value) ? value : "";
+    }
+
+    function workspaceOverrideFor(id) {
+        const value = workspaceId(id);
+        if (value === 0)
+            return "";
+        const overrides = (data().bar_appearance || ({})).workspace_overrides || ({});
+        const label = overrides[String(value)];
+        return identityLabelValid(label) ? label : "";
+    }
+
+    function workspaceStyleLabelFor(id, vertical) {
+        const value = workspaceId(id);
+        if (value === 0)
+            return String(id);
+        const style = workspaceStyle();
+        if (style === "awtarchy")
+            return stockWorkspaceLabelFor(value, vertical);
+        if (style === "numbers")
+            return String(value);
+        if (style === "icons") {
+            const icon = stockWorkspaceIconFor(value);
+            return icon.length > 0 ? icon : String(value);
+        }
+        if (style === "circled-numbers")
+            return String(circledWorkspaceNumbers[String(value)] || value);
+        if (style === "custom-symbol") {
+            const custom = workspaceCustomLabel();
+            return custom.length > 0 ? custom : stockWorkspaceLabelFor(value, vertical);
+        }
+        const symbol = String(workspaceStyleSymbols[style] || "");
+        return symbol.length > 0 ? symbol : stockWorkspaceLabelFor(value, vertical);
+    }
+
+    function workspaceLabelFor(id) {
+        const override = workspaceOverrideFor(id);
+        return override.length > 0 ? override : workspaceStyleLabelFor(id, false);
+    }
+
+    function workspaceVerticalLabelFor(id) {
+        const override = workspaceOverrideFor(id);
+        return override.length > 0 ? override : workspaceStyleLabelFor(id, true);
+    }
+
+    function launcherIcon() {
+        const appearance = data().bar_appearance || ({});
+        const value = appearance.launcher_icon;
+        if (identityLabelValid(value))
+            return value;
+        return "";
     }
 
     function updateNotificationsEnabled() {
