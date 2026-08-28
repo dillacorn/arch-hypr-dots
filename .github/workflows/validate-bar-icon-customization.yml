@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   bar-icon-customization:
@@ -15,19 +15,37 @@ jobs:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           fetch-depth: 0
+      - name: Install migration dependency
+        run: sudo apt-get update && sudo apt-get install -y lua5.4
       - name: Bash syntax
         run: |
           bash -n config/hypr/scripts/quickshell_application_state.sh
           bash -n tests/test-bar-icon-customization.sh
       - name: Bar icon persistence regression
         run: bash tests/test-bar-icon-customization.sh
-      - name: Managed stock hashes
+      - name: Record managed stock hashes
         run: |
-          sha256sum \
-            config/hypr/scripts/quickshell_application_state.sh \
-            config/quickshell/awtarchy/BarState.qml \
-            config/quickshell/awtarchy/Bar.qml \
-            config/quickshell/awtarchy/BarSettingsSection.qml \
-            config/quickshell/awtarchy/BarIconSettings.qml
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          entries=(
+            $'904f19204ce44a0cc4dee4d0a730c34135cae832c318076fdfb9d2a78e4c21a4\t.config/hypr/scripts/quickshell_application_state.sh'
+            $'46bf0e512d585c506558f68da8760dc3e7d20f335c57c973f22ca3d35e241b3e\t.config/quickshell/awtarchy/BarState.qml'
+            $'dc0925f2c5a59dcf76824365d80b2a15a3e80b7c06069d8ab17109407aaff96d\t.config/quickshell/awtarchy/Bar.qml'
+            $'7299694c95b8e3abe84889b69233656b05bb9cb28c5e5f5d655c7d773971890e\t.config/quickshell/awtarchy/BarSettingsSection.qml'
+            $'b8e8fab6bf5c91776db2bfbe3944961bdb4ad38583bc44e2ff92164cd2230528\t.config/quickshell/awtarchy/BarIconSettings.qml'
+          )
+          changed=0
+          for entry in "${entries[@]}"; do
+            if ! grep -Fqx -- "$entry" "$history"; then
+              printf '%s\n' "$entry" >>"$history"
+              changed=1
+            fi
+          done
+          if (( changed == 1 )); then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$history"
+            git commit -m 'Track bar icon managed hashes'
+            git push origin HEAD:feature/bar-icon-customization
+          fi
       - name: Quickshell updater migration
         run: bash tests/test-quickshell-updater-migration.sh
