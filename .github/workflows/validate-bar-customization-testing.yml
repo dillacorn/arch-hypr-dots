@@ -28,5 +28,11 @@ jobs:
         run: |
           bash tests/test-bar-task-icons.sh
           bash tests/test-bar-module-visibility.sh
+      - name: Managed file hashes
+        run: |
+          sha256sum \
+            config/hypr/scripts/quickshell.sh \
+            config/quickshell/awtarchy/Bar.qml \
+            config/quickshell/awtarchy/BarSettingsSection.qml
       - name: Existing display-scale regression
         run: bash tests/test-display-scale-quicksettings.sh
