@@ -1,0 +1,30 @@
+name: Validate Theme Picker Workspace Composition
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+      - name: Validate theme picker and workspace composition
+        run: |
+          bash -n config/hypr/scripts/quickshell_application_state.sh
+          shellcheck config/hypr/scripts/quickshell_application_state.sh
+          bash -n tests/test-theme-picker-workspace-composition.sh
+          shellcheck tests/test-theme-picker-workspace-composition.sh
+          bash -n tests/test-workspace-icon-packs.sh
+          shellcheck tests/test-workspace-icon-packs.sh
+          bash tests/test-theme-picker-workspace-composition.sh
+          bash tests/test-workspace-icon-packs.sh
+          bash tests/test-quickshell-theme-picker.sh
+          bash tests/test-bar-icon-customization.sh
+          git diff --check

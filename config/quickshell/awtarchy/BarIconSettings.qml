@@ -9,8 +9,15 @@ ColumnLayout {
     id: root
 
     property var identityCommandQueue: []
+    property var clipboardQueue: []
+    property var activeClipboardCopy: null
     property string identityError: ""
     property string message: ""
+    property string workspaceCopyFeedback: ""
+    property string launcherCopyFeedback: ""
+    property string copiedWorkspaceKey: ""
+    property string copiedWorkspacePack: ""
+    property string copiedLauncherValue: ""
     property string customWorkspaceText: BarState.workspaceCustomLabel()
     property string customLauncherText: BarState.launcherIcon()
 
@@ -20,13 +27,85 @@ ColumnLayout {
 
     spacing: 3
 
-    function workspaceStyleLabel() {
-        const style = BarState.workspaceStyle();
-        for (const preset of BarState.workspaceStylePresets) {
+    function workspaceIconStyleLabel() {
+        const style = BarState.workspaceIconStyle();
+        for (const preset of BarState.workspaceIconStylePresets) {
             if (preset.key === style)
                 return preset.label;
         }
         return "Awtarchy";
+    }
+
+    function enqueueClipboardCopy(text, kind, key, successText) {
+        const value = String(text || "");
+        if (value.length === 0)
+            return;
+        const queue = clipboardQueue.slice();
+        queue.push({
+            text: value,
+            kind: String(kind || ""),
+            key: String(key || ""),
+            successText: String(successText || "Copied")
+        });
+        clipboardQueue = queue;
+        runNextClipboardCopy();
+    }
+
+    function runNextClipboardCopy() {
+        if (clipboardWriter.running || activeClipboardCopy !== null
+                || clipboardQueue.length === 0)
+            return;
+        const next = clipboardQueue[0];
+        clipboardQueue = clipboardQueue.slice(1);
+        activeClipboardCopy = next;
+        clipboardWriter.exec(["wl-copy", "--type", "text/plain", "--", next.text]);
+    }
+
+    function completeClipboardCopy(next) {
+        if (next.kind === "workspace-symbol") {
+            copiedWorkspaceKey = next.key;
+            copiedWorkspacePack = "";
+            workspaceCopyFeedback = next.successText;
+            workspaceCopyFeedbackTimer.restart();
+        } else if (next.kind === "workspace-pack") {
+            copiedWorkspaceKey = "";
+            copiedWorkspacePack = next.key;
+            workspaceCopyFeedback = next.successText;
+            workspaceCopyFeedbackTimer.restart();
+        } else if (next.kind === "launcher") {
+            copiedLauncherValue = next.key;
+            launcherCopyFeedback = next.successText;
+            launcherCopyFeedbackTimer.restart();
+        }
+    }
+
+    function failClipboardCopy(next) {
+        if (!next)
+            return;
+        if (next.kind === "launcher") {
+            copiedLauncherValue = "";
+            launcherCopyFeedback = "Copy failed";
+            launcherCopyFeedbackTimer.restart();
+        } else {
+            copiedWorkspaceKey = "";
+            copiedWorkspacePack = "";
+            workspaceCopyFeedback = "Copy failed";
+            workspaceCopyFeedbackTimer.restart();
+        }
+    }
+
+    function copyWorkspaceSymbol(text, key) {
+        const value = String(text || "");
+        enqueueClipboardCopy(value, "workspace-symbol", key, "Copied · " + value);
+    }
+
+    function copyWorkspacePack(styleKey, text) {
+        enqueueClipboardCopy(String(text || ""), "workspace-pack", styleKey, "Copied all");
+    }
+
+    function copyLauncherIcon(value) {
+        const text = String(value || "");
+        enqueueClipboardCopy(text, "launcher", text, "Copied · " + text);
     }
 
     function enqueueIdentity(args, statusMessage) {
@@ -46,8 +125,13 @@ ColumnLayout {
         identityWriter.exec([identityStateScript, ...next.args]);
     }
 
-    function setWorkspaceStyle(style) {
-        enqueueIdentity(["set-workspace-style", style], "Workspace style · " + style);
+    function setWorkspaceNumbers(enabled) {
+        enqueueIdentity(["set-workspace-numbers", enabled ? "on" : "off"],
+            "Workspace numbers · " + (enabled ? "On" : "Off"));
+    }
+
+    function setWorkspaceIconStyle(style) {
+        enqueueIdentity(["set-workspace-icon-style", style], "Workspace icons · " + style);
     }
 
     function applyWorkspaceCustomLabel() {
@@ -57,8 +141,8 @@ ColumnLayout {
         }
         enqueueIdentity(["set-workspace-custom-label", customWorkspaceText],
             "Custom workspace symbol · " + customWorkspaceText);
-        enqueueIdentity(["set-workspace-style", "custom-symbol"],
-            "Workspace style · Custom");
+        enqueueIdentity(["set-workspace-icon-style", "custom-symbol"],
+            "Workspace icons · Custom");
     }
 
     function setWorkspaceOverride(workspaceId, value) {
@@ -100,6 +184,42 @@ ColumnLayout {
         enqueueIdentity(["reset-bar-icons"], "Bar icons reset to Awtarchy");
     }
 
+    Timer {
+        id: workspaceCopyFeedbackTimer
+        interval: 1500
+        repeat: false
+        onTriggered: {
+            root.workspaceCopyFeedback = "";
+            root.copiedWorkspaceKey = "";
+            root.copiedWorkspacePack = "";
+        }
+    }
+
+    Timer {
+        id: launcherCopyFeedbackTimer
+        interval: 1500
+        repeat: false
+        onTriggered: {
+            root.launcherCopyFeedback = "";
+            root.copiedLauncherValue = "";
+        }
+    }
+
+    Process {
+        id: clipboardWriter
+        onExited: (exitCode, exitStatus) => {
+            const next = root.activeClipboardCopy;
+            root.activeClipboardCopy = null;
+            if (next !== null) {
+                if (exitCode === 0)
+                    root.completeClipboardCopy(next);
+                else
+                    root.failClipboardCopy(next);
+            }
+            root.runNextClipboardCopy();
+        }
+    }
+
     Process {
         id: identityWriter
         stderr: StdioCollector {
@@ -126,6 +246,36 @@ ColumnLayout {
 
     RowLayout {
         Layout.fillWidth: true
+        Layout.preferredHeight: 28
+        spacing: 5
+
+        Text {
+            text: "Numbers"
+            color: Theme.foreground
+            font.family: Theme.fontFamily
+            font.pixelSize: 10
+            font.bold: true
+        }
+
+        Item { Layout.fillWidth: true }
+
+        SettingsButton {
+            label: "On"
+            textSize: 9
+            active: BarState.workspaceNumbersEnabled()
+            onClicked: root.setWorkspaceNumbers(true)
+        }
+
+        SettingsButton {
+            label: "Off"
+            textSize: 9
+            active: !BarState.workspaceNumbersEnabled()
+            onClicked: root.setWorkspaceNumbers(false)
+        }
+    }
+
+    RowLayout {
+        Layout.fillWidth: true
         Layout.preferredHeight: 24
         spacing: 5
 
@@ -137,38 +287,118 @@ ColumnLayout {
             font.bold: true
         }
 
+        Text {
+            visible: root.workspaceCopyFeedback.length > 0
+            text: root.workspaceCopyFeedback
+            color: Theme.focus
+            font.family: Theme.fontFamily
+            font.pixelSize: 9
+        }
+
         Item { Layout.fillWidth: true }
 
         Text {
-            text: "Global · " + root.workspaceStyleLabel()
+            text: "Global · " + root.workspaceIconStyleLabel()
             color: Theme.muted
             font.family: Theme.fontFamily
             font.pixelSize: 9
         }
     }
 
-    GridLayout {
+    ColumnLayout {
         Layout.fillWidth: true
-        columns: 4
-        columnSpacing: 4
-        rowSpacing: 3
+        spacing: 4
 
         Repeater {
-            model: BarState.workspaceStylePresets
+            model: BarState.workspaceIconStylePresets
 
-            delegate: SettingsButton {
+            delegate: Rectangle {
+                id: packRow
                 required property var modelData
 
                 Layout.fillWidth: true
-                label: modelData.sample + "  " + modelData.label
-                textSize: 9
-                horizontalPadding: 8
-                active: BarState.workspaceStyle() === modelData.key
-                onClicked: {
-                    if (modelData.key === "custom-symbol") {
-                        root.message = "Enter a custom workspace symbol below";
-                    } else {
-                        root.setWorkspaceStyle(modelData.key);
+                Layout.preferredHeight: packRow.modelData.symbols.length > 0 ? 34 : 28
+                color: BarState.workspaceIconStyle() === packRow.modelData.key
+                    ? Theme.subtleActive : "transparent"
+                border.width: 1
+                border.color: BarState.workspaceIconStyle() === packRow.modelData.key
+                    ? Theme.focus : Theme.muted
+                radius: 0
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 3
+                    spacing: 4
+
+                    SettingsButton {
+                        Layout.preferredWidth: 88
+                        label: packRow.modelData.label
+                        textSize: 9
+                        active: BarState.workspaceIconStyle() === packRow.modelData.key
+                        onClicked: {
+                            if (packRow.modelData.key === "custom-symbol"
+                                    && !BarState.identityLabelValid(root.customWorkspaceText)) {
+                                root.message = "Enter a custom workspace symbol below";
+                                return;
+                            }
+                            root.setWorkspaceIconStyle(packRow.modelData.key);
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        visible: packRow.modelData.symbols.length > 0
+
+                        Repeater {
+                            model: packRow.modelData.symbols
+
+                            delegate: Rectangle {
+                                id: symbolCell
+                                required property int index
+                                required property var modelData
+                                readonly property string copyKey: packRow.modelData.key + ":" + index
+
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 24
+                                color: root.copiedWorkspaceKey === symbolCell.copyKey
+                                    ? Theme.subtleActive
+                                    : (symbolMouse.containsMouse ? Theme.subtleHover : "transparent")
+                                border.width: 1
+                                border.color: root.copiedWorkspaceKey === symbolCell.copyKey
+                                    ? Theme.focus : Theme.muted
+                                radius: 0
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: String(symbolCell.modelData)
+                                    color: Theme.foreground
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Math.max(11, packRow.modelData.glyphSize - 2)
+                                }
+
+                                MouseArea {
+                                    id: symbolMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.copyWorkspaceSymbol(
+                                        String(symbolCell.modelData), symbolCell.copyKey)
+                                }
+                            }
+                        }
+                    }
+
+                    SettingsButton {
+                        visible: packRow.modelData.symbols.length > 0
+                        label: root.copiedWorkspacePack === packRow.modelData.key
+                            ? "✓ Copied all" : " Copy all"
+                        textSize: 9
+                        horizontalPadding: 8
+                        active: root.copiedWorkspacePack === packRow.modelData.key
+                        onClicked: root.copyWorkspacePack(
+                            String(packRow.modelData.key),
+                            packRow.modelData.symbols.join(" "))
                     }
                 }
             }
@@ -227,6 +457,33 @@ ColumnLayout {
             label: "Reset Workspace Icons"
             textSize: 9
             onClicked: root.resetWorkspaceIcons()
+        }
+    }
+
+    RowLayout {
+        Layout.fillWidth: true
+        Layout.preferredHeight: 28
+        spacing: 5
+
+        Text {
+            text: "Find more icons"
+            color: Theme.muted
+            font.family: Theme.fontFamily
+            font.pixelSize: 9
+        }
+
+        Item { Layout.fillWidth: true }
+
+        SettingsButton {
+            label: "Nerd Fonts ↗"
+            textSize: 9
+            onClicked: Qt.openUrlExternally("https://www.nerdfonts.com/cheat-sheet")
+        }
+
+        SettingsButton {
+            label: "Unicode ↗"
+            textSize: 9
+            onClicked: Qt.openUrlExternally("https://symbl.cc/en/unicode/")
         }
     }
 
@@ -338,6 +595,14 @@ ColumnLayout {
             font.bold: true
         }
 
+        Text {
+            visible: root.launcherCopyFeedback.length > 0
+            text: root.launcherCopyFeedback
+            color: Theme.focus
+            font.family: Theme.fontFamily
+            font.pixelSize: 9
+        }
+
         Item { Layout.fillWidth: true }
 
         Text {
@@ -350,22 +615,38 @@ ColumnLayout {
 
     GridLayout {
         Layout.fillWidth: true
-        columns: 5
+        columns: 3
         columnSpacing: 4
         rowSpacing: 3
 
         Repeater {
             model: BarState.launcherIconPresets
 
-            delegate: SettingsButton {
+            delegate: RowLayout {
+                id: launcherPreset
                 required property var modelData
 
                 Layout.fillWidth: true
-                label: modelData.value + "  " + modelData.label
-                textSize: 9
-                horizontalPadding: 8
-                active: BarState.launcherIcon() === modelData.value
-                onClicked: root.setLauncherIcon(modelData.value)
+                spacing: 3
+
+                SettingsButton {
+                    Layout.fillWidth: true
+                    label: launcherPreset.modelData.value + "  " + launcherPreset.modelData.label
+                    textSize: 9
+                    horizontalPadding: 8
+                    active: BarState.launcherIcon() === launcherPreset.modelData.value
+                    onClicked: root.setLauncherIcon(launcherPreset.modelData.value)
+                }
+
+                SettingsButton {
+                    Layout.preferredWidth: 30
+                    label: root.copiedLauncherValue === launcherPreset.modelData.value
+                        ? "✓" : ""
+                    textSize: 9
+                    horizontalPadding: 4
+                    active: root.copiedLauncherValue === launcherPreset.modelData.value
+                    onClicked: root.copyLauncherIcon(launcherPreset.modelData.value)
+                }
             }
         }
     }

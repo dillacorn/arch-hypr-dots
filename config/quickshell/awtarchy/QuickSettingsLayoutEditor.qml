@@ -96,76 +96,94 @@ Item {
                 wrapMode: Text.Wrap
             }
 
-            Flickable {
+            Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                clip: true
-                contentWidth: width
-                contentHeight: sectionRows.implicitHeight
-                boundsBehavior: Flickable.StopAtBounds
 
-                ColumnLayout {
-                    id: sectionRows
-                    width: parent.width
-                    spacing: 3
+                Flickable {
+                    id: layoutFlick
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.rightMargin: layoutScrollBar.visible ? layoutScrollBar.width : 0
+                    clip: true
+                    contentWidth: width
+                    contentHeight: sectionRows.implicitHeight
+                    boundsBehavior: Flickable.StopAtBounds
 
-                    Repeater {
-                        model: root.order || []
+                    ColumnLayout {
+                        id: sectionRows
+                        width: layoutFlick.width
+                        spacing: 3
 
-                        Rectangle {
-                            id: sectionRow
-                            required property var modelData
-                            readonly property string sectionId: String(modelData)
-                            readonly property int sectionIndex: root.order.indexOf(sectionId)
-                            readonly property bool shown: root.sectionVisible(sectionId)
+                        Repeater {
+                            model: root.order || []
 
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 30
-                            color: Theme.popupButton
-                            border.width: 1
-                            border.color: Theme.active
+                            Rectangle {
+                                id: sectionRow
+                                required property var modelData
+                                readonly property string sectionId: String(modelData)
+                                readonly property int sectionIndex: root.order.indexOf(sectionId)
+                                readonly property bool shown: root.sectionVisible(sectionId)
 
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 6
-                                anchors.rightMargin: 6
-                                spacing: 5
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 30
+                                color: Theme.popupButton
+                                border.width: 1
+                                border.color: Theme.active
 
-                                SettingsButton {
-                                    label: sectionRow.shown ? "Shown" : "Hidden"
-                                    active: sectionRow.shown
-                                    available: !sectionRow.shown || root.visibleCount() > 1
-                                    textSize: 8
-                                    onClicked: root.visibilityRequested(
-                                        sectionRow.sectionId, !sectionRow.shown)
-                                }
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 6
+                                    anchors.rightMargin: 6
+                                    spacing: 5
 
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: root.sectionLabel(sectionRow.sectionId)
-                                    color: sectionRow.shown ? Theme.foreground : Theme.muted
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: 10
-                                    elide: Text.ElideRight
-                                }
+                                    SettingsButton {
+                                        label: sectionRow.shown ? "Shown" : "Hidden"
+                                        active: sectionRow.shown
+                                        available: !sectionRow.shown || root.visibleCount() > 1
+                                        textSize: 8
+                                        onClicked: root.visibilityRequested(
+                                            sectionRow.sectionId, !sectionRow.shown)
+                                    }
 
-                                SettingsButton {
-                                    label: "↑"
-                                    available: sectionRow.sectionIndex > 0
-                                    textSize: 10
-                                    onClicked: root.moveRequested(sectionRow.sectionId, -1)
-                                }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: root.sectionLabel(sectionRow.sectionId)
+                                        color: sectionRow.shown ? Theme.foreground : Theme.muted
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: 10
+                                        elide: Text.ElideRight
+                                    }
 
-                                SettingsButton {
-                                    label: "↓"
-                                    available: sectionRow.sectionIndex >= 0
-                                        && sectionRow.sectionIndex < root.order.length - 1
-                                    textSize: 10
-                                    onClicked: root.moveRequested(sectionRow.sectionId, 1)
+                                    SettingsButton {
+                                        label: "↑"
+                                        available: sectionRow.sectionIndex > 0
+                                        textSize: 10
+                                        onClicked: root.moveRequested(sectionRow.sectionId, -1)
+                                    }
+
+                                    SettingsButton {
+                                        label: "↓"
+                                        available: sectionRow.sectionIndex >= 0
+                                            && sectionRow.sectionIndex < root.order.length - 1
+                                        textSize: 10
+                                        onClicked: root.moveRequested(sectionRow.sectionId, 1)
+                                    }
                                 }
                             }
                         }
                     }
+                }
+
+                ListScrollBar {
+                    id: layoutScrollBar
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.right: parent.right
+                    flickable: layoutFlick
+                    z: 10
                 }
             }
         }

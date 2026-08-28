@@ -54,7 +54,9 @@ require_picker 'palette.focus' 'Theme cards do not preview focus color'
 require_picker 'palette.urgent' 'Theme cards do not preview urgent color'
 require_picker 'palette.charging' 'Theme cards do not preview charging color'
 require_picker 'palette.muted' 'Theme cards do not preview muted color'
-require_picker 'onClicked: root.selectIndex(card.index)' 'Theme card click no longer owns selection'
+require_picker 'function activateThemeCard(index)' 'ThemePicker has no selected-card activation helper'
+require_picker 'if (selectedIndex === index)' 'ThemePicker does not apply an already-selected theme card'
+require_picker 'onClicked: root.activateThemeCard(card.index)' 'Theme card click does not use selected-card activation'
 require_picker '"Active theme: " + root.activeThemeName' 'ThemePicker header does not render active theme as one inline label'
 
 if grep -Fq "find '" "$PICKER"; then

@@ -341,6 +341,9 @@ PanelWindow {
             delegate: BarControl {
                 required property var modelData
                 vertical: false
+                workspaceButton: true
+                workspaceGlyphSize: BarState.workspaceIconPixelSize()
+                workspaceGlyphYOffset: BarState.workspaceIconYOffset()
                 label: BarState.workspaceLabelFor(modelData.id)
                 normalBackground: modelData.urgent ? Theme.urgent : (modelData.active ? Theme.subtleActive : "transparent")
                 foreground: modelData.urgent ? Theme.dark : Theme.foreground
@@ -365,6 +368,9 @@ PanelWindow {
                 required property var modelData
                 vertical: true
                 fixedWidth: bar.barSize
+                workspaceButton: true
+                workspaceGlyphSize: BarState.workspaceIconPixelSize()
+                workspaceGlyphYOffset: BarState.workspaceIconYOffset()
                 label: BarState.workspaceVerticalLabelFor(modelData.id)
                 normalBackground: modelData.urgent ? Theme.urgent : (modelData.active ? Theme.subtleActive : "transparent")
                 foreground: modelData.urgent ? Theme.dark : Theme.foreground

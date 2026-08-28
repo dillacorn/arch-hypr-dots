@@ -15,6 +15,9 @@ Rectangle {
     property int fixedWidth: 0
     property int fixedHeight: 0
     property int fontPixelSize: 0
+    property bool workspaceButton: false
+    property int workspaceGlyphSize: 0
+    property int workspaceGlyphYOffset: 0
     property bool hovered: false
     property int wheelActivationDelay: 0
     property bool wheelReady: wheelActivationDelay <= 0
@@ -45,15 +48,19 @@ Rectangle {
     // the Nerd Font used by Quickshell. Translate it to the well-supported
     // Font Awesome paste/clipboard glyph while keeping callers unchanged.
     readonly property string displayLabel: label.replace("", "").replace(/ {2,}/g, " ")
-    readonly property var horizontalParts: vertical
+    readonly property var workspaceParts: workspaceButton
+        ? displayLabel.split(/\s+/).filter(part => part.length > 0)
+        : []
+    readonly property var horizontalParts: vertical || workspaceButton
         ? []
         : displayLabel.split(/\s+/).filter(part => part.length > 0)
-    readonly property var verticalParts: vertical
+    readonly property var verticalParts: vertical && !workspaceButton
         ? displayLabel.split("\n").filter(part => part.length > 0)
         : []
-    readonly property bool useHorizontalParts: !vertical && horizontalParts.length > 1
-    readonly property bool useVerticalParts: vertical && verticalParts.length > 1
-    readonly property bool workspaceLabel: /^\d+\s/.test(displayLabel)
+    readonly property bool useWorkspaceParts: workspaceButton && workspaceParts.length > 1
+    readonly property bool useHorizontalParts: !workspaceButton && !vertical && horizontalParts.length > 1
+    readonly property bool useVerticalParts: !workspaceButton && vertical && verticalParts.length > 1
+    readonly property bool workspaceLabel: workspaceButton
     readonly property string effectiveTooltip: tooltip === "Audio volume"
         ? SystemState.audioOutputName
         : (tooltip.indexOf("Memory usage: ") === 0 ? SystemState.memoryTooltip : tooltip)
@@ -136,6 +143,11 @@ Rectangle {
         return Theme.fontFamily;
     }
 
+    function workspacePartYOffset(part) {
+        return workspaceButton && !/^\d+$/.test(String(part))
+            ? workspaceGlyphYOffset : 0;
+    }
+
     function scaledIconSize(baseSize) {
         const scaled = Math.round(baseSize * iconScale);
         const maxForBar = Math.max(8, barThickness - 2);
@@ -149,6 +161,13 @@ Rectangle {
     }
 
     function partFontPixelSize(part) {
+        if (workspaceButton) {
+            const token = String(part);
+            if (/^\d+$/.test(token))
+                return scaledTextSize(Theme.fontPixelSize);
+            return scaledIconSize(workspaceGlyphSize > 0 ? workspaceGlyphSize : 18);
+        }
+
         if (fontPixelSize > 0)
             return scaledIconSize(fontPixelSize);
 
@@ -199,23 +218,58 @@ Rectangle {
     Item {
         id: labelContent
         anchors.centerIn: parent
-        implicitWidth: root.useHorizontalParts
-            ? horizontalRow.implicitWidth
-            : (root.useVerticalParts ? verticalColumn.implicitWidth : normalText.implicitWidth)
-        implicitHeight: root.useHorizontalParts
+        implicitWidth: root.useWorkspaceParts
+            ? workspaceRow.implicitWidth
+            : (root.useHorizontalParts
+                ? horizontalRow.implicitWidth
+                : (root.useVerticalParts ? verticalColumn.implicitWidth : normalText.implicitWidth))
+        implicitHeight: root.useWorkspaceParts
             ? root.barThickness
-            : (root.useVerticalParts ? verticalColumn.implicitHeight : normalText.implicitHeight)
+            : (root.useHorizontalParts
+                ? root.barThickness
+                : (root.useVerticalParts ? verticalColumn.implicitHeight : normalText.implicitHeight))
 
         Text {
             id: normalText
             anchors.centerIn: parent
-            visible: !root.useHorizontalParts && !root.useVerticalParts
+            anchors.verticalCenterOffset: root.workspacePartYOffset(root.displayLabel)
+            visible: !root.useWorkspaceParts && !root.useHorizontalParts && !root.useVerticalParts
             text: root.displayLabel
             color: root.foreground
             font.family: root.partFontFamily(root.displayLabel)
             font.pixelSize: root.partFontPixelSize(root.displayLabel)
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
+        }
+
+        Row {
+            id: workspaceRow
+            anchors.centerIn: parent
+            height: root.barThickness
+            spacing: 3
+            visible: root.useWorkspaceParts
+
+            Repeater {
+                model: root.workspaceParts
+
+                delegate: Item {
+                    required property var modelData
+                    width: tokenText.implicitWidth
+                    height: workspaceRow.height
+
+                    Text {
+                        id: tokenText
+                        anchors.centerIn: parent
+                        anchors.verticalCenterOffset: root.workspacePartYOffset(String(parent.modelData))
+                        text: String(parent.modelData)
+                        color: root.foreground
+                        font.family: root.partFontFamily(String(parent.modelData))
+                        font.pixelSize: root.partFontPixelSize(String(parent.modelData))
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+            }
         }
 
         Row {
