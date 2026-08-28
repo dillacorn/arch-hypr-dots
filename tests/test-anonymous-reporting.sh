@@ -46,6 +46,7 @@ printf '{"ok":true,"created":true,"deduplicated":false,"issue_number":99,"issue_
 SH
 cat >"$BIN/notify-send" <<'SH'
 #!/usr/bin/env bash
+sleep "${NOTIFY_DELAY:-0}"
 printf '%s\n' "$*" >>"$NOTIFY_CALLS"
 SH
 chmod +x "$BIN"/*
@@ -109,6 +110,26 @@ if grep -Fq 'awtarchy_report_failure.sh' "$NOTIFY_CALLS"; then
     echo 'pending-report notification exposes the internal reporting script' >&2
     exit 1
 fi
+
+bash "$SCRIPT" capture quickshell start quickshell_not_ready
+SECOND_REPORT="$STATE/awtarchy/reports/quickshell--start--quickshell_not_ready.json"
+[[ -f "$SECOND_REPORT" ]]
+before_notify_count="$(wc -l <"$NOTIFY_CALLS")"
+export NOTIFY_DELAY=0.2
+bash "$SCRIPT" notify-pending &
+notify_pid_one=$!
+bash "$SCRIPT" notify-pending &
+notify_pid_two=$!
+wait "$notify_pid_one"
+wait "$notify_pid_two"
+unset NOTIFY_DELAY
+after_notify_count="$(wc -l <"$NOTIFY_CALLS")"
+[[ $((after_notify_count - before_notify_count)) == 1 ]] || {
+    echo 'concurrent pending-report checks produced duplicate notifications' >&2
+    exit 1
+}
+bash "$SCRIPT" discard "$SECOND_REPORT"
+[[ ! -e "$SECOND_REPORT" ]]
 
 jq -e --arg attempted "$ATTEMPTED_VERSION" '
   keys == [
