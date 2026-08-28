@@ -229,6 +229,7 @@ Singleton {
 
                     Rectangle {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 220
                         Layout.preferredHeight: 36
                         color: Theme.active
                         border.width: 1
@@ -292,27 +293,16 @@ Singleton {
                         }
                     }
 
-                    ColumnLayout {
-                        Layout.preferredWidth: 165
-                        spacing: 1
-
-                        Text {
-                            text: "Active theme"
-                            color: Theme.muted
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 11
-                            font.weight: Font.Medium
-                        }
-
-                        Text {
-                            Layout.fillWidth: true
-                            text: root.activeThemeName.length > 0 ? root.activeThemeName : "Unknown"
-                            color: Theme.foreground
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 13
-                            font.weight: Font.Medium
-                            elide: Text.ElideRight
-                        }
+                    Text {
+                        Layout.preferredWidth: 220
+                        Layout.alignment: Qt.AlignVCenter
+                        text: root.activeThemeName.length > 0 ? "Active theme: " + root.activeThemeName : "Active theme: Unknown"
+                        color: Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 12
+                        font.weight: Font.Medium
+                        horizontalAlignment: Text.AlignRight
+                        elide: Text.ElideRight
                     }
                 }
 
