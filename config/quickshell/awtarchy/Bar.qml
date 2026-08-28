@@ -111,6 +111,7 @@ PanelWindow {
         const ipc = toplevel.lastIpcObject || {};
         const title = String(toplevel.title || ipc.title || "");
         const flyoutTitles = [
+            "Awtarchy Application Search",
             "Awtarchy Clipboard History",
             "Awtarchy Notification Center",
             "Awtarchy Quick Settings",
