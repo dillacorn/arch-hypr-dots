@@ -47,7 +47,8 @@ SH
 cat >"$BIN/notify-send" <<'SH'
 #!/usr/bin/env bash
 sleep "${NOTIFY_DELAY:-0}"
-printf '%s\n' "$*" >>"$NOTIFY_CALLS"
+printf '%q ' "$@" >>"$NOTIFY_CALLS"
+printf '\n' >>"$NOTIFY_CALLS"
 SH
 chmod +x "$BIN"/*
 
