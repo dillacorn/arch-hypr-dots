@@ -13,9 +13,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
       - name: Bash syntax
         run: |
           bash -n config/hypr/scripts/quickshell_application_state.sh
           bash -n tests/test-bar-icon-customization.sh
       - name: Bar icon persistence regression
         run: bash tests/test-bar-icon-customization.sh
+      - name: Managed stock hashes
+        run: |
+          sha256sum \
+            config/hypr/scripts/quickshell_application_state.sh \
+            config/quickshell/awtarchy/BarState.qml \
+            config/quickshell/awtarchy/Bar.qml \
+            config/quickshell/awtarchy/BarSettingsSection.qml \
+            config/quickshell/awtarchy/BarIconSettings.qml
+      - name: Quickshell updater migration
+        run: bash tests/test-quickshell-updater-migration.sh
