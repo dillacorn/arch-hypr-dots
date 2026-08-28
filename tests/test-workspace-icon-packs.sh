@@ -104,15 +104,17 @@ contains "$BAR_SETTINGS" 'id: launcherCopyFeedbackTimer' \
     'launcher copy feedback has no timeout'
 contains "$BAR_SETTINGS" 'model: packRow.modelData.symbols' \
     'workspace icon preset does not preview its complete symbol pack'
-contains "$BAR_SETTINGS" 'root.copyWorkspaceSymbol(String(modelData)' \
+contains "$BAR_SETTINGS" 'root.copyWorkspaceSymbol(' \
     'individual workspace symbols cannot be copied with scoped feedback'
+contains "$BAR_SETTINGS" 'String(symbolCell.modelData), symbolCell.copyKey' \
+    'workspace symbol copy does not use the bound delegate value and key'
 contains "$BAR_SETTINGS" 'root.copyWorkspacePack(packRow.modelData)' \
     'workspace icon preset has no explicit whole-pack copy action'
 contains "$BAR_SETTINGS" '"✓ Copied all" : " Copy all"' \
     'Copy all control does not visibly confirm success'
 contains "$BAR_SETTINGS" 'text: root.workspaceCopyFeedback' \
     'workspace heading does not expose copy feedback'
-contains "$BAR_SETTINGS" 'root.copyLauncherIcon(modelData.value)' \
+contains "$BAR_SETTINGS" 'root.copyLauncherIcon(launcherPreset.modelData.value)' \
     'application launcher presets have no copy action'
 contains "$BAR_SETTINGS" 'label: " Copy"' \
     'application launcher copy action is not explicit'
