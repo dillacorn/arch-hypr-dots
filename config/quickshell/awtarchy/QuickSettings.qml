@@ -37,6 +37,7 @@ Singleton {
     property string nightLightScheduleError: ""
     property bool settingsOpen: false
     property bool layoutEditorOpen: false
+    property bool barIconEditorOpen: false
     property var layoutOrderDraft: []
     property var layoutHiddenDraft: []
     property var savedLayout: ({ order: [], hidden: [] })
@@ -1404,6 +1405,22 @@ Singleton {
                                             ], "Moving bar to " + String(modelData) + "…")
                                         }
                                     }
+                                }
+                                SettingsButton {
+                                    Layout.fillWidth: true
+                                    label: "Customize Icons…"
+                                    active: root.barIconEditorOpen
+                                    textSize: root.scaledText(9)
+                                    onClicked: {
+                                        root.barIconEditorOpen = !root.barIconEditorOpen;
+                                        if (root.bottomEdgeLayout)
+                                            Qt.callLater(() => root.alignContentToBar());
+                                    }
+                                }
+
+                                BarIconSettings {
+                                    Layout.fillWidth: true
+                                    visible: root.barIconEditorOpen
                                 }
                             }
                         }
