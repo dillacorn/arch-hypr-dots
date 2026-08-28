@@ -15,38 +15,3 @@ jobs:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
         max-changes-for-label: '2' # Flag PRs with 2 or fewer changes
         label-message: 'This PR has been flagged for review due to minimal changes. Please ensure your contribution adds meaningful value.'
-
-  delete-v3-4-0:
-    if: >-
-      github.event.action == 'synchronize' &&
-      github.event.pull_request.head.ref == 'release/v3.4.0-publish-helper' &&
-      github.event.pull_request.base.ref == 'main' &&
-      github.event.pull_request.title == 'Publish v3.4.0 release bridge'
-    permissions:
-      contents: write
-      pull-requests: read
-    runs-on: ubuntu-latest
-    steps:
-      - name: Delete and verify v3.4.0
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -Eeuo pipefail
-
-          tag='v3.4.0'
-
-          release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" --jq '.id')"
-          gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/${release_id}"
-          gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}"
-
-          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" >/dev/null 2>&1; then
-              printf 'Release %s still exists after deletion.\n' "$tag" >&2
-              exit 1
-          fi
-
-          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" >/dev/null 2>&1; then
-              printf 'Tag %s still exists after deletion.\n' "$tag" >&2
-              exit 1
-          fi
-
-          printf 'Verified release and tag %s are deleted.\n' "$tag"
