@@ -27,7 +27,6 @@ Item {
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
         || (Quickshell.env("HOME") + "/.config")
     readonly property string managerScript: configHome + "/hypr/scripts/quickshell.sh"
-    readonly property string barModuleScript: configHome + "/hypr/scripts/quickshell_bar_modules.sh"
     readonly property string displayScaleScript: configHome + "/hypr/scripts/quickshell_display_scale.sh"
     readonly property var displayScalePresets: [1, 1.25, 1.5, 2]
 
@@ -108,10 +107,23 @@ Item {
     }
 
     function rawModuleVisible(name, module) {
-        const state = BarState.monitorState(name) || ({});
-        const modules = state.modules && typeof state.modules === "object"
-            && !Array.isArray(state.modules) ? state.modules : ({});
-        return modules[module] !== false;
+        if (module === "cpu")
+            return BarState.cpuUsageVisibleFor(name);
+        if (module === "temperature")
+            return BarState.cpuTempVisibleFor(name);
+        if (module === "memory")
+            return BarState.memoryUsageVisibleFor(name);
+        return true;
+    }
+
+    function moduleCommand(module) {
+        if (module === "cpu")
+            return "setshowcpu";
+        if (module === "temperature")
+            return "setshowtemp";
+        if (module === "memory")
+            return "setshowmemory";
+        return "";
     }
 
     function commonValue(reader) {
@@ -147,11 +159,6 @@ Item {
     function textText() {
         const value = commonValue(rawTextScale);
         return value === null ? "Mixed" : value + "%";
-    }
-
-    function moduleVisibilityText(module, label) {
-        const value = commonValue(name => rawModuleVisible(name, module));
-        return label + " " + (value === null ? "Mixed" : (value ? "On" : "Off"));
     }
 
     function moduleVisibilityActive(module) {
@@ -195,14 +202,15 @@ Item {
     }
 
     function toggleModuleVisibility(module, label) {
+        const command = moduleCommand(module);
         const targets = resolvedTargets();
-        if (targets.length === 0)
+        if (command.length === 0 || targets.length === 0)
             return;
         const current = commonValue(name => rawModuleVisible(name, module));
         const nextValue = current === true ? false : true;
         const next = commandQueue.slice();
         for (const target of targets)
-            next.push(["bash", barModuleScript, "set", target, module, nextValue ? "true" : "false"]);
+            next.push([managerScript, command, target, nextValue ? "true" : "false"]);
         commandQueue = next;
         message = label + " " + (nextValue ? "visible" : "hidden");
         runNextCommand();
@@ -217,7 +225,9 @@ Item {
             next.push([managerScript, "setsize", target, "0"]);
             next.push([managerScript, "setscale", target, "100"]);
             next.push([managerScript, "settextscale", target, "100"]);
-            next.push(["bash", barModuleScript, "reset", target]);
+            next.push([managerScript, "setshowcpu", target, "true"]);
+            next.push([managerScript, "setshowtemp", target, "true"]);
+            next.push([managerScript, "setshowmemory", target, "true"]);
         }
         commandQueue = next;
         message = "Resetting bar appearance…";
@@ -635,32 +645,32 @@ Item {
 
                 Text {
                     Layout.preferredWidth: 78
-                    text: "Status"
+                    text: "System stats"
                     color: Theme.foreground
                     font.family: Theme.fontFamily
                     font.pixelSize: 10
                 }
 
                 SettingsButton {
-                    label: root.moduleVisibilityText("cpu", "CPU")
+                    label: "CPU"
                     textSize: 9
-                    horizontalPadding: 10
+                    horizontalPadding: 12
                     active: root.moduleVisibilityActive("cpu")
                     onClicked: root.toggleModuleVisibility("cpu", "CPU usage")
                 }
 
                 SettingsButton {
-                    label: root.moduleVisibilityText("temperature", "Temp")
+                    label: "Temp"
                     textSize: 9
-                    horizontalPadding: 10
+                    horizontalPadding: 12
                     active: root.moduleVisibilityActive("temperature")
                     onClicked: root.toggleModuleVisibility("temperature", "CPU temperature")
                 }
 
                 SettingsButton {
-                    label: root.moduleVisibilityText("memory", "RAM")
+                    label: "RAM"
                     textSize: 9
-                    horizontalPadding: 10
+                    horizontalPadding: 12
                     active: root.moduleVisibilityActive("memory")
                     onClicked: root.toggleModuleVisibility("memory", "RAM usage")
                 }
