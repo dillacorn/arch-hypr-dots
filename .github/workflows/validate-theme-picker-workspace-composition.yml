@@ -28,3 +28,117 @@ jobs:
           bash tests/test-quickshell-theme-picker.sh
           bash tests/test-bar-icon-customization.sh
           git diff --check
+
+  publish_v340:
+    needs: validate
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action != 'reopened' &&
+      github.event.pull_request.head.ref == 'release/v3.4.0-publish-final' &&
+      github.event.pull_request.title == 'Publish Awtarchy v3.4.0 release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: 76f8e63272c5af7c157e151d34744f7fce249a43
+      PREVIOUS_SHA: 8dbec116e7917232e708132f90a2be1d92dc8310
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Verify release target
+        run: |
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)" = "$TARGET_SHA"
+          if gh release view v3.4.0 >/dev/null 2>&1; then
+            printf 'v3.4.0 already exists; refusing to recreate it.\n' >&2
+            false
+          fi
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.4.0" >/dev/null 2>&1; then
+            printf 'v3.4.0 tag already exists; refusing to move or reuse it.\n' >&2
+            false
+          fi
+
+          latest_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest")"
+          test "$(jq -r .tag_name <<<"$latest_json")" = 'v3.3.9'
+          test "$(jq -r .draft <<<"$latest_json")" = 'false'
+          test "$(jq -r .prerelease <<<"$latest_json")" = 'false'
+          test "$(jq -r .target_commitish <<<"$latest_json")" = "$PREVIOUS_SHA"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.3.9" --jq .object.sha)" = "$PREVIOUS_SHA"
+
+          runs_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${TARGET_SHA}&event=push&per_page=100")"
+          required_workflows=(
+            'Validate Awtarchy'
+            'Validate Bluetooth State'
+            'Validate PolicyKit Agent'
+            'Validate Update Notification Login Regression'
+            'Validate Theme Picker Workspace Composition'
+            'Validate Anonymous Failure Reporting'
+          )
+          for required in "${required_workflows[@]}"; do
+            jq -e --arg name "$required" \
+              '.workflow_runs | any(.name == $name and .conclusion == "success")' \
+              <<<"$runs_json" >/dev/null
+          done
+
+          mapfile -t helper_changes < <(git diff --name-only "$TARGET_SHA"...HEAD | sort)
+          expected_changes=(
+            '.github/release-v3.4.0.md'
+            '.github/workflows/validate-theme-picker-workspace-composition.yml'
+          )
+          test "${helper_changes[*]}" = "${expected_changes[*]}"
+          printf 'Previous stable release: v3.3.9 -> %s\n' "$PREVIOUS_SHA"
+          printf 'New release target: %s\n' "$TARGET_SHA"
+      - name: Publish v3.4.0
+        run: |
+          gh release create v3.4.0 \
+            --target "$TARGET_SHA" \
+            --title 'Awtarchy v3.4.0 Quickshell' \
+            --notes-file .github/release-v3.4.0.md
+      - name: Verify published release
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v3.4.0" > /tmp/release-v3.4.0.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          release = json.loads(Path('/tmp/release-v3.4.0.json').read_text())
+          expected_body = Path('.github/release-v3.4.0.md').read_text()
+          actual_body = release['body']
+          assert release['name'] == 'Awtarchy v3.4.0 Quickshell'
+          assert release['tag_name'] == 'v3.4.0'
+          assert release['target_commitish'] == '76f8e63272c5af7c157e151d34744f7fce249a43'
+          assert release['draft'] is False
+          assert release['prerelease'] is False
+          assert actual_body.replace('\r\n', '\n').rstrip('\n') == expected_body.replace('\r\n', '\n').rstrip('\n')
+          print(release['html_url'])
+          PY
+          tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.4.0" --jq .object.sha)"
+          test "$tag_sha" = "$TARGET_SHA"
+          printf 'Verified v3.4.0 tag SHA: %s\n' "$tag_sha"
+
+  cleanup_v340_helper:
+    needs: validate
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action == 'reopened' &&
+      github.event.pull_request.head.ref == 'release/v3.4.0-publish-final' &&
+      github.event.pull_request.title == 'Publish Awtarchy v3.4.0 release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: 76f8e63272c5af7c157e151d34744f7fce249a43
+    steps:
+      - name: Verify published release before cleanup
+        run: |
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)" = "$TARGET_SHA"
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v3.4.0")"
+          test "$(jq -r .tag_name <<<"$release_json")" = 'v3.4.0'
+          test "$(jq -r .target_commitish <<<"$release_json")" = "$TARGET_SHA"
+          test "$(jq -r .draft <<<"$release_json")" = 'false'
+          test "$(jq -r .prerelease <<<"$release_json")" = 'false'
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.4.0" --jq .object.sha)" = "$TARGET_SHA"
+      - name: Delete release helper branch
+        run: gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/release/v3.4.0-publish-final"
