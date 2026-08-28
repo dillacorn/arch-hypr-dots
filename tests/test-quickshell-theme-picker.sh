@@ -8,6 +8,7 @@ CATALOG="${ROOT}/config/hypr/scripts/quickshell_theme_catalog.sh"
 QUICK_SETTINGS="${ROOT}/config/quickshell/awtarchy/QuickSettings.qml"
 THEME_SELECT="${ROOT}/config/hypr/scripts/theme_select.sh"
 MANAGED_HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
+PERMANENT_CI="${ROOT}/.github/workflows/validate-awtarchy.yml"
 managed_history_missing=0
 
 fail() {
@@ -91,5 +92,14 @@ fi
 require_managed_hash "$PICKER" '.config/quickshell/awtarchy/ThemePicker.qml'
 require_managed_hash "$CATALOG" '.config/hypr/scripts/quickshell_theme_catalog.sh'
 (( managed_history_missing == 0 )) || exit 1
+
+catalog_ci_count="$(grep -Fc 'tests/test-quickshell-theme-catalog.sh' "$PERMANENT_CI" || true)"
+picker_ci_count="$(grep -Fc 'tests/test-quickshell-theme-picker.sh' "$PERMANENT_CI" || true)"
+[[ "$catalog_ci_count" -ge 3 ]] || fail 'Validate Awtarchy does not cover theme catalog syntax, ShellCheck, and execution'
+[[ "$picker_ci_count" -ge 3 ]] || fail 'Validate Awtarchy does not cover theme picker syntax, ShellCheck, and execution'
+grep -Fq 'bash -n config/hypr/scripts/quickshell_theme_catalog.sh' "$PERMANENT_CI" \
+    || fail 'Validate Awtarchy does not syntax-check the theme catalog helper'
+grep -Fq 'config/hypr/scripts/quickshell_theme_catalog.sh \' "$PERMANENT_CI" \
+    || fail 'Validate Awtarchy does not ShellCheck the theme catalog helper'
 
 printf '%s\n' 'Quickshell visual theme picker contract test passed.'
