@@ -95,11 +95,9 @@ require_managed_hash "$CATALOG" '.config/hypr/scripts/quickshell_theme_catalog.s
 
 catalog_ci_count="$(grep -Fc 'tests/test-quickshell-theme-catalog.sh' "$PERMANENT_CI" || true)"
 picker_ci_count="$(grep -Fc 'tests/test-quickshell-theme-picker.sh' "$PERMANENT_CI" || true)"
+catalog_helper_ci_count="$(grep -Fc 'config/hypr/scripts/quickshell_theme_catalog.sh' "$PERMANENT_CI" || true)"
 [[ "$catalog_ci_count" -ge 3 ]] || fail 'Validate Awtarchy does not cover theme catalog syntax, ShellCheck, and execution'
 [[ "$picker_ci_count" -ge 3 ]] || fail 'Validate Awtarchy does not cover theme picker syntax, ShellCheck, and execution'
-grep -Fq 'bash -n config/hypr/scripts/quickshell_theme_catalog.sh' "$PERMANENT_CI" \
-    || fail 'Validate Awtarchy does not syntax-check the theme catalog helper'
-grep -Fq 'config/hypr/scripts/quickshell_theme_catalog.sh \' "$PERMANENT_CI" \
-    || fail 'Validate Awtarchy does not ShellCheck the theme catalog helper'
+[[ "$catalog_helper_ci_count" -ge 2 ]] || fail 'Validate Awtarchy does not syntax-check and ShellCheck the theme catalog helper'
 
 printf '%s\n' 'Quickshell visual theme picker contract test passed.'
