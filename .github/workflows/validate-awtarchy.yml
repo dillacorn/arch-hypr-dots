@@ -71,6 +71,7 @@ jobs:
           bash -n tests/test-awtarchy-update-notifications.sh
           bash -n tests/test-bar-control-actions.sh
           bash -n tests/test-bar-icon-customization.sh
+          bash -n tests/test-bar-module-visibility.sh
           bash -n tests/test-bar-task-icons.sh
           bash -n tests/test-bar-wheel-input.sh
           bash -n tests/test-battery-state.sh
@@ -165,6 +166,7 @@ jobs:
             tests/test-awtarchy-update-notifications.sh \
             tests/test-bar-control-actions.sh \
             tests/test-bar-icon-customization.sh \
+            tests/test-bar-module-visibility.sh \
             tests/test-bar-task-icons.sh \
             tests/test-bar-wheel-input.sh \
             tests/test-battery-state.sh \
@@ -233,6 +235,7 @@ jobs:
           bash tests/test-awtarchy-update-notifications.sh
           bash tests/test-bar-control-actions.sh
           bash tests/test-bar-icon-customization.sh
+          bash tests/test-bar-module-visibility.sh
           bash tests/test-bar-task-icons.sh
           bash tests/test-bar-wheel-input.sh
           bash tests/test-battery-state.sh
