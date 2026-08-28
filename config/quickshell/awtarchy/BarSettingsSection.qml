@@ -27,6 +27,7 @@ Item {
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
         || (Quickshell.env("HOME") + "/.config")
     readonly property string managerScript: configHome + "/hypr/scripts/quickshell.sh"
+    readonly property string barModuleScript: configHome + "/hypr/scripts/quickshell_bar_modules.sh"
     readonly property string displayScaleScript: configHome + "/hypr/scripts/quickshell_display_scale.sh"
     readonly property var displayScalePresets: [1, 1.25, 1.5, 2]
 
@@ -106,6 +107,13 @@ Item {
         return Number.isFinite(value) ? Math.max(50, Math.min(200, Math.round(value))) : 100;
     }
 
+    function rawModuleVisible(name, module) {
+        const state = BarState.monitorState(name) || ({});
+        const modules = state.modules && typeof state.modules === "object"
+            && !Array.isArray(state.modules) ? state.modules : ({});
+        return modules[module] !== false;
+    }
+
     function commonValue(reader) {
         const targets = resolvedTargets();
         if (targets.length === 0)
@@ -139,6 +147,15 @@ Item {
     function textText() {
         const value = commonValue(rawTextScale);
         return value === null ? "Mixed" : value + "%";
+    }
+
+    function moduleVisibilityText(module, label) {
+        const value = commonValue(name => rawModuleVisible(name, module));
+        return label + " " + (value === null ? "Mixed" : (value ? "On" : "Off"));
+    }
+
+    function moduleVisibilityActive(module) {
+        return commonValue(name => rawModuleVisible(name, module)) === true;
     }
 
     function baseThickness() {
@@ -177,6 +194,20 @@ Item {
         runNextCommand();
     }
 
+    function toggleModuleVisibility(module, label) {
+        const targets = resolvedTargets();
+        if (targets.length === 0)
+            return;
+        const current = commonValue(name => rawModuleVisible(name, module));
+        const nextValue = current === true ? false : true;
+        const next = commandQueue.slice();
+        for (const target of targets)
+            next.push(["bash", barModuleScript, "set", target, module, nextValue ? "true" : "false"]);
+        commandQueue = next;
+        message = label + " " + (nextValue ? "visible" : "hidden");
+        runNextCommand();
+    }
+
     function resetAppearance() {
         const targets = resolvedTargets();
         if (targets.length === 0)
@@ -186,6 +217,7 @@ Item {
             next.push([managerScript, "setsize", target, "0"]);
             next.push([managerScript, "setscale", target, "100"]);
             next.push([managerScript, "settextscale", target, "100"]);
+            next.push(["bash", barModuleScript, "reset", target]);
         }
         commandQueue = next;
         message = "Resetting bar appearance…";
@@ -594,6 +626,46 @@ Item {
                     horizontalAlignment: Text.AlignRight
                     elide: Text.ElideRight
                 }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 26
+                spacing: 5
+
+                Text {
+                    Layout.preferredWidth: 78
+                    text: "Status"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                }
+
+                SettingsButton {
+                    label: root.moduleVisibilityText("cpu", "CPU")
+                    textSize: 9
+                    horizontalPadding: 10
+                    active: root.moduleVisibilityActive("cpu")
+                    onClicked: root.toggleModuleVisibility("cpu", "CPU usage")
+                }
+
+                SettingsButton {
+                    label: root.moduleVisibilityText("temperature", "Temp")
+                    textSize: 9
+                    horizontalPadding: 10
+                    active: root.moduleVisibilityActive("temperature")
+                    onClicked: root.toggleModuleVisibility("temperature", "CPU temperature")
+                }
+
+                SettingsButton {
+                    label: root.moduleVisibilityText("memory", "RAM")
+                    textSize: 9
+                    horizontalPadding: 10
+                    active: root.moduleVisibilityActive("memory")
+                    onClicked: root.toggleModuleVisibility("memory", "RAM usage")
+                }
+
+                Item { Layout.fillWidth: true }
             }
         }
     }
