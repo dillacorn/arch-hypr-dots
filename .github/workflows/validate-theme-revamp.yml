@@ -23,7 +23,9 @@ jobs:
           bash -n tests/test-quickshell-theme-catalog.sh
           bash -n tests/test-quickshell-theme-picker.sh
           shellcheck config/hypr/scripts/quickshell_theme_catalog.sh tests/test-quickshell-theme-catalog.sh tests/test-quickshell-theme-picker.sh
-          qmlformat config/quickshell/awtarchy/ThemePicker.qml >/dev/null
+          qmlformat_bin="$(command -v qmlformat || true)"
+          [[ -n "$qmlformat_bin" ]] || qmlformat_bin='/usr/lib/qt6/bin/qmlformat'
+          "$qmlformat_bin" config/quickshell/awtarchy/ThemePicker.qml >/dev/null
           bash tests/test-quickshell-theme-catalog.sh
           bash tests/test-quickshell-theme-picker.sh
       - name: Related regressions
