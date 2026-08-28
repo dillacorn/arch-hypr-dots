@@ -502,7 +502,12 @@ notify_pending() {
 
 pending_reports() {
     local quiet_empty="${1:-0}"
-    [[ -d "$REPORT_DIR" && ! -L "$REPORT_DIR" && -O "$REPORT_DIR" ]] || return 0
+    if [[ ! -d "$REPORT_DIR" || -L "$REPORT_DIR" || ! -O "$REPORT_DIR" ]]; then
+        if (( quiet_empty == 0 )); then
+            printf 'No pending Awtarchy failure reports.\n'
+        fi
+        return 0
+    fi
     shopt -s nullglob
     local reports=("$REPORT_DIR"/*.json)
     shopt -u nullglob
