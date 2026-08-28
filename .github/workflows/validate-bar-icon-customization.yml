@@ -1,0 +1,21 @@
+name: Validate Bar Icon Customization
+
+on:
+  push:
+    branches: [feature/bar-icon-customization]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bar-icon-customization:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Bash syntax
+        run: |
+          bash -n config/hypr/scripts/quickshell_application_state.sh
+          bash -n tests/test-bar-icon-customization.sh
+      - name: Bar icon persistence regression
+        run: bash tests/test-bar-icon-customization.sh
