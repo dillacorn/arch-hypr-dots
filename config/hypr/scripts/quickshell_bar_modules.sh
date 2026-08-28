@@ -19,7 +19,7 @@ need() {
 cleanup() {
     [[ -z "$TMP_FILE" ]] || rm -f -- "$TMP_FILE"
 }
-trap cleanup RETURN EXIT
+trap cleanup EXIT
 
 validate_module() {
     case "$1" in
@@ -105,23 +105,33 @@ usage() {
     printf 'usage: %s {set <MON> <cpu|temperature|memory> <true|false>|reset <MON>}\n' "${0##*/}" >&2
 }
 
-need jq
-need flock
-mkdir -p -- "$(dirname -- "$STATE_FILE")"
-exec 8>"$STATE_LOCK_FILE"
-flock -x 8
+main() {
+    need jq
+    need flock
+    mkdir -p -- "$(dirname -- "$STATE_FILE")"
+    exec 8>"$STATE_LOCK_FILE"
+    flock -x 8
 
-case "${1:-}" in
-    set)
-        [[ -n ${2:-} && -n ${3:-} && -n ${4:-} ]] || { usage; return 2 2>/dev/null || exit 2; }
-        set_module "$2" "$3" "$4"
-        ;;
-    reset)
-        [[ -n ${2:-} ]] || { usage; return 2 2>/dev/null || exit 2; }
-        reset_modules "$2"
-        ;;
-    *)
-        usage
-        return 2 2>/dev/null || exit 2
-        ;;
-esac
+    case "${1:-}" in
+        set)
+            [[ -n ${2:-} && -n ${3:-} && -n ${4:-} ]] || {
+                usage
+                return 2
+            }
+            set_module "$2" "$3" "$4"
+            ;;
+        reset)
+            [[ -n ${2:-} ]] || {
+                usage
+                return 2
+            }
+            reset_modules "$2"
+            ;;
+        *)
+            usage
+            return 2
+            ;;
+    esac
+}
+
+main "$@"
