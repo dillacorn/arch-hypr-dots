@@ -25,17 +25,23 @@ jobs:
           from pathlib import Path
 
           path = Path("config/quickshell/awtarchy/Bar.qml")
-          text = path.read_text()
-          old = '''        const flyoutTitles = [
-              "Awtarchy Clipboard History",'''
-          new = '''        const flyoutTitles = [
-              "Awtarchy Application Search",
-              "Awtarchy Clipboard History",'''
+          lines = path.read_text().splitlines(keepends=True)
+          desired = '"Awtarchy Application Search",'
 
-          if new not in text:
-              if old not in text:
-                  raise SystemExit("launcher flyout-title insertion point not found")
-              path.write_text(text.replace(old, new, 1))
+          if not any(desired in line for line in lines):
+              list_index = next((i for i, line in enumerate(lines)
+                                 if "const flyoutTitles = [" in line), None)
+              if list_index is None:
+                  raise SystemExit("flyout title list not found")
+
+              insert_index = next((i for i in range(list_index + 1, len(lines))
+                                   if '"Awtarchy Clipboard History",' in lines[i]), None)
+              if insert_index is None:
+                  raise SystemExit("clipboard flyout title not found")
+
+              indent = lines[insert_index][:len(lines[insert_index]) - len(lines[insert_index].lstrip())]
+              lines.insert(insert_index, f'{indent}"Awtarchy Application Search",\n')
+              path.write_text("".join(lines))
           PY
 
           append_file_hash() {
