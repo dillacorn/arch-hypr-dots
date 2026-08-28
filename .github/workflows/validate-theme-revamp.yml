@@ -1,0 +1,22 @@
+name: Validate Theme Revamp
+
+on:
+  push:
+    branches: [feature/theme-revamp]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck lua5.4
+      - name: Catalog test
+        run: |
+          bash -n tests/test-quickshell-theme-catalog.sh
+          shellcheck tests/test-quickshell-theme-catalog.sh
+          bash tests/test-quickshell-theme-catalog.sh
