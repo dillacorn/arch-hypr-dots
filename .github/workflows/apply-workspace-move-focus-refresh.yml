@@ -1,0 +1,159 @@
+name: Apply workspace move focus refresh
+
+on:
+  push:
+    branches:
+      - fix/v3.4.2-workspace-focus-highlight
+    paths:
+      - '.github/workflows/apply-workspace-move-focus-refresh.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: fix/v3.4.2-workspace-focus-highlight
+          fetch-depth: 0
+
+      - name: Apply workspace move refresh repair
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import hashlib
+          import re
+
+          shell_qml = Path('config/quickshell/awtarchy/shell.qml')
+          runtime = Path('local/share/awtarchy/awtarchy-runtime.sh')
+          history = Path('local/share/awtarchy/quickshell-managed-history.sha256')
+          workflow = Path('.github/workflows/validate-workspace-focus-highlight.yml')
+
+          move_block = '''        if (event.name === "moveworkspace" || event.name === "moveworkspacev2") {
+              Hyprland.refreshMonitors();
+              return;
+          }
+
+          '''
+          config_anchor = '''        if (event.name === "configreloaded") {
+              runtimeRules.exec([root.runtimeRulesScript]);
+              NumlockSessionTweak.enforce();
+              return;
+          }
+          '''
+
+          shell_text = shell_qml.read_text(encoding='utf-8')
+          if move_block not in shell_text:
+              if shell_text.count(config_anchor) != 1:
+                  raise SystemExit('shell workspace-move insertion anchor mismatch')
+              shell_text = shell_text.replace(config_anchor, move_block + config_anchor, 1)
+              shell_qml.write_text(shell_text, encoding='utf-8')
+
+          runtime_text = runtime.read_text(encoding='utf-8')
+          new_function = r'''repair_v342_workspace_focus_target() {
+            local target_home="$1" tag="$2"
+            local bar_file="${target_home}/.config/quickshell/awtarchy/Bar.qml"
+            local shell_file="${target_home}/.config/quickshell/awtarchy/shell.qml"
+
+            [[ "$tag" == "v3.4.2" ]] || return 0
+            [[ -f "$bar_file" && ! -L "$bar_file" ]] \
+              || die "v3.4.2 post-release Bar target is unavailable."
+            [[ -f "$shell_file" && ! -L "$shell_file" ]] \
+              || die "v3.4.2 post-release shell target is unavailable."
+
+            python3 - "$bar_file" "$shell_file" <<'PY_WORKSPACE_FOCUS'
+          from pathlib import Path
+          import sys
+
+          bar_path = Path(sys.argv[1])
+          shell_path = Path(sys.argv[2])
+
+          bar_text = bar_path.read_text(encoding="utf-8")
+          old = 'normalBackground: modelData.urgent ? Theme.urgent : (modelData.active ? Theme.subtleActive : "transparent")'
+          new = 'normalBackground: modelData.urgent ? Theme.urgent : (modelData.focused ? Theme.subtleActive : "transparent")'
+          old_count = bar_text.count(old)
+          new_count = bar_text.count(new)
+
+          if old_count == 0 and new_count == 2:
+              pass
+          elif old_count == 2:
+              bar_path.write_text(bar_text.replace(old, new), encoding="utf-8")
+          else:
+              raise SystemExit(f"v3.4.2 workspace-focus Bar repair anchor mismatch: old={old_count}, new={new_count}")
+
+          shell_text = shell_path.read_text(encoding="utf-8")
+          move_block = '''        if (event.name === "moveworkspace" || event.name === "moveworkspacev2") {
+              Hyprland.refreshMonitors();
+              return;
+          }
+
+          '''
+          config_anchor = '''        if (event.name === "configreloaded") {
+              runtimeRules.exec([root.runtimeRulesScript]);
+              NumlockSessionTweak.enforce();
+              return;
+          }
+          '''
+          if move_block not in shell_text:
+              if shell_text.count(config_anchor) != 1:
+                  raise SystemExit("v3.4.2 workspace-focus shell repair anchor mismatch")
+              shell_path.write_text(shell_text.replace(config_anchor, move_block + config_anchor, 1), encoding="utf-8")
+          PY_WORKSPACE_FOCUS
+            log "Applied v3.4.2 workspace-focus post-release repair to generated target."
+          }
+          '''
+
+          pattern = re.compile(
+              r'repair_v342_workspace_focus_target\(\) \{.*?\n\}\n(?=prepare_quickshell_update_target\(\) \{)',
+              re.S,
+          )
+          runtime_text, count = pattern.subn(new_function, runtime_text, count=1)
+          if count != 1:
+              raise SystemExit('runtime workspace-focus repair function anchor mismatch')
+          runtime.write_text(runtime_text, encoding='utf-8')
+
+          workflow_text = workflow.read_text(encoding='utf-8')
+          bar_path_line = "      - 'config/quickshell/awtarchy/Bar.qml'\n"
+          shell_path_line = "      - 'config/quickshell/awtarchy/shell.qml'\n"
+          history_path_line = "      - 'local/share/awtarchy/quickshell-managed-history.sha256'\n"
+          if shell_path_line not in workflow_text:
+              if workflow_text.count(bar_path_line) != 1:
+                  raise SystemExit('workspace-focus workflow Bar path anchor mismatch')
+              workflow_text = workflow_text.replace(bar_path_line, bar_path_line + shell_path_line, 1)
+          runtime_path_line = "      - 'local/share/awtarchy/awtarchy-runtime.sh'\n"
+          if history_path_line not in workflow_text:
+              if workflow_text.count(runtime_path_line) != 1:
+                  raise SystemExit('workspace-focus workflow runtime path anchor mismatch')
+              workflow_text = workflow_text.replace(runtime_path_line, runtime_path_line + history_path_line, 1)
+          workflow.write_text(workflow_text, encoding='utf-8')
+
+          digest = hashlib.sha256(shell_qml.read_bytes()).hexdigest()
+          row = f'{digest}\t.config/quickshell/awtarchy/shell.qml'
+          history_text = history.read_text(encoding='utf-8')
+          if row not in history_text.splitlines():
+              if not history_text.endswith('\n'):
+                  history_text += '\n'
+              history.write_text(history_text + row + '\n', encoding='utf-8')
+          print(f'SHELL_SHA256={digest}')
+          PY
+
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n tests/test-workspace-focus-highlight.sh
+          shellcheck tests/test-workspace-focus-highlight.sh
+          bash tests/test-workspace-focus-highlight.sh
+          git diff --check
+
+      - name: Commit implementation
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- \
+            config/quickshell/awtarchy/shell.qml \
+            local/share/awtarchy/awtarchy-runtime.sh \
+            local/share/awtarchy/quickshell-managed-history.sha256 \
+            .github/workflows/validate-workspace-focus-highlight.yml
+          git diff --cached --check
+          git commit -m 'Refresh workspace focus after moves'
+          git push origin HEAD:fix/v3.4.2-workspace-focus-highlight
