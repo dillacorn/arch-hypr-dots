@@ -68,7 +68,7 @@ jobs:
               raise SystemExit("hyprland.lua mouse-submap anchor mismatch")
           hypr_path.write_text(hypr.replace(old_mouse, new_mouse, 1), encoding="utf-8")
 
-          repair_function = r'''repair_v342_mouse_submap_target() {
+          repair_function = r"""repair_v342_mouse_submap_target() {
             local target_home="$1" tag="$2"
             local file="${target_home}/.config/hypr/hyprland.lua"
 
@@ -129,7 +129,7 @@ jobs:
             log "Applied v3.4.2 mouse-submap post-release repair to generated target."
           }
 
-          '''
+          """
 
           runtime = runtime_path.read_text(encoding="utf-8")
           function_anchor = "prepare_quickshell_update_target() {\n"
