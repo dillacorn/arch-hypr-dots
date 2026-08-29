@@ -117,6 +117,17 @@ Item {
         return true;
     }
 
+    function rawIconOption(name, option) {
+        const state = BarState.monitorState(name) || ({});
+        if (option === "runningApps")
+            return state.show_tasks !== false;
+        if (option === "themeRunningApps")
+            return state.theme_task_icons === true;
+        if (option === "themeTray")
+            return state.theme_tray_icons === true;
+        return false;
+    }
+
     function moduleCommand(module) {
         if (module === "cpu")
             return "setshowcpu";
@@ -124,6 +135,16 @@ Item {
             return "setshowtemp";
         if (module === "memory")
             return "setshowmemory";
+        return "";
+    }
+
+    function iconOptionCommand(option) {
+        if (option === "runningApps")
+            return "setshowtasks";
+        if (option === "themeRunningApps")
+            return "setthemetaskicons";
+        if (option === "themeTray")
+            return "setthemetrayicons";
         return "";
     }
 
@@ -164,6 +185,10 @@ Item {
 
     function moduleVisibilityActive(module) {
         return commonValue(name => rawModuleVisible(name, module)) === true;
+    }
+
+    function iconOptionActive(option) {
+        return commonValue(name => rawIconOption(name, option)) === true;
     }
 
     function baseThickness() {
@@ -217,6 +242,21 @@ Item {
         runNextCommand();
     }
 
+    function toggleIconOption(option, enabledLabel, disabledLabel) {
+        const command = iconOptionCommand(option);
+        const targets = resolvedTargets();
+        if (command.length === 0 || targets.length === 0)
+            return;
+        const current = commonValue(name => rawIconOption(name, option));
+        const nextValue = current === true ? false : true;
+        const next = commandQueue.slice();
+        for (const target of targets)
+            next.push([managerScript, command, target, nextValue ? "true" : "false"]);
+        commandQueue = next;
+        message = nextValue ? enabledLabel : disabledLabel;
+        runNextCommand();
+    }
+
     function resetAppearance() {
         const targets = resolvedTargets();
         if (targets.length === 0)
@@ -226,6 +266,9 @@ Item {
             next.push([managerScript, "setsize", target, "0"]);
             next.push([managerScript, "setscale", target, "100"]);
             next.push([managerScript, "settextscale", target, "100"]);
+            next.push([managerScript, "setshowtasks", target, "true"]);
+            next.push([managerScript, "setthemetaskicons", target, "false"]);
+            next.push([managerScript, "setthemetrayicons", target, "false"]);
             next.push([managerScript, "setshowcpu", target, "true"]);
             next.push([managerScript, "setshowtemp", target, "true"]);
             next.push([managerScript, "setshowmemory", target, "true"]);
@@ -390,12 +433,13 @@ Item {
             anchors.margins: 6
             spacing: 3
 
-            RowLayout {
+            Item {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 26
-                spacing: 5
 
                 Text {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
                     text: "Bar Appearance"
                     color: Theme.foreground
                     font.family: Theme.fontFamily
@@ -403,40 +447,52 @@ Item {
                     font.bold: true
                 }
 
-                Item { Layout.fillWidth: true }
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 5
 
-                SettingsButton {
-                    label: "‹"
-                    textSize: 11
-                    onClicked: root.cycleTarget(-1)
+                    SettingsButton {
+                        label: "‹"
+                        textSize: 11
+                        onClicked: root.cycleTarget(-1)
+                    }
+
+                    Text {
+                        width: 240
+                        height: 24
+                        text: "Apply to: " + root.targetLabel()
+                        color: Theme.foreground
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 10
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideMiddle
+                    }
+
+                    SettingsButton {
+                        label: "›"
+                        textSize: 11
+                        onClicked: root.cycleTarget(1)
+                    }
                 }
 
-                Text {
-                    Layout.preferredWidth: 180
-                    text: root.targetLabel()
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 10
-                    horizontalAlignment: Text.AlignHCenter
-                    elide: Text.ElideMiddle
-                }
+                Row {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 5
 
-                SettingsButton {
-                    label: "›"
-                    textSize: 11
-                    onClicked: root.cycleTarget(1)
-                }
+                    SettingsButton {
+                        label: "Themes"
+                        textSize: 9
+                        onClicked: root.themePickerRequested()
+                    }
 
-                SettingsButton {
-                    label: "Themes"
-                    textSize: 9
-                    onClicked: root.themePickerRequested()
-                }
-
-                SettingsButton {
-                    label: "Reset"
-                    textSize: 9
-                    onClicked: root.resetAppearance()
+                    SettingsButton {
+                        label: "Reset"
+                        textSize: 9
+                        onClicked: root.resetAppearance()
+                    }
                 }
             }
 
@@ -637,6 +693,62 @@ Item {
                     horizontalAlignment: Text.AlignRight
                     elide: Text.ElideRight
                 }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 26
+                spacing: 5
+
+                Text {
+                    Layout.preferredWidth: 78
+                    text: "Running apps"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                }
+
+                SettingsButton {
+                    label: "Visible"
+                    textSize: 9
+                    horizontalPadding: 12
+                    active: root.iconOptionActive("runningApps")
+                    onClicked: root.toggleIconOption("runningApps", "Running apps visible", "Running apps hidden")
+                }
+
+                SettingsButton {
+                    label: "Theme color"
+                    textSize: 9
+                    horizontalPadding: 12
+                    active: root.iconOptionActive("themeRunningApps")
+                    onClicked: root.toggleIconOption("themeRunningApps", "Running app icons use theme color", "Running app icons use original colors")
+                }
+
+                Item { Layout.fillWidth: true }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 26
+                spacing: 5
+
+                Text {
+                    Layout.preferredWidth: 78
+                    text: "Tray icons"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                }
+
+                SettingsButton {
+                    label: "Theme color"
+                    textSize: 9
+                    horizontalPadding: 12
+                    active: root.iconOptionActive("themeTray")
+                    onClicked: root.toggleIconOption("themeTray", "Tray icons use theme color", "Tray icons use original colors")
+                }
+
+                Item { Layout.fillWidth: true }
             }
 
             RowLayout {

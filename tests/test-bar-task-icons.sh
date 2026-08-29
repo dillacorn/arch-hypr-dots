@@ -14,10 +14,6 @@ contains() {
     grep -Fq -- "$2" "$1" || fail "$3"
 }
 
-absent() {
-    ! grep -Fq -- "$2" "$1" || fail "$3"
-}
-
 contains "$BAR_QML" 'function isAwtarchyFlyout(toplevel)' \
     'Bar has no focused filter for Awtarchy flyout windows'
 for title in \
@@ -35,15 +31,21 @@ done
 contains "$BAR_QML" 'if (isAwtarchyFlyout(toplevel))' \
     'Awtarchy flyouts are not rejected before task rendering'
 
-# Running application and tray icons intentionally keep their native colors.
-absent "$BAR_QML" 'import QtQuick.Effects' \
-    'Bar unexpectedly imports Qt Quick effects for application icon tinting'
-absent "$BAR_QML" 'MultiEffect {' \
-    'Running application icons are still being theme-tinted'
+# Native icon sources remain authoritative. Theme coloring is optional and is
+# enabled only by the per-monitor state, so the stock false default preserves
+# the existing application and tray colors.
+contains "$BAR_QML" 'import QtQuick.Effects' \
+    'Bar does not expose the optional icon colorization effect'
 contains "$BAR_QML" 'source: bar.appIcon(task.modelData)' \
     'Running application icons no longer use their native application icon'
 contains "$BAR_QML" 'source: trayItem.modelData.icon' \
     'System tray icons no longer use their native applet icon'
+[[ $(grep -Fc 'layer.enabled: bar.taskIconsThemed(bar.monitorName)' "$BAR_QML") -eq 2 ]] \
+    || fail 'optional running application icon theming is not applied to both bar orientations'
+[[ $(grep -Fc 'layer.enabled: bar.trayIconsThemed(bar.monitorName)' "$BAR_QML") -eq 2 ]] \
+    || fail 'optional tray icon theming is not applied to both bar orientations'
+[[ $(grep -Fc 'colorizationColor: Theme.foreground' "$BAR_QML") -eq 4 ]] \
+    || fail 'optional task/tray icon coloring does not consistently use the theme foreground'
 
 contains "$BAR_QML" 'acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton' \
     'task icon mouse actions were removed while fixing flyout filtering'
@@ -54,4 +56,4 @@ contains "$BAR_QML" 'wayland.minimized = true;' \
 contains "$BAR_QML" 'wayland.activate();' \
     'task icon activation behavior disappeared'
 
-printf '%s\n' 'PASS: Awtarchy launcher/flyouts stay out of the task strip and native application/tray icon colors are preserved.'
+printf '%s\n' 'PASS: Awtarchy flyouts stay out of the task strip while task/tray icons preserve native sources and support optional theme coloring.'
