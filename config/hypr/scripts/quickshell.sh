@@ -87,6 +87,9 @@ ensure_state() {
                     bar_size:0,
                     icon_scale:100,
                     text_scale:100,
+                    show_tasks:true,
+                    theme_task_icons:false,
+                    theme_tray_icons:false,
                     show_cpu:true,
                     show_temp:true,
                     show_memory:true,
@@ -362,7 +365,9 @@ stop_shell() {
 }
 
 restart_shell() {
-    local report_stage="${AWTARCHY_REPORT_FAILURE_STAGE:-restart}"
+    local report_stage="${1:-start}"
+    local stable_pings=0
+
     case "$report_stage" in
         restart|restart_after_update) ;;
         *) report_stage=restart ;;
@@ -427,6 +432,21 @@ getshowmemory() {
     jq -r --arg monitor "$1" '(if .monitors[$monitor].show_memory == null then true else .monitors[$monitor].show_memory end) | if . then "true" else "false" end' "$STATE_FILE"
 }
 
+getshowtasks() {
+    ensure_state
+    jq -r --arg monitor "$1" '(if .monitors[$monitor].show_tasks == null then true else .monitors[$monitor].show_tasks end) | if . then "true" else "false" end' "$STATE_FILE"
+}
+
+getthemetaskicons() {
+    ensure_state
+    jq -r --arg monitor "$1" '(.monitors[$monitor].theme_task_icons // false) | if . then "true" else "false" end' "$STATE_FILE"
+}
+
+getthemetrayicons() {
+    ensure_state
+    jq -r --arg monitor "$1" '(.monitors[$monitor].theme_tray_icons // false) | if . then "true" else "false" end' "$STATE_FILE"
+}
+
 set_monitor_enabled() {
     local monitor="$1" enabled="$2" tmp
     case "$enabled" in
@@ -448,6 +468,22 @@ set_monitor_stat_visibility() {
     case "$enabled" in
         true|false) ;;
         *) printf 'quickshell.sh: bar stat visibility must be true or false\n' >&2; exit 2 ;;
+    esac
+    ensure_state
+    tmp="${STATE_FILE}.tmp.$$"
+    jq --arg monitor "$monitor" --arg key "$key" --argjson enabled "$enabled" '.monitors[$monitor][$key] = $enabled' "$STATE_FILE" >"$tmp"
+    mv -f "$tmp" "$STATE_FILE"
+}
+
+set_monitor_icon_option() {
+    local monitor="$1" key="$2" enabled="$3" tmp
+    case "$key" in
+        show_tasks|theme_task_icons|theme_tray_icons) ;;
+        *) printf 'quickshell.sh: invalid bar icon option: %s\n' "$key" >&2; exit 2 ;;
+    esac
+    case "$enabled" in
+        true|false) ;;
+        *) printf 'quickshell.sh: bar icon option must be true or false\n' >&2; exit 2 ;;
     esac
     ensure_state
     tmp="${STATE_FILE}.tmp.$$"
@@ -518,6 +554,9 @@ reset_mon() {
             bar_size:0,
             icon_scale:100,
             text_scale:100,
+            show_tasks:true,
+            theme_task_icons:false,
+            theme_tray_icons:false,
             show_cpu:true,
             show_temp:true,
             show_memory:true,
@@ -619,6 +658,9 @@ focused monitor:
   getsize-focused
   getscale-focused
   gettextscale-focused
+  getshowtasks-focused
+  getthemetaskicons-focused
+  getthemetrayicons-focused
   getshowcpu-focused
   getshowtemp-focused
   getshowmemory-focused
@@ -627,6 +669,9 @@ focused monitor:
   setsize-focused <0|20-80>
   setscale-focused <50-200>
   settextscale-focused <50-200>
+  setshowtasks-focused <true|false>
+  setthemetaskicons-focused <true|false>
+  setthemetrayicons-focused <true|false>
   setshowcpu-focused <true|false>
   setshowtemp-focused <true|false>
   setshowmemory-focused <true|false>
@@ -641,6 +686,9 @@ per monitor:
   getsize <MON>
   getscale <MON>
   gettextscale <MON>
+  getshowtasks <MON>
+  getthemetaskicons <MON>
+  getthemetrayicons <MON>
   getshowcpu <MON>
   getshowtemp <MON>
   getshowmemory <MON>
@@ -649,6 +697,9 @@ per monitor:
   setsize <MON> <0|20-80>
   setscale <MON> <50-200>
   settextscale <MON> <50-200>
+  setshowtasks <MON> <true|false>
+  setthemetaskicons <MON> <true|false>
+  setthemetrayicons <MON> <true|false>
   setshowcpu <MON> <true|false>
   setshowtemp <MON> <true|false>
   setshowmemory <MON> <true|false>
@@ -656,6 +707,7 @@ per monitor:
 
 bar_size 0 means Awtarchy defaults: 28px horizontal, 36px vertical.
 icon_scale and text_scale are percentages; 100 preserves the tuned defaults.
+Running application icons are visible by default; task and tray icons use original colors by default.
 CPU, temperature and memory modules are visible by default.
 USAGE
 }
@@ -699,6 +751,12 @@ case "$cmd" in
     getscale-focused) monitor="$(focused_monitor)"; getscale "$monitor" ;;
     gettextscale) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; gettextscale "$2" ;;
     gettextscale-focused) monitor="$(focused_monitor)"; gettextscale "$monitor" ;;
+    getshowtasks) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getshowtasks "$2" ;;
+    getshowtasks-focused) monitor="$(focused_monitor)"; getshowtasks "$monitor" ;;
+    getthemetaskicons) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getthemetaskicons "$2" ;;
+    getthemetaskicons-focused) monitor="$(focused_monitor)"; getthemetaskicons "$monitor" ;;
+    getthemetrayicons) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getthemetrayicons "$2" ;;
+    getthemetrayicons-focused) monitor="$(focused_monitor)"; getthemetrayicons "$monitor" ;;
     getshowcpu) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getshowcpu "$2" ;;
     getshowcpu-focused) monitor="$(focused_monitor)"; getshowcpu "$monitor" ;;
     getshowtemp) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getshowtemp "$2" ;;
@@ -715,6 +773,12 @@ case "$cmd" in
     setscale-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; setscale "$monitor" "$2" ;;
     settextscale) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; settextscale "$2" "$3" ;;
     settextscale-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; settextscale "$monitor" "$2" ;;
+    setshowtasks) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_icon_option "$2" show_tasks "$3" ;;
+    setshowtasks-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; set_monitor_icon_option "$monitor" show_tasks "$2" ;;
+    setthemetaskicons) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_icon_option "$2" theme_task_icons "$3" ;;
+    setthemetaskicons-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; set_monitor_icon_option "$monitor" theme_task_icons "$2" ;;
+    setthemetrayicons) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_icon_option "$2" theme_tray_icons "$3" ;;
+    setthemetrayicons-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; set_monitor_icon_option "$monitor" theme_tray_icons "$2" ;;
     setshowcpu) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_stat_visibility "$2" show_cpu "$3" ;;
     setshowcpu-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; set_monitor_stat_visibility "$monitor" show_cpu "$2" ;;
     setshowtemp) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_stat_visibility "$2" show_temp "$3" ;;
