@@ -1,0 +1,46 @@
+name: Temporary Refresh Bar Icon Managed History
+
+on:
+  push:
+    branches:
+      - feature/bar-icon-customization
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-history:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/bar-icon-customization
+          fetch-depth: 0
+      - name: Append current managed stock hashes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          for pair in \
+            'config/hypr/scripts/quickshell.sh|.config/hypr/scripts/quickshell.sh' \
+            'config/quickshell/awtarchy/Bar.qml|.config/quickshell/awtarchy/Bar.qml' \
+            'config/quickshell/awtarchy/BarSettingsSection.qml|.config/quickshell/awtarchy/BarSettingsSection.qml'
+          do
+            source_file="${pair%%|*}"
+            rel="${pair#*|}"
+            digest="$(sha256sum "$source_file" | awk '{print $1}')"
+            entry="${digest}"$'\t'"${rel}"
+            grep -Fxq -- "$entry" "$history" || printf '%s\n' "$entry" >>"$history"
+          done
+          git diff --check
+          git diff -- "$history"
+          if git diff --quiet -- "$history"; then
+            printf '%s\n' 'Managed history already current.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$history"
+          git commit -m 'Register bar icon managed history [skip ci]'
+          git push origin HEAD:feature/bar-icon-customization
