@@ -6,6 +6,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 MANAGER="${ROOT}/config/hypr/scripts/quickshell.sh"
 BAR_QML="${ROOT}/config/quickshell/awtarchy/Bar.qml"
 BAR_SETTINGS="${ROOT}/config/quickshell/awtarchy/BarSettingsSection.qml"
+HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 
@@ -137,5 +138,22 @@ jq -e '
     and .monitors["DP-2"].position == "top"
     and .unrelated.preserve == "yes"
 ' "$STATE_FILE" >/dev/null || fail 'bar icon option writes changed unrelated state'
+
+# These are managed stock files. Register each new stock revision so the
+# updater can recognize it without deleting historical hashes.
+missing_history=0
+while IFS='|' read -r source_file rel; do
+    digest="$(sha256sum "$source_file" | awk '{print $1}')"
+    if ! grep -Fxq -- "${digest}"$'\t'"${rel}" "$HISTORY"; then
+        printf 'MISSING_HISTORY_HASH: %s\t%s\n' "$digest" "$rel" >&2
+        missing_history=1
+    fi
+done <<EOF_HISTORY
+${MANAGER}|.config/hypr/scripts/quickshell.sh
+${BAR_QML}|.config/quickshell/awtarchy/Bar.qml
+${BAR_SETTINGS}|.config/quickshell/awtarchy/BarSettingsSection.qml
+EOF_HISTORY
+[[ $missing_history -eq 0 ]] \
+    || fail 'managed history is missing current bar icon option stock hashes'
 
 printf '%s\n' 'PASS: running application visibility and optional task/tray theme coloring are independent per-display settings with stock-safe defaults.'
