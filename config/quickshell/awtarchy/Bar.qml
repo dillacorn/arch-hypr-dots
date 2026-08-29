@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Effects
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Hyprland
@@ -142,6 +143,21 @@ PanelWindow {
         if (module === "memory")
             return state.show_memory !== false;
         return true;
+    }
+
+    function taskIconsVisible(name) {
+        const state = BarState.monitorState(name) || ({});
+        return state.show_tasks !== false;
+    }
+
+    function taskIconsThemed(name) {
+        const state = BarState.monitorState(name) || ({});
+        return state.theme_task_icons === true;
+    }
+
+    function trayIconsThemed(name) {
+        const state = BarState.monitorState(name) || ({});
+        return state.theme_tray_icons === true;
     }
 
     function scratchpadCount() {
@@ -384,6 +400,7 @@ PanelWindow {
 
     component TaskStrip: Row {
         spacing: 0
+        visible: bar.taskIconsVisible(bar.monitorName)
 
         Repeater {
             model: ScriptModel {
@@ -401,6 +418,11 @@ PanelWindow {
                     anchors.centerIn: parent
                     implicitSize: bar.smallIconSize
                     source: bar.appIcon(task.modelData)
+                    layer.enabled: bar.taskIconsThemed(bar.monitorName)
+                    layer.effect: MultiEffect {
+                        colorization: 1.0
+                        colorizationColor: Theme.foreground
+                    }
                 }
 
                 BarTooltip {
@@ -440,6 +462,7 @@ PanelWindow {
 
     component TaskColumn: Column {
         spacing: 0
+        visible: bar.taskIconsVisible(bar.monitorName)
 
         Repeater {
             model: ScriptModel {
@@ -453,7 +476,16 @@ PanelWindow {
                 height: bar.verticalItemSize
                 color: modelData.urgent ? Theme.urgent : (modelData.activated ? Theme.subtleActive : (taskMouse.containsMouse ? Theme.subtleHover : "transparent"))
 
-                IconImage { anchors.centerIn: parent; implicitSize: bar.smallIconSize; source: bar.appIcon(task.modelData) }
+                IconImage {
+                    anchors.centerIn: parent
+                    implicitSize: bar.smallIconSize
+                    source: bar.appIcon(task.modelData)
+                    layer.enabled: bar.taskIconsThemed(bar.monitorName)
+                    layer.effect: MultiEffect {
+                        colorization: 1.0
+                        colorizationColor: Theme.foreground
+                    }
+                }
 
                 BarTooltip {
                     anchorItem: task
@@ -492,7 +524,16 @@ PanelWindow {
                 width: Math.max(14, bar.smallIconSize)
                 height: bar.barSize
 
-                IconImage { anchors.centerIn: parent; implicitSize: bar.smallIconSize; source: trayItem.modelData.icon }
+                IconImage {
+                    anchors.centerIn: parent
+                    implicitSize: bar.smallIconSize
+                    source: trayItem.modelData.icon
+                    layer.enabled: bar.trayIconsThemed(bar.monitorName)
+                    layer.effect: MultiEffect {
+                        colorization: 1.0
+                        colorizationColor: Theme.foreground
+                    }
+                }
 
                 BarTooltip {
                     anchorItem: trayItem
@@ -542,7 +583,16 @@ PanelWindow {
                 width: bar.barSize
                 height: Math.max(20, bar.smallIconSize + 6)
 
-                IconImage { anchors.centerIn: parent; implicitSize: bar.smallIconSize; source: trayItem.modelData.icon }
+                IconImage {
+                    anchors.centerIn: parent
+                    implicitSize: bar.smallIconSize
+                    source: trayItem.modelData.icon
+                    layer.enabled: bar.trayIconsThemed(bar.monitorName)
+                    layer.effect: MultiEffect {
+                        colorization: 1.0
+                        colorizationColor: Theme.foreground
+                    }
+                }
 
                 BarTooltip {
                     anchorItem: trayItem
