@@ -433,12 +433,13 @@ Item {
             anchors.margins: 6
             spacing: 3
 
-            RowLayout {
+            Item {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 26
-                spacing: 5
 
                 Text {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
                     text: "Bar Appearance"
                     color: Theme.foreground
                     font.family: Theme.fontFamily
@@ -446,40 +447,52 @@ Item {
                     font.bold: true
                 }
 
-                Item { Layout.fillWidth: true }
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 5
 
-                SettingsButton {
-                    label: "‹"
-                    textSize: 11
-                    onClicked: root.cycleTarget(-1)
+                    SettingsButton {
+                        label: "‹"
+                        textSize: 11
+                        onClicked: root.cycleTarget(-1)
+                    }
+
+                    Text {
+                        width: 240
+                        height: 24
+                        text: "Apply to: " + root.targetLabel()
+                        color: Theme.foreground
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 10
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideMiddle
+                    }
+
+                    SettingsButton {
+                        label: "›"
+                        textSize: 11
+                        onClicked: root.cycleTarget(1)
+                    }
                 }
 
-                Text {
-                    Layout.preferredWidth: 180
-                    text: root.targetLabel()
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 10
-                    horizontalAlignment: Text.AlignHCenter
-                    elide: Text.ElideMiddle
-                }
+                Row {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 5
 
-                SettingsButton {
-                    label: "›"
-                    textSize: 11
-                    onClicked: root.cycleTarget(1)
-                }
+                    SettingsButton {
+                        label: "Themes"
+                        textSize: 9
+                        onClicked: root.themePickerRequested()
+                    }
 
-                SettingsButton {
-                    label: "Themes"
-                    textSize: 9
-                    onClicked: root.themePickerRequested()
-                }
-
-                SettingsButton {
-                    label: "Reset"
-                    textSize: 9
-                    onClicked: root.resetAppearance()
+                    SettingsButton {
+                        label: "Reset"
+                        textSize: 9
+                        onClicked: root.resetAppearance()
+                    }
                 }
             }
 
