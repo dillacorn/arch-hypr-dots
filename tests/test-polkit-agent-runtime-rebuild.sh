@@ -16,10 +16,18 @@ grep -Fq '"${stage}/agent.py"' "$RUNTIME"
 grep -Fq '"${stage}/tui.py"' "$RUNTIME"
 grep -Fq '"${stage}/alacritty.toml"' "$RUNTIME"
 grep -Fq '"${stage}/launcher"' "$RUNTIME"
-if grep -Fq 'shell.qml' "$RUNTIME" || grep -Fq 'window-guard.sh' "$RUNTIME"; then
+
+polkit_staging="$(awk '
+    /^install_awtarchy_polkit_agent_runtime\(\) \{/ { capture=1 }
+    capture { print }
+    capture && /^}$/ { exit }
+' "$RUNTIME")"
+[[ -n $polkit_staging ]]
+if grep -Fq 'shell.qml' <<<"$polkit_staging" || grep -Fq 'window-guard.sh' <<<"$polkit_staging"; then
     printf '%s\n' 'FAIL: production PolicyKit staging references obsolete Quickshell runtime files' >&2
     exit 1
 fi
+
 grep -Fq 'awtarchy_polkit_restore_install_transaction()' "$RUNTIME"
 grep -Fq 'awtarchy_polkit_root /usr/bin/mv -Tf -- "$AWTARCHY_POLKIT_RUNTIME_DIR" "$previous_runtime"' "$RUNTIME"
 grep -Fq 'awtarchy_polkit_root /usr/bin/mv -Tf -- "$stage" "$AWTARCHY_POLKIT_RUNTIME_DIR"' "$RUNTIME"
