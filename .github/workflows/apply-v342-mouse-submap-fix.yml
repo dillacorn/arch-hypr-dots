@@ -1,0 +1,165 @@
+name: Apply v3.4.2 mouse submap fix
+
+on:
+  push:
+    branches:
+      - fix/v3.4.2-mouse-submap-input
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.ref == 'refs/heads/fix/v3.4.2-mouse-submap-input'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: fix/v3.4.2-mouse-submap-input
+          fetch-depth: 0
+
+      - name: Apply exact post-release patch
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          hypr_path = Path("config/hypr/hyprland.lua")
+          runtime_path = Path("local/share/awtarchy/awtarchy-runtime.sh")
+
+          old_mouse = '''hl.define_submap("mouse", function()
+              -- Submap references in "mouse" (Toggle off)  [empty file on exit]
+              local mouse_off = _submap_off_cmd("mouse")
+
+              -- Resize (MOUSE-left/right / hold)
+              for _, bind in ipairs(resize_keys) do
+                  hl.bind(bind[1], hl.dsp.window.resize({ x = bind[2], y = bind[3], relative = true }), { repeating = true })
+              end
+
+              hl.bind("mouse:272", hl.dsp.window.drag(), { mouse = true })
+              hl.bind("mouse:273", hl.dsp.window.resize(), { mouse = true })
+              hl.bind("mouse:274", hl.dsp.window.float({ action = "toggle" }), {})
+              hl.bind("Escape", hl.dsp.exec_cmd(mouse_off), {})
+              hl.bind("Return", hl.dsp.exec_cmd(mouse_off), {})
+
+              -- Submap binds in "mouse"  (Toggle off/on)
+              hl.bind("SUPER + ALT + M", hl.dsp.exec_cmd(mouse_off), {})
+              hl.bind("SUPER + ALT + N", hl.dsp.exec_cmd(noalt_on), {})
+              hl.bind("SUPER + ALT + V", hl.dsp.exec_cmd(vm_on), {})
+          end)'''
+
+          new_mouse = '''hl.define_submap("mouse", function()
+              -- Submap references in "mouse" (Toggle off)  [empty file on exit]
+              local mouse_off = _submap_off_cmd("mouse")
+
+              -- Pointer-only window controls. Keep normal keyboard input available to
+              -- focused applications while mouse mode is active.
+              hl.bind("mouse:272", hl.dsp.window.drag(), { mouse = true })
+              hl.bind("mouse:273", hl.dsp.window.resize(), { mouse = true })
+              hl.bind("mouse:274", hl.dsp.window.float({ action = "toggle" }), {})
+
+              -- Submap binds in "mouse"  (Toggle off/on)
+              hl.bind("SUPER + ALT + M", hl.dsp.exec_cmd(mouse_off), {})
+              hl.bind("SUPER + ALT + N", hl.dsp.exec_cmd(noalt_on), {})
+              hl.bind("SUPER + ALT + V", hl.dsp.exec_cmd(vm_on), {})
+          end)'''
+
+          hypr = hypr_path.read_text(encoding="utf-8")
+          if hypr.count(old_mouse) != 1:
+              raise SystemExit("hyprland.lua mouse-submap anchor mismatch")
+          hypr_path.write_text(hypr.replace(old_mouse, new_mouse, 1), encoding="utf-8")
+
+          repair_function = r'''repair_v342_mouse_submap_target() {
+            local target_home="$1" tag="$2"
+            local file="${target_home}/.config/hypr/hyprland.lua"
+
+            [[ "$tag" == "v3.4.2" ]] || return 0
+            [[ -f "$file" && ! -L "$file" ]] \
+              || die "v3.4.2 post-release Hyprland target is unavailable."
+
+            python3 - "$file" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8")
+
+          old = '''hl.define_submap("mouse", function()
+              -- Submap references in "mouse" (Toggle off)  [empty file on exit]
+              local mouse_off = _submap_off_cmd("mouse")
+
+              -- Resize (MOUSE-left/right / hold)
+              for _, bind in ipairs(resize_keys) do
+                  hl.bind(bind[1], hl.dsp.window.resize({ x = bind[2], y = bind[3], relative = true }), { repeating = true })
+              end
+
+              hl.bind("mouse:272", hl.dsp.window.drag(), { mouse = true })
+              hl.bind("mouse:273", hl.dsp.window.resize(), { mouse = true })
+              hl.bind("mouse:274", hl.dsp.window.float({ action = "toggle" }), {})
+              hl.bind("Escape", hl.dsp.exec_cmd(mouse_off), {})
+              hl.bind("Return", hl.dsp.exec_cmd(mouse_off), {})
+
+              -- Submap binds in "mouse"  (Toggle off/on)
+              hl.bind("SUPER + ALT + M", hl.dsp.exec_cmd(mouse_off), {})
+              hl.bind("SUPER + ALT + N", hl.dsp.exec_cmd(noalt_on), {})
+              hl.bind("SUPER + ALT + V", hl.dsp.exec_cmd(vm_on), {})
+          end)'''
+
+          new = '''hl.define_submap("mouse", function()
+              -- Submap references in "mouse" (Toggle off)  [empty file on exit]
+              local mouse_off = _submap_off_cmd("mouse")
+
+              -- Pointer-only window controls. Keep normal keyboard input available to
+              -- focused applications while mouse mode is active.
+              hl.bind("mouse:272", hl.dsp.window.drag(), { mouse = true })
+              hl.bind("mouse:273", hl.dsp.window.resize(), { mouse = true })
+              hl.bind("mouse:274", hl.dsp.window.float({ action = "toggle" }), {})
+
+              -- Submap binds in "mouse"  (Toggle off/on)
+              hl.bind("SUPER + ALT + M", hl.dsp.exec_cmd(mouse_off), {})
+              hl.bind("SUPER + ALT + N", hl.dsp.exec_cmd(noalt_on), {})
+              hl.bind("SUPER + ALT + V", hl.dsp.exec_cmd(vm_on), {})
+          end)'''
+
+          if new in text:
+              raise SystemExit(0)
+          if text.count(old) != 1:
+              raise SystemExit("v3.4.2 mouse-submap repair anchor mismatch")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+            log "Applied v3.4.2 mouse-submap post-release repair to generated target."
+          }
+
+          '''
+
+          runtime = runtime_path.read_text(encoding="utf-8")
+          function_anchor = "prepare_quickshell_update_target() {\n"
+          if runtime.count(function_anchor) != 1:
+              raise SystemExit("runtime helper insertion anchor mismatch")
+          runtime = runtime.replace(function_anchor, repair_function + function_anchor, 1)
+
+          flow_old = '''  prepare_quickshell_update_target "$target_home"
+
+            bootstrap_previous_baseline "$active_theme"'''
+          flow_new = '''  prepare_quickshell_update_target "$target_home"
+            repair_v342_mouse_submap_target "$target_home" "$tag"
+
+            bootstrap_previous_baseline "$active_theme"'''
+          if runtime.count(flow_old) != 1:
+              raise SystemExit("runtime update-flow anchor mismatch")
+          runtime = runtime.replace(flow_old, flow_new, 1)
+          runtime_path.write_text(runtime, encoding="utf-8")
+          PY
+
+          rm -f -- .github/workflows/apply-v342-mouse-submap-fix.yml
+
+      - name: Commit exact patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A -- \
+            config/hypr/hyprland.lua \
+            local/share/awtarchy/awtarchy-runtime.sh \
+            .github/workflows/apply-v342-mouse-submap-fix.yml
+          git diff --cached --check
+          git commit -m 'Fix mouse submap keyboard capture'
+          git push origin HEAD:fix/v3.4.2-mouse-submap-input
