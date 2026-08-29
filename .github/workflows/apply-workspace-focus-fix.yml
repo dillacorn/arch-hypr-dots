@@ -1,0 +1,109 @@
+name: Apply workspace focus fix
+
+on:
+  push:
+    branches:
+      - fix/v3.4.2-workspace-focus-highlight
+    paths:
+      - '.github/workflows/apply-workspace-focus-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: fix/v3.4.2-workspace-focus-highlight
+          fetch-depth: 0
+
+      - name: Apply focused workspace repair
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import hashlib
+
+          bar = Path('config/quickshell/awtarchy/Bar.qml')
+          runtime = Path('local/share/awtarchy/awtarchy-runtime.sh')
+          history = Path('local/share/awtarchy/quickshell-managed-history.sha256')
+
+          old_expr = 'normalBackground: modelData.urgent ? Theme.urgent : (modelData.active ? Theme.subtleActive : "transparent")'
+          new_expr = 'normalBackground: modelData.urgent ? Theme.urgent : (modelData.focused ? Theme.subtleActive : "transparent")'
+
+          bar_text = bar.read_text(encoding='utf-8')
+          if bar_text.count(old_expr) != 2:
+              raise SystemExit('expected exactly two per-monitor active workspace highlight expressions')
+          bar_text = bar_text.replace(old_expr, new_expr)
+          bar.write_text(bar_text, encoding='utf-8')
+
+          runtime_text = runtime.read_text(encoding='utf-8')
+          marker = '\nprepare_quickshell_update_target() {\n'
+          if runtime_text.count(marker) != 1:
+              raise SystemExit('runtime target-preparation anchor mismatch')
+
+          repair = r'''
+repair_v342_workspace_focus_target() {
+  local target_home="$1" tag="$2"
+  local file="${target_home}/.config/quickshell/awtarchy/Bar.qml"
+
+  [[ "$tag" == "v3.4.2" ]] || return 0
+  [[ -f "$file" && ! -L "$file" ]] \
+    || die "v3.4.2 post-release Bar target is unavailable."
+
+  python3 - "$file" <<'PY_WORKSPACE_FOCUS'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+old = 'normalBackground: modelData.urgent ? Theme.urgent : (modelData.active ? Theme.subtleActive : "transparent")'
+new = 'normalBackground: modelData.urgent ? Theme.urgent : (modelData.focused ? Theme.subtleActive : "transparent")'
+old_count = text.count(old)
+new_count = text.count(new)
+
+if old_count == 0 and new_count == 2:
+    raise SystemExit(0)
+if old_count != 2:
+    raise SystemExit(f"v3.4.2 workspace-focus repair anchor mismatch: old={old_count}, new={new_count}")
+path.write_text(text.replace(old, new), encoding="utf-8")
+PY_WORKSPACE_FOCUS
+  log "Applied v3.4.2 workspace-focus post-release repair to generated target."
+}
+'''
+          runtime_text = runtime_text.replace(marker, '\n' + repair + marker.lstrip('\n'), 1)
+
+          old_call = '  repair_v342_mouse_submap_target "$target_home" "$tag"\n\n  bootstrap_previous_baseline "$active_theme"'
+          new_call = '  repair_v342_mouse_submap_target "$target_home" "$tag"\n  repair_v342_workspace_focus_target "$target_home" "$tag"\n\n  bootstrap_previous_baseline "$active_theme"'
+          if runtime_text.count(old_call) != 1:
+              raise SystemExit('runtime v3.4.2 repair ordering anchor mismatch')
+          runtime.write_text(runtime_text.replace(old_call, new_call, 1), encoding='utf-8')
+
+          digest = hashlib.sha256(bar.read_bytes()).hexdigest()
+          row = f'{digest}\t.config/quickshell/awtarchy/Bar.qml'
+          history_text = history.read_text(encoding='utf-8')
+          if row not in history_text.splitlines():
+              if not history_text.endswith('\n'):
+                  history_text += '\n'
+              history_text += row + '\n'
+              history.write_text(history_text, encoding='utf-8')
+          print(f'BAR_SHA256={digest}')
+          PY
+
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n tests/test-workspace-focus-highlight.sh
+          bash tests/test-workspace-focus-highlight.sh
+          git diff --check
+
+      - name: Commit implementation
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- \
+            config/quickshell/awtarchy/Bar.qml \
+            local/share/awtarchy/awtarchy-runtime.sh \
+            local/share/awtarchy/quickshell-managed-history.sha256
+          git diff --cached --check
+          git commit -m 'Fix workspace focus highlight'
+          git push origin HEAD:fix/v3.4.2-workspace-focus-highlight
