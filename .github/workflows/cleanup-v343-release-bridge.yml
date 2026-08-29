@@ -1,0 +1,44 @@
+name: Cleanup v3.4.3 release bridge
+
+on:
+  push:
+    branches:
+      - release-helper/v3.4.3
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  verify-and-clean:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify published release and remove helper
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: v3.4.3
+          RELEASE_TARGET: 155207b6891ccc4ecd119ecaea15910f6e0b2e9c
+          RELEASE_TITLE: Awtarchy v3.4.3 Quickshell
+        run: |
+          set -euo pipefail
+
+          release_name="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json name --jq .name)"
+          release_target="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)"
+          release_draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
+          release_prerelease="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)"
+          tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq .object.sha)"
+
+          [[ "$release_name" == "$RELEASE_TITLE" ]]
+          [[ "$release_target" == "$RELEASE_TARGET" ]]
+          [[ "$release_draft" == false ]]
+          [[ "$release_prerelease" == false ]]
+          [[ "$tag_sha" == "$RELEASE_TARGET" ]]
+
+          body="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body)"
+          grep -Fq '# Awtarchy v3.4.3 Quickshell' <<<"$body"
+          grep -Fq 'The v3.4.2 post-release mouse-mode repair is included directly in v3.4.3.' <<<"$body"
+          grep -Fq 'Moving the focused workspace between displays refreshes Quickshell' <<<"$body"
+          grep -Fq '_Placeholder for possible tested post-release patches to v3.4.3._' <<<"$body"
+
+          gh pr close 97 --repo "$GITHUB_REPOSITORY"
+          gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/release-helper/v3.4.3"
