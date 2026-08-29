@@ -21,6 +21,7 @@ jobs:
       - name: Add guarded one-use release job
         run: |
           python3 <<'SETUPPY'
+          import base64
           from pathlib import Path
 
           workflow = Path('.github/workflows/validate-awtarchy.yml')
@@ -29,100 +30,11 @@ jobs:
           if marker in text:
               raise SystemExit('release bridge job already exists')
 
+          encoded = 'ICBlZGl0X3YzNDJfcG9zdF9yZWxlYXNlX25vdGVzOgogICAgaWY6ID4tCiAgICAgIGdpdGh1Yi5ldmVudF9uYW1lID09ICdwdWxsX3JlcXVlc3QnICYmIGdpdGh1Yi5ldmVudC5wdWxsX3JlcXVlc3QudGl0bGUgPT0gJ1RFTVA6IGVkaXQgdjMuNC4yIHBvc3QtcmVsZWFzZSBub3RlcycgJiYgZ2l0aHViLmhlYWRfcmVmID09ICdvcHMvdjMuNC4yLXBvc3QtcmVsZWFzZS1ub3RlcycKICAgIHBlcm1pc3Npb25zOgogICAgICBjb250ZW50czogd3JpdGUKICAgIHJ1bnMtb246IHVidW50dS1sYXRlc3QKICAgIHN0ZXBzOgogICAgICAtIHVzZXM6IGFjdGlvbnMvY2hlY2tvdXRAMDhlYmEwYjI3ZTgyMDA3MWNkZTZkZjk0OWUwYmViOWJhNDkwNjk1NSAjIHY0LjMuMAogICAgICAgIHdpdGg6CiAgICAgICAgICBmZXRjaC1kZXB0aDogMAogICAgICAtIG5hbWU6IEVkaXQgYW5kIHZlcmlmeSBleGlzdGluZyB2My40LjIgcmVsZWFzZSBib2R5CiAgICAgICAgZW52OgogICAgICAgICAgR0hfVE9LRU46IF9fR0lUSFVCX1RPS0VOX18KICAgICAgICBydW46IHwKICAgICAgICAgIHNldCAtZXVvIHBpcGVmYWlsCiAgICAgICAgICByZXBvPSIke0dJVEhVQl9SRVBPU0lUT1JZfSIKICAgICAgICAgIHRhZz0ndjMuNC4yJwogICAgICAgICAgZXhwZWN0ZWRfdGFnX3NoYT0nZTEyNTQwOWQ3OTcwYzkxYWZjNDZhYjhhODhhNjFmNDYyYjIwODQ3OCcKCiAgICAgICAgICBnaCBhcGkgInJlcG9zLyR7cmVwb30vcmVsZWFzZXMvdGFncy8ke3RhZ30iID4gYmVmb3JlLmpzb24KICAgICAgICAgIHRhZ19zaGFfYmVmb3JlPSIkKGdoIGFwaSAicmVwb3MvJHtyZXBvfS9naXQvcmVmL3RhZ3MvJHt0YWd9IiAtLWpxICcub2JqZWN0LnNoYScpIgogICAgICAgICAgW1sgIiR0YWdfc2hhX2JlZm9yZSIgPT0gIiRleHBlY3RlZF90YWdfc2hhIiBdXQoKICAgICAgICAgIHB5dGhvbjMgPDwnUkVMRUFTRVBZJwogICAgICAgICAgaW1wb3J0IGpzb24KICAgICAgICAgIGZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAoKICAgICAgICAgIGJlZm9yZSA9IGpzb24ubG9hZHMoUGF0aCgnYmVmb3JlLmpzb24nKS5yZWFkX3RleHQoZW5jb2Rpbmc9J3V0Zi04JykpCiAgICAgICAgICBleHBlY3RlZCA9IHsKICAgICAgICAgICAgICAnaWQnOiAzNzg5NzY3NjcsCiAgICAgICAgICAgICAgJ3RhZ19uYW1lJzogJ3YzLjQuMicsCiAgICAgICAgICAgICAgJ25hbWUnOiAnQXd0YXJjaHkgdjMuNC4yIFF1aWNrc2hlbGwnLAogICAgICAgICAgICAgICd0YXJnZXRfY29tbWl0aXNoJzogJ2UxMjU0MDlkNzk3MGM5MWFmYzQ2YWI4YTg4YTYxZjQ2MmIyMDg0NzgnLAogICAgICAgICAgICAgICdkcmFmdCc6IEZhbHNlLAogICAgICAgICAgICAgICdwcmVyZWxlYXNlJzogRmFsc2UsCiAgICAgICAgICB9CiAgICAgICAgICBmb3Iga2V5LCB2YWx1ZSBpbiBleHBlY3RlZC5pdGVtcygpOgogICAgICAgICAgICAgIGlmIGJlZm9yZS5nZXQoa2V5KSAhPSB2YWx1ZToKICAgICAgICAgICAgICAgICAgcmFpc2UgU3lzdGVtRXhpdChmJ3VuZXhwZWN0ZWQgcHJlLWVkaXQgcmVsZWFzZSBtZXRhZGF0YToge2tleX09e2JlZm9yZS5nZXQoa2V5KSFyfScpCgogICAgICAgICAgcGxhY2Vob2xkZXIgPSAnX1BsYWNlaG9sZGVyIGZvciBwb3NzaWJsZSB0ZXN0ZWQgcG9zdC1yZWxlYXNlIHBhdGNoZXMgdG8gdjMuNC4yLl8nCiAgICAgICAgICBib2R5ID0gYmVmb3JlLmdldCgnYm9keScsICcnKQogICAgICAgICAgaWYgYm9keS5jb3VudChwbGFjZWhvbGRlcikgIT0gMToKICAgICAgICAgICAgICByYWlzZSBTeXN0ZW1FeGl0KCd2My40LjIgcG9zdC1yZWxlYXNlIHBsYWNlaG9sZGVyIGlzIG1pc3Npbmcgb3IgZHVwbGljYXRlZCcpCgogICAgICAgICAgcmVwbGFjZW1lbnQgPSAnXG4nLmpvaW4oWwogICAgICAgICAgICAgICctICoqTW91c2UgbW9kZSBrZXlib2FyZCBpbnB1dDoqKiBNb3VzZSBtb2RlIGlzIG5vdyBwb2ludGVyLW9ubHkgZm9yIHdpbmRvdyBjb250cm9sLiBOb3JtYWwga2V5Ym9hcmQgaW5wdXQgaW5jbHVkaW5nIGBoL2ovay9sYCwgYXJyb3cga2V5cywgYEVzY2FwZWAsIGFuZCBgUmV0dXJuYCByZWFjaGVzIHRoZSBmb2N1c2VkIGFwcGxpY2F0aW9uIGluc3RlYWQgb2YgYmVpbmcgY29uc3VtZWQgYnkgdGhlIHN1Ym1hcCwgd2hpbGUgbW91c2UgZHJhZy9yZXNpemUvZmxvYXQgY29udHJvbHMgYW5kIHRoZSBgU1VQRVIgKyBBTFRgIHN1Ym1hcCBzd2l0Y2hlcyByZW1haW4gYXZhaWxhYmxlLicsCiAgICAgICAgICAgICAgIi0gKipFeGlzdGluZyB2My40LjIgaW5zdGFsbHM6KiogUnVuIGBhd3RhcmNoeSB1cGRhdGVgIHRvIGFwcGx5IHRoaXMgcmVwYWlyLiBUaGUgcmVmcmVzaGVkIG1haW50ZW5hbmNlIHJ1bnRpbWUgcGF0Y2hlcyB0aGUgZ2VuZXJhdGVkIHYzLjQuMiBIeXBybGFuZCB0YXJnZXQgYmVmb3JlIEF3dGFyY2h5J3Mgbm9ybWFsIHByZXNlcnZlLW1vZGUgdGhyZWUtd2F5IG1lcmdlLCBzbyB1bnJlbGF0ZWQgYGh5cHJsYW5kLmx1YWAgY3VzdG9taXphdGlvbnMgYXJlIHJldGFpbmVkLiBBZnRlciBhIHN1Y2Nlc3NmdWwgdXBkYXRlLCB0aGUgcmVwYWlyZWQgdGFyZ2V0IGJlY29tZXMgdGhlIG5ldyBiYXNlbGluZSBzbyBsYXRlciB1cGRhdGVzIGRvIG5vdCByZXBlYXRlZGx5IHJlYXBwbHkgdGhlIHJlcGFpci4iLAogICAgICAgICAgICAgICctICoqVmFsaWRhdGlvbjoqKiBQUiAjOTQgcGFzc2VkIHRoZSBmb2N1c2VkIG1vdXNlLXN1Ym1hcCByZWdyZXNzaW9uIGFuZCBhIHJlYWwgdGhyZWUtd2F5IHByZXNlcnZlLW1lcmdlIHJlZ3Jlc3Npb24uIEV4YWN0IG1lcmdlZCBgbWFpbmAgY29tbWl0IGA1MWQ5YWE0MzA4MzJjMWQ1ZjI3NDI3YzhmZmQxZmJmNjg4Y2QxNWZkYCBwYXNzZWQgYWxsIGZvdXIgcHVzaCB3b3JrZmxvd3MsIGluY2x1ZGluZyBgVmFsaWRhdGUgQXd0YXJjaHlgIEJhc2ggc3ludGF4LCBTaGVsbENoZWNrLCBkZXNrdG9wLWVudHJ5IHZhbGlkYXRpb24sIGFuZCBjb21tYW5kL3VwZGF0ZXIgaW50ZWdyYXRpb24gdGVzdHMuJywKICAgICAgICAgIF0pCiAgICAgICAgICBpbnRlbmRlZCA9IGJvZHkucmVwbGFjZShwbGFjZWhvbGRlciwgcmVwbGFjZW1lbnQsIDEpCiAgICAgICAgICBQYXRoKCdhZnRlci5tZCcpLndyaXRlX3RleHQoaW50ZW5kZWQsIGVuY29kaW5nPSd1dGYtOCcpCiAgICAgICAgICBQYXRoKCdleHBlY3RlZC1yZWxlYXNlLmpzb24nKS53cml0ZV90ZXh0KGpzb24uZHVtcHMoZXhwZWN0ZWQsIHNvcnRfa2V5cz1UcnVlKSwgZW5jb2Rpbmc9J3V0Zi04JykKICAgICAgICAgIFJFTEVBU0VQWQoKICAgICAgICAgIGdoIHJlbGVhc2UgZWRpdCAiJHRhZyIgLS1yZXBvICIkcmVwbyIgLS1ub3Rlcy1maWxlIGFmdGVyLm1kCgogICAgICAgICAgZ2ggYXBpICJyZXBvcy8ke3JlcG99L3JlbGVhc2VzL3RhZ3MvJHt0YWd9IiA+IGFmdGVyLmpzb24KICAgICAgICAgIHRhZ19zaGFfYWZ0ZXI9IiQoZ2ggYXBpICJyZXBvcy8ke3JlcG99L2dpdC9yZWYvdGFncy8ke3RhZ30iIC0tanEgJy5vYmplY3Quc2hhJykiCiAgICAgICAgICBbWyAiJHRhZ19zaGFfYWZ0ZXIiID09ICIkdGFnX3NoYV9iZWZvcmUiIF1dCiAgICAgICAgICBbWyAiJHRhZ19zaGFfYWZ0ZXIiID09ICIkZXhwZWN0ZWRfdGFnX3NoYSIgXV0KCiAgICAgICAgICBweXRob24zIDw8J1ZFUklGWVBZJwogICAgICAgICAgaW1wb3J0IGpzb24KICAgICAgICAgIGZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAoKICAgICAgICAgIGJlZm9yZSA9IGpzb24ubG9hZHMoUGF0aCgnYmVmb3JlLmpzb24nKS5yZWFkX3RleHQoZW5jb2Rpbmc9J3V0Zi04JykpCiAgICAgICAgICBhZnRlciA9IGpzb24ubG9hZHMoUGF0aCgnYWZ0ZXIuanNvbicpLnJlYWRfdGV4dChlbmNvZGluZz0ndXRmLTgnKSkKICAgICAgICAgIGV4cGVjdGVkID0ganNvbi5sb2FkcyhQYXRoKCdleHBlY3RlZC1yZWxlYXNlLmpzb24nKS5yZWFkX3RleHQoZW5jb2Rpbmc9J3V0Zi04JykpCiAgICAgICAgICBpbnRlbmRlZCA9IFBhdGgoJ2FmdGVyLm1kJykucmVhZF90ZXh0KGVuY29kaW5nPSd1dGYtOCcpCgogICAgICAgICAgZm9yIGtleSwgdmFsdWUgaW4gZXhwZWN0ZWQuaXRlbXMoKToKICAgICAgICAgICAgICBpZiBhZnRlci5nZXQoa2V5KSAhPSB2YWx1ZToKICAgICAgICAgICAgICAgICAgcmFpc2UgU3lzdGVtRXhpdChmJ3Bvc3QtZWRpdCByZWxlYXNlIG1ldGFkYXRhIGNoYW5nZWQ6IHtrZXl9PXthZnRlci5nZXQoa2V5KSFyfScpCiAgICAgICAgICBmb3Iga2V5IGluICgnaWQnLCAndGFnX25hbWUnLCAnbmFtZScsICd0YXJnZXRfY29tbWl0aXNoJywgJ2RyYWZ0JywgJ3ByZXJlbGVhc2UnLCAncHVibGlzaGVkX2F0Jyk6CiAgICAgICAgICAgICAgaWYgYWZ0ZXIuZ2V0KGtleSkgIT0gYmVmb3JlLmdldChrZXkpOgogICAgICAgICAgICAgICAgICByYWlzZSBTeXN0ZW1FeGl0KGYncG9zdC1lZGl0IHJlbGVhc2UgbWV0YWRhdGEgZGlmZmVycyBmcm9tIHByZS1lZGl0IHZhbHVlOiB7a2V5fScpCiAgICAgICAgICBpZiBhZnRlci5nZXQoJ2JvZHknKSAhPSBpbnRlbmRlZDoKICAgICAgICAgICAgICByYWlzZSBTeXN0ZW1FeGl0KCdwdWJsaXNoZWQgdjMuNC4yIGJvZHkgZG9lcyBub3QgZXhhY3RseSBtYXRjaCBpbnRlbmRlZCBib2R5JykKICAgICAgICAgIGlmICdfUGxhY2Vob2xkZXIgZm9yIHBvc3NpYmxlIHRlc3RlZCBwb3N0LXJlbGVhc2UgcGF0Y2hlcyB0byB2My40LjIuXycgaW4gYWZ0ZXIuZ2V0KCdib2R5JywgJycpOgogICAgICAgICAgICAgIHJhaXNlIFN5c3RlbUV4aXQoJ3Bvc3QtcmVsZWFzZSBwbGFjZWhvbGRlciBzdGlsbCBwcmVzZW50IGFmdGVyIGVkaXQnKQogICAgICAgICAgcHJpbnQoJ3YzLjQuMiByZWxlYXNlIGJvZHkgdmVyaWZpZWQ7IHRhZyBhbmQgcmVsZWFzZSBtZXRhZGF0YSB1bmNoYW5nZWQuJykKICAgICAgICAgIFZFUklGWVBZCgogICAgICAtIG5hbWU6IERlbGV0ZSBvbmUtdXNlIGhlbHBlciBicmFuY2gKICAgICAgICBpZjogc3VjY2VzcygpCiAgICAgICAgcnVuOiBnaXQgcHVzaCBvcmlnaW4gLS1kZWxldGUgb3BzL3YzLjQuMi1wb3N0LXJlbGVhc2Utbm90ZXMK'
+          job = base64.b64decode(encoded).decode('utf-8')
           token_expr = '${' + '{ github.token }}'
-          job = r'''
-  edit_v342_post_release_notes:
-    if: github.event_name == 'pull_request' && github.event.pull_request.title == 'TEMP: edit v3.4.2 post-release notes' && github.head_ref == 'ops/v3.4.2-post-release-notes'
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-        with:
-          fetch-depth: 0
-      - name: Edit and verify existing v3.4.2 release body
-        env:
-          GH_TOKEN: __GITHUB_TOKEN__
-        run: |
-          set -euo pipefail
-          repo="${GITHUB_REPOSITORY}"
-          tag='v3.4.2'
-          expected_release_id='378976767'
-          expected_tag_sha='e125409d7970c91afc46ab8a88a61f462b208478'
-          expected_name='Awtarchy v3.4.2 Quickshell'
-          expected_target='e125409d7970c91afc46ab8a88a61f462b208478'
-
-          gh api "repos/${repo}/releases/tags/${tag}" > before.json
-          tag_sha_before="$(gh api "repos/${repo}/git/ref/tags/${tag}" --jq '.object.sha')"
-          [[ "$tag_sha_before" == "$expected_tag_sha" ]]
-
-          python3 <<'RELEASEPY'
-          import json
-          from pathlib import Path
-
-          before = json.loads(Path('before.json').read_text(encoding='utf-8'))
-          expected = {
-              'id': 378976767,
-              'tag_name': 'v3.4.2',
-              'name': 'Awtarchy v3.4.2 Quickshell',
-              'target_commitish': 'e125409d7970c91afc46ab8a88a61f462b208478',
-              'draft': False,
-              'prerelease': False,
-          }
-          for key, value in expected.items():
-              if before.get(key) != value:
-                  raise SystemExit(f'unexpected pre-edit release metadata: {key}={before.get(key)!r}')
-
-          placeholder = '_Placeholder for possible tested post-release patches to v3.4.2._'
-          body = before.get('body', '')
-          if body.count(placeholder) != 1:
-              raise SystemExit('v3.4.2 post-release placeholder is missing or duplicated')
-
-          replacement = '\n'.join([
-              '- **Mouse mode keyboard input:** Mouse mode is now pointer-only for window control. Normal keyboard input including `h/j/k/l`, arrow keys, `Escape`, and `Return` reaches the focused application instead of being consumed by the submap, while mouse drag/resize/float controls and the `SUPER + ALT` submap switches remain available.',
-              '- **Existing v3.4.2 installs:** Run `awtarchy update` to apply this repair. The refreshed maintenance runtime patches the generated v3.4.2 Hyprland target before Awtarchy\'s normal preserve-mode three-way merge, so unrelated `hyprland.lua` customizations are retained. After a successful update, the repaired target becomes the new baseline so later updates do not repeatedly reapply the repair.',
-              '- **Validation:** PR #94 passed the focused mouse-submap regression and a real three-way preserve-merge regression. Exact merged `main` commit `51d9aa430832c1d5f27427c8ffd1fbf688cd15fd` passed all four push workflows, including `Validate Awtarchy` Bash syntax, ShellCheck, desktop-entry validation, and command/updater integration tests.',
-          ])
-          intended = body.replace(placeholder, replacement, 1)
-          Path('after.md').write_text(intended, encoding='utf-8')
-          Path('expected-release.json').write_text(json.dumps(expected, sort_keys=True), encoding='utf-8')
-          RELEASEPY
-
-          gh release edit "$tag" --repo "$repo" --notes-file after.md
-
-          gh api "repos/${repo}/releases/tags/${tag}" > after.json
-          tag_sha_after="$(gh api "repos/${repo}/git/ref/tags/${tag}" --jq '.object.sha')"
-          [[ "$tag_sha_after" == "$tag_sha_before" ]]
-          [[ "$tag_sha_after" == "$expected_tag_sha" ]]
-
-          python3 <<'VERIFYPY'
-          import json
-          from pathlib import Path
-
-          before = json.loads(Path('before.json').read_text(encoding='utf-8'))
-          after = json.loads(Path('after.json').read_text(encoding='utf-8'))
-          expected = json.loads(Path('expected-release.json').read_text(encoding='utf-8'))
-          intended = Path('after.md').read_text(encoding='utf-8')
-
-          for key, value in expected.items():
-              if after.get(key) != value:
-                  raise SystemExit(f'post-edit release metadata changed: {key}={after.get(key)!r}')
-          for key in ('id', 'tag_name', 'name', 'target_commitish', 'draft', 'prerelease', 'published_at'):
-              if after.get(key) != before.get(key):
-                  raise SystemExit(f'post-edit release metadata differs from pre-edit value: {key}')
-          if after.get('body') != intended:
-              raise SystemExit('published v3.4.2 body does not exactly match intended body')
-          if '_Placeholder for possible tested post-release patches to v3.4.2._' in after.get('body', ''):
-              raise SystemExit('post-release placeholder still present after edit')
-          print('v3.4.2 release body verified; tag and release metadata unchanged.')
-          VERIFYPY
-
-      - name: Delete one-use helper branch
-        if: success()
-        run: git push origin --delete ops/v3.4.2-post-release-notes
-'''
           job = job.replace('__GITHUB_TOKEN__', token_expr)
-          workflow.write_text(text.rstrip() + '\n' + job.lstrip('\n'), encoding='utf-8')
+          workflow.write_text(text.rstrip() + '\n' + job, encoding='utf-8')
           SETUPPY
 
           rm -f -- .github/workflows/setup-v342-release-bridge.yml
