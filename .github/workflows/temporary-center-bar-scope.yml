@@ -1,0 +1,160 @@
+name: Temporary Center Bar Appearance Scope
+
+on:
+  push:
+    branches:
+      - feature/bar-icon-customization
+
+permissions:
+  contents: write
+
+jobs:
+  center-scope:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/bar-icon-customization
+          fetch-depth: 0
+      - name: Center bar appearance scope selector
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('config/quickshell/awtarchy/BarSettingsSection.qml')
+          text = path.read_text()
+          old = '''            RowLayout {
+                              Layout.fillWidth: true
+                              Layout.preferredHeight: 26
+                              spacing: 5
+
+                              Text {
+                                  text: "Bar Appearance"
+                                  color: Theme.foreground
+                                  font.family: Theme.fontFamily
+                                  font.pixelSize: 11
+                                  font.bold: true
+                              }
+
+                              Item { Layout.fillWidth: true }
+
+                              SettingsButton {
+                                  label: "‹"
+                                  textSize: 11
+                                  onClicked: root.cycleTarget(-1)
+                              }
+
+                              Text {
+                                  Layout.preferredWidth: 180
+                                  text: root.targetLabel()
+                                  color: Theme.foreground
+                                  font.family: Theme.fontFamily
+                                  font.pixelSize: 10
+                                  horizontalAlignment: Text.AlignHCenter
+                                  elide: Text.ElideMiddle
+                              }
+
+                              SettingsButton {
+                                  label: "›"
+                                  textSize: 11
+                                  onClicked: root.cycleTarget(1)
+                              }
+
+                              SettingsButton {
+                                  label: "Themes"
+                                  textSize: 9
+                                  onClicked: root.themePickerRequested()
+                              }
+
+                              SettingsButton {
+                                  label: "Reset"
+                                  textSize: 9
+                                  onClicked: root.resetAppearance()
+                              }
+                          }
+'''
+          new = '''            Item {
+                              Layout.fillWidth: true
+                              Layout.preferredHeight: 26
+
+                              Text {
+                                  anchors.left: parent.left
+                                  anchors.verticalCenter: parent.verticalCenter
+                                  text: "Bar Appearance"
+                                  color: Theme.foreground
+                                  font.family: Theme.fontFamily
+                                  font.pixelSize: 11
+                                  font.bold: true
+                              }
+
+                              Row {
+                                  anchors.horizontalCenter: parent.horizontalCenter
+                                  anchors.verticalCenter: parent.verticalCenter
+                                  spacing: 5
+
+                                  SettingsButton {
+                                      label: "‹"
+                                      textSize: 11
+                                      onClicked: root.cycleTarget(-1)
+                                  }
+
+                                  Text {
+                                      width: 240
+                                      height: 24
+                                      text: "Apply to: " + root.targetLabel()
+                                      color: Theme.foreground
+                                      font.family: Theme.fontFamily
+                                      font.pixelSize: 10
+                                      horizontalAlignment: Text.AlignHCenter
+                                      verticalAlignment: Text.AlignVCenter
+                                      elide: Text.ElideMiddle
+                                  }
+
+                                  SettingsButton {
+                                      label: "›"
+                                      textSize: 11
+                                      onClicked: root.cycleTarget(1)
+                                  }
+                              }
+
+                              Row {
+                                  anchors.right: parent.right
+                                  anchors.verticalCenter: parent.verticalCenter
+                                  spacing: 5
+
+                                  SettingsButton {
+                                      label: "Themes"
+                                      textSize: 9
+                                      onClicked: root.themePickerRequested()
+                                  }
+
+                                  SettingsButton {
+                                      label: "Reset"
+                                      textSize: 9
+                                      onClicked: root.resetAppearance()
+                                  }
+                              }
+                          }
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one Bar Appearance header block, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          source_file='config/quickshell/awtarchy/BarSettingsSection.qml'
+          rel='.config/quickshell/awtarchy/BarSettingsSection.qml'
+          digest="$(sha256sum "$source_file" | awk '{print $1}')"
+          entry="${digest}"$'\t'"${rel}"
+          grep -Fxq -- "$entry" "$history" || printf '%s\n' "$entry" >>"$history"
+
+          git diff --check
+          git diff -- "$source_file" "$history"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$source_file" "$history"
+          git commit -m 'Center bar appearance target selector'
+          git push origin HEAD:feature/bar-icon-customization
