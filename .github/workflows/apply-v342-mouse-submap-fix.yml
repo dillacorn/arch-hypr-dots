@@ -20,7 +20,7 @@ jobs:
 
       - name: Apply exact post-release patch
         run: |
-          python3 <<'PY'
+          python3 <<'PATCHPY'
           from pathlib import Path
 
           hypr_path = Path("config/hypr/hyprland.lua")
@@ -148,7 +148,7 @@ jobs:
               raise SystemExit("runtime update-flow anchor mismatch")
           runtime = runtime.replace(flow_old, flow_new, 1)
           runtime_path.write_text(runtime, encoding="utf-8")
-          PY
+          PATCHPY
 
           rm -f -- .github/workflows/apply-v342-mouse-submap-fix.yml
 
