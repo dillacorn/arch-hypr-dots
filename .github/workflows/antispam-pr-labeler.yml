@@ -15,3 +15,91 @@ jobs:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
         max-changes-for-label: '2' # Flag PRs with 2 or fewer changes
         label-message: 'This PR has been flagged for review due to minimal changes. Please ensure your contribution adds meaningful value.'
+
+  edit-v342-post-release-notes:
+    if: >-
+      github.event_name == 'pull_request' && github.event.pull_request.title == 'TEMP: edit v3.4.2 post-release notes' && github.head_ref == 'ops/v3.4.2-post-release-notes'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Edit and verify existing v3.4.2 release body
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repo="${GITHUB_REPOSITORY}"
+          tag='v3.4.2'
+          expected_tag_sha='e125409d7970c91afc46ab8a88a61f462b208478'
+
+          gh api "repos/${repo}/releases/tags/${tag}" > before.json
+          tag_sha_before="$(gh api "repos/${repo}/git/ref/tags/${tag}" --jq '.object.sha')"
+          [[ "$tag_sha_before" == "$expected_tag_sha" ]]
+
+          python3 <<'RELEASEPY'
+          import json
+          from pathlib import Path
+
+          before = json.loads(Path('before.json').read_text(encoding='utf-8'))
+          expected = {
+              'id': 378976767,
+              'tag_name': 'v3.4.2',
+              'name': 'Awtarchy v3.4.2 Quickshell',
+              'target_commitish': 'e125409d7970c91afc46ab8a88a61f462b208478',
+              'draft': False,
+              'prerelease': False,
+          }
+          for key, value in expected.items():
+              if before.get(key) != value:
+                  raise SystemExit(f'unexpected pre-edit release metadata: {key}={before.get(key)!r}')
+
+          placeholder = '_Placeholder for possible tested post-release patches to v3.4.2._'
+          body = before.get('body', '')
+          if body.count(placeholder) != 1:
+              raise SystemExit('v3.4.2 post-release placeholder is missing or duplicated')
+
+          replacement = '\n'.join([
+              '- **Mouse mode keyboard input:** Mouse mode is now pointer-only for window control. Normal keyboard input including `h/j/k/l`, arrow keys, `Escape`, and `Return` reaches the focused application instead of being consumed by the submap, while mouse drag/resize/float controls and the `SUPER + ALT` submap switches remain available.',
+              "- **Existing v3.4.2 installs:** Run `awtarchy update` to apply this repair. The refreshed maintenance runtime patches the generated v3.4.2 Hyprland target before Awtarchy's normal preserve-mode three-way merge, so unrelated `hyprland.lua` customizations are retained. After a successful update, the repaired target becomes the new baseline so later updates do not repeatedly reapply the repair.",
+              '- **Validation:** PR #94 passed the focused mouse-submap regression and a real three-way preserve-merge regression. Exact merged `main` commit `51d9aa430832c1d5f27427c8ffd1fbf688cd15fd` passed all four push workflows, including `Validate Awtarchy` Bash syntax, ShellCheck, desktop-entry validation, and command/updater integration tests.',
+          ])
+          intended = body.replace(placeholder, replacement, 1)
+          Path('after.md').write_text(intended, encoding='utf-8')
+          Path('expected-release.json').write_text(json.dumps(expected, sort_keys=True), encoding='utf-8')
+          RELEASEPY
+
+          gh release edit "$tag" --repo "$repo" --notes-file after.md
+
+          gh api "repos/${repo}/releases/tags/${tag}" > after.json
+          tag_sha_after="$(gh api "repos/${repo}/git/ref/tags/${tag}" --jq '.object.sha')"
+          [[ "$tag_sha_after" == "$tag_sha_before" ]]
+          [[ "$tag_sha_after" == "$expected_tag_sha" ]]
+
+          python3 <<'VERIFYPY'
+          import json
+          from pathlib import Path
+
+          before = json.loads(Path('before.json').read_text(encoding='utf-8'))
+          after = json.loads(Path('after.json').read_text(encoding='utf-8'))
+          expected = json.loads(Path('expected-release.json').read_text(encoding='utf-8'))
+          intended = Path('after.md').read_text(encoding='utf-8')
+
+          for key, value in expected.items():
+              if after.get(key) != value:
+                  raise SystemExit(f'post-edit release metadata changed: {key}={after.get(key)!r}')
+          for key in ('id', 'tag_name', 'name', 'target_commitish', 'draft', 'prerelease', 'published_at'):
+              if after.get(key) != before.get(key):
+                  raise SystemExit(f'post-edit release metadata differs from pre-edit value: {key}')
+          if after.get('body') != intended:
+              raise SystemExit('published v3.4.2 body does not exactly match intended body')
+          if '_Placeholder for possible tested post-release patches to v3.4.2._' in after.get('body', ''):
+              raise SystemExit('post-release placeholder still present after edit')
+          print('v3.4.2 release body verified; tag and release metadata unchanged.')
+          VERIFYPY
+
+      - name: Delete one-use helper branch
+        if: success()
+        run: git push origin --delete ops/v3.4.2-post-release-notes
