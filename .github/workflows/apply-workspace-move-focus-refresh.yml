@@ -52,7 +52,7 @@ jobs:
               shell_qml.write_text(shell_text, encoding='utf-8')
 
           runtime_text = runtime.read_text(encoding='utf-8')
-          new_function = r'''repair_v342_workspace_focus_target() {
+          new_function = r"""repair_v342_workspace_focus_target() {
             local target_home="$1" tag="$2"
             local bar_file="${target_home}/.config/quickshell/awtarchy/Bar.qml"
             local shell_file="${target_home}/.config/quickshell/awtarchy/shell.qml"
@@ -103,7 +103,7 @@ jobs:
           PY_WORKSPACE_FOCUS
             log "Applied v3.4.2 workspace-focus post-release repair to generated target."
           }
-          '''
+          """
 
           pattern = re.compile(
               r'repair_v342_workspace_focus_target\(\) \{.*?\n\}\n(?=prepare_quickshell_update_target\(\) \{)',
