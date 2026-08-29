@@ -1,0 +1,28 @@
+name: Validate Bar Icon Display Options
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/validate-bar-icon-display-options.yml'
+      - 'config/hypr/scripts/quickshell.sh'
+      - 'config/quickshell/awtarchy/Bar.qml'
+      - 'config/quickshell/awtarchy/BarSettingsSection.qml'
+      - 'tests/test-bar-icon-display-options.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bar-icon-display-options:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+      - name: Validate bar icon display options
+        run: |
+          bash -n config/hypr/scripts/quickshell.sh
+          bash -n tests/test-bar-icon-display-options.sh
+          shellcheck tests/test-bar-icon-display-options.sh
+          bash tests/test-bar-icon-display-options.sh
