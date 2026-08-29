@@ -1,0 +1,28 @@
+name: Validate Workspace Focus Highlight
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/validate-workspace-focus-highlight.yml'
+      - 'config/quickshell/awtarchy/Bar.qml'
+      - 'config/quickshell/awtarchy/shell.qml'
+      - 'local/share/awtarchy/awtarchy-runtime.sh'
+      - 'local/share/awtarchy/quickshell-managed-history.sha256'
+      - 'tests/test-workspace-focus-highlight.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  workspace-focus-highlight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Validate workspace focus highlight
+        run: |
+          bash -n tests/test-workspace-focus-highlight.sh
+          shellcheck tests/test-workspace-focus-highlight.sh
+          bash tests/test-workspace-focus-highlight.sh

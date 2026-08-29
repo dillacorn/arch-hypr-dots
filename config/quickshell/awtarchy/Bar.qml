@@ -361,7 +361,7 @@ PanelWindow {
                 workspaceGlyphSize: BarState.workspaceIconPixelSize()
                 workspaceGlyphYOffset: BarState.workspaceIconYOffset()
                 label: BarState.workspaceLabelFor(modelData.id)
-                normalBackground: modelData.urgent ? Theme.urgent : (modelData.active ? Theme.subtleActive : "transparent")
+                normalBackground: modelData.urgent ? Theme.urgent : (modelData.focused ? Theme.subtleActive : "transparent")
                 foreground: modelData.urgent ? Theme.dark : Theme.foreground
                 tooltip: "Workspace " + modelData.name
                 onClicked: bar.focusWorkspace(String(modelData.id))
@@ -388,7 +388,7 @@ PanelWindow {
                 workspaceGlyphSize: BarState.workspaceIconPixelSize()
                 workspaceGlyphYOffset: BarState.workspaceIconYOffset()
                 label: BarState.workspaceVerticalLabelFor(modelData.id)
-                normalBackground: modelData.urgent ? Theme.urgent : (modelData.active ? Theme.subtleActive : "transparent")
+                normalBackground: modelData.urgent ? Theme.urgent : (modelData.focused ? Theme.subtleActive : "transparent")
                 foreground: modelData.urgent ? Theme.dark : Theme.foreground
                 tooltip: "Workspace " + modelData.name
                 onClicked: bar.focusWorkspace(String(modelData.id))
