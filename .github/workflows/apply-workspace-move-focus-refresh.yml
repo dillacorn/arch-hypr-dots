@@ -23,6 +23,7 @@ jobs:
         run: |
           python3 <<'PY'
           from pathlib import Path
+          import base64
           import hashlib
           import re
 
@@ -31,85 +32,20 @@ jobs:
           history = Path('local/share/awtarchy/quickshell-managed-history.sha256')
           workflow = Path('.github/workflows/validate-workspace-focus-highlight.yml')
 
-          move_block = '''            if (event.name === "moveworkspace" || event.name === "moveworkspacev2") {
-              Hyprland.refreshMonitors();
-              return;
-          }
-
-          '''
-          config_anchor = '''            if (event.name === "configreloaded") {
-              runtimeRules.exec([root.runtimeRulesScript]);
-              NumlockSessionTweak.enforce();
-              return;
-          }
-          '''
+          move_block = '            if (event.name === "moveworkspace" || event.name === "moveworkspacev2") {\n                Hyprland.refreshMonitors();\n                return;\n            }\n\n'
+          config_anchor = '            if (event.name === "configreloaded") {\n                runtimeRules.exec([root.runtimeRulesScript]);\n                NumlockSessionTweak.enforce();\n                return;\n            }\n'
 
           shell_text = shell_qml.read_text(encoding='utf-8')
           if move_block not in shell_text:
               if shell_text.count(config_anchor) != 1:
                   raise SystemExit('shell workspace-move insertion anchor mismatch')
-              shell_text = shell_text.replace(config_anchor, move_block + config_anchor, 1)
-              shell_qml.write_text(shell_text, encoding='utf-8')
+              shell_qml.write_text(shell_text.replace(config_anchor, move_block + config_anchor, 1), encoding='utf-8')
 
+          encoded_function = 'cmVwYWlyX3YzNDJfd29ya3NwYWNlX2ZvY3VzX3RhcmdldCgpIHsKICBsb2NhbCB0YXJnZXRfaG9tZT0iJDEiIHRhZz0iJDIiCiAgbG9jYWwgYmFyX2ZpbGU9IiR7dGFyZ2V0X2hvbWV9Ly5jb25maWcvcXVpY2tzaGVsbC9hd3RhcmNoeS9CYXIucW1sIgogIGxvY2FsIHNoZWxsX2ZpbGU9IiR7dGFyZ2V0X2hvbWV9Ly5jb25maWcvcXVpY2tzaGVsbC9hd3RhcmNoeS9zaGVsbC5xbWwiCgogIFtbICIkdGFnIiA9PSAidjMuNC4yIiBdXSB8fCByZXR1cm4gMAogIFtbIC1mICIkYmFyX2ZpbGUiICYmICEgLUwgIiRiYXJfZmlsZSIgXV0gXAogICAgfHwgZGllICJ2My40LjIgcG9zdC1yZWxlYXNlIEJhciB0YXJnZXQgaXMgdW5hdmFpbGFibGUuIgogIFtbIC1mICIkc2hlbGxfZmlsZSIgJiYgISAtTCAiJHNoZWxsX2ZpbGUiIF1dIFwKICAgIHx8IGRpZSAidjMuNC4yIHBvc3QtcmVsZWFzZSBzaGVsbCB0YXJnZXQgaXMgdW5hdmFpbGFibGUuIgoKICBweXRob24zIC0gIiRiYXJfZmlsZSIgIiRzaGVsbF9maWxlIiA8PCdQWV9XT1JLU1BBQ0VfRk9DVVMnCmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAppbXBvcnQgc3lzCgpiYXJfcGF0aCA9IFBhdGgoc3lzLmFyZ3ZbMV0pCnNoZWxsX3BhdGggPSBQYXRoKHN5cy5hcmd2WzJdKQoKYmFyX3RleHQgPSBiYXJfcGF0aC5yZWFkX3RleHQoZW5jb2Rpbmc9InV0Zi04IikKb2xkID0gJ25vcm1hbEJhY2tncm91bmQ6IG1vZGVsRGF0YS51cmdlbnQgPyBUaGVtZS51cmdlbnQgOiAobW9kZWxEYXRhLmFjdGl2ZSA/IFRoZW1lLnN1YnRsZUFjdGl2ZSA6ICJ0cmFuc3BhcmVudCIpJwpuZXcgPSAnbm9ybWFsQmFja2dyb3VuZDogbW9kZWxEYXRhLnVyZ2VudCA/IFRoZW1lLnVyZ2VudCA6IChtb2RlbERhdGEuZm9jdXNlZCA/IFRoZW1lLnN1YnRsZUFjdGl2ZSA6ICJ0cmFuc3BhcmVudCIpJwpvbGRfY291bnQgPSBiYXJfdGV4dC5jb3VudChvbGQpCm5ld19jb3VudCA9IGJhcl90ZXh0LmNvdW50KG5ldykKCmlmIG9sZF9jb3VudCA9PSAwIGFuZCBuZXdfY291bnQgPT0gMjoKICAgIHBhc3MKZWxpZiBvbGRfY291bnQgPT0gMjoKICAgIGJhcl9wYXRoLndyaXRlX3RleHQoYmFyX3RleHQucmVwbGFjZShvbGQsIG5ldyksIGVuY29kaW5nPSJ1dGYtOCIpCmVsc2U6CiAgICByYWlzZSBTeXN0ZW1FeGl0KGYidjMuNC4yIHdvcmtzcGFjZS1mb2N1cyBCYXIgcmVwYWlyIGFuY2hvciBtaXNtYXRjaDogb2xkPXtvbGRfY291bnR9LCBuZXc9e25ld19jb3VudH0iKQoKc2hlbGxfdGV4dCA9IHNoZWxsX3BhdGgucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpCm1vdmVfYmxvY2sgPSAnJycgICAgICAgICAgICBpZiAoZXZlbnQubmFtZSA9PT0gIm1vdmV3b3Jrc3BhY2UiIHx8IGV2ZW50Lm5hbWUgPT09ICJtb3Zld29ya3NwYWNldjIiKSB7CiAgICAgICAgICAgICAgICBIeXBybGFuZC5yZWZyZXNoTW9uaXRvcnMoKTsKICAgICAgICAgICAgICAgIHJldHVybjsKICAgICAgICAgICAgfQoKJycnCmNvbmZpZ19hbmNob3IgPSAnJycgICAgICAgICAgICBpZiAoZXZlbnQubmFtZSA9PT0gImNvbmZpZ3JlbG9hZGVkIikgewogICAgICAgICAgICAgICAgcnVudGltZVJ1bGVzLmV4ZWMoW3Jvb3QucnVudGltZVJ1bGVzU2NyaXB0XSk7CiAgICAgICAgICAgICAgICBOdW1sb2NrU2Vzc2lvblR3ZWFrLmVuZm9yY2UoKTsKICAgICAgICAgICAgICAgIHJldHVybjsKICAgICAgICAgICAgfQonJycKaWYgbW92ZV9ibG9jayBub3QgaW4gc2hlbGxfdGV4dDoKICAgIGlmIHNoZWxsX3RleHQuY291bnQoY29uZmlnX2FuY2hvcikgIT0gMToKICAgICAgICByYWlzZSBTeXN0ZW1FeGl0KCJ2My40LjIgd29ya3NwYWNlLWZvY3VzIHNoZWxsIHJlcGFpciBhbmNob3IgbWlzbWF0Y2giKQogICAgc2hlbGxfcGF0aC53cml0ZV90ZXh0KHNoZWxsX3RleHQucmVwbGFjZShjb25maWdfYW5jaG9yLCBtb3ZlX2Jsb2NrICsgY29uZmlnX2FuY2hvcicsIDEpLCBlbmNvZGluZz0idXRmLTgiKQpQWV9XT1JLU1BBQ0VfRk9DVVMKICBsb2cgIkFwcGxpZWQgdjMuNC4yIHdvcmtzcGFjZS1mb2N1cyBwb3N0LXJlbGVhc2UgcmVwYWlyIHRvIGdlbmVyYXRlZCB0YXJnZXQuIgp9Cg=='
+          new_function = base64.b64decode(encoded_function).decode('utf-8')
           runtime_text = runtime.read_text(encoding='utf-8')
-          new_function = r"""repair_v342_workspace_focus_target() {
-            local target_home="$1" tag="$2"
-            local bar_file="${target_home}/.config/quickshell/awtarchy/Bar.qml"
-            local shell_file="${target_home}/.config/quickshell/awtarchy/shell.qml"
-
-            [[ "$tag" == "v3.4.2" ]] || return 0
-            [[ -f "$bar_file" && ! -L "$bar_file" ]] \
-              || die "v3.4.2 post-release Bar target is unavailable."
-            [[ -f "$shell_file" && ! -L "$shell_file" ]] \
-              || die "v3.4.2 post-release shell target is unavailable."
-
-            python3 - "$bar_file" "$shell_file" <<'PY_WORKSPACE_FOCUS'
-          from pathlib import Path
-          import sys
-
-          bar_path = Path(sys.argv[1])
-          shell_path = Path(sys.argv[2])
-
-          bar_text = bar_path.read_text(encoding="utf-8")
-          old = 'normalBackground: modelData.urgent ? Theme.urgent : (modelData.active ? Theme.subtleActive : "transparent")'
-          new = 'normalBackground: modelData.urgent ? Theme.urgent : (modelData.focused ? Theme.subtleActive : "transparent")'
-          old_count = bar_text.count(old)
-          new_count = bar_text.count(new)
-
-          if old_count == 0 and new_count == 2:
-              pass
-          elif old_count == 2:
-              bar_path.write_text(bar_text.replace(old, new), encoding="utf-8")
-          else:
-              raise SystemExit(f"v3.4.2 workspace-focus Bar repair anchor mismatch: old={old_count}, new={new_count}")
-
-          shell_text = shell_path.read_text(encoding="utf-8")
-          move_block = '''            if (event.name === "moveworkspace" || event.name === "moveworkspacev2") {
-              Hyprland.refreshMonitors();
-              return;
-          }
-
-          '''
-          config_anchor = '''            if (event.name === "configreloaded") {
-              runtimeRules.exec([root.runtimeRulesScript]);
-              NumlockSessionTweak.enforce();
-              return;
-          }
-          '''
-          if move_block not in shell_text:
-              if shell_text.count(config_anchor) != 1:
-                  raise SystemExit("v3.4.2 workspace-focus shell repair anchor mismatch")
-              shell_path.write_text(shell_text.replace(config_anchor, move_block + config_anchor, 1), encoding="utf-8")
-          PY_WORKSPACE_FOCUS
-            log "Applied v3.4.2 workspace-focus post-release repair to generated target."
-          }
-          """
-
-          pattern = re.compile(
-              r'repair_v342_workspace_focus_target\(\) \{.*?\n\}\n(?=prepare_quickshell_update_target\(\) \{)',
-              re.S,
-          )
-          runtime_text, count = pattern.subn(new_function, runtime_text, count=1)
+          pattern = re.compile(r'repair_v342_workspace_focus_target\(\) \{.*?\n\}\n(?=prepare_quickshell_update_target\(\) \{)', re.S)
+          runtime_text, count = pattern.subn(lambda _: new_function, runtime_text, count=1)
           if count != 1:
               raise SystemExit('runtime workspace-focus repair function anchor mismatch')
           runtime.write_text(runtime_text, encoding='utf-8')
@@ -118,11 +54,11 @@ jobs:
           bar_path_line = "      - 'config/quickshell/awtarchy/Bar.qml'\n"
           shell_path_line = "      - 'config/quickshell/awtarchy/shell.qml'\n"
           history_path_line = "      - 'local/share/awtarchy/quickshell-managed-history.sha256'\n"
+          runtime_path_line = "      - 'local/share/awtarchy/awtarchy-runtime.sh'\n"
           if shell_path_line not in workflow_text:
               if workflow_text.count(bar_path_line) != 1:
                   raise SystemExit('workspace-focus workflow Bar path anchor mismatch')
               workflow_text = workflow_text.replace(bar_path_line, bar_path_line + shell_path_line, 1)
-          runtime_path_line = "      - 'local/share/awtarchy/awtarchy-runtime.sh'\n"
           if history_path_line not in workflow_text:
               if workflow_text.count(runtime_path_line) != 1:
                   raise SystemExit('workspace-focus workflow runtime path anchor mismatch')
