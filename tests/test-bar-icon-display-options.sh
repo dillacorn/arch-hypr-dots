@@ -35,11 +35,11 @@ do
     contains "$MANAGER" "$command" \
         "quickshell manager is missing ${command}"
 done
-contains "$MANAGER" 'set_monitor_icon_option "$2" show_tasks "$3"' \
+contains "$MANAGER" "set_monitor_icon_option \"\$2\" show_tasks \"\$3\"" \
     'running application visibility is not persisted per monitor'
-contains "$MANAGER" 'set_monitor_icon_option "$2" theme_task_icons "$3"' \
+contains "$MANAGER" "set_monitor_icon_option \"\$2\" theme_task_icons \"\$3\"" \
     'running application theme coloring is not persisted per monitor'
-contains "$MANAGER" 'set_monitor_icon_option "$2" theme_tray_icons "$3"' \
+contains "$MANAGER" "set_monitor_icon_option \"\$2\" theme_tray_icons \"\$3\"" \
     'tray icon theme coloring is not persisted per monitor'
 
 contains "$BAR_QML" 'import QtQuick.Effects' \
