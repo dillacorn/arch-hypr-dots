@@ -253,6 +253,11 @@ ShellRoot {
             if (!event)
                 return;
 
+            if (event.name === "moveworkspace" || event.name === "moveworkspacev2") {
+                Hyprland.refreshMonitors();
+                return;
+            }
+
             if (event.name === "configreloaded") {
                 runtimeRules.exec([root.runtimeRulesScript]);
                 NumlockSessionTweak.enforce();
