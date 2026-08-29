@@ -7340,6 +7340,67 @@ record_quickshell_update_packages() {
   rm -f -- "$tmp"
 }
 
+repair_v342_mouse_submap_target() {
+  local target_home="$1" tag="$2"
+  local file="${target_home}/.config/hypr/hyprland.lua"
+
+  [[ "$tag" == "v3.4.2" ]] || return 0
+  [[ -f "$file" && ! -L "$file" ]] \
+    || die "v3.4.2 post-release Hyprland target is unavailable."
+
+  python3 - "$file" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+
+old = '''hl.define_submap("mouse", function()
+    -- Submap references in "mouse" (Toggle off)  [empty file on exit]
+    local mouse_off = _submap_off_cmd("mouse")
+
+    -- Resize (MOUSE-left/right / hold)
+    for _, bind in ipairs(resize_keys) do
+        hl.bind(bind[1], hl.dsp.window.resize({ x = bind[2], y = bind[3], relative = true }), { repeating = true })
+    end
+
+    hl.bind("mouse:272", hl.dsp.window.drag(), { mouse = true })
+    hl.bind("mouse:273", hl.dsp.window.resize(), { mouse = true })
+    hl.bind("mouse:274", hl.dsp.window.float({ action = "toggle" }), {})
+    hl.bind("Escape", hl.dsp.exec_cmd(mouse_off), {})
+    hl.bind("Return", hl.dsp.exec_cmd(mouse_off), {})
+
+    -- Submap binds in "mouse"  (Toggle off/on)
+    hl.bind("SUPER + ALT + M", hl.dsp.exec_cmd(mouse_off), {})
+    hl.bind("SUPER + ALT + N", hl.dsp.exec_cmd(noalt_on), {})
+    hl.bind("SUPER + ALT + V", hl.dsp.exec_cmd(vm_on), {})
+end)'''
+
+new = '''hl.define_submap("mouse", function()
+    -- Submap references in "mouse" (Toggle off)  [empty file on exit]
+    local mouse_off = _submap_off_cmd("mouse")
+
+    -- Pointer-only window controls. Keep normal keyboard input available to
+    -- focused applications while mouse mode is active.
+    hl.bind("mouse:272", hl.dsp.window.drag(), { mouse = true })
+    hl.bind("mouse:273", hl.dsp.window.resize(), { mouse = true })
+    hl.bind("mouse:274", hl.dsp.window.float({ action = "toggle" }), {})
+
+    -- Submap binds in "mouse"  (Toggle off/on)
+    hl.bind("SUPER + ALT + M", hl.dsp.exec_cmd(mouse_off), {})
+    hl.bind("SUPER + ALT + N", hl.dsp.exec_cmd(noalt_on), {})
+    hl.bind("SUPER + ALT + V", hl.dsp.exec_cmd(vm_on), {})
+end)'''
+
+if new in text:
+    raise SystemExit(0)
+if text.count(old) != 1:
+    raise SystemExit("v3.4.2 mouse-submap repair anchor mismatch")
+path.write_text(text.replace(old, new, 1), encoding="utf-8")
+PY
+  log "Applied v3.4.2 mouse-submap post-release repair to generated target."
+}
+
 prepare_quickshell_update_target() {
   local target_home="$1" rel
 
@@ -8021,6 +8082,7 @@ main() {
   fi
 
   prepare_quickshell_update_target "$target_home"
+  repair_v342_mouse_submap_target "$target_home" "$tag"
 
   bootstrap_previous_baseline "$active_theme"
   augment_baseline_from_local_git_history "$target_home"
