@@ -124,4 +124,73 @@ baseline_line="$(grep -nF 'bootstrap_previous_baseline "$active_theme"' "$RUNTIM
 (( prepare_line < repair_line && repair_line < baseline_line )) \
   || fail 'v3.4.2 target repair must run after target preparation and before baseline comparison'
 
-printf '%s\n' 'Launcher keyboard focus, result-direction, and mouse-submap regression test passed.'
+# Exercise the same three-way merge used by preserve mode. Build an old v3.4.2
+# baseline from the repaired source, add a user-only edit outside the mouse block,
+# then merge the repaired target. Both the user edit and post-release fix must
+# survive without conflict.
+merge_tmpdir="$(mktemp -d)"
+trap 'rm -rf -- "$merge_tmpdir"' EXIT
+baseline_copy="${merge_tmpdir}/baseline.lua"
+local_copy="${merge_tmpdir}/local.lua"
+merged_copy="${merge_tmpdir}/merged.lua"
+
+python3 - "$HYPRLAND" "$baseline_copy" "$local_copy" <<'PY'
+from pathlib import Path
+import sys
+
+target_path, baseline_path, local_path = map(Path, sys.argv[1:])
+text = target_path.read_text(encoding="utf-8")
+start = text.index('hl.define_submap("mouse", function()')
+end = text.index('\nend)', start) + len('\nend)')
+fixed = text[start:end]
+
+pointer_header = '''    -- Pointer-only window controls. Keep normal keyboard input available to
+    -- focused applications while mouse mode is active.
+'''
+resize_block = '''    -- Resize (MOUSE-left/right / hold)
+    for _, bind in ipairs(resize_keys) do
+        hl.bind(bind[1], hl.dsp.window.resize({ x = bind[2], y = bind[3], relative = true }), { repeating = true })
+    end
+
+'''
+float_bind = '    hl.bind("mouse:274", hl.dsp.window.float({ action = "toggle" }), {})\n'
+old_exits = '''    hl.bind("Escape", hl.dsp.exec_cmd(mouse_off), {})
+    hl.bind("Return", hl.dsp.exec_cmd(mouse_off), {})
+'''
+
+if pointer_header not in fixed or float_bind not in fixed:
+    raise SystemExit("repaired mouse block does not match expected test anchor")
+old = fixed.replace(pointer_header, resize_block, 1)
+old = old.replace(float_bind, float_bind + old_exits, 1)
+baseline = text[:start] + old + text[end:]
+marker_anchor = '-- github.com/dillacorn/awtarchy/tree/main/config/hypr\n'
+if marker_anchor not in baseline:
+    raise SystemExit("user-edit marker anchor missing")
+local = baseline.replace(marker_anchor, marker_anchor + '-- USER-PRESERVE-MARKER\n', 1)
+
+baseline_path.write_text(baseline, encoding="utf-8")
+local_path.write_text(local, encoding="utf-8")
+PY
+
+if ! git merge-file -p -- "$local_copy" "$baseline_copy" "$HYPRLAND" >"$merged_copy"; then
+  fail 'v3.4.2 post-release repair conflicts with an unrelated hyprland.lua user edit'
+fi
+
+grep -Fq -- '-- USER-PRESERVE-MARKER' "$merged_copy" \
+  || fail 'three-way merge dropped an unrelated hyprland.lua user edit'
+merged_mouse_block="$(awk '
+  /hl\.define_submap\("mouse", function\(\)/ { in_mouse = 1 }
+  in_mouse { print }
+  in_mouse && /VIRTUAL MACHINE SUBMAP/ { exit }
+' "$merged_copy")"
+for forbidden in \
+  'for _, bind in ipairs(resize_keys) do' \
+  'hl.bind("Escape",' \
+  'hl.bind("Return",'
+do
+  if grep -Fq -- "$forbidden" <<<"$merged_mouse_block"; then
+    fail "three-way merge retained obsolete mouse-submap keyboard bind: ${forbidden}"
+  fi
+done
+
+printf '%s\n' 'Launcher keyboard focus, result-direction, mouse-submap, and v3.4.2 preserve-merge regression tests passed.'
