@@ -365,9 +365,7 @@ stop_shell() {
 }
 
 restart_shell() {
-    local report_stage="${1:-start}"
-    local stable_pings=0
-
+    local report_stage="${AWTARCHY_REPORT_FAILURE_STAGE:-restart}"
     case "$report_stage" in
         restart|restart_after_update) ;;
         *) report_stage=restart ;;
