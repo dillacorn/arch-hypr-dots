@@ -1098,16 +1098,11 @@ hl.define_submap("mouse", function()
     -- Submap references in "mouse" (Toggle off)  [empty file on exit]
     local mouse_off = _submap_off_cmd("mouse")
 
-    -- Resize (MOUSE-left/right / hold)
-    for _, bind in ipairs(resize_keys) do
-        hl.bind(bind[1], hl.dsp.window.resize({ x = bind[2], y = bind[3], relative = true }), { repeating = true })
-    end
-
+    -- Pointer-only window controls. Keep normal keyboard input available to
+    -- focused applications while mouse mode is active.
     hl.bind("mouse:272", hl.dsp.window.drag(), { mouse = true })
     hl.bind("mouse:273", hl.dsp.window.resize(), { mouse = true })
     hl.bind("mouse:274", hl.dsp.window.float({ action = "toggle" }), {})
-    hl.bind("Escape", hl.dsp.exec_cmd(mouse_off), {})
-    hl.bind("Return", hl.dsp.exec_cmd(mouse_off), {})
 
     -- Submap binds in "mouse"  (Toggle off/on)
     hl.bind("SUPER + ALT + M", hl.dsp.exec_cmd(mouse_off), {})
