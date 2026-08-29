@@ -68,7 +68,7 @@ contains "$BAR_SETTINGS" 'anchors.horizontalCenter: parent.horizontalCenter' \
     'Bar Appearance display target selector is not centered in the header'
 contains "$BAR_SETTINGS" 'text: "Apply to: " + root.targetLabel()' \
     'Bar Appearance display target selector does not clearly describe its scope'
-contains "$BAR_SETTINGS" 'text: "Target: " + root.targetLabel()' \
+contains "$BAR_SETTINGS" 'message = "Target: " + entries[index].label;' \
     'Bar Appearance target feedback was removed while clarifying the header scope selector'
 for command in setshowtasks setthemetaskicons setthemetrayicons; do
     contains "$BAR_SETTINGS" "\"${command}\"" \
