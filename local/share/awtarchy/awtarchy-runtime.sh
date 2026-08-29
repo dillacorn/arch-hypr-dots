@@ -7403,28 +7403,52 @@ PY
 
 repair_v342_workspace_focus_target() {
   local target_home="$1" tag="$2"
-  local file="${target_home}/.config/quickshell/awtarchy/Bar.qml"
+  local bar_file="${target_home}/.config/quickshell/awtarchy/Bar.qml"
+  local shell_file="${target_home}/.config/quickshell/awtarchy/shell.qml"
 
   [[ "$tag" == "v3.4.2" ]] || return 0
-  [[ -f "$file" && ! -L "$file" ]] \
+  [[ -f "$bar_file" && ! -L "$bar_file" ]] \
     || die "v3.4.2 post-release Bar target is unavailable."
+  [[ -f "$shell_file" && ! -L "$shell_file" ]] \
+    || die "v3.4.2 post-release shell target is unavailable."
 
-  python3 - "$file" <<'PY_WORKSPACE_FOCUS'
+  python3 - "$bar_file" "$shell_file" <<'PY_WORKSPACE_FOCUS'
 from pathlib import Path
 import sys
 
-path = Path(sys.argv[1])
-text = path.read_text(encoding="utf-8")
+bar_path = Path(sys.argv[1])
+shell_path = Path(sys.argv[2])
+
+bar_text = bar_path.read_text(encoding="utf-8")
 old = 'normalBackground: modelData.urgent ? Theme.urgent : (modelData.active ? Theme.subtleActive : "transparent")'
 new = 'normalBackground: modelData.urgent ? Theme.urgent : (modelData.focused ? Theme.subtleActive : "transparent")'
-old_count = text.count(old)
-new_count = text.count(new)
+old_count = bar_text.count(old)
+new_count = bar_text.count(new)
 
 if old_count == 0 and new_count == 2:
-    raise SystemExit(0)
-if old_count != 2:
-    raise SystemExit(f"v3.4.2 workspace-focus repair anchor mismatch: old={old_count}, new={new_count}")
-path.write_text(text.replace(old, new), encoding="utf-8")
+    pass
+elif old_count == 2:
+    bar_path.write_text(bar_text.replace(old, new), encoding="utf-8")
+else:
+    raise SystemExit(f"v3.4.2 workspace-focus Bar repair anchor mismatch: old={old_count}, new={new_count}")
+
+shell_text = shell_path.read_text(encoding="utf-8")
+move_block = '''            if (event.name === "moveworkspace" || event.name === "moveworkspacev2") {
+                Hyprland.refreshMonitors();
+                return;
+            }
+
+'''
+config_anchor = '''            if (event.name === "configreloaded") {
+                runtimeRules.exec([root.runtimeRulesScript]);
+                NumlockSessionTweak.enforce();
+                return;
+            }
+'''
+if move_block not in shell_text:
+    if shell_text.count(config_anchor) != 1:
+        raise SystemExit("v3.4.2 workspace-focus shell repair anchor mismatch")
+    shell_path.write_text(shell_text.replace(config_anchor, move_block + config_anchor, 1), encoding="utf-8")
 PY_WORKSPACE_FOCUS
   log "Applied v3.4.2 workspace-focus post-release repair to generated target."
 }
