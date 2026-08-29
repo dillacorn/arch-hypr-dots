@@ -110,6 +110,10 @@ require_source "$RUNTIME" '[[ "$tag" == "v3.4.2" ]] || return 0' \
   'v3.4.2 mouse-submap repair is not scoped to the published release'
 require_source "$RUNTIME" 'repair_v342_mouse_submap_target "$target_home" "$tag"' \
   'runtime does not apply the v3.4.2 repair to the generated target'
+require_source "$RUNTIME" 'git merge-file -p -- "$local_file" "$baseline_file" "$target_file" >"$out"' \
+  'preserve mode no longer three-way merges local Hyprland edits against the repaired target'
+require_source "$RUNTIME" 'if attempt_merge "$local_file" "$baseline_file" "$target_file" "$rel" "$merge_tmp"; then' \
+  'Hyprland BOTH changes no longer use the preserve-mode three-way merge path'
 
 prepare_line="$(grep -nF 'prepare_quickshell_update_target "$target_home"' "$RUNTIME" | head -n1 | cut -d: -f1)"
 repair_line="$(grep -nF 'repair_v342_mouse_submap_target "$target_home" "$tag"' "$RUNTIME" | head -n1 | cut -d: -f1)"
