@@ -25,123 +25,91 @@ jobs:
           from pathlib import Path
 
           path = Path('config/quickshell/awtarchy/BarSettingsSection.qml')
-          text = path.read_text()
-          old = '''            RowLayout {
-                              Layout.fillWidth: true
-                              Layout.preferredHeight: 26
-                              spacing: 5
+          lines = path.read_text().splitlines(keepends=True)
 
-                              Text {
-                                  text: "Bar Appearance"
-                                  color: Theme.foreground
-                                  font.family: Theme.fontFamily
-                                  font.pixelSize: 11
-                                  font.bold: true
-                              }
+          title_index = next(i for i, line in enumerate(lines) if 'text: "Bar Appearance"' in line)
+          display_index = next(i for i, line in enumerate(lines[title_index + 1:], title_index + 1)
+                               if 'text: "Display scale"' in line)
+          start = max(i for i in range(title_index + 1) if lines[i].strip() == 'RowLayout {')
+          end = max(i for i in range(title_index + 1, display_index + 1)
+                    if lines[i].strip() == 'RowLayout {')
 
-                              Item { Layout.fillWidth: true }
+          if start >= end:
+              raise SystemExit('could not isolate Bar Appearance header row')
 
-                              SettingsButton {
-                                  label: "‹"
-                                  textSize: 11
-                                  onClicked: root.cycleTarget(-1)
-                              }
+          indent = lines[start][:len(lines[start]) - len(lines[start].lstrip())]
+          i1 = indent + '    '
+          i2 = i1 + '    '
+          i3 = i2 + '    '
 
-                              Text {
-                                  Layout.preferredWidth: 180
-                                  text: root.targetLabel()
-                                  color: Theme.foreground
-                                  font.family: Theme.fontFamily
-                                  font.pixelSize: 10
-                                  horizontalAlignment: Text.AlignHCenter
-                                  elide: Text.ElideMiddle
-                              }
+          replacement = [
+              indent + 'Item {\n',
+              i1 + 'Layout.fillWidth: true\n',
+              i1 + 'Layout.preferredHeight: 26\n',
+              '\n',
+              i1 + 'Text {\n',
+              i2 + 'anchors.left: parent.left\n',
+              i2 + 'anchors.verticalCenter: parent.verticalCenter\n',
+              i2 + 'text: "Bar Appearance"\n',
+              i2 + 'color: Theme.foreground\n',
+              i2 + 'font.family: Theme.fontFamily\n',
+              i2 + 'font.pixelSize: 11\n',
+              i2 + 'font.bold: true\n',
+              i1 + '}\n',
+              '\n',
+              i1 + 'Row {\n',
+              i2 + 'anchors.horizontalCenter: parent.horizontalCenter\n',
+              i2 + 'anchors.verticalCenter: parent.verticalCenter\n',
+              i2 + 'spacing: 5\n',
+              '\n',
+              i2 + 'SettingsButton {\n',
+              i3 + 'label: "‹"\n',
+              i3 + 'textSize: 11\n',
+              i3 + 'onClicked: root.cycleTarget(-1)\n',
+              i2 + '}\n',
+              '\n',
+              i2 + 'Text {\n',
+              i3 + 'width: 240\n',
+              i3 + 'height: 24\n',
+              i3 + 'text: "Apply to: " + root.targetLabel()\n',
+              i3 + 'color: Theme.foreground\n',
+              i3 + 'font.family: Theme.fontFamily\n',
+              i3 + 'font.pixelSize: 10\n',
+              i3 + 'horizontalAlignment: Text.AlignHCenter\n',
+              i3 + 'verticalAlignment: Text.AlignVCenter\n',
+              i3 + 'elide: Text.ElideMiddle\n',
+              i2 + '}\n',
+              '\n',
+              i2 + 'SettingsButton {\n',
+              i3 + 'label: "›"\n',
+              i3 + 'textSize: 11\n',
+              i3 + 'onClicked: root.cycleTarget(1)\n',
+              i2 + '}\n',
+              i1 + '}\n',
+              '\n',
+              i1 + 'Row {\n',
+              i2 + 'anchors.right: parent.right\n',
+              i2 + 'anchors.verticalCenter: parent.verticalCenter\n',
+              i2 + 'spacing: 5\n',
+              '\n',
+              i2 + 'SettingsButton {\n',
+              i3 + 'label: "Themes"\n',
+              i3 + 'textSize: 9\n',
+              i3 + 'onClicked: root.themePickerRequested()\n',
+              i2 + '}\n',
+              '\n',
+              i2 + 'SettingsButton {\n',
+              i3 + 'label: "Reset"\n',
+              i3 + 'textSize: 9\n',
+              i3 + 'onClicked: root.resetAppearance()\n',
+              i2 + '}\n',
+              i1 + '}\n',
+              indent + '}\n',
+              '\n',
+          ]
 
-                              SettingsButton {
-                                  label: "›"
-                                  textSize: 11
-                                  onClicked: root.cycleTarget(1)
-                              }
-
-                              SettingsButton {
-                                  label: "Themes"
-                                  textSize: 9
-                                  onClicked: root.themePickerRequested()
-                              }
-
-                              SettingsButton {
-                                  label: "Reset"
-                                  textSize: 9
-                                  onClicked: root.resetAppearance()
-                              }
-                          }
-'''
-          new = '''            Item {
-                              Layout.fillWidth: true
-                              Layout.preferredHeight: 26
-
-                              Text {
-                                  anchors.left: parent.left
-                                  anchors.verticalCenter: parent.verticalCenter
-                                  text: "Bar Appearance"
-                                  color: Theme.foreground
-                                  font.family: Theme.fontFamily
-                                  font.pixelSize: 11
-                                  font.bold: true
-                              }
-
-                              Row {
-                                  anchors.horizontalCenter: parent.horizontalCenter
-                                  anchors.verticalCenter: parent.verticalCenter
-                                  spacing: 5
-
-                                  SettingsButton {
-                                      label: "‹"
-                                      textSize: 11
-                                      onClicked: root.cycleTarget(-1)
-                                  }
-
-                                  Text {
-                                      width: 240
-                                      height: 24
-                                      text: "Apply to: " + root.targetLabel()
-                                      color: Theme.foreground
-                                      font.family: Theme.fontFamily
-                                      font.pixelSize: 10
-                                      horizontalAlignment: Text.AlignHCenter
-                                      verticalAlignment: Text.AlignVCenter
-                                      elide: Text.ElideMiddle
-                                  }
-
-                                  SettingsButton {
-                                      label: "›"
-                                      textSize: 11
-                                      onClicked: root.cycleTarget(1)
-                                  }
-                              }
-
-                              Row {
-                                  anchors.right: parent.right
-                                  anchors.verticalCenter: parent.verticalCenter
-                                  spacing: 5
-
-                                  SettingsButton {
-                                      label: "Themes"
-                                      textSize: 9
-                                      onClicked: root.themePickerRequested()
-                                  }
-
-                                  SettingsButton {
-                                      label: "Reset"
-                                      textSize: 9
-                                      onClicked: root.resetAppearance()
-                                  }
-                              }
-                          }
-'''
-          if text.count(old) != 1:
-              raise SystemExit(f'expected exactly one Bar Appearance header block, found {text.count(old)}')
-          path.write_text(text.replace(old, new, 1))
+          lines[start:end] = replacement
+          path.write_text(''.join(lines))
           PY
 
           history='local/share/awtarchy/quickshell-managed-history.sha256'
