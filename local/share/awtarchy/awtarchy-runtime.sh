@@ -7401,6 +7401,33 @@ PY
   log "Applied v3.4.2 mouse-submap post-release repair to generated target."
 }
 
+repair_v342_workspace_focus_target() {
+  local target_home="$1" tag="$2"
+  local file="${target_home}/.config/quickshell/awtarchy/Bar.qml"
+
+  [[ "$tag" == "v3.4.2" ]] || return 0
+  [[ -f "$file" && ! -L "$file" ]] \
+    || die "v3.4.2 post-release Bar target is unavailable."
+
+  python3 - "$file" <<'PY_WORKSPACE_FOCUS'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+old = 'normalBackground: modelData.urgent ? Theme.urgent : (modelData.active ? Theme.subtleActive : "transparent")'
+new = 'normalBackground: modelData.urgent ? Theme.urgent : (modelData.focused ? Theme.subtleActive : "transparent")'
+old_count = text.count(old)
+new_count = text.count(new)
+
+if old_count == 0 and new_count == 2:
+    raise SystemExit(0)
+if old_count != 2:
+    raise SystemExit(f"v3.4.2 workspace-focus repair anchor mismatch: old={old_count}, new={new_count}")
+path.write_text(text.replace(old, new), encoding="utf-8")
+PY_WORKSPACE_FOCUS
+  log "Applied v3.4.2 workspace-focus post-release repair to generated target."
+}
 prepare_quickshell_update_target() {
   local target_home="$1" rel
 
@@ -8083,6 +8110,7 @@ main() {
 
   prepare_quickshell_update_target "$target_home"
   repair_v342_mouse_submap_target "$target_home" "$tag"
+  repair_v342_workspace_focus_target "$target_home" "$tag"
 
   bootstrap_previous_baseline "$active_theme"
   augment_baseline_from_local_git_history "$target_home"
