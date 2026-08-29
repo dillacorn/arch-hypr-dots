@@ -64,6 +64,12 @@ contains "$BAR_SETTINGS" 'text: "Running apps"' \
     'Bar Appearance has no running application controls'
 contains "$BAR_SETTINGS" 'text: "Tray icons"' \
     'Bar Appearance has no tray icon controls'
+contains "$BAR_SETTINGS" 'anchors.horizontalCenter: parent.horizontalCenter' \
+    'Bar Appearance display target selector is not centered in the header'
+contains "$BAR_SETTINGS" 'text: "Apply to: " + root.targetLabel()' \
+    'Bar Appearance display target selector does not clearly describe its scope'
+contains "$BAR_SETTINGS" 'text: "Target: " + root.targetLabel()' \
+    'Bar Appearance target feedback was removed while clarifying the header scope selector'
 for command in setshowtasks setthemetaskicons setthemetrayicons; do
     contains "$BAR_SETTINGS" "\"${command}\"" \
         "Bar Appearance does not persist ${command}"
@@ -156,4 +162,4 @@ EOF_HISTORY
 [[ $missing_history -eq 0 ]] \
     || fail 'managed history is missing current bar icon option stock hashes'
 
-printf '%s\n' 'PASS: running application visibility and optional task/tray theme coloring are independent per-display settings with stock-safe defaults.'
+printf '%s\n' 'PASS: running application visibility and optional task/tray theme coloring are independent per-display settings with a centered, explicit scope selector and stock-safe defaults.'
