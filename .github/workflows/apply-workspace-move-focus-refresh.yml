@@ -31,13 +31,13 @@ jobs:
           history = Path('local/share/awtarchy/quickshell-managed-history.sha256')
           workflow = Path('.github/workflows/validate-workspace-focus-highlight.yml')
 
-          move_block = '''        if (event.name === "moveworkspace" || event.name === "moveworkspacev2") {
+          move_block = '''            if (event.name === "moveworkspace" || event.name === "moveworkspacev2") {
               Hyprland.refreshMonitors();
               return;
           }
 
           '''
-          config_anchor = '''        if (event.name === "configreloaded") {
+          config_anchor = '''            if (event.name === "configreloaded") {
               runtimeRules.exec([root.runtimeRulesScript]);
               NumlockSessionTweak.enforce();
               return;
@@ -84,13 +84,13 @@ jobs:
               raise SystemExit(f"v3.4.2 workspace-focus Bar repair anchor mismatch: old={old_count}, new={new_count}")
 
           shell_text = shell_path.read_text(encoding="utf-8")
-          move_block = '''        if (event.name === "moveworkspace" || event.name === "moveworkspacev2") {
+          move_block = '''            if (event.name === "moveworkspace" || event.name === "moveworkspacev2") {
               Hyprland.refreshMonitors();
               return;
           }
 
           '''
-          config_anchor = '''        if (event.name === "configreloaded") {
+          config_anchor = '''            if (event.name === "configreloaded") {
               runtimeRules.exec([root.runtimeRulesScript]);
               NumlockSessionTweak.enforce();
               return;
