@@ -26,3 +26,134 @@ jobs:
           bash -n tests/test-workspace-focus-highlight.sh
           shellcheck tests/test-workspace-focus-highlight.sh
           bash tests/test-workspace-focus-highlight.sh
+
+  publish-v343:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.title == 'Release bridge: publish v3.4.3' &&
+      github.head_ref == 'release-helper/v3.4.3' &&
+      github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Publish and verify v3.4.3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: v3.4.3
+          RELEASE_TARGET: 155207b6891ccc4ecd119ecaea15910f6e0b2e9c
+          RELEASE_TITLE: Awtarchy v3.4.3 Quickshell
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          git fetch origin main --tags
+          actual_main="$(git rev-parse origin/main)"
+          [[ "$actual_main" == "$RELEASE_TARGET" ]] || {
+            printf 'Refusing release: main moved from %s to %s\n' "$RELEASE_TARGET" "$actual_main" >&2
+            exit 1
+          }
+
+          if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}" >/dev/null || gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            printf 'Refusing release: %s already exists.\n' "$RELEASE_TAG" >&2
+            exit 1
+          fi
+
+          cat >/tmp/awtarchy-v343-notes.md <<'EOF_RELEASE_NOTES'
+          # Awtarchy v3.4.3 Quickshell
+
+          Awtarchy v3.4.3 folds the tested v3.4.2 post-release mouse-mode repair into a stable release and fixes workspace highlighting when a focused workspace moves between displays. Mouse mode no longer consumes normal typing, and the bar now follows the compositor's actual focused workspace instead of leaving another workspace highlighted after a monitor move.
+
+          ## Getting started
+
+          Awtarchy is an Arch Linux overlay/environment, not a Linux distribution or an Arch Linux installer. Install it onto a working minimal Arch Linux system.
+
+          If you are starting from zero:
+
+          1. Download the official Arch Linux ISO from the [Arch Linux download page](https://archlinux.org/download/).
+          2. Boot the Arch Linux ISO.
+          3. Install a working minimal Arch Linux system first.
+             - For most users, Awtarchy recommends the official `archinstall` guided installer included with the Arch ISO as the easiest path. Run `archinstall` from the live environment and complete a minimal Arch installation.
+             - A normal manual Arch installation using the [ArchWiki Installation Guide](https://wiki.archlinux.org/title/Installation_guide) is also fine.
+          4. Boot into the installed Arch system.
+
+          Once you have a working minimal Arch installation, install Awtarchy:
+
+          ```bash
+          sudo pacman -S git --noconfirm
+          git clone https://github.com/dillacorn/awtarchy
+          cd awtarchy
+          sudo ./awtarchy-install.sh
+          ```
+
+          Existing Awtarchy users:
+
+          ```bash
+          awtarchy update
+          ```
+
+          ## Mouse mode keyboard input
+
+          - The v3.4.2 post-release mouse-mode repair is included directly in v3.4.3.
+          - Mouse mode is pointer-only for window control instead of consuming normal keyboard input.
+          - Normal typing, including `h/j/k/l`, arrow keys, `Escape`, and `Return`, reaches the focused application while mouse mode is active.
+          - Mouse drag, resize, and float controls remain available, along with the existing `SUPER + ALT` submap switches.
+          - Existing v3.4.2 users no longer need to depend on a same-tag post-release patch once they update to v3.4.3.
+
+          ## Workspace focus highlighting
+
+          - Workspace buttons now highlight only the globally focused workspace rather than each monitor's locally active workspace.
+          - Moving the focused workspace between displays refreshes Quickshell's authoritative Hyprland monitor state on `moveworkspace` and `moveworkspacev2` events.
+          - The destination/origin monitor no longer leaves a fallback workspace such as workspace 3 or 4 highlighted while the moved workspace still has focus.
+          - The fix applies to both horizontal and vertical bar layouts.
+          - The v3.4.2 maintenance runtime retains the tested same-tag repair path so existing v3.4.2 installations can transition cleanly, while v3.4.3 contains the corrected QML directly.
+
+          ## Validation
+
+          - The v3.4.2 mouse-mode post-release repair from PR #94 passed its focused keyboard-input regression and preserve-mode three-way merge regression before being folded into this release.
+          - PR #96 was real-session tested and approved after reproducing the multi-monitor workspace-move failure. Its final head `5206a9623430b5158c99c7e354a1f472c54bd3b8` passed all 15 triggered pull-request workflows.
+          - Focused `Validate Workspace Focus Highlight` coverage verifies globally focused highlighting, monitor refresh on workspace-move events, the v3.4.2 generated-target repair, repair ordering, and idempotence.
+          - Exact release target `155207b6891ccc4ecd119ecaea15910f6e0b2e9c` passed all six workflows triggered on `main` before publication.
+          - `Validate Awtarchy` passed Bash syntax, ShellCheck, Quickshell desktop-entry validation, and the command/updater integration suite on the exact release target.
+
+          ## Post-release updates
+
+          _Placeholder for possible tested post-release patches to v3.4.3._
+          EOF_RELEASE_NOTES
+
+          sed -i 's/^          //' /tmp/awtarchy-v343-notes.md
+
+          gh release create "$RELEASE_TAG" \
+            --target "$RELEASE_TARGET" \
+            --title "$RELEASE_TITLE" \
+            --notes-file /tmp/awtarchy-v343-notes.md
+
+          gh release view "$RELEASE_TAG" --json body --jq .body >/tmp/published-body.md
+          cmp -s /tmp/awtarchy-v343-notes.md /tmp/published-body.md || {
+            printf 'Published release body does not match intended notes.\n' >&2
+            diff -u /tmp/awtarchy-v343-notes.md /tmp/published-body.md || true
+            exit 1
+          }
+
+          release_name="$(gh release view "$RELEASE_TAG" --json name --jq .name)"
+          release_target="$(gh release view "$RELEASE_TAG" --json targetCommitish --jq .targetCommitish)"
+          release_draft="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)"
+          release_prerelease="$(gh release view "$RELEASE_TAG" --json isPrerelease --jq .isPrerelease)"
+          [[ "$release_name" == "$RELEASE_TITLE" ]]
+          [[ "$release_target" == "$RELEASE_TARGET" ]]
+          [[ "$release_draft" == false ]]
+          [[ "$release_prerelease" == false ]]
+
+          git fetch origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          tag_sha="$(git rev-list -n1 "$RELEASE_TAG")"
+          [[ "$tag_sha" == "$RELEASE_TARGET" ]] || {
+            printf 'Release tag points to %s instead of %s.\n' "$tag_sha" "$RELEASE_TARGET" >&2
+            exit 1
+          }
+
+          gh pr close "$PR_NUMBER" --repo "$GITHUB_REPOSITORY"
+          gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/release-helper/v3.4.3"
