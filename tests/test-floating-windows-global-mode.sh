@@ -27,7 +27,7 @@ contains "$HELPER" 'AWTARCHY_FLOATING_STATE_FILE' \
     'Floating Windows helper does not publish shared runtime state'
 contains "$HELPER" '--notify' \
     'Floating Windows helper has no notification-capable toggle path'
-contains "$HELPER" '"$NOTIFY_SEND" -a Hyprland -t 1000 "Floating windows" "$state"' \
+contains "$HELPER" "\"\$NOTIFY_SEND\" -a Hyprland -t 1000 \"Floating windows\" \"\$state\"" \
     'Floating Windows feedback is not using the short transient Hyprland notification identity'
 if grep -Fq -- '-a Awtarchy' "$HELPER"; then
     fail 'Floating Windows feedback still uses the persistent Awtarchy notification identity'
