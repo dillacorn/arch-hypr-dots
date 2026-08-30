@@ -32,6 +32,18 @@ contains "$BAR_QML" 'if (isAwtarchyFlyout(toplevel))' \
     'Awtarchy flyouts are not rejected before task rendering'
 contains "$BAR_QML" 'if (toplevel.wayland && toplevel.wayland.parent)' \
     'Parented transient/dialog toplevels are not filtered from task rendering'
+contains "$BAR_QML" 'function isXwaylandPopupHelper(toplevel)' \
+    'Bar has no focused XWayland popup-helper filter'
+contains "$BAR_QML" 'if (isXwaylandPopupHelper(toplevel))' \
+    'XWayland popup/helper clients are not rejected before task rendering'
+contains "$BAR_QML" 'ipc.xwayland === true && ipc.floating === true' \
+    'XWayland helper filtering is not restricted to floating XWayland clients'
+contains "$BAR_QML" 'String(toplevel.title || ipc.title || ipc.initialTitle || "").trim().length === 0' \
+    'XWayland helper filtering is not restricted to untitled clients'
+contains "$BAR_QML" 'siblingIpc.pid === ipc.pid' \
+    'XWayland helper filtering does not require the same application process'
+contains "$BAR_QML" 'siblingClass === cls' \
+    'XWayland helper filtering does not require the same application class'
 
 # Native icon sources remain authoritative. Theme coloring is optional and is
 # enabled only by the per-monitor state, so the stock false default preserves
@@ -58,4 +70,4 @@ contains "$BAR_QML" 'wayland.minimized = true;' \
 contains "$BAR_QML" 'wayland.activate();' \
     'task icon activation behavior disappeared'
 
-printf '%s\n' 'PASS: Awtarchy flyouts and parented transient/dialog windows stay out of the task strip while task/tray icons preserve native sources and support optional theme coloring.'
+printf '%s\n' 'PASS: Awtarchy flyouts, parented transients, and untitled floating XWayland helpers stay out of the task strip while real titled app windows remain eligible.'
