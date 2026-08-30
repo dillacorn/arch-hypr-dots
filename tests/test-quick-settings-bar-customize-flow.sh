@@ -54,7 +54,7 @@ text = Path(sys.argv[1]).read_text()
 icons = text.index('label: "Icons"')
 appearance = text.index('label: "Appearance"', icons + 1)
 icons_block = text[icons:appearance]
-appearance_block = text[appearance:text.index('label: "Visible"', appearance)]
+appearance_block = text[appearance:text.index('label: root.barStatus.enabled ? "Visible" : "Hidden"', appearance)]
 if 'root.barIconsOpen = !root.barIconsOpen;' not in icons_block:
     raise SystemExit(1)
 if 'root.barAppearanceOpen = false;' not in icons_block:
