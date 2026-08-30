@@ -124,10 +124,30 @@ contains "$QUICK_SETTINGS" 'Layout.maximumHeight: root.settingsOpen ? 0 : root.m
     'hidden normal content row is not collapsed to zero height'
 contains "$QUICK_SETTINGS" 'id: headerBar' \
     'Quick Settings header has no stable anchor for the close control'
-contains "$QUICK_SETTINGS" 'anchors.verticalCenter: headerBar.verticalCenter' \
-    'close control is not vertically anchored to the actual header'
-contains "$QUICK_SETTINGS" 'anchors.right: panel.right' \
-    'close control is not anchored to the panel right edge'
+
+python3 - "$QUICK_SETTINGS" <<'PY' \
+    || fail 'close control is not structurally anchored inside the Quick Settings header'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text()
+header = '                Rectangle {\n                    id: headerBar\n'
+next_row = '                Rectangle {\n                    Layout.row: 1\n'
+close = '                    Rectangle {\n                        id: closeButton\n'
+
+header_start = text.index(header)
+header_end = text.index(next_row, header_start)
+close_start = text.find(close, header_start, header_end)
+if close_start < 0:
+    raise SystemExit(1)
+
+close_block = text[close_start:header_end]
+if 'anchors.right: parent.right' not in close_block:
+    raise SystemExit(1)
+if 'anchors.verticalCenter: parent.verticalCenter' not in close_block:
+    raise SystemExit(1)
+PY
+
 contains "$FLYOUT_SETTINGS" 'text: root.surfaceLabel === "Quick Settings" ? "Copy Quick Settings…" : "Copy to Displays…"' \
     'generic Quick Settings copy action is not clearly scoped'
 contains "$BAR_SETTINGS" 'label: "Copy Bar Settings…"' \
@@ -137,4 +157,4 @@ contains "$BAR_SETTINGS" 'copy-bar-settings' \
 contains "$MANAGER" 'copy-bar-settings)' \
     'quickshell manager has no copy-bar-settings command'
 
-printf '%s\n' 'PASS: Quick Settings settings mode is compact, isolated, and copy actions have explicit scopes.'
+printf '%s\n' 'PASS: Quick Settings settings mode is compact, isolated, and header-aligned.'
