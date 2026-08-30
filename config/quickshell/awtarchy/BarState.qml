@@ -620,6 +620,15 @@ Singleton {
         return Math.max(50, Math.min(200, percent)) / 100.0;
     }
 
+    function barTransparencyFor(name) {
+        const dependency = revision;
+        const mon = monitorState(name);
+        const percent = Number(mon.bar_transparency === undefined ? 0 : mon.bar_transparency);
+        if (!Number.isFinite(percent))
+            return 0;
+        return Math.max(0, Math.min(100, Math.round(percent)));
+    }
+
     function launcherViewFor(name) {
         const d = data();
         const defaults = launcherDefaultSizeFor(name);

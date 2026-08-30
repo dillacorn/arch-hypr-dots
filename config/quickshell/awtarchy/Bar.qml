@@ -40,7 +40,8 @@ PanelWindow {
     visible: monitorName.length > 0
         && BarState.enabledFor(monitorName)
         && !workspaceFullscreenForMonitor(monitorName)
-    color: Theme.background
+    color: Qt.rgba(Theme.background.r, Theme.background.g, Theme.background.b,
+        1 - BarState.barTransparencyFor(monitorName) / 100)
     aboveWindows: true
     focusable: false
     exclusiveZone: barSize

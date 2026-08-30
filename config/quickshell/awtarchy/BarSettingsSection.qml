@@ -21,6 +21,7 @@ Item {
     property string displayScaleError: ""
     property bool customScaleOpen: false
     property string customScaleText: "1"
+    property int barTransparencyHoverPercent: -1
 
     signal themePickerRequested()
 
@@ -106,6 +107,12 @@ Item {
         return Number.isFinite(value) ? Math.max(50, Math.min(200, Math.round(value))) : 100;
     }
 
+    function rawBarTransparency(name) {
+        const state = BarState.monitorState(name) || ({});
+        const value = Number(state.bar_transparency === undefined ? 0 : state.bar_transparency);
+        return Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 0;
+    }
+
     function rawModuleVisible(name, module) {
         const state = BarState.monitorState(name) || ({});
         if (module === "cpu")
@@ -183,6 +190,16 @@ Item {
         return value === null ? "Mixed" : value + "%";
     }
 
+    function transparencyText() {
+        const value = commonValue(rawBarTransparency);
+        return value === null ? "Mixed" : value + "%";
+    }
+
+    function transparencyPercent() {
+        const value = commonValue(rawBarTransparency);
+        return value === null ? -1 : value;
+    }
+
     function moduleVisibilityActive(module) {
         return commonValue(name => rawModuleVisible(name, module)) === true;
     }
@@ -214,6 +231,14 @@ Item {
             return common;
         const targets = resolvedTargets();
         return targets.length > 0 ? rawTextScale(targets[0]) : 100;
+    }
+
+    function baseBarTransparency() {
+        const common = commonValue(rawBarTransparency);
+        if (common !== null)
+            return common;
+        const targets = resolvedTargets();
+        return targets.length > 0 ? rawBarTransparency(targets[0]) : 0;
     }
 
     function enqueue(command, value) {
@@ -266,6 +291,7 @@ Item {
             next.push([managerScript, "setsize", target, "0"]);
             next.push([managerScript, "setscale", target, "100"]);
             next.push([managerScript, "settextscale", target, "100"]);
+            next.push([managerScript, "settransparency", target, "0"]);
             next.push([managerScript, "setshowtasks", target, "true"]);
             next.push([managerScript, "setthemetaskicons", target, "false"]);
             next.push([managerScript, "setthemetrayicons", target, "false"]);
@@ -302,6 +328,19 @@ Item {
         const next = Math.max(50, Math.min(200, baseTextScale() + delta));
         message = "Bar text " + next + "%";
         enqueue("settextscale", next);
+    }
+
+    function setTransparencyPercent(value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric))
+            return;
+        const next = Math.max(0, Math.min(100, Math.round(numeric)));
+        message = "Bar transparency " + next + "%";
+        enqueue("settransparency", next);
+    }
+
+    function adjustTransparency(delta) {
+        setTransparencyPercent(baseBarTransparency() + delta);
     }
 
     function displayScaleLabel(value) {
@@ -633,6 +672,67 @@ Item {
                 }
                 SettingsButton { label: "+"; textSize: 11; onClicked: root.adjustThickness(2) }
                 Item { Layout.fillWidth: true }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 26
+                spacing: 5
+
+                Text {
+                    Layout.preferredWidth: 78
+                    text: "Transparency"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                }
+
+                SettingsButton {
+                    label: "−5"
+                    textSize: 9
+                    onClicked: root.adjustTransparency(-5)
+                }
+
+                Rectangle {
+                    id: barTransparencyTrack
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 24
+                    color: Theme.popupBackground
+                    border.width: 0
+
+                    Rectangle {
+                        width: root.transparencyPercent() >= 0
+                            ? parent.width * root.transparencyPercent() / 100 : 0
+                        height: parent.height
+                        color: Theme.focus
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onPositionChanged: mouse => root.barTransparencyHoverPercent = Math.max(0,
+                            Math.min(100, Math.round(mouse.x * 100 / width)))
+                        onExited: root.barTransparencyHoverPercent = -1
+                        onPressed: mouse => root.setTransparencyPercent(mouse.x * 100 / width)
+                    }
+                }
+
+                SettingsButton {
+                    label: "+5"
+                    textSize: 9
+                    onClicked: root.adjustTransparency(5)
+                }
+
+                Text {
+                    Layout.preferredWidth: 52
+                    text: root.barTransparencyHoverPercent >= 0
+                        ? root.barTransparencyHoverPercent + "%" : root.transparencyText()
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                    horizontalAlignment: Text.AlignHCenter
+                }
             }
 
             RowLayout {

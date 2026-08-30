@@ -87,6 +87,7 @@ ensure_state() {
                     bar_size:0,
                     icon_scale:100,
                     text_scale:100,
+                    bar_transparency:0,
                     show_tasks:true,
                     theme_task_icons:false,
                     theme_tray_icons:false,
@@ -415,6 +416,11 @@ gettextscale() {
     jq -r --arg monitor "$1" '(.monitors[$monitor].text_scale // 100) | tonumber' "$STATE_FILE"
 }
 
+gettransparency() {
+    ensure_state
+    jq -r --arg monitor "$1" '(.monitors[$monitor].bar_transparency // 0) | tonumber' "$STATE_FILE"
+}
+
 getshowcpu() {
     ensure_state
     jq -r --arg monitor "$1" '(if .monitors[$monitor].show_cpu == null then true else .monitors[$monitor].show_cpu end) | if . then "true" else "false" end' "$STATE_FILE"
@@ -541,6 +547,19 @@ settextscale() {
     mv -f "$tmp" "$STATE_FILE"
 }
 
+settransparency() {
+    local monitor="$1" transparency="$2" tmp
+    [[ "$transparency" =~ ^[0-9]+$ ]] || { printf 'quickshell.sh: bar transparency must be an integer\n' >&2; exit 2; }
+    if (( transparency > 100 )); then
+        printf 'quickshell.sh: bar transparency must be 0-100\n' >&2
+        exit 2
+    fi
+    ensure_state
+    tmp="${STATE_FILE}.tmp.$$"
+    jq --arg monitor "$monitor" --argjson transparency "$transparency" '.monitors[$monitor].bar_transparency = $transparency' "$STATE_FILE" >"$tmp"
+    mv -f "$tmp" "$STATE_FILE"
+}
+
 reset_mon() {
     local monitor="$1" tmp
     ensure_state
@@ -552,6 +571,7 @@ reset_mon() {
             bar_size:0,
             icon_scale:100,
             text_scale:100,
+            bar_transparency:0,
             show_tasks:true,
             theme_task_icons:false,
             theme_tray_icons:false,
@@ -656,6 +676,7 @@ focused monitor:
   getsize-focused
   getscale-focused
   gettextscale-focused
+  gettransparency-focused
   getshowtasks-focused
   getthemetaskicons-focused
   getthemetrayicons-focused
@@ -667,6 +688,7 @@ focused monitor:
   setsize-focused <0|20-80>
   setscale-focused <50-200>
   settextscale-focused <50-200>
+  settransparency-focused <0-100>
   setshowtasks-focused <true|false>
   setthemetaskicons-focused <true|false>
   setthemetrayicons-focused <true|false>
@@ -684,6 +706,7 @@ per monitor:
   getsize <MON>
   getscale <MON>
   gettextscale <MON>
+  gettransparency <MON>
   getshowtasks <MON>
   getthemetaskicons <MON>
   getthemetrayicons <MON>
@@ -695,6 +718,7 @@ per monitor:
   setsize <MON> <0|20-80>
   setscale <MON> <50-200>
   settextscale <MON> <50-200>
+  settransparency <MON> <0-100>
   setshowtasks <MON> <true|false>
   setthemetaskicons <MON> <true|false>
   setthemetrayicons <MON> <true|false>
@@ -705,6 +729,7 @@ per monitor:
 
 bar_size 0 means Awtarchy defaults: 28px horizontal, 36px vertical.
 icon_scale and text_scale are percentages; 100 preserves the tuned defaults.
+bar_transparency is a percentage; 0 is fully opaque and 100 is fully transparent.
 Running application icons are visible by default; task and tray icons use original colors by default.
 CPU, temperature and memory modules are visible by default.
 USAGE
@@ -749,6 +774,8 @@ case "$cmd" in
     getscale-focused) monitor="$(focused_monitor)"; getscale "$monitor" ;;
     gettextscale) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; gettextscale "$2" ;;
     gettextscale-focused) monitor="$(focused_monitor)"; gettextscale "$monitor" ;;
+    gettransparency) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; gettransparency "$2" ;;
+    gettransparency-focused) monitor="$(focused_monitor)"; gettransparency "$monitor" ;;
     getshowtasks) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getshowtasks "$2" ;;
     getshowtasks-focused) monitor="$(focused_monitor)"; getshowtasks "$monitor" ;;
     getthemetaskicons) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getthemetaskicons "$2" ;;
@@ -771,6 +798,8 @@ case "$cmd" in
     setscale-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; setscale "$monitor" "$2" ;;
     settextscale) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; settextscale "$2" "$3" ;;
     settextscale-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; settextscale "$monitor" "$2" ;;
+    settransparency) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; settransparency "$2" "$3" ;;
+    settransparency-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; settransparency "$monitor" "$2" ;;
     setshowtasks) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_icon_option "$2" show_tasks "$3" ;;
     setshowtasks-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; set_monitor_icon_option "$monitor" show_tasks "$2" ;;
     setthemetaskicons) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_icon_option "$2" theme_task_icons "$3" ;;
