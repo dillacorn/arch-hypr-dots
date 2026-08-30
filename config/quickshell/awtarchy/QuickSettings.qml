@@ -37,7 +37,7 @@ Singleton {
     property string nightLightScheduleError: ""
     property bool settingsOpen: false
     property bool layoutEditorOpen: false
-    property bool barIconEditorOpen: false
+    property bool barCustomizeOpen: false
     property var layoutOrderDraft: []
     property var layoutHiddenDraft: []
     property var savedLayout: ({ order: [], hidden: [] })
@@ -77,6 +77,7 @@ Singleton {
     readonly property int maximumPanelHeight: Math.max(1, targetScreenHeight - 20)
     readonly property int minimumPanelWidth: Math.min(520, maximumPanelWidth)
     readonly property int minimumPanelHeight: Math.min(460, maximumPanelHeight)
+    readonly property int minimumSettingsPanelHeight: Math.min(180, maximumPanelHeight)
     readonly property int configuredPanelWidth: clampWidth(panelWidthOverride >= 0
         ? panelWidthOverride : BarState.quickSettingsViewFor(activeMonitorName).width)
     readonly property int configuredPanelHeight: clampHeight(panelHeightOverride >= 0
@@ -86,7 +87,7 @@ Singleton {
     readonly property int livePanelHeight: quickSettingsWindow.visible && !root.settingsOpen
         && quickSettingsWindow.height > 0
         ? clampHeight(Math.round(quickSettingsWindow.height)) : configuredPanelHeight
-    readonly property int settingsModePanelHeight: clampHeight(38
+    readonly property int settingsModePanelHeight: clampSettingsHeight(38
         + (layoutEditorOpen ? layoutEditor.implicitHeight : settingsPanel.implicitHeight) + 12)
     readonly property int effectiveTextScale: textScaleOverride >= 0
         ? textScaleOverride : BarState.quickSettingsViewFor(activeMonitorName).textScale
@@ -167,6 +168,11 @@ Singleton {
         return Math.max(minimumPanelHeight, Math.min(maximumPanelHeight, Math.round(value)));
     }
 
+    function clampSettingsHeight(value) {
+        return Math.max(minimumSettingsPanelHeight,
+            Math.min(maximumPanelHeight, Math.round(value)));
+    }
+
     function outputLimitForPosition(x, width) {
         if (width <= 0)
             return AudioLimitState.limitPercent;
@@ -181,7 +187,8 @@ Singleton {
         panelHeightOverride = clampHeight(height);
         if (quickSettingsWindow.visible && activeMonitorName.length > 0) {
             Quickshell.execDetached([
-                positionScript, "quick-settings", activeMonitorName, placement, "resize",
+                positionScript, "quick-settings", activeMonitorName, placement,
+                settingsOpen ? "resize-compact" : "resize",
                 String(panelWidthOverride),
                 String(settingsOpen ? settingsModePanelHeight : panelHeightOverride)
             ]);
@@ -192,7 +199,8 @@ Singleton {
         if (!quickSettingsWindow.visible || activeMonitorName.length === 0)
             return;
         Quickshell.execDetached([
-            positionScript, "quick-settings", activeMonitorName, placement, "resize",
+            positionScript, "quick-settings", activeMonitorName, placement,
+            settingsOpen ? "resize-compact" : "resize",
             String(configuredPanelWidth),
             String(settingsOpen ? settingsModePanelHeight : configuredPanelHeight)
         ]);
@@ -711,6 +719,10 @@ Singleton {
     function toggleSettings() {
         settingsOpen = !settingsOpen;
         layoutEditorOpen = false;
+        if (settingsOpen) {
+            barCustomizeOpen = false;
+            barAppearanceSettings.resetTransientState();
+        }
         settingsPanel.resetCopySelection();
         settingsMessage = "";
         Qt.callLater(() => root.resizeForSettingsMode());
@@ -727,7 +739,9 @@ Singleton {
         brightnessTarget = targetScreen.name;
         settingsOpen = false;
         layoutEditorOpen = false;
+        barCustomizeOpen = false;
         settingsPanel.resetCopySelection();
+        barAppearanceSettings.resetTransientState();
         settingsMessage = "";
         schedulerEditorOpen = false;
         schedulerArgsDirty = false;
@@ -750,7 +764,9 @@ Singleton {
         FlyoutManager.release("quick-settings");
         settingsOpen = false;
         layoutEditorOpen = false;
+        barCustomizeOpen = false;
         settingsPanel.resetCopySelection();
+        barAppearanceSettings.resetTransientState();
         settingsMessage = "";
         schedulerEditorOpen = false;
         nightLightScheduleEditorOpen = false;
@@ -1443,6 +1459,8 @@ Singleton {
 
                                 RowLayout {
                                     Layout.fillWidth: true
+                                    spacing: 5
+
                                     Text {
                                         Layout.fillWidth: true
                                         text: "Bar · " + root.activeMonitorName
@@ -1451,6 +1469,26 @@ Singleton {
                                         font.pixelSize: root.scaledText(12)
                                         font.bold: true
                                     }
+
+                                    SettingsButton {
+                                        label: "Themes"
+                                        textSize: root.scaledText(9)
+                                        onClicked: root.openThemeMenu()
+                                    }
+
+                                    SettingsButton {
+                                        label: "Customize…"
+                                        active: root.barCustomizeOpen
+                                        textSize: root.scaledText(9)
+                                        onClicked: {
+                                            root.barCustomizeOpen = !root.barCustomizeOpen;
+                                            if (!root.barCustomizeOpen)
+                                                barAppearanceSettings.resetTransientState();
+                                            if (root.bottomEdgeLayout)
+                                                Qt.callLater(() => root.alignContentToBar());
+                                        }
+                                    }
+
                                     SettingsButton {
                                         label: root.barStatus.enabled ? "Visible" : "Hidden"
                                         active: Boolean(root.barStatus.enabled)
@@ -1462,49 +1500,75 @@ Singleton {
                                     }
                                 }
 
-                                Flow {
+                                RowLayout {
                                     Layout.fillWidth: true
-                                    Layout.preferredHeight: childrenRect.height
-                                    spacing: 5
-                                    Repeater {
-                                        model: ["top", "bottom", "left", "right"]
-                                        SettingsButton {
-                                            required property var modelData
-                                            label: String(modelData)
-                                            active: String(root.barStatus.position) === String(modelData)
-                                            textSize: root.scaledText(9)
-                                            onClicked: root.queueAction([
-                                                "bar-position", root.activeMonitorName, String(modelData)
-                                            ], "Moving bar to " + String(modelData) + "…")
+                                    spacing: 6
+
+                                    Flow {
+                                        spacing: 5
+                                        Repeater {
+                                            model: ["top", "bottom", "left", "right"]
+                                            SettingsButton {
+                                                required property var modelData
+                                                label: String(modelData)
+                                                active: String(root.barStatus.position) === String(modelData)
+                                                textSize: root.scaledText(9)
+                                                onClicked: root.queueAction([
+                                                    "bar-position", root.activeMonitorName, String(modelData)
+                                                ], "Moving bar to " + String(modelData) + "…")
+                                            }
                                         }
                                     }
-                                }
-                                SettingsButton {
-                                    Layout.fillWidth: true
-                                    label: "Customize Icons…"
-                                    active: root.barIconEditorOpen
-                                    textSize: root.scaledText(9)
-                                    onClicked: {
-                                        root.barIconEditorOpen = !root.barIconEditorOpen;
-                                        if (root.bottomEdgeLayout)
-                                            Qt.callLater(() => root.alignContentToBar());
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "Tip: drag the bar with SUPER+Mouse1 or ALT+Mouse1."
+                                        color: Theme.muted
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: root.scaledText(8)
+                                        horizontalAlignment: Text.AlignRight
+                                        elide: Text.ElideRight
                                     }
                                 }
 
-                                BarIconSettings {
+                                ColumnLayout {
                                     Layout.fillWidth: true
-                                    visible: root.barIconEditorOpen
-                                }
+                                    visible: root.barCustomizeOpen
+                                    spacing: 6
 
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "Icons"
+                                        color: Theme.foreground
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: root.scaledText(10)
+                                        font.bold: true
+                                    }
 
-                                BarSettingsSection {
-                                    Layout.fillWidth: true
-                                    active: quickSettingsWindow.visible
-                                        && root.quickSettingsSectionVisible("bar")
-                                    monitorName: root.activeMonitorName
-                                    monitorNames: [root.activeMonitorName]
-                                        .concat(root.otherMonitorNames())
-                                    onThemePickerRequested: root.openThemeMenu()
+                                    BarIconSettings {
+                                        Layout.fillWidth: true
+                                        visible: root.barCustomizeOpen
+                                    }
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "Appearance"
+                                        color: Theme.foreground
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: root.scaledText(10)
+                                        font.bold: true
+                                    }
+
+                                    BarSettingsSection {
+                                        id: barAppearanceSettings
+                                        Layout.fillWidth: true
+                                        active: quickSettingsWindow.visible
+                                            && root.quickSettingsSectionVisible("bar")
+                                            && root.barCustomizeOpen
+                                        monitorName: root.activeMonitorName
+                                        monitorNames: [root.activeMonitorName]
+                                            .concat(root.otherMonitorNames())
+                                    }
                                 }
                             }
                         }

@@ -28,6 +28,7 @@ Item {
     property int managedCaptureOverride: -1
     property string managedMessage: ""
 
+    readonly property bool inlineCopy: surfaceLabel === "Quick Settings"
     readonly property bool managedConnectivityCapture: surfaceLabel === "Network"
         || surfaceLabel === "Bluetooth"
     readonly property string managedCaptureKey: surfaceLabel === "Network" ? "network"
@@ -58,8 +59,9 @@ Item {
     signal themePickerRequested()
     signal layoutEditorRequested()
 
-    implicitHeight: copyOpen ? 104
-        : 139 + (surfaceLabel === "Quick Settings" ? displayScaleSection.implicitHeight + 37 : 0)
+    implicitHeight: inlineCopy
+        ? 139 + displayScaleSection.implicitHeight + 37 + (copyOpen ? 31 : 0)
+        : (copyOpen ? 104 : 139)
 
     function targetSelected(name) {
         const dependency = copySelectionRevision;
@@ -140,7 +142,7 @@ Item {
             Layout.fillWidth: true
             Layout.preferredHeight: 28
             spacing: 6
-            visible: !root.copyOpen
+            visible: root.inlineCopy || !root.copyOpen
 
             Text {
                 Layout.fillWidth: true
@@ -181,7 +183,7 @@ Item {
             Layout.fillWidth: true
             Layout.preferredHeight: 28
             spacing: 5
-            visible: !root.copyOpen
+            visible: root.inlineCopy || !root.copyOpen
 
             Text {
                 text: "Width"
@@ -324,7 +326,7 @@ Item {
             Layout.fillWidth: true
             Layout.preferredHeight: 28
             spacing: 5
-            visible: !root.copyOpen
+            visible: root.inlineCopy || !root.copyOpen
 
             Text {
                 text: "Icons"
@@ -466,7 +468,7 @@ Item {
         DisplayScaleSettings {
             id: displayScaleSection
             Layout.fillWidth: true
-            visible: !root.copyOpen && root.surfaceLabel === "Quick Settings"
+            visible: root.surfaceLabel === "Quick Settings"
             active: visible
             monitorName: root.monitorName
         }
@@ -475,7 +477,7 @@ Item {
             Layout.fillWidth: true
             Layout.preferredHeight: 28
             spacing: 6
-            visible: !root.copyOpen && root.surfaceLabel === "Quick Settings"
+            visible: root.surfaceLabel === "Quick Settings"
 
             SettingsButton {
                 label: "Customize Layout…"
@@ -497,7 +499,7 @@ Item {
             Layout.fillWidth: true
             Layout.preferredHeight: 28
             spacing: 6
-            visible: !root.copyOpen
+            visible: root.inlineCopy || !root.copyOpen
 
             Rectangle {
                 Layout.preferredWidth: 142
@@ -519,6 +521,10 @@ Item {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
+                        if (root.inlineCopy && root.copyOpen) {
+                            root.resetCopySelection();
+                            return;
+                        }
                         root.copyTargets = ({});
                         root.copySelectionRevision++;
                         root.copyOpen = true;
@@ -539,9 +545,62 @@ Item {
 
         RowLayout {
             Layout.fillWidth: true
+            Layout.preferredHeight: visible ? 28 : 0
+            spacing: 5
+            visible: root.copyOpen && root.inlineCopy
+
+            Text {
+                text: "Copy to:"
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: 10
+            }
+
+            Repeater {
+                model: root.otherMonitorNames
+                delegate: SettingsButton {
+                    required property string modelData
+                    label: modelData
+                    textSize: 9
+                    horizontalPadding: 10
+                    active: root.targetSelected(modelData)
+                    onClicked: root.setTargetSelected(modelData,
+                        !root.targetSelected(modelData))
+                }
+            }
+
+            SettingsButton {
+                label: root.allTargetsSelected() ? "Clear" : "All"
+                textSize: 9
+                available: root.otherMonitorNames.length > 0
+                onClicked: root.toggleAllTargets()
+            }
+
+            Item { Layout.fillWidth: true }
+
+            SettingsButton {
+                label: "Back"
+                textSize: 9
+                onClicked: root.resetCopySelection()
+            }
+
+            SettingsButton {
+                label: "Copy"
+                textSize: 9
+                available: root.selectedTargetNames().length > 0
+                onClicked: {
+                    const targets = root.selectedTargetNames();
+                    root.copyRequested(targets);
+                    root.resetCopySelection();
+                }
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
             Layout.preferredHeight: 28
             spacing: 6
-            visible: root.copyOpen
+            visible: root.copyOpen && !root.inlineCopy
 
             Rectangle {
                 Layout.preferredWidth: 62
@@ -579,7 +638,7 @@ Item {
         Flickable {
             Layout.fillWidth: true
             Layout.preferredHeight: 28
-            visible: root.copyOpen
+            visible: root.copyOpen && !root.inlineCopy
             clip: true
             contentWidth: Math.max(width, copyTargetRow.width)
             contentHeight: height
@@ -671,7 +730,7 @@ Item {
             Layout.fillWidth: true
             Layout.preferredHeight: 28
             spacing: 6
-            visible: root.copyOpen
+            visible: root.copyOpen && !root.inlineCopy
 
             Text {
                 Layout.fillWidth: true

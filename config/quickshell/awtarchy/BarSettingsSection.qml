@@ -22,8 +22,6 @@ Item {
     property var copyTargets: ({})
     property int copySelectionRevision: 0
 
-    signal themePickerRequested()
-
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
         || (Quickshell.env("HOME") + "/.config")
     readonly property string managerScript: configHome + "/hypr/scripts/quickshell.sh"
@@ -126,6 +124,13 @@ Item {
         copyTargets = ({});
         copySelectionRevision++;
         copyOpen = false;
+    }
+
+    function resetTransientState() {
+        resetCopySelection();
+        targetKey = "current";
+        message = "";
+        cancelTransparencyDrag();
     }
 
     function copyBarSettings() {
@@ -474,16 +479,6 @@ Item {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 26
 
-                Text {
-                    anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: "Bar Appearance"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 11
-                    font.bold: true
-                }
-
                 Row {
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.verticalCenter: parent.verticalCenter
@@ -520,19 +515,12 @@ Item {
                     spacing: 5
 
                     SettingsButton {
-                        label: "Themes"
-                        textSize: 9
-                        onClicked: root.themePickerRequested()
-                    }
-
-                    SettingsButton {
                         label: "Reset"
                         textSize: 9
                         onClicked: root.resetAppearance()
                     }
                 }
             }
-
             RowLayout {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 26

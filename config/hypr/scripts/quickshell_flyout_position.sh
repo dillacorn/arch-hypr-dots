@@ -30,7 +30,7 @@ case "$placement" in
 esac
 
 case "$action" in
-    spawn|resize|clamp) ;;
+    spawn|resize|resize-compact|clamp) ;;
     *)
         printf 'quickshell_flyout_position.sh: invalid action: %s\n' "$action" >&2
         exit 2
@@ -97,6 +97,10 @@ case "$surface" in
         exit 2
         ;;
 esac
+
+if [[ "$surface" == quick-settings && "$action" == resize-compact ]]; then
+    min_h=180
+fi
 
 command -v hyprctl >/dev/null 2>&1 || exit 127
 command -v jq >/dev/null 2>&1 || exit 127
@@ -304,7 +308,7 @@ case "$action" in
         win_h="$(clamp_dimension "$desired_h" "$min_h" "$max_h")"
         resize_on_apply=1
         ;;
-    resize)
+    resize|resize-compact)
         [[ "$requested_w" =~ ^[0-9]+$ && "$requested_h" =~ ^[0-9]+$ ]] || {
             printf 'quickshell_flyout_position.sh: resize requires integer width and height\n' >&2
             exit 2
