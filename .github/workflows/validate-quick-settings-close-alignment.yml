@@ -1,0 +1,25 @@
+name: Validate Quick Settings Close Alignment
+
+on:
+  push:
+    branches:
+      - feature/bar-transparency
+    paths:
+      - '.github/workflows/validate-quick-settings-close-alignment.yml'
+      - 'config/quickshell/awtarchy/QuickSettings.qml'
+      - 'tests/test-quick-settings-settings-mode.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  close-alignment:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+      - run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+      - run: |
+          git diff --check
+          bash -n tests/test-quick-settings-settings-mode.sh
+          shellcheck tests/test-quick-settings-settings-mode.sh
+          bash tests/test-quick-settings-settings-mode.sh
