@@ -29,6 +29,8 @@ for command in gettransparency settransparency; do
 done
 contains "$BAR_STATE" 'function barTransparencyFor(name)' \
     'BarState has no per-display bar transparency resolver'
+contains "$BAR_QML" 'surfaceFormat.opaque: false' \
+    'Bar window does not request an alpha-capable surface format at creation time'
 contains "$BAR_QML" 'BarState.barTransparencyFor(monitorName)' \
     'Bar background does not consume the per-display transparency setting'
 contains "$BAR_QML" 'Qt.rgba(Theme.background.r, Theme.background.g, Theme.background.b' \
