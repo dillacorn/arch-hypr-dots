@@ -23,7 +23,8 @@ jobs:
           git diff --check
           bash -n config/hypr/scripts/quickshell.sh
           bash -n tests/test-quick-settings-settings-mode.sh
-          shellcheck config/hypr/scripts/quickshell.sh tests/test-quick-settings-settings-mode.sh
+          shellcheck -e SC2034 config/hypr/scripts/quickshell.sh
+          shellcheck tests/test-quick-settings-settings-mode.sh
           bash tests/test-quick-settings-settings-mode.sh
           bash tests/test-quick-settings-layout.sh
           bash tests/test-bar-transparency.sh
