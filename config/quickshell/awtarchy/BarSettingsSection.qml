@@ -25,6 +25,9 @@ Item {
     property int barTransparencyHoverPercent: -1
     property bool barTransparencyDragging: false
     property var barTransparencyDragTargets: []
+    property bool copyOpen: false
+    property var copyTargets: ({})
+    property int copySelectionRevision: 0
 
     signal themePickerRequested()
 
@@ -88,6 +91,63 @@ Item {
         if (targetKey === "current")
             return monitorName.length > 0 ? [monitorName] : [];
         return uniqueMonitorNames().indexOf(targetKey) >= 0 ? [targetKey] : [];
+    }
+
+    function copyMonitorNames() {
+        return uniqueMonitorNames().filter(name => name !== monitorName);
+    }
+
+    function copyTargetSelected(name) {
+        const dependency = copySelectionRevision;
+        return copyTargets[name] === true;
+    }
+
+    function selectedCopyTargets() {
+        return copyMonitorNames().filter(name => copyTargetSelected(name));
+    }
+
+    function setCopyTargetSelected(name, selected) {
+        const next = Object.assign({}, copyTargets);
+        if (selected)
+            next[name] = true;
+        else
+            delete next[name];
+        copyTargets = next;
+        copySelectionRevision++;
+    }
+
+    function allCopyTargetsSelected() {
+        const names = copyMonitorNames();
+        return names.length > 0 && names.every(name => copyTargetSelected(name));
+    }
+
+    function toggleAllCopyTargets() {
+        const next = {};
+        if (!allCopyTargetsSelected()) {
+            for (const name of copyMonitorNames())
+                next[name] = true;
+        }
+        copyTargets = next;
+        copySelectionRevision++;
+    }
+
+    function resetCopySelection() {
+        copyTargets = ({});
+        copySelectionRevision++;
+        copyOpen = false;
+    }
+
+    function copyBarSettings() {
+        const targets = selectedCopyTargets();
+        if (monitorName.length === 0 || targets.length === 0)
+            return;
+        const next = commandQueue.slice();
+        next.push([managerScript, "copy-bar-settings", monitorName, ...targets]);
+        commandQueue = next;
+        message = "Copied bar settings to " + targets.length
+            + (targets.length === 1 ? " display" : " displays");
+        resetCopySelection();
+        runNextCommand();
     }
 
     function rawBarSize(name) {
@@ -965,6 +1025,76 @@ Item {
                 }
 
                 Item { Layout.fillWidth: true }
+            }
+
+
+            RowLayout {
+                visible: !root.copyOpen
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? 26 : 0
+                spacing: 5
+
+                SettingsButton {
+                    label: "Copy Bar Settings…"
+                    textSize: 9
+                    horizontalPadding: 12
+                    available: root.copyMonitorNames().length > 0
+                    onClicked: {
+                        root.copyTargets = ({});
+                        root.copySelectionRevision++;
+                        root.copyOpen = true;
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Copies bar appearance only · display scale stays per display"
+                    color: Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 9
+                    elide: Text.ElideRight
+                }
+            }
+
+            RowLayout {
+                visible: root.copyOpen
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? 26 : 0
+                spacing: 5
+
+                SettingsButton {
+                    label: "Back"
+                    textSize: 9
+                    onClicked: root.resetCopySelection()
+                }
+
+                Repeater {
+                    model: root.copyMonitorNames()
+                    delegate: SettingsButton {
+                        required property string modelData
+                        label: modelData
+                        textSize: 9
+                        horizontalPadding: 10
+                        active: root.copyTargetSelected(modelData)
+                        onClicked: root.setCopyTargetSelected(modelData,
+                            !root.copyTargetSelected(modelData))
+                    }
+                }
+
+                SettingsButton {
+                    label: root.allCopyTargetsSelected() ? "Clear" : "All"
+                    textSize: 9
+                    onClicked: root.toggleAllCopyTargets()
+                }
+
+                Item { Layout.fillWidth: true }
+
+                SettingsButton {
+                    label: "Copy"
+                    textSize: 9
+                    available: root.selectedCopyTargets().length > 0
+                    onClicked: root.copyBarSettings()
+                }
             }
         }
     }

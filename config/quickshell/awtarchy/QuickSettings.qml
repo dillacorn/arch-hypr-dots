@@ -1068,6 +1068,7 @@ Singleton {
 
                 Flickable {
                     id: contentFlick
+                    visible: !root.settingsOpen
                     Layout.row: root.bottomEdgeLayout ? 0 : 2
                     Layout.fillWidth: true
                     Layout.fillHeight: true

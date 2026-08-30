@@ -509,7 +509,7 @@ Item {
 
                 Text {
                     anchors.centerIn: parent
-                    text: "Copy to Displays…"
+                    text: root.surfaceLabel === "Quick Settings" ? "Copy Quick Settings…" : "Copy to Displays…"
                     color: Theme.foreground
                     font.family: Theme.fontFamily
                     font.pixelSize: 11
