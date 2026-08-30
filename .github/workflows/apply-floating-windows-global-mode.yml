@@ -1,4 +1,5 @@
 name: Apply Floating Windows Global Mode
+# Temporary rerun marker; workflow is removed after GREEN validation.
 
 on:
   push:
