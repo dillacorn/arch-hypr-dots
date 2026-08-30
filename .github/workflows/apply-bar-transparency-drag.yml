@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   apply:
-    if: github.event.head_commit.message == 'Apply draggable transparency control'
+    if: github.event.head_commit.message == 'Run draggable transparency apply helper'
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -24,411 +24,97 @@ jobs:
           python3 <<'PY'
           from pathlib import Path
 
-          def replace_once(path, old, new, label):
-              text = path.read_text(encoding='utf-8')
-              if text.count(old) != 1:
-                  raise SystemExit(f'{label}: expected exactly one replacement anchor, found {text.count(old)}')
-              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          def rep(path, old, new, label):
+              text = path.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one anchor, found {count}")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
-          state = Path('config/quickshell/awtarchy/BarState.qml')
-          settings = Path('config/quickshell/awtarchy/BarSettingsSection.qml')
+          state = Path("config/quickshell/awtarchy/BarState.qml")
+          settings = Path("config/quickshell/awtarchy/BarSettingsSection.qml")
 
-          replace_once(
-              state,
-              '''    // Immediate in-process overrides keep bar geometry and icon sizing
-    // responsive while persistent JSON writes complete in the background.
-    property var livePositions: ({})
-    property var liveEnabled: ({})
-    property var liveBarSizes: ({})
-    property var liveIconScales: ({})
-''',
-              '''    // Immediate in-process overrides keep bar geometry, icon sizing, and
-    // transparency responsive while persistent JSON writes complete in the background.
-    property var livePositions: ({})
-    property var liveEnabled: ({})
-    property var liveBarSizes: ({})
-    property var liveIconScales: ({})
-    property var liveBarTransparencies: ({})
-''',
-              'BarState live properties'
-          )
+          rep(state,
+              "    property var liveIconScales: ({})\n",
+              "    property var liveIconScales: ({})\n    property var liveBarTransparencies: ({})\n",
+              "live transparency property")
 
-          replace_once(
-              state,
-              '''    function setLiveIconScale(name, value) {
-        const next = Object.assign({}, liveIconScales);
-        next[name] = Number(value);
-        liveIconScales = next;
-        revision++;
-    }
+          rep(state,
+              "\n    function clearLiveOverrides(name) {\n",
+              "\n    function setLiveBarTransparency(name, value) {\n"
+              "        const numeric = Number(value);\n"
+              "        if (!Number.isFinite(numeric))\n"
+              "            return;\n"
+              "        const percent = Math.max(0, Math.min(100, Math.round(numeric)));\n"
+              "        if (liveBarTransparencies[name] === percent)\n"
+              "            return;\n"
+              "        const next = Object.assign({}, liveBarTransparencies);\n"
+              "        next[name] = percent;\n"
+              "        liveBarTransparencies = next;\n"
+              "        revision++;\n"
+              "    }\n\n"
+              "    function clearLiveBarTransparency(name) {\n"
+              "        if (liveBarTransparencies[name] === undefined)\n"
+              "            return;\n"
+              "        const next = Object.assign({}, liveBarTransparencies);\n"
+              "        delete next[name];\n"
+              "        liveBarTransparencies = next;\n"
+              "        revision++;\n"
+              "    }\n\n"
+              "    function clearLiveOverrides(name) {\n",
+              "live transparency helpers")
 
-    function clearLiveOverrides(name) {
-''',
-              '''    function setLiveIconScale(name, value) {
-        const next = Object.assign({}, liveIconScales);
-        next[name] = Number(value);
-        liveIconScales = next;
-        revision++;
-    }
+          rep(state,
+              "        const scales = Object.assign({}, liveIconScales);\n",
+              "        const scales = Object.assign({}, liveIconScales);\n        const transparencies = Object.assign({}, liveBarTransparencies);\n",
+              "clear override clone")
+          rep(state,
+              "        delete scales[name];\n",
+              "        delete scales[name];\n        delete transparencies[name];\n",
+              "clear override delete")
+          rep(state,
+              "        liveIconScales = scales;\n        revision++;\n    }\n\n    FileView {\n",
+              "        liveIconScales = scales;\n        liveBarTransparencies = transparencies;\n        revision++;\n    }\n\n    FileView {\n",
+              "clear override assignment")
 
-    function setLiveBarTransparency(name, value) {
-        const percent = Math.max(0, Math.min(100, Math.round(Number(value))));
-        if (!Number.isFinite(percent) || liveBarTransparencies[name] === percent)
-            return;
-        const next = Object.assign({}, liveBarTransparencies);
-        next[name] = percent;
-        liveBarTransparencies = next;
-        revision++;
-    }
+          old_resolver = "    function barTransparencyFor(name) {\n        const dependency = revision;\n        const mon = monitorState(name);\n        const percent = Number(mon.bar_transparency === undefined ? 0 : mon.bar_transparency);\n        if (!Number.isFinite(percent))\n            return 0;\n        return Math.max(0, Math.min(100, Math.round(percent)));\n    }\n"
+          new_resolver = "    function barTransparencyFor(name) {\n        const dependency = revision;\n        const override = liveBarTransparencies[name];\n        const mon = monitorState(name);\n        const percent = Number(override !== undefined\n            ? override\n            : (mon.bar_transparency === undefined ? 0 : mon.bar_transparency));\n        if (!Number.isFinite(percent))\n            return 0;\n        return Math.max(0, Math.min(100, Math.round(percent)));\n    }\n"
+          rep(state, old_resolver, new_resolver, "transparency resolver")
 
-    function clearLiveBarTransparency(name) {
-        if (liveBarTransparencies[name] === undefined)
-            return;
-        const next = Object.assign({}, liveBarTransparencies);
-        delete next[name];
-        liveBarTransparencies = next;
-        revision++;
-    }
+          rep(settings,
+              "    property var commandQueue: []\n",
+              "    property var commandQueue: []\n    property var activeCommand: []\n",
+              "active command property")
+          rep(settings,
+              "    property int barTransparencyHoverPercent: -1\n",
+              "    property int barTransparencyHoverPercent: -1\n    property bool barTransparencyDragging: false\n    property var barTransparencyDragTargets: []\n",
+              "drag properties")
 
-    function clearLiveOverrides(name) {
-''',
-              'BarState transparency preview functions'
-          )
+          old_raw = "    function rawBarTransparency(name) {\n        const state = BarState.monitorState(name) || ({});\n        const value = Number(state.bar_transparency === undefined ? 0 : state.bar_transparency);\n        return Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 0;\n    }\n"
+          new_raw = "    function rawBarTransparency(name) {\n        const value = Number(BarState.barTransparencyFor(name));\n        return Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 0;\n    }\n"
+          rep(settings, old_raw, new_raw, "live transparency reader")
 
-          replace_once(
-              state,
-              '''        const sizes = Object.assign({}, liveBarSizes);
-        const scales = Object.assign({}, liveIconScales);
-        delete positions[name];
-        delete enabled[name];
-        delete sizes[name];
-        delete scales[name];
-        livePositions = positions;
-        liveEnabled = enabled;
-        liveBarSizes = sizes;
-        liveIconScales = scales;
-        revision++;
-''',
-              '''        const sizes = Object.assign({}, liveBarSizes);
-        const scales = Object.assign({}, liveIconScales);
-        const transparencies = Object.assign({}, liveBarTransparencies);
-        delete positions[name];
-        delete enabled[name];
-        delete sizes[name];
-        delete scales[name];
-        delete transparencies[name];
-        livePositions = positions;
-        liveEnabled = enabled;
-        liveBarSizes = sizes;
-        liveIconScales = scales;
-        liveBarTransparencies = transparencies;
-        revision++;
-''',
-              'BarState clear live overrides'
-          )
+          rep(settings,
+              "        commandQueue = commandQueue.slice(1);\n        writer.exec(next);\n",
+              "        commandQueue = commandQueue.slice(1);\n        activeCommand = next;\n        writer.exec(next);\n",
+              "active command tracking")
 
-          replace_once(
-              state,
-              '''    function barTransparencyFor(name) {
-        const dependency = revision;
-        const mon = monitorState(name);
-        const percent = Number(mon.bar_transparency === undefined ? 0 : mon.bar_transparency);
-        if (!Number.isFinite(percent))
-            return 0;
-        return Math.max(0, Math.min(100, Math.round(percent)));
-    }
-''',
-              '''    function barTransparencyFor(name) {
-        const dependency = revision;
-        const override = liveBarTransparencies[name];
-        const mon = monitorState(name);
-        const percent = Number(override !== undefined
-            ? override
-            : (mon.bar_transparency === undefined ? 0 : mon.bar_transparency));
-        if (!Number.isFinite(percent))
-            return 0;
-        return Math.max(0, Math.min(100, Math.round(percent)));
-    }
-''',
-              'BarState transparency resolver'
-          )
+          old_functions = "    function setTransparencyPercent(value) {\n        const numeric = Number(value);\n        if (!Number.isFinite(numeric))\n            return;\n        const next = Math.max(0, Math.min(100, Math.round(numeric)));\n        message = \"Bar transparency \" + next + \"%\";\n        enqueue(\"settransparency\", next);\n    }\n\n    function adjustTransparency(delta) {\n        setTransparencyPercent(baseBarTransparency() + delta);\n    }\n"
+          new_functions = "    function clampTransparencyPercent(value) {\n        const numeric = Number(value);\n        if (!Number.isFinite(numeric))\n            return -1;\n        return Math.max(0, Math.min(100, Math.round(numeric)));\n    }\n\n    function previewTransparencyPercent(value) {\n        const next = clampTransparencyPercent(value);\n        if (next < 0 || !barTransparencyDragging)\n            return;\n        barTransparencyHoverPercent = next;\n        for (const target of barTransparencyDragTargets)\n            BarState.setLiveBarTransparency(target, next);\n    }\n\n    function beginTransparencyDrag(value) {\n        const targets = resolvedTargets();\n        if (targets.length === 0)\n            return;\n        barTransparencyDragTargets = targets.slice();\n        barTransparencyDragging = true;\n        previewTransparencyPercent(value);\n    }\n\n    function commitTransparencyDrag() {\n        if (!barTransparencyDragging)\n            return;\n        const value = clampTransparencyPercent(barTransparencyHoverPercent);\n        const targets = barTransparencyDragTargets.slice();\n        barTransparencyDragging = false;\n        barTransparencyDragTargets = [];\n        if (value < 0 || targets.length === 0)\n            return;\n        const next = commandQueue.slice();\n        for (const target of targets)\n            next.push([managerScript, \"settransparency\", target, String(value)]);\n        commandQueue = next;\n        message = \"Bar transparency \" + value + \"%\";\n        runNextCommand();\n    }\n\n    function cancelTransparencyDrag() {\n        for (const target of barTransparencyDragTargets)\n            BarState.clearLiveBarTransparency(target);\n        barTransparencyDragging = false;\n        barTransparencyDragTargets = [];\n        barTransparencyHoverPercent = -1;\n    }\n\n    function setTransparencyPercent(value) {\n        const next = clampTransparencyPercent(value);\n        if (next < 0)\n            return;\n        message = \"Bar transparency \" + next + \"%\";\n        enqueue(\"settransparency\", next);\n    }\n\n    function adjustTransparency(delta) {\n        setTransparencyPercent(baseBarTransparency() + delta);\n    }\n"
+          rep(settings, old_functions, new_functions, "drag functions")
 
-          replace_once(
-              settings,
-              '''    property string targetKey: "current"
-    property var commandQueue: []
-    property string message: ""
-''',
-              '''    property string targetKey: "current"
-    property var commandQueue: []
-    property var activeCommand: []
-    property string message: ""
-''',
-              'Bar settings active command property'
-          )
+          old_writer = "    Process {\n        id: writer\n        onExited: {\n            BarState.refresh();\n            root.runNextCommand();\n        }\n    }\n"
+          new_writer = "    Process {\n        id: writer\n        onExited: {\n            const completed = root.activeCommand;\n            root.activeCommand = [];\n            BarState.refresh();\n            if (completed.length >= 3 && completed[1] === \"settransparency\")\n                Qt.callLater(() => BarState.clearLiveBarTransparency(String(completed[2])));\n            root.runNextCommand();\n        }\n    }\n"
+          rep(settings, old_writer, new_writer, "writer completion")
 
-          replace_once(
-              settings,
-              '''    property string customScaleText: "1"
-    property int barTransparencyHoverPercent: -1
-''',
-              '''    property string customScaleText: "1"
-    property int barTransparencyHoverPercent: -1
-    property bool barTransparencyDragging: false
-    property var barTransparencyDragTargets: []
-''',
-              'Bar settings drag properties'
-          )
+          tooltip = "\n                    Rectangle {\n                        visible: root.barTransparencyHoverPercent >= 0\n                        width: 46\n                        height: 21\n                        x: Math.max(0, Math.min(parent.width - width,\n                            parent.width * root.barTransparencyHoverPercent / 100 - width / 2))\n                        y: -25\n                        color: Theme.background\n                        border.width: 1\n                        border.color: Theme.focus\n                        z: 4\n\n                        Text {\n                            anchors.centerIn: parent\n                            text: root.barTransparencyHoverPercent + \"%\"\n                            color: Theme.foreground\n                            font.family: Theme.fontFamily\n                            font.pixelSize: 9\n                        }\n                    }\n"
+          rep(settings,
+              "\n                    MouseArea {\n                        anchors.fill: parent\n                        hoverEnabled: true\n                        cursorShape: Qt.PointingHandCursor\n                        onPositionChanged: mouse => root.barTransparencyHoverPercent = Math.max(0,\n                            Math.min(100, Math.round(mouse.x * 100 / width)))\n                        onExited: root.barTransparencyHoverPercent = -1\n                        onPressed: mouse => root.setTransparencyPercent(mouse.x * 100 / width)\n                    }\n",
+              tooltip + "\n                    MouseArea {\n                        anchors.fill: parent\n                        hoverEnabled: true\n                        cursorShape: Qt.PointingHandCursor\n                        onPositionChanged: mouse => {\n                            root.barTransparencyHoverPercent = Math.max(0,\n                                Math.min(100, Math.round(mouse.x * 100 / width)));\n                            if (pressed)\n                                root.previewTransparencyPercent(root.barTransparencyHoverPercent);\n                        }\n                        onExited: {\n                            if (!pressed)\n                                root.barTransparencyHoverPercent = -1;\n                        }\n                        onPressed: mouse => root.beginTransparencyDrag(mouse.x * 100 / width)\n                        onReleased: root.commitTransparencyDrag()\n                        onCanceled: root.cancelTransparencyDrag()\n                    }\n",
+              "slider mouse area")
 
-          replace_once(
-              settings,
-              '''    function rawBarTransparency(name) {
-        const state = BarState.monitorState(name) || ({});
-        const value = Number(state.bar_transparency === undefined ? 0 : state.bar_transparency);
-        return Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 0;
-    }
-''',
-              '''    function rawBarTransparency(name) {
-        const value = Number(BarState.barTransparencyFor(name));
-        return Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 0;
-    }
-''',
-              'Bar settings live transparency reader'
-          )
-
-          replace_once(
-              settings,
-              '''    function runNextCommand() {
-        if (writer.running || commandQueue.length === 0)
-            return;
-        const next = commandQueue[0];
-        commandQueue = commandQueue.slice(1);
-        writer.exec(next);
-    }
-''',
-              '''    function runNextCommand() {
-        if (writer.running || commandQueue.length === 0)
-            return;
-        const next = commandQueue[0];
-        commandQueue = commandQueue.slice(1);
-        activeCommand = next;
-        writer.exec(next);
-    }
-''',
-              'Bar settings active command tracking'
-          )
-
-          replace_once(
-              settings,
-              '''    function setTransparencyPercent(value) {
-        const numeric = Number(value);
-        if (!Number.isFinite(numeric))
-            return;
-        const next = Math.max(0, Math.min(100, Math.round(numeric)));
-        message = "Bar transparency " + next + "%";
-        enqueue("settransparency", next);
-    }
-
-    function adjustTransparency(delta) {
-        setTransparencyPercent(baseBarTransparency() + delta);
-    }
-''',
-              '''    function clampTransparencyPercent(value) {
-        const numeric = Number(value);
-        if (!Number.isFinite(numeric))
-            return -1;
-        return Math.max(0, Math.min(100, Math.round(numeric)));
-    }
-
-    function previewTransparencyPercent(value) {
-        const next = clampTransparencyPercent(value);
-        if (next < 0 || !barTransparencyDragging)
-            return;
-        barTransparencyHoverPercent = next;
-        for (const target of barTransparencyDragTargets)
-            BarState.setLiveBarTransparency(target, next);
-    }
-
-    function beginTransparencyDrag(value) {
-        const targets = resolvedTargets();
-        if (targets.length === 0)
-            return;
-        barTransparencyDragTargets = targets.slice();
-        barTransparencyDragging = true;
-        previewTransparencyPercent(value);
-    }
-
-    function commitTransparencyDrag() {
-        if (!barTransparencyDragging)
-            return;
-        const value = clampTransparencyPercent(barTransparencyHoverPercent);
-        const targets = barTransparencyDragTargets.slice();
-        barTransparencyDragging = false;
-        barTransparencyDragTargets = [];
-        if (value < 0 || targets.length === 0)
-            return;
-        const next = commandQueue.slice();
-        for (const target of targets)
-            next.push([managerScript, "settransparency", target, String(value)]);
-        commandQueue = next;
-        message = "Bar transparency " + value + "%";
-        runNextCommand();
-    }
-
-    function cancelTransparencyDrag() {
-        for (const target of barTransparencyDragTargets)
-            BarState.clearLiveBarTransparency(target);
-        barTransparencyDragging = false;
-        barTransparencyDragTargets = [];
-        barTransparencyHoverPercent = -1;
-    }
-
-    function setTransparencyPercent(value) {
-        const next = clampTransparencyPercent(value);
-        if (next < 0)
-            return;
-        message = "Bar transparency " + next + "%";
-        enqueue("settransparency", next);
-    }
-
-    function adjustTransparency(delta) {
-        setTransparencyPercent(baseBarTransparency() + delta);
-    }
-''',
-              'Bar settings drag functions'
-          )
-
-          replace_once(
-              settings,
-              '''    Process {
-        id: writer
-        onExited: {
-            BarState.refresh();
-            root.runNextCommand();
-        }
-    }
-''',
-              '''    Process {
-        id: writer
-        onExited: {
-            const completed = root.activeCommand;
-            root.activeCommand = [];
-            BarState.refresh();
-            if (completed.length >= 3 && completed[1] === "settransparency")
-                Qt.callLater(() => BarState.clearLiveBarTransparency(String(completed[2])));
-            root.runNextCommand();
-        }
-    }
-''',
-              'Bar settings writer completion'
-          )
-
-          replace_once(
-              settings,
-              '''                Rectangle {
-                    id: barTransparencyTrack
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 24
-                    color: Theme.popupBackground
-                    border.width: 0
-
-                    Rectangle {
-                        width: root.transparencyPercent() >= 0
-                            ? parent.width * root.transparencyPercent() / 100 : 0
-                        height: parent.height
-                        color: Theme.focus
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onPositionChanged: mouse => root.barTransparencyHoverPercent = Math.max(0,
-                            Math.min(100, Math.round(mouse.x * 100 / width)))
-                        onExited: root.barTransparencyHoverPercent = -1
-                        onPressed: mouse => root.setTransparencyPercent(mouse.x * 100 / width)
-                    }
-                }
-
-                SettingsButton {
-                    label: "+5"
-                    textSize: 9
-                    onClicked: root.adjustTransparency(5)
-                }
-
-                Text {
-                    Layout.preferredWidth: 52
-                    text: root.barTransparencyHoverPercent >= 0
-                        ? root.barTransparencyHoverPercent + "%" : root.transparencyText()
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 10
-                    horizontalAlignment: Text.AlignHCenter
-                }
-''',
-              '''                Rectangle {
-                    id: barTransparencyTrack
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 24
-                    color: Theme.popupBackground
-                    border.width: 0
-
-                    Rectangle {
-                        width: root.transparencyPercent() >= 0
-                            ? parent.width * root.transparencyPercent() / 100 : 0
-                        height: parent.height
-                        color: Theme.focus
-                    }
-
-                    Rectangle {
-                        visible: root.barTransparencyHoverPercent >= 0
-                        width: 46
-                        height: 21
-                        x: Math.max(0, Math.min(parent.width - width,
-                            parent.width * root.barTransparencyHoverPercent / 100 - width / 2))
-                        y: -25
-                        color: Theme.background
-                        border.width: 1
-                        border.color: Theme.focus
-                        z: 4
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: root.barTransparencyHoverPercent + "%"
-                            color: Theme.foreground
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 9
-                        }
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onPositionChanged: mouse => {
-                            root.barTransparencyHoverPercent = Math.max(0,
-                                Math.min(100, Math.round(mouse.x * 100 / width)));
-                            if (pressed)
-                                root.previewTransparencyPercent(root.barTransparencyHoverPercent);
-                        }
-                        onExited: {
-                            if (!pressed)
-                                root.barTransparencyHoverPercent = -1;
-                        }
-                        onPressed: mouse => root.beginTransparencyDrag(mouse.x * 100 / width)
-                        onReleased: root.commitTransparencyDrag()
-                        onCanceled: root.cancelTransparencyDrag()
-                    }
-                }
-
-                SettingsButton {
-                    label: "+5"
-                    textSize: 9
-                    onClicked: root.adjustTransparency(5)
-                }
-''',
-              'Bar settings transparency slider'
-          )
+          old_tail = "\n                Text {\n                    Layout.preferredWidth: 52\n                    text: root.barTransparencyHoverPercent >= 0\n                        ? root.barTransparencyHoverPercent + \"%\" : root.transparencyText()\n                    color: Theme.foreground\n                    font.family: Theme.fontFamily\n                    font.pixelSize: 10\n                    horizontalAlignment: Text.AlignHCenter\n                }\n"
+          rep(settings, old_tail, "", "permanent transparency percentage")
           PY
 
       - name: Register managed stock hashes
