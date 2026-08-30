@@ -1,0 +1,80 @@
+name: Temporary Apply Bar Customize Split
+
+on:
+  push:
+    branches:
+      - feature/bar-transparency
+    paths:
+      - '.github/workflows/apply-bar-customize-split-temp.yml'
+      - '.github/scripts/apply_bar_customize_split.py'
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Apply approved changes
+        run: python3 .github/scripts/apply_bar_customize_split.py
+      - name: Diff check
+        run: git diff --check
+      - name: Bash syntax
+        run: |
+          bash -n config/hypr/scripts/quickshell_floating_windows.sh
+          bash -n tests/test-quick-settings-bar-customize-flow.sh
+          bash -n tests/test-quick-settings-theme-toggle.sh
+          bash -n tests/test-floating-windows-global-mode.sh
+          bash -n tests/test-floating-windows-quicksettings.sh
+          bash -n tests/test-quick-settings-settings-mode.sh
+          bash -n tests/test-quick-settings-layout.sh
+          bash -n tests/test-quick-settings-ux-flow.sh
+          bash -n tests/test-bar-transparency.sh
+          bash -n tests/test-bar-module-visibility.sh
+          bash -n tests/test-bar-icon-display-options.sh
+          bash -n tests/test-bar-icon-customization.sh
+          bash -n tests/test-notification-hide-history.sh
+      - name: ShellCheck
+        run: |
+          shellcheck config/hypr/scripts/quickshell_floating_windows.sh
+          shellcheck tests/test-quick-settings-bar-customize-flow.sh
+          shellcheck tests/test-quick-settings-theme-toggle.sh
+          shellcheck tests/test-floating-windows-global-mode.sh
+          shellcheck tests/test-floating-windows-quicksettings.sh
+          shellcheck tests/test-quick-settings-settings-mode.sh
+          shellcheck tests/test-quick-settings-layout.sh
+          shellcheck tests/test-quick-settings-ux-flow.sh
+          shellcheck tests/test-bar-transparency.sh
+          shellcheck tests/test-bar-module-visibility.sh
+          shellcheck tests/test-bar-icon-display-options.sh
+          shellcheck tests/test-bar-icon-customization.sh
+          shellcheck tests/test-notification-hide-history.sh
+      - name: Focused and neighboring regressions
+        run: |
+          bash tests/test-quick-settings-bar-customize-flow.sh
+          bash tests/test-quick-settings-theme-toggle.sh
+          bash tests/test-floating-windows-global-mode.sh
+          bash tests/test-floating-windows-quicksettings.sh
+          bash tests/test-quick-settings-settings-mode.sh
+          bash tests/test-quick-settings-layout.sh
+          bash tests/test-quick-settings-ux-flow.sh
+          bash tests/test-bar-transparency.sh
+          bash tests/test-bar-module-visibility.sh
+          bash tests/test-bar-icon-display-options.sh
+          bash tests/test-bar-icon-customization.sh
+          bash tests/test-notification-hide-history.sh
+      - name: Commit production changes
+        run: |
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add \
+            config/quickshell/awtarchy/QuickSettings.qml \
+            config/quickshell/awtarchy/ThemePicker.qml \
+            config/hypr/scripts/quickshell_floating_windows.sh \
+            local/share/awtarchy/quickshell-managed-history.sha256
+          git diff --cached --quiet && exit 1
+          git commit -m 'Refine Bar customization controls'
+          git push origin HEAD:feature/bar-transparency
