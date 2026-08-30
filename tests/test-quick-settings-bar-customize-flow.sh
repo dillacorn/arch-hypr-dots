@@ -7,6 +7,7 @@ QUICK="$ROOT/config/quickshell/awtarchy/QuickSettings.qml"
 FLYOUT="$ROOT/config/quickshell/awtarchy/FlyoutSettings.qml"
 DISPLAY_SCALE="$ROOT/config/quickshell/awtarchy/DisplayScaleSettings.qml"
 BAR_SETTINGS="$ROOT/config/quickshell/awtarchy/BarSettingsSection.qml"
+THEME_PICKER="$ROOT/config/quickshell/awtarchy/ThemePicker.qml"
 POSITION="$ROOT/config/hypr/scripts/quickshell_flyout_position.sh"
 
 fail() {
@@ -63,6 +64,19 @@ if 'root.barAppearanceOpen = !root.barAppearanceOpen;' not in appearance_block:
 if 'root.barIconsOpen = false;' not in appearance_block:
     raise SystemExit(1)
 PY
+
+contains "$THEME_PICKER" 'readonly property bool open: pickerWindow.visible' \
+    'Theme Picker does not expose its open state to the Quick Settings Themes button'
+contains "$THEME_PICKER" 'function toggleForScreen(target)' \
+    'Theme Picker cannot toggle itself for the current Quick Settings display'
+contains "$THEME_PICKER" 'function toggleFocused() { toggleForScreen(focusedScreen()); }' \
+    'Theme Picker focused toggle does not share the screen-aware toggle path'
+contains "$QUICK" 'ThemePicker.toggleForScreen(activeScreen);' \
+    'Quick Settings Themes action still only opens instead of toggling the Theme Picker'
+contains "$QUICK" 'active: ThemePicker.open' \
+    'Quick Settings Themes button does not visually reflect an open Theme Picker'
+not_contains "$QUICK" 'ThemePicker.openForScreen(activeScreen);' \
+    'Quick Settings Themes action still uses the one-way open path'
 
 python3 - "$QUICK" <<'PY' || fail 'closing Quick Settings does not reset all transient customization state'
 from pathlib import Path
@@ -168,4 +182,4 @@ if 'root.layoutEditorOpen = true;' not in block:
     raise SystemExit(1)
 PY
 
-printf '%s\n' 'PASS: Quick Settings uses separate Icons and Appearance expansions, compact settings, inline copy targets, and complete transient reset.'
+printf '%s\n' 'PASS: Quick Settings uses separate Icons/Appearance expansions, toggleable Themes, compact settings, inline copy targets, and complete transient reset.'
