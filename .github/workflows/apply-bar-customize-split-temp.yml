@@ -75,7 +75,8 @@ jobs:
             config/quickshell/awtarchy/QuickSettings.qml \
             config/quickshell/awtarchy/ThemePicker.qml \
             config/hypr/scripts/quickshell_floating_windows.sh \
-            local/share/awtarchy/quickshell-managed-history.sha256
+            local/share/awtarchy/quickshell-managed-history.sha256 \
+            tests/test-bar-icon-customization.sh
           git diff --cached --quiet && exit 1
           git commit -m 'Refine Bar customization controls'
           git push origin HEAD:feature/bar-transparency
