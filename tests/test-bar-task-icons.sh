@@ -30,6 +30,10 @@ do
 done
 contains "$BAR_QML" 'if (isAwtarchyFlyout(toplevel))' \
     'Awtarchy flyouts are not rejected before task rendering'
+contains "$BAR_QML" 'const taskTitle = String(toplevel.title || "").trim();' \
+    'Task filtering does not use HyprlandToplevel.title directly'
+contains "$BAR_QML" 'if (taskTitle.length === 0)' \
+    'Untitled toplevels can still become task-strip entries'
 contains "$BAR_QML" 'if (toplevel.wayland && toplevel.wayland.parent)' \
     'Parented transient/dialog toplevels are not filtered from task rendering'
 contains "$BAR_QML" 'function isXwaylandPopupHelper(toplevel)' \
@@ -70,4 +74,4 @@ contains "$BAR_QML" 'wayland.minimized = true;' \
 contains "$BAR_QML" 'wayland.activate();' \
     'task icon activation behavior disappeared'
 
-printf '%s\n' 'PASS: Awtarchy flyouts, parented transients, and untitled XWayland helpers stay out of the task strip while real titled app windows remain eligible.'
+printf '%s\n' 'PASS: Awtarchy keeps untitled transient/helper toplevels out of the task strip while real titled app windows remain eligible.'
