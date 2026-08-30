@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 QUICK = ROOT / "config/quickshell/awtarchy/QuickSettings.qml"
 THEME_PICKER = ROOT / "config/quickshell/awtarchy/ThemePicker.qml"
 FLOATING = ROOT / "config/hypr/scripts/quickshell_floating_windows.sh"
+BAR_ICON_TEST = ROOT / "tests/test-bar-icon-customization.sh"
 HISTORY = ROOT / "local/share/awtarchy/quickshell-managed-history.sha256"
 
 
@@ -193,6 +194,27 @@ floating = replace_exact(
     label="Floating notification identity and timeout",
 )
 FLOATING.write_text(floating)
+
+bar_icon_test = BAR_ICON_TEST.read_text()
+bar_icon_test = replace_exact(
+    bar_icon_test,
+    "contains \"$QUICK_SETTINGS\" 'property bool barCustomizeOpen: false' \\\n    'Quick Settings does not own transient Bar customization expansion state'\n",
+    "contains \"$QUICK_SETTINGS\" 'property bool barIconsOpen: false' \\\n    'Quick Settings does not own the dedicated Bar Icons expansion state'\n",
+    label="Legacy Bar icon expansion property assertion",
+)
+bar_icon_test = replace_exact(
+    bar_icon_test,
+    "contains \"$QUICK_SETTINGS\" 'label: \"Customize…\"' \\\n    'Bar section does not expose the unified customization editor'\n",
+    "contains \"$QUICK_SETTINGS\" 'label: \"Icons\"' \\\n    'Bar section does not expose the dedicated icon customization editor'\n",
+    label="Legacy Bar icon button assertion",
+)
+bar_icon_test = replace_exact(
+    bar_icon_test,
+    "contains \"$QUICK_SETTINGS\" 'visible: root.barCustomizeOpen' \\\n    'Bar icon editor cannot collapse back to the compact Bar card'\n",
+    "contains \"$QUICK_SETTINGS\" 'visible: root.barIconsOpen' \\\n    'Bar icon editor cannot collapse behind the dedicated Icons button'\n",
+    label="Legacy Bar icon visibility assertion",
+)
+BAR_ICON_TEST.write_text(bar_icon_test)
 
 history = HISTORY.read_text()
 if history and not history.endswith("\n"):
