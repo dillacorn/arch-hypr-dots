@@ -16,6 +16,7 @@ PanelWindow {
     required property var modelData
 
     WlrLayershell.namespace: "awtarchy-bar"
+    surfaceFormat.opaque: false
 
     screen: modelData
     readonly property string monitorName: modelData ? modelData.name : ""
