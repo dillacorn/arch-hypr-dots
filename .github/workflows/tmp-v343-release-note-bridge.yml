@@ -1,0 +1,93 @@
+name: Temporary v3.4.3 Release Note Bridge
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  update-release-note:
+    if: github.event.pull_request.number == 99 && github.event.pull_request.head.ref == 'tmp/v343-transient-release-note' && github.event.pull_request.title == 'Temporary v3.4.3 release note bridge'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: tmp/v343-transient-release-note
+          fetch-depth: 0
+
+      - name: Update and verify v3.4.3 post-release note
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          tag='v3.4.3'
+          expected_tag_sha='155207b6891ccc4ecd119ecaea15910f6e0b2e9c'
+          before='/tmp/v343-release-before.json'
+          after='/tmp/v343-release-after.json'
+          body_file='/tmp/v343-release-body.md'
+
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" >"$before"
+          tag_before="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" --jq '.object.sha')"
+          [[ "$tag_before" == "$expected_tag_sha" ]]
+
+          python3 - "$before" "$body_file" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          before_path = Path(sys.argv[1])
+          body_path = Path(sys.argv[2])
+          release = json.loads(before_path.read_text(encoding="utf-8"))
+          body = release["body"]
+          placeholder = "_Placeholder for possible tested post-release patches to v3.4.3._"
+          replacement = """### Transient task icon filtering
+
+          - Quickshell's application task strip now ignores untitled transient/helper windows instead of treating them as runnable applications.
+          - This prevents temporary generic cog icons from appearing when hovering or opening Steam's XWayland menus while keeping titled Steam windows, including the main client and Friends List, visible.
+          - The v3.4.3 updater applies the tested repair to the generated release target before baseline comparison. The repair is scoped to v3.4.3 and is idempotent.
+          - Real-session testing confirmed the Steam task icon and Friends List remain visible while the transient menu cog icons no longer appear.
+          """
+
+          if body.count(placeholder) != 1:
+              raise SystemExit("v3.4.3 post-release placeholder is missing or duplicated")
+
+          body_path.write_text(body.replace(placeholder, replacement.rstrip()), encoding="utf-8")
+          PY
+
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file "$body_file"
+
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" >"$after"
+          tag_after="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" --jq '.object.sha')"
+          [[ "$tag_after" == "$expected_tag_sha" ]]
+          [[ "$tag_after" == "$tag_before" ]]
+
+          python3 - "$before" "$after" "$body_file" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          before = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          after = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+          expected_body = Path(sys.argv[3]).read_text(encoding="utf-8")
+
+          for key in ("id", "tag_name", "target_commitish", "name", "draft", "prerelease", "immutable"):
+              if before.get(key) != after.get(key):
+                  raise SystemExit(f"release metadata changed unexpectedly: {key}")
+
+          if after.get("body") != expected_body:
+              raise SystemExit("published v3.4.3 release body does not match the intended body")
+          if "_Placeholder for possible tested post-release patches to v3.4.3._" in after.get("body", ""):
+              raise SystemExit("v3.4.3 post-release placeholder still exists")
+          if "### Transient task icon filtering" not in after.get("body", ""):
+              raise SystemExit("v3.4.3 transient task post-release note is missing")
+          PY
+
+      - name: Remove one-use helper branch
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/tmp/v343-transient-release-note"
