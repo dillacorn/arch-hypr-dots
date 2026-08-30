@@ -8,6 +8,7 @@ HYPR_LUA="$ROOT/config/hypr/hyprland.lua"
 BAR="$ROOT/config/quickshell/awtarchy/Bar.qml"
 CARD="$ROOT/config/quickshell/awtarchy/FloatingWindowsCard.qml"
 STATE_QML="$ROOT/config/quickshell/awtarchy/FloatingWindowsState.qml"
+HISTORY="$ROOT/local/share/awtarchy/quickshell-managed-history.sha256"
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
@@ -57,9 +58,10 @@ if grep -Fq 'interval: 3000' "$CARD"; then
     fail 'Quick Settings Floating Windows card still polls status every 3 seconds'
 fi
 
-indicator_count="$(grep -Fc 'label: "Floating"' "$BAR" || true)"
-[[ "$indicator_count" == 2 ]] \
-    || fail 'horizontal and vertical bars must both expose the Floating indicator'
+contains "$BAR" 'label: "Floating"' \
+    'horizontal bar does not expose the persistent Floating indicator'
+contains "$BAR" 'label: "Float"' \
+    'vertical bar does not expose a compact floating-mode indicator'
 visible_count="$(grep -Fc 'visible: FloatingWindowsState.enabled' "$BAR" || true)"
 [[ "$visible_count" == 2 ]] \
     || fail 'Floating bar indicators must only appear while global floating-spawn mode is enabled'
@@ -139,5 +141,21 @@ contains "$TEST_LUA" 'local awtarchy_floating_windows = false -- AWTARCHY_FLOATI
     'second toggle did not persist the disabled marker'
 contains "$NOTIFY_LOG" 'Floating windows disabled' \
     'keyboard notification did not report disabled state'
+
+missing_history=0
+for rel in \
+    .config/quickshell/awtarchy/Bar.qml \
+    .config/quickshell/awtarchy/FloatingWindowsCard.qml \
+    .config/quickshell/awtarchy/FloatingWindowsState.qml
+do
+    source_file="$ROOT/config/${rel#.config/}"
+    digest="$(sha256sum "$source_file" | awk '{print $1}')"
+    if ! grep -Fq -- "$digest"$'\t'"$rel" "$HISTORY"; then
+        printf 'MISSING_MANAGED_HASH %s\t%s\n' "$digest" "$rel" >&2
+        missing_history=1
+    fi
+done
+(( missing_history == 0 )) \
+    || fail 'managed history is missing current global Floating Windows QML hashes'
 
 printf '%s\n' 'PASS: global Floating Windows mode has one shared state, keyboard toggle, and clickable bar escape hatch.'
