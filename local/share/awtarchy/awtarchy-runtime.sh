@@ -7452,6 +7452,47 @@ if move_block not in shell_text:
 PY_WORKSPACE_FOCUS
   log "Applied v3.4.2 workspace-focus post-release repair to generated target."
 }
+repair_v343_transient_task_icons_target() {
+  local target_home="$1" tag="$2"
+  local bar_file="${target_home}/.config/quickshell/awtarchy/Bar.qml"
+
+  [[ "$tag" == "v3.4.3" ]] || return 0
+  [[ -f "$bar_file" && ! -L "$bar_file" ]] \
+    || die "v3.4.3 post-release Bar target is unavailable."
+
+  python3 - "$bar_file" <<'PY_TRANSIENT_TASK_ICONS'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+guard = '''        const taskTitle = String(toplevel.title || "").trim();
+        if (taskTitle.length === 0)
+            return false;
+'''
+if guard in text:
+    raise SystemExit(0)
+
+anchor = '''        if (!toplevel || !toplevel.monitor || toplevel.monitor.name !== monitorName)
+            return false;
+        if (isAwtarchyFlyout(toplevel))
+            return false;
+'''
+replacement = '''        if (!toplevel || !toplevel.monitor || toplevel.monitor.name !== monitorName)
+            return false;
+        const taskTitle = String(toplevel.title || "").trim();
+        if (taskTitle.length === 0)
+            return false;
+        if (isAwtarchyFlyout(toplevel))
+            return false;
+'''
+if text.count(anchor) != 1:
+    raise SystemExit("v3.4.3 transient-task repair anchor mismatch")
+path.write_text(text.replace(anchor, replacement, 1), encoding="utf-8")
+PY_TRANSIENT_TASK_ICONS
+  log "Applied v3.4.3 transient-task-icon post-release repair to generated target."
+}
+
 prepare_quickshell_update_target() {
   local target_home="$1" rel
 
@@ -8135,6 +8176,7 @@ main() {
   prepare_quickshell_update_target "$target_home"
   repair_v342_mouse_submap_target "$target_home" "$tag"
   repair_v342_workspace_focus_target "$target_home" "$tag"
+  repair_v343_transient_task_icons_target "$target_home" "$tag"
 
   bootstrap_previous_baseline "$active_theme"
   augment_baseline_from_local_git_history "$target_home"

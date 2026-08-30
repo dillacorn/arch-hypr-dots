@@ -126,6 +126,9 @@ PanelWindow {
     function toplevelVisibleHere(toplevel) {
         if (!toplevel || !toplevel.monitor || toplevel.monitor.name !== monitorName)
             return false;
+        const taskTitle = String(toplevel.title || "").trim();
+        if (taskTitle.length === 0)
+            return false;
         if (isAwtarchyFlyout(toplevel))
             return false;
         const ipc = toplevel.lastIpcObject || {};
