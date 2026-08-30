@@ -43,7 +43,7 @@ jobs:
           runtime = runtime_path.read_text(encoding='utf-8')
           function_name = 'repair_v343_transient_task_icons_target()'
           if function_name not in runtime:
-              function_text = r'''repair_v343_transient_task_icons_target() {
+              function_text = r"""repair_v343_transient_task_icons_target() {
             local target_home="$1" tag="$2"
             local bar_file="${target_home}/.config/quickshell/awtarchy/Bar.qml"
 
@@ -84,7 +84,7 @@ jobs:
             log "Applied v3.4.3 transient-task-icon post-release repair to generated target."
           }
 
-          '''
+          """
               anchor = 'prepare_quickshell_update_target() {'
               if runtime.count(anchor) != 1:
                   raise SystemExit('could not locate Quickshell target preparation function')
