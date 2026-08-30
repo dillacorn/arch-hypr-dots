@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import hashlib
 
 path = Path("config/hypr/scripts/quickshell_floating_windows.sh")
+history_path = Path("local/share/awtarchy/quickshell-managed-history.sha256")
 text = path.read_text()
 old = r'''notify=0
 case "${1:-}" in
@@ -74,3 +76,12 @@ esac
 if text.count(old) != 1:
     raise SystemExit("expected one generated floating helper CLI block")
 path.write_text(text.replace(old, new, 1))
+
+digest = hashlib.sha256(path.read_bytes()).hexdigest()
+entry = f"{digest}\t.config/hypr/scripts/quickshell_floating_windows.sh"
+history = history_path.read_text()
+if entry not in history.splitlines():
+    if history and not history.endswith("\n"):
+        history += "\n"
+    history += entry + "\n"
+    history_path.write_text(history)
