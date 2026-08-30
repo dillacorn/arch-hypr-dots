@@ -128,6 +128,8 @@ PanelWindow {
             return false;
         if (isAwtarchyFlyout(toplevel))
             return false;
+        if (toplevel.wayland && toplevel.wayland.parent)
+            return false;
         const ipc = toplevel.lastIpcObject || {};
         const cls = String(ipc.class || ipc.initialClass || "").toLowerCase();
         const ignored = ["tofi", "rofi", "hyprlock", "swaylock", "swww", "mpvpaper", "pulsemixer", "org.waytrogen.waytrogen", "org.pulseaudio.pavucontrol", "wiremix", "quickshell", "awtarchy-polkit-agent"];
