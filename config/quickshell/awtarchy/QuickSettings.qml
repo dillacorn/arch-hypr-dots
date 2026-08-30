@@ -1028,6 +1028,36 @@ Singleton {
                             onClicked: root.toggleSettings()
                         }
                     }
+
+                    Rectangle {
+                        id: closeButton
+                        width: 28
+                        height: 28
+                        anchors.right: parent.right
+                        anchors.rightMargin: 6
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: closeMouse.containsMouse ? Theme.focus : Theme.active
+                        border.width: 1
+                        border.color: closeMouse.containsMouse ? Theme.focus : Theme.muted
+                        radius: 0
+                        z: 20
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "×"
+                            color: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.pixelSize: root.scaledIcon(15)
+                        }
+
+                        MouseArea {
+                            id: closeMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.close()
+                        }
+                    }
                 }
 
                 Rectangle {
@@ -2270,34 +2300,6 @@ Singleton {
                 }
             }
 
-            Rectangle {
-                width: 28
-                height: 28
-                anchors.right: panel.right
-                anchors.rightMargin: 6
-                anchors.verticalCenter: headerBar.verticalCenter
-                color: closeMouse.containsMouse ? Theme.focus : Theme.active
-                border.width: 1
-                border.color: closeMouse.containsMouse ? Theme.focus : Theme.muted
-                radius: 0
-                z: 20
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "×"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: root.scaledIcon(15)
-                }
-
-                MouseArea {
-                    id: closeMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.close()
-                }
-            }
         }
     }
 }
