@@ -30,6 +30,8 @@ do
 done
 contains "$BAR_QML" 'if (isAwtarchyFlyout(toplevel))' \
     'Awtarchy flyouts are not rejected before task rendering'
+contains "$BAR_QML" 'if (toplevel.wayland && toplevel.wayland.parent)' \
+    'Parented transient/dialog toplevels are not filtered from task rendering'
 
 # Native icon sources remain authoritative. Theme coloring is optional and is
 # enabled only by the per-monitor state, so the stock false default preserves
@@ -56,4 +58,4 @@ contains "$BAR_QML" 'wayland.minimized = true;' \
 contains "$BAR_QML" 'wayland.activate();' \
     'task icon activation behavior disappeared'
 
-printf '%s\n' 'PASS: Awtarchy flyouts stay out of the task strip while task/tray icons preserve native sources and support optional theme coloring.'
+printf '%s\n' 'PASS: Awtarchy flyouts and parented transient/dialog windows stay out of the task strip while task/tray icons preserve native sources and support optional theme coloring.'
