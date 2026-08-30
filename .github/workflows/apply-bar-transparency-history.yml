@@ -1,58 +1,19 @@
-name: Finalize Bar Transparency Implementation
+name: Validate Bar Transparency Regression Suite
 
 on:
-  push:
-    branches:
-      - feature/bar-transparency
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  apply:
-    if: github.event.head_commit.message == 'Finalize bar transparency implementation'
-    permissions:
-      contents: write
+  bar-regressions:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-        with:
-          ref: feature/bar-transparency
-      - name: Apply implementation payload
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-          import base64
-
-          workflow = Path('.github/workflows/validate-bar-transparency.yml').read_text(encoding='utf-8')
-          marker = "printf '%s' '"
-          suffix = "' | base64 -d >/tmp/apply-bar-transparency.py"
-          payload = None
-          for line in workflow.splitlines():
-              if marker in line and suffix in line:
-                  payload = line.split(marker, 1)[1].split("'", 1)[0]
-                  break
-          if not payload:
-              raise SystemExit('could not locate bar transparency implementation payload')
-          Path('/tmp/apply-bar-transparency.py').write_bytes(base64.b64decode(payload))
-          PY
-          python3 /tmp/apply-bar-transparency.py
-      - name: Register managed stock hashes
-        run: |
-          history='local/share/awtarchy/quickshell-managed-history.sha256'
-          while IFS='|' read -r source rel; do
-            digest="$(sha256sum "$source" | awk '{print $1}')"
-            entry="${digest}"$'\t'"${rel}"
-            grep -Fxq -- "$entry" "$history" || printf '%s\n' "$entry" >>"$history"
-          done <<'EOF_HISTORY'
-          config/hypr/scripts/quickshell.sh|.config/hypr/scripts/quickshell.sh
-          config/quickshell/awtarchy/BarState.qml|.config/quickshell/awtarchy/BarState.qml
-          config/quickshell/awtarchy/Bar.qml|.config/quickshell/awtarchy/Bar.qml
-          config/quickshell/awtarchy/BarSettingsSection.qml|.config/quickshell/awtarchy/BarSettingsSection.qml
-          EOF_HISTORY
       - name: Install validation tools
         run: sudo apt-get update && sudo apt-get install -y jq shellcheck
-      - name: Validate implementation before commit
+      - name: Validate bar regression suite
         run: |
           git diff --check
           bash -n config/hypr/scripts/quickshell.sh
@@ -63,26 +24,3 @@ jobs:
           bash tests/test-bar-icon-customization.sh
           bash tests/test-bar-icon-display-options.sh
           bash tests/test-bar-task-icons.sh
-      - name: Commit implementation
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add config/hypr/scripts/quickshell.sh \
-            config/quickshell/awtarchy/BarState.qml \
-            config/quickshell/awtarchy/Bar.qml \
-            config/quickshell/awtarchy/BarSettingsSection.qml \
-            local/share/awtarchy/quickshell-managed-history.sha256
-          git commit -m 'Add bar transparency control'
-          git push origin HEAD:feature/bar-transparency
-
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-      - name: Install validation tools
-        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
-      - name: Validate focused test
-        run: |
-          bash -n tests/test-bar-transparency.sh
-          shellcheck tests/test-bar-transparency.sh
-          bash tests/test-bar-transparency.sh
