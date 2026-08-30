@@ -118,6 +118,16 @@ Singleton {
         if (settingsOpen)
             Qt.callLater(() => resizeForSettingsMode());
     }
+    onPlacementChanged: {
+        if (!quickSettingsWindow.visible || openPreparing)
+            return;
+        Qt.callLater(() => {
+            if (root.settingsOpen)
+                root.resizeForSettingsMode();
+            else
+                root.positionWindow();
+        });
+    }
 
     function emptyStatus() {
         return ({
@@ -952,7 +962,8 @@ Singleton {
         surfaceFormat.opaque: false
         implicitWidth: root.configuredPanelWidth
         implicitHeight: root.settingsOpen ? root.settingsModePanelHeight : root.configuredPanelHeight
-        minimumSize: Qt.size(root.minimumPanelWidth, root.minimumPanelHeight)
+        minimumSize: Qt.size(root.minimumPanelWidth,
+            root.settingsOpen ? root.minimumSettingsPanelHeight : root.minimumPanelHeight)
         maximumSize: Qt.size(root.maximumPanelWidth, root.maximumPanelHeight)
 
         onClosed: root.close()
@@ -1134,7 +1145,10 @@ Singleton {
                         onCaptureToggleRequested: root.toggleCaptureAllowed()
                         onCopyRequested: monitorNames => root.copyDisplaySettings(monitorNames)
                         onThemePickerRequested: root.openThemeMenu()
-                        onLayoutEditorRequested: root.layoutEditorOpen = true
+                        onLayoutEditorRequested: {
+                            settingsPanel.resetCopySelection();
+                            root.layoutEditorOpen = true;
+                        }
                     }
 
                     QuickSettingsLayoutEditor {
