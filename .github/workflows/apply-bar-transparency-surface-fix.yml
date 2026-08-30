@@ -1,0 +1,62 @@
+name: Apply Bar Transparency Surface Fix
+
+on:
+  push:
+    branches:
+      - feature/bar-transparency
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    if: github.event.head_commit.message == 'Apply alpha-capable bar surface fix'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/bar-transparency
+      - name: Request alpha-capable bar surface
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('config/quickshell/awtarchy/Bar.qml')
+          text = path.read_text(encoding='utf-8')
+          old = '    WlrLayershell.namespace: "awtarchy-bar"\n\n    screen: modelData\n'
+          new = '    WlrLayershell.namespace: "awtarchy-bar"\n    surfaceFormat.opaque: false\n\n    screen: modelData\n'
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one Bar.qml surface anchor')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: Register managed stock hash
+        run: |
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          source='config/quickshell/awtarchy/Bar.qml'
+          rel='.config/quickshell/awtarchy/Bar.qml'
+          digest="$(sha256sum "$source" | awk '{print $1}')"
+          entry="${digest}"$'\t'"${rel}"
+          grep -Fxq -- "$entry" "$history" || printf '%s\n' "$entry" >>"$history"
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+      - name: Validate fix
+        run: |
+          git diff --check
+          bash -n config/hypr/scripts/quickshell.sh
+          bash -n tests/test-bar-transparency.sh
+          shellcheck tests/test-bar-transparency.sh
+          bash tests/test-bar-transparency.sh
+          bash tests/test-bar-module-visibility.sh
+          bash tests/test-bar-icon-customization.sh
+          bash tests/test-bar-icon-display-options.sh
+          bash tests/test-bar-task-icons.sh
+      - name: Commit fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add config/quickshell/awtarchy/Bar.qml \
+            local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'Fix live bar transparency'
+          git push origin HEAD:feature/bar-transparency
