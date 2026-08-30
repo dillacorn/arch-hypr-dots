@@ -940,7 +940,7 @@ hl.define_submap("noalt", function()
         { "SUPER + ALT + CTRL + B", bar_toggle },
         { "SUPER + CTRL + B", bar_flip },
         { "SUPER + A", toggle_animations },
-    { "SUPER + ALT + F", floating_windows_toggle },
+        { "SUPER + ALT + F", floating_windows_toggle },
     }) do
         hl.bind(bind[1], hl.dsp.exec_cmd(bind[2]), {})
     end
