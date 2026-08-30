@@ -37,7 +37,8 @@ Singleton {
     property string nightLightScheduleError: ""
     property bool settingsOpen: false
     property bool layoutEditorOpen: false
-    property bool barCustomizeOpen: false
+    property bool barIconsOpen: false
+    property bool barAppearanceOpen: false
     property var layoutOrderDraft: []
     property var layoutHiddenDraft: []
     property var savedLayout: ({ order: [], hidden: [] })
@@ -563,7 +564,7 @@ Singleton {
     }
 
     function openThemeMenu() {
-        ThemePicker.openForScreen(activeScreen);
+        ThemePicker.toggleForScreen(activeScreen);
     }
 
     function toggleNumlockSessionStart() {
@@ -730,7 +731,8 @@ Singleton {
         settingsOpen = !settingsOpen;
         layoutEditorOpen = false;
         if (settingsOpen) {
-            barCustomizeOpen = false;
+            barIconsOpen = false;
+            barAppearanceOpen = false;
             barAppearanceSettings.resetTransientState();
         }
         settingsPanel.resetTransientState();
@@ -749,7 +751,8 @@ Singleton {
         brightnessTarget = targetScreen.name;
         settingsOpen = false;
         layoutEditorOpen = false;
-        barCustomizeOpen = false;
+        barIconsOpen = false;
+        barAppearanceOpen = false;
         settingsPanel.resetTransientState();
         barAppearanceSettings.resetTransientState();
         settingsMessage = "";
@@ -774,7 +777,8 @@ Singleton {
         FlyoutManager.release("quick-settings");
         settingsOpen = false;
         layoutEditorOpen = false;
-        barCustomizeOpen = false;
+        barIconsOpen = false;
+        barAppearanceOpen = false;
         settingsPanel.resetTransientState();
         barAppearanceSettings.resetTransientState();
         settingsMessage = "";
@@ -1487,17 +1491,32 @@ Singleton {
 
                                     SettingsButton {
                                         label: "Themes"
+                                        active: ThemePicker.open
                                         textSize: root.scaledText(9)
                                         onClicked: root.openThemeMenu()
                                     }
 
                                     SettingsButton {
-                                        label: "Customize…"
-                                        active: root.barCustomizeOpen
+                                        label: "Icons"
+                                        active: root.barIconsOpen
                                         textSize: root.scaledText(9)
                                         onClicked: {
-                                            root.barCustomizeOpen = !root.barCustomizeOpen;
-                                            if (!root.barCustomizeOpen)
+                                            root.barIconsOpen = !root.barIconsOpen;
+                                            root.barAppearanceOpen = false;
+                                            barAppearanceSettings.resetTransientState();
+                                            if (root.bottomEdgeLayout)
+                                                Qt.callLater(() => root.alignContentToBar());
+                                        }
+                                    }
+
+                                    SettingsButton {
+                                        label: "Appearance"
+                                        active: root.barAppearanceOpen
+                                        textSize: root.scaledText(9)
+                                        onClicked: {
+                                            root.barAppearanceOpen = !root.barAppearanceOpen;
+                                            root.barIconsOpen = false;
+                                            if (!root.barAppearanceOpen)
                                                 barAppearanceSettings.resetTransientState();
                                             if (root.bottomEdgeLayout)
                                                 Qt.callLater(() => root.alignContentToBar());
@@ -1546,44 +1565,21 @@ Singleton {
                                     }
                                 }
 
-                                ColumnLayout {
+                                BarIconSettings {
                                     Layout.fillWidth: true
-                                    visible: root.barCustomizeOpen
-                                    spacing: 6
+                                    visible: root.barIconsOpen
+                                }
 
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: "Icons"
-                                        color: Theme.foreground
-                                        font.family: Theme.fontFamily
-                                        font.pixelSize: root.scaledText(10)
-                                        font.bold: true
-                                    }
-
-                                    BarIconSettings {
-                                        Layout.fillWidth: true
-                                        visible: root.barCustomizeOpen
-                                    }
-
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: "Appearance"
-                                        color: Theme.foreground
-                                        font.family: Theme.fontFamily
-                                        font.pixelSize: root.scaledText(10)
-                                        font.bold: true
-                                    }
-
-                                    BarSettingsSection {
-                                        id: barAppearanceSettings
-                                        Layout.fillWidth: true
-                                        active: quickSettingsWindow.visible
-                                            && root.quickSettingsSectionVisible("bar")
-                                            && root.barCustomizeOpen
-                                        monitorName: root.activeMonitorName
-                                        monitorNames: [root.activeMonitorName]
-                                            .concat(root.otherMonitorNames())
-                                    }
+                                BarSettingsSection {
+                                    id: barAppearanceSettings
+                                    Layout.fillWidth: true
+                                    visible: root.barAppearanceOpen
+                                    active: quickSettingsWindow.visible
+                                        && root.quickSettingsSectionVisible("bar")
+                                        && root.barAppearanceOpen
+                                    monitorName: root.activeMonitorName
+                                    monitorNames: [root.activeMonitorName]
+                                        .concat(root.otherMonitorNames())
                                 }
                             }
                         }

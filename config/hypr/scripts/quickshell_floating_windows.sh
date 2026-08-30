@@ -25,7 +25,7 @@ publish_state() {
 notify_state() {
     local state="$1"
     if [[ -x "$NOTIFY_SEND" ]] || command -v "$NOTIFY_SEND" >/dev/null 2>&1; then
-        "$NOTIFY_SEND" -a Awtarchy -t 1500 "Floating windows" "$state" >/dev/null 2>&1 || true
+        "$NOTIFY_SEND" -a Hyprland -t 1000 "Floating windows" "$state" >/dev/null 2>&1 || true
     fi
 }
 

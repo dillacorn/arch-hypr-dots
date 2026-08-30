@@ -242,14 +242,14 @@ contains "$BAR_QML" 'label: BarState.workspaceVerticalLabelFor(modelData.id)' \
 if grep -Fq 'BarIconSettings {' "$BAR_SETTINGS"; then
     fail 'large icon editor is still hosted inside the non-scrolling flyout settings panel'
 fi
-contains "$QUICK_SETTINGS" 'property bool barCustomizeOpen: false' \
-    'Quick Settings does not own transient Bar customization expansion state'
-contains "$QUICK_SETTINGS" 'label: "Customize…"' \
-    'Bar section does not expose the unified customization editor'
+contains "$QUICK_SETTINGS" 'property bool barIconsOpen: false' \
+    'Quick Settings does not own the dedicated Bar Icons expansion state'
+contains "$QUICK_SETTINGS" 'label: "Icons"' \
+    'Bar section does not expose the dedicated icon customization editor'
 contains "$QUICK_SETTINGS" 'BarIconSettings {' \
     'Bar icon customization is not hosted inside the main scrolling Quick Settings content'
-contains "$QUICK_SETTINGS" 'visible: root.barCustomizeOpen' \
-    'Bar icon editor cannot collapse back to the compact Bar card'
+contains "$QUICK_SETTINGS" 'visible: root.barIconsOpen' \
+    'Bar icon editor cannot collapse behind the dedicated Icons button'
 contains "$BAR_ICON_SETTINGS" 'readonly property string identityStateScript:' \
     'Bar icon settings have no direct global identity-state writer path'
 contains "$BAR_ICON_SETTINGS" 'model: BarState.workspaceIconStylePresets' \

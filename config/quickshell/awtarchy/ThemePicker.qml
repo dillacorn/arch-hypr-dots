@@ -15,6 +15,7 @@ Singleton {
     property string activeThemeName: ""
     property int selectedIndex: -1
     property string catalogError: ""
+    readonly property bool open: pickerWindow.visible
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")
@@ -128,7 +129,15 @@ Singleton {
         search.text = "";
     }
 
-    function toggleFocused() { pickerWindow.visible ? close() : openFocused(); }
+    function toggleForScreen(target) {
+        if (pickerWindow.visible) {
+            close();
+            return;
+        }
+        openForScreen(target);
+    }
+
+    function toggleFocused() { toggleForScreen(focusedScreen()); }
 
     function applySelectedTheme() {
         const selected = selectedTheme();
