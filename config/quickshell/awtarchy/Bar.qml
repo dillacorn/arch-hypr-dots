@@ -731,6 +731,16 @@ PanelWindow {
             }
 
             BarControl {
+                visible: FloatingWindowsState.enabled
+                label: "Floating"
+                tooltip: "New windows open floating by default\nClick to restore normal tiling"
+                normalBackground: Theme.subtleActive
+                hoverBackground: Theme.strongHover
+                onClicked: FloatingWindowsState.setEnabled(false)
+                onRightClicked: FloatingWindowsState.setEnabled(false)
+            }
+
+            BarControl {
                 visible: bar.privacyLabel().length > 0
                 label: bar.privacyLabel()
                 tooltip: "Privacy: active capture stream"
@@ -979,6 +989,18 @@ PanelWindow {
                 label: submapFile.text().trim()
                 tooltip: "Current submap: " + submapFile.text().trim() + " (click to reset)"
                 onClicked: Quickshell.execDetached([bar.mouseSubmapScript, "reset"])
+            }
+
+            BarControl {
+                visible: FloatingWindowsState.enabled
+                vertical: true; fixedWidth: bar.barSize
+                label: "Float"
+                fontPixelSize: 9
+                tooltip: "New windows open floating by default\nClick to restore normal tiling"
+                normalBackground: Theme.subtleActive
+                hoverBackground: Theme.strongHover
+                onClicked: FloatingWindowsState.setEnabled(false)
+                onRightClicked: FloatingWindowsState.setEnabled(false)
             }
         }
 

@@ -68,7 +68,7 @@ Expected: FAIL because the helper has no `toggle`, the shared singleton does not
 
 - [ ] **Step 1: Implement runtime publication and toggle**
 
-Add a publication helper that atomically writes exactly `enabled` or `disabled` plus a newline. Make CLI actions resolve the final state, publish it, print it, and optionally notify with `notify-send -a Awtarchy -t 1500 "Floating windows" "enabled|disabled"`.
+Add a publication helper that writes exactly `enabled` or `disabled` plus a newline. Make CLI actions resolve the final state, publish it, print it, and optionally notify with `notify-send -a Awtarchy -t 1500 "Floating windows" "enabled|disabled"`.
 
 - [ ] **Step 2: Add the bind in both contexts**
 

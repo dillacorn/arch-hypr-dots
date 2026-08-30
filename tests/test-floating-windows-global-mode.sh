@@ -30,7 +30,7 @@ contains "$HELPER" '--notify' \
 
 contains "$HYPR_LUA" 'local floating_windows_toggle = "~/.config/hypr/scripts/quickshell_floating_windows.sh toggle --notify"' \
     'hyprland.lua does not define the approved global floating-spawn toggle command'
-bind_count="$(grep -Fc 'hl.bind("SUPER + ALT + F", hl.dsp.exec_cmd(floating_windows_toggle), {})' "$HYPR_LUA" || true)"
+bind_count="$(grep -Fc '{ "SUPER + ALT + F", floating_windows_toggle },' "$HYPR_LUA" || true)"
 [[ "$bind_count" == 2 ]] \
     || fail 'SUPER+ALT+F must toggle global floating-spawn mode in default and noalt modes'
 contains "$HYPR_LUA" '{ "SUPER + F", hl.dsp.window.float({ action = "toggle" }) },' \

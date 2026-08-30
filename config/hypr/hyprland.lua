@@ -547,6 +547,7 @@ local bar_toggle = "~/.config/hypr/scripts/quickshell_bar_toggle.sh"
 local bar_flip = "~/.config/hypr/scripts/quickshell_bar_flip.sh"
 local bar_rotate = "~/.config/hypr/scripts/quickshell_bar_rotate.sh"
 local toggle_animations = "~/.config/hypr/scripts/toggle_animations.sh"
+local floating_windows_toggle = "~/.config/hypr/scripts/quickshell_floating_windows.sh toggle --notify"
 local notification_dismiss = "~/.config/hypr/scripts/quickshell_notification_dismiss.sh"
 local notifications_toggle = "~/.config/hypr/scripts/quickshell_notifications_toggle.sh"
 
@@ -692,6 +693,7 @@ for _, bind in ipairs({
     { "SUPER + ALT + CTRL + B", bar_toggle },
     { "SUPER + CTRL + B", bar_flip },
     { "SUPER + A", toggle_animations },
+    { "SUPER + ALT + F", floating_windows_toggle },
 }) do
     hl.bind(bind[1], hl.dsp.exec_cmd(bind[2]), {})
 end
@@ -938,6 +940,7 @@ hl.define_submap("noalt", function()
         { "SUPER + ALT + CTRL + B", bar_toggle },
         { "SUPER + CTRL + B", bar_flip },
         { "SUPER + A", toggle_animations },
+    { "SUPER + ALT + F", floating_windows_toggle },
     }) do
         hl.bind(bind[1], hl.dsp.exec_cmd(bind[2]), {})
     end

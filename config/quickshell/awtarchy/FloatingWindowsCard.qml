@@ -1,7 +1,5 @@
 import QtQuick
 import QtQuick.Layouts
-import Quickshell
-import Quickshell.Io
 
 Rectangle {
     id: root
@@ -9,13 +7,9 @@ Rectangle {
     property bool active: false
     property int textScale: 100
     property int iconScale: 100
-    property string floatingState: "checking"
-    property string message: ""
-    property string errorMessage: ""
 
-    readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
-    readonly property string helper: configHome + "/hypr/scripts/quickshell_floating_windows.sh"
-    readonly property bool operationBusy: statusRunner.running || actionRunner.running
+    readonly property string floatingState: FloatingWindowsState.state
+    readonly property bool operationBusy: FloatingWindowsState.busy
 
     Layout.fillWidth: true
     Layout.preferredHeight: content.implicitHeight + 16
@@ -37,89 +31,16 @@ Rectangle {
         return "Checking…";
     }
 
-    function probeStatus() {
-        if (!active || operationBusy)
-            return;
-        statusRunner.exec([root.helper, "status"]);
-    }
-
     function requestToggle() {
-        if (operationBusy)
-            return;
-        errorMessage = "";
-        message = floatingState === "enabled"
-            ? "Restoring tiled windows as the default…"
-            : "Making new windows float by default…";
-        actionRunner.exec([
-            root.helper,
-            "set",
-            floatingState === "enabled" ? "off" : "on"
-        ]);
+        FloatingWindowsState.toggle();
     }
 
     onActiveChanged: {
-        if (active)
-            Qt.callLater(() => root.probeStatus());
-    }
-
-    Process {
-        id: statusRunner
-        stdout: StdioCollector {
-            onStreamFinished: {
-                const state = text.trim();
-                root.floatingState = state === "enabled" || state === "disabled"
-                    ? state : "unavailable";
-            }
-        }
-        stderr: StdioCollector {
-            onStreamFinished: {
-                const detail = text.trim();
-                if (detail.length > 0)
-                    root.errorMessage = detail.split("\n")[0];
-            }
-        }
-        onExited: (exitCode, exitStatus) => {
-            if (exitCode !== 0)
-                root.floatingState = "unavailable";
-        }
-    }
-
-    Process {
-        id: actionRunner
-        stdout: StdioCollector {
-            onStreamFinished: {
-                const state = text.trim();
-                if (state === "enabled" || state === "disabled")
-                    root.floatingState = state;
-            }
-        }
-        stderr: StdioCollector {
-            onStreamFinished: {
-                const detail = text.trim();
-                if (detail.length > 0)
-                    root.errorMessage = detail.split("\n")[0];
-            }
-        }
-        onExited: (exitCode, exitStatus) => {
-            if (exitCode === 0) {
-                root.errorMessage = "";
-                root.message = root.floatingState === "enabled"
-                    ? "Floating Windows enabled."
-                    : "Floating Windows disabled.";
-            } else {
-                root.message = "";
-                if (root.errorMessage.length === 0)
-                    root.errorMessage = "Could not update the Floating Windows preference.";
-            }
-            Qt.callLater(() => root.probeStatus());
-        }
-    }
-
-    Timer {
-        interval: 3000
-        repeat: true
-        running: root.active && !root.operationBusy
-        onTriggered: root.probeStatus()
+        if (!active)
+            return;
+        FloatingWindowsState.clearFeedback();
+        if (!FloatingWindowsState.available)
+            Qt.callLater(() => FloatingWindowsState.refresh());
     }
 
     ColumnLayout {
@@ -165,22 +86,21 @@ Rectangle {
                 label: root.floatingState === "enabled" ? "Disable" : "Enable"
                 active: root.floatingState === "enabled"
                 textSize: root.scaledText(9)
-                enabled: (root.floatingState === "enabled" || root.floatingState === "disabled")
-                    && !root.operationBusy
+                enabled: FloatingWindowsState.available && !root.operationBusy
                 onClicked: root.requestToggle()
             }
         }
 
         Text {
             Layout.fillWidth: true
-            text: root.errorMessage.length > 0
-                ? root.errorMessage
-                : (root.message.length > 0
-                    ? root.message
+            text: FloatingWindowsState.errorMessage.length > 0
+                ? FloatingWindowsState.errorMessage
+                : (FloatingWindowsState.message.length > 0
+                    ? FloatingWindowsState.message
                     : (root.floatingState === "enabled"
-                        ? "New windows open floating by default. Existing windows keep their current state. Use SUPER+F to tile or float the focused window."
-                        : "New windows use Awtarchy's normal tiling behavior. Existing windows keep their current state."))
-            color: root.errorMessage.length > 0 ? Theme.urgent : Theme.muted
+                        ? "New windows open floating by default. Existing windows keep their current state. Use SUPER+ALT+F to disable this mode or SUPER+F to tile/float the focused window."
+                        : "New windows use Awtarchy's normal tiling behavior. Existing windows keep their current state. Use SUPER+ALT+F to toggle floating-spawn mode."))
+            color: FloatingWindowsState.errorMessage.length > 0 ? Theme.urgent : Theme.muted
             font.family: Theme.fontFamily
             font.pixelSize: root.scaledText(8)
             wrapMode: Text.Wrap

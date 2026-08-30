@@ -3,6 +3,8 @@ set -Eeuo pipefail
 
 HYPR_LUA="${HYPRLAND_LUA:-${XDG_CONFIG_HOME:-${HOME}/.config}/hypr/hyprland.lua}"
 HYPRCTL="${HYPRCTL:-hyprctl}"
+STATE_FILE="${AWTARCHY_FLOATING_STATE_FILE:-${XDG_RUNTIME_DIR:-${XDG_CACHE_HOME:-${HOME}/.cache}}/awtarchy-floating-windows-state}"
+NOTIFY_SEND="${NOTIFY_SEND:-notify-send}"
 MARKER_RE='^[[:space:]]*local awtarchy_floating_windows = (true|false) -- AWTARCHY_FLOATING_WINDOWS[[:space:]]*$'
 GLOBAL_FLOAT='hl.window_rule({ match = { class = ".*" }, float = true })'
 GAME_TILE='hl.window_rule({ match = { class = games }, tile = true })'
@@ -11,6 +13,29 @@ GAMES_ANCHOR_RE='^[[:space:]]*local games = '
 die() {
     printf 'Floating Windows: %s\n' "$*" >&2
     exit 1
+}
+
+publish_state() {
+    local state="$1" directory
+    directory="$(dirname -- "$STATE_FILE")"
+    mkdir -p -- "$directory" 2>/dev/null || return 0
+    printf '%s\n' "$state" >"$STATE_FILE" 2>/dev/null || true
+}
+
+notify_state() {
+    local state="$1"
+    if [[ -x "$NOTIFY_SEND" ]] || command -v "$NOTIFY_SEND" >/dev/null 2>&1; then
+        "$NOTIFY_SEND" -a Awtarchy -t 1500 "Floating windows" "$state" >/dev/null 2>&1 || true
+    fi
+}
+
+emit_state() {
+    local state="$1" notify="${2:-0}"
+    publish_state "$state"
+    if [[ "$notify" == 1 ]]; then
+        notify_state "$state"
+    fi
+    printf '%s\n' "$state"
 }
 
 marker_count() {
@@ -176,16 +201,39 @@ PY
     current_state
 }
 
+notify=0
+state=''
+current=''
 case "${1:-}" in
     status)
         [[ $# -eq 1 ]] || die 'usage: quickshell_floating_windows.sh status'
-        current_state
+        state="$(current_state)" || exit $?
+        emit_state "$state" 0
         ;;
     set)
-        [[ $# -eq 2 ]] || die 'usage: quickshell_floating_windows.sh set on|off'
-        set_state "$2"
+        if [[ $# -eq 3 && "${3:-}" == '--notify' ]]; then
+            notify=1
+        elif [[ $# -ne 2 ]]; then
+            die 'usage: quickshell_floating_windows.sh set on|off [--notify]'
+        fi
+        state="$(set_state "$2")" || exit $?
+        emit_state "$state" "$notify"
+        ;;
+    toggle)
+        if [[ $# -eq 2 && "${2:-}" == '--notify' ]]; then
+            notify=1
+        elif [[ $# -ne 1 ]]; then
+            die 'usage: quickshell_floating_windows.sh toggle [--notify]'
+        fi
+        current="$(current_state)" || exit $?
+        if [[ "$current" == 'enabled' ]]; then
+            state="$(set_state off)" || exit $?
+        else
+            state="$(set_state on)" || exit $?
+        fi
+        emit_state "$state" "$notify"
         ;;
     *)
-        die 'usage: quickshell_floating_windows.sh status | set on|off'
+        die 'usage: quickshell_floating_windows.sh status | set on|off [--notify] | toggle [--notify]'
         ;;
 esac
