@@ -18,6 +18,7 @@ jobs:
         with:
           fetch-depth: 0
       - run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - run: python3 .github/scripts/fix_floating_mode_test_contract.py
       - run: python3 .github/scripts/apply_floating_windows_global_mode.py
       - run: |
           git diff --check
@@ -43,6 +44,7 @@ jobs:
             config/quickshell/awtarchy/FloatingWindowsCard.qml \
             config/quickshell/awtarchy/FloatingWindowsState.qml \
             local/share/awtarchy/quickshell-managed-history.sha256 \
+            tests/test-floating-windows-global-mode.sh \
             docs/superpowers/plans/2026-08-30-floating-spawn-mode-design.md \
             docs/superpowers/plans/2026-08-30-floating-spawn-mode.md
           git commit -m 'Add global floating spawn mode controls'
