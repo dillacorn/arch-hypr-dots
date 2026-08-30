@@ -23,13 +23,18 @@ jobs:
           python3 <<'PY'
           from pathlib import Path
           import base64
-          import re
 
           workflow = Path('.github/workflows/validate-bar-transparency.yml').read_text(encoding='utf-8')
-          match = re.search(r"printf '%s' '([A-Za-z0-9+/=]+)' \\| base64 -d >/tmp/apply-bar-transparency.py", workflow)
-          if not match:
+          marker = "printf '%s' '"
+          suffix = "' | base64 -d >/tmp/apply-bar-transparency.py"
+          payload = None
+          for line in workflow.splitlines():
+              if marker in line and suffix in line:
+                  payload = line.split(marker, 1)[1].split("'", 1)[0]
+                  break
+          if not payload:
               raise SystemExit('could not locate bar transparency implementation payload')
-          Path('/tmp/apply-bar-transparency.py').write_bytes(base64.b64decode(match.group(1)))
+          Path('/tmp/apply-bar-transparency.py').write_bytes(base64.b64decode(payload))
           PY
           python3 /tmp/apply-bar-transparency.py
       - name: Register managed stock hashes
