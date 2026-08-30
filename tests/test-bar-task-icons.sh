@@ -36,8 +36,8 @@ contains "$BAR_QML" 'function isXwaylandPopupHelper(toplevel)' \
     'Bar has no focused XWayland popup-helper filter'
 contains "$BAR_QML" 'if (isXwaylandPopupHelper(toplevel))' \
     'XWayland popup/helper clients are not rejected before task rendering'
-contains "$BAR_QML" 'ipc.xwayland === true && ipc.floating === true' \
-    'XWayland helper filtering is not restricted to floating XWayland clients'
+contains "$BAR_QML" 'if (ipc.xwayland !== true || !titleEmpty)' \
+    'XWayland helper filtering still depends on mutable/stale floating IPC metadata'
 contains "$BAR_QML" 'String(toplevel.title || ipc.title || ipc.initialTitle || "").trim().length === 0' \
     'XWayland helper filtering is not restricted to untitled clients'
 contains "$BAR_QML" 'siblingIpc.pid === ipc.pid' \
@@ -70,4 +70,4 @@ contains "$BAR_QML" 'wayland.minimized = true;' \
 contains "$BAR_QML" 'wayland.activate();' \
     'task icon activation behavior disappeared'
 
-printf '%s\n' 'PASS: Awtarchy flyouts, parented transients, and untitled floating XWayland helpers stay out of the task strip while real titled app windows remain eligible.'
+printf '%s\n' 'PASS: Awtarchy flyouts, parented transients, and untitled XWayland helpers stay out of the task strip while real titled app windows remain eligible.'
