@@ -1,0 +1,43 @@
+name: Apply Quick Settings UX Flow
+
+on:
+  push:
+    branches:
+      - feature/bar-transparency
+    paths:
+      - '.github/workflows/apply-quick-settings-ux-flow.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          fetch-depth: 0
+      - run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+      - run: python3 .github/scripts/apply_quick_settings_ux_flow.py
+      - run: |
+          git diff --check
+          bash -n tests/test-quick-settings-ux-flow.sh
+          shellcheck tests/test-quick-settings-ux-flow.sh
+          bash tests/test-quick-settings-ux-flow.sh
+          bash tests/test-quick-settings-settings-mode.sh
+          bash tests/test-quick-settings-layout.sh
+          bash tests/test-bar-transparency.sh
+          bash tests/test-bar-module-visibility.sh
+          bash tests/test-bar-icon-display-options.sh
+          bash tests/test-bar-icon-customization.sh
+      - run: |
+          git config user.name dillacorn
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add \
+            config/quickshell/awtarchy/QuickSettings.qml \
+            config/quickshell/awtarchy/FlyoutSettings.qml \
+            config/quickshell/awtarchy/BarSettingsSection.qml \
+            config/quickshell/awtarchy/DisplayScaleSettings.qml \
+            local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'Improve Quick Settings layout workflow'
+          git push origin HEAD:feature/bar-transparency
