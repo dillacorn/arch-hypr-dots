@@ -29,8 +29,14 @@ quick = replace_exact(
     quick,
     "            barCustomizeOpen = false;\n",
     "            barIconsOpen = false;\n            barAppearanceOpen = false;\n",
-    count=3,
-    label="Bar lifecycle resets",
+    label="Nested Bar lifecycle reset",
+)
+quick = replace_exact(
+    quick,
+    "        barCustomizeOpen = false;\n",
+    "        barIconsOpen = false;\n        barAppearanceOpen = false;\n",
+    count=2,
+    label="Top-level Bar lifecycle resets",
 )
 quick = replace_exact(
     quick,
