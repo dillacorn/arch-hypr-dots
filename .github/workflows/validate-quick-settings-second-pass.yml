@@ -1,0 +1,19 @@
+name: Validate Quick Settings Second Pass
+
+on:
+  push:
+    branches:
+      - feature/bar-transparency
+    paths:
+      - 'tests/test-quick-settings-bar-customize-flow.sh'
+      - '.github/workflows/validate-quick-settings-second-pass.yml'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+      - run: |
+          bash -n tests/test-quick-settings-bar-customize-flow.sh
+          shellcheck tests/test-quick-settings-bar-customize-flow.sh
+          bash tests/test-quick-settings-bar-customize-flow.sh
