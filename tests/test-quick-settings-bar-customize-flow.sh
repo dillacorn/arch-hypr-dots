@@ -82,4 +82,53 @@ contains "$QUICK" 'readonly property int settingsModePanelHeight: clampSettingsH
 contains "$POSITION" 'resize-compact' \
     'flyout positioning does not support a compact Quick Settings resize action'
 
-printf '%s\n' 'PASS: Quick Settings uses compact edge-attached settings, inline copy targets, and one transient Bar customization flow.'
+python3 - "$QUICK" <<'PY' || fail 'FloatingWindow still forces the normal 460px minimum while settings mode is open'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text()
+start = text.index('    FloatingWindow {\n        id: quickSettingsWindow')
+end = text.index('\n        onClosed:', start)
+block = text[start:end]
+required = (
+    'minimumSize: Qt.size(root.minimumPanelWidth,',
+    'root.settingsOpen ? root.minimumSettingsPanelHeight : root.minimumPanelHeight',
+)
+if not all(needle in block for needle in required):
+    raise SystemExit(1)
+PY
+
+python3 - "$QUICK" <<'PY' || fail 'Quick Settings does not follow an in-session bar edge or visibility change'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text()
+start = text.index('    onPlacementChanged:')
+end = text.index('\n    }', start) + 6
+block = text[start:end]
+for needle in (
+    'quickSettingsWindow.visible',
+    'root.settingsOpen',
+    'root.resizeForSettingsMode()',
+    'root.positionWindow()',
+):
+    if needle not in block:
+        raise SystemExit(1)
+PY
+
+python3 - "$QUICK" <<'PY' || fail 'Customize Layout preserves a stale inline copy selector underneath the editor'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text()
+needle = '                        onLayoutEditorRequested:'
+start = text.index(needle)
+end = text.index('\n                    }', start)
+block = text[start:end]
+if 'settingsPanel.resetCopySelection();' not in block:
+    raise SystemExit(1)
+if 'root.layoutEditorOpen = true;' not in block:
+    raise SystemExit(1)
+PY
+
+printf '%s\n' 'PASS: Quick Settings uses compact edge-attached settings, inline copy targets, clean transient state, and one Bar customization flow.'
