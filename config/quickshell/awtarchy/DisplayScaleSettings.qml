@@ -57,6 +57,13 @@ Item {
             customScaleText = displayScaleLabel(displayScale);
     }
 
+    function resetTransientState() {
+        customScaleOpen = false;
+        customScaleText = displayScaleLabel(displayScale);
+        message = "";
+        displayScaleError = "";
+    }
+
     function applyCustomDisplayScale() {
         const scale = Number(String(customScaleText || "").trim());
         if (!Number.isFinite(scale) || scale < 1 || scale > 4) {

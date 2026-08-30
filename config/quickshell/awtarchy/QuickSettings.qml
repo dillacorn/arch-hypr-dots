@@ -733,7 +733,7 @@ Singleton {
             barCustomizeOpen = false;
             barAppearanceSettings.resetTransientState();
         }
-        settingsPanel.resetCopySelection();
+        settingsPanel.resetTransientState();
         settingsMessage = "";
         Qt.callLater(() => root.resizeForSettingsMode());
     }
@@ -750,7 +750,7 @@ Singleton {
         settingsOpen = false;
         layoutEditorOpen = false;
         barCustomizeOpen = false;
-        settingsPanel.resetCopySelection();
+        settingsPanel.resetTransientState();
         barAppearanceSettings.resetTransientState();
         settingsMessage = "";
         schedulerEditorOpen = false;
@@ -775,7 +775,7 @@ Singleton {
         settingsOpen = false;
         layoutEditorOpen = false;
         barCustomizeOpen = false;
-        settingsPanel.resetCopySelection();
+        settingsPanel.resetTransientState();
         barAppearanceSettings.resetTransientState();
         settingsMessage = "";
         schedulerEditorOpen = false;
@@ -786,6 +786,7 @@ Singleton {
         else
             schedulerPasswordInput.text = "";
         brightnessHoverPercent = -1;
+        outputVolumeHoverPercent = -1;
     }
 
     function toggleForScreen(targetScreen) {
@@ -1146,7 +1147,7 @@ Singleton {
                         onCopyRequested: monitorNames => root.copyDisplaySettings(monitorNames)
                         onThemePickerRequested: root.openThemeMenu()
                         onLayoutEditorRequested: {
-                            settingsPanel.resetCopySelection();
+                            settingsPanel.resetTransientState();
                             root.layoutEditorOpen = true;
                         }
                     }

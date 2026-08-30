@@ -103,6 +103,11 @@ Item {
         copyOpen = false;
     }
 
+    function resetTransientState() {
+        resetCopySelection();
+        displayScaleSection.resetTransientState();
+    }
+
     function toggleCaptureControl() {
         if (!managedConnectivityCapture) {
             captureToggleRequested();
