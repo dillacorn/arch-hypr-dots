@@ -27,6 +27,11 @@ contains "$HELPER" 'AWTARCHY_FLOATING_STATE_FILE' \
     'Floating Windows helper does not publish shared runtime state'
 contains "$HELPER" '--notify' \
     'Floating Windows helper has no notification-capable toggle path'
+contains "$HELPER" '"$NOTIFY_SEND" -a Hyprland -t 1000 "Floating windows" "$state"' \
+    'Floating Windows feedback is not using the short transient Hyprland notification identity'
+if grep -Fq -- '-a Awtarchy' "$HELPER"; then
+    fail 'Floating Windows feedback still uses the persistent Awtarchy notification identity'
+fi
 
 contains "$HYPR_LUA" 'local floating_windows_toggle = "~/.config/hypr/scripts/quickshell_floating_windows.sh toggle --notify"' \
     'hyprland.lua does not define the approved global floating-spawn toggle command'
@@ -129,8 +134,8 @@ printf '0\n' >"$CONFIGERROR_COUNT"
     || fail 'toggle did not publish enabled runtime state'
 contains "$TEST_LUA" 'local awtarchy_floating_windows = true -- AWTARCHY_FLOATING_WINDOWS' \
     'toggle did not persist the enabled marker'
-contains "$NOTIFY_LOG" 'Floating windows enabled' \
-    'keyboard notification did not report enabled state'
+contains "$NOTIFY_LOG" '-a Hyprland -t 1000 Floating windows enabled' \
+    'keyboard enable feedback is not short-lived/transient'
 
 printf '0\n' >"$CONFIGERROR_COUNT"
 [[ "$(run_helper toggle --notify)" == "disabled" ]] \
@@ -139,8 +144,8 @@ printf '0\n' >"$CONFIGERROR_COUNT"
     || fail 'second toggle did not publish disabled runtime state'
 contains "$TEST_LUA" 'local awtarchy_floating_windows = false -- AWTARCHY_FLOATING_WINDOWS' \
     'second toggle did not persist the disabled marker'
-contains "$NOTIFY_LOG" 'Floating windows disabled' \
-    'keyboard notification did not report disabled state'
+contains "$NOTIFY_LOG" '-a Hyprland -t 1000 Floating windows disabled' \
+    'keyboard disable feedback is not short-lived/transient'
 
 missing_history=0
 for rel in \
@@ -158,4 +163,4 @@ done
 (( missing_history == 0 )) \
     || fail 'managed history is missing current global Floating Windows QML hashes'
 
-printf '%s\n' 'PASS: global Floating Windows mode has one shared state, keyboard toggle, and clickable bar escape hatch.'
+printf '%s\n' 'PASS: global Floating Windows mode has shared state, short transient feedback, keyboard toggle, and clickable bar escape hatch.'
