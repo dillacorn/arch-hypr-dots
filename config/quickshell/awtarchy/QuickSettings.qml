@@ -94,14 +94,11 @@ Singleton {
         ? iconScaleOverride : BarState.quickSettingsViewFor(activeMonitorName).iconScale
     readonly property bool captureAllowed: captureAllowedOverride >= 0
         ? captureAllowedOverride === 1 : BarState.captureAllowedFor("quick_settings")
-    readonly property bool layoutDirty: layoutSignature(layoutOrderDraft, layoutHiddenDraft)
-        !== layoutSignature(savedLayout.order, savedLayout.hidden)
     readonly property bool settingsDirty: savedView.width !== livePanelWidth
         || savedView.height !== livePanelHeight
         || savedView.textScale !== effectiveTextScale
         || savedView.iconScale !== effectiveIconScale
         || savedView.captureAllowed !== captureAllowed
-        || layoutDirty
     readonly property var brightnessStatus: statusData.brightness || ({})
     readonly property var barStatus: statusData.bar || ({})
     readonly property var nightLightStatus: statusData.night_light || ({})
@@ -116,7 +113,7 @@ Singleton {
     }
 
     onBottomEdgeLayoutChanged: Qt.callLater(() => alignContentToBar())
-    onLayoutEditorOpenChanged: {
+    onSettingsModePanelHeightChanged: {
         if (settingsOpen)
             Qt.callLater(() => resizeForSettingsMode());
     }
@@ -271,6 +268,31 @@ Singleton {
         return JSON.stringify(ordered) + "|" + JSON.stringify(normalizedHidden);
     }
 
+    function persistQuickSettingsLayout() {
+        if (activeMonitorName.length === 0)
+            return;
+        queueStateCommand([
+            "save-quick-settings-layout", activeMonitorName,
+            JSON.stringify(layoutOrderDraft), JSON.stringify(layoutHiddenDraft)
+        ]);
+        savedLayout = ({
+            order: layoutOrderDraft.slice(),
+            hidden: layoutHiddenDraft.slice()
+        });
+        settingsMessage = "Quick Settings layout updated";
+    }
+
+    function resetQuickSettingsLayout() {
+        if (activeMonitorName.length === 0)
+            return;
+        queueStateCommand(["reset-quick-settings-layout", activeMonitorName]);
+        savedLayout = ({
+            order: layoutOrderDraft.slice(),
+            hidden: layoutHiddenDraft.slice()
+        });
+        settingsMessage = "Stock Quick Settings layout restored";
+    }
+
     function quickSettingsSectionVisible(sectionId) {
         return layoutHiddenDraft.indexOf(sectionId) < 0;
     }
@@ -299,6 +321,7 @@ Singleton {
         const moved = next.splice(index, 1)[0];
         next.splice(target, 0, moved);
         layoutOrderDraft = next;
+        persistQuickSettingsLayout();
         Qt.callLater(() => alignContentToBar());
     }
 
@@ -315,13 +338,14 @@ Singleton {
         else if (!visible && index < 0)
             next.push(sectionId);
         layoutHiddenDraft = next;
+        persistQuickSettingsLayout();
         Qt.callLater(() => alignContentToBar());
     }
 
     function resetQuickSettingsLayoutDraft() {
         layoutOrderDraft = BarState.defaultQuickSettingsSectionOrder.slice();
         layoutHiddenDraft = [];
-        settingsMessage = "Stock Quick Settings layout restored in draft";
+        resetQuickSettingsLayout();
         Qt.callLater(() => alignContentToBar());
     }
 
@@ -605,10 +629,6 @@ Singleton {
             String(livePanelWidth), String(livePanelHeight),
             String(effectiveTextScale), String(effectiveIconScale),
             captureAllowed ? "true" : "false"
-        ]);
-        queueStateCommand([
-            "save-quick-settings-layout", activeMonitorName,
-            JSON.stringify(layoutOrderDraft), JSON.stringify(layoutHiddenDraft)
         ]);
         panelWidthOverride = livePanelWidth;
         panelHeightOverride = livePanelHeight;
@@ -1474,6 +1494,17 @@ Singleton {
                                 BarIconSettings {
                                     Layout.fillWidth: true
                                     visible: root.barIconEditorOpen
+                                }
+
+
+                                BarSettingsSection {
+                                    Layout.fillWidth: true
+                                    active: quickSettingsWindow.visible
+                                        && root.quickSettingsSectionVisible("bar")
+                                    monitorName: root.activeMonitorName
+                                    monitorNames: [root.activeMonitorName]
+                                        .concat(root.otherMonitorNames())
+                                    onThemePickerRequested: root.openThemeMenu()
                                 }
                             }
                         }

@@ -59,7 +59,7 @@ Item {
     signal layoutEditorRequested()
 
     implicitHeight: copyOpen ? 104
-        : 139 + (surfaceLabel === "Quick Settings" ? barSection.implicitHeight + 37 : 0)
+        : 139 + (surfaceLabel === "Quick Settings" ? displayScaleSection.implicitHeight + 37 : 0)
 
     function targetSelected(name) {
         const dependency = copySelectionRevision;
@@ -463,14 +463,12 @@ Item {
             Item { Layout.fillWidth: true }
         }
 
-        BarSettingsSection {
-            id: barSection
+        DisplayScaleSettings {
+            id: displayScaleSection
             Layout.fillWidth: true
             visible: !root.copyOpen && root.surfaceLabel === "Quick Settings"
             active: visible
             monitorName: root.monitorName
-            monitorNames: [root.monitorName].concat(root.otherMonitorNames || [])
-            onThemePickerRequested: root.themePickerRequested()
         }
 
         RowLayout {
