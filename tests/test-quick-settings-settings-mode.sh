@@ -112,6 +112,22 @@ jq -e '.monitors["DP-2"].display_scale == 2' "$state" >/dev/null \
 
 contains "$QUICK_SETTINGS" 'visible: !root.settingsOpen' \
     'normal Quick Settings content is not hidden while settings mode is open'
+contains "$QUICK_SETTINGS" 'readonly property int settingsModePanelHeight:' \
+    'settings mode has no compact temporary window height'
+contains "$QUICK_SETTINGS" 'implicitHeight: root.settingsOpen ? root.settingsModePanelHeight : root.configuredPanelHeight' \
+    'settings mode does not shrink the floating window around its content'
+contains "$QUICK_SETTINGS" 'readonly property int livePanelHeight: quickSettingsWindow.visible && !root.settingsOpen' \
+    'temporary settings-mode height could leak into persisted Quick Settings height'
+contains "$QUICK_SETTINGS" 'Layout.fillHeight: !root.settingsOpen' \
+    'hidden normal content still expands inside the settings-mode layout'
+contains "$QUICK_SETTINGS" 'Layout.maximumHeight: root.settingsOpen ? 0 : root.maximumPanelHeight' \
+    'hidden normal content row is not collapsed to zero height'
+contains "$QUICK_SETTINGS" 'id: headerBar' \
+    'Quick Settings header has no stable anchor for the close control'
+contains "$QUICK_SETTINGS" 'anchors.verticalCenter: headerBar.verticalCenter' \
+    'close control is not vertically anchored to the actual header'
+contains "$QUICK_SETTINGS" 'anchors.right: panel.right' \
+    'close control is not anchored to the panel right edge'
 contains "$FLYOUT_SETTINGS" 'text: root.surfaceLabel === "Quick Settings" ? "Copy Quick Settings…" : "Copy to Displays…"' \
     'generic Quick Settings copy action is not clearly scoped'
 contains "$BAR_SETTINGS" 'label: "Copy Bar Settings…"' \
@@ -121,4 +137,4 @@ contains "$BAR_SETTINGS" 'copy-bar-settings' \
 contains "$MANAGER" 'copy-bar-settings)' \
     'quickshell manager has no copy-bar-settings command'
 
-printf '%s\n' 'PASS: Quick Settings settings mode is isolated and copy actions have explicit scopes.'
+printf '%s\n' 'PASS: Quick Settings settings mode is compact, isolated, and copy actions have explicit scopes.'
