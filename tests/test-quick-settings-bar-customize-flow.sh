@@ -24,18 +24,45 @@ not_contains() {
     fi
 }
 
-contains "$QUICK" 'property bool barCustomizeOpen: false' \
-    'Quick Settings does not own one unified Bar Customize expansion state'
-contains "$QUICK" 'label: "Customize…"' \
-    'Bar card does not expose the unified Customize action'
+contains "$QUICK" 'property bool barIconsOpen: false' \
+    'Quick Settings does not own a dedicated Bar Icons expansion state'
+contains "$QUICK" 'property bool barAppearanceOpen: false' \
+    'Quick Settings does not own a dedicated Bar Appearance expansion state'
+not_contains "$QUICK" 'property bool barCustomizeOpen: false' \
+    'Quick Settings still owns the old combined Bar Customize expansion state'
+contains "$QUICK" 'label: "Icons"' \
+    'Bar card does not expose a dedicated Icons action'
+contains "$QUICK" 'label: "Appearance"' \
+    'Bar card does not expose a dedicated Appearance action'
 contains "$QUICK" 'label: "Themes"' \
     'Themes is not promoted to the Bar card header'
 contains "$QUICK" 'Tip: drag the bar with SUPER+Mouse1 or ALT+Mouse1.' \
     'Bar position controls do not explain the mouse-drag shortcut'
-contains "$QUICK" 'visible: root.barCustomizeOpen' \
-    'Bar customization does not collapse behind the unified Customize action'
+contains "$QUICK" 'visible: root.barIconsOpen' \
+    'Bar icon customization does not collapse behind the Icons action'
+contains "$QUICK" 'visible: root.barAppearanceOpen' \
+    'Bar appearance customization does not collapse behind the Appearance action'
 contains "$QUICK" 'id: barAppearanceSettings' \
     'Quick Settings does not own the embedded Bar appearance settings instance'
+
+python3 - "$QUICK" <<'PY' || fail 'Bar Icons and Appearance buttons are not mutually exclusive'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text()
+icons = text.index('label: "Icons"')
+appearance = text.index('label: "Appearance"', icons + 1)
+icons_block = text[icons:appearance]
+appearance_block = text[appearance:text.index('label: "Visible"', appearance)]
+if 'root.barIconsOpen = !root.barIconsOpen;' not in icons_block:
+    raise SystemExit(1)
+if 'root.barAppearanceOpen = false;' not in icons_block:
+    raise SystemExit(1)
+if 'root.barAppearanceOpen = !root.barAppearanceOpen;' not in appearance_block:
+    raise SystemExit(1)
+if 'root.barIconsOpen = false;' not in appearance_block:
+    raise SystemExit(1)
+PY
 
 python3 - "$QUICK" <<'PY' || fail 'closing Quick Settings does not reset all transient customization state'
 from pathlib import Path
@@ -46,7 +73,8 @@ start = text.index('    function close() {')
 end = text.index('\n    }', start) + 6
 block = text[start:end]
 for needle in (
-    'barCustomizeOpen = false;',
+    'barIconsOpen = false;',
+    'barAppearanceOpen = false;',
     'settingsPanel.resetTransientState();',
     'barAppearanceSettings.resetTransientState();',
     'brightnessHoverPercent = -1;',
@@ -140,4 +168,4 @@ if 'root.layoutEditorOpen = true;' not in block:
     raise SystemExit(1)
 PY
 
-printf '%s\n' 'PASS: Quick Settings uses compact edge-attached settings, inline copy targets, complete transient reset, and one Bar customization flow.'
+printf '%s\n' 'PASS: Quick Settings uses separate Icons and Appearance expansions, compact settings, inline copy targets, and complete transient reset.'
