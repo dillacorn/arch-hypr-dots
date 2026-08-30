@@ -100,8 +100,12 @@ jobs:
 
           test_path = Path('tests/test-bar-task-icons.sh')
           test = test_path.read_text(encoding='utf-8')
-          if '# shellcheck disable=SC1090\n' not in test:
-              test = test.replace('#!/usr/bin/env bash\n', '#!/usr/bin/env bash\n# shellcheck disable=SC1090\n', 1)
+          old_header = '# shellcheck disable=SC1090\n'
+          new_header = '# shellcheck disable=SC1090,SC2016\n'
+          if old_header in test:
+              test = test.replace(old_header, new_header, 1)
+          elif new_header not in test:
+              test = test.replace('#!/usr/bin/env bash\n', '#!/usr/bin/env bash\n' + new_header, 1)
           if 'RUNTIME="${ROOT}/local/share/awtarchy/awtarchy-runtime.sh"' not in test:
               test = test.replace(
                   'BAR_QML="${ROOT}/config/quickshell/awtarchy/Bar.qml"\n',
