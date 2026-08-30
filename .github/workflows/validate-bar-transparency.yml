@@ -19,7 +19,6 @@ permissions:
 
 jobs:
   apply-implementation:
-    if: github.event_name == 'push' && github.event.head_commit.message == 'Apply bar transparency implementation'
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -29,326 +28,13 @@ jobs:
           ref: feature/bar-transparency
       - name: Apply scoped implementation
         run: |
-          python3 <<'PY'
-          from pathlib import Path
-
-          def replace_once(path, old, new):
-              p = Path(path)
-              text = p.read_text(encoding='utf-8')
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{path}: expected one anchor, found {count}')
-              p.write_text(text.replace(old, new, 1), encoding='utf-8')
-
-          manager = 'config/hypr/scripts/quickshell.sh'
-          state = 'config/quickshell/awtarchy/BarState.qml'
-          bar = 'config/quickshell/awtarchy/Bar.qml'
-          settings = 'config/quickshell/awtarchy/BarSettingsSection.qml'
-
-          default_block = '''                    bar_size:0,
-                    icon_scale:100,
-                    text_scale:100,
-                    show_tasks:true,
-'''
-          default_with_transparency = '''                    bar_size:0,
-                    icon_scale:100,
-                    text_scale:100,
-                    bar_transparency:0,
-                    show_tasks:true,
-'''
-          replace_once(manager, default_block, default_with_transparency)
-
-          replace_once(manager, '''gettextscale() {
-    ensure_state
-    jq -r --arg monitor "$1" '(.monitors[$monitor].text_scale // 100) | tonumber' "$STATE_FILE"
-}
-
-getshowcpu() {
-''', '''gettextscale() {
-    ensure_state
-    jq -r --arg monitor "$1" '(.monitors[$monitor].text_scale // 100) | tonumber' "$STATE_FILE"
-}
-
-gettransparency() {
-    ensure_state
-    jq -r --arg monitor "$1" '(.monitors[$monitor].bar_transparency // 0) | tonumber' "$STATE_FILE"
-}
-
-getshowcpu() {
-''')
-
-          replace_once(manager, '''settextscale() {
-    local monitor="$1" scale="$2" tmp
-    [[ "$scale" =~ ^[0-9]+$ ]] || { printf 'quickshell.sh: text scale must be an integer\\n' >&2; exit 2; }
-    if (( scale < MIN_TEXT_SCALE || scale > MAX_TEXT_SCALE )); then
-        printf 'quickshell.sh: text scale must be %d-%d\\n' "$MIN_TEXT_SCALE" "$MAX_TEXT_SCALE" >&2
-        exit 2
-    fi
-    ensure_state
-    tmp="${STATE_FILE}.tmp.$$"
-    jq --arg monitor "$monitor" --argjson scale "$scale" '.monitors[$monitor].text_scale = $scale' "$STATE_FILE" >"$tmp"
-    mv -f "$tmp" "$STATE_FILE"
-}
-
-reset_mon() {
-''', '''settextscale() {
-    local monitor="$1" scale="$2" tmp
-    [[ "$scale" =~ ^[0-9]+$ ]] || { printf 'quickshell.sh: text scale must be an integer\\n' >&2; exit 2; }
-    if (( scale < MIN_TEXT_SCALE || scale > MAX_TEXT_SCALE )); then
-        printf 'quickshell.sh: text scale must be %d-%d\\n' "$MIN_TEXT_SCALE" "$MAX_TEXT_SCALE" >&2
-        exit 2
-    fi
-    ensure_state
-    tmp="${STATE_FILE}.tmp.$$"
-    jq --arg monitor "$monitor" --argjson scale "$scale" '.monitors[$monitor].text_scale = $scale' "$STATE_FILE" >"$tmp"
-    mv -f "$tmp" "$STATE_FILE"
-}
-
-settransparency() {
-    local monitor="$1" transparency="$2" tmp
-    [[ "$transparency" =~ ^[0-9]+$ ]] || { printf 'quickshell.sh: bar transparency must be an integer\\n' >&2; exit 2; }
-    if (( transparency > 100 )); then
-        printf 'quickshell.sh: bar transparency must be 0-100\\n' >&2
-        exit 2
-    fi
-    ensure_state
-    tmp="${STATE_FILE}.tmp.$$"
-    jq --arg monitor "$monitor" --argjson transparency "$transparency" '.monitors[$monitor].bar_transparency = $transparency' "$STATE_FILE" >"$tmp"
-    mv -f "$tmp" "$STATE_FILE"
-}
-
-reset_mon() {
-''')
-
-          reset_block = '''            bar_size:0,
-            icon_scale:100,
-            text_scale:100,
-            show_tasks:true,
-'''
-          reset_with_transparency = '''            bar_size:0,
-            icon_scale:100,
-            text_scale:100,
-            bar_transparency:0,
-            show_tasks:true,
-'''
-          replace_once(manager, reset_block, reset_with_transparency)
-
-          replace_once(manager, '''  getscale-focused
-  gettextscale-focused
-  getshowtasks-focused
-''', '''  getscale-focused
-  gettextscale-focused
-  gettransparency-focused
-  getshowtasks-focused
-''')
-          replace_once(manager, '''  setscale-focused <50-200>
-  settextscale-focused <50-200>
-  setshowtasks-focused <true|false>
-''', '''  setscale-focused <50-200>
-  settextscale-focused <50-200>
-  settransparency-focused <0-100>
-  setshowtasks-focused <true|false>
-''')
-          replace_once(manager, '''  getscale <MON>
-  gettextscale <MON>
-  getshowtasks <MON>
-''', '''  getscale <MON>
-  gettextscale <MON>
-  gettransparency <MON>
-  getshowtasks <MON>
-''')
-          replace_once(manager, '''  setscale <MON> <50-200>
-  settextscale <MON> <50-200>
-  setshowtasks <MON> <true|false>
-''', '''  setscale <MON> <50-200>
-  settextscale <MON> <50-200>
-  settransparency <MON> <0-100>
-  setshowtasks <MON> <true|false>
-''')
-          replace_once(manager, '''icon_scale and text_scale are percentages; 100 preserves the tuned defaults.
-Running application icons are visible by default; task and tray icons use original colors by default.
-''', '''icon_scale and text_scale are percentages; 100 preserves the tuned defaults.
-bar_transparency is a percentage; 0 is fully opaque and 100 is fully transparent.
-Running application icons are visible by default; task and tray icons use original colors by default.
-''')
-          replace_once(manager, '''    gettextscale) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; gettextscale "$2" ;;
-    gettextscale-focused) monitor="$(focused_monitor)"; gettextscale "$monitor" ;;
-    getshowtasks) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getshowtasks "$2" ;;
-''', '''    gettextscale) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; gettextscale "$2" ;;
-    gettextscale-focused) monitor="$(focused_monitor)"; gettextscale "$monitor" ;;
-    gettransparency) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; gettransparency "$2" ;;
-    gettransparency-focused) monitor="$(focused_monitor)"; gettransparency "$monitor" ;;
-    getshowtasks) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getshowtasks "$2" ;;
-''')
-          replace_once(manager, '''    settextscale) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; settextscale "$2" "$3" ;;
-    settextscale-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; settextscale "$monitor" "$2" ;;
-    setshowtasks) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_icon_option "$2" show_tasks "$3" ;;
-''', '''    settextscale) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; settextscale "$2" "$3" ;;
-    settextscale-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; settextscale "$monitor" "$2" ;;
-    settransparency) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; settransparency "$2" "$3" ;;
-    settransparency-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; settransparency "$monitor" "$2" ;;
-    setshowtasks) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_icon_option "$2" show_tasks "$3" ;;
-''')
-
-          replace_once(state, '''    function launcherViewFor(name) {
-''', '''    function barTransparencyFor(name) {
-        const dependency = revision;
-        const mon = monitorState(name);
-        const percent = Number(mon.bar_transparency === undefined ? 0 : mon.bar_transparency);
-        if (!Number.isFinite(percent))
-            return 0;
-        return Math.max(0, Math.min(100, Math.round(percent)));
-    }
-
-    function launcherViewFor(name) {
-''')
-
-          replace_once(bar, '''    color: Theme.background
-    aboveWindows: true
-''', '''    color: Qt.rgba(Theme.background.r, Theme.background.g, Theme.background.b,
-        1 - BarState.barTransparencyFor(monitorName) / 100)
-    aboveWindows: true
-''')
-
-          replace_once(settings, '''    property string customScaleText: "1"
-
-    signal themePickerRequested()
-''', '''    property string customScaleText: "1"
-    property int barTransparencyHoverPercent: -1
-
-    signal themePickerRequested()
-''')
-          replace_once(settings, '''    function rawModuleVisible(name, module) {
-''', '''    function rawBarTransparency(name) {
-        const state = BarState.monitorState(name) || ({});
-        const value = Number(state.bar_transparency === undefined ? 0 : state.bar_transparency);
-        return Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 0;
-    }
-
-    function rawModuleVisible(name, module) {
-''')
-          replace_once(settings, '''    function moduleVisibilityActive(module) {
-''', '''    function transparencyText() {
-        const value = commonValue(rawBarTransparency);
-        return value === null ? "Mixed" : value + "%";
-    }
-
-    function transparencyPercent() {
-        const value = commonValue(rawBarTransparency);
-        return value === null ? -1 : value;
-    }
-
-    function moduleVisibilityActive(module) {
-''')
-          replace_once(settings, '''    function enqueue(command, value) {
-''', '''    function baseBarTransparency() {
-        const common = commonValue(rawBarTransparency);
-        if (common !== null)
-            return common;
-        const targets = resolvedTargets();
-        return targets.length > 0 ? rawBarTransparency(targets[0]) : 0;
-    }
-
-    function enqueue(command, value) {
-''')
-          replace_once(settings, '''            next.push([managerScript, "settextscale", target, "100"]);
-            next.push([managerScript, "setshowtasks", target, "true"]);
-''', '''            next.push([managerScript, "settextscale", target, "100"]);
-            next.push([managerScript, "settransparency", target, "0"]);
-            next.push([managerScript, "setshowtasks", target, "true"]);
-''')
-          replace_once(settings, '''    function displayScaleLabel(value) {
-''', '''    function setTransparencyPercent(value) {
-        const next = Math.max(0, Math.min(100, Math.round(Number(value))));
-        if (!Number.isFinite(next))
-            return;
-        message = "Bar transparency " + next + "%";
-        enqueue("settransparency", next);
-    }
-
-    function adjustTransparency(delta) {
-        setTransparencyPercent(baseBarTransparency() + delta);
-    }
-
-    function displayScaleLabel(value) {
-''')
-
-          text_size_row = '''            RowLayout {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 26
-                spacing: 5
-
-                Text {
-                    Layout.preferredWidth: 78
-                    text: "Text size"
-'''
-          transparency_row = '''            RowLayout {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 26
-                spacing: 5
-
-                Text {
-                    Layout.preferredWidth: 78
-                    text: "Transparency"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 10
-                }
-
-                SettingsButton {
-                    label: "−5"
-                    textSize: 9
-                    onClicked: root.adjustTransparency(-5)
-                }
-
-                Rectangle {
-                    id: barTransparencyTrack
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 24
-                    color: Theme.popupBackground
-                    border.width: 0
-
-                    Rectangle {
-                        width: root.transparencyPercent() >= 0
-                            ? parent.width * root.transparencyPercent() / 100 : 0
-                        height: parent.height
-                        color: Theme.focus
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onPositionChanged: mouse => root.barTransparencyHoverPercent = Math.max(0,
-                            Math.min(100, Math.round(mouse.x * 100 / width)))
-                        onExited: root.barTransparencyHoverPercent = -1
-                        onPressed: mouse => root.setTransparencyPercent(mouse.x * 100 / width)
-                    }
-                }
-
-                SettingsButton {
-                    label: "+5"
-                    textSize: 9
-                    onClicked: root.adjustTransparency(5)
-                }
-
-                Text {
-                    Layout.preferredWidth: 52
-                    text: root.barTransparencyHoverPercent >= 0
-                        ? root.barTransparencyHoverPercent + "%" : root.transparencyText()
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 10
-                    horizontalAlignment: Text.AlignHCenter
-                }
-            }
-
-'''
-          replace_once(settings, text_size_row, transparency_row + text_size_row)
-          PY
+          if [[ "$(git log -1 --pretty=%s)" == "Apply bar transparency implementation" ]]; then
+            printf '%s' 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCgpkZWYgcmVwbGFjZV9vbmNlKHBhdGgsIG9sZCwgbmV3KToKICAgIHAgPSBQYXRoKHBhdGgpCiAgICB0ZXh0ID0gcC5yZWFkX3RleHQoZW5jb2Rpbmc9InV0Zi04IikKICAgIGNvdW50ID0gdGV4dC5jb3VudChvbGQpCiAgICBpZiBjb3VudCAhPSAxOgogICAgICAgIHJhaXNlIFN5c3RlbUV4aXQoZiJ7cGF0aH06IGV4cGVjdGVkIG9uZSBhbmNob3IsIGZvdW5kIHtjb3VudH0iKQogICAgcC53cml0ZV90ZXh0KHRleHQucmVwbGFjZShvbGQsIG5ldywgMSksIGVuY29kaW5nPSJ1dGYtOCIpCgptYW5hZ2VyID0gImNvbmZpZy9oeXByL3NjcmlwdHMvcXVpY2tzaGVsbC5zaCIKc3RhdGUgPSAiY29uZmlnL3F1aWNrc2hlbGwvYXd0YXJjaHkvQmFyU3RhdGUucW1sIgpiYXIgPSAiY29uZmlnL3F1aWNrc2hlbGwvYXd0YXJjaHkvQmFyLnFtbCIKc2V0dGluZ3MgPSAiY29uZmlnL3F1aWNrc2hlbGwvYXd0YXJjaHkvQmFyU2V0dGluZ3NTZWN0aW9uLnFtbCIKCnJlcGxhY2Vfb25jZSgKICAgIG1hbmFnZXIsCiAgICAiIiIgICAgICAgICAgICAgICAgICAgIGJhcl9zaXplOjAsCiAgICAgICAgICAgICAgICAgICAgaWNvbl9zY2FsZToxMDAsCiAgICAgICAgICAgICAgICAgICAgdGV4dF9zY2FsZToxMDAsCiAgICAgICAgICAgICAgICAgICAgc2hvd190YXNrczp0cnVlLAoiIiIsCiAgICAiIiIgICAgICAgICAgICAgICAgICAgIGJhcl9zaXplOjAsCiAgICAgICAgICAgICAgICAgICAgaWNvbl9zY2FsZToxMDAsCiAgICAgICAgICAgICAgICAgICAgdGV4dF9zY2FsZToxMDAsCiAgICAgICAgICAgICAgICAgICAgYmFyX3RyYW5zcGFyZW5jeTowLAogICAgICAgICAgICAgICAgICAgIHNob3dfdGFza3M6dHJ1ZSwKIiIiLAopCgpyZXBsYWNlX29uY2UoCiAgICBtYW5hZ2VyLAogICAgIiIiZ2V0dGV4dHNjYWxlKCkgewogICAgZW5zdXJlX3N0YXRlCiAgICBqcSAtciAtLWFyZyBtb25pdG9yICIkMSIgJygubW9uaXRvcnNbJG1vbml0b3JdLnRleHRfc2NhbGUgLy8gMTAwKSB8IHRvbnVtYmVyJyAiJFNUQVRFX0ZJTEUiCn0KCmdldHNob3djcHUoKSB7CiIiIiwKICAgICIiImdldHRleHRzY2FsZSgpIHsKICAgIGVuc3VyZV9zdGF0ZQogICAganEgLXIgLS1hcmcgbW9uaXRvciAiJDEiICcoLm1vbml0b3JzWyRtb25pdG9yXS50ZXh0X3NjYWxlIC8vIDEwMCkgfCB0b251bWJlcicgIiRTVEFURV9GSUxFIgp9CgpnZXR0cmFuc3BhcmVuY3koKSB7CiAgICBlbnN1cmVfc3RhdGUKICAgIGpxIC1yIC0tYXJnIG1vbml0b3IgIiQxIiAnKC5tb25pdG9yc1skbW9uaXRvcl0uYmFyX3RyYW5zcGFyZW5jeSAvLyAwKSB8IHRvbnVtYmVyJyAiJFNUQVRFX0ZJTEUiCn0KCmdldHNob3djcHUoKSB7CiIiIiwKKQoKcmVwbGFjZV9vbmNlKAogICAgbWFuYWdlciwKICAgICIiInNldHRleHRzY2FsZSgpIHsKICAgIGxvY2FsIG1vbml0b3I9IiQxIiBzY2FsZT0iJDIiIHRtcAogICAgW1sgIiRzY2FsZSIgPX4gXlswLTldKyQgXV0gfHwgeyBwcmludGYgJ3F1aWNrc2hlbGwuc2g6IHRleHQgc2NhbGUgbXVzdCBiZSBhbiBpbnRlZ2VyXFxuJyA+JjI7IGV4aXQgMjsgfQogICAgaWYgKCggc2NhbGUgPCBNSU5fVEVYVF9TQ0FMRSB8fCBzY2FsZSA+IE1BWF9URVhUX1NDQUxFICkpOyB0aGVuCiAgICAgICAgcHJpbnRmICdxdWlja3NoZWxsLnNoOiB0ZXh0IHNjYWxlIG11c3QgYmUgJWQtJWRcXG4nICIkTUlOX1RFWFRfU0NBTEUiICIkTUFYX1RFWFRfU0NBTEUiID4mMgogICAgICAgIGV4aXQgMgogICAgZmkKICAgIGVuc3VyZV9zdGF0ZQogICAgdG1wPSIke1NUQVRFX0ZJTEV9LnRtcC4kJCIKICAgIGpxIC0tYXJnIG1vbml0b3IgIiRtb25pdG9yIiAtLWFyZ2pzb24gc2NhbGUgIiRzY2FsZSIgJy5tb25pdG9yc1skbW9uaXRvcl0udGV4dF9zY2FsZSA9ICRzY2FsZScgIiRTVEFURV9GSUxFIiA+IiR0bXAiCiAgICBtdiAtZiAiJHRtcCIgIiRTVEFURV9GSUxFIgp9CgpyZXNldF9tb24oKSB7CiIiIiwKICAgICIiInNldHRleHRzY2FsZSgpIHsKICAgIGxvY2FsIG1vbml0b3I9IiQxIiBzY2FsZT0iJDIiIHRtcAogICAgW1sgIiRzY2FsZSIgPX4gXlswLTldKyQgXV0gfHwgeyBwcmludGYgJ3F1aWNrc2hlbGwuc2g6IHRleHQgc2NhbGUgbXVzdCBiZSBhbiBpbnRlZ2VyXFxuJyA+JjI7IGV4aXQgMjsgfQogICAgaWYgKCggc2NhbGUgPCBNSU5fVEVYVF9TQ0FMRSB8fCBzY2FsZSA+IE1BWF9URVhUX1NDQUxFICkpOyB0aGVuCiAgICAgICAgcHJpbnRmICdxdWlja3NoZWxsLnNoOiB0ZXh0IHNjYWxlIG11c3QgYmUgJWQtJWRcXG4nICIkTUlOX1RFWFRfU0NBTEUiICIkTUFYX1RFWFRfU0NBTEUiID4mMgogICAgICAgIGV4aXQgMgogICAgZmkKICAgIGVuc3VyZV9zdGF0ZQogICAgdG1wPSIke1NUQVRFX0ZJTEV9LnRtcC4kJCIKICAgIGpxIC0tYXJnIG1vbml0b3IgIiRtb25pdG9yIiAtLWFyZ2pzb24gc2NhbGUgIiRzY2FsZSIgJy5tb25pdG9yc1skbW9uaXRvcl0udGV4dF9zY2FsZSA9ICRzY2FsZScgIiRTVEFURV9GSUxFIiA+IiR0bXAiCiAgICBtdiAtZiAiJHRtcCIgIiRTVEFURV9GSUxFIgp9CgpzZXR0cmFuc3BhcmVuY3koKSB7CiAgICBsb2NhbCBtb25pdG9yPSIkMSIgdHJhbnNwYXJlbmN5PSIkMiIgdG1wCiAgICBbWyAiJHRyYW5zcGFyZW5jeSIgPX4gXlswLTldKyQgXV0gfHwgeyBwcmludGYgJ3F1aWNrc2hlbGwuc2g6IGJhciB0cmFuc3BhcmVuY3kgbXVzdCBiZSBhbiBpbnRlZ2VyXFxuJyA+JjI7IGV4aXQgMjsgfQogICAgaWYgKCggdHJhbnNwYXJlbmN5ID4gMTAwICkpOyB0aGVuCiAgICAgICAgcHJpbnRmICdxdWlja3NoZWxsLnNoOiBiYXIgdHJhbnNwYXJlbmN5IG11c3QgYmUgMC0xMDBcXG4nID4mMgogICAgICAgIGV4aXQgMgogICAgZmkKICAgIGVuc3VyZV9zdGF0ZQogICAgdG1wPSIke1NUQVRFX0ZJTEV9LnRtcC4kJCIKICAgIGpxIC0tYXJnIG1vbml0b3IgIiRtb25pdG9yIiAtLWFyZ2pzb24gdHJhbnNwYXJlbmN5ICIkdHJhbnNwYXJlbmN5IiAnLm1vbml0b3JzWyRtb25pdG9yXS5iYXJfdHJhbnNwYXJlbmN5ID0gJHRyYW5zcGFyZW5jeScgIiRTVEFURV9GSUxFIiA+IiR0bXAiCiAgICBtdiAtZiAiJHRtcCIgIiRTVEFURV9GSUxFIgp9CgpyZXNldF9tb24oKSB7CiIiIiwKKQoKcmVwbGFjZV9vbmNlKAogICAgbWFuYWdlciwKICAgICIiIiAgICAgICAgICAgIGJhcl9zaXplOjAsCiAgICAgICAgICAgIGljb25fc2NhbGU6MTAwLAogICAgICAgICAgICB0ZXh0X3NjYWxlOjEwMCwKICAgICAgICAgICAgc2hvd190YXNrczp0cnVlLAoiIiIsCiAgICAiIiIgICAgICAgICAgICBiYXJfc2l6ZTowLAogICAgICAgICAgICBpY29uX3NjYWxlOjEwMCwKICAgICAgICAgICAgdGV4dF9zY2FsZToxMDAsCiAgICAgICAgICAgIGJhcl90cmFuc3BhcmVuY3k6MCwKICAgICAgICAgICAgc2hvd190YXNrczp0cnVlLAoiIiIsCikKCnBhaXJzID0gWwogICAgKAogICAgICAgICIgIGdldHNjYWxlLWZvY3VzZWRcbiAgZ2V0dGV4dHNjYWxlLWZvY3VzZWRcbiAgZ2V0c2hvd3Rhc2tzLWZvY3VzZWRcbiIsCiAgICAgICAgIiAgZ2V0c2NhbGUtZm9jdXNlZFxuICBnZXR0ZXh0c2NhbGUtZm9jdXNlZFxuICBnZXR0cmFuc3BhcmVuY3ktZm9jdXNlZFxuICBnZXRzaG93dGFza3MtZm9jdXNlZFxuIiwKICAgICksCiAgICAoCiAgICAgICAgIiAgc2V0c2NhbGUtZm9jdXNlZCA8NTAtMjAwPlxuICBzZXR0ZXh0c2NhbGUtZm9jdXNlZCA8NTAtMjAwPlxuICBzZXRzaG93dGFza3MtZm9jdXNlZCA8dHJ1ZXxmYWxzZT5cbiIsCiAgICAgICAgIiAgc2V0c2NhbGUtZm9jdXNlZCA8NTAtMjAwPlxuICBzZXR0ZXh0c2NhbGUtZm9jdXNlZCA8NTAtMjAwPlxuICBzZXR0cmFuc3BhcmVuY3ktZm9jdXNlZCA8MC0xMDA+XG4gIHNldHNob3d0YXNrcy1mb2N1c2VkIDx0cnVlfGZhbHNlPlxuIiwKICAgICksCiAgICAoCiAgICAgICAgIiAgZ2V0c2NhbGUgPE1PTj5cbiAgZ2V0dGV4dHNjYWxlIDxNT04+XG4gIGdldHNob3d0YXNrcyA8TU9OPlxuIiwKICAgICAgICAiICBnZXRzY2FsZSA8TU9OPlxuICBnZXR0ZXh0c2NhbGUgPE1PTj5cbiAgZ2V0dHJhbnNwYXJlbmN5IDxNT04+XG4gIGdldHNob3d0YXNrcyA8TU9OPlxuIiwKICAgICksCiAgICAoCiAgICAgICAgIiAgc2V0c2NhbGUgPE1PTj4gPDUwLTIwMD5cbiAgc2V0dGV4dHNjYWxlIDxNT04+IDw1MC0yMDA+XG4gIHNldHNob3d0YXNrcyA8TU9OPiA8dHJ1ZXxmYWxzZT5cbiIsCiAgICAgICAgIiAgc2V0c2NhbGUgPE1PTj4gPDUwLTIwMD5cbiAgc2V0dGV4dHNjYWxlIDxNT04+IDw1MC0yMDA+XG4gIHNldHRyYW5zcGFyZW5jeSA8TU9OPiA8MC0xMDA+XG4gIHNldHNob3d0YXNrcyA8TU9OPiA8dHJ1ZXxmYWxzZT5cbiIsCiAgICApLAogICAgKAogICAgICAgICJpY29uX3NjYWxlIGFuZCB0ZXh0X3NjYWxlIGFyZSBwZXJjZW50YWdlczsgMTAwIHByZXNlcnZlcyB0aGUgdHVuZWQgZGVmYXVsdHMuXG5SdW5uaW5nIGFwcGxpY2F0aW9uIGljb25zIGFyZSB2aXNpYmxlIGJ5IGRlZmF1bHQ7IHRhc2sgYW5kIHRyYXkgaWNvbnMgdXNlIG9yaWdpbmFsIGNvbG9ycyBieSBkZWZhdWx0LlxuIiwKICAgICAgICAiaWNvbl9zY2FsZSBhbmQgdGV4dF9zY2FsZSBhcmUgcGVyY2VudGFnZXM7IDEwMCBwcmVzZXJ2ZXMgdGhlIHR1bmVkIGRlZmF1bHRzLlxuYmFyX3RyYW5zcGFyZW5jeSBpcyBhIHBlcmNlbnRhZ2U7IDAgaXMgZnVsbHkgb3BhcXVlIGFuZCAxMDAgaXMgZnVsbHkgdHJhbnNwYXJlbnQuXG5SdW5uaW5nIGFwcGxpY2F0aW9uIGljb25zIGFyZSB2aXNpYmxlIGJ5IGRlZmF1bHQ7IHRhc2sgYW5kIHRyYXkgaWNvbnMgdXNlIG9yaWdpbmFsIGNvbG9ycyBieSBkZWZhdWx0LlxuIiwKICAgICksCiAgICAoCiAgICAgICAgIiIiICAgIGdldHRleHRzY2FsZSkgW1sgLW4gIiR7MjotfSIgXV0gfHwgeyB1c2FnZSA+JjI7IGV4aXQgMjsgfTsgZ2V0dGV4dHNjYWxlICIkMiIgOzsKICAgIGdldHRleHRzY2FsZS1mb2N1c2VkKSBtb25pdG9yPSIkKGZvY3VzZWRfbW9uaXRvcikiOyBnZXR0ZXh0c2NhbGUgIiRtb25pdG9yIiA7OwogICAgZ2V0c2hvd3Rhc2tzKSBbWyAtbiAiJHsyOi19IiBdXSB8fCB7IHVzYWdlID4mMjsgZXhpdCAyOyB9OyBnZXRzaG93dGFza3MgIiQyIiA7OwoiIiIsCiAgICAgICAgIiIiICAgIGdldHRleHRzY2FsZSkgW1sgLW4gIiR7MjotfSIgXV0gfHwgeyB1c2FnZSA+JjI7IGV4aXQgMjsgfTsgZ2V0dGV4dHNjYWxlICIkMiIgOzsKICAgIGdldHRleHRzY2FsZS1mb2N1c2VkKSBtb25pdG9yPSIkKGZvY3VzZWRfbW9uaXRvcikiOyBnZXR0ZXh0c2NhbGUgIiRtb25pdG9yIiA7OwogICAgZ2V0dHJhbnNwYXJlbmN5KSBbWyAtbiAiJHsyOi19IiBdXSB8fCB7IHVzYWdlID4mMjsgZXhpdCAyOyB9OyBnZXR0cmFuc3BhcmVuY3kgIiQyIiA7OwogICAgZ2V0dHJhbnNwYXJlbmN5LWZvY3VzZWQpIG1vbml0b3I9IiQoZm9jdXNlZF9tb25pdG9yKSI7IGdldHRyYW5zcGFyZW5jeSAiJG1vbml0b3IiIDs7CiAgICBnZXRzaG93dGFza3MpIFtbIC1uICIkezI6LX0iIF1dIHx8IHsgdXNhZ2UgPiYyOyBleGl0IDI7IH07IGdldHNob3d0YXNrcyAiJDIiIDs7CiIiIiwKICAgICksCiAgICAoCiAgICAgICAgIiIiICAgIHNldHRleHRzY2FsZSkgW1sgLW4gIiR7MjotfSIgJiYgLW4gIiR7MzotfSIgXV0gfHwgeyB1c2FnZSA+JjI7IGV4aXQgMjsgfTsgc2V0dGV4dHNjYWxlICIkMiIgIiQzIiA7OwogICAgc2V0dGV4dHNjYWxlLWZvY3VzZWQpIFtbIC1uICIkezI6LX0iIF1dIHx8IHsgdXNhZ2UgPiYyOyBleGl0IDI7IH07IG1vbml0b3I9IiQoZm9jdXNlZF9tb25pdG9yKSI7IHNldHRleHRzY2FsZSAiJG1vbml0b3IiICIkMiIgOzsKICAgIHNldHNob3d0YXNrcykgW1sgLW4gIiR7MjotfSIgJiYgLW4gIiR7MzotfSIgXV0gfHwgeyB1c2FnZSA+JjI7IGV4aXQgMjsgfTsgc2V0X21vbml0b3JfaWNvbl9vcHRpb24gIiQyIiBzaG93X3Rhc2tzICIkMyIgOzsKIiIiLAogICAgICAgICIiIiAgICBzZXR0ZXh0c2NhbGUpIFtbIC1uICIkezI6LX0iICYmIC1uICIkezM6LX0iIF1dIHx8IHsgdXNhZ2UgPiYyOyBleGl0IDI7IH07IHNldHRleHRzY2FsZSAiJDIiICIkMyIgOzsKICAgIHNldHRleHRzY2FsZS1mb2N1c2VkKSBbWyAtbiAiJHsyOi19IiBdXSB8fCB7IHVzYWdlID4mMjsgZXhpdCAyOyB9OyBtb25pdG9yPSIkKGZvY3VzZWRfbW9uaXRvcikiOyBzZXR0ZXh0c2NhbGUgIiRtb25pdG9yIiAiJDIiIDs7CiAgICBzZXR0cmFuc3BhcmVuY3kpIFtbIC1uICIkezI6LX0iICYmIC1uICIkezM6LX0iIF1dIHx8IHsgdXNhZ2UgPiYyOyBleGl0IDI7IH07IHNldHRyYW5zcGFyZW5jeSAiJDIiICIkMyIgOzsKICAgIHNldHRyYW5zcGFyZW5jeS1mb2N1c2VkKSBbWyAtbiAiJHsyOi19IiBdXSB8fCB7IHVzYWdlID4mMjsgZXhpdCAyOyB9OyBtb25pdG9yPSIkKGZvY3VzZWRfbW9uaXRvcikiOyBzZXR0cmFuc3BhcmVuY3kgIiRtb25pdG9yIiAiJDIiIDs7CiAgICBzZXRzaG93dGFza3MpIFtbIC1uICIkezI6LX0iICYmIC1uICIkezM6LX0iIF1dIHx8IHsgdXNhZ2UgPiYyOyBleGl0IDI7IH07IHNldF9tb25pdG9yX2ljb25fb3B0aW9uICIkMiIgc2hvd190YXNrcyAiJDMiIDs7CiIiIiwKICAgICksCl0KZm9yIG9sZCwgbmV3IGluIHBhaXJzOgogICAgcmVwbGFjZV9vbmNlKG1hbmFnZXIsIG9sZCwgbmV3KQoKcmVwbGFjZV9vbmNlKAogICAgc3RhdGUsCiAgICAiIiIgICAgZnVuY3Rpb24gbGF1bmNoZXJWaWV3Rm9yKG5hbWUpIHsKIiIiLAogICAgIiIiICAgIGZ1bmN0aW9uIGJhclRyYW5zcGFyZW5jeUZvcihuYW1lKSB7CiAgICAgICAgY29uc3QgZGVwZW5kZW5jeSA9IHJldmlzaW9uOwogICAgICAgIGNvbnN0IG1vbiA9IG1vbml0b3JTdGF0ZShuYW1lKTsKICAgICAgICBjb25zdCBwZXJjZW50ID0gTnVtYmVyKG1vbi5iYXJfdHJhbnNwYXJlbmN5ID09PSB1bmRlZmluZWQgPyAwIDogbW9uLmJhcl90cmFuc3BhcmVuY3kpOwogICAgICAgIGlmICghTnVtYmVyLmlzRmluaXRlKHBlcmNlbnQpKQogICAgICAgICAgICByZXR1cm4gMDsKICAgICAgICByZXR1cm4gTWF0aC5tYXgoMCwgTWF0aC5taW4oMTAwLCBNYXRoLnJvdW5kKHBlcmNlbnQpKSk7CiAgICB9CgogICAgZnVuY3Rpb24gbGF1bmNoZXJWaWV3Rm9yKG5hbWUpIHsKIiIiLAopCgpyZXBsYWNlX29uY2UoCiAgICBiYXIsCiAgICAiIiIgICAgY29sb3I6IFRoZW1lLmJhY2tncm91bmQKICAgIGFib3ZlV2luZG93czogdHJ1ZQoiIiIsCiAgICAiIiIgICAgY29sb3I6IFF0LnJnYmEoVGhlbWUuYmFja2dyb3VuZC5yLCBUaGVtZS5iYWNrZ3JvdW5kLmcsIFRoZW1lLmJhY2tncm91bmQuYiwKICAgICAgICAxIC0gQmFyU3RhdGUuYmFyVHJhbnNwYXJlbmN5Rm9yKG1vbml0b3JOYW1lKSAvIDEwMCkKICAgIGFib3ZlV2luZG93czogdHJ1ZQoiIiIsCikKCnJlcGxhY2Vfb25jZSgKICAgIHNldHRpbmdzLAogICAgIiIiICAgIHByb3BlcnR5IHN0cmluZyBjdXN0b21TY2FsZVRleHQ6ICIxIgoKICAgIHNpZ25hbCB0aGVtZVBpY2tlclJlcXVlc3RlZCgpCiIiIiwKICAgICIiIiAgICBwcm9wZXJ0eSBzdHJpbmcgY3VzdG9tU2NhbGVUZXh0OiAiMSIKICAgIHByb3BlcnR5IGludCBiYXJUcmFuc3BhcmVuY3lIb3ZlclBlcmNlbnQ6IC0xCgogICAgc2lnbmFsIHRoZW1lUGlja2VyUmVxdWVzdGVkKCkKIiIiLAopCgpyZXBsYWNlX29uY2UoCiAgICBzZXR0aW5ncywKICAgICIiIiAgICBmdW5jdGlvbiByYXdNb2R1bGVWaXNpYmxlKG5hbWUsIG1vZHVsZSkgewoiIiIsCiAgICAiIiIgICAgZnVuY3Rpb24gcmF3QmFyVHJhbnNwYXJlbmN5KG5hbWUpIHsKICAgICAgICBjb25zdCBzdGF0ZSA9IEJhclN0YXRlLm1vbml0b3JTdGF0ZShuYW1lKSB8fCAoe30pOwogICAgICAgIGNvbnN0IHZhbHVlID0gTnVtYmVyKHN0YXRlLmJhcl90cmFuc3BhcmVuY3kgPT09IHVuZGVmaW5lZCA/IDAgOiBzdGF0ZS5iYXJfdHJhbnNwYXJlbmN5KTsKICAgICAgICByZXR1cm4gTnVtYmVyLmlzRmluaXRlKHZhbHVlKSA/IE1hdGgubWF4KDAsIE1hdGgubWluKDEwMCwgTWF0aC5yb3VuZCh2YWx1ZSkpKSA6IDA7CiAgICB9CgogICAgZnVuY3Rpb24gcmF3TW9kdWxlVmlzaWJsZShuYW1lLCBtb2R1bGUpIHsKIiIiLAopCgpyZXBsYWNlX29uY2UoCiAgICBzZXR0aW5ncywKICAgICIiIiAgICBmdW5jdGlvbiBtb2R1bGVWaXNpYmlsaXR5QWN0aXZlKG1vZHVsZSkgewoiIiIsCiAgICAiIiIgICAgZnVuY3Rpb24gdHJhbnNwYXJlbmN5VGV4dCgpIHsKICAgICAgICBjb25zdCB2YWx1ZSA9IGNvbW1vblZhbHVlKHJhd0JhclRyYW5zcGFyZW5jeSk7CiAgICAgICAgcmV0dXJuIHZhbHVlID09PSBudWxsID8gIk1peGVkIiA6IHZhbHVlICsgIiUiOwogICAgfQoKICAgIGZ1bmN0aW9uIHRyYW5zcGFyZW5jeVBlcmNlbnQoKSB7CiAgICAgICAgY29uc3QgdmFsdWUgPSBjb21tb25WYWx1ZShyYXdCYXJUcmFuc3BhcmVuY3kpOwogICAgICAgIHJldHVybiB2YWx1ZSA9PT0gbnVsbCA/IC0xIDogdmFsdWU7CiAgICB9CgogICAgZnVuY3Rpb24gbW9kdWxlVmlzaWJpbGl0eUFjdGl2ZShtb2R1bGUpIHsKIiIiLAopCgpyZXBsYWNlX29uY2UoCiAgICBzZXR0aW5ncywKICAgICIiIiAgICBmdW5jdGlvbiBlbnF1ZXVlKGNvbW1hbmQsIHZhbHVlKSB7CiIiIiwKICAgICIiIiAgICBmdW5jdGlvbiBiYXNlQmFyVHJhbnNwYXJlbmN5KCkgewogICAgICAgIGNvbnN0IGNvbW1vbiA9IGNvbW1vblZhbHVlKHJhd0JhclRyYW5zcGFyZW5jeSk7CiAgICAgICAgaWYgKGNvbW1vbiAhPT0gbnVsbCkKICAgICAgICAgICAgcmV0dXJuIGNvbW1vbjsKICAgICAgICBjb25zdCB0YXJnZXRzID0gcmVzb2x2ZWRUYXJnZXRzKCk7CiAgICAgICAgcmV0dXJuIHRhcmdldHMubGVuZ3RoID4gMCA/IHJhd0JhclRyYW5zcGFyZW5jeSh0YXJnZXRzWzBdKSA6IDA7CiAgICB9CgogICAgZnVuY3Rpb24gZW5xdWV1ZShjb21tYW5kLCB2YWx1ZSkgewoiIiIsCikKCnJlcGxhY2Vfb25jZSgKICAgIHNldHRpbmdzLAogICAgIiIiICAgICAgICAgICAgbmV4dC5wdXNoKFttYW5hZ2VyU2NyaXB0LCAic2V0dGV4dHNjYWxlIiwgdGFyZ2V0LCAiMTAwIl0pOwogICAgICAgICAgICBuZXh0LnB1c2goW21hbmFnZXJTY3JpcHQsICJzZXRzaG93dGFza3MiLCB0YXJnZXQsICJ0cnVlIl0pOwoiIiIsCiAgICAiIiIgICAgICAgICAgICBuZXh0LnB1c2goW21hbmFnZXJTY3JpcHQsICJzZXR0ZXh0c2NhbGUiLCB0YXJnZXQsICIxMDAiXSk7CiAgICAgICAgICAgIG5leHQucHVzaChbbWFuYWdlclNjcmlwdCwgInNldHRyYW5zcGFyZW5jeSIsIHRhcmdldCwgIjAiXSk7CiAgICAgICAgICAgIG5leHQucHVzaChbbWFuYWdlclNjcmlwdCwgInNldHNob3d0YXNrcyIsIHRhcmdldCwgInRydWUiXSk7CiIiIiwKKQoKcmVwbGFjZV9vbmNlKAogICAgc2V0dGluZ3MsCiAgICAiIiIgICAgZnVuY3Rpb24gZGlzcGxheVNjYWxlTGFiZWwodmFsdWUpIHsKIiIiLAogICAgIiIiICAgIGZ1bmN0aW9uIHNldFRyYW5zcGFyZW5jeVBlcmNlbnQodmFsdWUpIHsKICAgICAgICBjb25zdCBudW1lcmljID0gTnVtYmVyKHZhbHVlKTsKICAgICAgICBpZiAoIU51bWJlci5pc0Zpbml0ZShudW1lcmljKSkKICAgICAgICAgICAgcmV0dXJuOwogICAgICAgIGNvbnN0IG5leHQgPSBNYXRoLm1heCgwLCBNYXRoLm1pbigxMDAsIE1hdGgucm91bmQobnVtZXJpYykpKTsKICAgICAgICBtZXNzYWdlID0gIkJhciB0cmFuc3BhcmVuY3kgIiArIG5leHQgKyAiJSI7CiAgICAgICAgZW5xdWV1ZSgic2V0dHJhbnNwYXJlbmN5IiwgbmV4dCk7CiAgICB9CgogICAgZnVuY3Rpb24gYWRqdXN0VHJhbnNwYXJlbmN5KGRlbHRhKSB7CiAgICAgICAgc2V0VHJhbnNwYXJlbmN5UGVyY2VudChiYXNlQmFyVHJhbnNwYXJlbmN5KCkgKyBkZWx0YSk7CiAgICB9CgogICAgZnVuY3Rpb24gZGlzcGxheVNjYWxlTGFiZWwodmFsdWUpIHsKIiIiLAopCgp0ZXh0X3NpemVfcm93ID0gIiIiICAgICAgICAgICAgUm93TGF5b3V0IHsKICAgICAgICAgICAgICAgIExheW91dC5maWxsV2lkdGg6IHRydWUKICAgICAgICAgICAgICAgIExheW91dC5wcmVmZXJyZWRIZWlnaHQ6IDI2CiAgICAgICAgICAgICAgICBzcGFjaW5nOiA1CgogICAgICAgICAgICAgICAgVGV4dCB7CiAgICAgICAgICAgICAgICAgICAgTGF5b3V0LnByZWZlcnJlZFdpZHRoOiA3OAogICAgICAgICAgICAgICAgICAgIHRleHQ6ICJUZXh0IHNpemUiCiIiIgoKdHJhbnNwYXJlbmN5X3JvdyA9ICIiIiAgICAgICAgICAgIFJvd0xheW91dCB7CiAgICAgICAgICAgICAgICBMYXlvdXQuZmlsbFdpZHRoOiB0cnVlCiAgICAgICAgICAgICAgICBMYXlvdXQucHJlZmVycmVkSGVpZ2h0OiAyNgogICAgICAgICAgICAgICAgc3BhY2luZzogNQoKICAgICAgICAgICAgICAgIFRleHQgewogICAgICAgICAgICAgICAgICAgIExheW91dC5wcmVmZXJyZWRXaWR0aDogNzgKICAgICAgICAgICAgICAgICAgICB0ZXh0OiAiVHJhbnNwYXJlbmN5IgogICAgICAgICAgICAgICAgICAgIGNvbG9yOiBUaGVtZS5mb3JlZ3JvdW5kCiAgICAgICAgICAgICAgICAgICAgZm9udC5mYW1pbHk6IFRoZW1lLmZvbnRGYW1pbHkKICAgICAgICAgICAgICAgICAgICBmb250LnBpeGVsU2l6ZTogMTAKICAgICAgICAgICAgICAgIH0KCiAgICAgICAgICAgICAgICBTZXR0aW5nc0J1dHRvbiB7CiAgICAgICAgICAgICAgICAgICAgbGFiZWw6ICLiiJI1IgogICAgICAgICAgICAgICAgICAgIHRleHRTaXplOiA5CiAgICAgICAgICAgICAgICAgICAgb25DbGlja2VkOiByb290LmFkanVzdFRyYW5zcGFyZW5jeSgtNSkKICAgICAgICAgICAgICAgIH0KCiAgICAgICAgICAgICAgICBSZWN0YW5nbGUgewogICAgICAgICAgICAgICAgICAgIGlkOiBiYXJUcmFuc3BhcmVuY3lUcmFjawogICAgICAgICAgICAgICAgICAgIExheW91dC5maWxsV2lkdGg6IHRydWUKICAgICAgICAgICAgICAgICAgICBMYXlvdXQucHJlZmVycmVkSGVpZ2h0OiAyNAogICAgICAgICAgICAgICAgICAgIGNvbG9yOiBUaGVtZS5wb3B1cEJhY2tncm91bmQKICAgICAgICAgICAgICAgICAgICBib3JkZXIud2lkdGg6IDAKCiAgICAgICAgICAgICAgICAgICAgUmVjdGFuZ2xlIHsKICAgICAgICAgICAgICAgICAgICAgICAgd2lkdGg6IHJvb3QudHJhbnNwYXJlbmN5UGVyY2VudCgpID49IDAKICAgICAgICAgICAgICAgICAgICAgICAgICAgID8gcGFyZW50LndpZHRoICogcm9vdC50cmFuc3BhcmVuY3lQZXJjZW50KCkgLyAxMDAgOiAwCiAgICAgICAgICAgICAgICAgICAgICAgIGhlaWdodDogcGFyZW50LmhlaWdodAogICAgICAgICAgICAgICAgICAgICAgICBjb2xvcjogVGhlbWUuZm9jdXMKICAgICAgICAgICAgICAgICAgICB9CgogICAgICAgICAgICAgICAgICAgIE1vdXNlQXJlYSB7CiAgICAgICAgICAgICAgICAgICAgICAgIGFuY2hvcnMuZmlsbDogcGFyZW50CiAgICAgICAgICAgICAgICAgICAgICAgIGhvdmVyRW5hYmxlZDogdHJ1ZQogICAgICAgICAgICAgICAgICAgICAgICBjdXJzb3JTaGFwZTogUXQuUG9pbnRpbmdIYW5kQ3Vyc29yCiAgICAgICAgICAgICAgICAgICAgICAgIG9uUG9zaXRpb25DaGFuZ2VkOiBtb3VzZSA9PiByb290LmJhclRyYW5zcGFyZW5jeUhvdmVyUGVyY2VudCA9IE1hdGgubWF4KDAsCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBNYXRoLm1pbigxMDAsIE1hdGgucm91bmQobW91c2UueCAqIDEwMCAvIHdpZHRoKSkpCiAgICAgICAgICAgICAgICAgICAgICAgIG9uRXhpdGVkOiByb290LmJhclRyYW5zcGFyZW5jeUhvdmVyUGVyY2VudCA9IC0xCiAgICAgICAgICAgICAgICAgICAgICAgIG9uUHJlc3NlZDogbW91c2UgPT4gcm9vdC5zZXRUcmFuc3BhcmVuY3lQZXJjZW50KG1vdXNlLnggKiAxMDAgLyB3aWR0aCkKICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICB9CgogICAgICAgICAgICAgICAgU2V0dGluZ3NCdXR0b24gewogICAgICAgICAgICAgICAgICAgIGxhYmVsOiAiKzUiCiAgICAgICAgICAgICAgICAgICAgdGV4dFNpemU6IDkKICAgICAgICAgICAgICAgICAgICBvbkNsaWNrZWQ6IHJvb3QuYWRqdXN0VHJhbnNwYXJlbmN5KDUpCiAgICAgICAgICAgICAgICB9CgogICAgICAgICAgICAgICAgVGV4dCB7CiAgICAgICAgICAgICAgICAgICAgTGF5b3V0LnByZWZlcnJlZFdpZHRoOiA1MgogICAgICAgICAgICAgICAgICAgIHRleHQ6IHJvb3QuYmFyVHJhbnNwYXJlbmN5SG92ZXJQZXJjZW50ID49IDAKICAgICAgICAgICAgICAgICAgICAgICAgPyByb290LmJhclRyYW5zcGFyZW5jeUhvdmVyUGVyY2VudCArICIlIiA6IHJvb3QudHJhbnNwYXJlbmN5VGV4dCgpCiAgICAgICAgICAgICAgICAgICAgY29sb3I6IFRoZW1lLmZvcmVncm91bmQKICAgICAgICAgICAgICAgICAgICBmb250LmZhbWlseTogVGhlbWUuZm9udEZhbWlseQogICAgICAgICAgICAgICAgICAgIGZvbnQucGl4ZWxTaXplOiAxMAogICAgICAgICAgICAgICAgICAgIGhvcml6b250YWxBbGlnbm1lbnQ6IFRleHQuQWxpZ25IQ2VudGVyCiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgIH0KCiIiIgoKcmVwbGFjZV9vbmNlKHNldHRpbmdzLCB0ZXh0X3NpemVfcm93LCB0cmFuc3BhcmVuY3lfcm93ICsgdGV4dF9zaXplX3JvdykK' | base64 -d >/tmp/apply-bar-transparency.py
+            python3 /tmp/apply-bar-transparency.py
+          fi
       - name: Install validation tools
         run: sudo apt-get update && sudo apt-get install -y jq shellcheck
-      - name: Validate implementation before commit
+      - name: Validate implementation
         run: |
           git diff --check
           bash -n config/hypr/scripts/quickshell.sh
@@ -359,16 +45,20 @@ Running application icons are visible by default; task and tray icons use origin
           bash tests/test-bar-icon-customization.sh
           bash tests/test-bar-icon-display-options.sh
           bash tests/test-bar-task-icons.sh
-      - name: Commit implementation
+      - name: Commit implementation when changed
         run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add config/hypr/scripts/quickshell.sh \
-            config/quickshell/awtarchy/BarState.qml \
-            config/quickshell/awtarchy/Bar.qml \
-            config/quickshell/awtarchy/BarSettingsSection.qml
-          git commit -m 'Add bar transparency control'
-          git push origin HEAD:feature/bar-transparency
+          if git diff --quiet; then
+            printf '%s\n' 'No implementation diff to commit.'
+          else
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add config/hypr/scripts/quickshell.sh \
+              config/quickshell/awtarchy/BarState.qml \
+              config/quickshell/awtarchy/Bar.qml \
+              config/quickshell/awtarchy/BarSettingsSection.qml
+            git commit -m 'Add bar transparency control'
+            git push origin HEAD:feature/bar-transparency
+          fi
 
   bar-transparency:
     runs-on: ubuntu-latest
