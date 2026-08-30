@@ -34,3 +34,4 @@ jobs:
           git add config/quickshell/awtarchy/QuickSettings.qml local/share/awtarchy/quickshell-managed-history.sha256
           git commit -m 'Fix Quick Settings settings geometry'
           git push origin HEAD:feature/bar-transparency
+# trigger
