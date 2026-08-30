@@ -13,6 +13,7 @@ Item {
     property bool active: false
     property string targetKey: "current"
     property var commandQueue: []
+    property var activeCommand: []
     property string message: ""
     property real displayScale: 1
     property int monitorPixelWidth: 0
@@ -22,6 +23,8 @@ Item {
     property bool customScaleOpen: false
     property string customScaleText: "1"
     property int barTransparencyHoverPercent: -1
+    property bool barTransparencyDragging: false
+    property var barTransparencyDragTargets: []
 
     signal themePickerRequested()
 
@@ -108,8 +111,7 @@ Item {
     }
 
     function rawBarTransparency(name) {
-        const state = BarState.monitorState(name) || ({});
-        const value = Number(state.bar_transparency === undefined ? 0 : state.bar_transparency);
+        const value = Number(BarState.barTransparencyFor(name));
         return Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 0;
     }
 
@@ -309,6 +311,7 @@ Item {
             return;
         const next = commandQueue[0];
         commandQueue = commandQueue.slice(1);
+        activeCommand = next;
         writer.exec(next);
     }
 
@@ -330,11 +333,60 @@ Item {
         enqueue("settextscale", next);
     }
 
-    function setTransparencyPercent(value) {
+    function clampTransparencyPercent(value) {
         const numeric = Number(value);
         if (!Number.isFinite(numeric))
+            return -1;
+        return Math.max(0, Math.min(100, Math.round(numeric)));
+    }
+
+    function previewTransparencyPercent(value) {
+        const next = clampTransparencyPercent(value);
+        if (next < 0 || !barTransparencyDragging)
             return;
-        const next = Math.max(0, Math.min(100, Math.round(numeric)));
+        barTransparencyHoverPercent = next;
+        for (const target of barTransparencyDragTargets)
+            BarState.setLiveBarTransparency(target, next);
+    }
+
+    function beginTransparencyDrag(value) {
+        const targets = resolvedTargets();
+        if (targets.length === 0)
+            return;
+        barTransparencyDragTargets = targets.slice();
+        barTransparencyDragging = true;
+        previewTransparencyPercent(value);
+    }
+
+    function commitTransparencyDrag() {
+        if (!barTransparencyDragging)
+            return;
+        const value = clampTransparencyPercent(barTransparencyHoverPercent);
+        const targets = barTransparencyDragTargets.slice();
+        barTransparencyDragging = false;
+        barTransparencyDragTargets = [];
+        if (value < 0 || targets.length === 0)
+            return;
+        const next = commandQueue.slice();
+        for (const target of targets)
+            next.push([managerScript, "settransparency", target, String(value)]);
+        commandQueue = next;
+        message = "Bar transparency " + value + "%";
+        runNextCommand();
+    }
+
+    function cancelTransparencyDrag() {
+        for (const target of barTransparencyDragTargets)
+            BarState.clearLiveBarTransparency(target);
+        barTransparencyDragging = false;
+        barTransparencyDragTargets = [];
+        barTransparencyHoverPercent = -1;
+    }
+
+    function setTransparencyPercent(value) {
+        const next = clampTransparencyPercent(value);
+        if (next < 0)
+            return;
         message = "Bar transparency " + next + "%";
         enqueue("settransparency", next);
     }
@@ -417,7 +469,11 @@ Item {
     Process {
         id: writer
         onExited: {
+            const completed = root.activeCommand;
+            root.activeCommand = [];
             BarState.refresh();
+            if (completed.length >= 3 && completed[1] === "settransparency")
+                Qt.callLater(() => BarState.clearLiveBarTransparency(String(completed[2])));
             root.runNextCommand();
         }
     }
@@ -707,14 +763,44 @@ Item {
                         color: Theme.focus
                     }
 
+                    Rectangle {
+                        visible: root.barTransparencyHoverPercent >= 0
+                        width: 46
+                        height: 21
+                        x: Math.max(0, Math.min(parent.width - width,
+                            parent.width * root.barTransparencyHoverPercent / 100 - width / 2))
+                        y: -25
+                        color: Theme.background
+                        border.width: 1
+                        border.color: Theme.focus
+                        z: 4
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: root.barTransparencyHoverPercent + "%"
+                            color: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 9
+                        }
+                    }
+
                     MouseArea {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onPositionChanged: mouse => root.barTransparencyHoverPercent = Math.max(0,
-                            Math.min(100, Math.round(mouse.x * 100 / width)))
-                        onExited: root.barTransparencyHoverPercent = -1
-                        onPressed: mouse => root.setTransparencyPercent(mouse.x * 100 / width)
+                        onPositionChanged: mouse => {
+                            root.barTransparencyHoverPercent = Math.max(0,
+                                Math.min(100, Math.round(mouse.x * 100 / width)));
+                            if (pressed)
+                                root.previewTransparencyPercent(root.barTransparencyHoverPercent);
+                        }
+                        onExited: {
+                            if (!pressed)
+                                root.barTransparencyHoverPercent = -1;
+                        }
+                        onPressed: mouse => root.beginTransparencyDrag(mouse.x * 100 / width)
+                        onReleased: root.commitTransparencyDrag()
+                        onCanceled: root.cancelTransparencyDrag()
                     }
                 }
 
@@ -722,16 +808,6 @@ Item {
                     label: "+5"
                     textSize: 9
                     onClicked: root.adjustTransparency(5)
-                }
-
-                Text {
-                    Layout.preferredWidth: 52
-                    text: root.barTransparencyHoverPercent >= 0
-                        ? root.barTransparencyHoverPercent + "%" : root.transparencyText()
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 10
-                    horizontalAlignment: Text.AlignHCenter
                 }
             }
 

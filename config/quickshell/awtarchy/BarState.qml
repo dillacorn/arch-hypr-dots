@@ -147,6 +147,7 @@ Singleton {
     property var liveEnabled: ({})
     property var liveBarSizes: ({})
     property var liveIconScales: ({})
+    property var liveBarTransparencies: ({})
 
     function focusedMonitorName() {
         const monitor = Hyprland.focusedMonitor;
@@ -259,19 +260,44 @@ Singleton {
         revision++;
     }
 
+    function setLiveBarTransparency(name, value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric))
+            return;
+        const percent = Math.max(0, Math.min(100, Math.round(numeric)));
+        if (liveBarTransparencies[name] === percent)
+            return;
+        const next = Object.assign({}, liveBarTransparencies);
+        next[name] = percent;
+        liveBarTransparencies = next;
+        revision++;
+    }
+
+    function clearLiveBarTransparency(name) {
+        if (liveBarTransparencies[name] === undefined)
+            return;
+        const next = Object.assign({}, liveBarTransparencies);
+        delete next[name];
+        liveBarTransparencies = next;
+        revision++;
+    }
+
     function clearLiveOverrides(name) {
         const positions = Object.assign({}, livePositions);
         const enabled = Object.assign({}, liveEnabled);
         const sizes = Object.assign({}, liveBarSizes);
         const scales = Object.assign({}, liveIconScales);
+        const transparencies = Object.assign({}, liveBarTransparencies);
         delete positions[name];
         delete enabled[name];
         delete sizes[name];
         delete scales[name];
+        delete transparencies[name];
         livePositions = positions;
         liveEnabled = enabled;
         liveBarSizes = sizes;
         liveIconScales = scales;
+        liveBarTransparencies = transparencies;
         revision++;
     }
 
@@ -622,8 +648,11 @@ Singleton {
 
     function barTransparencyFor(name) {
         const dependency = revision;
+        const override = liveBarTransparencies[name];
         const mon = monitorState(name);
-        const percent = Number(mon.bar_transparency === undefined ? 0 : mon.bar_transparency);
+        const percent = Number(override !== undefined
+            ? override
+            : (mon.bar_transparency === undefined ? 0 : mon.bar_transparency));
         if (!Number.isFinite(percent))
             return 0;
         return Math.max(0, Math.min(100, Math.round(percent)));
