@@ -123,12 +123,39 @@ PanelWindow {
         return flyoutTitles.indexOf(title) >= 0;
     }
 
+    function isXwaylandPopupHelper(toplevel) {
+        if (!toplevel)
+            return false;
+
+        const ipc = toplevel.lastIpcObject || {};
+        const titleEmpty = String(toplevel.title || ipc.title || ipc.initialTitle || "").trim().length === 0;
+        if (!(ipc.xwayland === true && ipc.floating === true) || !titleEmpty)
+            return false;
+
+        const cls = String(ipc.class || ipc.initialClass || "").toLowerCase();
+        if (!cls || ipc.pid === undefined || ipc.pid === null)
+            return false;
+
+        return Hyprland.toplevels.values.some(sibling => {
+            if (!sibling || sibling === toplevel)
+                return false;
+            const siblingIpc = sibling.lastIpcObject || {};
+            const siblingClass = String(siblingIpc.class || siblingIpc.initialClass || "").toLowerCase();
+            const siblingTitle = String(sibling.title || siblingIpc.title || siblingIpc.initialTitle || "").trim();
+            return siblingIpc.pid === ipc.pid
+                && siblingClass === cls
+                && siblingTitle.length > 0;
+        });
+    }
+
     function toplevelVisibleHere(toplevel) {
         if (!toplevel || !toplevel.monitor || toplevel.monitor.name !== monitorName)
             return false;
         if (isAwtarchyFlyout(toplevel))
             return false;
         if (toplevel.wayland && toplevel.wayland.parent)
+            return false;
+        if (isXwaylandPopupHelper(toplevel))
             return false;
         const ipc = toplevel.lastIpcObject || {};
         const cls = String(ipc.class || ipc.initialClass || "").toLowerCase();
