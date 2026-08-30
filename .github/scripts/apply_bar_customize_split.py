@@ -200,6 +200,7 @@ if history and not history.endswith("\n"):
 for source, rel in (
     (QUICK, ".config/quickshell/awtarchy/QuickSettings.qml"),
     (THEME_PICKER, ".config/quickshell/awtarchy/ThemePicker.qml"),
+    (FLOATING, ".config/hypr/scripts/quickshell_floating_windows.sh"),
 ):
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
     line = f"{digest}\t{rel}\n"
