@@ -83,8 +83,11 @@ Singleton {
         ? panelHeightOverride : BarState.quickSettingsViewFor(activeMonitorName).height)
     readonly property int livePanelWidth: quickSettingsWindow.visible && quickSettingsWindow.width > 0
         ? clampWidth(Math.round(quickSettingsWindow.width)) : configuredPanelWidth
-    readonly property int livePanelHeight: quickSettingsWindow.visible && quickSettingsWindow.height > 0
+    readonly property int livePanelHeight: quickSettingsWindow.visible && !root.settingsOpen
+        && quickSettingsWindow.height > 0
         ? clampHeight(Math.round(quickSettingsWindow.height)) : configuredPanelHeight
+    readonly property int settingsModePanelHeight: clampHeight(38
+        + (layoutEditorOpen ? layoutEditor.implicitHeight : settingsPanel.implicitHeight) + 12)
     readonly property int effectiveTextScale: textScaleOverride >= 0
         ? textScaleOverride : BarState.quickSettingsViewFor(activeMonitorName).textScale
     readonly property int effectiveIconScale: iconScaleOverride >= 0
@@ -113,6 +116,10 @@ Singleton {
     }
 
     onBottomEdgeLayoutChanged: Qt.callLater(() => alignContentToBar())
+    onLayoutEditorOpenChanged: {
+        if (settingsOpen)
+            Qt.callLater(() => resizeForSettingsMode());
+    }
 
     function emptyStatus() {
         return ({
@@ -178,9 +185,20 @@ Singleton {
         if (quickSettingsWindow.visible && activeMonitorName.length > 0) {
             Quickshell.execDetached([
                 positionScript, "quick-settings", activeMonitorName, placement, "resize",
-                String(panelWidthOverride), String(panelHeightOverride)
+                String(panelWidthOverride),
+                String(settingsOpen ? settingsModePanelHeight : panelHeightOverride)
             ]);
         }
+    }
+
+    function resizeForSettingsMode() {
+        if (!quickSettingsWindow.visible || activeMonitorName.length === 0)
+            return;
+        Quickshell.execDetached([
+            positionScript, "quick-settings", activeMonitorName, placement, "resize",
+            String(configuredPanelWidth),
+            String(settingsOpen ? settingsModePanelHeight : configuredPanelHeight)
+        ]);
     }
 
     function positionWindow() {
@@ -675,6 +693,7 @@ Singleton {
         layoutEditorOpen = false;
         settingsPanel.resetCopySelection();
         settingsMessage = "";
+        Qt.callLater(() => root.resizeForSettingsMode());
     }
 
     function openForScreen(targetScreen) {
@@ -896,7 +915,7 @@ Singleton {
         color: "transparent"
         surfaceFormat.opaque: false
         implicitWidth: root.configuredPanelWidth
-        implicitHeight: root.configuredPanelHeight
+        implicitHeight: root.settingsOpen ? root.settingsModePanelHeight : root.configuredPanelHeight
         minimumSize: Qt.size(root.minimumPanelWidth, root.minimumPanelHeight)
         maximumSize: Qt.size(root.maximumPanelWidth, root.maximumPanelHeight)
 
@@ -944,6 +963,7 @@ Singleton {
                 columnSpacing: 0
 
                 Rectangle {
+                    id: headerBar
                     Layout.row: root.bottomEdgeLayout ? 2 : 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: 38
@@ -1071,7 +1091,9 @@ Singleton {
                     visible: !root.settingsOpen
                     Layout.row: root.bottomEdgeLayout ? 0 : 2
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    Layout.fillHeight: !root.settingsOpen
+                    Layout.preferredHeight: root.settingsOpen ? 0 : -1
+                    Layout.maximumHeight: root.settingsOpen ? 0 : root.maximumPanelHeight
                     Layout.bottomMargin: 0
                     contentWidth: width
                     contentHeight: Math.max(height, settingsColumn.implicitHeight + 12)
@@ -2251,8 +2273,9 @@ Singleton {
             Rectangle {
                 width: 28
                 height: 28
-                x: panel.width - width - 6
-                y: root.bottomEdgeLayout ? panel.height - height - 5 : 5
+                anchors.right: panel.right
+                anchors.rightMargin: 6
+                anchors.verticalCenter: headerBar.verticalCenter
                 color: closeMouse.containsMouse ? Theme.focus : Theme.active
                 border.width: 1
                 border.color: closeMouse.containsMouse ? Theme.focus : Theme.muted
