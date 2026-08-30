@@ -18,6 +18,358 @@ permissions:
   contents: read
 
 jobs:
+  apply-implementation:
+    if: github.event_name == 'push' && github.event.head_commit.message == 'Apply bar transparency implementation'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/bar-transparency
+      - name: Apply scoped implementation
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one anchor, found {count}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          manager = 'config/hypr/scripts/quickshell.sh'
+          state = 'config/quickshell/awtarchy/BarState.qml'
+          bar = 'config/quickshell/awtarchy/Bar.qml'
+          settings = 'config/quickshell/awtarchy/BarSettingsSection.qml'
+
+          default_block = '''                    bar_size:0,
+                    icon_scale:100,
+                    text_scale:100,
+                    show_tasks:true,
+'''
+          default_with_transparency = '''                    bar_size:0,
+                    icon_scale:100,
+                    text_scale:100,
+                    bar_transparency:0,
+                    show_tasks:true,
+'''
+          replace_once(manager, default_block, default_with_transparency)
+
+          replace_once(manager, '''gettextscale() {
+    ensure_state
+    jq -r --arg monitor "$1" '(.monitors[$monitor].text_scale // 100) | tonumber' "$STATE_FILE"
+}
+
+getshowcpu() {
+''', '''gettextscale() {
+    ensure_state
+    jq -r --arg monitor "$1" '(.monitors[$monitor].text_scale // 100) | tonumber' "$STATE_FILE"
+}
+
+gettransparency() {
+    ensure_state
+    jq -r --arg monitor "$1" '(.monitors[$monitor].bar_transparency // 0) | tonumber' "$STATE_FILE"
+}
+
+getshowcpu() {
+''')
+
+          replace_once(manager, '''settextscale() {
+    local monitor="$1" scale="$2" tmp
+    [[ "$scale" =~ ^[0-9]+$ ]] || { printf 'quickshell.sh: text scale must be an integer\\n' >&2; exit 2; }
+    if (( scale < MIN_TEXT_SCALE || scale > MAX_TEXT_SCALE )); then
+        printf 'quickshell.sh: text scale must be %d-%d\\n' "$MIN_TEXT_SCALE" "$MAX_TEXT_SCALE" >&2
+        exit 2
+    fi
+    ensure_state
+    tmp="${STATE_FILE}.tmp.$$"
+    jq --arg monitor "$monitor" --argjson scale "$scale" '.monitors[$monitor].text_scale = $scale' "$STATE_FILE" >"$tmp"
+    mv -f "$tmp" "$STATE_FILE"
+}
+
+reset_mon() {
+''', '''settextscale() {
+    local monitor="$1" scale="$2" tmp
+    [[ "$scale" =~ ^[0-9]+$ ]] || { printf 'quickshell.sh: text scale must be an integer\\n' >&2; exit 2; }
+    if (( scale < MIN_TEXT_SCALE || scale > MAX_TEXT_SCALE )); then
+        printf 'quickshell.sh: text scale must be %d-%d\\n' "$MIN_TEXT_SCALE" "$MAX_TEXT_SCALE" >&2
+        exit 2
+    fi
+    ensure_state
+    tmp="${STATE_FILE}.tmp.$$"
+    jq --arg monitor "$monitor" --argjson scale "$scale" '.monitors[$monitor].text_scale = $scale' "$STATE_FILE" >"$tmp"
+    mv -f "$tmp" "$STATE_FILE"
+}
+
+settransparency() {
+    local monitor="$1" transparency="$2" tmp
+    [[ "$transparency" =~ ^[0-9]+$ ]] || { printf 'quickshell.sh: bar transparency must be an integer\\n' >&2; exit 2; }
+    if (( transparency > 100 )); then
+        printf 'quickshell.sh: bar transparency must be 0-100\\n' >&2
+        exit 2
+    fi
+    ensure_state
+    tmp="${STATE_FILE}.tmp.$$"
+    jq --arg monitor "$monitor" --argjson transparency "$transparency" '.monitors[$monitor].bar_transparency = $transparency' "$STATE_FILE" >"$tmp"
+    mv -f "$tmp" "$STATE_FILE"
+}
+
+reset_mon() {
+''')
+
+          reset_block = '''            bar_size:0,
+            icon_scale:100,
+            text_scale:100,
+            show_tasks:true,
+'''
+          reset_with_transparency = '''            bar_size:0,
+            icon_scale:100,
+            text_scale:100,
+            bar_transparency:0,
+            show_tasks:true,
+'''
+          replace_once(manager, reset_block, reset_with_transparency)
+
+          replace_once(manager, '''  getscale-focused
+  gettextscale-focused
+  getshowtasks-focused
+''', '''  getscale-focused
+  gettextscale-focused
+  gettransparency-focused
+  getshowtasks-focused
+''')
+          replace_once(manager, '''  setscale-focused <50-200>
+  settextscale-focused <50-200>
+  setshowtasks-focused <true|false>
+''', '''  setscale-focused <50-200>
+  settextscale-focused <50-200>
+  settransparency-focused <0-100>
+  setshowtasks-focused <true|false>
+''')
+          replace_once(manager, '''  getscale <MON>
+  gettextscale <MON>
+  getshowtasks <MON>
+''', '''  getscale <MON>
+  gettextscale <MON>
+  gettransparency <MON>
+  getshowtasks <MON>
+''')
+          replace_once(manager, '''  setscale <MON> <50-200>
+  settextscale <MON> <50-200>
+  setshowtasks <MON> <true|false>
+''', '''  setscale <MON> <50-200>
+  settextscale <MON> <50-200>
+  settransparency <MON> <0-100>
+  setshowtasks <MON> <true|false>
+''')
+          replace_once(manager, '''icon_scale and text_scale are percentages; 100 preserves the tuned defaults.
+Running application icons are visible by default; task and tray icons use original colors by default.
+''', '''icon_scale and text_scale are percentages; 100 preserves the tuned defaults.
+bar_transparency is a percentage; 0 is fully opaque and 100 is fully transparent.
+Running application icons are visible by default; task and tray icons use original colors by default.
+''')
+          replace_once(manager, '''    gettextscale) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; gettextscale "$2" ;;
+    gettextscale-focused) monitor="$(focused_monitor)"; gettextscale "$monitor" ;;
+    getshowtasks) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getshowtasks "$2" ;;
+''', '''    gettextscale) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; gettextscale "$2" ;;
+    gettextscale-focused) monitor="$(focused_monitor)"; gettextscale "$monitor" ;;
+    gettransparency) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; gettransparency "$2" ;;
+    gettransparency-focused) monitor="$(focused_monitor)"; gettransparency "$monitor" ;;
+    getshowtasks) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getshowtasks "$2" ;;
+''')
+          replace_once(manager, '''    settextscale) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; settextscale "$2" "$3" ;;
+    settextscale-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; settextscale "$monitor" "$2" ;;
+    setshowtasks) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_icon_option "$2" show_tasks "$3" ;;
+''', '''    settextscale) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; settextscale "$2" "$3" ;;
+    settextscale-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; settextscale "$monitor" "$2" ;;
+    settransparency) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; settransparency "$2" "$3" ;;
+    settransparency-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; settransparency "$monitor" "$2" ;;
+    setshowtasks) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_icon_option "$2" show_tasks "$3" ;;
+''')
+
+          replace_once(state, '''    function launcherViewFor(name) {
+''', '''    function barTransparencyFor(name) {
+        const dependency = revision;
+        const mon = monitorState(name);
+        const percent = Number(mon.bar_transparency === undefined ? 0 : mon.bar_transparency);
+        if (!Number.isFinite(percent))
+            return 0;
+        return Math.max(0, Math.min(100, Math.round(percent)));
+    }
+
+    function launcherViewFor(name) {
+''')
+
+          replace_once(bar, '''    color: Theme.background
+    aboveWindows: true
+''', '''    color: Qt.rgba(Theme.background.r, Theme.background.g, Theme.background.b,
+        1 - BarState.barTransparencyFor(monitorName) / 100)
+    aboveWindows: true
+''')
+
+          replace_once(settings, '''    property string customScaleText: "1"
+
+    signal themePickerRequested()
+''', '''    property string customScaleText: "1"
+    property int barTransparencyHoverPercent: -1
+
+    signal themePickerRequested()
+''')
+          replace_once(settings, '''    function rawModuleVisible(name, module) {
+''', '''    function rawBarTransparency(name) {
+        const state = BarState.monitorState(name) || ({});
+        const value = Number(state.bar_transparency === undefined ? 0 : state.bar_transparency);
+        return Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 0;
+    }
+
+    function rawModuleVisible(name, module) {
+''')
+          replace_once(settings, '''    function moduleVisibilityActive(module) {
+''', '''    function transparencyText() {
+        const value = commonValue(rawBarTransparency);
+        return value === null ? "Mixed" : value + "%";
+    }
+
+    function transparencyPercent() {
+        const value = commonValue(rawBarTransparency);
+        return value === null ? -1 : value;
+    }
+
+    function moduleVisibilityActive(module) {
+''')
+          replace_once(settings, '''    function enqueue(command, value) {
+''', '''    function baseBarTransparency() {
+        const common = commonValue(rawBarTransparency);
+        if (common !== null)
+            return common;
+        const targets = resolvedTargets();
+        return targets.length > 0 ? rawBarTransparency(targets[0]) : 0;
+    }
+
+    function enqueue(command, value) {
+''')
+          replace_once(settings, '''            next.push([managerScript, "settextscale", target, "100"]);
+            next.push([managerScript, "setshowtasks", target, "true"]);
+''', '''            next.push([managerScript, "settextscale", target, "100"]);
+            next.push([managerScript, "settransparency", target, "0"]);
+            next.push([managerScript, "setshowtasks", target, "true"]);
+''')
+          replace_once(settings, '''    function displayScaleLabel(value) {
+''', '''    function setTransparencyPercent(value) {
+        const next = Math.max(0, Math.min(100, Math.round(Number(value))));
+        if (!Number.isFinite(next))
+            return;
+        message = "Bar transparency " + next + "%";
+        enqueue("settransparency", next);
+    }
+
+    function adjustTransparency(delta) {
+        setTransparencyPercent(baseBarTransparency() + delta);
+    }
+
+    function displayScaleLabel(value) {
+''')
+
+          text_size_row = '''            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 26
+                spacing: 5
+
+                Text {
+                    Layout.preferredWidth: 78
+                    text: "Text size"
+'''
+          transparency_row = '''            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 26
+                spacing: 5
+
+                Text {
+                    Layout.preferredWidth: 78
+                    text: "Transparency"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                }
+
+                SettingsButton {
+                    label: "−5"
+                    textSize: 9
+                    onClicked: root.adjustTransparency(-5)
+                }
+
+                Rectangle {
+                    id: barTransparencyTrack
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 24
+                    color: Theme.popupBackground
+                    border.width: 0
+
+                    Rectangle {
+                        width: root.transparencyPercent() >= 0
+                            ? parent.width * root.transparencyPercent() / 100 : 0
+                        height: parent.height
+                        color: Theme.focus
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onPositionChanged: mouse => root.barTransparencyHoverPercent = Math.max(0,
+                            Math.min(100, Math.round(mouse.x * 100 / width)))
+                        onExited: root.barTransparencyHoverPercent = -1
+                        onPressed: mouse => root.setTransparencyPercent(mouse.x * 100 / width)
+                    }
+                }
+
+                SettingsButton {
+                    label: "+5"
+                    textSize: 9
+                    onClicked: root.adjustTransparency(5)
+                }
+
+                Text {
+                    Layout.preferredWidth: 52
+                    text: root.barTransparencyHoverPercent >= 0
+                        ? root.barTransparencyHoverPercent + "%" : root.transparencyText()
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                    horizontalAlignment: Text.AlignHCenter
+                }
+            }
+
+'''
+          replace_once(settings, text_size_row, transparency_row + text_size_row)
+          PY
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+      - name: Validate implementation before commit
+        run: |
+          git diff --check
+          bash -n config/hypr/scripts/quickshell.sh
+          bash -n tests/test-bar-transparency.sh
+          shellcheck tests/test-bar-transparency.sh
+          bash tests/test-bar-transparency.sh
+          bash tests/test-bar-module-visibility.sh
+          bash tests/test-bar-icon-customization.sh
+          bash tests/test-bar-icon-display-options.sh
+          bash tests/test-bar-task-icons.sh
+      - name: Commit implementation
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add config/hypr/scripts/quickshell.sh \
+            config/quickshell/awtarchy/BarState.qml \
+            config/quickshell/awtarchy/Bar.qml \
+            config/quickshell/awtarchy/BarSettingsSection.qml
+          git commit -m 'Add bar transparency control'
+          git push origin HEAD:feature/bar-transparency
+
   bar-transparency:
     runs-on: ubuntu-latest
     steps:
