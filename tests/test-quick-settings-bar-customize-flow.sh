@@ -5,6 +5,7 @@ IFS=$'\n\t'
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 QUICK="$ROOT/config/quickshell/awtarchy/QuickSettings.qml"
 FLYOUT="$ROOT/config/quickshell/awtarchy/FlyoutSettings.qml"
+DISPLAY_SCALE="$ROOT/config/quickshell/awtarchy/DisplayScaleSettings.qml"
 BAR_SETTINGS="$ROOT/config/quickshell/awtarchy/BarSettingsSection.qml"
 POSITION="$ROOT/config/hypr/scripts/quickshell_flyout_position.sh"
 
@@ -36,7 +37,7 @@ contains "$QUICK" 'visible: root.barCustomizeOpen' \
 contains "$QUICK" 'id: barAppearanceSettings' \
     'Quick Settings does not own the embedded Bar appearance settings instance'
 
-python3 - "$QUICK" <<'PY' || fail 'closing Quick Settings does not reset transient customization state'
+python3 - "$QUICK" <<'PY' || fail 'closing Quick Settings does not reset all transient customization state'
 from pathlib import Path
 import sys
 
@@ -46,8 +47,10 @@ end = text.index('\n    }', start) + 6
 block = text[start:end]
 for needle in (
     'barCustomizeOpen = false;',
-    'settingsPanel.resetCopySelection();',
+    'settingsPanel.resetTransientState();',
     'barAppearanceSettings.resetTransientState();',
+    'brightnessHoverPercent = -1;',
+    'outputVolumeHoverPercent = -1;',
 ):
     if needle not in block:
         raise SystemExit(1)
@@ -72,6 +75,12 @@ contains "$FLYOUT" 'visible: root.copyOpen' \
     'inline copy target row is not conditionally expanded'
 contains "$FLYOUT" 'root.copyRequested(targets);' \
     'inline Quick Settings copy selector does not apply the selected targets'
+contains "$FLYOUT" 'function resetTransientState()' \
+    'Quick Settings settings panel has no unified transient reset contract'
+contains "$FLYOUT" 'displayScaleSection.resetTransientState();' \
+    'Quick Settings settings reset does not collapse the custom Display Scale editor'
+contains "$DISPLAY_SCALE" 'function resetTransientState()' \
+    'Display Scale custom editor cannot be reset when Quick Settings closes'
 
 contains "$QUICK" 'readonly property int minimumSettingsPanelHeight:' \
     'settings mode does not have a compact minimum independent of the normal panel'
@@ -116,7 +125,7 @@ for needle in (
         raise SystemExit(1)
 PY
 
-python3 - "$QUICK" <<'PY' || fail 'Customize Layout preserves a stale inline copy selector underneath the editor'
+python3 - "$QUICK" <<'PY' || fail 'Customize Layout preserves stale settings sub-panels underneath the editor'
 from pathlib import Path
 import sys
 
@@ -125,10 +134,10 @@ needle = '                        onLayoutEditorRequested:'
 start = text.index(needle)
 end = text.index('\n                    }', start)
 block = text[start:end]
-if 'settingsPanel.resetCopySelection();' not in block:
+if 'settingsPanel.resetTransientState();' not in block:
     raise SystemExit(1)
 if 'root.layoutEditorOpen = true;' not in block:
     raise SystemExit(1)
 PY
 
-printf '%s\n' 'PASS: Quick Settings uses compact edge-attached settings, inline copy targets, clean transient state, and one Bar customization flow.'
+printf '%s\n' 'PASS: Quick Settings uses compact edge-attached settings, inline copy targets, complete transient reset, and one Bar customization flow.'
