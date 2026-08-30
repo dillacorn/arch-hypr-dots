@@ -1,4 +1,5 @@
 name: Temporary Apply Bar Customize Split
+# Rerun after correcting the permanent Bar-control regression boundary.
 
 on:
   push:
