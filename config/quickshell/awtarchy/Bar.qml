@@ -129,7 +129,7 @@ PanelWindow {
 
         const ipc = toplevel.lastIpcObject || {};
         const titleEmpty = String(toplevel.title || ipc.title || ipc.initialTitle || "").trim().length === 0;
-        if (!(ipc.xwayland === true && ipc.floating === true) || !titleEmpty)
+        if (ipc.xwayland !== true || !titleEmpty)
             return false;
 
         const cls = String(ipc.class || ipc.initialClass || "").toLowerCase();
