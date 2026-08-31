@@ -169,9 +169,14 @@ if ! declare -F ensure_aur_helper >/dev/null; then
   fail 'reconciler has no AUR helper preparation function'
 else
   if ! (
+    # These functions are intentionally invoked indirectly by ensure_aur_helper.
+    # shellcheck disable=SC2317
     aur_helper_usable() { return 1; }
+    # shellcheck disable=SC2317
     have() { [[ $1 == yay ]]; }
+    # shellcheck disable=SC2317
     package_installed() { [[ $1 == yay ]]; }
+    # shellcheck disable=SC2317
     rebuild_aur_helper() { return 1; }
     AUR_HELPER=""
 
