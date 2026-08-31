@@ -20,9 +20,9 @@ contains "$CORE" 'SCHED_EXT_LAST_SELECTED=""' \
     'sched-ext state does not track the last successfully selected scheduler'
 contains "$CORE" 'SCHED_EXT_RESTORE_ENABLED="0"' \
     'sched-ext state does not track whether session restore is enabled'
-contains "$CORE" 'printf '\''SCHED_EXT_LAST_SELECTED=%q\n'\'' "$SCHED_EXT_LAST_SELECTED"' \
+contains "$CORE" "printf 'SCHED_EXT_LAST_SELECTED=%q\\n' \"\$SCHED_EXT_LAST_SELECTED\"" \
     'sched-ext state file does not persist the last selected scheduler'
-contains "$CORE" 'printf '\''SCHED_EXT_RESTORE_ENABLED=%q\n'\'' "$SCHED_EXT_RESTORE_ENABLED"' \
+contains "$CORE" "printf 'SCHED_EXT_RESTORE_ENABLED=%q\\n' \"\$SCHED_EXT_RESTORE_ENABLED\"" \
     'sched-ext state file does not persist restore enablement'
 
 python3 - "$CORE" <<'PY' || fail 'successful scheduler start/switch does not persist restore state'
@@ -56,7 +56,7 @@ contains "$BACKEND" 'machine_scheduler_restore()' \
     'Quick Settings backend has no one-shot scheduler restore action'
 contains "$BACKEND" '--restore-scheduler)' \
     'Quick Settings backend exposes no scheduler restore entrypoint for session startup'
-contains "$BACKEND" '[[ "$SCHED_EXT_RUNNING" == "$SCHED_EXT_LAST_SELECTED" ]] && return 0' \
+contains "$BACKEND" "[[ \"\$SCHED_EXT_RUNNING\" == \"\$SCHED_EXT_LAST_SELECTED\" ]] && return 0" \
     'scheduler restore would unnecessarily restart an already-running saved scheduler'
 contains "$BACKEND" 'machine_scheduler_reapply_if_running()' \
     'scheduler config edits cannot reapply the active scheduler after removing Apply'
@@ -67,8 +67,6 @@ import sys
 text = Path(sys.argv[1]).read_text()
 for action in ('scheduler-profile)', 'scheduler-args)', 'scheduler-autopower)', 'scheduler-reset)'):
     start = text.index(action)
-    next_case = text.find('\n    ', start + len(action))
-    # Use a generous bounded block; each case is short and the next scheduler case follows quickly.
     block = text[start:start + 900]
     if 'machine_scheduler_reapply_if_running "$scheduler"' not in block:
         raise SystemExit(action)
