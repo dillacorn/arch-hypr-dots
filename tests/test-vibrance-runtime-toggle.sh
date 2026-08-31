@@ -46,7 +46,7 @@ run_toggle() {
     HYPRLAND_LUA="$LUA" \
     VIBRANCE_SHADER_FILE="$SHADER" \
     HYPRCTL_TEST_LOG="$LOG" \
-    "$SCRIPT" toggle >/dev/null
+    bash "$SCRIPT" toggle >/dev/null
 }
 
 : >"$LOG"
