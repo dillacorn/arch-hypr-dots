@@ -37,7 +37,8 @@ Singleton {
     property string nightLightScheduleError: ""
     property bool settingsOpen: false
     property bool layoutEditorOpen: false
-    property bool barIconEditorOpen: false
+    property bool barIconsOpen: false
+    property bool barAppearanceOpen: false
     property var layoutOrderDraft: []
     property var layoutHiddenDraft: []
     property var savedLayout: ({ order: [], hidden: [] })
@@ -77,28 +78,29 @@ Singleton {
     readonly property int maximumPanelHeight: Math.max(1, targetScreenHeight - 20)
     readonly property int minimumPanelWidth: Math.min(520, maximumPanelWidth)
     readonly property int minimumPanelHeight: Math.min(460, maximumPanelHeight)
+    readonly property int minimumSettingsPanelHeight: Math.min(180, maximumPanelHeight)
     readonly property int configuredPanelWidth: clampWidth(panelWidthOverride >= 0
         ? panelWidthOverride : BarState.quickSettingsViewFor(activeMonitorName).width)
     readonly property int configuredPanelHeight: clampHeight(panelHeightOverride >= 0
         ? panelHeightOverride : BarState.quickSettingsViewFor(activeMonitorName).height)
     readonly property int livePanelWidth: quickSettingsWindow.visible && quickSettingsWindow.width > 0
         ? clampWidth(Math.round(quickSettingsWindow.width)) : configuredPanelWidth
-    readonly property int livePanelHeight: quickSettingsWindow.visible && quickSettingsWindow.height > 0
+    readonly property int livePanelHeight: quickSettingsWindow.visible && !root.settingsOpen
+        && quickSettingsWindow.height > 0
         ? clampHeight(Math.round(quickSettingsWindow.height)) : configuredPanelHeight
+    readonly property int settingsModePanelHeight: clampSettingsHeight(38
+        + (layoutEditorOpen ? layoutEditor.implicitHeight : settingsPanel.implicitHeight) + 12)
     readonly property int effectiveTextScale: textScaleOverride >= 0
         ? textScaleOverride : BarState.quickSettingsViewFor(activeMonitorName).textScale
     readonly property int effectiveIconScale: iconScaleOverride >= 0
         ? iconScaleOverride : BarState.quickSettingsViewFor(activeMonitorName).iconScale
     readonly property bool captureAllowed: captureAllowedOverride >= 0
         ? captureAllowedOverride === 1 : BarState.captureAllowedFor("quick_settings")
-    readonly property bool layoutDirty: layoutSignature(layoutOrderDraft, layoutHiddenDraft)
-        !== layoutSignature(savedLayout.order, savedLayout.hidden)
     readonly property bool settingsDirty: savedView.width !== livePanelWidth
         || savedView.height !== livePanelHeight
         || savedView.textScale !== effectiveTextScale
         || savedView.iconScale !== effectiveIconScale
         || savedView.captureAllowed !== captureAllowed
-        || layoutDirty
     readonly property var brightnessStatus: statusData.brightness || ({})
     readonly property var barStatus: statusData.bar || ({})
     readonly property var nightLightStatus: statusData.night_light || ({})
@@ -113,6 +115,20 @@ Singleton {
     }
 
     onBottomEdgeLayoutChanged: Qt.callLater(() => alignContentToBar())
+    onSettingsModePanelHeightChanged: {
+        if (settingsOpen)
+            Qt.callLater(() => resizeForSettingsMode());
+    }
+    onPlacementChanged: {
+        if (!quickSettingsWindow.visible || openPreparing)
+            return;
+        Qt.callLater(() => {
+            if (root.settingsOpen)
+                root.resizeForSettingsMode();
+            else
+                root.positionWindow();
+        });
+    }
 
     function emptyStatus() {
         return ({
@@ -135,6 +151,8 @@ Singleton {
                 running: "off",
                 mode: "",
                 enabled: false,
+                last_selected: "",
+                restore_enabled: false,
                 available: false,
                 authorized: false,
                 schedulers: []
@@ -163,6 +181,11 @@ Singleton {
         return Math.max(minimumPanelHeight, Math.min(maximumPanelHeight, Math.round(value)));
     }
 
+    function clampSettingsHeight(value) {
+        return Math.max(minimumSettingsPanelHeight,
+            Math.min(maximumPanelHeight, Math.round(value)));
+    }
+
     function outputLimitForPosition(x, width) {
         if (width <= 0)
             return AudioLimitState.limitPercent;
@@ -177,10 +200,23 @@ Singleton {
         panelHeightOverride = clampHeight(height);
         if (quickSettingsWindow.visible && activeMonitorName.length > 0) {
             Quickshell.execDetached([
-                positionScript, "quick-settings", activeMonitorName, placement, "resize",
-                String(panelWidthOverride), String(panelHeightOverride)
+                positionScript, "quick-settings", activeMonitorName, placement,
+                settingsOpen ? "resize-compact" : "resize",
+                String(panelWidthOverride),
+                String(settingsOpen ? settingsModePanelHeight : panelHeightOverride)
             ]);
         }
+    }
+
+    function resizeForSettingsMode() {
+        if (!quickSettingsWindow.visible || activeMonitorName.length === 0)
+            return;
+        Quickshell.execDetached([
+            positionScript, "quick-settings", activeMonitorName, placement,
+            settingsOpen ? "resize-compact" : "resize",
+            String(configuredPanelWidth),
+            String(settingsOpen ? settingsModePanelHeight : configuredPanelHeight)
+        ]);
     }
 
     function positionWindow() {
@@ -253,6 +289,31 @@ Singleton {
         return JSON.stringify(ordered) + "|" + JSON.stringify(normalizedHidden);
     }
 
+    function persistQuickSettingsLayout() {
+        if (activeMonitorName.length === 0)
+            return;
+        queueStateCommand([
+            "save-quick-settings-layout", activeMonitorName,
+            JSON.stringify(layoutOrderDraft), JSON.stringify(layoutHiddenDraft)
+        ]);
+        savedLayout = ({
+            order: layoutOrderDraft.slice(),
+            hidden: layoutHiddenDraft.slice()
+        });
+        settingsMessage = "Quick Settings layout updated";
+    }
+
+    function resetQuickSettingsLayout() {
+        if (activeMonitorName.length === 0)
+            return;
+        queueStateCommand(["reset-quick-settings-layout", activeMonitorName]);
+        savedLayout = ({
+            order: layoutOrderDraft.slice(),
+            hidden: layoutHiddenDraft.slice()
+        });
+        settingsMessage = "Stock Quick Settings layout restored";
+    }
+
     function quickSettingsSectionVisible(sectionId) {
         return layoutHiddenDraft.indexOf(sectionId) < 0;
     }
@@ -281,6 +342,7 @@ Singleton {
         const moved = next.splice(index, 1)[0];
         next.splice(target, 0, moved);
         layoutOrderDraft = next;
+        persistQuickSettingsLayout();
         Qt.callLater(() => alignContentToBar());
     }
 
@@ -297,13 +359,14 @@ Singleton {
         else if (!visible && index < 0)
             next.push(sectionId);
         layoutHiddenDraft = next;
+        persistQuickSettingsLayout();
         Qt.callLater(() => alignContentToBar());
     }
 
     function resetQuickSettingsLayoutDraft() {
         layoutOrderDraft = BarState.defaultQuickSettingsSectionOrder.slice();
         layoutHiddenDraft = [];
-        settingsMessage = "Stock Quick Settings layout restored in draft";
+        resetQuickSettingsLayout();
         Qt.callLater(() => alignContentToBar());
     }
 
@@ -331,7 +394,9 @@ Singleton {
 
         let selected = schedulerByName(selectedSchedulerName);
         if (!selected) {
-            selected = schedulerByName(String(schedulerStatus.running || "")) || schedulers[0];
+            selected = schedulerByName(String(schedulerStatus.running || ""))
+                || schedulerByName(String(schedulerStatus.last_selected || ""))
+                || schedulers[0];
             selectedSchedulerName = String(selected.name || "");
             schedulerArgsDirty = false;
         }
@@ -345,6 +410,8 @@ Singleton {
         schedulerArgsDraft = selected ? String(selected.custom_args || "") : "";
         schedulerArgsDirty = false;
         schedulerEditorOpen = true;
+        if (Boolean(schedulerStatus.available) && Boolean(schedulerStatus.authorized))
+            queueAction(["scheduler-start", name], "Switching to " + name + "…");
     }
 
     function refreshStatus() {
@@ -503,7 +570,7 @@ Singleton {
     }
 
     function openThemeMenu() {
-        ThemePicker.openForScreen(activeScreen);
+        ThemePicker.toggleForScreen(activeScreen);
     }
 
     function toggleNumlockSessionStart() {
@@ -588,10 +655,6 @@ Singleton {
             String(effectiveTextScale), String(effectiveIconScale),
             captureAllowed ? "true" : "false"
         ]);
-        queueStateCommand([
-            "save-quick-settings-layout", activeMonitorName,
-            JSON.stringify(layoutOrderDraft), JSON.stringify(layoutHiddenDraft)
-        ]);
         panelWidthOverride = livePanelWidth;
         panelHeightOverride = livePanelHeight;
         acceptDraftAsSaved();
@@ -673,8 +736,14 @@ Singleton {
     function toggleSettings() {
         settingsOpen = !settingsOpen;
         layoutEditorOpen = false;
-        settingsPanel.resetCopySelection();
+        if (settingsOpen) {
+            barIconsOpen = false;
+            barAppearanceOpen = false;
+            barAppearanceSettings.resetTransientState();
+        }
+        settingsPanel.resetTransientState();
         settingsMessage = "";
+        Qt.callLater(() => root.resizeForSettingsMode());
     }
 
     function openForScreen(targetScreen) {
@@ -688,7 +757,10 @@ Singleton {
         brightnessTarget = targetScreen.name;
         settingsOpen = false;
         layoutEditorOpen = false;
-        settingsPanel.resetCopySelection();
+        barIconsOpen = false;
+        barAppearanceOpen = false;
+        settingsPanel.resetTransientState();
+        barAppearanceSettings.resetTransientState();
         settingsMessage = "";
         schedulerEditorOpen = false;
         schedulerArgsDirty = false;
@@ -711,7 +783,10 @@ Singleton {
         FlyoutManager.release("quick-settings");
         settingsOpen = false;
         layoutEditorOpen = false;
-        settingsPanel.resetCopySelection();
+        barIconsOpen = false;
+        barAppearanceOpen = false;
+        settingsPanel.resetTransientState();
+        barAppearanceSettings.resetTransientState();
         settingsMessage = "";
         schedulerEditorOpen = false;
         nightLightScheduleEditorOpen = false;
@@ -721,6 +796,7 @@ Singleton {
         else
             schedulerPasswordInput.text = "";
         brightnessHoverPercent = -1;
+        outputVolumeHoverPercent = -1;
     }
 
     function toggleForScreen(targetScreen) {
@@ -758,6 +834,24 @@ Singleton {
         function open(): void { root.openFocused(); }
         function close(): void { root.close(); }
         function refresh(): void { root.refreshStatus(); }
+    }
+
+    Timer {
+        interval: 1800
+        repeat: false
+        running: true
+        onTriggered: {
+            if (!schedulerRestoreRunner.running)
+                schedulerRestoreRunner.exec([backend, "--restore-scheduler"]);
+        }
+    }
+
+    Process {
+        id: schedulerRestoreRunner
+        onExited: {
+            if (quickSettingsWindow.visible)
+                root.refreshStatus();
+        }
     }
 
     Process {
@@ -896,8 +990,9 @@ Singleton {
         color: "transparent"
         surfaceFormat.opaque: false
         implicitWidth: root.configuredPanelWidth
-        implicitHeight: root.configuredPanelHeight
-        minimumSize: Qt.size(root.minimumPanelWidth, root.minimumPanelHeight)
+        implicitHeight: root.settingsOpen ? root.settingsModePanelHeight : root.configuredPanelHeight
+        minimumSize: Qt.size(root.minimumPanelWidth,
+            root.settingsOpen ? root.minimumSettingsPanelHeight : root.minimumPanelHeight)
         maximumSize: Qt.size(root.maximumPanelWidth, root.maximumPanelHeight)
 
         onClosed: root.close()
@@ -923,8 +1018,6 @@ Singleton {
             color: Theme.popupBackground
             radius: 0
             focus: true
-            Keys.onEscapePressed: root.close()
-
             MouseArea {
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton
@@ -944,6 +1037,7 @@ Singleton {
                 columnSpacing: 0
 
                 Rectangle {
+                    id: headerBar
                     Layout.row: root.bottomEdgeLayout ? 2 : 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: 38
@@ -1008,6 +1102,36 @@ Singleton {
                             onClicked: root.toggleSettings()
                         }
                     }
+
+                    Rectangle {
+                        id: closeButton
+                        width: 28
+                        height: 28
+                        anchors.right: parent.right
+                        anchors.rightMargin: 6
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: closeMouse.containsMouse ? Theme.focus : Theme.active
+                        border.width: 1
+                        border.color: closeMouse.containsMouse ? Theme.focus : Theme.muted
+                        radius: 0
+                        z: 20
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "×"
+                            color: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.pixelSize: root.scaledIcon(15)
+                        }
+
+                        MouseArea {
+                            id: closeMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.close()
+                        }
+                    }
                 }
 
                 Rectangle {
@@ -1039,6 +1163,8 @@ Singleton {
                         captureAllowed: root.captureAllowed
                         message: root.settingsMessage
                         otherMonitorNames: root.otherMonitorNames()
+                        quickSettingsOrder: root.layoutOrderDraft
+                        quickSettingsHidden: root.layoutHiddenDraft
 
                         onResetRequested: root.resetDisplaySettings()
                         onWidthAdjustmentRequested: delta => root.adjustPanelWidth(delta)
@@ -1048,7 +1174,13 @@ Singleton {
                         onCaptureToggleRequested: root.toggleCaptureAllowed()
                         onCopyRequested: monitorNames => root.copyDisplaySettings(monitorNames)
                         onThemePickerRequested: root.openThemeMenu()
-                        onLayoutEditorRequested: root.layoutEditorOpen = true
+                        onQuickSettingsVisibilityRequested: (sectionId, visible) =>
+                            root.setQuickSettingsSectionVisible(sectionId, visible)
+                        onQuickSettingsLayoutResetRequested: root.resetQuickSettingsLayoutDraft()
+                        onLayoutEditorRequested: {
+                            settingsPanel.resetTransientState();
+                            root.layoutEditorOpen = true;
+                        }
                     }
 
                     QuickSettingsLayoutEditor {
@@ -1068,9 +1200,12 @@ Singleton {
 
                 Flickable {
                     id: contentFlick
+                    visible: !root.settingsOpen
                     Layout.row: root.bottomEdgeLayout ? 0 : 2
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    Layout.fillHeight: !root.settingsOpen
+                    Layout.preferredHeight: root.settingsOpen ? 0 : -1
+                    Layout.maximumHeight: root.settingsOpen ? 0 : root.maximumPanelHeight
                     Layout.bottomMargin: 0
                     contentWidth: width
                     contentHeight: Math.max(height, settingsColumn.implicitHeight + 12)
@@ -1370,6 +1505,8 @@ Singleton {
 
                                 RowLayout {
                                     Layout.fillWidth: true
+                                    spacing: 5
+
                                     Text {
                                         Layout.fillWidth: true
                                         text: "Bar · " + root.activeMonitorName
@@ -1378,6 +1515,41 @@ Singleton {
                                         font.pixelSize: root.scaledText(12)
                                         font.bold: true
                                     }
+
+                                    SettingsButton {
+                                        label: "Themes"
+                                        active: ThemePicker.open
+                                        textSize: root.scaledText(9)
+                                        onClicked: root.openThemeMenu()
+                                    }
+
+                                    SettingsButton {
+                                        label: "Icons"
+                                        active: root.barIconsOpen
+                                        textSize: root.scaledText(9)
+                                        onClicked: {
+                                            root.barIconsOpen = !root.barIconsOpen;
+                                            root.barAppearanceOpen = false;
+                                            barAppearanceSettings.resetTransientState();
+                                            if (root.bottomEdgeLayout)
+                                                Qt.callLater(() => root.alignContentToBar());
+                                        }
+                                    }
+
+                                    SettingsButton {
+                                        label: "Appearance"
+                                        active: root.barAppearanceOpen
+                                        textSize: root.scaledText(9)
+                                        onClicked: {
+                                            root.barAppearanceOpen = !root.barAppearanceOpen;
+                                            root.barIconsOpen = false;
+                                            if (!root.barAppearanceOpen)
+                                                barAppearanceSettings.resetTransientState();
+                                            if (root.bottomEdgeLayout)
+                                                Qt.callLater(() => root.alignContentToBar());
+                                        }
+                                    }
+
                                     SettingsButton {
                                         label: root.barStatus.enabled ? "Visible" : "Hidden"
                                         active: Boolean(root.barStatus.enabled)
@@ -1389,38 +1561,76 @@ Singleton {
                                     }
                                 }
 
-                                Flow {
+                                RowLayout {
                                     Layout.fillWidth: true
-                                    Layout.preferredHeight: childrenRect.height
-                                    spacing: 5
-                                    Repeater {
-                                        model: ["top", "bottom", "left", "right"]
-                                        SettingsButton {
-                                            required property var modelData
-                                            label: String(modelData)
-                                            active: String(root.barStatus.position) === String(modelData)
-                                            textSize: root.scaledText(9)
-                                            onClicked: root.queueAction([
-                                                "bar-position", root.activeMonitorName, String(modelData)
-                                            ], "Moving bar to " + String(modelData) + "…")
+                                    spacing: 6
+
+                                    Flow {
+                                        spacing: 5
+                                        Repeater {
+                                            model: ["top", "bottom", "left", "right"]
+                                            SettingsButton {
+                                                required property var modelData
+                                                label: String(modelData)
+                                                active: String(root.barStatus.position) === String(modelData)
+                                                textSize: root.scaledText(9)
+                                                onClicked: root.queueAction([
+                                                    "bar-position", root.activeMonitorName, String(modelData)
+                                                ], "Moving bar to " + String(modelData) + "…")
+                                            }
                                         }
                                     }
-                                }
-                                SettingsButton {
-                                    Layout.fillWidth: true
-                                    label: "Customize Icons…"
-                                    active: root.barIconEditorOpen
-                                    textSize: root.scaledText(9)
-                                    onClicked: {
-                                        root.barIconEditorOpen = !root.barIconEditorOpen;
-                                        if (root.bottomEdgeLayout)
-                                            Qt.callLater(() => root.alignContentToBar());
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 1
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: "Themes: SUPER+T"
+                                            color: Theme.muted
+                                            font.family: Theme.fontFamily
+                                            font.pixelSize: root.scaledText(8)
+                                            horizontalAlignment: Text.AlignRight
+                                            wrapMode: Text.Wrap
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: "Position: SUPER+Mouse1 / ALT+Mouse1 drag · CTRL+SUPER+B / SUPER+ALT+B change edge"
+                                            color: Theme.muted
+                                            font.family: Theme.fontFamily
+                                            font.pixelSize: root.scaledText(8)
+                                            horizontalAlignment: Text.AlignRight
+                                            wrapMode: Text.Wrap
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: "Visibility: CTRL+SUPER+ALT+B toggle"
+                                            color: Theme.muted
+                                            font.family: Theme.fontFamily
+                                            font.pixelSize: root.scaledText(8)
+                                            horizontalAlignment: Text.AlignRight
+                                        }
                                     }
                                 }
 
                                 BarIconSettings {
                                     Layout.fillWidth: true
-                                    visible: root.barIconEditorOpen
+                                    visible: root.barIconsOpen
+                                }
+
+                                BarSettingsSection {
+                                    id: barAppearanceSettings
+                                    Layout.fillWidth: true
+                                    visible: root.barAppearanceOpen
+                                    active: quickSettingsWindow.visible
+                                        && root.quickSettingsSectionVisible("bar")
+                                        && root.barAppearanceOpen
+                                    monitorName: root.activeMonitorName
+                                    monitorNames: [root.activeMonitorName]
+                                        .concat(root.otherMonitorNames())
                                 }
                             }
                         }
@@ -1645,7 +1855,7 @@ Singleton {
 
                                     Text {
                                         Layout.fillWidth: true
-                                        text: "SUPER+ALT+CTRL+- warmer  ·  SUPER+ALT+CTRL+= cooler  ·  SUPER+ALT+CTRL+BACKSPACE toggle"
+                                        text: "CTRL+SUPER+ALT+[ warmer  ·  CTRL+SUPER+ALT+] cooler  ·  CTRL+SUPER+ALT+N toggle"
                                         color: Theme.muted
                                         font.family: Theme.fontFamily
                                         font.pixelSize: root.scaledText(8)
@@ -1698,7 +1908,7 @@ Singleton {
                                     }
                                     Text {
                                         Layout.fillWidth: true
-                                        text: "SUPER+ALT+CTRL+V toggle"
+                                        text: "SUPER+ALT+[ decrease  ·  SUPER+ALT+] increase  ·  CTRL+SUPER+ALT+V toggle"
                                         color: Theme.muted
                                         font.family: Theme.fontFamily
                                         font.pixelSize: root.scaledText(8)
@@ -1934,16 +2144,6 @@ Singleton {
                                         onClicked: root.openSchedulerAuthorization()
                                     }
                                     SettingsButton {
-                                        label: "Apply"
-                                        available: Boolean(root.schedulerStatus.available)
-                                            && Boolean(root.schedulerStatus.authorized)
-                                            && root.selectedSchedulerName.length > 0
-                                        textSize: root.scaledText(9)
-                                        onClicked: root.queueAction([
-                                            "scheduler-start", root.selectedSchedulerName
-                                        ], "Starting " + root.selectedSchedulerName + "…")
-                                    }
-                                    SettingsButton {
                                         label: "Stop"
                                         available: Boolean(root.schedulerStatus.enabled)
                                             && Boolean(root.schedulerStatus.authorized)
@@ -2050,6 +2250,8 @@ Singleton {
                                                 + (String(root.schedulerStatus.running) === String(modelData.name)
                                                     ? " ●" : "")
                                             active: root.selectedSchedulerName === String(modelData.name)
+                                            available: Boolean(root.schedulerStatus.available)
+                                                && Boolean(root.schedulerStatus.authorized)
                                             textSize: root.scaledText(9)
                                             onClicked: root.selectScheduler(String(modelData.name))
                                         }
@@ -2247,33 +2449,6 @@ Singleton {
                 }
             }
 
-            Rectangle {
-                width: 28
-                height: 28
-                x: panel.width - width - 6
-                y: root.bottomEdgeLayout ? panel.height - height - 5 : 5
-                color: closeMouse.containsMouse ? Theme.focus : Theme.active
-                border.width: 1
-                border.color: closeMouse.containsMouse ? Theme.focus : Theme.muted
-                radius: 0
-                z: 20
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "×"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: root.scaledIcon(15)
-                }
-
-                MouseArea {
-                    id: closeMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.close()
-                }
-            }
         }
     }
 }

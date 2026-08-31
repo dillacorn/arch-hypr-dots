@@ -3,42 +3,45 @@ set -Eeuo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 SCALE_SCRIPT="${ROOT}/config/hypr/scripts/quickshell_display_scale.sh"
-BAR_SETTINGS="${ROOT}/config/quickshell/awtarchy/BarSettingsSection.qml"
+DISPLAY_SCALE="${ROOT}/config/quickshell/awtarchy/DisplayScaleSettings.qml"
+FLYOUT_SETTINGS="${ROOT}/config/quickshell/awtarchy/FlyoutSettings.qml"
 HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
 
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 contains() { grep -Fq -- "$2" "$1" || fail "$3"; }
 
 [[ -f $SCALE_SCRIPT ]] || fail 'display scale helper is missing'
-contains "$BAR_SETTINGS" 'text: "Display scale"' \
-  'Bar Appearance does not expose a display scale row'
-contains "$BAR_SETTINGS" 'readonly property var displayScalePresets: [1, 1.25, 1.5, 2]' \
+contains "$FLYOUT_SETTINGS" 'DisplayScaleSettings {' \
+  'Quick Settings settings panel does not host DisplayScaleSettings'
+contains "$DISPLAY_SCALE" 'text: "Display scale"' \
+  'Quick Settings does not expose a display scale row'
+contains "$DISPLAY_SCALE" 'readonly property var displayScalePresets: [1, 1.25, 1.5, 2]' \
   'display scale presets changed unexpectedly'
-contains "$BAR_SETTINGS" 'function displayScaleLabel(value)' \
+contains "$DISPLAY_SCALE" 'function displayScaleLabel(value)' \
   'display scale presets are not presented as Hyprland scale factors'
-contains "$BAR_SETTINGS" 'label: root.displayScaleLabel(Number(modelData))' \
+contains "$DISPLAY_SCALE" 'label: root.displayScaleLabel(Number(modelData))' \
   'display scale preset buttons do not show literal scale factors'
-contains "$BAR_SETTINGS" 'label: "Custom"' \
+contains "$DISPLAY_SCALE" 'label: "Custom"' \
   'display scale row has no Custom control'
-contains "$BAR_SETTINGS" 'property bool customScaleOpen: false' \
+contains "$DISPLAY_SCALE" 'property bool customScaleOpen: false' \
   'custom display scale editor has no explicit open state'
-contains "$BAR_SETTINGS" 'property string customScaleText:' \
+contains "$DISPLAY_SCALE" 'property string customScaleText:' \
   'custom display scale editor has no editable value'
-contains "$BAR_SETTINGS" 'function applyCustomDisplayScale()' \
+contains "$DISPLAY_SCALE" 'function applyCustomDisplayScale()' \
   'custom display scale editor has no apply path'
-contains "$BAR_SETTINGS" 'TextInput {' \
+contains "$DISPLAY_SCALE" 'TextInput {' \
   'custom display scale editor has no numeric input'
-contains "$BAR_SETTINGS" 'label: "Apply"' \
+contains "$DISPLAY_SCALE" 'label: "Apply"' \
   'custom display scale editor has no explicit Apply control'
-contains "$BAR_SETTINGS" '"bash", root.displayScaleScript, "set", root.monitorName' \
+contains "$DISPLAY_SCALE" '"bash", root.displayScaleScript, "set", root.monitorName' \
   'display scale action is not pinned to the current Quick Settings display'
-contains "$BAR_SETTINGS" 'function displayScaleValid(value)' \
+contains "$DISPLAY_SCALE" 'function displayScaleValid(value)' \
   'display scale choices are not checked against the current monitor resolution'
-contains "$BAR_SETTINGS" 'scale < 1 || scale > 4' \
+contains "$DISPLAY_SCALE" 'scale < 1 || scale > 4' \
   'custom display scale UI does not enforce the approved 1.0-4.0 safety range'
-contains "$BAR_SETTINGS" '"bash", root.displayScaleScript, "status", root.monitorName' \
-  'Bar Appearance does not refresh the current display scale'
-contains "$BAR_SETTINGS" '|| Math.abs(displayScale - scale) < 0.001)' \
+contains "$DISPLAY_SCALE" '"bash", root.displayScaleScript, "status", root.monitorName' \
+  'Quick Settings does not refresh the current display scale'
+contains "$DISPLAY_SCALE" '|| Math.abs(displayScale - scale) < 0.001)' \
   'the active display scale is not ignored before invoking the persistence helper'
 contains "$SCALE_SCRIPT" 'hyprctl reload' \
   'display scale persistence does not reload Hyprland'
@@ -204,7 +207,7 @@ cmp -s "$TMP/hyprland.lua" "$TMP/before-configerror.lua" \
 missing_history=0
 for rel in \
   .config/hypr/scripts/quickshell_display_scale.sh \
-  .config/quickshell/awtarchy/BarSettingsSection.qml
+  .config/quickshell/awtarchy/DisplayScaleSettings.qml
 do
   source_file="${ROOT}/config/${rel#.config/}"
   digest="$(sha256sum "$source_file" | awk '{print $1}')"

@@ -16,6 +16,7 @@ PanelWindow {
     required property var modelData
 
     WlrLayershell.namespace: "awtarchy-bar"
+    surfaceFormat.opaque: false
 
     screen: modelData
     readonly property string monitorName: modelData ? modelData.name : ""
@@ -40,7 +41,8 @@ PanelWindow {
     visible: monitorName.length > 0
         && BarState.enabledFor(monitorName)
         && !workspaceFullscreenForMonitor(monitorName)
-    color: Theme.background
+    color: Qt.rgba(Theme.background.r, Theme.background.g, Theme.background.b,
+        1 - BarState.barTransparencyFor(monitorName) / 100)
     aboveWindows: true
     focusable: false
     exclusiveZone: barSize
@@ -729,6 +731,16 @@ PanelWindow {
             }
 
             BarControl {
+                visible: FloatingWindowsState.enabled
+                label: "Floating"
+                tooltip: "New windows open floating by default\nClick to restore normal tiling"
+                normalBackground: Theme.subtleActive
+                hoverBackground: Theme.strongHover
+                onClicked: FloatingWindowsState.setEnabled(false)
+                onRightClicked: FloatingWindowsState.setEnabled(false)
+            }
+
+            BarControl {
                 visible: bar.privacyLabel().length > 0
                 label: bar.privacyLabel()
                 tooltip: "Privacy: active capture stream"
@@ -977,6 +989,18 @@ PanelWindow {
                 label: submapFile.text().trim()
                 tooltip: "Current submap: " + submapFile.text().trim() + " (click to reset)"
                 onClicked: Quickshell.execDetached([bar.mouseSubmapScript, "reset"])
+            }
+
+            BarControl {
+                visible: FloatingWindowsState.enabled
+                vertical: true; fixedWidth: bar.barSize
+                label: "Float"
+                fontPixelSize: 9
+                tooltip: "New windows open floating by default\nClick to restore normal tiling"
+                normalBackground: Theme.subtleActive
+                hoverBackground: Theme.strongHover
+                onClicked: FloatingWindowsState.setEnabled(false)
+                onRightClicked: FloatingWindowsState.setEnabled(false)
             }
         }
 

@@ -131,6 +131,14 @@ ShellRoot {
             flyout.close();
     }
 
+    function closeTopFloatingSurface() {
+        if (ThemePicker.open) {
+            ThemePicker.close();
+            return;
+        }
+        closeActiveFloatingSurface();
+    }
+
     function flyoutWidth(surface) {
         const flyout = flyoutByName(surface);
         return flyout ? flyout.livePanelWidth : -1;
@@ -163,15 +171,16 @@ ShellRoot {
     readonly property bool powerReady: PowerMenu !== null
     readonly property bool themesReady: ThemePicker !== null
 
-    // Escape always closes the active Awtarchy flyout regardless of which child
-    // control currently owns focus. Existing per-window handlers remain valid,
-    // but this provides a consistent application-level fallback.
+    // Escape always closes the topmost visible shell surface first. A Theme
+    // Picker opened from Quick Settings must close without dismissing the
+    // Quick Settings flyout beneath it.
     Shortcut {
         sequence: "Escape"
         context: Qt.ApplicationShortcut
-        enabled: String(FlyoutManager.activeSurface || "").length > 0
+        enabled: ThemePicker.open
+            || String(FlyoutManager.activeSurface || "").length > 0
         autoRepeat: false
-        onActivated: root.closeActiveFloatingSurface()
+        onActivated: root.closeTopFloatingSurface()
     }
 
     Process {

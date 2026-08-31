@@ -11,6 +11,7 @@ HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
 
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 contains() { grep -Fq -- "$2" "$1" || fail "$3"; }
+not_contains() { if grep -Fq -- "$2" "$1"; then fail "$3"; fi; }
 
 DEFAULT_ORDER='["brightness","output-volume","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","title-bars"]'
 CUSTOM_ORDER='["bar","brightness","output-volume","display-effects","submap","wallpaper","awtarchy","title-bars","numlock","scheduler","smtty"]'
@@ -33,10 +34,39 @@ contains "$QUICK_SETTINGS" '"copy-quick-settings-layout"' \
   'Copy to Displays does not include the current Quick Settings layout draft'
 contains "$QUICK_SETTINGS" '"reset-quick-settings-layout"' \
   'Reset Quick Settings does not restore the stock layout'
-contains "$FLYOUT_SETTINGS" 'signal layoutEditorRequested()' \
-  'Quick Settings flyout settings do not expose the layout editor action'
-contains "$FLYOUT_SETTINGS" 'label: "Customize Layout…"' \
-  'Quick Settings flyout settings do not expose Customize Layout'
+
+contains "$FLYOUT_SETTINGS" 'property var quickSettingsOrder: []' \
+  'Quick Settings flyout settings do not accept the current section order'
+contains "$FLYOUT_SETTINGS" 'property var quickSettingsHidden: []' \
+  'Quick Settings flyout settings do not accept current hidden sections'
+contains "$FLYOUT_SETTINGS" 'signal quickSettingsVisibilityRequested(string sectionId, bool visible)' \
+  'Quick Settings flyout settings do not expose direct per-section visibility toggles'
+contains "$FLYOUT_SETTINGS" 'model: root.quickSettingsOrder' \
+  'Quick Settings settings page does not render all section toggles inline'
+contains "$FLYOUT_SETTINGS" 'label: root.quickSettingsSectionLabel(String(modelData))' \
+  'inline Quick Settings section toggles are not labeled from their section ids'
+contains "$FLYOUT_SETTINGS" 'active: root.quickSettingsSectionVisible(String(modelData))' \
+  'inline Quick Settings section toggles do not show current visibility state'
+contains "$FLYOUT_SETTINGS" 'root.quickSettingsVisibilityRequested(sectionId, !shown)' \
+  'inline Quick Settings section toggles do not change section visibility directly'
+contains "$FLYOUT_SETTINGS" 'label: "Reorder…"' \
+  'Quick Settings settings page does not retain a compact path to section reordering'
+contains "$FLYOUT_SETTINGS" 'label: "Stock Layout"' \
+  'Quick Settings settings page does not expose an inline stock-layout reset'
+not_contains "$FLYOUT_SETTINGS" 'label: "Customize Layout…"' \
+  'Quick Settings settings page still hides section visibility behind Customize Layout'
+
+contains "$QUICK_SETTINGS" 'quickSettingsOrder: root.layoutOrderDraft' \
+  'Quick Settings does not pass the current section order into inline settings toggles'
+contains "$QUICK_SETTINGS" 'quickSettingsHidden: root.layoutHiddenDraft' \
+  'Quick Settings does not pass hidden sections into inline settings toggles'
+contains "$QUICK_SETTINGS" 'onQuickSettingsVisibilityRequested: (sectionId, visible) =>' \
+  'Quick Settings does not wire inline section toggles to immediate persistence'
+contains "$QUICK_SETTINGS" 'root.setQuickSettingsSectionVisible(sectionId, visible)' \
+  'Quick Settings inline section toggles bypass the established visibility path'
+contains "$QUICK_SETTINGS" 'onQuickSettingsLayoutResetRequested: root.resetQuickSettingsLayoutDraft()' \
+  'Quick Settings inline Stock Layout does not use the established reset path'
+
 contains "$LAYOUT_EDITOR" 'signal moveRequested(string sectionId, int delta)' \
   'layout editor does not expose section reordering'
 contains "$LAYOUT_EDITOR" 'signal visibilityRequested(string sectionId, bool visible)' \
@@ -156,4 +186,4 @@ done
 [[ $missing_history -eq 0 ]] \
   || fail 'managed history is missing current Quick Settings layout stock hashes'
 
-printf '%s\n' 'PASS: Quick Settings layout customization covers the 11 real sections per display with a visible shared scrollbar for overflow.'
+printf '%s\n' 'PASS: Quick Settings exposes all 11 section toggles inline while preserving per-display reorder and persistence.'

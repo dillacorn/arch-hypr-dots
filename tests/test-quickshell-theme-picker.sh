@@ -6,6 +6,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PICKER="${ROOT}/config/quickshell/awtarchy/ThemePicker.qml"
 CATALOG="${ROOT}/config/hypr/scripts/quickshell_theme_catalog.sh"
 QUICK_SETTINGS="${ROOT}/config/quickshell/awtarchy/QuickSettings.qml"
+SHELL_QML="${ROOT}/config/quickshell/awtarchy/shell.qml"
 THEME_SELECT="${ROOT}/config/hypr/scripts/theme_select.sh"
 MANAGED_HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
 PERMANENT_CI="${ROOT}/.github/workflows/validate-awtarchy.yml"
@@ -44,7 +45,6 @@ require_picker 'Qt.Key_Up' 'ThemePicker lacks up grid navigation'
 require_picker 'Qt.Key_Down' 'ThemePicker lacks down grid navigation'
 require_picker 'Qt.Key_Home' 'ThemePicker lacks Home navigation'
 require_picker 'Qt.Key_End' 'ThemePicker lacks End navigation'
-require_picker 'Qt.Key_Escape' 'ThemePicker lacks Escape cancellation'
 require_picker 'Qt.Key_Return' 'ThemePicker lacks Enter apply behavior'
 require_picker 'target: "themes"' 'ThemePicker themes IPC target was removed'
 require_picker 'text: "Active"' 'ThemePicker does not mark the active theme'
@@ -71,6 +71,10 @@ if grep -Fq 'text: "Active theme"' "$PICKER"; then
     fail 'ThemePicker still uses the overlapping two-line active-theme header block'
 fi
 
+if grep -Fq 'event.key === Qt.Key_Escape' "$PICKER"; then
+    fail 'ThemePicker still owns a duplicate local Escape close path'
+fi
+
 apply_calls="$(grep -Fc 'applyProcess.exec(' "$PICKER" || true)"
 [[ "$apply_calls" == 1 ]] || fail "ThemePicker must have exactly one applyProcess.exec call, found ${apply_calls}"
 
@@ -88,9 +92,23 @@ if "applyProcess.exec([root.applyBackend, selected.name])" not in block:
     raise SystemExit("apply call exists outside applySelectedTheme")
 PY
 
-if ! grep -Fq 'ThemePicker.openForScreen(activeScreen)' "$QUICK_SETTINGS"; then
-    fail 'Quick Settings no longer opens ThemePicker for its active screen'
+if ! grep -Fq 'ThemePicker.toggleForScreen(activeScreen)' "$QUICK_SETTINGS"; then
+    fail 'Quick Settings no longer toggles ThemePicker for its active screen'
 fi
+
+python3 - "$QUICK_SETTINGS" <<'PY' || fail 'Quick Settings main panel still owns Escape instead of deferring to the application escape stack'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+start = text.index("        Rectangle {\n            id: panel")
+end = text.index("\n            MouseArea {", start)
+block = text[start:end]
+if "Keys.onEscapePressed:" in block:
+    raise SystemExit(1)
+PY
+
+bash "$ROOT/tests/test-theme-overlay-escape.sh"
 
 if ! grep -Fq 'ipc call themes toggle' "$THEME_SELECT"; then
     fail 'theme_select.sh no longer uses the themes toggle IPC entrypoint'
@@ -98,6 +116,7 @@ fi
 
 require_managed_hash "$PICKER" '.config/quickshell/awtarchy/ThemePicker.qml'
 require_managed_hash "$CATALOG" '.config/hypr/scripts/quickshell_theme_catalog.sh'
+require_managed_hash "$SHELL_QML" '.config/quickshell/awtarchy/shell.qml'
 (( managed_history_missing == 0 )) || exit 1
 
 catalog_ci_count="$(grep -Fc 'tests/test-quickshell-theme-catalog.sh' "$PERMANENT_CI" || true)"

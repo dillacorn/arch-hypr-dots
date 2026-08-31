@@ -1,0 +1,33 @@
+name: Apply Bar Transparency Managed History
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-branch-history:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/bar-transparency
+
+      - name: Validate focused transparency regression
+        shell: bash
+        run: bash tests/test-bar-transparency.sh
+
+      - name: Validate managed history on merged branch state
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          hash="$(sha256sum config/quickshell/awtarchy/Bar.qml | awk '{print $1}')"
+          entry="${hash}"$'\t'".config/quickshell/awtarchy/Bar.qml"
+
+          if ! grep -Fxq -- "$entry" local/share/awtarchy/quickshell-managed-history.sha256; then
+            echo "Missing managed-history entry for current Bar.qml hash: $hash" >&2
+            exit 1
+          fi

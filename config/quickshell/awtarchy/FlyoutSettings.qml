@@ -22,12 +22,15 @@ Item {
     property bool showCaptureControl: true
     property string message: ""
     property var otherMonitorNames: []
+    property var quickSettingsOrder: []
+    property var quickSettingsHidden: []
     property bool copyOpen: false
     property var copyTargets: ({})
     property int copySelectionRevision: 0
     property int managedCaptureOverride: -1
     property string managedMessage: ""
 
+    readonly property bool inlineCopy: surfaceLabel === "Quick Settings"
     readonly property bool managedConnectivityCapture: surfaceLabel === "Network"
         || surfaceLabel === "Bluetooth"
     readonly property string managedCaptureKey: surfaceLabel === "Network" ? "network"
@@ -57,9 +60,43 @@ Item {
     signal copyRequested(var monitorNames)
     signal themePickerRequested()
     signal layoutEditorRequested()
+    signal quickSettingsVisibilityRequested(string sectionId, bool visible)
+    signal quickSettingsLayoutResetRequested()
 
-    implicitHeight: copyOpen ? 104
-        : 139 + (surfaceLabel === "Quick Settings" ? barSection.implicitHeight + 37 : 0)
+    implicitHeight: inlineCopy
+        ? 139 + displayScaleSection.implicitHeight
+            + quickSettingsSectionControls.implicitHeight + 3 + (copyOpen ? 31 : 0)
+        : (copyOpen ? 104 : 139)
+
+    function quickSettingsSectionLabel(sectionId) {
+        const labels = {
+            "brightness": "Brightness",
+            "output-volume": "Max Volume",
+            "bar": "Bar",
+            "display-effects": "Night + Vibrance",
+            "submap": "Submap",
+            "wallpaper": "Wallpaper",
+            "awtarchy": "Awtarchy",
+            "smtty": "smtty",
+            "scheduler": "sched-ext",
+            "numlock": "Num Lock",
+            "title-bars": "Title Bars"
+        };
+        return labels[sectionId] || sectionId;
+    }
+
+    function quickSettingsSectionVisible(sectionId) {
+        return (quickSettingsHidden || []).indexOf(sectionId) < 0;
+    }
+
+    function quickSettingsVisibleCount() {
+        let count = 0;
+        for (const sectionId of quickSettingsOrder || []) {
+            if (quickSettingsSectionVisible(String(sectionId)))
+                count++;
+        }
+        return count;
+    }
 
     function targetSelected(name) {
         const dependency = copySelectionRevision;
@@ -101,6 +138,11 @@ Item {
         copyOpen = false;
     }
 
+    function resetTransientState() {
+        resetCopySelection();
+        displayScaleSection.resetTransientState();
+    }
+
     function toggleCaptureControl() {
         if (!managedConnectivityCapture) {
             captureToggleRequested();
@@ -140,7 +182,7 @@ Item {
             Layout.fillWidth: true
             Layout.preferredHeight: 28
             spacing: 6
-            visible: !root.copyOpen
+            visible: root.inlineCopy || !root.copyOpen
 
             Text {
                 Layout.fillWidth: true
@@ -181,7 +223,7 @@ Item {
             Layout.fillWidth: true
             Layout.preferredHeight: 28
             spacing: 5
-            visible: !root.copyOpen
+            visible: root.inlineCopy || !root.copyOpen
 
             Text {
                 text: "Width"
@@ -324,7 +366,7 @@ Item {
             Layout.fillWidth: true
             Layout.preferredHeight: 28
             spacing: 5
-            visible: !root.copyOpen
+            visible: root.inlineCopy || !root.copyOpen
 
             Text {
                 text: "Icons"
@@ -463,35 +505,69 @@ Item {
             Item { Layout.fillWidth: true }
         }
 
-        BarSettingsSection {
-            id: barSection
+        DisplayScaleSettings {
+            id: displayScaleSection
             Layout.fillWidth: true
-            visible: !root.copyOpen && root.surfaceLabel === "Quick Settings"
+            visible: root.surfaceLabel === "Quick Settings"
             active: visible
             monitorName: root.monitorName
-            monitorNames: [root.monitorName].concat(root.otherMonitorNames || [])
-            onThemePickerRequested: root.themePickerRequested()
         }
 
-        RowLayout {
+        ColumnLayout {
+            id: quickSettingsSectionControls
             Layout.fillWidth: true
-            Layout.preferredHeight: 28
-            spacing: 6
-            visible: !root.copyOpen && root.surfaceLabel === "Quick Settings"
+            visible: root.surfaceLabel === "Quick Settings"
+            spacing: 4
 
-            SettingsButton {
-                label: "Customize Layout…"
-                textSize: 9
-                onClicked: root.layoutEditorRequested()
-            }
-
-            Text {
+            RowLayout {
                 Layout.fillWidth: true
-                text: "Show, hide, and reorder sections for this display"
-                color: Theme.muted
-                font.family: Theme.fontFamily
-                font.pixelSize: 9
-                elide: Text.ElideRight
+                Layout.preferredHeight: 24
+                spacing: 5
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Quick Settings sections"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                    font.weight: Font.Medium
+                    elide: Text.ElideRight
+                }
+
+                SettingsButton {
+                    label: "Reorder…"
+                    textSize: 8
+                    onClicked: root.layoutEditorRequested()
+                }
+
+                SettingsButton {
+                    label: "Stock Layout"
+                    textSize: 8
+                    onClicked: root.quickSettingsLayoutResetRequested()
+                }
+            }
+
+            Flow {
+                Layout.fillWidth: true
+                Layout.preferredHeight: childrenRect.height
+                spacing: 5
+
+                Repeater {
+                    model: root.quickSettingsOrder
+
+                    SettingsButton {
+                        required property var modelData
+                        readonly property string sectionId: String(modelData)
+                        readonly property bool shown: root.quickSettingsSectionVisible(sectionId)
+
+                        label: root.quickSettingsSectionLabel(String(modelData))
+                        active: root.quickSettingsSectionVisible(String(modelData))
+                        available: !shown || root.quickSettingsVisibleCount() > 1
+                        textSize: 8
+                        horizontalPadding: 9
+                        onClicked: root.quickSettingsVisibilityRequested(sectionId, !shown)
+                    }
+                }
             }
         }
 
@@ -499,7 +575,7 @@ Item {
             Layout.fillWidth: true
             Layout.preferredHeight: 28
             spacing: 6
-            visible: !root.copyOpen
+            visible: root.inlineCopy || !root.copyOpen
 
             Rectangle {
                 Layout.preferredWidth: 142
@@ -509,7 +585,7 @@ Item {
 
                 Text {
                     anchors.centerIn: parent
-                    text: "Copy to Displays…"
+                    text: root.surfaceLabel === "Quick Settings" ? "Copy Quick Settings…" : "Copy to Displays…"
                     color: Theme.foreground
                     font.family: Theme.fontFamily
                     font.pixelSize: 11
@@ -521,6 +597,10 @@ Item {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
+                        if (root.inlineCopy && root.copyOpen) {
+                            root.resetCopySelection();
+                            return;
+                        }
                         root.copyTargets = ({});
                         root.copySelectionRevision++;
                         root.copyOpen = true;
@@ -541,9 +621,62 @@ Item {
 
         RowLayout {
             Layout.fillWidth: true
+            Layout.preferredHeight: visible ? 28 : 0
+            spacing: 5
+            visible: root.copyOpen && root.inlineCopy
+
+            Text {
+                text: "Copy to:"
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: 10
+            }
+
+            Repeater {
+                model: root.otherMonitorNames
+                delegate: SettingsButton {
+                    required property string modelData
+                    label: modelData
+                    textSize: 9
+                    horizontalPadding: 10
+                    active: root.targetSelected(modelData)
+                    onClicked: root.setTargetSelected(modelData,
+                        !root.targetSelected(modelData))
+                }
+            }
+
+            SettingsButton {
+                label: root.allTargetsSelected() ? "Clear" : "All"
+                textSize: 9
+                available: root.otherMonitorNames.length > 0
+                onClicked: root.toggleAllTargets()
+            }
+
+            Item { Layout.fillWidth: true }
+
+            SettingsButton {
+                label: "Back"
+                textSize: 9
+                onClicked: root.resetCopySelection()
+            }
+
+            SettingsButton {
+                label: "Copy"
+                textSize: 9
+                available: root.selectedTargetNames().length > 0
+                onClicked: {
+                    const targets = root.selectedTargetNames();
+                    root.copyRequested(targets);
+                    root.resetCopySelection();
+                }
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
             Layout.preferredHeight: 28
             spacing: 6
-            visible: root.copyOpen
+            visible: root.copyOpen && !root.inlineCopy
 
             Rectangle {
                 Layout.preferredWidth: 62
@@ -581,7 +714,7 @@ Item {
         Flickable {
             Layout.fillWidth: true
             Layout.preferredHeight: 28
-            visible: root.copyOpen
+            visible: root.copyOpen && !root.inlineCopy
             clip: true
             contentWidth: Math.max(width, copyTargetRow.width)
             contentHeight: height
@@ -673,7 +806,7 @@ Item {
             Layout.fillWidth: true
             Layout.preferredHeight: 28
             spacing: 6
-            visible: root.copyOpen
+            visible: root.copyOpen && !root.inlineCopy
 
             Text {
                 Layout.fillWidth: true

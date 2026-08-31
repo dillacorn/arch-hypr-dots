@@ -154,6 +154,7 @@ valid_scheduler_profile() {
 machine_status() {
   local panel_monitor="${1:-}" brightness_monitor="${2:-}" monitors_json schedulers_json scheduler_authorized
   local scheduler profiles_json profile custom autopower summary sun_temp sunset_status
+  local scheduler_last_selected scheduler_restore_enabled
   local NLS_schedule_enabled="0" NLS_schedule_start="20:00" NLS_schedule_end="07:00"
   local NLS_schedule_temperature="N/A" NLS_schedule_next_day="0"
 
@@ -169,6 +170,8 @@ machine_status() {
   fi
 
   sched_ext_state_load
+  scheduler_last_selected="$SCHED_EXT_LAST_SELECTED"
+  scheduler_restore_enabled="$SCHED_EXT_RESTORE_ENABLED"
   refresh_all
 
   sunset_status="$(run_capture "$SUNSET_SCRIPT" status || true)"
@@ -252,6 +255,8 @@ machine_status() {
     --arg scheduler_running "$SCHED_EXT_RUNNING" \
     --arg scheduler_mode "$SCHED_EXT_MODE" \
     --arg scheduler_enabled "$SCHED_EXT_ENABLED" \
+    --arg scheduler_last_selected "$scheduler_last_selected" \
+    --arg scheduler_restore_enabled "$scheduler_restore_enabled" \
     --arg scheduler_available "$(have_cmd scxctl && printf true || printf false)" \
     --arg scheduler_authorized "$scheduler_authorized" \
     --argjson monitors "$monitors_json" \
@@ -289,6 +294,8 @@ machine_status() {
           running:$scheduler_running,
           mode:$scheduler_mode,
           enabled:($scheduler_enabled == "1"),
+          last_selected:$scheduler_last_selected,
+          restore_enabled:($scheduler_restore_enabled == "1"),
           available:($scheduler_available == "true"),
           authorized:($scheduler_authorized == "true"),
           schedulers:$schedulers
@@ -370,6 +377,43 @@ machine_scheduler_stop() {
   sched_ext_stop
 }
 
+machine_scheduler_restore() {
+  sched_ext_state_load
+  [[ "$SCHED_EXT_RESTORE_ENABLED" == '1' ]] || return 0
+  valid_scheduler "$SCHED_EXT_LAST_SELECTED" || return 0
+
+  refresh_sched_ext
+  [[ "$SCHED_EXT_RUNNING" == "$SCHED_EXT_LAST_SELECTED" ]] && return 0
+  sched_ext_deps_ok || return 0
+
+  if (( EUID != 0 )) && ! sudo_can_run_scxctl_noninteractive; then
+    return 0
+  fi
+  if (( EUID != 0 )); then
+    scxctl_auth_state_mark || true
+  fi
+
+  sched_ext_switch_or_start "$SCHED_EXT_LAST_SELECTED"
+}
+
+machine_scheduler_reapply_if_running() {
+  local scheduler="$1"
+  refresh_sched_ext
+  [[ "$SCHED_EXT_ENABLED" == '1' && "$SCHED_EXT_RUNNING" == "$scheduler" ]] || return 0
+  sched_ext_deps_ok || return 1
+
+  if (( EUID != 0 )) && ! sudo_can_run_scxctl_noninteractive; then
+    scxctl_auth_state_clear
+    printf 'sched-ext authorization has not been configured\n' >&2
+    return 3
+  fi
+  if (( EUID != 0 )); then
+    scxctl_auth_state_mark || true
+  fi
+
+  sched_ext_switch_or_start "$scheduler"
+}
+
 machine_action() {
   local action="${1:-}" monitor value scheduler profile custom
   shift || true
@@ -436,6 +480,7 @@ machine_action() {
       sched_ext_state_load
       SCHED_EXT_PROFILE_MAP["$scheduler"]="$profile"
       sched_ext_state_save
+      machine_scheduler_reapply_if_running "$scheduler"
       ;;
     scheduler-args)
       scheduler="${1:-}"; custom="${2:-}"
@@ -443,6 +488,7 @@ machine_action() {
       sched_ext_state_load
       SCHED_EXT_CUSTOM_ARGS_MAP["$scheduler"]="$(sched_ext_normalize_args "$custom")"
       sched_ext_state_save
+      machine_scheduler_reapply_if_running "$scheduler"
       ;;
     scheduler-autopower)
       scheduler="${1:-}"; value="${2:-}"
@@ -450,12 +496,14 @@ machine_action() {
       sched_ext_state_load
       SCHED_EXT_LAVD_AUTOPOWER_MAP["$scheduler"]=$([[ "$value" == true ]] && printf 1 || printf 0)
       sched_ext_state_save
+      machine_scheduler_reapply_if_running "$scheduler"
       ;;
     scheduler-reset)
       scheduler="${1:-}"
       valid_scheduler "$scheduler" || return 2
       sched_ext_state_load
       sched_ext_reset_config "$scheduler"
+      machine_scheduler_reapply_if_running "$scheduler"
       ;;
     *)
       printf 'unknown Quick Settings action: %s\n' "$action" >&2
@@ -471,6 +519,9 @@ case "${1:-}" in
     ;;
   --authorize-scheduler-stdin)
     machine_scheduler_authorize_stdin
+    ;;
+  --restore-scheduler)
+    machine_scheduler_restore
     ;;
   --action)
     shift

@@ -15,6 +15,7 @@ Singleton {
     property string activeThemeName: ""
     property int selectedIndex: -1
     property string catalogError: ""
+    readonly property bool open: pickerWindow.visible
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")
@@ -115,6 +116,7 @@ Singleton {
             pickerWindow.screen = target;
         search.text = "";
         pickerWindow.visible = true;
+        FlyoutManager.claimOverlay("themes");
         loadActiveTheme();
         loadCatalog();
         resetSelection();
@@ -124,11 +126,20 @@ Singleton {
     function openFocused() { openForScreen(focusedScreen()); }
 
     function close() {
+        FlyoutManager.releaseOverlay("themes");
         pickerWindow.visible = false;
         search.text = "";
     }
 
-    function toggleFocused() { pickerWindow.visible ? close() : openFocused(); }
+    function toggleForScreen(target) {
+        if (pickerWindow.visible) {
+            close();
+            return;
+        }
+        openForScreen(target);
+    }
+
+    function toggleFocused() { toggleForScreen(focusedScreen()); }
 
     function applySelectedTheme() {
         const selected = selectedTheme();
@@ -194,7 +205,7 @@ Singleton {
         WlrLayershell.namespace: "awtarchy-theme-picker"
         visible: false
         color: "transparent"
-        focusable: true
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
         aboveWindows: true
         exclusionMode: ExclusionMode.Ignore
         implicitWidth: Math.max(1, Math.min(900, (screen ? screen.width : 1920) - 20))
@@ -212,6 +223,7 @@ Singleton {
             border.width: 1
             border.color: Theme.muted
             radius: 0
+            focus: true
             MouseArea {
                 anchors.fill: parent
                 onPressed: mouse => mouse.accepted = true
@@ -269,10 +281,7 @@ Singleton {
                             clip: true
 
                             Keys.onPressed: event => {
-                                if (event.key === Qt.Key_Escape) {
-                                    root.close();
-                                    event.accepted = true;
-                                } else if (event.key === Qt.Key_Left) {
+                                if (event.key === Qt.Key_Left) {
                                     root.moveSelection(-1);
                                     event.accepted = true;
                                 } else if (event.key === Qt.Key_Right) {

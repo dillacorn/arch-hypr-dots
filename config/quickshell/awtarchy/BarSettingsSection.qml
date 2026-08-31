@@ -13,22 +13,18 @@ Item {
     property bool active: false
     property string targetKey: "current"
     property var commandQueue: []
+    property var activeCommand: []
     property string message: ""
-    property real displayScale: 1
-    property int monitorPixelWidth: 0
-    property int monitorPixelHeight: 0
-    property real pendingDisplayScale: 1
-    property string displayScaleError: ""
-    property bool customScaleOpen: false
-    property string customScaleText: "1"
-
-    signal themePickerRequested()
+    property int barTransparencyHoverPercent: -1
+    property bool barTransparencyDragging: false
+    property var barTransparencyDragTargets: []
+    property bool copyOpen: false
+    property var copyTargets: ({})
+    property int copySelectionRevision: 0
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
         || (Quickshell.env("HOME") + "/.config")
     readonly property string managerScript: configHome + "/hypr/scripts/quickshell.sh"
-    readonly property string displayScaleScript: configHome + "/hypr/scripts/quickshell_display_scale.sh"
-    readonly property var displayScalePresets: [1, 1.25, 1.5, 2]
 
     implicitHeight: active ? controls.implicitHeight + 12 : 0
 
@@ -86,6 +82,70 @@ Item {
         return uniqueMonitorNames().indexOf(targetKey) >= 0 ? [targetKey] : [];
     }
 
+    function copyMonitorNames() {
+        return uniqueMonitorNames().filter(name => name !== monitorName);
+    }
+
+    function copyTargetSelected(name) {
+        const dependency = copySelectionRevision;
+        return copyTargets[name] === true;
+    }
+
+    function selectedCopyTargets() {
+        return copyMonitorNames().filter(name => copyTargetSelected(name));
+    }
+
+    function setCopyTargetSelected(name, selected) {
+        const next = Object.assign({}, copyTargets);
+        if (selected)
+            next[name] = true;
+        else
+            delete next[name];
+        copyTargets = next;
+        copySelectionRevision++;
+    }
+
+    function allCopyTargetsSelected() {
+        const names = copyMonitorNames();
+        return names.length > 0 && names.every(name => copyTargetSelected(name));
+    }
+
+    function toggleAllCopyTargets() {
+        const next = {};
+        if (!allCopyTargetsSelected()) {
+            for (const name of copyMonitorNames())
+                next[name] = true;
+        }
+        copyTargets = next;
+        copySelectionRevision++;
+    }
+
+    function resetCopySelection() {
+        copyTargets = ({});
+        copySelectionRevision++;
+        copyOpen = false;
+    }
+
+    function resetTransientState() {
+        resetCopySelection();
+        targetKey = "current";
+        message = "";
+        cancelTransparencyDrag();
+    }
+
+    function copyBarSettings() {
+        const targets = selectedCopyTargets();
+        if (monitorName.length === 0 || targets.length === 0)
+            return;
+        const next = commandQueue.slice();
+        next.push([managerScript, "copy-bar-settings", monitorName, ...targets]);
+        commandQueue = next;
+        message = "Copied bar settings to " + targets.length
+            + (targets.length === 1 ? " display" : " displays");
+        resetCopySelection();
+        runNextCommand();
+    }
+
     function rawBarSize(name) {
         const state = BarState.monitorState(name) || ({});
         const value = Number(state.bar_size === undefined ? 0 : state.bar_size);
@@ -104,6 +164,11 @@ Item {
         const state = BarState.monitorState(name) || ({});
         const value = Number(state.text_scale === undefined ? 100 : state.text_scale);
         return Number.isFinite(value) ? Math.max(50, Math.min(200, Math.round(value))) : 100;
+    }
+
+    function rawBarTransparency(name) {
+        const value = Number(BarState.barTransparencyFor(name));
+        return Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 0;
     }
 
     function rawModuleVisible(name, module) {
@@ -183,6 +248,16 @@ Item {
         return value === null ? "Mixed" : value + "%";
     }
 
+    function transparencyText() {
+        const value = commonValue(rawBarTransparency);
+        return value === null ? "Mixed" : value + "%";
+    }
+
+    function transparencyPercent() {
+        const value = commonValue(rawBarTransparency);
+        return value === null ? -1 : value;
+    }
+
     function moduleVisibilityActive(module) {
         return commonValue(name => rawModuleVisible(name, module)) === true;
     }
@@ -214,6 +289,14 @@ Item {
             return common;
         const targets = resolvedTargets();
         return targets.length > 0 ? rawTextScale(targets[0]) : 100;
+    }
+
+    function baseBarTransparency() {
+        const common = commonValue(rawBarTransparency);
+        if (common !== null)
+            return common;
+        const targets = resolvedTargets();
+        return targets.length > 0 ? rawBarTransparency(targets[0]) : 0;
     }
 
     function enqueue(command, value) {
@@ -266,6 +349,7 @@ Item {
             next.push([managerScript, "setsize", target, "0"]);
             next.push([managerScript, "setscale", target, "100"]);
             next.push([managerScript, "settextscale", target, "100"]);
+            next.push([managerScript, "settransparency", target, "0"]);
             next.push([managerScript, "setshowtasks", target, "true"]);
             next.push([managerScript, "setthemetaskicons", target, "false"]);
             next.push([managerScript, "setthemetrayicons", target, "false"]);
@@ -283,6 +367,7 @@ Item {
             return;
         const next = commandQueue[0];
         commandQueue = commandQueue.slice(1);
+        activeCommand = next;
         writer.exec(next);
     }
 
@@ -304,120 +389,77 @@ Item {
         enqueue("settextscale", next);
     }
 
-    function displayScaleLabel(value) {
-        const scale = Number(value);
-        if (!Number.isFinite(scale))
-            return "";
-        return String(Math.round(scale * 1000) / 1000);
+    function clampTransparencyPercent(value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric))
+            return -1;
+        return Math.max(0, Math.min(100, Math.round(numeric)));
     }
 
-    function displayScaleIsPreset(value) {
-        const scale = Number(value);
-        return displayScalePresets.some(preset => Math.abs(Number(preset) - scale) < 0.001);
-    }
-
-    function displayScaleValid(value) {
-        const scale = Number(value);
-        const width = Number(monitorPixelWidth);
-        const height = Number(monitorPixelHeight);
-        if (!Number.isFinite(scale) || scale < 1 || scale > 4 || width <= 0 || height <= 0)
-            return false;
-        const logicalWidth = width / scale;
-        const logicalHeight = height / scale;
-        return Math.abs(logicalWidth - Math.round(logicalWidth)) < 0.0001
-            && Math.abs(logicalHeight - Math.round(logicalHeight)) < 0.0001;
-    }
-
-    function toggleCustomDisplayScale() {
-        customScaleOpen = !customScaleOpen;
-        if (customScaleOpen)
-            customScaleText = displayScaleLabel(displayScale);
-    }
-
-    function applyCustomDisplayScale() {
-        const scale = Number(String(customScaleText || "").trim());
-        if (!Number.isFinite(scale) || scale < 1 || scale > 4) {
-            message = "Custom display scale must be between 1 and 4";
+    function previewTransparencyPercent(value) {
+        const next = clampTransparencyPercent(value);
+        if (next < 0 || !barTransparencyDragging)
             return;
-        }
-        if (!displayScaleValid(scale)) {
-            message = "Display scale " + displayScaleLabel(scale) + " is invalid for "
-                + monitorPixelWidth + "×" + monitorPixelHeight;
-            return;
-        }
-        setDisplayScale(scale);
-        customScaleOpen = false;
+        barTransparencyHoverPercent = next;
+        for (const target of barTransparencyDragTargets)
+            BarState.setLiveBarTransparency(target, next);
     }
 
-    function refreshDisplayScale() {
-        if (!active || monitorName.length === 0 || scaleStatusRunner.running || scaleWriter.running)
+    function beginTransparencyDrag(value) {
+        const targets = resolvedTargets();
+        if (targets.length === 0)
             return;
-        scaleStatusRunner.exec(["bash", root.displayScaleScript, "status", root.monitorName]);
+        barTransparencyDragTargets = targets.slice();
+        barTransparencyDragging = true;
+        previewTransparencyPercent(value);
     }
 
-    function setDisplayScale(value) {
-        const scale = Number(value);
-        if (monitorName.length === 0 || scaleWriter.running || !displayScaleValid(scale)
-                || Math.abs(displayScale - scale) < 0.001)
+    function commitTransparencyDrag() {
+        if (!barTransparencyDragging)
             return;
-        pendingDisplayScale = scale;
-        displayScaleError = "";
-        message = "Display scale " + displayScaleLabel(scale) + " · " + monitorName;
-        scaleWriter.exec(["bash", root.displayScaleScript, "set", root.monitorName, String(scale)]);
+        const value = clampTransparencyPercent(barTransparencyHoverPercent);
+        const targets = barTransparencyDragTargets.slice();
+        barTransparencyDragging = false;
+        barTransparencyDragTargets = [];
+        if (value < 0 || targets.length === 0)
+            return;
+        const next = commandQueue.slice();
+        for (const target of targets)
+            next.push([managerScript, "settransparency", target, String(value)]);
+        commandQueue = next;
+        message = "Bar transparency " + value + "%";
+        runNextCommand();
     }
 
-    onMonitorNameChanged: {
-        customScaleOpen = false;
-        refreshDisplayScale();
+    function cancelTransparencyDrag() {
+        for (const target of barTransparencyDragTargets)
+            BarState.clearLiveBarTransparency(target);
+        barTransparencyDragging = false;
+        barTransparencyDragTargets = [];
+        barTransparencyHoverPercent = -1;
     }
-    onActiveChanged: {
-        if (active)
-            refreshDisplayScale();
+
+    function setTransparencyPercent(value) {
+        const next = clampTransparencyPercent(value);
+        if (next < 0)
+            return;
+        message = "Bar transparency " + next + "%";
+        enqueue("settransparency", next);
+    }
+
+    function adjustTransparency(delta) {
+        setTransparencyPercent(baseBarTransparency() + delta);
     }
 
     Process {
         id: writer
         onExited: {
+            const completed = root.activeCommand;
+            root.activeCommand = [];
             BarState.refresh();
+            if (completed.length >= 3 && completed[1] === "settransparency")
+                Qt.callLater(() => BarState.clearLiveBarTransparency(String(completed[2])));
             root.runNextCommand();
-        }
-    }
-
-    Process {
-        id: scaleStatusRunner
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    const status = JSON.parse(text.trim());
-                    root.displayScale = Number(status.scale || 1);
-                    root.monitorPixelWidth = Number(status.width || 0);
-                    root.monitorPixelHeight = Number(status.height || 0);
-                } catch (error) {
-                    root.monitorPixelWidth = 0;
-                    root.monitorPixelHeight = 0;
-                }
-            }
-        }
-    }
-
-    Process {
-        id: scaleWriter
-        stderr: StdioCollector {
-            onStreamFinished: root.displayScaleError = text.trim()
-        }
-        onExited: (exitCode, exitStatus) => {
-            if (exitCode === 0) {
-                root.displayScale = root.pendingDisplayScale;
-                root.message = "Display scale " + root.displayScaleLabel(root.displayScale)
-                    + " · " + root.monitorName;
-                root.refreshDisplayScale();
-                return;
-            }
-            const errorText = root.displayScaleError.length > 0
-                ? root.displayScaleError.split("\n")[0]
-                : "Display scale change failed";
-            root.message = errorText;
-            root.refreshDisplayScale();
         }
     }
 
@@ -436,16 +478,6 @@ Item {
             Item {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 26
-
-                Text {
-                    anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: "Bar Appearance"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 11
-                    font.bold: true
-                }
 
                 Row {
                     anchors.horizontalCenter: parent.horizontalCenter
@@ -483,133 +515,12 @@ Item {
                     spacing: 5
 
                     SettingsButton {
-                        label: "Themes"
-                        textSize: 9
-                        onClicked: root.themePickerRequested()
-                    }
-
-                    SettingsButton {
                         label: "Reset"
                         textSize: 9
                         onClicked: root.resetAppearance()
                     }
                 }
             }
-
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 26
-                spacing: 5
-
-                Text {
-                    Layout.preferredWidth: 78
-                    text: "Display scale"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 10
-                }
-
-                Repeater {
-                    model: root.displayScalePresets
-                    delegate: SettingsButton {
-                        required property var modelData
-
-                        label: root.displayScaleLabel(Number(modelData))
-                        textSize: 9
-                        horizontalPadding: 10
-                        active: Math.abs(root.displayScale - Number(modelData)) < 0.001
-                        available: !scaleWriter.running
-                            && root.displayScaleValid(Number(modelData))
-                        onClicked: root.setDisplayScale(Number(modelData))
-                    }
-                }
-
-                SettingsButton {
-                    label: "Custom"
-                    textSize: 9
-                    horizontalPadding: 10
-                    active: root.customScaleOpen || !root.displayScaleIsPreset(root.displayScale)
-                    available: !scaleWriter.running && root.monitorPixelWidth > 0
-                        && root.monitorPixelHeight > 0
-                    onClicked: root.toggleCustomDisplayScale()
-                }
-
-                Item { Layout.fillWidth: true }
-
-                Text {
-                    text: root.monitorName.length > 0 ? "Focused · " + root.monitorName : "Focused display"
-                    color: Theme.muted
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 9
-                    elide: Text.ElideMiddle
-                    Layout.maximumWidth: 120
-                }
-            }
-
-            RowLayout {
-                visible: root.customScaleOpen
-                Layout.fillWidth: true
-                Layout.preferredHeight: visible ? 26 : 0
-                spacing: 5
-
-                Text {
-                    Layout.preferredWidth: 78
-                    text: "Custom scale"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 10
-                }
-
-                Rectangle {
-                    Layout.preferredWidth: 82
-                    Layout.preferredHeight: 24
-                    color: Theme.popupBackground
-                    border.width: 1
-                    border.color: customScaleInput.activeFocus ? Theme.focus : Theme.muted
-                    radius: 0
-
-                    TextInput {
-                        id: customScaleInput
-                        anchors.fill: parent
-                        anchors.margins: 5
-                        text: root.customScaleText
-                        color: Theme.foreground
-                        selectionColor: Theme.focus
-                        selectedTextColor: Theme.foreground
-                        font.family: Theme.fontFamily
-                        font.pixelSize: 10
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        selectByMouse: true
-                        inputMethodHints: Qt.ImhFormattedNumbersOnly
-                        onTextEdited: root.customScaleText = text
-                        Keys.onReturnPressed: root.applyCustomDisplayScale()
-                    }
-                }
-
-                SettingsButton {
-                    label: "Apply"
-                    textSize: 9
-                    available: !scaleWriter.running && root.monitorName.length > 0
-                    onClicked: root.applyCustomDisplayScale()
-                }
-
-                Text {
-                    Layout.fillWidth: true
-                    text: {
-                        const scale = Number(root.customScaleText);
-                        if (root.displayScaleValid(scale))
-                            return Math.round(root.monitorPixelWidth / scale) + "×"
-                                + Math.round(root.monitorPixelHeight / scale) + " logical";
-                        return "1–4 · whole logical pixels only";
-                    }
-                    color: Theme.muted
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 9
-                    elide: Text.ElideRight
-                }
-            }
-
             RowLayout {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 26
@@ -633,6 +544,87 @@ Item {
                 }
                 SettingsButton { label: "+"; textSize: 11; onClicked: root.adjustThickness(2) }
                 Item { Layout.fillWidth: true }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 26
+                spacing: 5
+
+                Text {
+                    Layout.preferredWidth: 78
+                    text: "Transparency"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                }
+
+                SettingsButton {
+                    label: "−5"
+                    textSize: 9
+                    onClicked: root.adjustTransparency(-5)
+                }
+
+                Rectangle {
+                    id: barTransparencyTrack
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 24
+                    color: Theme.popupBackground
+                    border.width: 0
+
+                    Rectangle {
+                        width: root.transparencyPercent() >= 0
+                            ? parent.width * root.transparencyPercent() / 100 : 0
+                        height: parent.height
+                        color: Theme.focus
+                    }
+
+                    Rectangle {
+                        visible: root.barTransparencyHoverPercent >= 0
+                        width: 46
+                        height: 21
+                        x: Math.max(0, Math.min(parent.width - width,
+                            parent.width * root.barTransparencyHoverPercent / 100 - width / 2))
+                        y: -25
+                        color: Theme.background
+                        border.width: 1
+                        border.color: Theme.focus
+                        z: 4
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: root.barTransparencyHoverPercent + "%"
+                            color: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 9
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onPositionChanged: mouse => {
+                            root.barTransparencyHoverPercent = Math.max(0,
+                                Math.min(100, Math.round(mouse.x * 100 / width)));
+                            if (pressed)
+                                root.previewTransparencyPercent(root.barTransparencyHoverPercent);
+                        }
+                        onExited: {
+                            if (!pressed)
+                                root.barTransparencyHoverPercent = -1;
+                        }
+                        onPressed: mouse => root.beginTransparencyDrag(mouse.x * 100 / width)
+                        onReleased: root.commitTransparencyDrag()
+                        onCanceled: root.cancelTransparencyDrag()
+                    }
+                }
+
+                SettingsButton {
+                    label: "+5"
+                    textSize: 9
+                    onClicked: root.adjustTransparency(5)
+                }
             }
 
             RowLayout {
@@ -789,6 +781,76 @@ Item {
                 }
 
                 Item { Layout.fillWidth: true }
+            }
+
+
+            RowLayout {
+                visible: !root.copyOpen
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? 26 : 0
+                spacing: 5
+
+                SettingsButton {
+                    label: "Copy Bar Settings…"
+                    textSize: 9
+                    horizontalPadding: 12
+                    available: root.copyMonitorNames().length > 0
+                    onClicked: {
+                        root.copyTargets = ({});
+                        root.copySelectionRevision++;
+                        root.copyOpen = true;
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Copies bar appearance only · display scale stays per display"
+                    color: Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 9
+                    elide: Text.ElideRight
+                }
+            }
+
+            RowLayout {
+                visible: root.copyOpen
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? 26 : 0
+                spacing: 5
+
+                SettingsButton {
+                    label: "Back"
+                    textSize: 9
+                    onClicked: root.resetCopySelection()
+                }
+
+                Repeater {
+                    model: root.copyMonitorNames()
+                    delegate: SettingsButton {
+                        required property string modelData
+                        label: modelData
+                        textSize: 9
+                        horizontalPadding: 10
+                        active: root.copyTargetSelected(modelData)
+                        onClicked: root.setCopyTargetSelected(modelData,
+                            !root.copyTargetSelected(modelData))
+                    }
+                }
+
+                SettingsButton {
+                    label: root.allCopyTargetsSelected() ? "Clear" : "All"
+                    textSize: 9
+                    onClicked: root.toggleAllCopyTargets()
+                }
+
+                Item { Layout.fillWidth: true }
+
+                SettingsButton {
+                    label: "Copy"
+                    textSize: 9
+                    available: root.selectedCopyTargets().length > 0
+                    onClicked: root.copyBarSettings()
+                }
             }
         }
     }

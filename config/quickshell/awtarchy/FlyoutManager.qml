@@ -9,6 +9,7 @@ QtObject {
     id: root
 
     property string activeSurface: ""
+    property string overlaySurface: ""
     property string activeMonitorName: ""
     property string recentBarMonitorName: ""
     property real recentBarMonitorTimestamp: 0
@@ -133,6 +134,19 @@ QtObject {
 
         lastToggleTimestamps[key] = now;
         return true;
+    }
+
+    function claimOverlay(surface) {
+        const key = String(surface || "");
+        if (key.length === 0)
+            return;
+        overlaySurface = key;
+    }
+
+    function releaseOverlay(surface) {
+        const key = String(surface || "");
+        if (overlaySurface === key)
+            overlaySurface = "";
     }
 
     function claim(surface, monitorName) {

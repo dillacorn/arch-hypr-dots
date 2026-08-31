@@ -87,6 +87,7 @@ ensure_state() {
                     bar_size:0,
                     icon_scale:100,
                     text_scale:100,
+                    bar_transparency:0,
                     show_tasks:true,
                     theme_task_icons:false,
                     theme_tray_icons:false,
@@ -415,6 +416,11 @@ gettextscale() {
     jq -r --arg monitor "$1" '(.monitors[$monitor].text_scale // 100) | tonumber' "$STATE_FILE"
 }
 
+gettransparency() {
+    ensure_state
+    jq -r --arg monitor "$1" '(.monitors[$monitor].bar_transparency // 0) | tonumber' "$STATE_FILE"
+}
+
 getshowcpu() {
     ensure_state
     jq -r --arg monitor "$1" '(if .monitors[$monitor].show_cpu == null then true else .monitors[$monitor].show_cpu end) | if . then "true" else "false" end' "$STATE_FILE"
@@ -541,6 +547,64 @@ settextscale() {
     mv -f "$tmp" "$STATE_FILE"
 }
 
+settransparency() {
+    local monitor="$1" transparency="$2" tmp
+    [[ "$transparency" =~ ^[0-9]+$ ]] || { printf 'quickshell.sh: bar transparency must be an integer\n' >&2; exit 2; }
+    if (( transparency > 100 )); then
+        printf 'quickshell.sh: bar transparency must be 0-100\n' >&2
+        exit 2
+    fi
+    ensure_state
+    tmp="${STATE_FILE}.tmp.$$"
+    jq --arg monitor "$monitor" --argjson transparency "$transparency" '.monitors[$monitor].bar_transparency = $transparency' "$STATE_FILE" >"$tmp"
+    mv -f "$tmp" "$STATE_FILE"
+}
+
+copy_bar_settings() {
+    local source="$1"
+    shift
+    local -a targets=("$@")
+    local target targets_json tmp
+
+    [[ -n "$source" ]] || { printf 'quickshell.sh: source monitor is required\n' >&2; exit 2; }
+    (( ${#targets[@]} > 0 )) || { printf 'quickshell.sh: at least one target monitor is required\n' >&2; exit 2; }
+
+    ensure_state
+    jq -e --arg source "$source" '.monitors[$source] | type == "object"' "$STATE_FILE" >/dev/null \
+        || { printf 'quickshell.sh: unknown source monitor: %s\n' "$source" >&2; exit 2; }
+    for target in "${targets[@]}"; do
+        jq -e --arg target "$target" '.monitors[$target] | type == "object"' "$STATE_FILE" >/dev/null \
+            || { printf 'quickshell.sh: unknown target monitor: %s\n' "$target" >&2; exit 2; }
+    done
+
+    targets_json="$(printf '%s\n' "${targets[@]}" | jq -Rsc 'split("\n") | map(select(length > 0)) | unique')"
+    tmp="${STATE_FILE}.tmp.$$"
+    jq --arg source "$source" --argjson targets "$targets_json" '
+        .monitors[$source] as $source_state
+        | ($source_state | {
+            position,
+            bar_size,
+            icon_scale,
+            text_scale,
+            bar_transparency,
+            show_tasks,
+            theme_task_icons,
+            theme_tray_icons,
+            show_cpu,
+            show_temp,
+            show_memory,
+            last_horizontal,
+            last_vertical
+        }) as $bar_settings
+        | reduce $targets[] as $target
+            (.;
+                if $target == $source then .
+                else .monitors[$target] = (.monitors[$target] + $bar_settings)
+                end)
+    ' "$STATE_FILE" >"$tmp"
+    mv -f "$tmp" "$STATE_FILE"
+}
+
 reset_mon() {
     local monitor="$1" tmp
     ensure_state
@@ -552,6 +616,7 @@ reset_mon() {
             bar_size:0,
             icon_scale:100,
             text_scale:100,
+            bar_transparency:0,
             show_tasks:true,
             theme_task_icons:false,
             theme_tray_icons:false,
@@ -656,6 +721,7 @@ focused monitor:
   getsize-focused
   getscale-focused
   gettextscale-focused
+  gettransparency-focused
   getshowtasks-focused
   getthemetaskicons-focused
   getthemetrayicons-focused
@@ -667,6 +733,7 @@ focused monitor:
   setsize-focused <0|20-80>
   setscale-focused <50-200>
   settextscale-focused <50-200>
+  settransparency-focused <0-100>
   setshowtasks-focused <true|false>
   setthemetaskicons-focused <true|false>
   setthemetrayicons-focused <true|false>
@@ -684,6 +751,7 @@ per monitor:
   getsize <MON>
   getscale <MON>
   gettextscale <MON>
+  gettransparency <MON>
   getshowtasks <MON>
   getthemetaskicons <MON>
   getthemetrayicons <MON>
@@ -695,16 +763,19 @@ per monitor:
   setsize <MON> <0|20-80>
   setscale <MON> <50-200>
   settextscale <MON> <50-200>
+  settransparency <MON> <0-100>
   setshowtasks <MON> <true|false>
   setthemetaskicons <MON> <true|false>
   setthemetrayicons <MON> <true|false>
   setshowcpu <MON> <true|false>
   setshowtemp <MON> <true|false>
   setshowmemory <MON> <true|false>
+  copy-bar-settings <SOURCE_MON> <TARGET_MON...>
   reset-mon <MON>
 
 bar_size 0 means Awtarchy defaults: 28px horizontal, 36px vertical.
 icon_scale and text_scale are percentages; 100 preserves the tuned defaults.
+bar_transparency is a percentage; 0 is fully opaque and 100 is fully transparent.
 Running application icons are visible by default; task and tray icons use original colors by default.
 CPU, temperature and memory modules are visible by default.
 USAGE
@@ -749,6 +820,8 @@ case "$cmd" in
     getscale-focused) monitor="$(focused_monitor)"; getscale "$monitor" ;;
     gettextscale) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; gettextscale "$2" ;;
     gettextscale-focused) monitor="$(focused_monitor)"; gettextscale "$monitor" ;;
+    gettransparency) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; gettransparency "$2" ;;
+    gettransparency-focused) monitor="$(focused_monitor)"; gettransparency "$monitor" ;;
     getshowtasks) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getshowtasks "$2" ;;
     getshowtasks-focused) monitor="$(focused_monitor)"; getshowtasks "$monitor" ;;
     getthemetaskicons) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getthemetaskicons "$2" ;;
@@ -771,6 +844,8 @@ case "$cmd" in
     setscale-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; setscale "$monitor" "$2" ;;
     settextscale) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; settextscale "$2" "$3" ;;
     settextscale-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; settextscale "$monitor" "$2" ;;
+    settransparency) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; settransparency "$2" "$3" ;;
+    settransparency-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; settransparency "$monitor" "$2" ;;
     setshowtasks) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_icon_option "$2" show_tasks "$3" ;;
     setshowtasks-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; set_monitor_icon_option "$monitor" show_tasks "$2" ;;
     setthemetaskicons) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_icon_option "$2" theme_task_icons "$3" ;;
@@ -783,6 +858,7 @@ case "$cmd" in
     setshowtemp-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; set_monitor_stat_visibility "$monitor" show_temp "$2" ;;
     setshowmemory) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_stat_visibility "$2" show_memory "$3" ;;
     setshowmemory-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; set_monitor_stat_visibility "$monitor" show_memory "$2" ;;
+    copy-bar-settings) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; copy_bar_settings "$2" "${@:3}" ;;
     reset-mon) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; reset_mon "$2" ;;
     reset-focused) monitor="$(focused_monitor)"; reset_mon "$monitor" ;;
     flip-focused) monitor="$(focused_monitor)"; flip_mon "$monitor" ;;
