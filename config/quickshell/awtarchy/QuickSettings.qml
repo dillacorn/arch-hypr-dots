@@ -151,6 +151,8 @@ Singleton {
                 running: "off",
                 mode: "",
                 enabled: false,
+                last_selected: "",
+                restore_enabled: false,
                 available: false,
                 authorized: false,
                 schedulers: []
@@ -392,7 +394,9 @@ Singleton {
 
         let selected = schedulerByName(selectedSchedulerName);
         if (!selected) {
-            selected = schedulerByName(String(schedulerStatus.running || "")) || schedulers[0];
+            selected = schedulerByName(String(schedulerStatus.running || ""))
+                || schedulerByName(String(schedulerStatus.last_selected || ""))
+                || schedulers[0];
             selectedSchedulerName = String(selected.name || "");
             schedulerArgsDirty = false;
         }
@@ -406,6 +410,8 @@ Singleton {
         schedulerArgsDraft = selected ? String(selected.custom_args || "") : "";
         schedulerArgsDirty = false;
         schedulerEditorOpen = true;
+        if (Boolean(schedulerStatus.available) && Boolean(schedulerStatus.authorized))
+            queueAction(["scheduler-start", name], "Switching to " + name + "…");
     }
 
     function refreshStatus() {
@@ -828,6 +834,24 @@ Singleton {
         function open(): void { root.openFocused(); }
         function close(): void { root.close(); }
         function refresh(): void { root.refreshStatus(); }
+    }
+
+    Timer {
+        interval: 1800
+        repeat: false
+        running: true
+        onTriggered: {
+            if (!schedulerRestoreRunner.running)
+                schedulerRestoreRunner.exec([backend, "--restore-scheduler"]);
+        }
+    }
+
+    Process {
+        id: schedulerRestoreRunner
+        onExited: {
+            if (quickSettingsWindow.visible)
+                root.refreshStatus();
+        }
     }
 
     Process {
@@ -1554,14 +1578,28 @@ Singleton {
                                         }
                                     }
 
-                                    Text {
+                                    ColumnLayout {
                                         Layout.fillWidth: true
-                                        text: "Tip: drag the bar with SUPER+Mouse1 or ALT+Mouse1."
-                                        color: Theme.muted
-                                        font.family: Theme.fontFamily
-                                        font.pixelSize: root.scaledText(8)
-                                        horizontalAlignment: Text.AlignRight
-                                        elide: Text.ElideRight
+                                        spacing: 1
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: "Position: SUPER+Mouse1 / ALT+Mouse1 drag · CTRL+SUPER+B / SUPER+ALT+B change edge"
+                                            color: Theme.muted
+                                            font.family: Theme.fontFamily
+                                            font.pixelSize: root.scaledText(8)
+                                            horizontalAlignment: Text.AlignRight
+                                            wrapMode: Text.Wrap
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: "Visibility: CTRL+SUPER+ALT+B toggle"
+                                            color: Theme.muted
+                                            font.family: Theme.fontFamily
+                                            font.pixelSize: root.scaledText(8)
+                                            horizontalAlignment: Text.AlignRight
+                                        }
                                     }
                                 }
 
@@ -2093,16 +2131,6 @@ Singleton {
                                         onClicked: root.openSchedulerAuthorization()
                                     }
                                     SettingsButton {
-                                        label: "Apply"
-                                        available: Boolean(root.schedulerStatus.available)
-                                            && Boolean(root.schedulerStatus.authorized)
-                                            && root.selectedSchedulerName.length > 0
-                                        textSize: root.scaledText(9)
-                                        onClicked: root.queueAction([
-                                            "scheduler-start", root.selectedSchedulerName
-                                        ], "Starting " + root.selectedSchedulerName + "…")
-                                    }
-                                    SettingsButton {
                                         label: "Stop"
                                         available: Boolean(root.schedulerStatus.enabled)
                                             && Boolean(root.schedulerStatus.authorized)
@@ -2209,6 +2237,8 @@ Singleton {
                                                 + (String(root.schedulerStatus.running) === String(modelData.name)
                                                     ? " ●" : "")
                                             active: root.selectedSchedulerName === String(modelData.name)
+                                            available: Boolean(root.schedulerStatus.available)
+                                                && Boolean(root.schedulerStatus.authorized)
                                             textSize: root.scaledText(9)
                                             onClicked: root.selectScheduler(String(modelData.name))
                                         }

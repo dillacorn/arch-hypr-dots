@@ -58,6 +58,8 @@ SCHED_EXT_ITEMS=(
 SCHED_EXT_RUNNING="off"
 SCHED_EXT_MODE=""
 SCHED_EXT_ENABLED="0"
+SCHED_EXT_LAST_SELECTED=""
+SCHED_EXT_RESTORE_ENABLED="0"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/hypr_quicksettings"
 SCHED_EXT_STATE_FILE="${STATE_DIR}/sched_ext_state.sh"
 declare -A SCHED_EXT_PROFILE_MAP=()
@@ -766,6 +768,11 @@ sched_ext_state_load() {
     source <(sed -E 's/^declare -A /declare -gA /' "$SCHED_EXT_STATE_FILE")
     sched_ext_state_init_defaults
   fi
+
+  case "$SCHED_EXT_RESTORE_ENABLED" in
+    1) ;;
+    *) SCHED_EXT_RESTORE_ENABLED='0' ;;
+  esac
 }
 
 sched_ext_state_save() {
@@ -774,6 +781,8 @@ sched_ext_state_save() {
   tmpfile="$(mktemp)"
   {
     printf '#!/usr/bin/env bash\n'
+    printf 'SCHED_EXT_LAST_SELECTED=%q\n' "$SCHED_EXT_LAST_SELECTED"
+    printf 'SCHED_EXT_RESTORE_ENABLED=%q\n' "$SCHED_EXT_RESTORE_ENABLED"
     declare -p SCHED_EXT_PROFILE_MAP | sed -E 's/^declare -A /declare -gA /'
     declare -p SCHED_EXT_CUSTOM_ARGS_MAP | sed -E 's/^declare -A /declare -gA /'
     declare -p SCHED_EXT_LAVD_AUTOPOWER_MAP | sed -E 's/^declare -A /declare -gA /'
@@ -1837,7 +1846,7 @@ move_sel_down() {
 }
 
 sched_ext_switch_or_start() {
-  local sched_full="$1" sched_short verb args summary
+  local sched_full="$1" sched_short verb args summary rc=1
   sched_short="${sched_full#scx_}"
   args="$(sched_ext_effective_args "$sched_full")"
   summary="$(sched_ext_config_summary "$sched_full")"
@@ -1849,17 +1858,18 @@ sched_ext_switch_or_start() {
   fi
 
   if [[ -n "$args" ]]; then
-    if scxctl_run_quiet "$verb" --sched "$sched_short" --args "$args"; then
-      refresh_sched_ext
-      MSG="sched-ext: ${sched_full} [${summary}]"
-      return 0
-    fi
+    scxctl_run_quiet "$verb" --sched "$sched_short" --args "$args" && rc=0
   else
-    if scxctl_run_quiet "$verb" --sched "$sched_short"; then
-      refresh_sched_ext
-      MSG="sched-ext: ${sched_full} [${summary}]"
-      return 0
-    fi
+    scxctl_run_quiet "$verb" --sched "$sched_short" && rc=0
+  fi
+
+  if (( rc == 0 )); then
+    SCHED_EXT_LAST_SELECTED="$sched_full"
+    SCHED_EXT_RESTORE_ENABLED='1'
+    sched_ext_state_save
+    refresh_sched_ext
+    MSG="sched-ext: ${sched_full} [${summary}]"
+    return 0
   fi
 
   refresh_sched_ext
@@ -1871,6 +1881,9 @@ sched_ext_stop() {
   if ! sched_ext_deps_ok; then
     return 1
   fi
+
+  SCHED_EXT_RESTORE_ENABLED='0'
+  sched_ext_state_save
 
   if [[ "$SCHED_EXT_ENABLED" != '1' ]]; then
     MSG='sched-ext: already off'
