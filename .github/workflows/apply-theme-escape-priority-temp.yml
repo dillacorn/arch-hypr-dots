@@ -52,7 +52,7 @@ jobs:
             config/quickshell/awtarchy/shell.qml \
             config/quickshell/awtarchy/ThemePicker.qml \
             local/share/awtarchy/quickshell-managed-history.sha256 \
-            .github/workflows/validate-awtarchy.yml
+            tests/test-quickshell-theme-picker.sh
           git diff --cached --quiet && exit 1
           git commit -m 'Prioritize Theme Picker on Escape'
           git push origin HEAD:feature/bar-transparency
