@@ -1,4 +1,4 @@
-name: Publish v3.4.5
+name: Cleanup v3.4.5 Release Helper
 
 on:
   pull_request:
@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 jobs:
-  publish:
+  cleanup:
     if: github.event.pull_request.number == 103 && github.head_ref == 'release/v3.4.5-publish'
     runs-on: ubuntu-latest
     env:
@@ -16,127 +16,22 @@ jobs:
       RELEASE_TAG: v3.4.5
       RELEASE_TARGET: 6f9da234d11d8668e72fcc4683597ce23dd47e64
     steps:
-      - name: Verify exact release target
+      - name: Verify published release before cleanup
         shell: bash
         run: |
           set -euo pipefail
 
           main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
-          if [[ "$main_sha" != "$RELEASE_TARGET" ]]; then
-            echo "main moved: expected $RELEASE_TARGET, got $main_sha" >&2
-            exit 1
-          fi
-
-          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
-            echo "release ${RELEASE_TAG} already exists" >&2
-            exit 1
-          fi
-
-          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
-            echo "tag ${RELEASE_TAG} already exists" >&2
-            exit 1
-          fi
-
-      - name: Publish v3.4.5
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cat > /tmp/release-body.md <<'EOF'
-          # Awtarchy v3.4.5 Quickshell
-
-          Awtarchy v3.4.5 expands Quickshell customization and tightens the runtime behavior around Quick Settings, floating windows, themes, bar appearance, and update preservation. It also folds the tested transient task-icon filtering into the stable release and fixes Escape ordering when the Theme Picker is opened from Quick Settings.
-
-          ## Getting started
-
-          Awtarchy is an Arch Linux overlay/environment, not a Linux distribution or an Arch Linux installer. Install it onto a working minimal Arch Linux system.
-
-          If you are starting from zero:
-
-          1. Download the official Arch Linux ISO from the [Arch Linux download page](https://archlinux.org/download/).
-          2. Boot the Arch Linux ISO.
-          3. Install a working minimal Arch Linux system first.
-             - For most users, Awtarchy recommends the official `archinstall` guided installer included with the Arch ISO as the easiest path. Run `archinstall` from the live environment and complete a minimal Arch installation.
-             - A normal manual Arch installation using the [ArchWiki Installation Guide](https://wiki.archlinux.org/title/Installation_guide) is also fine.
-          4. Boot into the installed Arch system.
-
-          Once you have a working minimal Arch installation, install Awtarchy:
-
-          ```bash
-          sudo pacman -S git --noconfirm
-          git clone https://github.com/dillacorn/awtarchy
-          cd awtarchy
-          sudo ./awtarchy-install.sh
-          ```
-
-          Existing Awtarchy users:
-
-          ```bash
-          awtarchy update
-          ```
-
-          ## Bar appearance and customization
-
-          - Bar Appearance now includes adjustable bar transparency with persisted state and updater-safe managed history.
-          - Bar settings were reorganized so appearance controls are cleaner while preserving the existing per-display behavior.
-          - Running-application task filtering now includes the tested transient/helper-window handling that prevents temporary Steam menu cog icons from appearing as normal application tasks.
-
-          ## Quick Settings and display scaling
-
-          - Display scaling now has a dedicated Quick Settings component instead of being tied to Bar Appearance.
-          - Scale controls target the active display and support the existing preset/custom-scale workflow without forcing unrelated bar sizing changes.
-          - Quick Settings settings-mode and customization flows received additional regression coverage and layout hardening.
-
-          ## Floating windows and runtime behavior
-
-          - Floating-window state is now centralized so spawn-mode behavior is consistent across the shell and Quick Settings.
-          - Runtime Hyprland rules and flyout positioning were refined for floating Quickshell surfaces.
-          - Scheduler selection and related Quick Settings state now persist more reliably across reopen/reload cycles.
-
-          ## Themes and Escape behavior
-
-          - Themes remain directly accessible from Quick Settings and continue to target the active display.
-          - Escape now respects the visible modal stack: the first press closes the Theme Picker, while a second press closes Quick Settings.
-          - The compositor-level Escape route now recognizes the Theme Picker layer surface before closing normal floating flyouts.
-
-          ## Color and vibrance controls
-
-          - Color-adjustment keybind handling and runtime vibrance toggling received dedicated regression coverage.
-          - Vibrance state handling was hardened so runtime changes remain consistent with the active Hyprland configuration.
-
-          ## Update safety and validation
-
-          - Managed-history entries were refreshed for the changed Quickshell and runtime-rule files so Awtarchy can distinguish stock updates from user edits correctly.
-          - PR #102 final head `11bdf5ddb9487084bc29d1f764b990bdf0be2e7a` passed all 16 pull-request workflows.
-          - The Theme Picker Escape order was real-session tested before merge.
-          - Exact release target `6f9da234d11d8668e72fcc4683597ce23dd47e64` passed all six workflows triggered on `main` before publication.
-          - `Validate Awtarchy` passed Bash syntax, ShellCheck, Quickshell desktop-entry validation, and the full command/updater integration suite on the exact release target.
-          EOF
-
-          body="$(cat /tmp/release-body.md)"
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/releases" \
-            -f tag_name="$RELEASE_TAG" \
-            -f target_commitish="$RELEASE_TARGET" \
-            -f name='Awtarchy v3.4.5 Quickshell' \
-            --raw-field body="$body" \
-            -F draft=false \
-            -F prerelease=false >/tmp/release.json
-
-      - name: Verify published release
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          release_tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.tag_name')"
-          release_name="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.name')"
           release_target="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.target_commitish')"
-          release_draft="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.draft')"
-          release_prerelease="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.prerelease')"
           tag_target="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha')"
 
-          [[ "$release_tag" == "$RELEASE_TAG" ]]
-          [[ "$release_name" == 'Awtarchy v3.4.5 Quickshell' ]]
+          [[ "$main_sha" == "$RELEASE_TARGET" ]]
           [[ "$release_target" == "$RELEASE_TARGET" ]]
-          [[ "$release_draft" == 'false' ]]
-          [[ "$release_prerelease" == 'false' ]]
           [[ "$tag_target" == "$RELEASE_TARGET" ]]
+
+      - name: Delete one-use release helper branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --method DELETE \
+            "repos/${GITHUB_REPOSITORY}/git/refs/heads/release/v3.4.5-publish"
