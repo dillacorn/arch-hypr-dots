@@ -32,16 +32,18 @@ jobs:
           if f'{old_hash}\t{rel}' not in history.splitlines():
               raise SystemExit(f'current QuickSettings stock hash is missing from managed history: {old_hash}')
 
-          old = '''                                    Flow {
-                                        spacing: 5
-                                        Repeater {
-                                            model: ["top", "bottom", "left", "right"]
-'''
-          new = '''                                    RowLayout {
-                                        spacing: 5
-                                        Repeater {
-                                            model: ["top", "bottom", "left", "right"]
-'''
+          old = (
+              '                                    Flow {\n'
+              '                                        spacing: 5\n'
+              '                                        Repeater {\n'
+              '                                            model: ["top", "bottom", "left", "right"]\n'
+          )
+          new = (
+              '                                    RowLayout {\n'
+              '                                        spacing: 5\n'
+              '                                        Repeater {\n'
+              '                                            model: ["top", "bottom", "left", "right"]\n'
+          )
 
           if text.count(old) != 1:
               raise SystemExit(f'expected one bar position Flow block, found {text.count(old)}')
