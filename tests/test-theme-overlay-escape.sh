@@ -6,6 +6,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 FLYOUT="$ROOT/config/quickshell/awtarchy/FlyoutManager.qml"
 PICKER="$ROOT/config/quickshell/awtarchy/ThemePicker.qml"
 SHELL="$ROOT/config/quickshell/awtarchy/shell.qml"
+RUNTIME_RULES="$ROOT/config/hypr/scripts/quickshell_runtime_rules.sh"
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
@@ -74,4 +75,30 @@ if 'FlyoutManager.overlaySurface.length === 0' in block:
     raise SystemExit(1)
 PY
 
-printf '%s\n' 'PASS: one application-level Escape owner closes Theme Picker first and leaves the underlying flyout for the next keypress.'
+python3 - "$RUNTIME_RULES" <<'PY' || fail 'compositor-level Escape does not close the Theme Picker layer before floating flyouts'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+start = text.index('awtarchy_flyout_escape_bind_v1 = hl.bind("Escape", function()')
+end = text.index('\nend, { auto_consuming = true })', start)
+block = text[start:end]
+
+required = (
+    'awtarchy_theme_picker_visible()',
+    'close_awtarchy_theme_picker()',
+    'return { ok = true }',
+    'visible_awtarchy_flyouts()',
+    'close_visible_awtarchy_flyouts(flyouts)',
+)
+for needle in required:
+    if needle not in block:
+        raise SystemExit(1)
+
+if block.index('awtarchy_theme_picker_visible()') > block.index('visible_awtarchy_flyouts()'):
+    raise SystemExit(1)
+if block.index('close_awtarchy_theme_picker()') > block.index('visible_awtarchy_flyouts()'):
+    raise SystemExit(1)
+PY
+
+printf '%s\n' 'PASS: Escape closes the Theme Picker overlay before the underlying Quick Settings flyout in both QML and compositor-level routes.'
