@@ -137,7 +137,7 @@ if ! declare -F choose_ly_action >/dev/null; then
   fail 'reconciler has no interrupted Ly setup recovery action'
 else
   confirm_yes_no() { return 0; }
-  LY_STATUS='installed, not enabled on tty2'
+  export LY_STATUS='installed, not enabled on tty2'
   install_ly=0
   enable_ly=0
   choose_ly_action
