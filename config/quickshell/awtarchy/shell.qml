@@ -109,6 +109,11 @@ ShellRoot {
     }
 
     function closeActiveFloatingSurface() {
+        if (ThemePicker.open) {
+            ThemePicker.close();
+            return;
+        }
+
         const surface = String(FlyoutManager.activeSurface || "");
         if (surface.length === 0)
             return;
@@ -169,7 +174,7 @@ ShellRoot {
     Shortcut {
         sequence: "Escape"
         context: Qt.ApplicationShortcut
-        enabled: String(FlyoutManager.activeSurface || "").length > 0
+        enabled: ThemePicker.open || String(FlyoutManager.activeSurface || "").length > 0
         autoRepeat: false
         onActivated: root.closeActiveFloatingSurface()
     }

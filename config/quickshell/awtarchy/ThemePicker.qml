@@ -278,10 +278,7 @@ Singleton {
                             clip: true
 
                             Keys.onPressed: event => {
-                                if (event.key === Qt.Key_Escape) {
-                                    root.close();
-                                    event.accepted = true;
-                                } else if (event.key === Qt.Key_Left) {
+                                if (event.key === Qt.Key_Left) {
                                     root.moveSelection(-1);
                                     event.accepted = true;
                                 } else if (event.key === Qt.Key_Right) {
