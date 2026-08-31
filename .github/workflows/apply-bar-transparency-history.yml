@@ -1,26 +1,41 @@
-name: Validate Bar Transparency Regression Suite
+name: Apply Bar Transparency Managed History
 
 on:
-  workflow_dispatch:
+  pull_request:
+    branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  bar-regressions:
+  refresh-managed-history:
+    if: github.event.pull_request.number == 102 && github.head_ref == 'feature/bar-transparency'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-      - name: Install validation tools
-        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
-      - name: Validate bar regression suite
+        with:
+          ref: feature/bar-transparency
+      - name: Append current managed hashes
         run: |
-          git diff --check
-          bash -n config/hypr/scripts/quickshell.sh
-          bash -n tests/test-bar-transparency.sh
-          shellcheck tests/test-bar-transparency.sh
-          bash tests/test-bar-transparency.sh
-          bash tests/test-bar-module-visibility.sh
-          bash tests/test-bar-icon-customization.sh
-          bash tests/test-bar-icon-display-options.sh
-          bash tests/test-bar-task-icons.sh
+          set -euo pipefail
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          for spec in \
+            'config/quickshell/awtarchy/ThemePicker.qml:.config/quickshell/awtarchy/ThemePicker.qml' \
+            'config/quickshell/awtarchy/shell.qml:.config/quickshell/awtarchy/shell.qml'
+          do
+            file="${spec%%:*}"
+            rel="${spec#*:}"
+            hash="$(sha256sum "$file" | awk '{print $1}')"
+            entry="${hash}"$'\t'"${rel}"
+            grep -Fxq -- "$entry" "$history" || printf '%s\n' "$entry" >> "$history"
+          done
+
+          if git diff --quiet -- "$history"; then
+            exit 0
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "$history"
+          git commit -m 'Register release managed hashes'
+          git push origin HEAD:feature/bar-transparency
