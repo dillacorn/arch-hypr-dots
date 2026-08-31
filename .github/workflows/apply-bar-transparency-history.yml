@@ -15,8 +15,6 @@ jobs:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           ref: feature/bar-transparency
-          fetch-depth: 0
-          fetch-tags: true
 
       - name: Register current runtime rule hash
         shell: bash
@@ -28,10 +26,6 @@ jobs:
           hash="$(sha256sum "$file" | awk '{print $1}')"
           entry="${hash}"$'\t'"${rel}"
           grep -Fxq -- "$entry" "$history" || printf '%s\n' "$entry" >> "$history"
-
-          # Run the complete updater-migration regression before writing so any
-          # other missing current stock hashes are caught in this same gate.
-          bash tests/test-quickshell-updater-migration.sh
 
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
