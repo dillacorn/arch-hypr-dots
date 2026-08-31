@@ -58,21 +58,35 @@ PY
 not_contains "$PICKER" 'sequence: "Escape"' \
     'Theme Picker still uses a competing application-level Escape shortcut'
 
-python3 - "$SHELL" <<'PY' || fail 'normal flyout Escape remains enabled underneath a Theme Picker overlay'
+python3 - "$SHELL" <<'PY' || fail 'application Escape does not close the topmost Theme Picker before the underlying flyout'
 from pathlib import Path
 import sys
 
 text = Path(sys.argv[1]).read_text(encoding="utf-8")
+
+route_start = text.index('    function closeTopFloatingSurface() {')
+route_end = text.index('\n    }', route_start) + 6
+route = text[route_start:route_end]
+for required in (
+    'if (ThemePicker.open)',
+    'ThemePicker.close();',
+    'closeActiveFloatingSurface();',
+):
+    if required not in route:
+        raise SystemExit(1)
+
 needle = '    Shortcut {\n        sequence: "Escape"'
 start = text.index(needle)
 end = text.index('\n    }', start) + 6
 block = text[start:end]
-if 'FlyoutManager.overlaySurface.length === 0' not in block:
+if 'ThemePicker.open' not in block:
     raise SystemExit(1)
 if 'String(FlyoutManager.activeSurface || "").length > 0' not in block:
     raise SystemExit(1)
-if 'onActivated: root.closeActiveFloatingSurface()' not in block:
+if 'onActivated: root.closeTopFloatingSurface()' not in block:
+    raise SystemExit(1)
+if 'FlyoutManager.overlaySurface.length === 0' in block:
     raise SystemExit(1)
 PY
 
-printf '%s\n' 'PASS: Theme Picker takes exclusive keyboard focus and consumes Escape before the underlying flyout.'
+printf '%s\n' 'PASS: Escape closes Theme Picker first and leaves the underlying flyout for the next Escape press.'
