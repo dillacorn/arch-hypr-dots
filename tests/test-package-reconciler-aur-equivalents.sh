@@ -16,8 +16,15 @@ fail() {
 home="${TMP}/home"
 fakebin="${TMP}/fakebin"
 state="${TMP}/installed-packages"
+runtime="${TMP}/awtarchy-runtime.sh"
 mkdir -p "$home" "$fakebin"
 : >"$state"
+
+cat >"$runtime" <<'EOF_RUNTIME'
+declare -a PKG_GROUPS=()
+declare -a PACKAGES_AUR=()
+declare -a FLATPAK_CATALOG=()
+EOF_RUNTIME
 
 cat >"$fakebin/pacman" <<'EOF_PACMAN'
 #!/usr/bin/env bash
@@ -33,6 +40,7 @@ chmod +x "$fakebin/pacman"
 export TEST_STATE="$state"
 export PATH="$fakebin:/usr/bin:/bin"
 export HOME="$home"
+export AWTARCHY_RUNTIME="$runtime"
 
 # Load function definitions only. Main execution begins at collect_state.
 # shellcheck disable=SC1090
