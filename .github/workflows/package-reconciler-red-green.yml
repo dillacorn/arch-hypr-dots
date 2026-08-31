@@ -24,13 +24,16 @@ jobs:
           bash -n local/share/awtarchy/awtarchy-package-reconcile.sh
           bash -n tests/test-package-reconciler.sh
           bash -n tests/test-package-reconciler-alternatives.sh
+          bash -n tests/test-package-reconciler-interrupted-recovery.sh
       - name: ShellCheck
         run: |
           shellcheck local/bin/awtarchy
           shellcheck local/share/awtarchy/awtarchy-package-reconcile.sh
           shellcheck tests/test-package-reconciler.sh
           shellcheck tests/test-package-reconciler-alternatives.sh
+          shellcheck tests/test-package-reconciler-interrupted-recovery.sh
       - name: Package reconciler regression
         run: |
           bash tests/test-package-reconciler.sh
           bash tests/test-package-reconciler-alternatives.sh
+          bash tests/test-package-reconciler-interrupted-recovery.sh
