@@ -38,16 +38,16 @@ contains "$PICKER" 'WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive' \
 not_contains "$PICKER" 'focusable: true' \
     'Theme Picker still relies on ambiguous on-demand PanelWindow focus'
 
-python3 - "$PICKER" <<'PY' || fail 'Theme Picker focused search field does not consume Escape locally'
+python3 - "$PICKER" <<'PY' || fail 'Theme Picker panel does not consume Escape locally'
 from pathlib import Path
 import sys
 
 text = Path(sys.argv[1]).read_text(encoding="utf-8")
-start = text.index('                            Keys.onPressed: event => {')
-end = text.index('\n                            }', start) + 30
+window = text.index('    PanelWindow {\n        id: pickerWindow')
+start = text.index('            Keys.onEscapePressed:', window)
+end = text.index('\n            }', start) + 14
 block = text[start:end]
 required = (
-    'event.key === Qt.Key_Escape',
     'root.close();',
     'event.accepted = true;',
 )
