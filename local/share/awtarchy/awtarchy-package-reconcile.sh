@@ -51,6 +51,7 @@ declare -a MISSING_FLATPAK_IDS=()
 declare -a MISSING_FLATPAK_NAMES=()
 declare -a RETIRED_MANAGED=()
 declare -a RETIRED_UNOWNED=()
+declare -a FAILED_AUR=()
 SYSTEM_TYPE="unknown"
 LY_STATUS="not installed"
 AUR_HELPER=""
@@ -511,22 +512,39 @@ rebuild_aur_helper() {
 
   case "$helper" in
     paru|yay) ;;
-    *) die "Unsupported AUR helper rebuild target: ${helper}" ;;
+    *)
+      warn "Unsupported AUR helper rebuild target: ${helper}"
+      return 1
+      ;;
   esac
 
-  package_installed "$helper" \
-    || die "${helper} exists but is not installed as the standard ${helper} package; refusing to replace an unknown helper variant."
-  have git || die "git is required to rebuild the broken ${helper} AUR helper."
-  have makepkg || die "makepkg is required to rebuild the broken ${helper} AUR helper."
-  (( EUID != 0 )) \
-    || die "AUR helper rebuild must run from the regular user account, not as root."
+  if ! package_installed "$helper"; then
+    warn "${helper} exists but is not installed as the standard ${helper} package; refusing to replace an unknown helper variant."
+    return 1
+  fi
+  if ! have git; then
+    warn "git is required to rebuild the broken ${helper} AUR helper."
+    return 1
+  fi
+  if ! have makepkg; then
+    warn "makepkg is required to rebuild the broken ${helper} AUR helper."
+    return 1
+  fi
+  if (( EUID == 0 )); then
+    warn "AUR helper rebuild must run from the regular user account, not as root."
+    return 1
+  fi
 
-  tmp="$(mktemp -d)"
+  if ! tmp="$(mktemp -d)"; then
+    warn "Could not create a temporary directory to rebuild ${helper}."
+    return 1
+  fi
   log "Rebuilding broken AUR helper ${helper} against the current pacman/libalpm..."
 
   if ! git clone --depth 1 "https://aur.archlinux.org/${helper}.git" "${tmp}/${helper}"; then
     rm -rf -- "$tmp"
-    die "Failed to download ${helper} AUR source for rebuild."
+    warn "Failed to download ${helper} AUR source for rebuild."
+    return 1
   fi
 
   if ! (
@@ -534,23 +552,28 @@ rebuild_aur_helper() {
     makepkg -s --noconfirm
   ); then
     rm -rf -- "$tmp"
-    die "Failed to rebuild ${helper} against the current pacman/libalpm."
+    warn "Failed to rebuild ${helper} against the current pacman/libalpm."
+    return 1
   fi
 
   pkg="$(find "${tmp}/${helper}" -maxdepth 1 -type f -name "${helper}-*.pkg.tar*" ! -name '*-debug*' -print -quit)"
   if [[ -z $pkg ]]; then
     rm -rf -- "$tmp"
-    die "Rebuilt ${helper} package archive was not found."
+    warn "Rebuilt ${helper} package archive was not found."
+    return 1
   fi
 
   if ! as_root pacman -U --noconfirm "$pkg"; then
     rm -rf -- "$tmp"
-    die "Failed to reinstall rebuilt ${helper}."
+    warn "Failed to reinstall rebuilt ${helper}."
+    return 1
   fi
 
   rm -rf -- "$tmp"
-  aur_helper_usable "$helper" \
-    || die "${helper} is still unusable after rebuild."
+  if ! aur_helper_usable "$helper"; then
+    warn "${helper} is still unusable after rebuild."
+    return 1
+  fi
 }
 
 ensure_aur_helper() {
@@ -567,13 +590,45 @@ ensure_aur_helper() {
   for helper in paru yay; do
     if have "$helper" && package_installed "$helper"; then
       warn "${helper} is installed but cannot run after system package changes; rebuilding it."
-      rebuild_aur_helper "$helper"
-      AUR_HELPER="$helper"
-      return 0
+      if rebuild_aur_helper "$helper"; then
+        AUR_HELPER="$helper"
+        return 0
+      fi
     fi
   done
 
-  die "AUR packages were selected but no usable standard paru or yay installation is available."
+  warn "No usable standard paru or yay installation is available for the selected AUR packages."
+  return 1
+}
+
+install_selected_aur_packages() {
+  local pkg
+
+  for pkg in "$@"; do
+    if aur_package_satisfied "$pkg"; then
+      log "${pkg} or an equivalent installation is already present; skipping."
+      continue
+    fi
+
+    log "Installing AUR package with ${AUR_HELPER}: ${pkg}"
+    if ! "$AUR_HELPER" -S --needed --noconfirm "$pkg"; then
+      warn "AUR package failed: ${pkg}. Continuing with remaining package actions."
+      FAILED_AUR+=("$pkg")
+      continue
+    fi
+
+    if ! aur_package_satisfied "$pkg"; then
+      warn "AUR helper returned success but ${pkg} is still not detected. Continuing with remaining package actions."
+      FAILED_AUR+=("$pkg")
+      continue
+    fi
+
+    if ! record_managed_packages "$pkg"; then
+      warn "${pkg} installed, but Awtarchy could not update its managed-package ledger."
+    fi
+  done
+
+  return 0
 }
 
 record_managed_packages() {
@@ -754,10 +809,12 @@ if (( enable_ly == 1 )); then
 fi
 
 if (( ${#selected_aur[@]} )); then
-  ensure_aur_helper
-  log "Installing AUR packages with ${AUR_HELPER}: ${selected_aur[*]}"
-  "$AUR_HELPER" -S --needed --noconfirm "${selected_aur[@]}"
-  record_managed_packages "${selected_aur[@]}"
+  if ensure_aur_helper; then
+    install_selected_aur_packages "${selected_aur[@]}"
+  else
+    warn 'AUR helper is unavailable; recording selected AUR packages as failed and continuing with remaining package actions.'
+    FAILED_AUR+=("${selected_aur[@]}")
+  fi
 fi
 
 if (( ${#selected_flatpak[@]} )); then
@@ -773,4 +830,12 @@ if (( ${#selected_retired[@]} )); then
   forget_managed_packages "${selected_retired[@]}"
 fi
 
-log 'Package reconciliation complete.'
+if (( ${#FAILED_AUR[@]} )); then
+  sort_unique_array FAILED_AUR
+  printf '\n'
+  print_list 'AUR packages that could not be installed:' "${FAILED_AUR[@]}"
+  warn 'AUR failures do not stop package reconciliation; all other selected package actions were still processed.'
+  log 'Package reconciliation completed with AUR package failures.'
+else
+  log 'Package reconciliation complete.'
+fi
