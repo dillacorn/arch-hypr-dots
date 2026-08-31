@@ -25,6 +25,7 @@ jobs:
           bash -n tests/test-package-reconciler.sh
           bash -n tests/test-package-reconciler-alternatives.sh
           bash -n tests/test-package-reconciler-interrupted-recovery.sh
+          bash -n tests/test-package-reconciler-aur-replacements.sh
       - name: ShellCheck
         run: |
           shellcheck local/bin/awtarchy
@@ -32,8 +33,10 @@ jobs:
           shellcheck tests/test-package-reconciler.sh
           shellcheck tests/test-package-reconciler-alternatives.sh
           shellcheck tests/test-package-reconciler-interrupted-recovery.sh
+          shellcheck tests/test-package-reconciler-aur-replacements.sh
       - name: Package reconciler regression
         run: |
           bash tests/test-package-reconciler.sh
           bash tests/test-package-reconciler-alternatives.sh
           bash tests/test-package-reconciler-interrupted-recovery.sh
+          bash tests/test-package-reconciler-aur-replacements.sh
