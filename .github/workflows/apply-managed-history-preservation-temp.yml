@@ -1,0 +1,82 @@
+name: Temporary Apply Managed History Preservation
+
+on:
+  push:
+    branches:
+      - feature/bar-transparency
+    paths:
+      - '.github/workflows/apply-managed-history-preservation-temp.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Restore history and append current hashes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          parent=7c316e8ffed632cf9219929345620a7c6ccd9f81
+          path=local/share/awtarchy/quickshell-managed-history.sha256
+
+          flyout_hash="$(sha256sum config/quickshell/awtarchy/FlyoutManager.qml | awk '{print $1}')"
+          picker_hash="$(sha256sum config/quickshell/awtarchy/ThemePicker.qml | awk '{print $1}')"
+          shell_hash="$(sha256sum config/quickshell/awtarchy/shell.qml | awk '{print $1}')"
+
+          git show "${parent}:${path}" > "$path"
+
+          for entry in \
+            "${flyout_hash}"$'\t''.config/quickshell/awtarchy/FlyoutManager.qml' \
+            "${picker_hash}"$'\t''.config/quickshell/awtarchy/ThemePicker.qml' \
+            "${shell_hash}"$'\t''.config/quickshell/awtarchy/shell.qml'
+          do
+            grep -Fxq -- "$entry" "$path" || printf '%s\n' "$entry" >> "$path"
+          done
+      - name: Verify history preservation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          parent=7c316e8ffed632cf9219929345620a7c6ccd9f81
+          path=local/share/awtarchy/quickshell-managed-history.sha256
+          git show "${parent}:${path}" > /tmp/history-before
+
+          missing=0
+          while IFS= read -r entry; do
+            [[ -n "$entry" ]] || continue
+            if ! grep -Fxq -- "$entry" "$path"; then
+              printf 'MISSING: %s\n' "$entry"
+              missing=$((missing + 1))
+            fi
+          done < /tmp/history-before
+          printf 'missing_parent_entries=%d\n' "$missing"
+          (( missing == 0 ))
+
+          for file in \
+            config/quickshell/awtarchy/FlyoutManager.qml \
+            config/quickshell/awtarchy/ThemePicker.qml \
+            config/quickshell/awtarchy/shell.qml
+          do
+            rel=".${file#config}"
+            hash="$(sha256sum "$file" | awk '{print $1}')"
+            grep -Fxq -- "${hash}"$'\t'"${rel}" "$path"
+          done
+      - name: Focused regressions
+        run: |
+          bash tests/test-theme-overlay-escape.sh
+          bash tests/test-color-adjustment-keybinds.sh
+          bash tests/test-quickshell-theme-picker.sh
+          bash tests/test-lua-validation.sh
+      - name: Commit repaired history
+        run: |
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add local/share/awtarchy/quickshell-managed-history.sha256
+          git diff --cached --check
+          git diff --cached --quiet && exit 1
+          git commit -m 'Preserve Quickshell managed hash history'
+          git push origin HEAD:feature/bar-transparency
