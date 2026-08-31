@@ -1018,7 +1018,13 @@ Singleton {
             color: Theme.popupBackground
             radius: 0
             focus: true
-            Keys.onEscapePressed: root.close()
+            Keys.onEscapePressed: event => {
+                if (ThemePicker.open)
+                    ThemePicker.close();
+                else
+                    root.close();
+                event.accepted = true;
+            }
 
             MouseArea {
                 anchors.fill: parent
@@ -1165,6 +1171,8 @@ Singleton {
                         captureAllowed: root.captureAllowed
                         message: root.settingsMessage
                         otherMonitorNames: root.otherMonitorNames()
+                        quickSettingsOrder: root.layoutOrderDraft
+                        quickSettingsHidden: root.layoutHiddenDraft
 
                         onResetRequested: root.resetDisplaySettings()
                         onWidthAdjustmentRequested: delta => root.adjustPanelWidth(delta)
@@ -1174,6 +1182,9 @@ Singleton {
                         onCaptureToggleRequested: root.toggleCaptureAllowed()
                         onCopyRequested: monitorNames => root.copyDisplaySettings(monitorNames)
                         onThemePickerRequested: root.openThemeMenu()
+                        onQuickSettingsVisibilityRequested: (sectionId, visible) =>
+                            root.setQuickSettingsSectionVisible(sectionId, visible)
+                        onQuickSettingsLayoutResetRequested: root.resetQuickSettingsLayoutDraft()
                         onLayoutEditorRequested: {
                             settingsPanel.resetTransientState();
                             root.layoutEditorOpen = true;

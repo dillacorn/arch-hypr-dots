@@ -22,6 +22,8 @@ Item {
     property bool showCaptureControl: true
     property string message: ""
     property var otherMonitorNames: []
+    property var quickSettingsOrder: []
+    property var quickSettingsHidden: []
     property bool copyOpen: false
     property var copyTargets: ({})
     property int copySelectionRevision: 0
@@ -58,10 +60,43 @@ Item {
     signal copyRequested(var monitorNames)
     signal themePickerRequested()
     signal layoutEditorRequested()
+    signal quickSettingsVisibilityRequested(string sectionId, bool visible)
+    signal quickSettingsLayoutResetRequested()
 
     implicitHeight: inlineCopy
-        ? 139 + displayScaleSection.implicitHeight + 37 + (copyOpen ? 31 : 0)
+        ? 139 + displayScaleSection.implicitHeight
+            + quickSettingsSectionControls.implicitHeight + 3 + (copyOpen ? 31 : 0)
         : (copyOpen ? 104 : 139)
+
+    function quickSettingsSectionLabel(sectionId) {
+        const labels = {
+            "brightness": "Brightness",
+            "output-volume": "Max Volume",
+            "bar": "Bar",
+            "display-effects": "Night + Vibrance",
+            "submap": "Submap",
+            "wallpaper": "Wallpaper",
+            "awtarchy": "Awtarchy",
+            "smtty": "smtty",
+            "scheduler": "sched-ext",
+            "numlock": "Num Lock",
+            "title-bars": "Title Bars"
+        };
+        return labels[sectionId] || sectionId;
+    }
+
+    function quickSettingsSectionVisible(sectionId) {
+        return (quickSettingsHidden || []).indexOf(sectionId) < 0;
+    }
+
+    function quickSettingsVisibleCount() {
+        let count = 0;
+        for (const sectionId of quickSettingsOrder || []) {
+            if (quickSettingsSectionVisible(String(sectionId)))
+                count++;
+        }
+        return count;
+    }
 
     function targetSelected(name) {
         const dependency = copySelectionRevision;
@@ -478,25 +513,61 @@ Item {
             monitorName: root.monitorName
         }
 
-        RowLayout {
+        ColumnLayout {
+            id: quickSettingsSectionControls
             Layout.fillWidth: true
-            Layout.preferredHeight: 28
-            spacing: 6
             visible: root.surfaceLabel === "Quick Settings"
+            spacing: 4
 
-            SettingsButton {
-                label: "Customize Layout…"
-                textSize: 9
-                onClicked: root.layoutEditorRequested()
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 24
+                spacing: 5
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Quick Settings sections"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                    font.weight: Font.Medium
+                    elide: Text.ElideRight
+                }
+
+                SettingsButton {
+                    label: "Reorder…"
+                    textSize: 8
+                    onClicked: root.layoutEditorRequested()
+                }
+
+                SettingsButton {
+                    label: "Stock Layout"
+                    textSize: 8
+                    onClicked: root.quickSettingsLayoutResetRequested()
+                }
             }
 
-            Text {
+            Flow {
                 Layout.fillWidth: true
-                text: "Show, hide, and reorder sections for this display"
-                color: Theme.muted
-                font.family: Theme.fontFamily
-                font.pixelSize: 9
-                elide: Text.ElideRight
+                Layout.preferredHeight: childrenRect.height
+                spacing: 5
+
+                Repeater {
+                    model: root.quickSettingsOrder
+
+                    SettingsButton {
+                        required property var modelData
+                        readonly property string sectionId: String(modelData)
+                        readonly property bool shown: root.quickSettingsSectionVisible(sectionId)
+
+                        label: root.quickSettingsSectionLabel(String(modelData))
+                        active: root.quickSettingsSectionVisible(String(modelData))
+                        available: !shown || root.quickSettingsVisibleCount() > 1
+                        textSize: 8
+                        horizontalPadding: 9
+                        onClicked: root.quickSettingsVisibilityRequested(sectionId, !shown)
+                    }
+                }
             }
         }
 
