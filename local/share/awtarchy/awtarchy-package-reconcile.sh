@@ -179,6 +179,23 @@ package_installed() {
   pacman -Q "$1" >/dev/null 2>&1
 }
 
+package_satisfied() {
+  local pkg="$1"
+  package_installed "$pkg" && return 0
+
+  case "$pkg" in
+    zathura-pdf-mupdf)
+      package_installed zathura-pdf-poppler
+      ;;
+    zathura-pdf-poppler)
+      package_installed zathura-pdf-mupdf
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 managed_package() {
   [[ -r "$MANAGED_PACKAGES_FILE" ]] || return 1
   grep -Fxq -- "$1" "$MANAGED_PACKAGES_FILE"
@@ -244,7 +261,7 @@ collect_state() {
   done
 
   for pkg in "${ARCH_CATALOG[@]}"; do
-    package_installed "$pkg" && continue
+    package_satisfied "$pkg" && continue
     array_contains "$pkg" "${REQUIRED_ARCH[@]}" && continue
     [[ $pkg == ly ]] && continue
     MISSING_ARCH+=("$pkg")
