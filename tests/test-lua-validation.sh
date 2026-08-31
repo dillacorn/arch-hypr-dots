@@ -85,4 +85,6 @@ if validate_candidate "$invalid_lua" '.config/hypr/invalid config.lua' </dev/nul
   fail "invalid Lua passed validation"
 fi
 
+bash "$ROOT/tests/test-color-adjustment-keybinds.sh"
+
 printf 'Lua validation tests passed.\n'
