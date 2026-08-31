@@ -1,0 +1,39 @@
+name: Temporary Validate Scheduler and Bar Hints
+
+on:
+  push:
+    branches:
+      - feature/bar-transparency
+    paths:
+      - '.github/workflows/validate-scheduler-bar-hints-temp.yml'
+      - 'tests/test-sched-ext-selection-persistence.sh'
+      - 'tests/test-quick-settings-bar-customize-flow.sh'
+      - 'config/quickshell/awtarchy/QuickSettings.qml'
+      - 'config/hypr/scripts/hypr_quicksettings.sh'
+      - 'config/hypr/scripts/hypr_quicksettings_core.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Bash syntax
+        run: |
+          bash -n tests/test-sched-ext-selection-persistence.sh
+          bash -n tests/test-quick-settings-bar-customize-flow.sh
+          bash -n config/hypr/scripts/hypr_quicksettings.sh
+          bash -n config/hypr/scripts/hypr_quicksettings_core.sh
+      - name: ShellCheck
+        run: |
+          shellcheck tests/test-sched-ext-selection-persistence.sh
+          shellcheck tests/test-quick-settings-bar-customize-flow.sh
+      - name: Focused regressions
+        run: |
+          bash tests/test-sched-ext-selection-persistence.sh
+          bash tests/test-quick-settings-bar-customize-flow.sh
