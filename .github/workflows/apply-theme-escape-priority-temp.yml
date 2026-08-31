@@ -1,0 +1,58 @@
+name: Temporary Apply Theme Escape Priority
+
+on:
+  push:
+    branches:
+      - feature/bar-transparency
+    paths:
+      - '.github/workflows/apply-theme-escape-priority-temp.yml'
+      - '.github/scripts/apply_theme_escape_priority.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Apply approved change
+        run: python3 .github/scripts/apply_theme_escape_priority.py
+      - name: Diff check
+        run: git diff --check
+      - name: Bash syntax
+        run: |
+          bash -n tests/test-quickshell-theme-escape-priority.sh
+          bash -n tests/test-quickshell-theme-picker.sh
+          bash -n tests/test-quick-settings-theme-toggle.sh
+          bash -n tests/test-quick-settings-bar-customize-flow.sh
+      - name: ShellCheck
+        run: |
+          shellcheck tests/test-quickshell-theme-escape-priority.sh
+          shellcheck tests/test-quickshell-theme-picker.sh
+          shellcheck tests/test-quick-settings-theme-toggle.sh
+          shellcheck tests/test-quick-settings-bar-customize-flow.sh
+      - name: Focused and neighboring regressions
+        run: |
+          bash tests/test-quickshell-theme-picker.sh
+          bash tests/test-quickshell-theme-escape-priority.sh
+          bash tests/test-quick-settings-theme-toggle.sh
+          bash tests/test-quick-settings-bar-customize-flow.sh
+          bash tests/test-quick-settings-settings-mode.sh
+          bash tests/test-quick-settings-layout.sh
+          bash tests/test-quick-settings-ux-flow.sh
+      - name: Commit production changes
+        run: |
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add \
+            config/quickshell/awtarchy/shell.qml \
+            config/quickshell/awtarchy/ThemePicker.qml \
+            local/share/awtarchy/quickshell-managed-history.sha256 \
+            .github/workflows/validate-awtarchy.yml
+          git diff --cached --quiet && exit 1
+          git commit -m 'Prioritize Theme Picker on Escape'
+          git push origin HEAD:feature/bar-transparency
