@@ -61,4 +61,6 @@ require_ui 'text: "CTRL+SUPER+ALT+[ warmer  ·  CTRL+SUPER+ALT+] cooler  ·  CTR
 require_ui 'text: "SUPER+ALT+[ decrease  ·  SUPER+ALT+] increase  ·  CTRL+SUPER+ALT+V toggle"' \
     'Vibrance Quick Settings hint is missing or does not match the actual bindings'
 
-printf '%s\n' 'PASS: Quick Settings, Night Light, and digital vibrance bindings match their visible hints.'
+bash "$ROOT/tests/test-vibrance-runtime-toggle.sh"
+
+printf '%s\n' 'PASS: Quick Settings, Night Light, and digital vibrance bindings match their visible hints and live toggle behavior.'
