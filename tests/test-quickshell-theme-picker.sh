@@ -6,6 +6,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PICKER="${ROOT}/config/quickshell/awtarchy/ThemePicker.qml"
 CATALOG="${ROOT}/config/hypr/scripts/quickshell_theme_catalog.sh"
 QUICK_SETTINGS="${ROOT}/config/quickshell/awtarchy/QuickSettings.qml"
+SHELL_QML="${ROOT}/config/quickshell/awtarchy/shell.qml"
 THEME_SELECT="${ROOT}/config/hypr/scripts/theme_select.sh"
 MANAGED_HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
 PERMANENT_CI="${ROOT}/.github/workflows/validate-awtarchy.yml"
@@ -70,6 +71,10 @@ if grep -Fq 'text: "Active theme"' "$PICKER"; then
     fail 'ThemePicker still uses the overlapping two-line active-theme header block'
 fi
 
+if grep -Fq 'event.key === Qt.Key_Escape' "$PICKER"; then
+    fail 'ThemePicker still owns a duplicate local Escape close path'
+fi
+
 apply_calls="$(grep -Fc 'applyProcess.exec(' "$PICKER" || true)"
 [[ "$apply_calls" == 1 ]] || fail "ThemePicker must have exactly one applyProcess.exec call, found ${apply_calls}"
 
@@ -91,12 +96,46 @@ if ! grep -Fq 'ThemePicker.toggleForScreen(activeScreen)' "$QUICK_SETTINGS"; the
     fail 'Quick Settings no longer toggles ThemePicker for its active screen'
 fi
 
+python3 - "$SHELL_QML" <<'PY' || fail 'application Escape handler does not close ThemePicker before the active flyout'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+start = text.index("    function closeActiveFloatingSurface() {")
+end = text.index("\n    function flyoutWidth", start)
+block = text[start:end]
+theme_guard = block.find("if (ThemePicker.open)")
+theme_close = block.find("ThemePicker.close();")
+active_surface = block.find("const surface = String(FlyoutManager.activeSurface")
+if min(theme_guard, theme_close, active_surface) < 0:
+    raise SystemExit(1)
+if not (theme_guard < theme_close < active_surface):
+    raise SystemExit(1)
+PY
+
+python3 - "$SHELL_QML" <<'PY' || fail 'application Escape shortcut is disabled when ThemePicker is open standalone'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+start = text.index('    Shortcut {\n        sequence: "Escape"')
+end = text.index("\n    }", start) + 6
+block = text[start:end]
+if "ThemePicker.open" not in block:
+    raise SystemExit(1)
+if 'String(FlyoutManager.activeSurface || "").length > 0' not in block:
+    raise SystemExit(1)
+if "onActivated: root.closeActiveFloatingSurface()" not in block:
+    raise SystemExit(1)
+PY
+
 if ! grep -Fq 'ipc call themes toggle' "$THEME_SELECT"; then
     fail 'theme_select.sh no longer uses the themes toggle IPC entrypoint'
 fi
 
 require_managed_hash "$PICKER" '.config/quickshell/awtarchy/ThemePicker.qml'
 require_managed_hash "$CATALOG" '.config/hypr/scripts/quickshell_theme_catalog.sh'
+require_managed_hash "$SHELL_QML" '.config/quickshell/awtarchy/shell.qml'
 (( managed_history_missing == 0 )) || exit 1
 
 catalog_ci_count="$(grep -Fc 'tests/test-quickshell-theme-catalog.sh' "$PERMANENT_CI" || true)"
