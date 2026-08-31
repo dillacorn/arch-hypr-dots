@@ -1587,6 +1587,16 @@ Singleton {
 
                                         Text {
                                             Layout.fillWidth: true
+                                            text: "Themes: SUPER+T"
+                                            color: Theme.muted
+                                            font.family: Theme.fontFamily
+                                            font.pixelSize: root.scaledText(8)
+                                            horizontalAlignment: Text.AlignRight
+                                            wrapMode: Text.Wrap
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
                                             text: "Position: SUPER+Mouse1 / ALT+Mouse1 drag · CTRL+SUPER+B / SUPER+ALT+B change edge"
                                             color: Theme.muted
                                             font.family: Theme.fontFamily

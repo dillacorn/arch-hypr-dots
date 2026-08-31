@@ -184,4 +184,6 @@ if 'root.layoutEditorOpen = true;' not in block:
     raise SystemExit(1)
 PY
 
+bash "$ROOT/tests/test-quick-settings-theme-hint.sh"
+
 printf '%s\n' 'PASS: Quick Settings uses separate Icons/Appearance expansions, toggleable Themes, compact settings, inline copy targets, keybind hints, and complete transient reset.'
