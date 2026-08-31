@@ -86,6 +86,32 @@ else
   fi
 fi
 
+cat >"$runtime" <<'EOF_RUNTIME'
+declare -a PKG_GROUPS=()
+declare -a PACKAGES_AUR=(
+  alacritty-graphics
+  qimgv
+  obs-pipewire-audio-capture-bin
+  smtty
+)
+declare -a FLATPAK_CATALOG=()
+EOF_RUNTIME
+printf '%s\n' alacritty qimgv-git >"$state"
+review_output="$(bash "$RECONCILER" --review)"
+aur_section="$(printf '%s\n' "$review_output" | sed -n '/^Missing current AUR catalog packages:/,/^Missing current Flatpak catalog apps:/p')"
+
+if printf '%s\n' "$aur_section" | grep -Fq 'alacritty-graphics'; then
+  fail 'review still offered alacritty-graphics despite installed alacritty'
+fi
+if printf '%s\n' "$aur_section" | grep -Fq 'qimgv'; then
+  fail 'review still offered qimgv despite installed qimgv-git'
+fi
+if printf '%s\n' "$aur_section" | grep -Fq 'obs-pipewire-audio-capture-bin'; then
+  fail 'review still offered OBS PipeWire package despite existing user plugin'
+fi
+printf '%s\n' "$aur_section" | grep -Fq -- '- smtty' \
+  || fail 'review did not retain genuinely missing smtty'
+
 if (( failures > 0 )); then
   exit 1
 fi
