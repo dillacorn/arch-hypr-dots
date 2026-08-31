@@ -111,6 +111,7 @@ jobs:
           bash -n tests/test-quickshell-updater-migration.sh
           bash -n tests/test-hyprbars-quicksettings.sh
           bash -n tests/test-network-bar-state.sh
+          bash -n tests/test-sched-ext-selection-persistence.sh
           bash -n tests/test-scxctl-auth-ui.sh
           bash -n tests/test-scxctl-auth-stale-rule.sh
           bash -n tests/test-scxctl-helper-update.sh
@@ -205,6 +206,7 @@ jobs:
             tests/test-quickshell-updater-migration.sh \
             tests/test-hyprbars-quicksettings.sh \
             tests/test-network-bar-state.sh \
+            tests/test-sched-ext-selection-persistence.sh \
             tests/test-scxctl-auth-ui.sh \
             tests/test-scxctl-auth-stale-rule.sh \
             tests/test-scxctl-helper-update.sh \
@@ -280,6 +282,7 @@ jobs:
           bash tests/test-network-bar-state.sh
           python3 tests/test-config-noise-comparison.py
           bash tests/test-quickshell-updater-migration.sh
+          bash tests/test-sched-ext-selection-persistence.sh
           bash tests/test-scxctl-auth-ui.sh
           bash tests/test-scxctl-auth-stale-rule.sh
           bash tests/test-scxctl-helper-update.sh
