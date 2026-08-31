@@ -327,7 +327,6 @@ Singleton {
     function loadSavedView(targetScreen) {
         if (!targetScreen)
             return;
-        BarState.refresh();
         const persisted = BarState.bluetoothViewFor(targetScreen.name);
         panelWidthOverride = clampWidth(persisted.width);
         panelHeightOverride = clampHeight(persisted.height);

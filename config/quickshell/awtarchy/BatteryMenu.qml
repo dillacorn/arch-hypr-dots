@@ -178,7 +178,6 @@ Singleton {
     function loadSavedView(targetScreen) {
         if (!targetScreen)
             return;
-        BarState.refresh();
         const persisted = BarState.batteryViewFor(targetScreen.name);
         panelWidthOverride = clampWidth(persisted.width);
         panelHeightOverride = clampHeight(persisted.height);
