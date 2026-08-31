@@ -1,0 +1,92 @@
+name: Apply v3.4.6 Flyout Latency Fix
+
+on:
+  push:
+    branches:
+      - release/v3.4.6-flyout-latency
+    paths:
+      - '.github/workflows/apply-v346-production-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Apply validated production changes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from hashlib import sha256
+          from pathlib import Path
+
+          paths = [
+              Path('config/quickshell/awtarchy/ClipboardMenu.qml'),
+              Path('config/quickshell/awtarchy/QuickSettings.qml'),
+              Path('config/quickshell/awtarchy/NetworkMenu.qml'),
+              Path('config/quickshell/awtarchy/BluetoothMenu.qml'),
+              Path('config/quickshell/awtarchy/BatteryMenu.qml'),
+              Path('config/quickshell/awtarchy/Notifications.qml'),
+          ]
+          history_path = Path('local/share/awtarchy/quickshell-managed-history.sha256')
+          history = history_path.read_text()
+          new_entries = []
+
+          for path in paths:
+              text = path.read_text()
+              old_hash = sha256(text.encode()).hexdigest()
+              rel = '.config/quickshell/awtarchy/' + path.name
+              old_entry = f'{old_hash}\t{rel}'
+              if old_entry not in history.splitlines():
+                  raise SystemExit(f'{path}: v3.4.5 stock hash missing from managed history: {old_hash}')
+
+              marker = '    function loadSavedView(targetScreen) {'
+              start = text.find(marker)
+              if start < 0:
+                  raise SystemExit(f'{path}: loadSavedView() not found')
+              end = text.find('\n    }', start)
+              if end < 0:
+                  raise SystemExit(f'{path}: loadSavedView() end not found')
+              block = text[start:end]
+              needle = '        BarState.refresh();\n'
+              if block.count(needle) != 1:
+                  raise SystemExit(
+                      f'{path}: expected one BarState.refresh() in loadSavedView(), '
+                      f'found {block.count(needle)}'
+                  )
+              block = block.replace(needle, '', 1)
+              text = text[:start] + block + text[end:]
+              path.write_text(text)
+
+              new_hash = sha256(text.encode()).hexdigest()
+              new_entry = f'{new_hash}\t{rel}'
+              if new_entry not in history.splitlines():
+                  new_entries.append(new_entry)
+
+          if new_entries:
+              if not history.endswith('\n'):
+                  history += '\n'
+              history += '# v3.4.6 flyout open-state reuse.\n'
+              history += '\n'.join(new_entries) + '\n'
+              history_path.write_text(history)
+          PY
+
+          bash -n tests/test-flyout-open-state-refresh.sh
+          shellcheck tests/test-flyout-open-state-refresh.sh
+          bash tests/test-flyout-open-state-refresh.sh
+          git diff --check
+
+          git config user.name dillacorn
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add \
+            config/quickshell/awtarchy/ClipboardMenu.qml \
+            config/quickshell/awtarchy/QuickSettings.qml \
+            config/quickshell/awtarchy/NetworkMenu.qml \
+            config/quickshell/awtarchy/BluetoothMenu.qml \
+            config/quickshell/awtarchy/BatteryMenu.qml \
+            config/quickshell/awtarchy/Notifications.qml \
+            local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'Avoid redundant flyout state refreshes'
+          git push origin HEAD:release/v3.4.6-flyout-latency
