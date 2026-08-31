@@ -31,9 +31,9 @@ jobs:
           self_section = text[self_start:self_end]
           self_pattern = re.compile(
               r'  if ! tar -xzf "\$archive" -C "\$tmp"; then\n'
-              r'\s+rm -rf -- "\$tmp"\n'
-              r'\s+die "Failed to extract updater commit \$\{commit\}\."\n'
-              r'\s+fi\n'
+              r'[ \t]*rm -rf -- "\$tmp"\n'
+              r'[ \t]*die "Failed to extract updater commit \$\{commit\}\."\n'
+              r'[ \t]*fi\n'
           )
           self_section, count = self_pattern.subn(
               '  tar -xzf "$archive" -C "$tmp"\n', self_section, count=1
@@ -47,9 +47,9 @@ jobs:
           git_section = text[git_start:git_end]
           git_pattern = re.compile(
               r'  if ! tar -xzf "\$archive" -C "\$tmp"; then\n'
-              r'\s+rm -rf -- "\$tmp"\n'
-              r'\s+die "Failed to extract Git-testing package archive for revision \$\{revision\}\."\n'
-              r'\s+fi\n'
+              r'[ \t]*rm -rf -- "\$tmp"\n'
+              r'[ \t]*die "Failed to extract Git-testing package archive for revision \$\{revision\}\."\n'
+              r'[ \t]*fi\n'
           )
           formatted = (
               '  if ! tar -xzf "$archive" -C "$tmp"; then\n'
