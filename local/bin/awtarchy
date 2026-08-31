@@ -613,7 +613,10 @@ self_update() {
     die "Updater archive does not match commit ${commit}."
   }
 
-  tar -xzf "$archive" -C "$tmp"
+  if ! tar -xzf "$archive" -C "$tmp"; then
+    rm -rf -- "$tmp"
+    die "Failed to extract Git-testing package archive for revision ${revision}."
+  fi
   repo_dir="${tmp}/${top}"
   new_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
   new_launcher="${repo_dir}/local/bin/awtarchy"
@@ -766,7 +769,8 @@ run_git_testing_package_reconciler() {
   local testing_runtime="" testing_reconciler="" rc=0
 
   config="$(installed_config_tag)"
-  [[ $config =~ ^(.+)@([0-9a-fA-F]{40})$ ]] || return 2
+  [[ $config =~ ^(.+)@([0-9a-fA-F]{40})$ ]] \
+    || die "Active Git-testing configuration has no valid exact revision for package reconciliation."
   branch="${BASH_REMATCH[1]}"
   revision="${BASH_REMATCH[2],,}"
 
@@ -822,11 +826,9 @@ run_git_testing_package_reconciler() {
 }
 
 run_package_reconciler() {
-  local rc=0
   if config_is_git_testing; then
-    run_git_testing_package_reconciler "$@" || rc=$?
-    (( rc != 2 )) || die "Active Git-testing configuration has no valid exact revision for package reconciliation."
-    return "$rc"
+    run_git_testing_package_reconciler "$@"
+    return $?
   fi
 
   require_package_reconciler
