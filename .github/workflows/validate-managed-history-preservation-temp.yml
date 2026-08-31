@@ -1,0 +1,44 @@
+name: Temporary Validate Managed History Preservation
+
+on:
+  push:
+    branches:
+      - feature/bar-transparency
+    paths:
+      - '.github/workflows/validate-managed-history-preservation-temp.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  red:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Prove historical hashes were lost
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          parent=7c316e8ffed632cf9219929345620a7c6ccd9f81
+          path=local/share/awtarchy/quickshell-managed-history.sha256
+          git show "${parent}:${path}" > /tmp/history-before
+          current="$path"
+          missing=0
+          for rel in \
+            '.config/quickshell/awtarchy/FlyoutManager.qml' \
+            '.config/quickshell/awtarchy/ThemePicker.qml' \
+            '.config/quickshell/awtarchy/shell.qml'
+          do
+            while IFS= read -r entry; do
+              [[ -n "$entry" ]] || continue
+              if ! grep -Fxq -- "$entry" "$current"; then
+                printf 'MISSING: %s\n' "$entry"
+                missing=$((missing + 1))
+              fi
+            done < <(grep -F $'\t'"$rel" /tmp/history-before)
+          done
+          printf 'missing_historical_entries=%d\n' "$missing"
+          (( missing == 0 ))
