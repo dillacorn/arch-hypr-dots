@@ -23,10 +23,14 @@ jobs:
           bash -n local/bin/awtarchy
           bash -n local/share/awtarchy/awtarchy-package-reconcile.sh
           bash -n tests/test-package-reconciler.sh
+          bash -n tests/test-package-reconciler-alternatives.sh
       - name: ShellCheck
         run: |
           shellcheck local/bin/awtarchy
           shellcheck local/share/awtarchy/awtarchy-package-reconcile.sh
           shellcheck tests/test-package-reconciler.sh
+          shellcheck tests/test-package-reconciler-alternatives.sh
       - name: Package reconciler regression
-        run: bash tests/test-package-reconciler.sh
+        run: |
+          bash tests/test-package-reconciler.sh
+          bash tests/test-package-reconciler-alternatives.sh
