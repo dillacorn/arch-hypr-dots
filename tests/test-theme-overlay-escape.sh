@@ -33,24 +33,30 @@ contains "$PICKER" 'FlyoutManager.claimOverlay("themes");' \
     'Theme Picker does not claim the themes overlay when opened'
 contains "$PICKER" 'FlyoutManager.releaseOverlay("themes");' \
     'Theme Picker does not release the themes overlay when closed'
+contains "$PICKER" 'WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive' \
+    'Theme Picker does not take exclusive keyboard focus while visually above Quick Settings'
+not_contains "$PICKER" 'focusable: true' \
+    'Theme Picker still relies on ambiguous on-demand PanelWindow focus'
 
-python3 - "$PICKER" <<'PY' || fail 'Theme Picker does not exclusively own Escape while its overlay is visible'
+python3 - "$PICKER" <<'PY' || fail 'Theme Picker focused search field does not consume Escape locally'
 from pathlib import Path
 import sys
 
 text = Path(sys.argv[1]).read_text(encoding="utf-8")
-needle = '    Shortcut {\n        sequence: "Escape"'
-start = text.index(needle)
-end = text.index('\n    }', start) + 6
+start = text.index('                            Keys.onPressed: event => {')
+end = text.index('\n                            }', start) + 30
 block = text[start:end]
 required = (
-    'context: Qt.ApplicationShortcut',
-    'enabled: root.open && FlyoutManager.overlaySurface === "themes"',
-    'onActivated: root.close()',
+    'event.key === Qt.Key_Escape',
+    'root.close();',
+    'event.accepted = true;',
 )
 if not all(item in block for item in required):
     raise SystemExit(1)
 PY
+
+not_contains "$PICKER" 'sequence: "Escape"' \
+    'Theme Picker still uses a competing application-level Escape shortcut'
 
 python3 - "$SHELL" <<'PY' || fail 'normal flyout Escape remains enabled underneath a Theme Picker overlay'
 from pathlib import Path
@@ -69,7 +75,4 @@ if 'onActivated: root.closeActiveFloatingSurface()' not in block:
     raise SystemExit(1)
 PY
 
-not_contains "$SHELL" 'if (ThemePicker.open)' \
-    'shell Escape still special-cases Theme Picker instead of respecting overlay ownership'
-
-printf '%s\n' 'PASS: Theme Picker owns Escape as an explicit overlay above the active flyout.'
+printf '%s\n' 'PASS: Theme Picker takes exclusive keyboard focus and consumes Escape before the underlying flyout.'
