@@ -53,6 +53,7 @@ declare -a RETIRED_MANAGED=()
 declare -a RETIRED_UNOWNED=()
 SYSTEM_TYPE="unknown"
 LY_STATUS="not installed"
+AUR_HELPER=""
 
 log()  { printf '%s\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
@@ -414,6 +415,31 @@ confirm_yes_no() {
   esac
 }
 
+choose_ly_action() {
+  install_ly=0
+  enable_ly=0
+
+  case "$LY_STATUS" in
+    'not installed')
+      if confirm_yes_no 'Install and enable Ly on tty2?' 0; then
+        install_ly=1
+        enable_ly=1
+      fi
+      ;;
+    'installed, not enabled on tty2')
+      if confirm_yes_no 'Enable installed Ly on tty2?' 0; then
+        enable_ly=1
+      fi
+      ;;
+    'installed and enabled on tty2')
+      printf '\nLy is already installed and enabled on tty2; leaving it unchanged.\n' >/dev/tty
+      ;;
+    *)
+      printf '\nLy state is %s; leaving it unchanged.\n' "$LY_STATUS" >/dev/tty
+      ;;
+  esac
+}
+
 selected_values() {
   local values_name="$1" flags_name="$2" output_name="$3"
   local -n values="$values_name"
@@ -440,6 +466,82 @@ as_root() {
   else
     sudo -- "$@"
   fi
+}
+
+aur_helper_usable() {
+  local helper="$1"
+  have "$helper" || return 1
+  "$helper" --version >/dev/null 2>&1
+}
+
+rebuild_aur_helper() {
+  local helper="$1" tmp pkg
+
+  case "$helper" in
+    paru|yay) ;;
+    *) die "Unsupported AUR helper rebuild target: ${helper}" ;;
+  esac
+
+  package_installed "$helper" \
+    || die "${helper} exists but is not installed as the standard ${helper} package; refusing to replace an unknown helper variant."
+  have git || die "git is required to rebuild the broken ${helper} AUR helper."
+  have makepkg || die "makepkg is required to rebuild the broken ${helper} AUR helper."
+  (( EUID != 0 )) \
+    || die "AUR helper rebuild must run from the regular user account, not as root."
+
+  tmp="$(mktemp -d)"
+  log "Rebuilding broken AUR helper ${helper} against the current pacman/libalpm..."
+
+  if ! git clone --depth 1 "https://aur.archlinux.org/${helper}.git" "${tmp}/${helper}"; then
+    rm -rf -- "$tmp"
+    die "Failed to download ${helper} AUR source for rebuild."
+  fi
+
+  if ! (
+    cd -- "${tmp}/${helper}"
+    makepkg -s --noconfirm
+  ); then
+    rm -rf -- "$tmp"
+    die "Failed to rebuild ${helper} against the current pacman/libalpm."
+  fi
+
+  pkg="$(find "${tmp}/${helper}" -maxdepth 1 -type f -name "${helper}-*.pkg.tar*" ! -name '*-debug*' -print -quit)"
+  if [[ -z $pkg ]]; then
+    rm -rf -- "$tmp"
+    die "Rebuilt ${helper} package archive was not found."
+  fi
+
+  if ! as_root pacman -U --noconfirm "$pkg"; then
+    rm -rf -- "$tmp"
+    die "Failed to reinstall rebuilt ${helper}."
+  fi
+
+  rm -rf -- "$tmp"
+  aur_helper_usable "$helper" \
+    || die "${helper} is still unusable after rebuild."
+}
+
+ensure_aur_helper() {
+  local helper
+  AUR_HELPER=""
+
+  for helper in paru yay; do
+    if aur_helper_usable "$helper"; then
+      AUR_HELPER="$helper"
+      return 0
+    fi
+  done
+
+  for helper in paru yay; do
+    if have "$helper" && package_installed "$helper"; then
+      warn "${helper} is installed but cannot run after system package changes; rebuilding it."
+      rebuild_aur_helper "$helper"
+      AUR_HELPER="$helper"
+      return 0
+    fi
+  done
+
+  die "AUR packages were selected but no usable standard paru or yay installation is available."
 }
 
 record_managed_packages() {
@@ -555,11 +657,8 @@ if (( ${#flatpak_labels[@]} )); then
 fi
 
 install_ly=0
-if [[ $LY_STATUS == 'not installed' ]]; then
-  if confirm_yes_no 'Install and enable Ly on tty2?' 0; then install_ly=1; fi
-else
-  printf '\nLy is already %s; this reconciler will leave it installed.\n' "$LY_STATUS" >/dev/tty
-fi
+enable_ly=0
+choose_ly_action
 
 # Retired packages: Awtarchy-owned defaults selected; unowned defaults kept.
 declare -a retired_labels=()
@@ -598,10 +697,10 @@ printf '\n' >/dev/tty
 print_list 'Install Flatpak apps:' "${selected_flatpak[@]}" >/dev/tty
 printf '\n' >/dev/tty
 print_list 'Remove retired/replaced packages:' "${selected_retired[@]}" >/dev/tty
-if (( install_ly == 1 )); then printf '\nLy: enable ly@tty2.service and disable getty@tty2.service\n' >/dev/tty; fi
+if (( enable_ly == 1 )); then printf '\nLy: enable ly@tty2.service and disable getty@tty2.service\n' >/dev/tty; fi
 printf '\nNo current installed package will be removed merely because it was not selected.\n\n' >/dev/tty
 
-if (( ${#install_arch[@]} == 0 && ${#selected_aur[@]} == 0 && ${#selected_flatpak[@]} == 0 && ${#selected_retired[@]} == 0 && install_ly == 0 )); then
+if (( ${#install_arch[@]} == 0 && ${#selected_aur[@]} == 0 && ${#selected_flatpak[@]} == 0 && ${#selected_retired[@]} == 0 && enable_ly == 0 )); then
   log 'No package changes selected.'
   exit 0
 fi
@@ -615,12 +714,17 @@ if (( ${#install_arch[@]} )); then
   record_managed_packages "${install_arch[@]}"
 fi
 
+if (( enable_ly == 1 )); then
+  have systemctl || die "Ly is installed but systemctl is unavailable for tty2 setup."
+  as_root systemctl disable getty@tty2.service >/dev/null 2>&1 || true
+  as_root systemctl enable ly@tty2.service
+  log 'Ly enabled on tty2; getty@tty2 disabled.'
+fi
+
 if (( ${#selected_aur[@]} )); then
-  aur_helper=""
-  if have paru; then aur_helper=paru; elif have yay; then aur_helper=yay; fi
-  [[ -n $aur_helper ]] || die "AUR packages were selected but neither paru nor yay is installed."
-  log "Installing AUR packages with ${aur_helper}: ${selected_aur[*]}"
-  "$aur_helper" -S --needed --noconfirm "${selected_aur[@]}"
+  ensure_aur_helper
+  log "Installing AUR packages with ${AUR_HELPER}: ${selected_aur[*]}"
+  "$AUR_HELPER" -S --needed --noconfirm "${selected_aur[@]}"
   record_managed_packages "${selected_aur[@]}"
 fi
 
@@ -629,13 +733,6 @@ if (( ${#selected_flatpak[@]} )); then
   scope="$(flatpak_scope)"
   log "Installing Flatpak apps in ${scope} scope: ${selected_flatpak[*]}"
   install_flatpak_apps "$scope" "${selected_flatpak[@]}"
-fi
-
-if (( install_ly == 1 )); then
-  have systemctl || die "Ly was installed but systemctl is unavailable for tty2 setup."
-  as_root systemctl disable getty@tty2.service >/dev/null 2>&1 || true
-  as_root systemctl enable ly@tty2.service
-  log 'Ly enabled on tty2; getty@tty2 disabled.'
 fi
 
 if (( ${#selected_retired[@]} )); then
