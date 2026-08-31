@@ -123,15 +123,22 @@ else
       printf ' %q' "$@"
       printf '\n'
     } >>"$yay_log"
+
+    if [[ ${*: -1} == awtwall ]]; then
+      return 1
+    fi
+    return 0
   }
   record_managed_packages() {
     :
   }
   export AUR_HELPER=yay
+  FAILED_AUR=()
   : >"$state"
   : >"$yay_log"
 
-  install_selected_aur_packages awtwall mpvpaper
+  install_selected_aur_packages awtwall mpvpaper \
+    || fail 'per-package AUR installer aborted instead of continuing'
 
   [[ $(grep -c '^yay ' "$yay_log") -eq 2 ]] \
     || fail 'selected AUR packages were not installed as separate transactions'
@@ -142,10 +149,12 @@ else
   if grep -F 'awtwall' "$yay_log" | grep -Fq 'mpvpaper'; then
     fail 'multiple AUR targets were still batched into one transaction'
   fi
+  [[ ${#FAILED_AUR[@]} -eq 1 && ${FAILED_AUR[0]} == awtwall ]] \
+    || fail 'failed AUR package was not recorded for end-of-run reporting'
 fi
 
 if (( failures > 0 )); then
   exit 1
 fi
 
-printf 'PASS: reconciler matches installer AUR equivalence and per-package install semantics\n'
+printf 'PASS: reconciler matches installer AUR equivalence and best-effort per-package install semantics\n'
