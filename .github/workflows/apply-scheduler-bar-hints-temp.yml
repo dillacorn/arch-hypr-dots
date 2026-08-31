@@ -1,0 +1,74 @@
+name: Temporary Apply Scheduler and Bar Hints
+
+on:
+  push:
+    branches:
+      - feature/bar-transparency
+    paths:
+      - '.github/workflows/apply-scheduler-bar-hints-temp.yml'
+      - '.github/scripts/apply_scheduler_bar_hints.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Apply approved changes
+        run: python3 .github/scripts/apply_scheduler_bar_hints.py
+      - name: Diff check
+        run: git diff --check
+      - name: Bash syntax
+        run: |
+          bash -n config/hypr/scripts/hypr_quicksettings.sh
+          bash -n config/hypr/scripts/hypr_quicksettings_core.sh
+          bash -n tests/test-sched-ext-selection-persistence.sh
+          bash -n tests/test-scxctl-auth-ui.sh
+          bash -n tests/test-scxctl-auth-stale-rule.sh
+          bash -n tests/test-quick-settings-bar-customize-flow.sh
+          bash -n tests/test-quick-settings-settings-mode.sh
+          bash -n tests/test-quick-settings-layout.sh
+          bash -n tests/test-quick-settings-ux-flow.sh
+          bash -n tests/test-bar-transparency.sh
+          bash -n tests/test-quickshell-theme-picker.sh
+      - name: ShellCheck
+        run: |
+          shellcheck -e SC2034,SC2153 config/hypr/scripts/hypr_quicksettings.sh
+          shellcheck -e SC2015 config/hypr/scripts/hypr_quicksettings_core.sh
+          shellcheck tests/test-sched-ext-selection-persistence.sh
+          shellcheck tests/test-scxctl-auth-ui.sh
+          shellcheck tests/test-scxctl-auth-stale-rule.sh
+          shellcheck tests/test-quick-settings-bar-customize-flow.sh
+          shellcheck tests/test-quick-settings-settings-mode.sh
+          shellcheck tests/test-quick-settings-layout.sh
+          shellcheck tests/test-quick-settings-ux-flow.sh
+          shellcheck tests/test-bar-transparency.sh
+          shellcheck tests/test-quickshell-theme-picker.sh
+      - name: Focused and neighboring regressions
+        run: |
+          bash tests/test-sched-ext-selection-persistence.sh
+          bash tests/test-scxctl-auth-ui.sh
+          bash tests/test-scxctl-auth-stale-rule.sh
+          bash tests/test-quick-settings-bar-customize-flow.sh
+          bash tests/test-quick-settings-settings-mode.sh
+          bash tests/test-quick-settings-layout.sh
+          bash tests/test-quick-settings-ux-flow.sh
+          bash tests/test-bar-transparency.sh
+          bash tests/test-quickshell-theme-picker.sh
+      - name: Commit production changes
+        run: |
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add \
+            config/quickshell/awtarchy/QuickSettings.qml \
+            config/hypr/scripts/hypr_quicksettings.sh \
+            config/hypr/scripts/hypr_quicksettings_core.sh \
+            local/share/awtarchy/quickshell-managed-history.sha256
+          git diff --cached --quiet && exit 1
+          git commit -m 'Streamline Bar and scheduler controls'
+          git push origin HEAD:feature/bar-transparency
