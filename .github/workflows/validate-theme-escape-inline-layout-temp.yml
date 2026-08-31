@@ -1,0 +1,45 @@
+name: Temporary Validate Theme Escape and Inline Layout
+
+on:
+  push:
+    branches:
+      - feature/bar-transparency
+    paths:
+      - '.github/workflows/validate-theme-escape-inline-layout-temp.yml'
+      - 'config/quickshell/awtarchy/QuickSettings.qml'
+      - 'config/quickshell/awtarchy/FlyoutSettings.qml'
+      - 'tests/test-quickshell-theme-picker.sh'
+      - 'tests/test-quick-settings-layout.sh'
+      - 'local/share/awtarchy/quickshell-managed-history.sha256'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Syntax and ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          bash -n tests/test-quickshell-theme-picker.sh
+          bash -n tests/test-quick-settings-layout.sh
+          shellcheck tests/test-quickshell-theme-picker.sh
+          shellcheck tests/test-quick-settings-layout.sh
+      - name: Independent RED regressions
+        shell: bash
+        run: |
+          set +e
+          theme_rc=0
+          layout_rc=0
+          bash tests/test-quickshell-theme-picker.sh || theme_rc=$?
+          bash tests/test-quick-settings-layout.sh || layout_rc=$?
+          printf 'theme_escape_rc=%d\n' "$theme_rc"
+          printf 'inline_layout_rc=%d\n' "$layout_rc"
+          if (( theme_rc == 0 || layout_rc == 0 )); then
+            printf 'Expected both new regressions to fail before production changes.\n' >&2
+          fi
+          exit 1
