@@ -106,7 +106,7 @@ contains "$QML" 'backend, "--restore-scheduler"' \
     'Quick Settings does not request scheduler restore when its singleton starts'
 contains "$QML" 'last_selected:' \
     'Quick Settings empty scheduler status does not model persisted selection state'
-contains "$BACKEND" 'last_selected:$scheduler_last_selected' \
+contains "$BACKEND" "last_selected:\$scheduler_last_selected" \
     'backend scheduler status does not expose the persisted scheduler selection'
 
 # Exercise the core persistence behavior with no real scxctl or sudo calls.
