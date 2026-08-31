@@ -116,6 +116,7 @@ Singleton {
             pickerWindow.screen = target;
         search.text = "";
         pickerWindow.visible = true;
+        FlyoutManager.claimOverlay("themes");
         loadActiveTheme();
         loadCatalog();
         resetSelection();
@@ -125,6 +126,7 @@ Singleton {
     function openFocused() { openForScreen(focusedScreen()); }
 
     function close() {
+        FlyoutManager.releaseOverlay("themes");
         pickerWindow.visible = false;
         search.text = "";
     }
@@ -145,6 +147,14 @@ Singleton {
             return;
         applyProcess.exec([root.applyBackend, selected.name]);
         close();
+    }
+
+    Shortcut {
+        sequence: "Escape"
+        context: Qt.ApplicationShortcut
+        enabled: root.open && FlyoutManager.overlaySurface === "themes"
+        autoRepeat: false
+        onActivated: root.close()
     }
 
     IpcHandler {

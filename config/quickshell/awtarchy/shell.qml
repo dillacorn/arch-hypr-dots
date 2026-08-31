@@ -109,11 +109,6 @@ ShellRoot {
     }
 
     function closeActiveFloatingSurface() {
-        if (ThemePicker.open) {
-            ThemePicker.close();
-            return;
-        }
-
         const surface = String(FlyoutManager.activeSurface || "");
         if (surface.length === 0)
             return;
@@ -168,13 +163,13 @@ ShellRoot {
     readonly property bool powerReady: PowerMenu !== null
     readonly property bool themesReady: ThemePicker !== null
 
-    // Escape always closes the active Awtarchy flyout regardless of which child
-    // control currently owns focus. Existing per-window handlers remain valid,
-    // but this provides a consistent application-level fallback.
+    // The active flyout owns Escape only when no higher overlay is present.
+    // Overlays such as ThemePicker own their own application-level Escape shortcut.
     Shortcut {
         sequence: "Escape"
         context: Qt.ApplicationShortcut
-        enabled: ThemePicker.open || String(FlyoutManager.activeSurface || "").length > 0
+        enabled: FlyoutManager.overlaySurface.length === 0
+            && String(FlyoutManager.activeSurface || "").length > 0
         autoRepeat: false
         onActivated: root.closeActiveFloatingSurface()
     }
