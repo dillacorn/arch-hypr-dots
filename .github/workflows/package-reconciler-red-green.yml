@@ -1,16 +1,32 @@
-name: Package Reconciler Red Green
+name: Validate Package Reconciler
 
 on:
   pull_request:
+    branches: [main]
+  push:
     branches: [main]
 
 permissions:
   contents: read
 
 jobs:
-  test:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+      - name: Bash syntax
+        run: |
+          bash -n local/bin/awtarchy
+          bash -n local/share/awtarchy/awtarchy-package-reconcile.sh
+          bash -n tests/test-package-reconciler.sh
+      - name: ShellCheck
+        run: |
+          shellcheck local/bin/awtarchy
+          shellcheck local/share/awtarchy/awtarchy-package-reconcile.sh
+          shellcheck tests/test-package-reconciler.sh
       - name: Package reconciler regression
         run: bash tests/test-package-reconciler.sh
