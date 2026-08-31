@@ -197,6 +197,38 @@ package_satisfied() {
   esac
 }
 
+obs_pipewire_audio_capture_user_plugin_installed() {
+  [[ -f "${HOME}/.config/obs-studio/plugins/linux-pipewire-audio/bin/64bit/linux-pipewire-audio.so" ]]
+}
+
+aur_package_satisfied() {
+  local pkg="$1" alt=""
+
+  case "$pkg" in
+    alacritty|alacritty-graphics)
+      for alt in alacritty alacritty-graphics; do
+        package_installed "$alt" && return 0
+      done
+      return 1
+      ;;
+    qimgv|qimgv-git)
+      for alt in qimgv qimgv-git; do
+        package_installed "$alt" && return 0
+      done
+      return 1
+      ;;
+    obs-pipewire-audio-capture|obs-pipewire-audio-capture-bin)
+      for alt in obs-pipewire-audio-capture obs-pipewire-audio-capture-bin; do
+        package_installed "$alt" && return 0
+      done
+      obs_pipewire_audio_capture_user_plugin_installed
+      ;;
+    *)
+      package_installed "$pkg"
+      ;;
+  esac
+}
+
 managed_package() {
   [[ -r "$MANAGED_PACKAGES_FILE" ]] || return 1
   grep -Fxq -- "$1" "$MANAGED_PACKAGES_FILE"
@@ -269,7 +301,7 @@ collect_state() {
   done
 
   for pkg in "${AUR_CATALOG[@]}"; do
-    package_installed "$pkg" || MISSING_AUR+=("$pkg")
+    aur_package_satisfied "$pkg" || MISSING_AUR+=("$pkg")
   done
 
   for i in "${!FLATPAK_IDS[@]}"; do
