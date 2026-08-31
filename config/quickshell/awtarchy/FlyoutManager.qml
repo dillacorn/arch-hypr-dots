@@ -169,6 +169,15 @@ QtObject {
     }
 
     function release(surface) {
+        if (surface === "quick-settings") {
+            console.warn(
+                "AWTARCHY_QS_CLOSE_TRACE",
+                "active=" + String(activeSurface || ""),
+                "overlay=" + String(overlaySurface || "")
+            );
+            console.trace();
+        }
+
         if (activeSurface === surface) {
             activeSurface = "";
             activeMonitorName = "";
