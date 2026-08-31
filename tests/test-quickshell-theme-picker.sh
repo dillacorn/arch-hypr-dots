@@ -96,6 +96,25 @@ if ! grep -Fq 'ThemePicker.toggleForScreen(activeScreen)' "$QUICK_SETTINGS"; the
     fail 'Quick Settings no longer toggles ThemePicker for its active screen'
 fi
 
+python3 - "$QUICK_SETTINGS" <<'PY' || fail 'Quick Settings local Escape handler can close Quick Settings underneath ThemePicker'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+needle = "            Keys.onEscapePressed:"
+start = text.index(needle)
+end = text.index("\n\n            MouseArea", start)
+block = text[start:end]
+theme_guard = block.find("if (ThemePicker.open)")
+theme_close = block.find("ThemePicker.close();")
+quick_close = block.find("root.close();")
+accepted = block.find("event.accepted = true;")
+if min(theme_guard, theme_close, quick_close, accepted) < 0:
+    raise SystemExit(1)
+if not (theme_guard < theme_close < quick_close < accepted):
+    raise SystemExit(1)
+PY
+
 python3 - "$SHELL_QML" <<'PY' || fail 'application Escape handler does not close ThemePicker before the active flyout'
 from pathlib import Path
 import sys
