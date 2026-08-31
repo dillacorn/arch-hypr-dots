@@ -361,10 +361,14 @@ multi_select() {
     key="$(read_key)" || return 1
     case "$key" in
       $'\033[A'|k)
-        (( current > 0 )) && ((current--)) || true
+        if (( current > 0 )); then
+          ((current--))
+        fi
         ;;
       $'\033[B'|j)
-        (( current + 1 < ${#labels[@]} )) && ((current++)) || true
+        if (( current + 1 < ${#labels[@]} )); then
+          ((current++))
+        fi
         ;;
       ' ')
         if (( selected[current] == 1 )); then selected[current]=0; else selected[current]=1; fi
@@ -426,7 +430,11 @@ record_managed_packages() {
   local tmp pkg
   (( ${#add[@]} )) || return 0
   tmp="$(mktemp)"
-  [[ -r "$MANAGED_PACKAGES_FILE" ]] && cat -- "$MANAGED_PACKAGES_FILE" >"$tmp" || : >"$tmp"
+  if [[ -r "$MANAGED_PACKAGES_FILE" ]]; then
+    cat -- "$MANAGED_PACKAGES_FILE" >"$tmp"
+  else
+    : >"$tmp"
+  fi
   for pkg in "${add[@]}"; do
     package_installed "$pkg" && printf '%s\n' "$pkg" >>"$tmp"
   done
