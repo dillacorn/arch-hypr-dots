@@ -224,10 +224,6 @@ Singleton {
             border.color: Theme.muted
             radius: 0
             focus: true
-            Keys.onEscapePressed: event => {
-                root.close();
-                event.accepted = true;
-            }
             MouseArea {
                 anchors.fill: parent
                 onPressed: mouse => mouse.accepted = true
