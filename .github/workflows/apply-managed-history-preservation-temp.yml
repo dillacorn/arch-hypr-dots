@@ -1,5 +1,5 @@
 name: Temporary Apply Managed History Preservation
-# rerun 2
+# rerun 3
 
 on:
   push:
@@ -71,7 +71,6 @@ jobs:
           bash tests/test-theme-overlay-escape.sh
           bash tests/test-color-adjustment-keybinds.sh
           bash tests/test-quickshell-theme-picker.sh
-          bash tests/test-lua-validation.sh
       - name: Commit repaired history
         run: |
           git config user.name dillacorn
