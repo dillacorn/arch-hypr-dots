@@ -613,10 +613,7 @@ self_update() {
     die "Updater archive does not match commit ${commit}."
   }
 
-  if ! tar -xzf "$archive" -C "$tmp"; then
-    rm -rf -- "$tmp"
-    die "Failed to extract updater commit ${commit}."
-  fi
+  tar -xzf "$archive" -C "$tmp"
   repo_dir="${tmp}/${top}"
   new_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
   new_launcher="${repo_dir}/local/bin/awtarchy"
@@ -799,9 +796,9 @@ run_git_testing_package_reconciler() {
   }
 
   if ! tar -xzf "$archive" -C "$tmp"; then
-  rm -rf -- "$tmp"
-  die "Failed to extract Git-testing package archive for revision ${revision}."
-fi
+    rm -rf -- "$tmp"
+    die "Failed to extract Git-testing package archive for revision ${revision}."
+  fi
   repo_dir="${tmp}/${top}"
   testing_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
   testing_reconciler="${repo_dir}/local/share/awtarchy/awtarchy-package-reconcile.sh"
