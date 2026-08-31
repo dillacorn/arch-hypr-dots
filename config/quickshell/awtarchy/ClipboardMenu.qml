@@ -166,7 +166,6 @@ Singleton {
         if (!targetScreen)
             return;
 
-        BarState.refresh();
         const persisted = BarState.clipboardViewFor(targetScreen.name);
         panelWidthOverride = clampWidth(persisted.width);
         panelHeightOverride = clampHeight(persisted.height);

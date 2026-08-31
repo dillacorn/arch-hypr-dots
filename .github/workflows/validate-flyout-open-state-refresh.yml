@@ -1,0 +1,40 @@
+name: Validate Flyout Open State Reuse
+
+on:
+  pull_request:
+    paths:
+      - 'config/quickshell/awtarchy/ClipboardMenu.qml'
+      - 'config/quickshell/awtarchy/QuickSettings.qml'
+      - 'config/quickshell/awtarchy/NetworkMenu.qml'
+      - 'config/quickshell/awtarchy/BluetoothMenu.qml'
+      - 'config/quickshell/awtarchy/BatteryMenu.qml'
+      - 'config/quickshell/awtarchy/Notifications.qml'
+      - 'tests/test-flyout-open-state-refresh.sh'
+      - '.github/workflows/validate-flyout-open-state-refresh.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'config/quickshell/awtarchy/ClipboardMenu.qml'
+      - 'config/quickshell/awtarchy/QuickSettings.qml'
+      - 'config/quickshell/awtarchy/NetworkMenu.qml'
+      - 'config/quickshell/awtarchy/BluetoothMenu.qml'
+      - 'config/quickshell/awtarchy/BatteryMenu.qml'
+      - 'config/quickshell/awtarchy/Notifications.qml'
+      - 'tests/test-flyout-open-state-refresh.sh'
+      - '.github/workflows/validate-flyout-open-state-refresh.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Validate test syntax
+        run: |
+          bash -n tests/test-flyout-open-state-refresh.sh
+          shellcheck tests/test-flyout-open-state-refresh.sh
+      - name: Validate flyout open state reuse
+        run: bash tests/test-flyout-open-state-refresh.sh
