@@ -25,29 +25,27 @@ jobs:
           path = Path('local/bin/awtarchy')
           text = path.read_text(encoding='utf-8')
 
-          wrong_message = 'die "Failed to extract Git-testing package archive for revision ${revision}."'
-          if text.count(wrong_message) != 1:
-              raise SystemExit('expected exactly one misplaced extraction message')
-          text = text.replace(
-              wrong_message,
-              'die "Failed to extract updater commit ${commit}."',
-              1,
-          )
+          wrong = 'die "Failed to extract Git-testing package archive for revision ${revision}."'
+          if text.count(wrong) != 1:
+              raise SystemExit(f'expected one misplaced extraction message, found {text.count(wrong)}')
+          text = text.replace(wrong, 'die "Failed to extract updater commit ${commit}."', 1)
 
-          target = '''  tar -xzf "$archive" -C "$tmp"
-          repo_dir="${tmp}/${top}"
-          testing_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
-          '''
-          replacement = '''  if ! tar -xzf "$archive" -C "$tmp"; then
+          runtime_anchor = 'testing_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"'
+          runtime_pos = text.find(runtime_anchor)
+          if runtime_pos < 0:
+              raise SystemExit('testing runtime anchor not found')
+
+          tar_line = '  tar -xzf "$archive" -C "$tmp"\n'
+          tar_pos = text.rfind(tar_line, 0, runtime_pos)
+          if tar_pos < 0:
+              raise SystemExit('Git-testing tar extraction before runtime anchor not found')
+
+          guarded = '''  if ! tar -xzf "$archive" -C "$tmp"; then
             rm -rf -- "$tmp"
             die "Failed to extract Git-testing package archive for revision ${revision}."
           fi
-          repo_dir="${tmp}/${top}"
-          testing_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
           '''
-          if target not in text:
-              raise SystemExit('unguarded Git-testing extraction target not found')
-          text = text.replace(target, replacement, 1)
+          text = text[:tar_pos] + guarded + text[tar_pos + len(tar_line):]
           path.write_text(text, encoding='utf-8')
           PY
       - name: Commit correction
