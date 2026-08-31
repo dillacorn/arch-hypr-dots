@@ -20,26 +20,20 @@ permissions:
   contents: read
 
 jobs:
-  validate:
+  theme-escape:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-      - name: Install validation tools
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
-      - name: Bash syntax
-        run: |
-          bash -n config/hypr/scripts/vibrance_shader.sh
-          bash -n tests/test-theme-overlay-escape.sh
-          bash -n tests/test-color-adjustment-keybinds.sh
-          bash -n tests/test-vibrance-runtime-toggle.sh
-      - name: ShellCheck
-        run: |
-          shellcheck config/hypr/scripts/vibrance_shader.sh
-          shellcheck tests/test-theme-overlay-escape.sh
-          shellcheck tests/test-color-adjustment-keybinds.sh
-          shellcheck tests/test-vibrance-runtime-toggle.sh
-      - name: Focused regressions
-        run: |
-          bash tests/test-theme-overlay-escape.sh
-          bash tests/test-color-adjustment-keybinds.sh
-          bash tests/test-vibrance-runtime-toggle.sh
+      - run: bash tests/test-theme-overlay-escape.sh
+
+  color-hints:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - run: bash tests/test-color-adjustment-keybinds.sh
+
+  vibrance-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - run: bash tests/test-vibrance-runtime-toggle.sh
