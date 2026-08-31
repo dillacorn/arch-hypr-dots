@@ -1,0 +1,78 @@
+name: Apply Git-Testing Handoff Correction
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/apply-git-handoff-correction.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - name: Correct extraction guard
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('local/bin/awtarchy')
+          text = path.read_text(encoding='utf-8')
+
+          wrong = '''  if ! tar -xzf "$archive" -C "$tmp"; then
+            rm -rf -- "$tmp"
+            die "Failed to extract Git-testing package archive for revision ${revision}."
+          fi
+          repo_dir="${tmp}/${top}"
+          new_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
+          '''
+          fixed_self_update = '''  tar -xzf "$archive" -C "$tmp"
+          repo_dir="${tmp}/${top}"
+          new_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
+          '''
+          if wrong not in text:
+              raise SystemExit('misplaced self_update extraction guard not found')
+          text = text.replace(wrong, fixed_self_update, 1)
+
+          target = '''  [[ $top == "${REPO_NAME}-${revision}" ]] || {
+            rm -rf -- "$tmp"
+            die "Git-testing package archive does not match revision ${revision}."
+          }
+
+          tar -xzf "$archive" -C "$tmp"
+          repo_dir="${tmp}/${top}"
+          testing_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
+          '''
+          replacement = '''  [[ $top == "${REPO_NAME}-${revision}" ]] || {
+            rm -rf -- "$tmp"
+            die "Git-testing package archive does not match revision ${revision}."
+          }
+
+          if ! tar -xzf "$archive" -C "$tmp"; then
+            rm -rf -- "$tmp"
+            die "Failed to extract Git-testing package archive for revision ${revision}."
+          fi
+          repo_dir="${tmp}/${top}"
+          testing_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
+          '''
+          if target not in text:
+              raise SystemExit('Git-testing extraction target not found')
+          text = text.replace(target, replacement, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit correction
+        run: |
+          if git diff --quiet -- local/bin/awtarchy; then
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add local/bin/awtarchy
+          git commit -m 'fix: correct git-testing archive cleanup'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
