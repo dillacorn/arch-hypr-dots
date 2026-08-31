@@ -1,0 +1,59 @@
+name: Temporary Apply Theme Escape Single Owner
+
+on:
+  push:
+    branches:
+      - feature/bar-transparency
+    paths:
+      - '.github/workflows/apply-theme-escape-single-owner-temp.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Apply single-owner Escape fix
+        run: python3 .github/scripts/apply_theme_escape_single_owner.py
+      - name: Diff check
+        run: git diff --check
+      - name: Test syntax and ShellCheck
+        run: |
+          bash -n tests/test-quickshell-theme-picker.sh
+          bash -n tests/test-quick-settings-theme-toggle.sh
+          bash -n tests/test-quick-settings-settings-mode.sh
+          bash -n tests/test-quick-settings-layout.sh
+          bash -n tests/test-quick-settings-ux-flow.sh
+          bash -n tests/test-quick-settings-bar-customize-flow.sh
+          shellcheck tests/test-quickshell-theme-picker.sh
+          shellcheck tests/test-quick-settings-theme-toggle.sh
+          shellcheck tests/test-quick-settings-settings-mode.sh
+          shellcheck tests/test-quick-settings-layout.sh
+          shellcheck tests/test-quick-settings-ux-flow.sh
+          shellcheck tests/test-quick-settings-bar-customize-flow.sh
+      - name: Focused regressions
+        run: |
+          bash tests/test-quickshell-theme-picker.sh
+          bash tests/test-quick-settings-theme-toggle.sh
+          bash tests/test-quick-settings-settings-mode.sh
+          bash tests/test-quick-settings-layout.sh
+          bash tests/test-quick-settings-ux-flow.sh
+          bash tests/test-quick-settings-bar-customize-flow.sh
+      - name: Commit production changes
+        run: |
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add \
+            config/quickshell/awtarchy/QuickSettings.qml \
+            tests/test-quickshell-theme-picker.sh \
+            local/share/awtarchy/quickshell-managed-history.sha256
+          git diff --cached --quiet && exit 1
+          git commit -m 'Fix layered Theme Picker Escape handling'
+          git push origin HEAD:feature/bar-transparency
