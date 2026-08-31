@@ -479,6 +479,23 @@ local function visible_awtarchy_flyouts()
     return result
 end
 
+local function awtarchy_theme_picker_visible()
+    for _, layer in ipairs(hl.get_layers()) do
+        if layer.namespace == "awtarchy-theme-picker"
+            and layer.mapped ~= false then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function close_awtarchy_theme_picker()
+    hl.dispatch(hl.dsp.exec_cmd(
+        "qs -c awtarchy ipc call themes close >/dev/null 2>&1"
+    ))
+end
+
 local function cursor_inside_window(cursor, window)
     if cursor == nil or window == nil then
         return false
@@ -578,8 +595,14 @@ awtarchy_flyout_outside_click_bind_v1 = hl.bind("mouse:272", function()
 end, { non_consuming = true })
 
 -- Keep Escape compositor-level so every flyout closes even when follow_mouse
--- has moved keyboard focus to a normal application.
+-- has moved keyboard focus to a normal application. Theme Picker is a layer
+-- surface rather than a normal window, so honor it as the topmost modal first.
 awtarchy_flyout_escape_bind_v1 = hl.bind("Escape", function()
+    if awtarchy_theme_picker_visible() then
+        close_awtarchy_theme_picker()
+        return { ok = true }
+    end
+
     local flyouts = visible_awtarchy_flyouts()
     if #flyouts == 0 then
         return { ok = false }
