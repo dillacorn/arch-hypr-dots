@@ -1,0 +1,71 @@
+name: Apply Git-Testing Handoff Final Cleanup
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/apply-git-handoff-final-cleanup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - name: Clean launcher diff
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('local/bin/awtarchy')
+          text = path.read_text(encoding='utf-8')
+
+          unrelated = '''  if ! tar -xzf "$archive" -C "$tmp"; then
+            rm -rf -- "$tmp"
+            die "Failed to extract updater commit ${commit}."
+          fi
+          repo_dir="${tmp}/${top}"
+          new_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
+          '''
+          original = '''  tar -xzf "$archive" -C "$tmp"
+          repo_dir="${tmp}/${top}"
+          new_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
+          '''
+          if unrelated not in text:
+              raise SystemExit('unrelated self_update guard not found')
+          text = text.replace(unrelated, original, 1)
+
+          malformed = '''  if ! tar -xzf "$archive" -C "$tmp"; then
+          rm -rf -- "$tmp"
+          die "Failed to extract Git-testing package archive for revision ${revision}."
+          fi
+          repo_dir="${tmp}/${top}"
+          testing_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
+          '''
+          formatted = '''  if ! tar -xzf "$archive" -C "$tmp"; then
+            rm -rf -- "$tmp"
+            die "Failed to extract Git-testing package archive for revision ${revision}."
+          fi
+          repo_dir="${tmp}/${top}"
+          testing_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
+          '''
+          if malformed not in text:
+              raise SystemExit('malformed Git-testing extraction guard not found')
+          text = text.replace(malformed, formatted, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit cleanup
+        run: |
+          if git diff --quiet -- local/bin/awtarchy; then
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add local/bin/awtarchy
+          git commit -m 'fix: keep git-testing handoff scoped'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
