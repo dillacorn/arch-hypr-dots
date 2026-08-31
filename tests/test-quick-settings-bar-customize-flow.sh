@@ -37,8 +37,10 @@ contains "$QUICK" 'label: "Appearance"' \
     'Bar card does not expose a dedicated Appearance action'
 contains "$QUICK" 'label: "Themes"' \
     'Themes is not promoted to the Bar card header'
-contains "$QUICK" 'Tip: drag the bar with SUPER+Mouse1 or ALT+Mouse1.' \
-    'Bar position controls do not explain the mouse-drag shortcut'
+contains "$QUICK" 'Position: SUPER+Mouse1 / ALT+Mouse1 drag · CTRL+SUPER+B / SUPER+ALT+B change edge' \
+    'Bar position hint does not document mouse drag and keyboard edge changes'
+contains "$QUICK" 'Visibility: CTRL+SUPER+ALT+B toggle' \
+    'Bar visibility hint does not document the keyboard toggle'
 contains "$QUICK" 'visible: root.barIconsOpen' \
     'Bar icon customization does not collapse behind the Icons action'
 contains "$QUICK" 'visible: root.barAppearanceOpen' \
@@ -182,4 +184,4 @@ if 'root.layoutEditorOpen = true;' not in block:
     raise SystemExit(1)
 PY
 
-printf '%s\n' 'PASS: Quick Settings uses separate Icons/Appearance expansions, toggleable Themes, compact settings, inline copy targets, and complete transient reset.'
+printf '%s\n' 'PASS: Quick Settings uses separate Icons/Appearance expansions, toggleable Themes, compact settings, inline copy targets, keybind hints, and complete transient reset.'
