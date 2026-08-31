@@ -17,8 +17,10 @@ home="${TMP}/home"
 fakebin="${TMP}/fakebin"
 state="${TMP}/installed-packages"
 runtime="${TMP}/awtarchy-runtime.sh"
+yay_log="${TMP}/yay.log"
 mkdir -p "$home" "$fakebin"
 : >"$state"
+: >"$yay_log"
 
 cat >"$runtime" <<'EOF_RUNTIME'
 declare -a PKG_GROUPS=()
@@ -112,8 +114,36 @@ fi
 printf '%s\n' "$aur_section" | grep -Fq -- '- smtty' \
   || fail 'review did not retain genuinely missing smtty'
 
+if ! declare -F install_selected_aur_packages >/dev/null; then
+  fail 'reconciler has no per-package AUR installer'
+else
+  yay() {
+    printf 'yay' >>"$yay_log"
+    printf ' %q' "$@" >>"$yay_log"
+    printf '\n' >>"$yay_log"
+  }
+  record_managed_packages() {
+    :
+  }
+  export AUR_HELPER=yay
+  : >"$state"
+  : >"$yay_log"
+
+  install_selected_aur_packages awtwall mpvpaper
+
+  [[ $(grep -c '^yay ' "$yay_log") -eq 2 ]] \
+    || fail 'selected AUR packages were not installed as separate transactions'
+  grep -Fqx 'yay -S --needed --noconfirm awtwall' "$yay_log" \
+    || fail 'awtwall did not get its own AUR install transaction'
+  grep -Fqx 'yay -S --needed --noconfirm mpvpaper' "$yay_log" \
+    || fail 'mpvpaper did not get its own AUR install transaction'
+  if grep -F 'awtwall' "$yay_log" | grep -Fq 'mpvpaper'; then
+    fail 'multiple AUR targets were still batched into one transaction'
+  fi
+fi
+
 if (( failures > 0 )); then
   exit 1
 fi
 
-printf 'PASS: reconciler matches installer AUR equivalence semantics\n'
+printf 'PASS: reconciler matches installer AUR equivalence and per-package install semantics\n'
