@@ -1018,14 +1018,6 @@ Singleton {
             color: Theme.popupBackground
             radius: 0
             focus: true
-            Keys.onEscapePressed: event => {
-                if (ThemePicker.open)
-                    ThemePicker.close();
-                else
-                    root.close();
-                event.accepted = true;
-            }
-
             MouseArea {
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton
