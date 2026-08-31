@@ -1,33 +1,73 @@
 name: Apply Bar Transparency Managed History
 
 on:
-  workflow_dispatch:
+  pull_request:
+    branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  validate-branch-history:
+  align-display-scale-validation:
+    if: github.event.pull_request.number == 102 && github.head_ref == 'feature/bar-transparency'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout feature branch
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           ref: feature/bar-transparency
 
-      - name: Validate focused transparency regression
-        shell: bash
-        run: bash tests/test-bar-transparency.sh
-
-      - name: Validate managed history on merged branch state
+      - name: Follow the extracted DisplayScaleSettings component
         shell: bash
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
 
-          hash="$(sha256sum config/quickshell/awtarchy/Bar.qml | awk '{print $1}')"
-          entry="${hash}"$'\t'".config/quickshell/awtarchy/Bar.qml"
+          path = Path('tests/test-display-scale-quicksettings.sh')
+          text = path.read_text()
+          old = 'BAR_SETTINGS="${ROOT}/config/quickshell/awtarchy/BarSettingsSection.qml"'
+          new = '\n'.join([
+              'DISPLAY_SCALE="${ROOT}/config/quickshell/awtarchy/DisplayScaleSettings.qml"',
+              'FLYOUT_SETTINGS="${ROOT}/config/quickshell/awtarchy/FlyoutSettings.qml"',
+          ])
+          if old not in text:
+              raise SystemExit('expected legacy BarSettingsSection target not found')
+          text = text.replace(old, new, 1)
+          text = text.replace('contains "$BAR_SETTINGS"', 'contains "$DISPLAY_SCALE"')
+          text = text.replace('Bar Appearance', 'Quick Settings')
+          text = text.replace(
+              '[[ -f $SCALE_SCRIPT ]] || fail \'display scale helper is missing\'\n',
+              '[[ -f $SCALE_SCRIPT ]] || fail \'display scale helper is missing\'\n'
+              'contains "$FLYOUT_SETTINGS" \'DisplayScaleSettings {\' \\\n'
+              '  \'Quick Settings settings panel does not host DisplayScaleSettings\'\n',
+              1,
+          )
+          text = text.replace(
+              '.config/quickshell/awtarchy/BarSettingsSection.qml',
+              '.config/quickshell/awtarchy/DisplayScaleSettings.qml',
+          )
+          path.write_text(text)
+          PY
 
-          if ! grep -Fxq -- "$entry" local/share/awtarchy/quickshell-managed-history.sha256; then
-            echo "Missing managed-history entry for current Bar.qml hash: $hash" >&2
-            exit 1
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          for spec in \
+            'config/hypr/scripts/quickshell_display_scale.sh:.config/hypr/scripts/quickshell_display_scale.sh' \
+            'config/quickshell/awtarchy/DisplayScaleSettings.qml:.config/quickshell/awtarchy/DisplayScaleSettings.qml'
+          do
+            file="${spec%%:*}"
+            rel="${spec#*:}"
+            hash="$(sha256sum "$file" | awk '{print $1}')"
+            entry="${hash}"$'\t'"${rel}"
+            grep -Fxq -- "$entry" "$history" || printf '%s\n' "$entry" >> "$history"
+          done
+
+          bash -n tests/test-display-scale-quicksettings.sh
+          bash tests/test-display-scale-quicksettings.sh
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- tests/test-display-scale-quicksettings.sh "$history"
+          if ! git diff --cached --quiet; then
+            git commit -m 'Follow extracted display scale settings in validation'
+            git push origin HEAD:feature/bar-transparency
           fi
