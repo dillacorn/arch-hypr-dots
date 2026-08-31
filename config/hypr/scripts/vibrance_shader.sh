@@ -332,6 +332,17 @@ reload_hypr() {
   hyprctl reload >/dev/null 2>&1 || true
 }
 
+apply_live_vibrance_state() {
+  local enable="$1"
+  command -v hyprctl >/dev/null 2>&1 || return 0
+
+  if [[ "$enable" == "1" ]]; then
+    hyprctl keyword decoration:screen_shader "$SHADER" >/dev/null 2>&1
+  else
+    hyprctl keyword decoration:screen_shader "" >/dev/null 2>&1
+  fi
+}
+
 snap_level_value() {
   local raw="$1"
   local idx
@@ -371,6 +382,7 @@ main() {
       [[ "$new" == "0.00" ]] && want_enable=0
       set_vibrance_state "$want_enable"
       reload_hypr
+      apply_live_vibrance_state "$want_enable"
       notify_enabled_or_off "$want_enable" "$new"
       ;;
     down)
@@ -382,22 +394,26 @@ main() {
       [[ "$new" == "0.00" ]] && want_enable=0
       set_vibrance_state "$want_enable"
       reload_hypr
+      apply_live_vibrance_state "$want_enable"
       notify_enabled_or_off "$want_enable" "$new"
       ;;
     toggle)
       if vibrance_is_active; then
         set_vibrance_state 0
         reload_hypr
+        apply_live_vibrance_state 0
         notify "off"
       else
         set_vibrance_state 1
         reload_hypr
+        apply_live_vibrance_state 1
         notify "$(read_vibrance)"
       fi
       ;;
     off)
       set_vibrance_state 0
       reload_hypr
+      apply_live_vibrance_state 0
       notify "off"
       ;;
     set)
@@ -408,6 +424,7 @@ main() {
       [[ "$new" == "0.00" ]] && want_enable=0
       set_vibrance_state "$want_enable"
       reload_hypr
+      apply_live_vibrance_state "$want_enable"
       notify_enabled_or_off "$want_enable" "$new"
       ;;
     key)
@@ -430,6 +447,7 @@ main() {
       [[ "$new" == "0.00" ]] && want_enable=0
       set_vibrance_state "$want_enable"
       reload_hypr
+      apply_live_vibrance_state "$want_enable"
       notify_enabled_or_off "$want_enable" "$new"
       ;;
     *)

@@ -149,14 +149,6 @@ Singleton {
         close();
     }
 
-    Shortcut {
-        sequence: "Escape"
-        context: Qt.ApplicationShortcut
-        enabled: root.open && FlyoutManager.overlaySurface === "themes"
-        autoRepeat: false
-        onActivated: root.close()
-    }
-
     IpcHandler {
         target: "themes"
         function toggle(): void { root.toggleFocused(); }
@@ -213,7 +205,7 @@ Singleton {
         WlrLayershell.namespace: "awtarchy-theme-picker"
         visible: false
         color: "transparent"
-        focusable: true
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
         aboveWindows: true
         exclusionMode: ExclusionMode.Ignore
         implicitWidth: Math.max(1, Math.min(900, (screen ? screen.width : 1920) - 20))
@@ -231,6 +223,11 @@ Singleton {
             border.width: 1
             border.color: Theme.muted
             radius: 0
+            focus: true
+            Keys.onEscapePressed: event => {
+                root.close();
+                event.accepted = true;
+            }
             MouseArea {
                 anchors.fill: parent
                 onPressed: mouse => mouse.accepted = true

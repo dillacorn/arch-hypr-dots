@@ -1845,7 +1845,7 @@ Singleton {
 
                                     Text {
                                         Layout.fillWidth: true
-                                        text: "SUPER+ALT+CTRL+- warmer  ·  SUPER+ALT+CTRL+= cooler  ·  SUPER+ALT+CTRL+BACKSPACE toggle"
+                                        text: "CTRL+SUPER+ALT+[ warmer  ·  CTRL+SUPER+ALT+] cooler  ·  CTRL+SUPER+ALT+N toggle"
                                         color: Theme.muted
                                         font.family: Theme.fontFamily
                                         font.pixelSize: root.scaledText(8)
@@ -1898,7 +1898,7 @@ Singleton {
                                     }
                                     Text {
                                         Layout.fillWidth: true
-                                        text: "SUPER+ALT+CTRL+V toggle"
+                                        text: "SUPER+ALT+[ decrease  ·  SUPER+ALT+] increase  ·  CTRL+SUPER+ALT+V toggle"
                                         color: Theme.muted
                                         font.family: Theme.fontFamily
                                         font.pixelSize: root.scaledText(8)
