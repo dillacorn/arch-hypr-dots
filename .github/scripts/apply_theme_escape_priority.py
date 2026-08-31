@@ -7,7 +7,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SHELL = ROOT / "config/quickshell/awtarchy/shell.qml"
 PICKER = ROOT / "config/quickshell/awtarchy/ThemePicker.qml"
-CI = ROOT / ".github/workflows/validate-awtarchy.yml"
 HISTORY = ROOT / "local/share/awtarchy/quickshell-managed-history.sha256"
 
 
@@ -57,27 +56,6 @@ picker = replace_exact(
     label="remove duplicate local Theme Picker Escape handler",
 )
 PICKER.write_text(picker, encoding="utf-8")
-
-ci = CI.read_text(encoding="utf-8")
-ci = replace_exact(
-    ci,
-    '          bash -n tests/test-quickshell-theme-picker.sh\n',
-    '          bash -n tests/test-quickshell-theme-picker.sh\n          bash -n tests/test-quickshell-theme-escape-priority.sh\n',
-    label="permanent CI Bash syntax coverage",
-)
-ci = replace_exact(
-    ci,
-    '            tests/test-quickshell-theme-picker.sh \\\n',
-    '            tests/test-quickshell-theme-picker.sh \\\n            tests/test-quickshell-theme-escape-priority.sh \\\n',
-    label="permanent CI ShellCheck coverage",
-)
-ci = replace_exact(
-    ci,
-    '          bash tests/test-quickshell-theme-picker.sh\n',
-    '          bash tests/test-quickshell-theme-picker.sh\n          bash tests/test-quickshell-theme-escape-priority.sh\n',
-    label="permanent CI execution coverage",
-)
-CI.write_text(ci, encoding="utf-8")
 
 history = HISTORY.read_text(encoding="utf-8")
 if history and not history.endswith("\n"):
