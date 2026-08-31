@@ -33,7 +33,7 @@ jobs:
         run: |
           shellcheck tests/test-sched-ext-selection-persistence.sh
           shellcheck tests/test-quick-settings-bar-customize-flow.sh
-      - name: Focused regressions
-        run: |
-          bash tests/test-sched-ext-selection-persistence.sh
-          bash tests/test-quick-settings-bar-customize-flow.sh
+      - name: Bar hint regression
+        run: bash tests/test-quick-settings-bar-customize-flow.sh
+      - name: Scheduler regression
+        run: bash tests/test-sched-ext-selection-persistence.sh
