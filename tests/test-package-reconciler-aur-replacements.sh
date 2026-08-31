@@ -105,7 +105,7 @@ fi
 if ! declare -F install_aur_package_with_replacement >/dev/null; then
   fail 'reconciler has no controlled AUR replacement installer'
 else
-  AUR_HELPER=yay
+  export AUR_HELPER=yay
   : >"$logfile"
   printf '%s\n' alacritty >"$state"
   unset TEST_YAY_FAIL
