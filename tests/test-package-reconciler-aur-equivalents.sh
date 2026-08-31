@@ -118,9 +118,11 @@ if ! declare -F install_selected_aur_packages >/dev/null; then
   fail 'reconciler has no per-package AUR installer'
 else
   yay() {
-    printf 'yay' >>"$yay_log"
-    printf ' %q' "$@" >>"$yay_log"
-    printf '\n' >>"$yay_log"
+    {
+      printf 'yay'
+      printf ' %q' "$@"
+      printf '\n'
+    } >>"$yay_log"
   }
   record_managed_packages() {
     :
