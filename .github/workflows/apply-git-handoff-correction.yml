@@ -17,7 +17,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
-      - name: Correct extraction guard
+      - name: Correct extraction guards
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -25,36 +25,20 @@ jobs:
           path = Path('local/bin/awtarchy')
           text = path.read_text(encoding='utf-8')
 
-          wrong = '''  if ! tar -xzf "$archive" -C "$tmp"; then
-            rm -rf -- "$tmp"
-            die "Failed to extract Git-testing package archive for revision ${revision}."
-          fi
-          repo_dir="${tmp}/${top}"
-          new_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
-          '''
-          fixed_self_update = '''  tar -xzf "$archive" -C "$tmp"
-          repo_dir="${tmp}/${top}"
-          new_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
-          '''
-          if wrong not in text:
-              raise SystemExit('misplaced self_update extraction guard not found')
-          text = text.replace(wrong, fixed_self_update, 1)
+          wrong_message = 'die "Failed to extract Git-testing package archive for revision ${revision}."'
+          if text.count(wrong_message) != 1:
+              raise SystemExit('expected exactly one misplaced extraction message')
+          text = text.replace(
+              wrong_message,
+              'die "Failed to extract updater commit ${commit}."',
+              1,
+          )
 
-          target = '''  [[ $top == "${REPO_NAME}-${revision}" ]] || {
-            rm -rf -- "$tmp"
-            die "Git-testing package archive does not match revision ${revision}."
-          }
-
-          tar -xzf "$archive" -C "$tmp"
+          target = '''  tar -xzf "$archive" -C "$tmp"
           repo_dir="${tmp}/${top}"
           testing_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
           '''
-          replacement = '''  [[ $top == "${REPO_NAME}-${revision}" ]] || {
-            rm -rf -- "$tmp"
-            die "Git-testing package archive does not match revision ${revision}."
-          }
-
-          if ! tar -xzf "$archive" -C "$tmp"; then
+          replacement = '''  if ! tar -xzf "$archive" -C "$tmp"; then
             rm -rf -- "$tmp"
             die "Failed to extract Git-testing package archive for revision ${revision}."
           fi
@@ -62,7 +46,7 @@ jobs:
           testing_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
           '''
           if target not in text:
-              raise SystemExit('Git-testing extraction target not found')
+              raise SystemExit('unguarded Git-testing extraction target not found')
           text = text.replace(target, replacement, 1)
           path.write_text(text, encoding='utf-8')
           PY
