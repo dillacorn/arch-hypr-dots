@@ -53,9 +53,9 @@ require_source "${QML_DIR}/Bar.qml" \
   'onClicked: PowerMenu.toggleForScreen(bar.screen)' \
   'bar power button does not use the damped toggle path'
 
-require_source "${QML_DIR}/BarSettingsSection.qml" \
+require_source "${QML_DIR}/QuickSettings.qml" \
   'label: "Themes"' \
-  'bar appearance settings do not expose the theme picker'
+  'quick settings do not expose the theme picker'
 require_source "${QML_DIR}/FlyoutSettings.qml" \
   'onThemePickerRequested: root.themePickerRequested()' \
   'flyout settings do not forward the theme-picker request'
