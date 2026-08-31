@@ -57,8 +57,11 @@ require_source "${QML_DIR}/QuickSettings.qml" \
   'label: "Themes"' \
   'quick settings do not expose the theme picker'
 require_source "${QML_DIR}/FlyoutSettings.qml" \
-  'onThemePickerRequested: root.themePickerRequested()' \
-  'flyout settings do not forward the theme-picker request'
+  'signal themePickerRequested()' \
+  'flyout settings do not expose the theme-picker request signal'
+require_source "${QML_DIR}/QuickSettings.qml" \
+  'onThemePickerRequested: root.openThemeMenu()' \
+  'quick settings do not handle the theme-picker request'
 require_source "${QML_DIR}/QuickSettings.qml" \
   'ThemePicker.openForScreen(activeScreen)' \
   'quick settings do not open the theme picker on their active display'
