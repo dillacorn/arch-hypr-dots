@@ -1,0 +1,30 @@
+name: Validate Bar Position Controls Row
+
+on:
+  pull_request:
+    paths:
+      - 'config/quickshell/awtarchy/QuickSettings.qml'
+      - 'tests/test-bar-position-controls-row.sh'
+      - '.github/workflows/validate-bar-position-controls-row.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'config/quickshell/awtarchy/QuickSettings.qml'
+      - 'tests/test-bar-position-controls-row.sh'
+      - '.github/workflows/validate-bar-position-controls-row.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Validate test syntax
+        run: |
+          bash -n tests/test-bar-position-controls-row.sh
+          shellcheck tests/test-bar-position-controls-row.sh
+      - name: Validate bar position controls stay horizontal
+        run: bash tests/test-bar-position-controls-row.sh

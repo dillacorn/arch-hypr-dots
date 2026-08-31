@@ -1564,7 +1564,7 @@ Singleton {
                                     Layout.fillWidth: true
                                     spacing: 6
 
-                                    Flow {
+                                    RowLayout {
                                         spacing: 5
                                         Repeater {
                                             model: ["top", "bottom", "left", "right"]

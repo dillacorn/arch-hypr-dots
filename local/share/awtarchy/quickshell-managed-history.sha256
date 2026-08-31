@@ -832,3 +832,5 @@ cf363f1d01d970c88c4e99978c5f189d69c6db06b28467500264507780d3347c	.config/quicksh
 cd8f7a4395ba177a25a2c4fa2dc0b463942bc9e9bedf306474b402281d29341f	.config/quickshell/awtarchy/BluetoothMenu.qml
 8aa2fc0ddf1ca4b1c7664e33125cc575dff84d343370c07d2504fc80d6d35b04	.config/quickshell/awtarchy/BatteryMenu.qml
 7d5d77e61058a68420d3fd266a791344cc03bcbeb0f51c2cfb7c188b2ed548bf	.config/quickshell/awtarchy/Notifications.qml
+# v3.4.6 bar position controls stay horizontal.
+05fa2eea0206e4d85e263f8c05519b49c0e3d7edb35622903332df6c540e5b3c	.config/quickshell/awtarchy/QuickSettings.qml
