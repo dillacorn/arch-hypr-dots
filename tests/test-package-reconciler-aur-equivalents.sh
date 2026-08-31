@@ -165,6 +165,25 @@ else
     || fail 'equivalent-installed AUR package was incorrectly recorded as failed'
 fi
 
+if ! declare -F ensure_aur_helper >/dev/null; then
+  fail 'reconciler has no AUR helper preparation function'
+else
+  if ! (
+    aur_helper_usable() { return 1; }
+    have() { [[ $1 == yay ]]; }
+    package_installed() { [[ $1 == yay ]]; }
+    rebuild_aur_helper() { return 1; }
+    AUR_HELPER=""
+
+    if ensure_aur_helper; then
+      exit 91
+    fi
+    [[ -z $AUR_HELPER ]]
+  ); then
+    fail 'unrepairable AUR helper terminated or incorrectly succeeded instead of returning control'
+  fi
+fi
+
 if (( failures > 0 )); then
   exit 1
 fi
