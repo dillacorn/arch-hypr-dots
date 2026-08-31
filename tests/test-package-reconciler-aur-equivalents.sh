@@ -118,15 +118,17 @@ if ! declare -F install_selected_aur_packages >/dev/null; then
   fail 'reconciler has no per-package AUR installer'
 else
   yay() {
+    local pkg="${*: -1}"
     {
       printf 'yay'
       printf ' %q' "$@"
       printf '\n'
     } >>"$yay_log"
 
-    if [[ ${*: -1} == awtwall ]]; then
+    if [[ $pkg == awtwall ]]; then
       return 1
     fi
+    printf '%s\n' "$pkg" >>"$state"
     return 0
   }
   record_managed_packages() {
@@ -151,6 +153,16 @@ else
   fi
   [[ ${#FAILED_AUR[@]} -eq 1 && ${FAILED_AUR[0]} == awtwall ]] \
     || fail 'failed AUR package was not recorded for end-of-run reporting'
+
+  printf '%s\n' alacritty >"$state"
+  : >"$yay_log"
+  FAILED_AUR=()
+  install_selected_aur_packages alacritty-graphics \
+    || fail 'equivalent-installed AUR package check returned failure'
+  [[ ! -s $yay_log ]] \
+    || fail 'equivalent-installed AUR package still invoked the AUR helper'
+  (( ${#FAILED_AUR[@]} == 0 )) \
+    || fail 'equivalent-installed AUR package was incorrectly recorded as failed'
 fi
 
 if (( failures > 0 )); then
