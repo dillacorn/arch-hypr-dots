@@ -1,0 +1,39 @@
+name: Temporary Validate Theme Overlay and Color Binds
+
+on:
+  push:
+    branches:
+      - feature/bar-transparency
+    paths:
+      - '.github/workflows/validate-theme-overlay-color-binds-temp.yml'
+      - 'config/quickshell/awtarchy/FlyoutManager.qml'
+      - 'config/quickshell/awtarchy/ThemePicker.qml'
+      - 'config/quickshell/awtarchy/shell.qml'
+      - 'config/hypr/hyprland.lua'
+      - 'tests/test-theme-overlay-escape.sh'
+      - 'tests/test-color-adjustment-keybinds.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  red:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Verify both new regressions are RED
+        shell: bash
+        run: |
+          set +e
+          overlay_rc=0
+          binds_rc=0
+          bash tests/test-theme-overlay-escape.sh || overlay_rc=$?
+          bash tests/test-color-adjustment-keybinds.sh || binds_rc=$?
+          printf 'overlay_escape_rc=%d\n' "$overlay_rc"
+          printf 'color_binds_rc=%d\n' "$binds_rc"
+          if (( overlay_rc == 0 || binds_rc == 0 )); then
+            printf 'Expected both new regressions to fail before production changes.\n' >&2
+            exit 2
+          fi
+          exit 1
