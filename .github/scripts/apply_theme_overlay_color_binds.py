@@ -62,9 +62,24 @@ replace_exact(
 )
 
 hypr = ROOT / "config/hypr/hyprland.lua"
-old_night = '''hl.bind("SUPER + ALT + CTRL + equal", hl.dsp.exec_cmd(hyprsunset_ctl .. " up"), {})\nhl.bind("SUPER + ALT + CTRL + minus", hl.dsp.exec_cmd(hyprsunset_ctl .. " down"), {})\nhl.bind("SUPER + ALT + CTRL + backspace", hl.dsp.exec_cmd(hyprsunset_ctl .. " toggle"), {})'''
-new_night = '''hl.bind("SUPER + ALT + CTRL + bracketright", hl.dsp.exec_cmd(hyprsunset_ctl .. " up"), {})\nhl.bind("SUPER + ALT + CTRL + bracketleft", hl.dsp.exec_cmd(hyprsunset_ctl .. " down"), {})\nhl.bind("SUPER + ALT + CTRL + N", hl.dsp.exec_cmd(hyprsunset_ctl .. " toggle"), {})'''
-replace_exact(hypr, old_night, new_night, expected=2)
+replace_exact(
+    hypr,
+    'hl.bind("SUPER + ALT + CTRL + equal", hl.dsp.exec_cmd(hyprsunset_ctl .. " up"), {})',
+    'hl.bind("SUPER + ALT + CTRL + bracketright", hl.dsp.exec_cmd(hyprsunset_ctl .. " up"), {})',
+    expected=2,
+)
+replace_exact(
+    hypr,
+    'hl.bind("SUPER + ALT + CTRL + minus", hl.dsp.exec_cmd(hyprsunset_ctl .. " down"), {})',
+    'hl.bind("SUPER + ALT + CTRL + bracketleft", hl.dsp.exec_cmd(hyprsunset_ctl .. " down"), {})',
+    expected=2,
+)
+replace_exact(
+    hypr,
+    'hl.bind("SUPER + ALT + CTRL + backspace", hl.dsp.exec_cmd(hyprsunset_ctl .. " toggle"), {})',
+    'hl.bind("SUPER + ALT + CTRL + N", hl.dsp.exec_cmd(hyprsunset_ctl .. " toggle"), {})',
+    expected=2,
+)
 
 picker_test = ROOT / "tests/test-quickshell-theme-picker.sh"
 text = picker_test.read_text(encoding="utf-8")
