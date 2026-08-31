@@ -15,6 +15,7 @@ DATA_HOME=""
 STATE_HOME=""
 INSTALL_DIR=""
 RUNTIME=""
+PACKAGE_RECONCILER=""
 COMMAND_VERSION_FILE=""
 CONFIG_VERSION_FILE=""
 GIT_TEST_STATE_FILE=""
@@ -70,6 +71,7 @@ init_target() {
   STATE_HOME="${XDG_STATE_HOME:-${TARGET_HOME}/.local/state}"
   INSTALL_DIR="${DATA_HOME}/awtarchy"
   RUNTIME="${INSTALL_DIR}/awtarchy-runtime.sh"
+  PACKAGE_RECONCILER="${INSTALL_DIR}/awtarchy-package-reconcile.sh"
   COMMAND_VERSION_FILE="${STATE_HOME}/awtarchy/command-version"
   CONFIG_VERSION_FILE="${STATE_HOME}/awtarchy/config-version"
   GIT_TEST_STATE_FILE="${STATE_HOME}/awtarchy/git-testing"
@@ -571,7 +573,8 @@ write_command_version() {
 }
 
 self_update() {
-  local commit="${1:-}" installed tmp archive top repo_dir new_runtime new_launcher
+  local commit="${1:-}" installed tmp archive top repo_dir
+  local new_runtime new_launcher new_package_reconciler
 
   have curl || die "curl is required for self-update."
   have tar || die "tar is required for self-update."
@@ -584,7 +587,7 @@ self_update() {
   commit="${commit,,}"
 
   installed="$(installed_updater_commit)"
-  if [[ $installed == "$commit" ]]; then
+  if [[ $installed == "$commit" && -x $PACKAGE_RECONCILER ]]; then
     log "Awtarchy updater is already current at ${UPDATER_BRANCH}@${commit}."
     return 0
   fi
@@ -614,6 +617,7 @@ self_update() {
   repo_dir="${tmp}/${top}"
   new_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
   new_launcher="${repo_dir}/local/bin/awtarchy"
+  new_package_reconciler="${repo_dir}/local/share/awtarchy/awtarchy-package-reconcile.sh"
 
   [[ -f $new_runtime ]] || {
     rm -rf -- "$tmp"
@@ -623,6 +627,10 @@ self_update() {
     rm -rf -- "$tmp"
     die "Updater commit ${commit} does not contain the Awtarchy command."
   }
+  [[ -f $new_package_reconciler && ! -L $new_package_reconciler ]] || {
+    rm -rf -- "$tmp"
+    die "Updater commit ${commit} does not contain the package reconciler."
+  }
   bash -n "$new_runtime" || {
     rm -rf -- "$tmp"
     die "Downloaded Awtarchy runtime failed Bash syntax validation."
@@ -631,8 +639,13 @@ self_update() {
     rm -rf -- "$tmp"
     die "Downloaded Awtarchy command failed Bash syntax validation."
   }
+  bash -n "$new_package_reconciler" || {
+    rm -rf -- "$tmp"
+    die "Downloaded Awtarchy package reconciler failed Bash syntax validation."
+  }
   atomic_install "$new_runtime" "$RUNTIME" 0755
   atomic_install "$new_launcher" "${TARGET_HOME}/.local/bin/awtarchy" 0755
+  atomic_install "$new_package_reconciler" "$PACKAGE_RECONCILER" 0755
   write_command_version "$commit"
   rm -rf -- "$tmp"
 
@@ -733,6 +746,24 @@ run_runtime() {
 exec_runtime() {
   require_runtime
   exec bash "$RUNTIME" "$@"
+}
+
+require_package_reconciler() {
+  if [[ -x $PACKAGE_RECONCILER && ! -L $PACKAGE_RECONCILER ]]; then
+    return 0
+  fi
+
+  local remote=""
+  remote="$(updater_branch_head)" \
+    || die "Could not determine the current updater while repairing the package reconciler."
+  self_update "$remote"
+  [[ -x $PACKAGE_RECONCILER && ! -L $PACKAGE_RECONCILER ]] \
+    || die "Package reconciler is unavailable after updater repair: ${PACKAGE_RECONCILER}"
+}
+
+run_package_reconciler() {
+  require_package_reconciler
+  AWTARCHY_RUNTIME="$RUNTIME" bash "$PACKAGE_RECONCILER" "$@"
 }
 
 run_failure_reports() {
@@ -1049,6 +1080,7 @@ maintenance_menu() {
       "Refresh Awtarchy updater from main" \
       "Update configs (preserve Hyprland customizations)" \
       "Reset configs (clean-slate managed files)" \
+      "Reconcile packages (install current / remove replaced)" \
       "Review config changes without applying" \
       "Clean Awtarchy backup files" \
       "Version information" \
@@ -1081,6 +1113,13 @@ maintenance_menu() {
         [[ -z ${rc:-} ]] || return "$rc"
         ;;
       3)
+        ensure_latest_updater packages
+        clear_screen
+        run_package_reconciler || rc=$?
+        pause_menu
+        [[ -z ${rc:-} ]] || return "$rc"
+        ;;
+      4)
         protect_git_state_before_updater_refresh
         ensure_latest_updater review
         if config_release_ready_or_noop; then
@@ -1089,12 +1128,12 @@ maintenance_menu() {
         pause_menu
         [[ -z ${rc:-} ]] || return "$rc"
         ;;
-      4)
+      5)
         run_runtime clean-backups || rc=$?
         pause_menu
         [[ -z ${rc:-} ]] || return "$rc"
         ;;
-      5)
+      6)
         clear_screen
         print_version_status >/dev/tty
         pause_menu
@@ -1111,6 +1150,7 @@ Usage:
   awtarchy
   awtarchy update [--tag <tag>] [update options]
   awtarchy reset [--tag <tag>] [update options]
+  awtarchy packages [--review]
   awtarchy review [--tag <tag>]
   awtarchy report
   awtarchy git
@@ -1127,6 +1167,11 @@ Usage:
 The updater always refreshes from the current `main` branch head.
 Managed configs update only from the latest published release or an exact
 published release selected with --tag.
+
+Package reconciliation uses the current installed Awtarchy package catalogs.
+It can install missing current dependencies and selected catalog items, and it
+can remove explicitly retired/replaced packages. Retired package removal is
+preselected only when Awtarchy recorded ownership of that package.
 
 Git testing is explicit. The selected Awtarchy remote branch is resolved to an
 exact revision, and an exact --commit is accepted only when it belongs to that
@@ -1182,6 +1227,11 @@ main() {
       shift
       (( $# == 0 )) || die "self-update does not accept options; the updater source is always ${UPDATER_BRANCH}."
       self_update_safely
+      ;;
+    packages)
+      ensure_latest_updater "$@"
+      shift
+      run_package_reconciler "$@"
       ;;
     update)
       reject_stable_testing_overrides "$@"
