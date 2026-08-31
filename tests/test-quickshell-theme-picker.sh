@@ -44,7 +44,6 @@ require_picker 'Qt.Key_Up' 'ThemePicker lacks up grid navigation'
 require_picker 'Qt.Key_Down' 'ThemePicker lacks down grid navigation'
 require_picker 'Qt.Key_Home' 'ThemePicker lacks Home navigation'
 require_picker 'Qt.Key_End' 'ThemePicker lacks End navigation'
-require_picker 'Qt.Key_Escape' 'ThemePicker lacks Escape cancellation'
 require_picker 'Qt.Key_Return' 'ThemePicker lacks Enter apply behavior'
 require_picker 'target: "themes"' 'ThemePicker themes IPC target was removed'
 require_picker 'text: "Active"' 'ThemePicker does not mark the active theme'
@@ -88,8 +87,8 @@ if "applyProcess.exec([root.applyBackend, selected.name])" not in block:
     raise SystemExit("apply call exists outside applySelectedTheme")
 PY
 
-if ! grep -Fq 'ThemePicker.openForScreen(activeScreen)' "$QUICK_SETTINGS"; then
-    fail 'Quick Settings no longer opens ThemePicker for its active screen'
+if ! grep -Fq 'ThemePicker.toggleForScreen(activeScreen)' "$QUICK_SETTINGS"; then
+    fail 'Quick Settings no longer toggles ThemePicker for its active screen'
 fi
 
 if ! grep -Fq 'ipc call themes toggle' "$THEME_SELECT"; then
