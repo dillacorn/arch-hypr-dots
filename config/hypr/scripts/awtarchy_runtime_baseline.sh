@@ -95,6 +95,25 @@ thread_count_for() {
     find "$task_dir" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d '[:space:]'
 }
 
+thread_types_for() {
+    local pid="$1"
+    local thread_types
+    thread_types="$(
+        ps -L -p "$pid" -o comm= 2>/dev/null \
+            | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+            | sed '/^$/d' \
+            | sort \
+            | uniq -c \
+            | sort -nr \
+            || true
+    )"
+    if [[ -n "$thread_types" ]]; then
+        printf '%s\n' "$thread_types"
+    else
+        printf '%s\n' 'unavailable'
+    fi
+}
+
 proc_process_ticks() {
     local pid="$1"
     local stat_path="${PROC_ROOT}/${pid}/stat"
@@ -206,6 +225,14 @@ collect_report() {
     printf '%s\n' '=== Quickshell direct children/helpers ==='
     if [[ -n "$qs_pid" ]]; then
         ps --ppid "$qs_pid" -o pid=,ppid=,comm=,args= 2>/dev/null || printf '%s\n' 'unavailable'
+    else
+        printf '%s\n' 'unavailable'
+    fi
+    printf '\n'
+
+    printf '%s\n' '=== Quickshell thread types ==='
+    if [[ -n "$qs_pid" ]]; then
+        thread_types_for "$qs_pid"
     else
         printf '%s\n' 'unavailable'
     fi
