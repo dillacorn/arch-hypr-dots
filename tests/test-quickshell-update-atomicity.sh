@@ -5,6 +5,7 @@ IFS=$'\n\t'
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 RUNTIME="${ROOT}/local/share/awtarchy/awtarchy-runtime.sh"
 
+# Protect the live shell from seeing a partially updated managed QML tree.
 python3 - "$RUNTIME" <<'PY'
 from pathlib import Path
 import sys
