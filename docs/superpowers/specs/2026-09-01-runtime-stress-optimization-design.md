@@ -93,6 +93,8 @@ The default automated run performs only safe, reversible session activity:
 5. post-stress runtime baseline
 6. summary of measurable deltas and failures
 
+The runner must also support an explicit `snapshot <label>` checkpoint mode that records a labeled runtime baseline without performing UI stress. This is the supported capture path for before/after evidence around user-performed disruptive scenarios.
+
 The runner must not automatically suspend the machine, disconnect monitors, restart NetworkManager/BlueZ/PipeWire/WirePlumber, power-cycle displays, or perform other disruptive host actions.
 
 ## Disruptive and hardware-dependent scenarios
@@ -111,7 +113,7 @@ Issue #101 also requires behavior that cannot be proven safely by a generic auto
 - gamescope/fullscreen behavior
 - multi-hour memory/resource growth
 
-Stage 1 should make these tests easier to capture, not silently automate them. The stress runner may support explicit snapshot/checkpoint modes so the same collector can record before/after evidence around user-performed disruptive scenarios.
+Stage 1 makes these tests easier to capture without silently automating them. Use `awtarchy_runtime_stress.sh snapshot <label>` before and after the relevant user-performed event so the same collector format records comparable evidence.
 
 No runtime issue is considered fixed solely from static inspection or CI. Real-session claims require actual session evidence.
 
@@ -167,6 +169,7 @@ Stage 1 is complete when:
 
 - the fresh branch contains current-main-compatible collectors instead of stale branch merges
 - one command can gather a reproducible safe real-session stress bundle
+- `snapshot <label>` can capture comparable before/after checkpoints for disruptive manual tests
 - baseline CPU/RSS/thread/helper data is captured
 - launcher/clipboard/Quick Settings/network/Bluetooth mapped-open latency is measurable where current IPC supports it
 - launcher and clipboard usable-content readiness is measurable
