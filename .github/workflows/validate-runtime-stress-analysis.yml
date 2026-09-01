@@ -15,6 +15,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Validate runtime stress analysis
         run: |
+          bash -n config/hypr/scripts/awtarchy_runtime_baseline.sh
           bash -n tests/test-runtime-baseline-collector.sh
-          shellcheck tests/test-runtime-baseline-collector.sh
+          shellcheck config/hypr/scripts/awtarchy_runtime_baseline.sh tests/test-runtime-baseline-collector.sh
           bash tests/test-runtime-baseline-collector.sh
