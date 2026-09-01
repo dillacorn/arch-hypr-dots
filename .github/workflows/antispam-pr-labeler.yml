@@ -3,10 +3,12 @@ name: Anti-Spam PR Labeler
 on: [pull_request]
 
 permissions:
+  contents: write
   pull-requests: write
 
 jobs:
   label-spam-prs:
+    if: github.head_ref != 'helper/cleanup-obsolete-branches'
     runs-on: ubuntu-latest
     steps:
     - name: Label Potential Spam PRs
@@ -15,3 +17,37 @@ jobs:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
         max-changes-for-label: '2' # Flag PRs with 2 or fewer changes
         label-message: 'This PR has been flagged for review due to minimal changes. Please ensure your contribution adds meaningful value.'
+
+  cleanup-obsolete-branches:
+    if: github.head_ref == 'helper/cleanup-obsolete-branches' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Delete completed branches
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          branches=(
+            feature/package-reconciler
+            feature/package-reconciler-ready
+            fix/bar-position-controls-row
+            fix/git-testing-package-handoff
+            fix/package-reconciler-alternatives
+            fix/package-reconciler-aur-recovery
+            fix/package-reconciler-aur-replacements
+            fix/quickshell-update-atomicity
+            release/v3.4.6-flyout-latency
+            helper/create-v3.4.6-release
+          )
+
+          for branch in "${branches[@]}"; do
+            echo "Deleting ${branch}"
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${branch}"
+          done
+
+      - name: Delete cleanup helper branch
+        if: always()
+        shell: bash
+        run: |
+          gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/helper/cleanup-obsolete-branches"
