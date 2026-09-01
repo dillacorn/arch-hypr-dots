@@ -47,6 +47,16 @@ helper_count() {
     ' "$path"
 }
 
+numeric_delta() {
+    local before="$1"
+    local after="$2"
+    if [[ "$before" =~ ^[0-9]+$ && "$after" =~ ^[0-9]+$ ]]; then
+        printf '%s\n' "$((after - before))"
+    else
+        printf '%s\n' 'unavailable'
+    fi
+}
+
 close_all_surfaces() {
     local target
     for target in "${SURFACES[@]}"; do
@@ -82,32 +92,47 @@ run_transient_stress() {
 
 write_summary() {
     local run_dir="$1"
+    local cold="${run_dir}/baseline-cold.log"
     local pre="${run_dir}/baseline-pre.log"
     local post="${run_dir}/baseline-post.log"
-    local pre_rss post_rss pre_threads post_threads pre_helpers post_helpers
-    local rss_delta='unavailable'
+    local cold_rss pre_rss post_rss cold_threads pre_threads post_threads
+    local cold_helpers pre_helpers post_helpers warm_rss_delta stress_rss_delta
+    local warm_thread_delta stress_thread_delta
 
+    cold_rss="$(metric_value "$cold" 'Quickshell RSS KiB')"
     pre_rss="$(metric_value "$pre" 'Quickshell RSS KiB')"
     post_rss="$(metric_value "$post" 'Quickshell RSS KiB')"
+    cold_threads="$(metric_value "$cold" 'Quickshell threads')"
     pre_threads="$(metric_value "$pre" 'Quickshell threads')"
     post_threads="$(metric_value "$post" 'Quickshell threads')"
+    cold_helpers="$(helper_count "$cold")"
     pre_helpers="$(helper_count "$pre")"
     post_helpers="$(helper_count "$post")"
-
-    if [[ "$pre_rss" =~ ^[0-9]+$ && "$post_rss" =~ ^[0-9]+$ ]]; then
-        rss_delta=$((post_rss - pre_rss))
-    fi
+    warm_rss_delta="$(numeric_delta "$cold_rss" "$pre_rss")"
+    stress_rss_delta="$(numeric_delta "$pre_rss" "$post_rss")"
+    warm_thread_delta="$(numeric_delta "$cold_threads" "$pre_threads")"
+    stress_thread_delta="$(numeric_delta "$pre_threads" "$post_threads")"
 
     {
         printf '%s\n' 'Awtarchy runtime stress summary'
         printf 'Collected: %s\n' "$(date --iso-8601=seconds 2>/dev/null || date)"
+        printf 'Quickshell RSS cold KiB: %s\n' "${cold_rss:-unavailable}"
+        printf 'Quickshell RSS warmed KiB: %s\n' "${pre_rss:-unavailable}"
+        printf 'Quickshell RSS cold-to-warm delta KiB: %s\n' "$warm_rss_delta"
         printf 'Quickshell RSS pre KiB: %s\n' "${pre_rss:-unavailable}"
         printf 'Quickshell RSS post KiB: %s\n' "${post_rss:-unavailable}"
-        printf 'Quickshell RSS delta KiB: %s\n' "$rss_delta"
+        printf 'Quickshell RSS delta KiB: %s\n' "$stress_rss_delta"
+        printf 'Quickshell threads cold: %s\n' "${cold_threads:-unavailable}"
+        printf 'Quickshell threads warmed: %s\n' "${pre_threads:-unavailable}"
+        printf 'Quickshell threads cold-to-warm delta: %s\n' "$warm_thread_delta"
         printf 'Quickshell threads pre: %s\n' "${pre_threads:-unavailable}"
         printf 'Quickshell threads post: %s\n' "${post_threads:-unavailable}"
+        printf 'Quickshell threads delta: %s\n' "$stress_thread_delta"
+        printf 'Quickshell direct helpers cold: %s\n' "$cold_helpers"
         printf 'Quickshell direct helpers pre: %s\n' "$pre_helpers"
         printf 'Quickshell direct helpers post: %s\n' "$post_helpers"
+        printf '\n%s\n' 'Cold-start to warmed change is initialization evidence, not stress growth.'
+        printf '%s\n' 'Stress deltas compare the warmed pre-stress baseline with the post-stress baseline.'
         printf '\n%s\n' '=== Recorded failures/timeouts ==='
         grep -Eh 'failures:|TIMEOUT|IPC_ERROR' \
             "${run_dir}/ui-latency.log" \
@@ -115,9 +140,10 @@ write_summary() {
             "${run_dir}/transient-stress.log" || true
         printf '\n%s\n' '=== Artifacts ==='
         printf '%s\n' \
-            "${run_dir}/baseline-pre.log" \
+            "${run_dir}/baseline-cold.log" \
             "${run_dir}/ui-latency.log" \
             "${run_dir}/content-readiness.log" \
+            "${run_dir}/baseline-pre.log" \
             "${run_dir}/transient-stress.log" \
             "${run_dir}/baseline-post.log"
         printf '\n%s\n' 'Short-run RSS change is not a memory-leak determination.'
@@ -139,9 +165,10 @@ run_bundle() {
     mkdir -p -- "$run_dir"
     trap 'close_all_surfaces >/dev/null 2>&1 || true' EXIT
 
-    "$BASELINE_COLLECTOR" >"${run_dir}/baseline-pre.log"
+    "$BASELINE_COLLECTOR" >"${run_dir}/baseline-cold.log"
     "$UI_LATENCY_COLLECTOR" >"${run_dir}/ui-latency.log"
     "$CONTENT_READINESS_COLLECTOR" >"${run_dir}/content-readiness.log"
+    "$BASELINE_COLLECTOR" >"${run_dir}/baseline-pre.log"
     run_transient_stress "${run_dir}/transient-stress.log"
     "$BASELINE_COLLECTOR" >"${run_dir}/baseline-post.log"
     write_summary "$run_dir"
