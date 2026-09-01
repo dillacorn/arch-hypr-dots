@@ -1,0 +1,20 @@
+name: Validate Runtime Stress Analysis
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-stress-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Validate runtime stress analysis
+        run: |
+          bash -n tests/test-runtime-baseline-collector.sh
+          shellcheck tests/test-runtime-baseline-collector.sh
+          bash tests/test-runtime-baseline-collector.sh
