@@ -834,3 +834,5 @@ cd8f7a4395ba177a25a2c4fa2dc0b463942bc9e9bedf306474b402281d29341f	.config/quicksh
 7d5d77e61058a68420d3fd266a791344cc03bcbeb0f51c2cfb7c188b2ed548bf	.config/quickshell/awtarchy/Notifications.qml
 # v3.4.6 bar position controls stay horizontal.
 05fa2eea0206e4d85e263f8c05519b49c0e3d7edb35622903332df6c540e5b3c	.config/quickshell/awtarchy/QuickSettings.qml
+4cd998ccb220fd2ab28a474ed33bb49642fdd90522522d6e1baf8985dd226b63	.config/quickshell/awtarchy/ClipboardMenu.qml
+0215027d0e262fdac7f2a91accd57563c0b7ae43359c13867e18e6c0e5507976	.config/quickshell/awtarchy/Launcher.qml
