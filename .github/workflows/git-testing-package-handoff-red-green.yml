@@ -1,0 +1,30 @@
+name: Validate Git-Testing Package Handoff
+
+on:
+  pull_request:
+    paths:
+      - local/bin/awtarchy
+      - tests/test-awtarchy-git-package-handoff.sh
+      - .github/workflows/git-testing-package-handoff-red-green.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Bash syntax
+        run: |
+          bash -n local/bin/awtarchy
+          bash -n tests/test-awtarchy-git-package-handoff.sh
+      - name: ShellCheck
+        run: |
+          shellcheck local/bin/awtarchy
+          shellcheck tests/test-awtarchy-git-package-handoff.sh
+      - name: Git-testing package handoff regression
+        run: bash tests/test-awtarchy-git-package-handoff.sh

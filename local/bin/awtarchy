@@ -761,7 +761,76 @@ require_package_reconciler() {
     || die "Package reconciler is unavailable after updater repair: ${PACKAGE_RECONCILER}"
 }
 
+run_git_testing_package_reconciler() {
+  local config="" branch="" revision="" tmp="" archive="" top="" repo_dir=""
+  local testing_runtime="" testing_reconciler="" rc=0
+
+  config="$(installed_config_tag)"
+  [[ $config =~ ^(.+)@([0-9a-fA-F]{40})$ ]] \
+    || die "Active Git-testing configuration has no valid exact revision for package reconciliation."
+  branch="${BASH_REMATCH[1]}"
+  revision="${BASH_REMATCH[2],,}"
+
+  have curl || die "curl is required for Git-testing package reconciliation."
+  have tar || die "tar is required for Git-testing package reconciliation."
+  have python3 || die "python3 is required for Git-testing package reconciliation."
+
+  tmp="$(mktemp -d)"
+  archive="${tmp}/awtarchy.tar.gz"
+  curl_args download
+  log "Loading package reconciler from Git testing ${branch}@${revision}..."
+  if ! curl "${CURL_ARGS[@]}" -o "$archive" \
+    "https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/${revision}.tar.gz";
+  then
+    rm -rf -- "$tmp"
+    die "Failed to download active Git-testing revision ${revision}."
+  fi
+
+  top="$(archive_topdir "$archive")" || {
+    rm -rf -- "$tmp"
+    die "Git-testing package archive validation failed."
+  }
+  [[ $top == "${REPO_NAME}-${revision}" ]] || {
+    rm -rf -- "$tmp"
+    die "Git-testing package archive does not match revision ${revision}."
+  }
+
+  if ! tar -xzf "$archive" -C "$tmp"; then
+    rm -rf -- "$tmp"
+    die "Failed to extract Git-testing package archive for revision ${revision}."
+  fi
+  repo_dir="${tmp}/${top}"
+  testing_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
+  testing_reconciler="${repo_dir}/local/share/awtarchy/awtarchy-package-reconcile.sh"
+
+  [[ -f $testing_runtime && ! -L $testing_runtime ]] || {
+    rm -rf -- "$tmp"
+    die "Git-testing revision ${revision} does not contain a safe Awtarchy runtime."
+  }
+  [[ -f $testing_reconciler && ! -L $testing_reconciler ]] || {
+    rm -rf -- "$tmp"
+    die "Git-testing revision ${revision} does not contain a safe package reconciler."
+  }
+  bash -n "$testing_runtime" || {
+    rm -rf -- "$tmp"
+    die "Git-testing runtime failed Bash syntax validation."
+  }
+  bash -n "$testing_reconciler" || {
+    rm -rf -- "$tmp"
+    die "Git-testing package reconciler failed Bash syntax validation."
+  }
+
+  AWTARCHY_RUNTIME="$testing_runtime" bash "$testing_reconciler" "$@" || rc=$?
+  rm -rf -- "$tmp"
+  return "$rc"
+}
+
 run_package_reconciler() {
+  if config_is_git_testing; then
+    run_git_testing_package_reconciler "$@"
+    return $?
+  fi
+
   require_package_reconciler
   AWTARCHY_RUNTIME="$RUNTIME" bash "$PACKAGE_RECONCILER" "$@"
 }
