@@ -16,6 +16,7 @@ jobs:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           ref: fix/quickshell-update-atomicity
+          fetch-depth: 0
       - name: Apply session-aware Quickshell stop logic
         run: |
           python3 - <<'PY'
@@ -62,9 +63,7 @@ jobs:
           from pathlib import Path
           import sys
 
-          path = Path(sys.argv[1])
-          text = path.read_text(encoding="utf-8")
-
+          text = Path(sys.argv[1]).read_text(encoding="utf-8")
           helper_start = text.find('stop_quickshell_update_shell() {')
           if helper_start < 0:
               raise SystemExit('FAIL: session-aware Quickshell update stop helper is missing')
@@ -82,15 +81,12 @@ jobs:
           start = text.find('ensure_quickshell_update_prerequisites\n  snapshot_quickshell_update_legacy_paths')
           if start < 0:
               raise SystemExit('FAIL: could not locate the Quickshell update mutation section')
-
           apply_index = text.find('apply_plan "$plan_file"', start)
           if apply_index < 0:
               raise SystemExit('FAIL: could not locate apply_plan in the Quickshell update path')
-
           stop_index = text.find('stop_quickshell_update_shell', start, apply_index)
           if stop_index < 0:
               raise SystemExit('FAIL: live Quickshell is not stopped before managed files are mutated')
-
           start_index = text.find('start_quickshell_update_shell', apply_index)
           if start_index < 0:
               raise SystemExit('FAIL: Quickshell is not restarted after the managed update')
@@ -106,11 +102,12 @@ jobs:
           shellcheck tests/test-quickshell-update-atomicity.sh
           bash tests/test-quickshell-update-atomicity.sh
           bash tests/test-quickshell-updater-migration.sh
-      - name: Commit final fix and remove helper workflow
+      - name: Commit final fix and remove temporary workflows
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git rm .github/workflows/tmp-fix-quickshell-update-headless.yml
+          git rm .github/workflows/tmp-fix-quickshell-update-headless-v2.yml
           git add local/share/awtarchy/awtarchy-runtime.sh tests/test-quickshell-update-atomicity.sh
           git commit -m 'Handle headless Quickshell updates safely'
           git push origin HEAD:fix/quickshell-update-atomicity
