@@ -7994,6 +7994,12 @@ report_quickshell_update_failure() {
     || true
 }
 
+stop_quickshell_update_shell() {
+  command -v hyprctl >/dev/null 2>&1 || return 0
+  [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || return 0
+  stop_quickshell_update_instances
+}
+
 start_quickshell_update_shell() {
   command -v hyprctl >/dev/null 2>&1 || return 0
   [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || return 0
@@ -8212,7 +8218,7 @@ main() {
   ensure_quickshell_update_prerequisites
   snapshot_quickshell_update_legacy_paths
 
-  stop_quickshell_update_instances \
+  stop_quickshell_update_shell \
     || die "Could not stop Quickshell safely before updating managed files."
   apply_plan "$plan_file" || die "Update failed and user files were rolled back."
 
