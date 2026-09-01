@@ -8212,6 +8212,8 @@ main() {
   ensure_quickshell_update_prerequisites
   snapshot_quickshell_update_legacy_paths
 
+  stop_quickshell_update_instances \
+    || die "Could not stop Quickshell safely before updating managed files."
   apply_plan "$plan_file" || die "Update failed and user files were rolled back."
 
   if ! install_awtarchy_polkit_agent_runtime "$repo_dir"; then
