@@ -17,6 +17,8 @@ jobs:
         with:
           ref: fix/quickshell-update-atomicity
           fetch-depth: 0
+      - name: Install validation dependency
+        run: sudo apt-get update && sudo apt-get install -y lua5.4
       - name: Apply session-aware Quickshell stop logic
         run: |
           python3 - <<'PY'
