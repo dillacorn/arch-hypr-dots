@@ -1,0 +1,84 @@
+name: Apply Runtime Readiness Diagnostics
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.number == 115 && github.event.pull_request.head.ref == 'analysis/runtime-stress-optimization'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: analysis/runtime-stress-optimization
+          fetch-depth: 0
+      - name: Add read-only readiness properties
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          launcher = Path('config/quickshell/awtarchy/Launcher.qml')
+          text = launcher.read_text()
+          anchor = '    IpcHandler {\n        target: "launcher"\n'
+          addition = '''    IpcHandler {
+              target: "launcher"
+              readonly property int diagnosticResultCount: appList.count
+              readonly property bool diagnosticReady: launcherWindow.visible
+                  && root.launcherPositioned
+                  && launcherPanel.opacity >= 0.99
+                  && search.activeFocus
+                  && appList.count > 0
+                  && appList.currentItem !== null
+          '''
+          if 'diagnosticResultCount' in text or 'diagnosticReady' in text:
+              raise SystemExit('launcher diagnostics already exist')
+          if text.count(anchor) != 1:
+              raise SystemExit('launcher IPC anchor is not unique')
+          launcher.write_text(text.replace(anchor, addition, 1))
+
+          clipboard = Path('config/quickshell/awtarchy/ClipboardMenu.qml')
+          text = clipboard.read_text()
+          anchor = '    IpcHandler {\n        target: "clipboard"\n'
+          addition = '''    IpcHandler {
+              target: "clipboard"
+              readonly property int diagnosticEntryCount: root.entries.length
+              readonly property bool diagnosticFirstRowReady: clipboardWindow.visible
+                  && panel.opacity >= 0.99
+                  && clipboardList.count > 0
+                  && clipboardList.currentItem !== null
+                  && clipboardList.currentItem.opacity >= 0.99
+              readonly property int diagnosticThumbnailCandidateCount: Object.keys(root.thumbnailKnown).length
+              readonly property int diagnosticThumbnailReadyCount: root.entries.filter(entry =>
+                  entry && entry.thumb && String(entry.thumb).length > 0).length
+              readonly property bool diagnosticListLoading: root.listLoading
+          '''
+          if any(name in text for name in (
+              'diagnosticEntryCount', 'diagnosticFirstRowReady',
+              'diagnosticThumbnailCandidateCount', 'diagnosticThumbnailReadyCount',
+              'diagnosticListLoading')):
+              raise SystemExit('clipboard diagnostics already exist')
+          if text.count(anchor) != 1:
+              raise SystemExit('clipboard IPC anchor is not unique')
+          clipboard.write_text(text.replace(anchor, addition, 1))
+          PY
+
+          grep -Fq 'readonly property int diagnosticResultCount:' config/quickshell/awtarchy/Launcher.qml
+          grep -Fq 'readonly property bool diagnosticReady:' config/quickshell/awtarchy/Launcher.qml
+          grep -Fq 'readonly property int diagnosticEntryCount:' config/quickshell/awtarchy/ClipboardMenu.qml
+          grep -Fq 'readonly property bool diagnosticFirstRowReady:' config/quickshell/awtarchy/ClipboardMenu.qml
+          grep -Fq 'readonly property int diagnosticThumbnailCandidateCount:' config/quickshell/awtarchy/ClipboardMenu.qml
+          grep -Fq 'readonly property int diagnosticThumbnailReadyCount:' config/quickshell/awtarchy/ClipboardMenu.qml
+          grep -Fq 'readonly property bool diagnosticListLoading:' config/quickshell/awtarchy/ClipboardMenu.qml
+
+          rm -f .github/workflows/apply-runtime-readiness-diagnostics.yml
+          git diff --check
+          git config user.name dillacorn
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add config/quickshell/awtarchy/Launcher.qml \
+            config/quickshell/awtarchy/ClipboardMenu.qml \
+            .github/workflows/apply-runtime-readiness-diagnostics.yml
+          git commit -m 'Expose runtime readiness diagnostics'
+          git push origin HEAD:analysis/runtime-stress-optimization
