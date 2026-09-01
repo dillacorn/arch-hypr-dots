@@ -16,9 +16,12 @@ jobs:
       - name: Validate runtime stress analysis
         run: |
           bash -n config/hypr/scripts/awtarchy_runtime_baseline.sh
+          bash -n config/hypr/scripts/awtarchy_ui_latency.sh
           bash -n tests/test-runtime-baseline-collector.sh
           bash -n tests/test-runtime-ui-latency.sh
-          shellcheck config/hypr/scripts/awtarchy_runtime_baseline.sh \
+          shellcheck \
+            config/hypr/scripts/awtarchy_runtime_baseline.sh \
+            config/hypr/scripts/awtarchy_ui_latency.sh \
             tests/test-runtime-baseline-collector.sh \
             tests/test-runtime-ui-latency.sh
           bash tests/test-runtime-baseline-collector.sh
