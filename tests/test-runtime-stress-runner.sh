@@ -32,15 +32,28 @@ sequence='$sequence'
 count="\$(cat "\$count_file")"
 count=\$((count + 1))
 printf '%s\n' "\$count" >"\$count_file"
-if (( count == 1 )); then
-    printf '%s\n' baseline-pre >>"\$sequence"
-    rss=100000
-    threads=12
-else
-    printf '%s\n' baseline-post >>"\$sequence"
-    rss=101024
-    threads=12
-fi
+case "\$count" in
+    1)
+        printf '%s\n' baseline-cold >>"\$sequence"
+        rss=90000
+        threads=10
+        ;;
+    2)
+        printf '%s\n' baseline-pre >>"\$sequence"
+        rss=100000
+        threads=12
+        ;;
+    3)
+        printf '%s\n' baseline-post >>"\$sequence"
+        rss=101024
+        threads=12
+        ;;
+    *)
+        printf '%s\n' baseline-snapshot >>"\$sequence"
+        rss=101024
+        threads=12
+        ;;
+esac
 printf '%s\n' \
     'Awtarchy runtime baseline' \
     "Quickshell RSS KiB: \$rss" \
@@ -114,25 +127,31 @@ PATH="${fakebin}:/usr/bin:/bin" \
 
 run_dir="${state_home}/awtarchy/logs/runtime-stress-20260901-193000"
 [[ -d "$run_dir" ]] || fail 'run directory was not created'
-for file in baseline-pre.log ui-latency.log content-readiness.log transient-stress.log baseline-post.log summary.log; do
+for file in baseline-cold.log baseline-pre.log ui-latency.log content-readiness.log transient-stress.log baseline-post.log summary.log; do
     [[ -f "${run_dir}/${file}" ]] || fail "missing run artifact: ${file}"
 done
 
 mapfile -t sequence_lines <"$sequence"
-[[ ${sequence_lines[0]:-} == baseline-pre ]] || fail 'baseline pre did not run first'
+[[ ${sequence_lines[0]:-} == baseline-cold ]] || fail 'cold baseline did not run first'
 [[ ${sequence_lines[1]:-} == ui-latency ]] || fail 'UI latency did not run second'
 [[ ${sequence_lines[2]:-} == content-readiness ]] || fail 'content readiness did not run third'
-[[ ${sequence_lines[3]:-} == baseline-post ]] || fail 'baseline post did not run after transient stress'
+[[ ${sequence_lines[3]:-} == baseline-pre ]] || fail 'warmed pre-stress baseline did not run after readiness initialization'
+[[ ${sequence_lines[4]:-} == baseline-post ]] || fail 'baseline post did not run after transient stress'
 
-grep -Fq 'Quickshell RSS pre KiB: 100000' "${run_dir}/summary.log" || fail 'missing pre RSS summary'
+grep -Fq 'Quickshell RSS cold KiB: 90000' "${run_dir}/summary.log" || fail 'missing cold RSS summary'
+grep -Fq 'Quickshell RSS cold-to-warm delta KiB: 10000' "${run_dir}/summary.log" || fail 'missing initialization RSS delta'
+grep -Fq 'Quickshell RSS pre KiB: 100000' "${run_dir}/summary.log" || fail 'missing warmed pre RSS summary'
 grep -Fq 'Quickshell RSS post KiB: 101024' "${run_dir}/summary.log" || fail 'missing post RSS summary'
-grep -Fq 'Quickshell RSS delta KiB: 1024' "${run_dir}/summary.log" || fail 'missing RSS delta'
+grep -Fq 'Quickshell RSS delta KiB: 1024' "${run_dir}/summary.log" || fail 'missing stress RSS delta'
+grep -Fq 'Quickshell threads cold: 10' "${run_dir}/summary.log" || fail 'missing cold thread count'
 grep -Fq 'Quickshell threads pre: 12' "${run_dir}/summary.log" || fail 'missing pre thread count'
 grep -Fq 'Quickshell threads post: 12' "${run_dir}/summary.log" || fail 'missing post thread count'
 grep -Fq 'Quickshell direct helpers pre: 2' "${run_dir}/summary.log" || fail 'missing pre helper count'
 grep -Fq 'Quickshell direct helpers post: 2' "${run_dir}/summary.log" || fail 'missing post helper count'
 grep -Fq 'network failures: timeouts=1 ipc_errors=0' "${run_dir}/summary.log" \
     || fail 'collector failure line was not propagated to summary'
+grep -Fq 'Cold-start to warmed change is initialization evidence, not stress growth.' "${run_dir}/summary.log" \
+    || fail 'missing cold-start initialization explanation'
 grep -Fq 'Short-run RSS change is not a memory-leak determination.' "${run_dir}/summary.log" \
     || fail 'missing memory-leak caution'
 grep -Fq 'Run directory:' "$out" || fail 'runner did not print run directory'
