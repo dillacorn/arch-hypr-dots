@@ -18,6 +18,7 @@ jobs:
           bash -n config/hypr/scripts/awtarchy_runtime_baseline.sh
           bash -n config/hypr/scripts/awtarchy_ui_latency.sh
           bash -n config/hypr/scripts/awtarchy_content_readiness.sh
+          bash -n config/hypr/scripts/awtarchy_runtime_stress.sh
           bash -n tests/test-runtime-baseline-collector.sh
           bash -n tests/test-runtime-ui-latency.sh
           bash -n tests/test-runtime-content-readiness.sh
@@ -26,6 +27,7 @@ jobs:
             config/hypr/scripts/awtarchy_runtime_baseline.sh \
             config/hypr/scripts/awtarchy_ui_latency.sh \
             config/hypr/scripts/awtarchy_content_readiness.sh \
+            config/hypr/scripts/awtarchy_runtime_stress.sh \
             tests/test-runtime-baseline-collector.sh \
             tests/test-runtime-ui-latency.sh \
             tests/test-runtime-stress-runner.sh
