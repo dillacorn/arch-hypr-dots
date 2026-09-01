@@ -21,16 +21,19 @@ jobs:
           bash -n tests/test-runtime-baseline-collector.sh
           bash -n tests/test-runtime-ui-latency.sh
           bash -n tests/test-runtime-content-readiness.sh
+          bash -n tests/test-runtime-stress-runner.sh
           shellcheck \
             config/hypr/scripts/awtarchy_runtime_baseline.sh \
             config/hypr/scripts/awtarchy_ui_latency.sh \
             config/hypr/scripts/awtarchy_content_readiness.sh \
             tests/test-runtime-baseline-collector.sh \
-            tests/test-runtime-ui-latency.sh
+            tests/test-runtime-ui-latency.sh \
+            tests/test-runtime-stress-runner.sh
           shellcheck -e SC2016 tests/test-runtime-content-readiness.sh
           bash tests/test-runtime-baseline-collector.sh
           bash tests/test-runtime-ui-latency.sh
           bash tests/test-runtime-content-readiness.sh
+          bash tests/test-runtime-stress-runner.sh
           bash tests/test-quickshell-clipboard-load-state.sh
           bash tests/test-quickshell-clipboard-progressive.sh
           bash tests/test-quickshell-clipboard-thumbnails.sh
