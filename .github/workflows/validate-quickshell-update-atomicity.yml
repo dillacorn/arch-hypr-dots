@@ -1,0 +1,30 @@
+name: Validate Quickshell Update Atomicity
+
+on:
+  pull_request:
+    paths:
+      - 'local/share/awtarchy/awtarchy-runtime.sh'
+      - 'tests/test-quickshell-update-atomicity.sh'
+      - '.github/workflows/validate-quickshell-update-atomicity.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'local/share/awtarchy/awtarchy-runtime.sh'
+      - 'tests/test-quickshell-update-atomicity.sh'
+      - '.github/workflows/validate-quickshell-update-atomicity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Validate test syntax
+        run: |
+          bash -n tests/test-quickshell-update-atomicity.sh
+          shellcheck tests/test-quickshell-update-atomicity.sh
+      - name: Validate Quickshell update atomicity
+        run: bash tests/test-quickshell-update-atomicity.sh
