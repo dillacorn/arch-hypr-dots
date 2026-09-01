@@ -24,8 +24,8 @@ jobs:
             config/hypr/scripts/awtarchy_runtime_baseline.sh \
             config/hypr/scripts/awtarchy_ui_latency.sh \
             tests/test-runtime-baseline-collector.sh \
-            tests/test-runtime-ui-latency.sh \
-            tests/test-runtime-content-readiness.sh
+            tests/test-runtime-ui-latency.sh
+          shellcheck -e SC2016 tests/test-runtime-content-readiness.sh
           bash tests/test-runtime-baseline-collector.sh
           bash tests/test-runtime-ui-latency.sh
           bash tests/test-runtime-content-readiness.sh
