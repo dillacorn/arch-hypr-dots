@@ -585,7 +585,17 @@ Singleton {
     }
 
     IpcHandler {
-        target: "clipboard"
+    target: "clipboard"
+    readonly property int diagnosticEntryCount: root.entries.length
+    readonly property bool diagnosticFirstRowReady: clipboardWindow.visible
+        && panel.opacity >= 0.99
+        && clipboardList.count > 0
+        && clipboardList.currentItem !== null
+        && clipboardList.currentItem.opacity >= 0.99
+    readonly property int diagnosticThumbnailCandidateCount: Object.keys(root.thumbnailKnown).length
+    readonly property int diagnosticThumbnailReadyCount: root.entries.filter(entry =>
+        entry && entry.thumb && String(entry.thumb).length > 0).length
+    readonly property bool diagnosticListLoading: root.listLoading
         function toggle(): void { root.toggleFocused(); }
         function open(): void { root.openFocused(); }
         function close(): void { root.close(); }

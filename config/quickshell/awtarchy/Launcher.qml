@@ -741,7 +741,14 @@ Singleton {
     }
 
     IpcHandler {
-        target: "launcher"
+    target: "launcher"
+    readonly property int diagnosticResultCount: appList.count
+    readonly property bool diagnosticReady: launcherWindow.visible
+        && root.launcherPositioned
+        && launcherPanel.opacity >= 0.99
+        && search.activeFocus
+        && appList.count > 0
+        && appList.currentItem !== null
         function toggle(): void { root.toggleFocused(); }
         function open(): void { root.openFocused(); }
         function close(): void { root.close(); }
