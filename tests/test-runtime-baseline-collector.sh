@@ -55,6 +55,14 @@ case "$args" in
             '4244 4242 bash bash /home/test/.config/hypr/scripts/helper.sh' \
             '5000 1 other other-process'
         ;;
+    *"-L -p 4242 -o comm="*)
+        printf '%s\n' \
+            'qs' \
+            'QSGRenderThread' \
+            'QSGRenderThread' \
+            'qs:gl0' \
+            'qs:gl0'
+        ;;
     *"-p 4242 -o etimes="*) printf '%s\n' '321' ;;
     *"-p 4242 -o rss="*) printf '%s\n' '65432' ;;
     *"-p 4242 -o %cpu="*)
@@ -156,6 +164,10 @@ grep -Fq 'Quickshell RSS KiB: 65432' "$out" || fail 'missing Quickshell RSS'
 grep -Fq 'Quickshell threads: 2' "$out" || fail 'missing Quickshell thread count'
 grep -Fq 'Quickshell CPU sample 1: 1.2%' "$out" || fail 'missing first CPU sample'
 grep -Fq 'Quickshell CPU sample 2: 2.4%' "$out" || fail 'missing second CPU sample'
+grep -Fq '=== Quickshell thread types ===' "$out" || fail 'missing Quickshell thread type section'
+grep -Eq '^[[:space:]]*2[[:space:]]+QSGRenderThread$' "$out" || fail 'missing aggregated QSG render threads'
+grep -Eq '^[[:space:]]*2[[:space:]]+qs:gl0$' "$out" || fail 'missing aggregated Quickshell GL threads'
+grep -Eq '^[[:space:]]*1[[:space:]]+qs$' "$out" || fail 'missing main Quickshell thread'
 grep -Fq 'Hyprland 0.fixture' "$out" || fail 'missing Hyprland version'
 grep -Fq 'quickshell fixture' "$out" || fail 'missing Quickshell version'
 grep -Fq '"name":"DP-1"' "$out" || fail 'missing monitor JSON'
