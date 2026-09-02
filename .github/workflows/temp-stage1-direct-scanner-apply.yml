@@ -19,7 +19,7 @@ jobs:
           ref: feature/direct-aur-scanner
 
       - name: Apply installer delegation
-        run: python3 .github/temp-stage1-direct-scanner-apply.py
+        run: python3 .github/temp-stage1-direct-scanner-apply-v2.py
 
       - name: Validate Stage 1
         shell: bash
