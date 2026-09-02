@@ -130,13 +130,21 @@ grep -Fq 'root.refreshIdleAfterToggle();' "$SYSTEM_STATE" \
 
 grep -Fq 'repair_v347_idle_inhibitor_feedback_target()' "$RUNTIME" \
   || fail "runtime is missing the v3.4.7 idle-inhibitor post-release repair"
+# Match literal runtime source; $tag must not expand in this test pattern.
+# shellcheck disable=SC2016
 grep -Fq '[[ "$tag" == "v3.4.7" ]] || return 0' "$RUNTIME" \
   || fail "v3.4.7 idle-inhibitor repair is not scoped to the published release"
+# Match literal runtime source; $target_home and $tag must remain literal.
+# shellcheck disable=SC2016
 grep -Fq 'repair_v347_idle_inhibitor_feedback_target "$target_home" "$tag"' "$RUNTIME" \
   || fail "runtime does not apply the v3.4.7 idle-inhibitor repair to the generated target"
 
+# Locate literal runtime source calls; these variables belong to the inspected source.
+# shellcheck disable=SC2016
 prepare_line="$(grep -nF 'prepare_quickshell_update_target "$target_home"' "$RUNTIME" | head -n1 | cut -d: -f1)"
+# shellcheck disable=SC2016
 repair_line="$(grep -nF 'repair_v347_idle_inhibitor_feedback_target "$target_home" "$tag"' "$RUNTIME" | head -n1 | cut -d: -f1)"
+# shellcheck disable=SC2016
 baseline_line="$(grep -nF 'bootstrap_previous_baseline "$active_theme"' "$RUNTIME" | head -n1 | cut -d: -f1)"
 [[ "$prepare_line" =~ ^[0-9]+$ && "$repair_line" =~ ^[0-9]+$ && "$baseline_line" =~ ^[0-9]+$ ]] \
   || fail "could not locate v3.4.7 idle-inhibitor target-repair ordering"
