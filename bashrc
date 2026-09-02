@@ -134,6 +134,7 @@ _AUR_GUARD_LIST_MAX_AGE=86400
 _AUR_GUARD_LIST_MAX_BYTES=2097152
 _AUR_GUARD_LIST_MIN_NAMES=100
 _AUR_GUARD_GITHUB_ARCHIVE_MAX_BYTES=20971520
+_AUR_GUARD_AUR_SCAN_PACKAGE='aur-scanner'
 
 # Exact names that should remain permanently blocked even after historical
 # incident records are cleaned or restored. Keep this list intentionally small.
@@ -2757,6 +2758,33 @@ _aur_guard_scan_package_files() {
   _aur_guard_scan_source_tree "$pkg" "$pkgdir" recursive
 }
 
+_aur_guard_scan_checkout_with_aur_scan() {
+  local pkg="$1"
+  local pkgdir="$2"
+  local scanner status
+
+  if [[ ${_AUR_GUARD_AUR_SCAN_BOOTSTRAP:-0} == 1 ]]; then
+    printf 'AUR Verify: aur-scan bootstrap is in progress; built-in AUR Guard checks remain active for %s.\n' \
+      "$pkg"
+    return 0
+  fi
+
+  scanner=$(type -P aur-scan 2>/dev/null) || {
+    _aur_guard_fail "aur-scan is required before evaluating $pkg. Install $_AUR_GUARD_AUR_SCAN_PACKAGE with: aurinstall $_AUR_GUARD_AUR_SCAN_PACKAGE"
+    return 127
+  }
+
+  printf 'AUR Verify: running aur-scan on the exact fetched checkout for %s.\n' "$pkg"
+  if "$scanner" scan "$pkgdir" --fail-on high; then
+    return 0
+  else
+    status=$?
+  fi
+
+  _aur_guard_fail "aur-scan rejected or could not scan the exact fetched checkout for $pkg"
+  return "$status"
+}
+
 _aur_guard_normalize_srcinfo() {
   local file="$1"
 
@@ -2962,6 +2990,11 @@ _aur_guard_verify_package_recursive() {
   fetched_pkgbase="${pkgdir##*/}"
 
   _aur_guard_scan_package_files "$pkg" "$pkgdir" || {
+    _AUR_GUARD_REQUEST_STATE[$pkg]='failed'
+    return 1
+  }
+
+  _aur_guard_scan_checkout_with_aur_scan "$pkg" "$pkgdir" || {
     _AUR_GUARD_REQUEST_STATE[$pkg]='failed'
     return 1
   }
@@ -6307,6 +6340,46 @@ aurcheck() {
   _AUR_GUARD_HISTORICAL_MATCHES=()
 }
 
+_aur_guard_ensure_aur_scan() {
+  local requested_pkg="$1"
+  local status
+
+  type -P aur-scan >/dev/null 2>&1 && return 0
+
+  if [[ ${_AUR_GUARD_AUR_SCAN_BOOTSTRAP:-0} == 1 ]]; then
+    return 0
+  fi
+
+  if [[ "$requested_pkg" == "$_AUR_GUARD_AUR_SCAN_PACKAGE" ]]; then
+    printf 'AUR Guard: bootstrapping %s with the built-in verification stack; aur-scan becomes mandatory after installation.\n' \
+      "$requested_pkg"
+    _AUR_GUARD_AUR_SCAN_BOOTSTRAP=1
+    return 0
+  fi
+
+  printf 'AUR Guard: aur-scan is not installed; bootstrapping stable %s through AUR Guard first.\n' \
+    "$_AUR_GUARD_AUR_SCAN_PACKAGE"
+  _AUR_GUARD_AUR_SCAN_BOOTSTRAP=1
+  if aurinstall "$_AUR_GUARD_AUR_SCAN_PACKAGE"; then
+    status=0
+  else
+    status=$?
+  fi
+  _AUR_GUARD_AUR_SCAN_BOOTSTRAP=0
+
+  if (( status != 0 )); then
+    _aur_guard_fail "could not bootstrap $_AUR_GUARD_AUR_SCAN_PACKAGE"
+    return "$status"
+  fi
+
+  type -P aur-scan >/dev/null 2>&1 || {
+    _aur_guard_fail "$_AUR_GUARD_AUR_SCAN_PACKAGE installed without providing aur-scan"
+    return 127
+  }
+
+  printf 'AUR Guard: aur-scan is installed and will gate this AUR transaction.\n'
+}
+
 aurverify() {
   local pkg status
   local _AUR_GUARD_MODE='practical'
@@ -6371,6 +6444,7 @@ aurinstall() {
   local restart_count=0
   local _AUR_GUARD_MODE='practical'
   local _AUR_GUARD_BUILD_REQUESTED=1
+  local _AUR_GUARD_AUR_SCAN_BOOTSTRAP="${_AUR_GUARD_AUR_SCAN_BOOTSTRAP:-0}"
 
   case "$#" in
     1)
@@ -6408,12 +6482,22 @@ aurinstall() {
 
     if _aur_guard_is_installer_mode; then
       printf 'Awtarchy installer mode: installing with pacman --needed --noconfirm.\n'
-      sudo pacman -S --needed --noconfirm "$pkg"
+      sudo pacman -S --neded --noconfirm "$pkg"
     else
       printf 'Installing with pacman:\n  sudo pacman -S %s\n\n' "$pkg"
       sudo pacman -S "$pkg"
     fi
     return $?
+  fi
+
+  if ! _aur_guard_check_emergency_block "$pkg"; then
+    _aur_guard_refuse_install "$pkg" 'the package is present on the Awtarchy emergency blocklist'
+    return 1
+  fi
+
+  if ! _aur_guard_ensure_aur_scan "$pkg"; then
+    _aur_guard_refuse_install "$pkg" 'could not prepare the required aur-scan security gate'
+    return 1
   fi
 
   while true; do
