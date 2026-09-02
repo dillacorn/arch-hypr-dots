@@ -6482,7 +6482,7 @@ aurinstall() {
 
     if _aur_guard_is_installer_mode; then
       printf 'Awtarchy installer mode: installing with pacman --needed --noconfirm.\n'
-      sudo pacman -S --neded --noconfirm "$pkg"
+      sudo pacman -S --needed --noconfirm "$pkg"
     else
       printf 'Installing with pacman:\n  sudo pacman -S %s\n\n' "$pkg"
       sudo pacman -S "$pkg"
