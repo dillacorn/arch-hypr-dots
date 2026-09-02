@@ -239,4 +239,35 @@ printf '%s\n' "$COMMIT_C" "$COMMIT_C" > "$HEAD_FILE"
 aurguard refresh >/dev/null
 [[ -s "$NETWORK_LOG" ]] || fail 'aurguard refresh did not force an exact-commit refresh'
 
-printf 'PASS: AurGuard runtime refresh uses a 24-hour exact-commit cache, fail-closed validation, Git-testing pinning, and flock serialization.\n'
+old_runtime_hash=$(sha256sum "$RUNTIME" | awk '{print $1}')
+old_meta_hash=$(sha256sum "$META" | awk '{print $1}')
+rollback_candidate="$TMP/rollback-candidate"
+cat > "$rollback_candidate" <<'EOF_ROLLBACK'
+# AWTARCHY_AURGUARD_RUNTIME v1
+# shellcheck shell=bash
+_aur_guard_scan_checkout_with_aur_scan() { :; }
+aurverify() { printf 'NEW aurverify %s\n' "$*"; }
+aurinstall() { printf 'NEW aurinstall %s\n' "$*"; }
+aurguard() { printf 'NEW aurguard %s\n' "$*"; }
+EOF_ROLLBACK
+chmod 0600 "$rollback_candidate"
+
+mv() {
+  local destination="${@: -1}"
+  if [[ "$destination" == "$META" ]]; then
+    return 1
+  fi
+  command mv "$@"
+}
+if _aur_guard_runtime_activate_candidate "$rollback_candidate" main "$COMMIT_A"; then
+  fail 'runtime activation unexpectedly succeeded when metadata activation failed'
+fi
+unset -f mv
+[[ $(sha256sum "$RUNTIME" | awk '{print $1}') == "$old_runtime_hash" ]] \
+  || fail 'metadata activation failure destroyed the previously validated runtime cache'
+[[ $(sha256sum "$META" | awk '{print $1}') == "$old_meta_hash" ]] \
+  || fail 'metadata activation failure modified the previously validated runtime metadata'
+_aur_guard_runtime_cache_valid \
+  || fail 'metadata activation failure did not leave the previous cache valid'
+
+printf 'PASS: AurGuard runtime refresh uses a 24-hour exact-commit cache, fail-closed validation, Git-testing pinning, flock serialization, and activation rollback.\n'
