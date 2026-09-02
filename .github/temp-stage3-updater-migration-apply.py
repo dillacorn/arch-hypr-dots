@@ -67,7 +67,10 @@ if text.count(old) != 1:
     raise SystemExit("unexpected updater pre-apply boundary")
 text = text.replace(old, new, 1)
 
-if text.index('ensure_update_aur_scanner \\\n      || die') > text.index('apply_plan "$plan_file"'):
+migration_pos = text.index('if target_uses_direct_aur_scanner "$target_home"; then')
+ensure_pos = text.index("ensure_update_aur_scanner", migration_pos)
+apply_pos = text.index('apply_plan "$plan_file"', ensure_pos)
+if not (migration_pos < ensure_pos < apply_pos):
     raise SystemExit("scanner prerequisite landed after managed-file application")
 
 path.write_text(text, encoding="utf-8")
