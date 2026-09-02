@@ -48,6 +48,8 @@ if "aurinstall" in ensure_yay or "AUR Guard" in ensure_yay:
 ensure_scanner = function_body("ensure_aur_scanner")
 if "aur-scanner" not in ensure_scanner or "/usr/bin/aur-scan" not in ensure_scanner:
     raise SystemExit("installer does not bootstrap and verify the stable aur-scanner CLI")
+if "--pgpfetch" not in ensure_scanner:
+    raise SystemExit("fresh aur-scanner bootstrap does not request upstream validpgpkeys import through yay")
 
 scanner_install = function_body("install_aur_with_scanner")
 if "/usr/bin/aur-scan" not in scanner_install or " install " not in scanner_install:
