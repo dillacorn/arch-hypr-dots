@@ -239,6 +239,22 @@ printf '%s\n' "$COMMIT_C" "$COMMIT_C" > "$HEAD_FILE"
 aurguard refresh >/dev/null
 [[ -s "$NETWORK_LOG" ]] || fail 'aurguard refresh did not force an exact-commit refresh'
 
+forced_runtime_hash=$(sha256sum "$RUNTIME" | awk '{print $1}')
+forced_meta_hash=$(sha256sum "$META" | awk '{print $1}')
+touch "$FAIL_FILE"
+: > "$NETWORK_LOG"
+if output=$(aurguard refresh 2>&1); then
+  fail 'aurguard refresh incorrectly succeeded by falling back to the existing cache when the forced network refresh failed'
+fi
+[[ -s "$NETWORK_LOG" ]] || fail 'failed aurguard refresh did not attempt a network refresh'
+[[ "$output" != *'refreshed the validated exact-commit runtime cache'* ]] \
+  || fail 'failed aurguard refresh falsely reported that the runtime cache was refreshed'
+[[ $(sha256sum "$RUNTIME" | awk '{print $1}') == "$forced_runtime_hash" ]] \
+  || fail 'failed forced refresh modified the previously validated runtime cache'
+[[ $(sha256sum "$META" | awk '{print $1}') == "$forced_meta_hash" ]] \
+  || fail 'failed forced refresh modified the previously validated runtime metadata'
+rm -f -- "$FAIL_FILE"
+
 old_runtime_hash=$(sha256sum "$RUNTIME" | awk '{print $1}')
 old_meta_hash=$(sha256sum "$META" | awk '{print $1}')
 rollback_candidate="$TMP/rollback-candidate"
@@ -274,4 +290,4 @@ unset -f mv
 _aur_guard_runtime_cache_valid \
   || fail 'metadata activation failure did not leave the previous cache valid'
 
-printf 'PASS: AurGuard runtime refresh uses a 24-hour exact-commit cache, fail-closed validation, Git-testing pinning, flock serialization, and activation rollback.\n'
+printf 'PASS: AurGuard runtime refresh uses a 24-hour exact-commit cache, fail-closed validation, Git-testing pinning, flock serialization, forced-refresh truthfulness, and activation rollback.\n'
