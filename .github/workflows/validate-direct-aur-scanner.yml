@@ -1,0 +1,37 @@
+name: Validate Direct AUR Scanner Migration
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - local/share/awtarchy/awtarchy-runtime.sh
+      - tests/test-installer-aur-scanner-delegation.sh
+      - .github/workflows/validate-direct-aur-scanner.yml
+  push:
+    branches:
+      - main
+    paths:
+      - local/share/awtarchy/awtarchy-runtime.sh
+      - tests/test-installer-aur-scanner-delegation.sh
+      - .github/workflows/validate-direct-aur-scanner.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate-installer-delegation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+
+      - name: Validate installer aur-scanner delegation
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n tests/test-installer-aur-scanner-delegation.sh
+          shellcheck local/share/awtarchy/awtarchy-runtime.sh tests/test-installer-aur-scanner-delegation.sh
+          bash tests/test-installer-aur-scanner-delegation.sh
+          git diff --check
