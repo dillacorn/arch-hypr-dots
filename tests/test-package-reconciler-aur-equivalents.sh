@@ -17,10 +17,10 @@ home="${TMP}/home"
 fakebin="${TMP}/fakebin"
 state="${TMP}/installed-packages"
 runtime="${TMP}/awtarchy-runtime.sh"
-yay_log="${TMP}/yay.log"
+scan_log="${TMP}/aur-scan.log"
 mkdir -p "$home" "$fakebin"
 : >"$state"
-: >"$yay_log"
+: >"$scan_log"
 
 cat >"$runtime" <<'EOF_RUNTIME'
 declare -a PKG_GROUPS=()
@@ -39,7 +39,32 @@ exit 0
 EOF_PACMAN
 chmod +x "$fakebin/pacman"
 
+cat >"$fakebin/aur-scan" <<'EOF_SCAN'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${1:-} == --version ]]; then
+  printf '%s\n' 'aur-scan test'
+  exit 0
+fi
+{
+  printf 'aur-scan'
+  printf ' %q' "$@"
+  printf '\n'
+} >>"$TEST_SCAN_LOG"
+if [[ ${1:-} != install ]]; then
+  exit 90
+fi
+pkg="${2:-}"
+if [[ $pkg == awtwall ]]; then
+  exit 1
+fi
+printf '%s\n' "$pkg" >>"$TEST_STATE"
+EOF_SCAN
+chmod +x "$fakebin/aur-scan"
+
 export TEST_STATE="$state"
+export TEST_SCAN_LOG="$scan_log"
+export AWTARCHY_AUR_SCAN_BIN="$fakebin/aur-scan"
 export PATH="$fakebin:/usr/bin:/bin"
 export HOME="$home"
 export AWTARCHY_RUNTIME="$runtime"
@@ -114,83 +139,63 @@ fi
 printf '%s\n' "$aur_section" | grep -Fq -- '- smtty' \
   || fail 'review did not retain genuinely missing smtty'
 
+if ! declare -F ensure_aur_scanner >/dev/null; then
+  fail 'reconciler has no aur-scanner preparation function'
+fi
 if ! declare -F install_selected_aur_packages >/dev/null; then
   fail 'reconciler has no per-package AUR installer'
 else
-  yay() {
-    local pkg="${*: -1}"
-    {
-      printf 'yay'
-      printf ' %q' "$@"
-      printf '\n'
-    } >>"$yay_log"
-
-    if [[ $pkg == awtwall ]]; then
-      return 1
-    fi
-    printf '%s\n' "$pkg" >>"$state"
-    return 0
-  }
   record_managed_packages() {
     :
   }
-  export AUR_HELPER=yay
   FAILED_AUR=()
   : >"$state"
-  : >"$yay_log"
+  : >"$scan_log"
 
   install_selected_aur_packages awtwall mpvpaper \
     || fail 'per-package AUR installer aborted instead of continuing'
 
-  [[ $(grep -c '^yay ' "$yay_log") -eq 2 ]] \
-    || fail 'selected AUR packages were not installed as separate transactions'
-  grep -Fqx 'yay -S --needed --noconfirm awtwall' "$yay_log" \
-    || fail 'awtwall did not get its own AUR install transaction'
-  grep -Fqx 'yay -S --needed --noconfirm mpvpaper' "$yay_log" \
-    || fail 'mpvpaper did not get its own AUR install transaction'
-  if grep -F 'awtwall' "$yay_log" | grep -Fq 'mpvpaper'; then
+  [[ $(grep -c '^aur-scan ' "$scan_log") -eq 2 ]] \
+    || fail 'selected AUR packages were not installed as separate aur-scan transactions'
+  grep -Fqx 'aur-scan install awtwall --noconfirm' "$scan_log" \
+    || fail 'awtwall did not get its own aur-scan install transaction'
+  grep -Fqx 'aur-scan install mpvpaper --noconfirm' "$scan_log" \
+    || fail 'mpvpaper did not get its own aur-scan install transaction'
+  if grep -F 'awtwall' "$scan_log" | grep -Fq 'mpvpaper'; then
     fail 'multiple AUR targets were still batched into one transaction'
   fi
   [[ ${#FAILED_AUR[@]} -eq 1 && ${FAILED_AUR[0]} == awtwall ]] \
     || fail 'failed AUR package was not recorded for end-of-run reporting'
 
   printf '%s\n' alacritty >"$state"
-  : >"$yay_log"
+  : >"$scan_log"
   FAILED_AUR=()
   install_selected_aur_packages alacritty-graphics \
     || fail 'equivalent-installed AUR package check returned failure'
-  [[ ! -s $yay_log ]] \
-    || fail 'equivalent-installed AUR package still invoked the AUR helper'
+  [[ ! -s $scan_log ]] \
+    || fail 'equivalent-installed AUR package still invoked aur-scan'
   (( ${#FAILED_AUR[@]} == 0 )) \
     || fail 'equivalent-installed AUR package was incorrectly recorded as failed'
 fi
 
-if ! declare -F ensure_aur_helper >/dev/null; then
-  fail 'reconciler has no AUR helper preparation function'
-else
-  if ! (
-    # These functions are intentionally invoked indirectly by ensure_aur_helper.
-    # shellcheck disable=SC2317
-    aur_helper_usable() { return 1; }
-    # shellcheck disable=SC2317
-    have() { [[ $1 == yay ]]; }
-    # shellcheck disable=SC2317
-    package_installed() { [[ $1 == yay ]]; }
-    # shellcheck disable=SC2317
-    rebuild_aur_helper() { return 1; }
-    AUR_HELPER=""
-
-    if ensure_aur_helper; then
-      exit 91
-    fi
-    [[ -z $AUR_HELPER ]]
-  ); then
-    fail 'unrepairable AUR helper terminated or incorrectly succeeded instead of returning control'
-  fi
+if declare -F ensure_aur_helper >/dev/null; then
+  fail 'obsolete updater AUR-helper preparation function still exists'
+fi
+if declare -F rebuild_aur_helper >/dev/null; then
+  fail 'obsolete updater AUR-helper rebuild machinery still exists'
+fi
+if grep -Fq 'AUR_HELPER=' "$RECONCILER"; then
+  fail 'reconciler still maintains an AUR helper transaction-engine state variable'
+fi
+if ! grep -Fq '/usr/bin/yay -S --noconfirm --pgpfetch aur-scanner' "$RECONCILER"; then
+  fail 'reconciler does not limit direct yay installation to the aur-scanner bootstrap'
+fi
+if grep -Eq '"\$AUR_HELPER"[[:space:]]+-S|\b(paru|yay)[[:space:]]+-S[[:space:]]+--needed' "$RECONCILER"; then
+  fail 'reconciler still contains a normal selected-package helper install path'
 fi
 
 if (( failures > 0 )); then
   exit 1
 fi
 
-printf 'PASS: reconciler matches installer AUR equivalence and best-effort per-package install semantics\n'
+printf 'PASS: reconciler preserves AUR equivalence and delegates best-effort per-package installs to aur-scan\n'
