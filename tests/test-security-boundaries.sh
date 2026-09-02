@@ -65,10 +65,12 @@ from pathlib import Path
 import sys
 
 text = Path(sys.argv[1]).read_text(encoding="utf-8")
-legacy_scan = text.index('_aur_guard_scan_package_files "$pkg" "$pkgdir"')
-aur_scan = text.index('_aur_guard_scan_checkout_with_aur_scan "$pkg" "$pkgdir"', legacy_scan)
+legacy_call = '_aur_guard_scan_package_files "$pkg" "$pkgdir"'
+if legacy_call in text:
+    raise SystemExit("legacy checkout regex blocker still runs before aur-scan")
+aur_scan = text.index('_aur_guard_scan_checkout_with_aur_scan "$pkg" "$pkgdir"')
 srcinfo = text.index('_aur_guard_verify_srcinfo "$pkg" "$pkgdir"', aur_scan)
-if not legacy_scan < aur_scan < srcinfo:
+if not aur_scan < srcinfo:
     raise SystemExit("aur-scan does not run on the exact checkout before makepkg metadata evaluation")
 PY
 
