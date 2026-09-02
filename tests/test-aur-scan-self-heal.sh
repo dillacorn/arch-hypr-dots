@@ -79,6 +79,7 @@ runner="${TMPD}/runner"
 cat >"$runner" <<'EOF_RUNNER'
 #!/usr/bin/env bash
 set -euo pipefail
+export AUR_GUARD_TEST_MODE=1
 # shellcheck disable=SC1090
 source "${AWTARCHY_TEST_AUR_GUARD_FIXTURE:?}"
 
