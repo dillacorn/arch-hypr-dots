@@ -5,6 +5,7 @@ IFS=$'\n\t'
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 MOUSE_SCRIPT="${AWTARCHY_TEST_MOUSE_SCRIPT:-${ROOT}/config/hypr/scripts/toggle_mouse_submap.sh}"
 VOLUME_SCRIPT="${AWTARCHY_TEST_VOLUME_SCRIPT:-${ROOT}/config/hypr/scripts/quickshell_volume.sh}"
+SYSTEM_STATE="${ROOT}/config/quickshell/awtarchy/SystemState.qml"
 TMP="$(mktemp -d)"
 SUBMAP_RUNTIME="${TMP}/submap-runtime"
 SUBMAP_FILE="${SUBMAP_RUNTIME}/awtarchy-hypr-submap"
@@ -110,6 +111,21 @@ fi
 
 [[ ! -e $runtime_marker ]] \
   || fail "reset reinstalled runtime pointer bindings during the click"
+
+grep -Fq 'property bool idleReconcilePending: false' "$SYSTEM_STATE" \
+  || fail "idle inhibitor does not track pending backend reconciliation"
+grep -Fq 'root.idleInhibited = !root.idleInhibited;' "$SYSTEM_STATE" \
+  || fail "idle inhibitor click does not update the existing UI state immediately"
+grep -Fq 'idleToggleProcess.exec([idleScript, "toggle"]);' "$SYSTEM_STATE" \
+  || fail "idle inhibitor toggle is not managed by a QML Process"
+grep -Fq 'if (idleReconcilePending)' "$SYSTEM_STATE" \
+  || fail "idle status does not reject stale results during reconciliation"
+grep -Fq 'root.refreshIdleAfterToggle();' "$SYSTEM_STATE" \
+  || fail "idle toggle completion does not reconcile with authoritative backend status"
+! grep -Fq 'refreshIdleTimer' "$SYSTEM_STATE" \
+  || fail "idle inhibitor still waits on the fixed refresh timer"
+! grep -Fq 'interval: 350' "$SYSTEM_STATE" \
+  || fail "idle inhibitor still contains the 350 ms visual delay"
 
 volume_bin="${TMP}/volume-bin"
 volume_state="${TMP}/volume-state"
