@@ -1,0 +1,103 @@
+name: One-use v3.4.7 idle release note bridge
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  edit-release:
+    if: >-
+      github.actor == 'dillacorn' &&
+      github.event.pull_request.title == 'Edit v3.4.7 post-release notes: idle inhibitor' &&
+      github.event.pull_request.head.ref == 'helper/v347-idle-release-note'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Edit existing v3.4.7 release body only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo='dillacorn/awtarchy'
+          tag='v3.4.7'
+          expected_tag_sha='b9c2385dec61dab53002c08fcdf81a019b308691'
+
+          gh api "repos/${repo}/releases/tags/${tag}" > before-release.json
+          gh api "repos/${repo}/git/ref/tags/${tag}" > before-tag.json
+
+          python3 <<'PY'
+          import json
+          from pathlib import Path
+
+          release = json.loads(Path('before-release.json').read_text(encoding='utf-8'))
+          tag = json.loads(Path('before-tag.json').read_text(encoding='utf-8'))
+
+          expected_tag_sha = 'b9c2385dec61dab53002c08fcdf81a019b308691'
+          if tag['object']['sha'] != expected_tag_sha:
+              raise SystemExit('v3.4.7 tag SHA changed before release edit')
+          if release['id'] != 380909987:
+              raise SystemExit('unexpected v3.4.7 release id')
+          if release['tag_name'] != 'v3.4.7':
+              raise SystemExit('unexpected release tag')
+          if release['target_commitish'] != expected_tag_sha:
+              raise SystemExit('unexpected release target')
+          if release['name'] != 'Awtarchy v3.4.7 Quickshell':
+              raise SystemExit('unexpected release name')
+          if release['draft'] or release['prerelease']:
+              raise SystemExit('v3.4.7 release publication state changed')
+
+          body = release['body']
+          placeholder = '## Post-release updates\n\n_Placeholder for possible tested post-release patches to v3.4.7._\n'
+          replacement = (
+              '## Post-release updates\n\n'
+              '- Made the Quickshell idle-inhibitor eye update immediately on click while still reconciling against the real systemd inhibitor state; validated in a real Hyprland session in both enabled and disabled states.\n'
+          )
+          if body.count(placeholder) != 1:
+              raise SystemExit('v3.4.7 post-release placeholder mismatch')
+
+          updated_body = body.replace(placeholder, replacement, 1)
+          Path('notes.md').write_text(updated_body, encoding='utf-8')
+          Path('expected-body.md').write_text(updated_body, encoding='utf-8')
+          Path('release-invariants.json').write_text(
+              json.dumps({
+                  'id': release['id'],
+                  'tag_name': release['tag_name'],
+                  'target_commitish': release['target_commitish'],
+                  'name': release['name'],
+                  'draft': release['draft'],
+                  'prerelease': release['prerelease'],
+                  'created_at': release['created_at'],
+                  'published_at': release['published_at'],
+              }, sort_keys=True),
+              encoding='utf-8',
+          )
+          PY
+
+          gh release edit "$tag" --repo "$repo" --notes-file notes.md
+
+          gh api "repos/${repo}/releases/tags/${tag}" > after-release.json
+          gh api "repos/${repo}/git/ref/tags/${tag}" > after-tag.json
+
+          python3 <<'PY'
+          import json
+          from pathlib import Path
+
+          after = json.loads(Path('after-release.json').read_text(encoding='utf-8'))
+          tag = json.loads(Path('after-tag.json').read_text(encoding='utf-8'))
+          expected = json.loads(Path('release-invariants.json').read_text(encoding='utf-8'))
+          expected_body = Path('expected-body.md').read_text(encoding='utf-8')
+          expected_tag_sha = 'b9c2385dec61dab53002c08fcdf81a019b308691'
+
+          if tag['object']['sha'] != expected_tag_sha:
+              raise SystemExit('v3.4.7 tag SHA changed during release edit')
+          for key, value in expected.items():
+              if after[key] != value:
+                  raise SystemExit(f'v3.4.7 release invariant changed: {key}')
+          if after['body'] != expected_body:
+              raise SystemExit('v3.4.7 release body differs from intended edit')
+          PY
