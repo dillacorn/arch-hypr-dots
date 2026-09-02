@@ -252,9 +252,13 @@ aurguard() { printf 'NEW aurguard %s\n' "$*"; }
 EOF_ROLLBACK
 chmod 0600 "$rollback_candidate"
 
+AWTARCHY_TEST_FAIL_META_MOVE=1
+# ShellCheck cannot see that production code resolves this function indirectly.
+# shellcheck disable=SC2317
 mv() {
-  local destination="${@: -1}"
-  if [[ "$destination" == "$META" ]]; then
+  local destination="${!#}"
+  if [[ "$destination" == "$META" && $AWTARCHY_TEST_FAIL_META_MOVE == 1 ]]; then
+    AWTARCHY_TEST_FAIL_META_MOVE=0
     return 1
   fi
   command mv "$@"
