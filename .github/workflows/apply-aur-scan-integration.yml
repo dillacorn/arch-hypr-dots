@@ -1,46 +1,36 @@
-name: Apply AUR Scan Integration
+name: Validate AUR Scan Integration
 
 on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - bashrc
+      - tests/test-security-boundaries.sh
+      - .github/workflows/apply-aur-scan-integration.yml
   push:
     branches:
-      - feature/aur-scan-integration
+      - main
+    paths:
+      - bashrc
+      - tests/test-security-boundaries.sh
+      - .github/workflows/apply-aur-scan-integration.yml
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  correct-integration:
+  validate-aur-scan:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout feature branch
+      - name: Checkout repository
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-        with:
-          ref: feature/aur-scan-integration
-          fetch-depth: 0
 
-      - name: Restore existing pacman flag
+      - name: Validate AUR Guard aur-scan boundary
         shell: bash
         run: |
           set -euo pipefail
-          python3 -c 'from pathlib import Path; p=Path("bashrc"); t=p.read_text(encoding="utf-8"); old="sudo pacman -S --neded --noconfirm \"$pkg\""; new="sudo pacman -S --needed --noconfirm \"$pkg\""; count=t.count(old); assert count == 1, f"expected one typo, found {count}"; p.write_text(t.replace(old, new, 1), encoding="utf-8")'
-
-      - name: Validate corrected branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -t changed < <(git diff --name-only)
-          [[ ${#changed[@]} -eq 1 && ${changed[0]} == bashrc ]]
           bash -n bashrc
           shellcheck bashrc tests/test-security-boundaries.sh
           bash tests/test-security-boundaries.sh
           git diff --check
-
-      - name: Commit correction
-        shell: bash
-        run: |
-          set -euo pipefail
-          git add -- bashrc
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Restore pacman --needed in aur-scan integration'
-          git push origin HEAD:feature/aur-scan-integration
