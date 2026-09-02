@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  apply-integration:
+  correct-integration:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout feature branch
@@ -18,35 +18,29 @@ jobs:
           ref: feature/aur-scan-integration
           fetch-depth: 0
 
-      - name: Apply deterministic AUR Guard integration
+      - name: Restore existing pacman flag
         shell: bash
         run: |
           set -euo pipefail
-          printf '%s' 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCgpwYXRoID0gUGF0aCgiYmFzaHJjIikKdGV4dCA9IHBhdGgucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpCm1hcmtlciA9ICJfQVVSX0dVQVJEX0FVUl9TQ0FOX1BBQ0tBR0U9J2F1ci1zY2FubmVyJyIKCmlmIG1hcmtlciBpbiB0ZXh0OgogICAgcHJpbnQoImF1ci1zY2FuIGludGVncmF0aW9uIGFscmVhZHkgYXBwbGllZDsgdmFsaWRhdGluZyBleGlzdGluZyBicmFuY2ggc3RhdGUiKQogICAgcmFpc2UgU3lzdGVtRXhpdCgwKQoKZGVmIHJlcGxhY2Vfb25jZShvbGQ6IHN0ciwgbmV3OiBzdHIsIGxhYmVsOiBzdHIpIC0+IE5vbmU6CiAgICBnbG9iYWwgdGV4dAogICAgY291bnQgPSB0ZXh0LmNvdW50KG9sZCkKICAgIGlmIGNvdW50ICE9IDE6CiAgICAgICAgcmFpc2UgU3lzdGVtRXhpdChmIntsYWJlbH06IGV4cGVjdGVkIGV4YWN0bHkgb25lIGFuY2hvciwgZm91bmQge2NvdW50fSIpCiAgICB0ZXh0ID0gdGV4dC5yZXBsYWNlKG9sZCwgbmV3LCAxKQoKcmVwbGFjZV9vbmNlKAogICAgIl9BVVJfR1VBUkRfR0lUSFVCX0FSQ0hJVkVfTUFYX0JZVEVTPTIwOTcxNTIwXG5cbiMgRXhhY3QgbmFtZXMgdGhhdCBzaG91bGQgcmVtYWluIHBlcm1hbmVudGx5IGJsb2NrZWQgZXZlbiBhZnRlciBoaXN0b3JpY2FsXG4iLAogICAgIl9BVVJfR1VBUkRfR0lUSFVCX0FSQ0hJVkVfTUFYX0JZVEVTPTIwOTcxNTIwXG5fQVVSX0dVQVJEX0FVUl9TQ0FOX1BBQ0tBR0U9J2F1ci1zY2FubmVyJ1xuXG4jIEV4YWN0IG5hbWVzIHRoYXQgc2hvdWxkIHJlbWFpbiBwZXJtYW5lbnRseSBibG9ja2VkIGV2ZW4gYWZ0ZXIgaGlzdG9yaWNhbFxuIiwKICAgICJhdXItc2Nhbm5lciBwYWNrYWdlIGNvbnN0YW50IiwKKQoKcmVwbGFjZV9vbmNlKAogICAgcicnJyAgX2F1cl9ndWFyZF9zY2FuX3NvdXJjZV90cmVlICIkcGtnIiAiJHBrZ2RpciIgcmVjdXJzaXZlCn0KCl9hdXJfZ3VhcmRfbm9ybWFsaXplX3NyY2luZm8oKSB7CicnJywKICAgIHInJycgIF9hdXJfZ3VhcmRfc2Nhbl9zb3VyY2VfdHJlZSAiJHBrZyIgIiRwa2dkaXIiIHJlY3Vyc2l2ZQp9CgpfYXVyX2d1YXJkX3NjYW5fY2hlY2tvdXRfd2l0aF9hdXJfc2NhbigpIHsKICBsb2NhbCBwa2c9IiQxIgogIGxvY2FsIHBrZ2Rpcj0iJDIiCiAgbG9jYWwgc2Nhbm5lciBzdGF0dXMKCiAgaWYgW1sgJHtfQVVSX0dVQVJEX0FVUl9TQ0FOX0JPT1RTVFJBUDotMH0gPT0gMSBdXTsgdGhlbgogICAgcHJpbnRmICdBVVIgVmVyaWZ5OiBhdXItc2NhbiBib290c3RyYXAgaXMgaW4gcHJvZ3Jlc3M7IGJ1aWx0LWluIEFVUiBHdWFyZCBjaGVja3MgcmVtYWluIGFjdGl2ZSBmb3IgJXMuXG4nIFwKICAgICAgIiRwa2ciCiAgICByZXR1cm4gMAogIGZpCgogIHNjYW5uZXI9JCh0eXBlIC1QIGF1ci1zY2FuIDI+L2Rldi9udWxsKSB8fCB7CiAgICBfYXVyX2d1YXJkX2ZhaWwgImF1ci1zY2FuIGlzIHJlcXVpcmVkIGJlZm9yZSBldmFsdWF0aW5nICRwa2cuIEluc3RhbGwgJF9BVVJfR1VBUkRfQVVSX1NDQU5fUEFDS0FHRSB3aXRoOiBhdXJpbnN0YWxsICRfQVVSX0dVQVJEX0FVUl9TQ0FOX1BBQ0tBR0UiCiAgICByZXR1cm4gMTI3CiAgfQoKICBwcmludGYgJ0FVUiBWZXJpZnk6IHJ1bm5pbmcgYXVyLXNjYW4gb24gdGhlIGV4YWN0IGZldGNoZWQgY2hlY2tvdXQgZm9yICVzLlxuJyAiJHBrZyIKICBpZiAiJHNjYW5uZXIiIHNjYW4gIiRwa2dkaXIiIC0tZmFpbC1vbiBoaWdoOyB0aGVuCiAgICByZXR1cm4gMAogIGVsc2UKICAgIHN0YXR1cz0kPwogIGZpCgogIF9hdXJfZ3VhcmRfZmFpbCAiYXVyLXNjYW4gcmVqZWN0ZWQgb3IgY291bGQgbm90IHNjYW4gdGhlIGV4YWN0IGZldGNoZWQgY2hlY2tvdXQgZm9yICRwa2ciCiAgcmV0dXJuICIkc3RhdHVzIgp9CgpfYXVyX2d1YXJkX25vcm1hbGl6ZV9zcmNpbmZvKCkgewonJycsCiAgICAiYXVyLXNjYW4gY2hlY2tvdXQgZnVuY3Rpb24iLAopCgpyZXBsYWNlX29uY2UoCiAgICByJycnICBfYXVyX2d1YXJkX3NjYW5fcGFja2FnZV9maWxlcyAiJHBrZyIgIiRwa2dkaXIiIHx8IHsKICAgIF9BVVJfR1VBUkRfUkVRVUVTVF9TVEFURVskcGtnXT0nZmFpbGVkJwogICAgcmV0dXJuIDEKICB9CgogIF9hdXJfZ3VhcmRfdmVyaWZ5X3NyY2luZm8gIiRwa2ciICIkcGtnZGlyIiB8fCB7CicnJywKICAgIHInJycgIF9hdXJfZ3VhcmRfc2Nhbl9wYWNrYWdlX2ZpbGVzICIkcGtnIiAiJHBrZ2RpciIgfHwgewogICAgX0FVUl9HVUFSRF9SRVFVRVNUX1NUQVRFWyRwa2ddPSdmYWlsZWQnCiAgICByZXR1cm4gMQogIH0KCiAgX2F1cl9ndWFyZF9zY2FuX2NoZWNrb3V0X3dpdGhfYXVyX3NjYW4gIiRwa2ciICIkcGtnZGlyIiB8fCB7CiAgICBfQVVSX0dVQVJEX1JFUVVFU1RfU1RBVEVbJHBrZ109J2ZhaWxlZCcKICAgIHJldHVybiAxCiAgfQoKICBfYXVyX2d1YXJkX3ZlcmlmeV9zcmNpbmZvICIkcGtnIiAiJHBrZ2RpciIgfHwgewonJycsCiAgICAiYXVyLXNjYW4gcHJlLW1ha2Vwa2cgZ2F0ZSIsCikKCnJlcGxhY2Vfb25jZSgKICAgICJhdXJ2ZXJpZnkoKSB7XG4iLAogICAgcicnJ19hdXJfZ3VhcmRfZW5zdXJlX2F1cl9zY2FuKCkgewogIGxvY2FsIHJlcXVlc3RlZF9wa2c9IiQxIgogIGxvY2FsIHN0YXR1cwoKICB0eXBlIC1QIGF1ci1zY2FuID4vZGV2L251bGwgMj4mMSAmJiByZXR1cm4gMAoKICBpZiBbWyAke19BVVJfR1VBUkRfQVVSX1NDQU5fQk9PVFNUUkFQOi0wfSA9PSAxIF1dOyB0aGVuCiAgICByZXR1cm4gMAogIGZpCgogIGlmIFtbICIkcmVxdWVzdGVkX3BrZyIgPT0gIiRfQVVSX0dVQVJEX0FVUl9TQ0FOX1BBQ0tBR0UiIF1dOyB0aGVuCiAgICBwcmludGYgJ0FVUiBHdWFyZDogYm9vdHN0cmFwcGluZyAlcyB3aXRoIHRoZSBidWlsdC1pbiB2ZXJpZmljYXRpb24gc3RhY2s7IGF1ci1zY2FuIGJlY29tZXMgbWFuZGF0b3J5IGFmdGVyIGluc3RhbGxhdGlvbi5cbicgXAogICAgICAiJHJlcXVlc3RlZF9wa2ciCiAgICBfQVVSX0dVQVJEX0FVUl9TQ0FOX0JPT1RTVFJBUD0xCiAgICByZXR1cm4gMAogIGZpCgogIHByaW50ZiAnQVVSIEd1YXJkOiBhdXItc2NhbiBpcyBub3QgaW5zdGFsbGVkOyBib290c3RyYXBwaW5nIHN0YWJsZSAlcyB0aHJvdWdoIEFVUiBHdWFyZCBmaXJzdC5cbicgXAogICAgIiRfQVVSX0dVQVJEX0FVUl9TQ0FOX1BBQ0tBR0UiCiAgX0FVUl9HVUFSRF9BVVJfU0NBTl9CT09UU1RSQVA9MQogIGlmIGF1cmluc3RhbGwgIiRfQVVSX0dVQVJEX0FVUl9TQ0FOX1BBQ0tBR0UiOyB0aGVuCiAgICBzdGF0dXM9MAogIGVsc2UKICAgIHN0YXR1cz0kPwogIGZpCiAgX0FVUl9HVUFSRF9BVVJfU0NBTl9CT09UU1RSQVA9MAoKICBpZiAoKCBzdGF0dXMgIT0gMCApKTsgdGhlbgogICAgX2F1cl9ndWFyZF9mYWlsICJjb3VsZCBub3QgYm9vdHN0cmFwICRfQVVSX0dVQVJEX0FVUl9TQ0FOX1BBQ0tBR0UiCiAgICByZXR1cm4gIiRzdGF0dXMiCiAgZmkKCiAgdHlwZSAtUCBhdXItc2NhbiA+L2Rldi9udWxsIDI+JjEgfHwgewogICAgX2F1cl9ndWFyZF9mYWlsICIkX0FVUl9HVUFSRF9BVVJfU0NBTl9QQUNLQUdFIGluc3RhbGxlZCB3aXRob3V0IHByb3ZpZGluZyBhdXItc2NhbiIKICAgIHJldHVybiAxMjcKICB9CgogIHByaW50ZiAnQVVSIEd1YXJkOiBhdXItc2NhbiBpcyBpbnN0YWxsZWQgYW5kIHdpbGwgZ2F0ZSB0aGlzIEFVUiB0cmFuc2FjdGlvbi5cbicKfQoKYXVydmVyaWZ5KCkgewonJycsCiAgICAiYXVyLXNjYW4gYm9vdHN0cmFwIGhlbHBlciIsCikKCnJlcGxhY2Vfb25jZSgKICAgIHInJycgIGxvY2FsIHJlc3RhcnRfY291bnQ9MAogIGxvY2FsIF9BVVJfR1VBUkRfTU9ERT0ncHJhY3RpY2FsJwogIGxvY2FsIF9BVVJfR1VBUkRfQlVJTERfUkVRVUVTVEVEPTEKJycnLAogICAgcicnJyAgbG9jYWwgcmVzdGFydF9jb3VudD0wCiAgbG9jYWwgX0FVUl9HVUFSRF9NT0RFPSdwcmFjdGljYWwnCiAgbG9jYWwgX0FVUl9HVUFSRF9CVUlMRF9SRVFVRVNURUQ9MQogIGxvY2FsIF9BVVJfR1VBUkRfQVVSX1NDQU5fQk9PVFNUUkFQPSIke19BVVJfR1VBUkRfQVVSX1NDQU5fQk9PVFNUUkFQOi0wfSIKJycnLAogICAgImF1cmluc3RhbGwgYm9vdHN0cmFwIHNjb3BlIiwKKQoKcmVwbGFjZV9vbmNlKAogICAgcicnJyAgICBpZiBfYXVyX2d1YXJkX2lzX2luc3RhbGxlcl9tb2RlOyB0aGVuCiAgICAgIHByaW50ZiAnQXd0YXJjaHkgaW5zdGFsbGVyIG1vZGU6IGluc3RhbGxpbmcgd2l0aCBwYWNtYW4gLS1uZWVkZWQgLS1ub2NvbmZpcm0uXG4nCiAgICAgIHN1ZG8gcGFjbWFuIC1TIC0tbmVlZGVkIC0tbm9jb25maXJtICIkcGtnIgogICAgZWxzZQogICAgICBwcmludGYgJ0luc3RhbGxpbmcgd2l0aCBwYWNtYW46XG4gIHN1ZG8gcGFjbWFuIC1TICVzXG5cbicgIiRwa2ciCiAgICAgIHN1ZG8gcGFjbWFuIC1TICIkcGtnIgogICAgZmkKICAgIHJldHVybiAkPwogIGZpCgogIHdoaWxlIHRydWU7IGRvCicnJywKICAgIHInJycgICAgaWYgX2F1cl9ndWFyZF9pc19pbnN0YWxsZXJfbW9kZTsgdGhlbgogICAgICBwcmludGYgJ0F3dGFyY2h5IGluc3RhbGxlciBtb2RlOiBpbnN0YWxsaW5nIHdpdGggcGFjbWFuIC0tbmVlZGVkIC0tbm9jb25maXJtLlxuJwogICAgICBzdWRvIHBhY21hbiAtUyAtLW5lZGVkIC0tbm9jb25maXJtICIkcGtnIgogICAgZWxzZQogICAgICBwcmludGYgJ0luc3RhbGxpbmcgd2l0aCBwYWNtYW46XG4gIHN1ZG8gcGFjbWFuIC1TICVzXG5cbicgIiRwa2ciCiAgICAgIHN1ZG8gcGFjbWFuIC1TICIkcGtnIgogICAgZmkKICAgIHJldHVybiAkPwogIGZpCgogIGlmICEgX2F1cl9ndWFyZF9jaGVja19lbWVyZ2VuY3lfYmxvY2sgIiRwa2ciOyB0aGVuCiAgICBfYXVyX2d1YXJkX3JlZnVzZV9pbnN0YWxsICIkcGtnIiAndGhlIHBhY2thZ2UgaXMgcHJlc2VudCBvbiB0aGUgQXd0YXJjaHkgZW1lcmdlbmN5IGJsb2NrbGlzdCcKICAgIHJldHVybiAxCiAgZmkKCiAgaWYgISBfYXVyX2d1YXJkX2Vuc3VyZV9hdXJfc2NhbiAiJHBrZyI7IHRoZW4KICAgIF9hdXJfZ3VhcmRfcmVmdXNlX2luc3RhbGwgIiRwa2ciICdjb3VsZCBub3QgcHJlcGFyZSB0aGUgcmVxdWlyZWQgYXVyLXNjYW4gc2VjdXJpdHkgZ2F0ZScKICAgIHJldHVybiAxCiAgZmkKCiAgd2hpbGUgdHJ1ZTsgZG8KJycnLAogICAgImF1cmluc3RhbGwgc2Nhbm5lciBib290c3RyYXAgZ2F0ZSIsCikKCnBhdGgud3JpdGVfdGV4dCh0ZXh0LCBlbmNvZGluZz0idXRmLTgiKQo=' | base64 --decode | python3
+          python3 -c 'from pathlib import Path; p=Path("bashrc"); t=p.read_text(encoding="utf-8"); old="sudo pacman -S --neded --noconfirm \"$pkg\""; new="sudo pacman -S --needed --noconfirm \"$pkg\""; count=t.count(old); assert count == 1, f"expected one typo, found {count}"; p.write_text(t.replace(old, new, 1), encoding="utf-8")'
 
-      - name: Validate deterministic edit
+      - name: Validate corrected branch
         shell: bash
         run: |
           set -euo pipefail
           mapfile -t changed < <(git diff --name-only)
-          if (( ${#changed[@]} > 0 )); then
-            [[ ${#changed[@]} -eq 1 && ${changed[0]} == bashrc ]]
-          fi
+          [[ ${#changed[@]} -eq 1 && ${changed[0]} == bashrc ]]
           bash -n bashrc
           shellcheck bashrc tests/test-security-boundaries.sh
           bash tests/test-security-boundaries.sh
           git diff --check
 
-      - name: Commit production change
+      - name: Commit correction
         shell: bash
         run: |
           set -euo pipefail
           git add -- bashrc
-          if git diff --cached --quiet; then
-            printf '%s\n' 'No production change to commit.'
-          else
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'Integrate aur-scan into AUR Guard'
-            git push origin HEAD:feature/aur-scan-integration
-          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Restore pacman --needed in aur-scan integration'
+          git push origin HEAD:feature/aur-scan-integration
