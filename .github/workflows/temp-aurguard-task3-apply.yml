@@ -54,6 +54,56 @@ jobs:
       - name: Apply Task 3
         run: python3 .github/temp-aurguard-task3-apply.py
 
+      - name: Preserve intentional test-mode lint semantics
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('bashrc')
+          text = path.read_text(encoding='utf-8')
+
+          unused = '  local target_spec target revision lock_fd\n'
+          if text.count(unused) != 1:
+              raise SystemExit(f'expected one unused target_spec declaration, found {text.count(unused)}')
+          text = text.replace(unused, '  local target revision lock_fd\n', 1)
+
+          guard = (
+              '  if [[ ${AWTARCHY_AURGUARD_RUNTIME_ACTIVE:-0} != 1 \\\n'
+              '      && ${AUR_GUARD_TEST_MODE:-0} != 1 ]]; then\n'
+          )
+          guarded = (
+              '  # AUR_GUARD_TEST_MODE is intentionally inherited by commands run inside aurguardtest()\'s subshell.\n'
+              '  # shellcheck disable=SC2031\n'
+              + guard
+          )
+          guard_count = text.count(guard)
+          if guard_count != 15:
+              raise SystemExit(f'expected 15 runtime dispatch guards, found {guard_count}')
+          text = text.replace(guard, guarded)
+
+          assignment = '  export AUR_GUARD_TEST_MODE=1\n'
+          assignment_with_intent = (
+              '  # This assignment is intentionally local to aurguardtest()\'s subshell.\n'
+              '  # shellcheck disable=SC2030\n'
+              + assignment
+          )
+          if text.count(assignment) != 1:
+              raise SystemExit(f'expected one AUR_GUARD_TEST_MODE assignment, found {text.count(assignment)}')
+          text = text.replace(assignment, assignment_with_intent, 1)
+
+          aurhelp_dispatch = '    _aur_guard_runtime_dispatch aurhelp "$@"\n'
+          if text.count(aurhelp_dispatch) != 1:
+              raise SystemExit(f'expected one aurhelp runtime dispatch, found {text.count(aurhelp_dispatch)}')
+          text = text.replace(
+              aurhelp_dispatch,
+              '    _aur_guard_runtime_dispatch aurhelp\n',
+              1,
+          )
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
       - name: Validate Task 3
         shell: bash
         run: |
