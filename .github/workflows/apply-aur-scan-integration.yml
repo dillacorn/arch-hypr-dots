@@ -42,12 +42,13 @@ jobs:
 
           path = Path('bashrc')
           text = path.read_text(encoding='utf-8')
-          old = '''  _aur_guard_scan_package_files "$pkg" "$pkgdir" || {
-            _AUR_GUARD_REQUEST_STATE[$pkg]='failed'
-            return 1
-          }
-
-          '''
+          old = (
+              '  _aur_guard_scan_package_files "$pkg" "$pkgdir" || {\n'
+              "    _AUR_GUARD_REQUEST_STATE[$pkg]='failed'\n"
+              '    return 1\n'
+              '  }\n'
+              '\n'
+          )
           count = text.count(old)
           if count != 1:
               raise SystemExit(f'expected exactly one live legacy checkout gate, found {count}')
