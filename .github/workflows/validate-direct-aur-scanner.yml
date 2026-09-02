@@ -8,6 +8,9 @@ on:
       - local/share/awtarchy/awtarchy-runtime.sh
       - local/share/awtarchy/awtarchy-package-reconcile.sh
       - tests/test-installer-aur-scanner-delegation.sh
+      - tests/test-package-reconciler.sh
+      - tests/test-package-reconciler-alternatives.sh
+      - tests/test-package-reconciler-interrupted-recovery.sh
       - tests/test-package-reconciler-aur-equivalents.sh
       - .github/workflows/validate-direct-aur-scanner.yml
   push:
@@ -18,6 +21,9 @@ on:
       - local/share/awtarchy/awtarchy-runtime.sh
       - local/share/awtarchy/awtarchy-package-reconcile.sh
       - tests/test-installer-aur-scanner-delegation.sh
+      - tests/test-package-reconciler.sh
+      - tests/test-package-reconciler-alternatives.sh
+      - tests/test-package-reconciler-interrupted-recovery.sh
       - tests/test-package-reconciler-aur-equivalents.sh
       - .github/workflows/validate-direct-aur-scanner.yml
 
@@ -38,8 +44,19 @@ jobs:
           bash -n local/share/awtarchy/awtarchy-runtime.sh
           bash -n local/share/awtarchy/awtarchy-package-reconcile.sh
           bash -n tests/test-installer-aur-scanner-delegation.sh
+          bash -n tests/test-package-reconciler.sh
+          bash -n tests/test-package-reconciler-alternatives.sh
+          bash -n tests/test-package-reconciler-interrupted-recovery.sh
           bash -n tests/test-package-reconciler-aur-equivalents.sh
-          shellcheck tests/test-installer-aur-scanner-delegation.sh tests/test-package-reconciler-aur-equivalents.sh
+          shellcheck local/share/awtarchy/awtarchy-package-reconcile.sh
+          shellcheck tests/test-installer-aur-scanner-delegation.sh
+          shellcheck tests/test-package-reconciler.sh
+          shellcheck tests/test-package-reconciler-alternatives.sh
+          shellcheck tests/test-package-reconciler-interrupted-recovery.sh
+          shellcheck tests/test-package-reconciler-aur-equivalents.sh
           bash tests/test-installer-aur-scanner-delegation.sh
+          bash tests/test-package-reconciler.sh
+          bash tests/test-package-reconciler-alternatives.sh
+          bash tests/test-package-reconciler-interrupted-recovery.sh
           bash tests/test-package-reconciler-aur-equivalents.sh
           git diff --check
