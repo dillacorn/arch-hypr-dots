@@ -113,116 +113,127 @@ jobs:
           path = Path(sys.argv[1])
           text = path.read_text(encoding="utf-8")
 
+          def block(*lines):
+              return "\n".join(lines) + "\n"
+
           replacements = [
               (
-                  '''    property bool idleInhibited: false
-              property bool idleBroken: false
-              property var coreUsage: ({})
-          ''',
-                  '''    property bool idleInhibited: false
-              property bool idleBroken: false
-              property bool idleReconcilePending: false
-              property var coreUsage: ({})
-          ''',
+                  block(
+                      "    property bool idleInhibited: false",
+                      "    property bool idleBroken: false",
+                      "    property var coreUsage: ({})",
+                  ),
+                  block(
+                      "    property bool idleInhibited: false",
+                      "    property bool idleBroken: false",
+                      "    property bool idleReconcilePending: false",
+                      "    property var coreUsage: ({})",
+                  ),
               ),
               (
-                  '''    Process {
-              id: idleStatusProcess
-              command: ["sh", "-c", "if [ -x '" + root.idleScript + "' ]; then '" + root.idleScript + "'; fi"]
-              stdout: StdioCollector {
-                  onStreamFinished: {
-                      try {
-                          const status = JSON.parse(text.trim());
-                          const classes = status.class || [];
-                          root.idleInhibited = classes.indexOf("activated") >= 0;
-                          root.idleBroken = classes.indexOf("error") >= 0;
-                      } catch (error) {
-                          root.idleInhibited = false;
-                          root.idleBroken = false;
-                      }
-                  }
-              }
-          }
-          ''',
-                  '''    Process {
-              id: idleStatusProcess
-              command: ["sh", "-c", "if [ -x '" + root.idleScript + "' ]; then '" + root.idleScript + "'; fi"]
-              stdout: StdioCollector {
-                  onStreamFinished: {
-                      if (idleReconcilePending)
-                          return;
-                      try {
-                          const status = JSON.parse(text.trim());
-                          const classes = status.class || [];
-                          root.idleInhibited = classes.indexOf("activated") >= 0;
-                          root.idleBroken = classes.indexOf("error") >= 0;
-                      } catch (error) {
-                          root.idleInhibited = false;
-                          root.idleBroken = false;
-                      }
-                  }
-              }
-              onExited: {
-                  if (root.idleReconcilePending && !idleToggleProcess.running)
-                      root.refreshIdleAfterToggle();
-              }
-          }
-
-          Process {
-              id: idleToggleProcess
-              onExited: root.refreshIdleAfterToggle()
-          }
-          ''',
+                  block(
+                      "    Process {",
+                      "        id: idleStatusProcess",
+                      "        command: [\"sh\", \"-c\", \"if [ -x '\" + root.idleScript + \"' ]; then '\" + root.idleScript + \"'; fi\"]",
+                      "        stdout: StdioCollector {",
+                      "            onStreamFinished: {",
+                      "                try {",
+                      "                    const status = JSON.parse(text.trim());",
+                      "                    const classes = status.class || [];",
+                      "                    root.idleInhibited = classes.indexOf(\"activated\") >= 0;",
+                      "                    root.idleBroken = classes.indexOf(\"error\") >= 0;",
+                      "                } catch (error) {",
+                      "                    root.idleInhibited = false;",
+                      "                    root.idleBroken = false;",
+                      "                }",
+                      "            }",
+                      "        }",
+                      "    }",
+                  ),
+                  block(
+                      "    Process {",
+                      "        id: idleStatusProcess",
+                      "        command: [\"sh\", \"-c\", \"if [ -x '\" + root.idleScript + \"' ]; then '\" + root.idleScript + \"'; fi\"]",
+                      "        stdout: StdioCollector {",
+                      "            onStreamFinished: {",
+                      "                if (idleReconcilePending)",
+                      "                    return;",
+                      "                try {",
+                      "                    const status = JSON.parse(text.trim());",
+                      "                    const classes = status.class || [];",
+                      "                    root.idleInhibited = classes.indexOf(\"activated\") >= 0;",
+                      "                    root.idleBroken = classes.indexOf(\"error\") >= 0;",
+                      "                } catch (error) {",
+                      "                    root.idleInhibited = false;",
+                      "                    root.idleBroken = false;",
+                      "                }",
+                      "            }",
+                      "        }",
+                      "        onExited: {",
+                      "            if (root.idleReconcilePending && !idleToggleProcess.running)",
+                      "                root.refreshIdleAfterToggle();",
+                      "        }",
+                      "    }",
+                      "",
+                      "    Process {",
+                      "        id: idleToggleProcess",
+                      "        onExited: root.refreshIdleAfterToggle()",
+                      "    }",
+                  ),
               ),
               (
-                  '''            if (!metricsProcess.running)
-                  metricsProcess.running = true;
-              if (!idleStatusProcess.running)
-                  idleStatusProcess.running = true;
-          ''',
-                  '''            if (!metricsProcess.running)
-                  metricsProcess.running = true;
-              if (!idleStatusProcess.running && !idleToggleProcess.running && !root.idleReconcilePending)
-                  idleStatusProcess.running = true;
-          ''',
+                  block(
+                      "            if (!metricsProcess.running)",
+                      "                metricsProcess.running = true;",
+                      "            if (!idleStatusProcess.running)",
+                      "                idleStatusProcess.running = true;",
+                  ),
+                  block(
+                      "            if (!metricsProcess.running)",
+                      "                metricsProcess.running = true;",
+                      "            if (!idleStatusProcess.running && !idleToggleProcess.running && !root.idleReconcilePending)",
+                      "                idleStatusProcess.running = true;",
+                  ),
               ),
               (
-                  '''    function toggleIdle() {
-              Quickshell.execDetached([idleScript, "toggle"]);
-              refreshIdleTimer.restart();
-          }
-
-          Timer {
-              id: refreshIdleTimer
-              interval: 350
-              repeat: false
-              onTriggered: {
-                  if (!idleStatusProcess.running)
-                      idleStatusProcess.running = true;
-              }
-          }
-          ''',
-                  '''    function refreshIdleAfterToggle() {
-              if (!root.idleReconcilePending || idleToggleProcess.running || idleStatusProcess.running)
-                  return;
-              root.idleReconcilePending = false;
-              idleStatusProcess.running = true;
-          }
-
-          function toggleIdle() {
-              if (idleToggleProcess.running)
-                  return;
-              root.idleInhibited = !root.idleInhibited;
-              root.idleReconcilePending = true;
-              idleToggleProcess.exec([idleScript, "toggle"]);
-          }
-          ''',
+                  block(
+                      "    function toggleIdle() {",
+                      "        Quickshell.execDetached([idleScript, \"toggle\"]);",
+                      "        refreshIdleTimer.restart();",
+                      "    }",
+                      "",
+                      "    Timer {",
+                      "        id: refreshIdleTimer",
+                      "        interval: 350",
+                      "        repeat: false",
+                      "        onTriggered: {",
+                      "            if (!idleStatusProcess.running)",
+                      "                idleStatusProcess.running = true;",
+                      "        }",
+                      "    }",
+                  ),
+                  block(
+                      "    function refreshIdleAfterToggle() {",
+                      "        if (!root.idleReconcilePending || idleToggleProcess.running || idleStatusProcess.running)",
+                      "            return;",
+                      "        root.idleReconcilePending = false;",
+                      "        idleStatusProcess.running = true;",
+                      "    }",
+                      "",
+                      "    function toggleIdle() {",
+                      "        if (idleToggleProcess.running)",
+                      "            return;",
+                      "        root.idleInhibited = !root.idleInhibited;",
+                      "        root.idleReconcilePending = true;",
+                      "        idleToggleProcess.exec([idleScript, \"toggle\"]);",
+                      "    }",
+                  ),
               ),
           ]
 
-          for old, new in replacements:
+          for index, (old, new) in enumerate(replacements, start=1):
               if text.count(old) != 1:
-                  raise SystemExit("v3.4.7 idle inhibitor target repair anchor mismatch")
+                  raise SystemExit(f"v3.4.7 idle inhibitor target repair anchor mismatch: block {index}")
               text = text.replace(old, new, 1)
 
           path.write_text(text, encoding="utf-8")
