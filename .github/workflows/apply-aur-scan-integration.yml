@@ -4,22 +4,12 @@ on:
   push:
     branches:
       - feature/aur-scan-integration
-  pull_request:
-    branches:
-      - main
-    types:
-      - opened
-      - reopened
-      - synchronize
 
 permissions:
   contents: write
 
 jobs:
   apply-integration:
-    if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/feature/aur-scan-integration') ||
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'feature/aur-scan-integration')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout feature branch
