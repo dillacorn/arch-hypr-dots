@@ -836,3 +836,6 @@ cd8f7a4395ba177a25a2c4fa2dc0b463942bc9e9bedf306474b402281d29341f	.config/quicksh
 05fa2eea0206e4d85e263f8c05519b49c0e3d7edb35622903332df6c540e5b3c	.config/quickshell/awtarchy/QuickSettings.qml
 4cd998ccb220fd2ab28a474ed33bb49642fdd90522522d6e1baf8985dd226b63	.config/quickshell/awtarchy/ClipboardMenu.qml
 0215027d0e262fdac7f2a91accd57563c0b7ae43359c13867e18e6c0e5507976	.config/quickshell/awtarchy/Launcher.qml
+
+# 2026-09-01 instant idle inhibitor bar feedback.
+e813a7a6c197df3df5cf57c0141c6912b89636a788d81057d45827b0e90765ce	.config/quickshell/awtarchy/SystemState.qml

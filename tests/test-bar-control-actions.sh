@@ -5,6 +5,8 @@ IFS=$'\n\t'
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 MOUSE_SCRIPT="${AWTARCHY_TEST_MOUSE_SCRIPT:-${ROOT}/config/hypr/scripts/toggle_mouse_submap.sh}"
 VOLUME_SCRIPT="${AWTARCHY_TEST_VOLUME_SCRIPT:-${ROOT}/config/hypr/scripts/quickshell_volume.sh}"
+SYSTEM_STATE="${ROOT}/config/quickshell/awtarchy/SystemState.qml"
+RUNTIME="${ROOT}/local/share/awtarchy/awtarchy-runtime.sh"
 TMP="$(mktemp -d)"
 SUBMAP_RUNTIME="${TMP}/submap-runtime"
 SUBMAP_FILE="${SUBMAP_RUNTIME}/awtarchy-hypr-submap"
@@ -110,6 +112,71 @@ fi
 
 [[ ! -e $runtime_marker ]] \
   || fail "reset reinstalled runtime pointer bindings during the click"
+
+grep -Fq 'property bool idleReconcilePending: false' "$SYSTEM_STATE" \
+  || fail "idle inhibitor does not track pending backend reconciliation"
+grep -Fq 'root.idleInhibited = !root.idleInhibited;' "$SYSTEM_STATE" \
+  || fail "idle inhibitor click does not update the existing UI state immediately"
+grep -Fq 'idleToggleProcess.exec([idleScript, "toggle"]);' "$SYSTEM_STATE" \
+  || fail "idle inhibitor toggle is not managed by a QML Process"
+grep -Fq 'if (idleReconcilePending)' "$SYSTEM_STATE" \
+  || fail "idle status does not reject stale results during reconciliation"
+grep -Fq 'root.refreshIdleAfterToggle();' "$SYSTEM_STATE" \
+  || fail "idle toggle completion does not reconcile with authoritative backend status"
+! grep -Fq 'refreshIdleTimer' "$SYSTEM_STATE" \
+  || fail "idle inhibitor still waits on the fixed refresh timer"
+! grep -Fq 'interval: 350' "$SYSTEM_STATE" \
+  || fail "idle inhibitor still contains the 350 ms visual delay"
+
+grep -Fq 'repair_v347_idle_inhibitor_feedback_target()' "$RUNTIME" \
+  || fail "runtime is missing the v3.4.7 idle-inhibitor post-release repair"
+# Match literal runtime source; $tag must not expand in this test pattern.
+# shellcheck disable=SC2016
+grep -Fq '[[ "$tag" == "v3.4.7" ]] || return 0' "$RUNTIME" \
+  || fail "v3.4.7 idle-inhibitor repair is not scoped to the published release"
+# Match literal runtime source; $target_home and $tag must remain literal.
+# shellcheck disable=SC2016
+grep -Fq 'repair_v347_idle_inhibitor_feedback_target "$target_home" "$tag"' "$RUNTIME" \
+  || fail "runtime does not apply the v3.4.7 idle-inhibitor repair to the generated target"
+
+# Locate literal runtime source calls; these variables belong to the inspected source.
+# shellcheck disable=SC2016
+prepare_line="$(grep -nF 'prepare_quickshell_update_target "$target_home"' "$RUNTIME" | head -n1 | cut -d: -f1)"
+# shellcheck disable=SC2016
+repair_line="$(grep -nF 'repair_v347_idle_inhibitor_feedback_target "$target_home" "$tag"' "$RUNTIME" | head -n1 | cut -d: -f1)"
+# shellcheck disable=SC2016
+baseline_line="$(grep -nF 'bootstrap_previous_baseline "$active_theme"' "$RUNTIME" | head -n1 | cut -d: -f1)"
+[[ "$prepare_line" =~ ^[0-9]+$ && "$repair_line" =~ ^[0-9]+$ && "$baseline_line" =~ ^[0-9]+$ ]] \
+  || fail "could not locate v3.4.7 idle-inhibitor target-repair ordering"
+(( prepare_line < repair_line && repair_line < baseline_line )) \
+  || fail "v3.4.7 idle-inhibitor target repair must run before baseline comparison"
+
+v347_target_home="${TMP}/v347-target"
+v346_target_home="${TMP}/v346-control-target"
+v347_rel='.config/quickshell/awtarchy/SystemState.qml'
+v347_original="${TMP}/v347-original-SystemState.qml"
+mkdir -p "${v347_target_home}/$(dirname "$v347_rel")" "${v346_target_home}/$(dirname "$v347_rel")"
+git -C "$ROOT" show v3.4.7:config/quickshell/awtarchy/SystemState.qml >"$v347_original" \
+  || fail "v3.4.7 SystemState fixture is unavailable"
+cp -- "$v347_original" "${v347_target_home}/${v347_rel}"
+cp -- "$v347_original" "${v346_target_home}/${v347_rel}"
+
+repair_definition="$(
+  sed -n '/^repair_v347_idle_inhibitor_feedback_target() {/,/^prepare_quickshell_update_target() {/p' "$RUNTIME" |
+    sed '$d'
+)"
+[[ -n "$repair_definition" ]] || fail "could not extract v3.4.7 idle-inhibitor repair function"
+log() { :; }
+die() { fail "$*"; }
+eval "$repair_definition"
+
+repair_v347_idle_inhibitor_feedback_target "$v347_target_home" v3.4.7
+cmp -s "${v347_target_home}/${v347_rel}" "$SYSTEM_STATE" \
+  || fail "v3.4.7 post-release repair does not produce the current fixed SystemState.qml"
+
+repair_v347_idle_inhibitor_feedback_target "$v346_target_home" v3.4.6
+cmp -s "${v346_target_home}/${v347_rel}" "$v347_original" \
+  || fail "v3.4.7 post-release repair changed another release target"
 
 volume_bin="${TMP}/volume-bin"
 volume_state="${TMP}/volume-state"
