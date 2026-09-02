@@ -7,7 +7,7 @@ start = source.index('def edit_aur_stage(stage: str) -> str:\n')
 end_marker = '\n\ntext = edit_function(text, "install_aur_repo_apps_stage", edit_aur_stage)'
 end = source.index(end_marker, start)
 
-replacement = r'''def edit_aur_stage(stage: str) -> str:
+replacement = r"""def edit_aur_stage(stage: str) -> str:
     replacements = (
         ("  ensure_aur_guard_requirements\n", "  ensure_aur_install_requirements\n", "requirements call"),
         ('    log "Installing selected AUR packages through AUR Guard practical mode..."',
@@ -47,7 +47,7 @@ replacement = r'''def edit_aur_stage(stage: str) -> str:
     if stage.count(scanner_call) != 1:
         raise SystemExit("could not locate selected AUR transaction call")
     stage = stage.replace(scanner_call, scanner_guard, 1)
-    return stage'''
+    return stage"""
 
 source = source[:start] + replacement + source[end:]
 exec(compile(source, str(source_path), 'exec'), {'__name__': '__main__'})
