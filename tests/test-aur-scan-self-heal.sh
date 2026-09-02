@@ -21,6 +21,7 @@ assert_contains() {
 fingerprint='25631EAE3F43999050B7D7021132BF893C33FB51'
 assert_contains "$BASHRC" "_AUR_GUARD_AUR_SCAN_SIGNING_KEY='${fingerprint}'"
 assert_contains "$BASHRC" '_aur_guard_ensure_aur_scan_signing_key()'
+# shellcheck disable=SC2016
 assert_contains "$BASHRC" '_aur_guard_ensure_aur_scan "$pkg"'
 
 python3 - "$BASHRC" <<'PY'
