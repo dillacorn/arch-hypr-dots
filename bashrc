@@ -135,6 +135,8 @@ _AUR_GUARD_LIST_MAX_BYTES=2097152
 _AUR_GUARD_LIST_MIN_NAMES=100
 _AUR_GUARD_GITHUB_ARCHIVE_MAX_BYTES=20971520
 _AUR_GUARD_AUR_SCAN_PACKAGE='aur-scanner'
+_AUR_GUARD_AUR_SCAN_SIGNING_KEY='25631EAE3F43999050B7D7021132BF893C33FB51'
+_AUR_GUARD_AUR_SCAN_KEYSERV='hkps://keyserver.ubuntu.com'
 
 # Exact names that should remain permanently blocked even after historical
 # incident records are cleaned or restored. Keep this list intentionally small.
@@ -6340,6 +6342,41 @@ aurcheck() {
   _AUR_GUARD_HISTORICAL_MATCHES=()
 }
 
+_aur_guard_ensure_aur_scan_signing_key() {
+  local fingerprint="$_AUR_GUARD_AUR_SCAN_SIGNING_KEY"
+  local keyserver="$_AUR_GUARD_AUR_SCAN_KEYSERV"
+  local imported_fingerprint
+
+  if command gpg --batch --list-keys "$fingerprint" >/dev/null 2>&1; then
+    imported_fingerprint=$(
+      command gpg --batch --with-colons --fingerprint "$fingerprint" 2>/dev/null |
+        awk -F: '$1 == "fpr" { print $10; exit }'
+    )
+    if [[ "$imported_fingerprint" == "$fingerprint" ]]; then
+      return 0
+    fi
+    _aur_guard_fail "existing aur-scanner signing key did not match the pinned fingerprint"
+    return 1
+  fi
+
+  printf 'AUR Guard: importing pinned aur-scanner signing key %s.\n' "$fingerprint"
+  if ! command gpg --batch --keyserver "$keyserver" --recv-keys "$fingerprint"; then
+    _aur_guard_fail "could not fetch pinned aur-scanner signing key $fingerprint"
+    return 1
+  fi
+
+  imported_fingerprint=$(
+    command gpg --batch --with-colons --fingerprint "$fingerprint" 2>/dev/null |
+      awk -F: '$1 == "fpr" { print $10; exit }'
+  )
+  if [[ "$imported_fingerprint" != "$fingerprint" ]]; then
+    _aur_guard_fail "imported aur-scanner signing key fingerprint did not match the pinned value"
+    return 1
+  fi
+
+  printf 'AUR Guard: verified aur-scanner signing key fingerprint %s.\n' "$fingerprint"
+}
+
 _aur_guard_ensure_aur_scan() {
   local requested_pkg="$1"
   local status
@@ -6349,6 +6386,8 @@ _aur_guard_ensure_aur_scan() {
   if [[ ${_AUR_GUARD_AUR_SCAN_BOOTSTRAP:-0} == 1 ]]; then
     return 0
   fi
+
+  _aur_guard_ensure_aur_scan_signing_key || return 1
 
   if [[ "$requested_pkg" == "$_AUR_GUARD_AUR_SCAN_PACKAGE" ]]; then
     printf 'AUR Guard: bootstrapping %s with the built-in verification stack; aur-scan becomes mandatory after installation.\n' \
@@ -6384,6 +6423,7 @@ aurverify() {
   local pkg status
   local _AUR_GUARD_MODE='practical'
   local _AUR_GUARD_BUILD_REQUESTED=0
+  local _AUR_GUARD_AUR_SCAN_BOOTSTRAP="${_AUR_GUARD_AUR_SCAN_BOOTSTRAP:-0}"
 
   case "$#" in
     1)
@@ -6422,6 +6462,11 @@ aurverify() {
     return 0
   fi
 
+  if ! _aur_guard_ensure_aur_scan "$pkg"; then
+    _aur_guard_fail "could not prepare the required aur-scan security gate for $pkg"
+    return 1
+  fi
+
   _aur_guard_verify_tree "$pkg"
   status=$?
 
@@ -6429,9 +6474,9 @@ aurverify() {
     if _aur_guard_has_guarded_matches; then
       _aur_guard_print_historical_summary
       _aur_guard_print_context_summary
-      _aur_guard_pass "$pkg and all required AUR dependencies passed ${_AUR_GUARD_MODE} verification. Review warnings remain. Nothing was installed."
+      _aur_guard_pass "$pkg and all required AUR dependencies passed ${_AUR_GUARD_MODE} verification. Review warnings remain. The requested package was not installed."
     else
-      _aur_guard_pass "$pkg and all required AUR dependencies passed ${_AUR_GUARD_MODE} verification. Nothing was installed."
+      _aur_guard_pass "$pkg and all required AUR dependencies passed ${_AUR_GUARD_MODE} verification. The requested package was not installed."
     fi
   fi
 
