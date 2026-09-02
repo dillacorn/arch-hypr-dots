@@ -97,14 +97,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 <<'PY'
-          from pathlib import Path
-
-          path = Path('local/share/awtarchy/awtarchy-runtime.sh')
-          text = path.read_text(encoding='utf-8')
-
-          function_anchor = '\nprepare_quickshell_update_target() {\n'
-          repair = r'''
+          cat >/tmp/v347-idle-repair.txt <<'REPAIR'
           repair_v347_idle_inhibitor_feedback_target() {
             local target_home="$1" tag="$2"
             local state_file="${target_home}/.config/quickshell/awtarchy/SystemState.qml"
@@ -236,25 +229,30 @@ jobs:
           PY_V347_IDLE_INHIBITOR
             log "Applied v3.4.7 idle-inhibitor post-release repair to generated target."
           }
-          '''
+          REPAIR
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('local/share/awtarchy/awtarchy-runtime.sh')
+          text = path.read_text(encoding='utf-8')
+          repair = Path('/tmp/v347-idle-repair.txt').read_text(encoding='utf-8')
+
           if 'repair_v347_idle_inhibitor_feedback_target()' in text:
               raise SystemExit('v3.4.7 idle-inhibitor repair already exists')
+          function_anchor = '\nprepare_quickshell_update_target() {\n'
           if text.count(function_anchor) != 1:
               raise SystemExit('runtime function insertion anchor mismatch')
-          text = text.replace(function_anchor, '\n' + repair + function_anchor, 1)
+          text = text.replace(function_anchor, '\n' + repair + '\nprepare_quickshell_update_target() {\n', 1)
 
-          call_anchor = '''  repair_v343_transient_task_icons_target "$target_home" "$tag"
-
-            bootstrap_previous_baseline "$active_theme"
-          '''
-          call_replacement = '''  repair_v343_transient_task_icons_target "$target_home" "$tag"
-            repair_v347_idle_inhibitor_feedback_target "$target_home" "$tag"
-
-            bootstrap_previous_baseline "$active_theme"
-          '''
+          call_anchor = '  repair_v343_transient_task_icons_target "$target_home" "$tag"\n'
           if text.count(call_anchor) != 1:
               raise SystemExit('runtime repair-call insertion anchor mismatch')
-          text = text.replace(call_anchor, call_replacement, 1)
+          text = text.replace(
+              call_anchor,
+              call_anchor + '  repair_v347_idle_inhibitor_feedback_target "$target_home" "$tag"\n',
+              1,
+          )
           path.write_text(text, encoding='utf-8')
           PY
 
