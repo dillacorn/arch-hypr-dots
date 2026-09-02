@@ -18,7 +18,7 @@ text = Path(sys.argv[1]).read_text(encoding="utf-8")
 
 def function_body(name: str) -> str:
     match = re.search(
-        rf"(?ms)^{re.escape(name)}\(\) \{{\n(.*?)^\}}\n",
+        rf"(?ms)^{re.escape(name)}\(\)\s*\{{\n(.*?)^\}}\n",
         text,
     )
     if not match:
