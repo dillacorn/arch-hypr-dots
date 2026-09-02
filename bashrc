@@ -530,6 +530,7 @@ _AUR_GUARD_LIST_MAX_BYTES=2097152
 _AUR_GUARD_LIST_MIN_NAMES=100
 _AUR_GUARD_GITHUB_ARCHIVE_MAX_BYTES=20971520
 _AUR_GUARD_AUR_SCAN_PACKAGE='aur-scanner'
+_AUR_GUARD_AUR_SCAN_PATH='/usr/bin/aur-scan'
 _AUR_GUARD_AUR_SCAN_SIGNING_KEY='25631EAE3F43999050B7D7021132BF893C33FB51'
 _AUR_GUARD_AUR_SCAN_KEYSERV='hkps://keyserver.ubuntu.com'
 
@@ -3487,6 +3488,23 @@ _aur_guard_scan_package_files() {
   _aur_guard_scan_source_tree "$pkg" "$pkgdir" recursive
 }
 
+_aur_guard_resolve_aur_scan() {
+  local scanner="${_AUR_GUARD_AUR_SCAN_PATH:-/usr/bin/aur-scan}"
+  local owner
+
+  [[ -f "$scanner" && ! -L "$scanner" && -x "$scanner" ]] || return 1
+  owner=$(command pacman --query --owns --quiet "$scanner" 2>/dev/null) || return 1
+
+  case "$owner" in
+    aur-scanner|ks-aur-scanner)
+      printf '%s\n' "$scanner"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 declare -a _AUR_GUARD_SCAN_REVIEW_FINDINGS=()
 
 _aur_guard_has_scan_review() {
@@ -3552,8 +3570,8 @@ _aur_guard_scan_checkout_with_aur_scan() {
     return 0
   fi
 
-  scanner=$(type -P aur-scan 2>/dev/null) || {
-    _aur_guard_fail "aur-scan is required before evaluating $pkg. Install $_AUR_GUARD_AUR_SCAN_PACKAGE with: aurinstall $_AUR_GUARD_AUR_SCAN_PACKAGE"
+  scanner=$(_aur_guard_resolve_aur_scan) || {
+    _aur_guard_fail "trusted package-owned aur-scan is required before evaluating $pkg. Install $_AUR_GUARD_AUR_SCAN_PACKAGE with: aurinstall $_AUR_GUARD_AUR_SCAN_PACKAGE"
     return 127
   }
 
@@ -7318,7 +7336,7 @@ _aur_guard_ensure_aur_scan() {
   local requested_pkg="$1"
   local status
 
-  type -P aur-scan >/dev/null 2>&1 && return 0
+  _aur_guard_resolve_aur_scan >/dev/null 2>&1 && return 0
 
   if [[ ${_AUR_GUARD_AUR_SCAN_BOOTSTRAP:-0} == 1 ]]; then
     return 0
@@ -7348,8 +7366,8 @@ _aur_guard_ensure_aur_scan() {
     return "$status"
   fi
 
-  type -P aur-scan >/dev/null 2>&1 || {
-    _aur_guard_fail "$_AUR_GUARD_AUR_SCAN_PACKAGE installed without providing aur-scan"
+  _aur_guard_resolve_aur_scan >/dev/null 2>&1 || {
+    _aur_guard_fail "$_AUR_GUARD_AUR_SCAN_PACKAGE installed without providing a trusted package-owned aur-scan"
     return 127
   }
 

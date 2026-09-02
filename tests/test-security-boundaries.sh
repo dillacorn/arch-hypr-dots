@@ -55,6 +55,8 @@ assert_contains "$RUNTIME" 'ensure_aur_sudo_access()'
 # PKGBUILD. Scanner findings remain visible evidence; scanner execution or malformed
 # output fails closed. The stable aur-scanner package is the automatic bootstrap target.
 assert_contains "$BASHRC" "_AUR_GUARD_AUR_SCAN_PACKAGE='aur-scanner'"
+assert_contains "$BASHRC" "_AUR_GUARD_AUR_SCAN_PATH='/usr/bin/aur-scan'"
+assert_contains "$BASHRC" '_aur_guard_resolve_aur_scan()'
 assert_contains "$BASHRC" '_aur_guard_scan_checkout_with_aur_scan()'
 # shellcheck disable=SC2016
 assert_contains "$BASHRC" '"$scanner" scan "$pkgdir" --format json'
@@ -93,18 +95,28 @@ status="${AWTARCHY_TEST_AUR_SCAN_STATUS:-0}"
 printf '%s
 ' '{"package_name":"fixture","package_version":"1-1","findings":[],"scanned_files":["PKGBUILD"],"timestamp":"2026-09-02T00:00:00Z","scan_duration_ms":1}'
 EOF_AUR_SCAN
+cat >"${aur_scan_fakebin}/pacman" <<'EOF_AUR_SCAN_PACMAN'
+#!/usr/bin/env bash
+set -euo pipefail
+case " $* " in
+  *' --query --owns --quiet '*) printf '%s\n' aur-scanner ;;
+  *) exit 1 ;;
+esac
+EOF_AUR_SCAN_PACMAN
 cat >"$aur_scan_runner" <<'EOF_AUR_SCAN_RUNNER'
 #!/usr/bin/env bash
 set -euo pipefail
 # shellcheck disable=SC1090
 source "${AWTARCHY_TEST_AUR_GUARD_FIXTURE:?}"
+_AUR_GUARD_AUR_SCAN_PATH="${AWTARCHY_TEST_AUR_SCAN_PATH:?}"
 _aur_guard_scan_checkout_with_aur_scan fixture "${AWTARCHY_TEST_AUR_SCAN_PKGDIR:?}"
 EOF_AUR_SCAN_RUNNER
-chmod 0755 "${aur_scan_fakebin}/aur-scan" "$aur_scan_runner"
+chmod 0755 "${aur_scan_fakebin}/aur-scan" "${aur_scan_fakebin}/pacman" "$aur_scan_runner"
 
 if ! env \
     "PATH=${aur_scan_fakebin}:$PATH" \
     AWTARCHY_TEST_AUR_SCAN_LOG="$aur_scan_log" \
+    AWTARCHY_TEST_AUR_SCAN_PATH="${aur_scan_fakebin}/aur-scan" \
     AWTARCHY_TEST_AUR_GUARD_FIXTURE="$aur_guard_fixture" \
     AWTARCHY_TEST_AUR_SCAN_PKGDIR="$aur_scan_pkgdir" \
     "$aur_scan_runner"; then
@@ -125,6 +137,7 @@ if env \
     "PATH=${aur_scan_fakebin}:$PATH" \
     AWTARCHY_TEST_AUR_SCAN_LOG="$aur_scan_log" \
     AWTARCHY_TEST_AUR_SCAN_STATUS=42 \
+    AWTARCHY_TEST_AUR_SCAN_PATH="${aur_scan_fakebin}/aur-scan" \
     AWTARCHY_TEST_AUR_GUARD_FIXTURE="$aur_guard_fixture" \
     AWTARCHY_TEST_AUR_SCAN_PKGDIR="$aur_scan_pkgdir" \
     "$aur_scan_runner" >/dev/null 2>&1; then
@@ -141,6 +154,7 @@ cat >"$aur_scan_bootstrap_runner" <<'EOF_AUR_SCAN_BOOTSTRAP_RUNNER'
 set -euo pipefail
 # shellcheck disable=SC1090
 source "${AWTARCHY_TEST_AUR_GUARD_FIXTURE:?}"
+_AUR_GUARD_AUR_SCAN_PATH="${AWTARCHY_TEST_AUR_SCAN_BOOTSTRAP_FAKEBIN:?}/aur-scan"
 
 aurinstall() {
   [[ $# -eq 1 ]]
@@ -157,9 +171,20 @@ EOF_FAKE_AUR_SCAN
 _AUR_GUARD_AUR_SCAN_BOOTSTRAP=0
 _aur_guard_ensure_aur_scan fixture
 [[ ${_AUR_GUARD_AUR_SCAN_BOOTSTRAP:-0} == 0 ]]
-type -P aur-scan >/dev/null 2>&1
+_aur_guard_resolve_aur_scan >/dev/null
 EOF_AUR_SCAN_BOOTSTRAP_RUNNER
-chmod 0755 "$aur_scan_bootstrap_runner"
+cat >"${aur_scan_bootstrap_fakebin}/pacman" <<'EOF_AUR_SCAN_BOOTSTRAP_PACMAN'
+#!/usr/bin/env bash
+set -euo pipefail
+case " $* " in
+  *' --query --owns --quiet '*)
+    [[ -x ${AWTARCHY_TEST_AUR_SCAN_BOOTSTRAP_FAKEBIN:?}/aur-scan ]] || exit 1
+    printf '%s\n' aur-scanner
+    ;;
+  *) exit 1 ;;
+esac
+EOF_AUR_SCAN_BOOTSTRAP_PACMAN
+chmod 0755 "$aur_scan_bootstrap_runner" "${aur_scan_bootstrap_fakebin}/pacman"
 
 if ! env \
     "PATH=${aur_scan_bootstrap_fakebin}:/usr/bin:/bin" \

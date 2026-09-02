@@ -60,7 +60,15 @@ JSON
   *) exit 99 ;;
 esac
 EOF_AUR_SCAN
-chmod 0755 "${fakebin}/aur-scan"
+cat >"${fakebin}/pacman" <<'EOF_PACMAN'
+#!/usr/bin/env bash
+set -euo pipefail
+case " $* " in
+  *' --query --owns --quiet '*) printf '%s\n' aur-scanner ;;
+  *) exit 1 ;;
+esac
+EOF_PACMAN
+chmod 0755 "${fakebin}/aur-scan" "${fakebin}/pacman"
 
 runner="${TMPD}/runner"
 cat >"$runner" <<'EOF_RUNNER'
@@ -68,6 +76,7 @@ cat >"$runner" <<'EOF_RUNNER'
 set -euo pipefail
 # shellcheck disable=SC1090
 source "${AWTARCHY_TEST_FIXTURE:?}"
+_AUR_GUARD_AUR_SCAN_PATH="${AWTARCHY_TEST_AUR_SCAN_PATH:?}"
 
 declare -F _aur_guard_has_scan_review >/dev/null \
   || { printf '%s\n' 'missing _aur_guard_has_scan_review' >&2; exit 70; }
@@ -122,6 +131,7 @@ chmod 0755 "$runner"
 if ! env \
     "PATH=${fakebin}:/usr/bin:/bin" \
     AWTARCHY_TEST_FIXTURE="$fixture" \
+    AWTARCHY_TEST_AUR_SCAN_PATH="${fakebin}/aur-scan" \
     AWTARCHY_TEST_PKGDIR="$pkgdir" \
     AWTARCHY_TEST_SCAN_LOG="$scan_log" \
     "$runner"; then
