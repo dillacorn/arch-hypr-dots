@@ -1,0 +1,51 @@
+name: Apply Direct AUR Scanner Stage 3
+
+on:
+  push:
+    branches:
+      - feature/direct-aur-scanner
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/direct-aur-scanner
+          fetch-depth: 0
+
+      - name: Apply updater migration gate
+        run: python3 .github/temp-stage3-updater-migration-apply.py
+
+      - name: Validate Stage 3
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n tests/test-aur-scanner-updater-migration.sh
+          shellcheck tests/test-aur-scanner-updater-migration.sh
+          bash tests/test-installer-aur-scanner-delegation.sh
+          bash tests/test-aur-scanner-updater-migration.sh
+          bash tests/test-package-reconciler.sh
+          bash tests/test-package-reconciler-alternatives.sh
+          bash tests/test-package-reconciler-interrupted-recovery.sh
+          bash tests/test-package-reconciler-aur-equivalents.sh
+          bash tests/test-security-boundaries.sh
+          bash tests/test-quickshell-updater-migration.sh
+          git diff --check
+
+      - name: Commit Stage 3
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add local/share/awtarchy/awtarchy-runtime.sh
+          git diff --cached --quiet && exit 0
+          git commit -m 'Gate AurGuard shell migration on aur-scanner'
+          git push origin HEAD:feature/direct-aur-scanner
