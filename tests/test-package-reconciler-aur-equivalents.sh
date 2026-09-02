@@ -190,6 +190,8 @@ fi
 if ! grep -Fq '/usr/bin/yay -S --noconfirm --pgpfetch aur-scanner' "$RECONCILER"; then
   fail 'reconciler does not limit direct yay installation to the aur-scanner bootstrap'
 fi
+# The literal regex intentionally matches "$AUR_HELPER" text in source.
+# shellcheck disable=SC2016
 if grep -Eq '"\$AUR_HELPER"[[:space:]]+-S|\b(paru|yay)[[:space:]]+-S[[:space:]]+--needed' "$RECONCILER"; then
   fail 'reconciler still contains a normal selected-package helper install path'
 fi
