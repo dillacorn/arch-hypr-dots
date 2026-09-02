@@ -7,6 +7,7 @@ on:
     paths:
       - bashrc
       - tests/test-security-boundaries.sh
+      - tests/test-aur-scan-self-heal.sh
       - .github/workflows/apply-aur-scan-integration.yml
   push:
     branches:
@@ -14,6 +15,7 @@ on:
     paths:
       - bashrc
       - tests/test-security-boundaries.sh
+      - tests/test-aur-scan-self-heal.sh
       - .github/workflows/apply-aur-scan-integration.yml
 
 permissions:
@@ -31,6 +33,9 @@ jobs:
         run: |
           set -euo pipefail
           bash -n bashrc
-          shellcheck bashrc tests/test-security-boundaries.sh
+          bash -n tests/test-security-boundaries.sh
+          bash -n tests/test-aur-scan-self-heal.sh
+          shellcheck bashrc tests/test-security-boundaries.sh tests/test-aur-scan-self-heal.sh
           bash tests/test-security-boundaries.sh
+          bash tests/test-aur-scan-self-heal.sh
           git diff --check
