@@ -5913,6 +5913,40 @@ install_managed_pacman_packages() {
   record_managed_packages "${missing[@]}"
 }
 
+target_uses_direct_aur_scanner() {
+  local target_home="$1"
+  local target_bashrc="${target_home}/.bashrc"
+
+  [[ -f "$target_bashrc" && ! -L "$target_bashrc" ]] || return 1
+  grep -Fq 'github.com/dillacorn/awtarchy' "$target_bashrc" || return 1
+  grep -Fq 'aur-scan' "$target_bashrc" || return 1
+  if grep -Eq '^(aurguard|aurverify|aurinstall)[[:space:]]*\(\)' "$target_bashrc"; then
+    return 1
+  fi
+}
+
+ensure_update_aur_scanner() {
+  if [[ -x /usr/bin/aur-scan ]] && /usr/bin/aur-scan --version >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [[ ! -x /usr/bin/yay ]] || ! /usr/bin/yay --version >/dev/null 2>&1; then
+    warn "The direct aur-scanner shell is ready to migrate, but /usr/bin/aur-scan is missing and a usable /usr/bin/yay is unavailable for bootstrap."
+    return 1
+  fi
+
+  log "Installing stable aur-scanner before replacing the AurGuard-era shell..."
+  if ! /usr/bin/yay -S --noconfirm --pgpfetch aur-scanner; then
+    warn "Failed to bootstrap stable aur-scanner; the managed shell has not been migrated."
+    return 1
+  fi
+
+  if [[ ! -x /usr/bin/aur-scan ]] || ! /usr/bin/aur-scan --version >/dev/null 2>&1; then
+    warn "aur-scanner bootstrap completed without a usable /usr/bin/aur-scan."
+    return 1
+  fi
+}
+
 multilib_enabled_update() {
   [[ -f /etc/pacman.conf ]] || return 1
   awk '
@@ -8388,6 +8422,10 @@ main() {
     log "Selected update mode: preserve hyprland.lua; update other managed files"
   else
     log "Selected update mode: clean"
+  fi
+
+  if target_uses_direct_aur_scanner "$target_home"; then
+    ensure_update_aur_scanner       || die "aur-scanner is required before replacing the AurGuard-era managed shell. No managed files were changed."
   fi
 
   if [[ ${AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR:-0} != 1 ]]; then
