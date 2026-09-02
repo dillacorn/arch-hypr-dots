@@ -2991,11 +2991,6 @@ _aur_guard_verify_package_recursive() {
   }
   fetched_pkgbase="${pkgdir##*/}"
 
-  _aur_guard_scan_package_files "$pkg" "$pkgdir" || {
-    _AUR_GUARD_REQUEST_STATE[$pkg]='failed'
-    return 1
-  }
-
   _aur_guard_scan_checkout_with_aur_scan "$pkg" "$pkgdir" || {
     _AUR_GUARD_REQUEST_STATE[$pkg]='failed'
     return 1
