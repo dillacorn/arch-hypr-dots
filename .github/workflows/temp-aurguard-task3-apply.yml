@@ -18,7 +18,7 @@ jobs:
         with:
           ref: feature/aur-scan-integration
 
-      - name: Correct applicator brace substitution
+      - name: Correct applicator literal handling
         shell: bash
         run: |
           python3 - <<'PY'
@@ -27,6 +27,14 @@ jobs:
           text = path.read_text(encoding='utf-8')
           text = text.replace('guard_template.format(name=name)', 'guard_template.replace("{name}", name)')
           text = text.replace('guard_template.format(name="aurguardtest")', 'guard_template.replace("{name}", "aurguardtest")')
+          text = text.replace(
+              'begin = "# AWTARCHY_AURGUARD_RUNTIME_BEGIN v1"',
+              'begin = "# AWTARCHY_AURGUARD_" + "RUNTIME_BEGIN v1"',
+          )
+          text = text.replace(
+              'end = "# AWTARCHY_AURGUARD_RUNTIME_END v1"',
+              'end = "# AWTARCHY_AURGUARD_" + "RUNTIME_END v1"',
+          )
           path.write_text(text, encoding='utf-8')
           PY
 
