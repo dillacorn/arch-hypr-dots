@@ -1,0 +1,47 @@
+name: Apply AurGuard Task 2
+
+on:
+  push:
+    branches:
+      - feature/aur-scan-integration
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: feature/aur-scan-integration
+
+      - name: Validate applicator syntax
+        run: python3 -m py_compile .github/temp-aurguard-task2-apply.py
+
+      - name: Apply Task 2
+        run: python3 .github/temp-aurguard-task2-apply.py
+
+      - name: Validate Task 2
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n bashrc
+          bash -n tests/test-aur-signed-metadata-chain.sh
+          shellcheck bashrc tests/test-aur-signed-metadata-chain.sh
+          bash tests/test-aur-signed-metadata-chain.sh
+          bash tests/test-aur-scan-review-policy.sh
+          bash tests/test-security-boundaries.sh
+          git diff --check
+
+      - name: Commit Task 2
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- bashrc
+          git commit -m 'Verify signed repository metadata chains'
+          git push origin HEAD:feature/aur-scan-integration
