@@ -74,6 +74,7 @@ PY
 
 aur_guard_fixture="${TMPD}/bashrc-aur-guard"
 aur_scan_fakebin="${TMPD}/aur-scan-fakebin"
+aur_scan_runner="${TMPD}/aur-scan-runner"
 aur_scan_log="${TMPD}/aur-scan.log"
 aur_scan_pkgdir="${TMPD}/aur-package"
 mkdir -p -- "$aur_scan_fakebin" "$aur_scan_pkgdir"
@@ -86,15 +87,21 @@ printf '%s\n' "$@" >"${AWTARCHY_TEST_AUR_SCAN_LOG:?}"
 status="${AWTARCHY_TEST_AUR_SCAN_STATUS:-0}"
 (( status == 0 ))
 EOF_AUR_SCAN
-chmod 0755 "${aur_scan_fakebin}/aur-scan"
+cat >"$aur_scan_runner" <<'EOF_AUR_SCAN_RUNNER'
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck disable=SC1090
+source "${AWTARCHY_TEST_AUR_GUARD_FIXTURE:?}"
+_aur_guard_scan_checkout_with_aur_scan fixture "${AWTARCHY_TEST_AUR_SCAN_PKGDIR:?}"
+EOF_AUR_SCAN_RUNNER
+chmod 0755 "${aur_scan_fakebin}/aur-scan" "$aur_scan_runner"
 
-if ! (
-  export PATH="${aur_scan_fakebin}:$PATH"
-  export AWTARCHY_TEST_AUR_SCAN_LOG="$aur_scan_log"
-  # shellcheck disable=SC1090
-  source "$aur_guard_fixture"
-  _aur_guard_scan_checkout_with_aur_scan fixture "$aur_scan_pkgdir"
-); then
+if ! env \
+    "PATH=${aur_scan_fakebin}:$PATH" \
+    AWTARCHY_TEST_AUR_SCAN_LOG="$aur_scan_log" \
+    AWTARCHY_TEST_AUR_GUARD_FIXTURE="$aur_guard_fixture" \
+    AWTARCHY_TEST_AUR_SCAN_PKGDIR="$aur_scan_pkgdir" \
+    "$aur_scan_runner"; then
   fail 'AUR Guard rejected a clean exact-checkout aur-scan result'
 fi
 mapfile -t aur_scan_args <"$aur_scan_log"
@@ -107,14 +114,13 @@ mapfile -t aur_scan_args <"$aur_scan_log"
 [[ ${aur_scan_args[2]} == --fail-on && ${aur_scan_args[3]} == high ]] \
   || fail 'AUR Guard did not block high and critical aur-scan findings'
 
-if (
-  export PATH="${aur_scan_fakebin}:$PATH"
-  export AWTARCHY_TEST_AUR_SCAN_LOG="$aur_scan_log"
-  export AWTARCHY_TEST_AUR_SCAN_STATUS=42
-  # shellcheck disable=SC1090
-  source "$aur_guard_fixture"
-  _aur_guard_scan_checkout_with_aur_scan fixture "$aur_scan_pkgdir"
-) >/dev/null 2>&1; then
+if env \
+    "PATH=${aur_scan_fakebin}:$PATH" \
+    AWTARCHY_TEST_AUR_SCAN_LOG="$aur_scan_log" \
+    AWTARCHY_TEST_AUR_SCAN_STATUS=42 \
+    AWTARCHY_TEST_AUR_GUARD_FIXTURE="$aur_guard_fixture" \
+    AWTARCHY_TEST_AUR_SCAN_PKGDIR="$aur_scan_pkgdir" \
+    "$aur_scan_runner" >/dev/null 2>&1; then
   fail 'AUR Guard ignored a failing aur-scan result'
 fi
 
