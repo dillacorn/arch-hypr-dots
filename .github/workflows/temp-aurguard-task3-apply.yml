@@ -35,6 +35,16 @@ jobs:
               'end = "# AWTARCHY_AURGUARD_RUNTIME_END v1"',
               'end = "# AWTARCHY_AURGUARD_" + "RUNTIME_END v1"',
           )
+          old = """  python3 - \"$source\" \"$candidate\" <<'PY_RUNTIME_EXTRACT'\n"""
+          new = """  python3 - \"$source\" \"$candidate\" <<'PY_RUNTIME_EXTRACT' || return 1\n"""
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one extractor heredoc command, found {text.count(old)}')
+          text = text.replace(old, new, 1)
+          old_tail = """PY_RUNTIME_EXTRACT\n  || return 1\n\n  candidate_size="""
+          new_tail = """PY_RUNTIME_EXTRACT\n\n  candidate_size="""
+          if text.count(old_tail) != 1:
+              raise SystemExit(f'expected one extractor heredoc tail, found {text.count(old_tail)}')
+          text = text.replace(old_tail, new_tail, 1)
           path.write_text(text, encoding='utf-8')
           PY
 
