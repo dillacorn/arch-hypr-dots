@@ -113,7 +113,9 @@ new = '''_aur_guard_runtime_activate_candidate() {
     local restore_failed=0
     mv -f -- "$runtime_backup" "$_AUR_GUARD_RUNTIME_FILE" || restore_failed=1
     mv -f -- "$metadata_backup" "$_AUR_GUARD_RUNTIME_METADATA" || restore_failed=1
-    (( restore_failed == 0 )) && _aur_guard_runtime_cache_valid || true
+    if (( restore_failed == 0 )); then
+      _aur_guard_runtime_cache_valid || true
+    fi
   else
     rm -f -- "$_AUR_GUARD_RUNTIME_FILE" "$_AUR_GUARD_RUNTIME_METADATA"
   fi
