@@ -19,6 +19,9 @@ jobs:
           ref: feature/direct-aur-scanner
           fetch-depth: 0
 
+      - name: Install updater test dependency
+        run: sudo apt-get update && sudo apt-get install -y lua5.4
+
       - name: Apply updater migration gate
         run: python3 .github/temp-stage3-updater-migration-apply.py
 
