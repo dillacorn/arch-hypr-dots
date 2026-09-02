@@ -2374,7 +2374,7 @@ ensure_aur_scanner() {
   ensure_yay
 
   log "Installing stable aur-scanner through yay for the initial bootstrap..."
-  if ! run_as_target /usr/bin/yay -S --noconfirm aur-scanner; then
+  if ! run_as_target /usr/bin/yay -S --noconfirm --pgpfetch aur-scanner; then
     die "Failed to bootstrap stable aur-scanner."
   fi
 
