@@ -510,6 +510,13 @@ _aur_guard_runtime_ensure() {
     return 0
   fi
 
+  if [[ "$force" == force ]]; then
+    printf 'AUR Guard: forced runtime refresh failed; existing validated cache was left unchanged.\n' >&2
+    flock -u "$lock_fd" || true
+    exec {lock_fd}>&-
+    return 1
+  fi
+
   if _aur_guard_runtime_cache_matches_target "$target" "$revision"; then
     printf 'AUR Guard: runtime refresh failed; using cached AurGuard runtime.\n' >&2
     flock -u "$lock_fd" || true
