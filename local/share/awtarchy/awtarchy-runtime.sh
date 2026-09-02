@@ -7493,6 +7493,149 @@ PY_TRANSIENT_TASK_ICONS
   log "Applied v3.4.3 transient-task-icon post-release repair to generated target."
 }
 
+repair_v347_idle_inhibitor_feedback_target() {
+  local target_home="$1" tag="$2"
+  local state_file="${target_home}/.config/quickshell/awtarchy/SystemState.qml"
+
+  [[ "$tag" == "v3.4.7" ]] || return 0
+  [[ -f "$state_file" && ! -L "$state_file" ]] \
+    || die "v3.4.7 post-release SystemState target is unavailable."
+
+  python3 - "$state_file" <<'PY_V347_IDLE_INHIBITOR'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+
+def block(*lines):
+    return "\n".join(lines) + "\n"
+
+replacements = [
+    (
+        block(
+            "    property bool idleInhibited: false",
+            "    property bool idleBroken: false",
+            "    property var coreUsage: ({})",
+        ),
+        block(
+            "    property bool idleInhibited: false",
+            "    property bool idleBroken: false",
+            "    property bool idleReconcilePending: false",
+            "    property var coreUsage: ({})",
+        ),
+    ),
+    (
+        block(
+            "    Process {",
+            "        id: idleStatusProcess",
+            "        command: [\"sh\", \"-c\", \"if [ -x '\" + root.idleScript + \"' ]; then '\" + root.idleScript + \"'; fi\"]",
+            "        stdout: StdioCollector {",
+            "            onStreamFinished: {",
+            "                try {",
+            "                    const status = JSON.parse(text.trim());",
+            "                    const classes = status.class || [];",
+            "                    root.idleInhibited = classes.indexOf(\"activated\") >= 0;",
+            "                    root.idleBroken = classes.indexOf(\"error\") >= 0;",
+            "                } catch (error) {",
+            "                    root.idleInhibited = false;",
+            "                    root.idleBroken = false;",
+            "                }",
+            "            }",
+            "        }",
+            "    }",
+        ),
+        block(
+            "    Process {",
+            "        id: idleStatusProcess",
+            "        command: [\"sh\", \"-c\", \"if [ -x '\" + root.idleScript + \"' ]; then '\" + root.idleScript + \"'; fi\"]",
+            "        stdout: StdioCollector {",
+            "            onStreamFinished: {",
+            "                if (idleReconcilePending)",
+            "                    return;",
+            "                try {",
+            "                    const status = JSON.parse(text.trim());",
+            "                    const classes = status.class || [];",
+            "                    root.idleInhibited = classes.indexOf(\"activated\") >= 0;",
+            "                    root.idleBroken = classes.indexOf(\"error\") >= 0;",
+            "                } catch (error) {",
+            "                    root.idleInhibited = false;",
+            "                    root.idleBroken = false;",
+            "                }",
+            "            }",
+            "        }",
+            "        onExited: {",
+            "            if (root.idleReconcilePending && !idleToggleProcess.running)",
+            "                root.refreshIdleAfterToggle();",
+            "        }",
+            "    }",
+            "",
+            "    Process {",
+            "        id: idleToggleProcess",
+            "        onExited: root.refreshIdleAfterToggle()",
+            "    }",
+        ),
+    ),
+    (
+        block(
+            "            if (!metricsProcess.running)",
+            "                metricsProcess.running = true;",
+            "            if (!idleStatusProcess.running)",
+            "                idleStatusProcess.running = true;",
+        ),
+        block(
+            "            if (!metricsProcess.running)",
+            "                metricsProcess.running = true;",
+            "            if (!idleStatusProcess.running && !idleToggleProcess.running && !root.idleReconcilePending)",
+            "                idleStatusProcess.running = true;",
+        ),
+    ),
+    (
+        block(
+            "    function toggleIdle() {",
+            "        Quickshell.execDetached([idleScript, \"toggle\"]);",
+            "        refreshIdleTimer.restart();",
+            "    }",
+            "",
+            "    Timer {",
+            "        id: refreshIdleTimer",
+            "        interval: 350",
+            "        repeat: false",
+            "        onTriggered: {",
+            "            if (!idleStatusProcess.running)",
+            "                idleStatusProcess.running = true;",
+            "        }",
+            "    }",
+        ),
+        block(
+            "    function refreshIdleAfterToggle() {",
+            "        if (!root.idleReconcilePending || idleToggleProcess.running || idleStatusProcess.running)",
+            "            return;",
+            "        root.idleReconcilePending = false;",
+            "        idleStatusProcess.running = true;",
+            "    }",
+            "",
+            "    function toggleIdle() {",
+            "        if (idleToggleProcess.running)",
+            "            return;",
+            "        root.idleInhibited = !root.idleInhibited;",
+            "        root.idleReconcilePending = true;",
+            "        idleToggleProcess.exec([idleScript, \"toggle\"]);",
+            "    }",
+        ),
+    ),
+]
+
+for index, (old, new) in enumerate(replacements, start=1):
+    if text.count(old) != 1:
+        raise SystemExit(f"v3.4.7 idle inhibitor target repair anchor mismatch: block {index}")
+    text = text.replace(old, new, 1)
+
+path.write_text(text, encoding="utf-8")
+PY_V347_IDLE_INHIBITOR
+  log "Applied v3.4.7 idle-inhibitor post-release repair to generated target."
+}
+
 prepare_quickshell_update_target() {
   local target_home="$1" rel
 
@@ -8183,6 +8326,7 @@ main() {
   repair_v342_mouse_submap_target "$target_home" "$tag"
   repair_v342_workspace_focus_target "$target_home" "$tag"
   repair_v343_transient_task_icons_target "$target_home" "$tag"
+  repair_v347_idle_inhibitor_feedback_target "$target_home" "$tag"
 
   bootstrap_previous_baseline "$active_theme"
   augment_baseline_from_local_git_history "$target_home"
