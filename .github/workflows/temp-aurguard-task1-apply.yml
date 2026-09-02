@@ -1,0 +1,40 @@
+name: Apply AurGuard Task 1
+
+on:
+  push:
+    branches:
+      - feature/aur-scan-integration
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/aur-scan-integration
+
+      - name: Validate applicator syntax
+        run: python3 -m py_compile .github/temp-aurguard-task1-apply.py
+
+      - name: Apply Task 1
+        run: |
+          set -euo pipefail
+          python3 .github/temp-aurguard-task1-apply.py
+          bash -n bashrc
+          bash -n tests/test-security-boundaries.sh
+          bash -n tests/test-aur-scan-review-policy.sh
+          git diff --check
+
+      - name: Commit Task 1
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- bashrc tests/test-security-boundaries.sh
+          git commit -m 'Review aur-scan heuristics without blind blocking'
+          git push origin HEAD:feature/aur-scan-integration
