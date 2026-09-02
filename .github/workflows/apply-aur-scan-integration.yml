@@ -32,7 +32,7 @@ jobs:
         with:
           ref: feature/aur-scan-integration
 
-      - name: Apply exact checkout delegation change
+      - name: Update legacy boundary regression
         if: github.actor != 'github-actions[bot]'
         shell: bash
         run: |
@@ -40,26 +40,37 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          path = Path('bashrc')
+          path = Path('tests/test-security-boundaries.sh')
           text = path.read_text(encoding='utf-8')
           old = (
-              '  _aur_guard_scan_package_files "$pkg" "$pkgdir" || {\n'
-              "    _AUR_GUARD_REQUEST_STATE[$pkg]='failed'\n"
-              '    return 1\n'
-              '  }\n'
-              '\n'
+              'text = Path(sys.argv[1]).read_text(encoding="utf-8")\n'
+              'legacy_scan = text.index(\'_aur_guard_scan_package_files "$pkg" "$pkgdir"\')\n'
+              'aur_scan = text.index(\'_aur_guard_scan_checkout_with_aur_scan "$pkg" "$pkgdir"\', legacy_scan)\n'
+              'srcinfo = text.index(\'_aur_guard_verify_srcinfo "$pkg" "$pkgdir"\', aur_scan)\n'
+              'if not legacy_scan < aur_scan < srcinfo:\n'
+              '    raise SystemExit("aur-scan does not run on the exact checkout before makepkg metadata evaluation")\n'
+          )
+          new = (
+              'text = Path(sys.argv[1]).read_text(encoding="utf-8")\n'
+              'legacy_call = \'_aur_guard_scan_package_files "$pkg" "$pkgdir"\'\n'
+              'if legacy_call in text:\n'
+              '    raise SystemExit("legacy checkout regex blocker still runs before aur-scan")\n'
+              'aur_scan = text.index(\'_aur_guard_scan_checkout_with_aur_scan "$pkg" "$pkgdir"\')\n'
+              'srcinfo = text.index(\'_aur_guard_verify_srcinfo "$pkg" "$pkgdir"\', aur_scan)\n'
+              'if not aur_scan < srcinfo:\n'
+              '    raise SystemExit("aur-scan does not run on the exact checkout before makepkg metadata evaluation")\n'
           )
           count = text.count(old)
           if count != 1:
-              raise SystemExit(f'expected exactly one live legacy checkout gate, found {count}')
-          path.write_text(text.replace(old, '', 1), encoding='utf-8')
+              raise SystemExit(f'expected exactly one legacy test assumption, found {count}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
           PY
-          bash -n bashrc
+          bash -n tests/test-security-boundaries.sh
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- bashrc
-          git commit -m 'Delegate AUR checkout scanning to aur-scan'
+          git add -- tests/test-security-boundaries.sh
+          git commit -m 'Update aur-scan checkout boundary regression'
           git push origin HEAD:feature/aur-scan-integration
 
       - name: Validate AUR Guard aur-scan boundary
