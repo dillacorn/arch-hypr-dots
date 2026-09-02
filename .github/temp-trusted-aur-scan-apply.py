@@ -125,12 +125,30 @@ chmod 0755 "${aur_scan_fakebin}/aur-scan" "${aur_scan_fakebin}/pacman" "$aur_sca
 ''',
     "security scanner fixture",
 )
-text = text.replace(
-    '    AWTARCHY_TEST_AUR_SCAN_LOG="$aur_scan_log" \\\n    AWTARCHY_TEST_AUR_GUARD_FIXTURE="$aur_guard_fixture" \\\n',
-    '    AWTARCHY_TEST_AUR_SCAN_LOG="$aur_scan_log" \\\n    AWTARCHY_TEST_AUR_SCAN_PATH="${aur_scan_fakebin}/aur-scan" \\\n    AWTARCHY_TEST_AUR_GUARD_FIXTURE="$aur_guard_fixture" \\\n',
+text = replace_once(
+    text,
+    '''    AWTARCHY_TEST_AUR_SCAN_LOG="$aur_scan_log" \\
+    AWTARCHY_TEST_AUR_GUARD_FIXTURE="$aur_guard_fixture" \\
+''',
+    '''    AWTARCHY_TEST_AUR_SCAN_LOG="$aur_scan_log" \\
+    AWTARCHY_TEST_AUR_SCAN_PATH="${aur_scan_fakebin}/aur-scan" \\
+    AWTARCHY_TEST_AUR_GUARD_FIXTURE="$aur_guard_fixture" \\
+''',
+    "clean scanner trusted path env",
 )
-if text.count('AWTARCHY_TEST_AUR_SCAN_PATH="${aur_scan_fakebin}/aur-scan"') != 2:
-    raise SystemExit("security scan env: expected two trusted scanner path injections")
+text = replace_once(
+    text,
+    '''    AWTARCHY_TEST_AUR_SCAN_LOG="$aur_scan_log" \\
+    AWTARCHY_TEST_AUR_SCAN_STATUS=42 \\
+    AWTARCHY_TEST_AUR_GUARD_FIXTURE="$aur_guard_fixture" \\
+''',
+    '''    AWTARCHY_TEST_AUR_SCAN_LOG="$aur_scan_log" \\
+    AWTARCHY_TEST_AUR_SCAN_STATUS=42 \\
+    AWTARCHY_TEST_AUR_SCAN_PATH="${aur_scan_fakebin}/aur-scan" \\
+    AWTARCHY_TEST_AUR_GUARD_FIXTURE="$aur_guard_fixture" \\
+''',
+    "failing scanner trusted path env",
+)
 
 text = replace_once(
     text,
