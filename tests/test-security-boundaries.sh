@@ -7,6 +7,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 INSTALLER="${ROOT}/awtarchy-install.sh"
 LAUNCHER="${ROOT}/local/bin/awtarchy"
 RUNTIME="${ROOT}/local/share/awtarchy/awtarchy-runtime.sh"
+BASHRC="${ROOT}/bashrc"
 QUICKSETTINGS="${ROOT}/config/hypr/scripts/hypr_quicksettings_core.sh"
 WIREGUARD="${ROOT}/config/hypr/scripts/quickshell_wireguard.sh"
 WIREGUARD_PRIVILEGED="${ROOT}/local/libexec/awtarchy/wireguard-helper"
@@ -38,6 +39,7 @@ assert_not_contains() {
 bash -n "$INSTALLER"
 bash -n "$LAUNCHER"
 bash -n "$RUNTIME"
+bash -n "$BASHRC"
 bash -n "$QUICKSETTINGS"
 bash -n "$WIREGUARD"
 bash -n "$GIF_CAPTURE"
@@ -48,6 +50,72 @@ bash -n "$RESIZE_TOGGLE"
 assert_not_contains "$RUNTIME" 'NOPASSWD: ALL'
 assert_not_contains "$RUNTIME" 'create_temp_sudoers_for_aur'
 assert_contains "$RUNTIME" 'ensure_aur_sudo_access()'
+
+# AUR Guard must scan the exact fetched checkout before makepkg evaluates the
+# PKGBUILD. High and critical aur-scan findings are a hard failure. The stable
+# aur-scanner package is the automatic bootstrap target when the binary is absent.
+assert_contains "$BASHRC" "_AUR_GUARD_AUR_SCAN_PACKAGE='aur-scanner'"
+assert_contains "$BASHRC" '_aur_guard_scan_checkout_with_aur_scan()'
+assert_contains "$BASHRC" '"$scanner" scan "$pkgdir" --fail-on high'
+# shellcheck disable=SC2016
+assert_contains "$BASHRC" '_aur_guard_scan_checkout_with_aur_scan "$pkg" "$pkgdir"'
+python3 - "$BASHRC" <<'PY'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+legacy_scan = text.index('_aur_guard_scan_package_files "$pkg" "$pkgdir"')
+aur_scan = text.index('_aur_guard_scan_checkout_with_aur_scan "$pkg" "$pkgdir"', legacy_scan)
+srcinfo = text.index('_aur_guard_verify_srcinfo "$pkg" "$pkgdir"', aur_scan)
+if not legacy_scan < aur_scan < srcinfo:
+    raise SystemExit("aur-scan does not run on the exact checkout before makepkg metadata evaluation")
+PY
+
+aur_guard_fixture="${TMPD}/bashrc-aur-guard"
+aur_scan_fakebin="${TMPD}/aur-scan-fakebin"
+aur_scan_log="${TMPD}/aur-scan.log"
+aur_scan_pkgdir="${TMPD}/aur-package"
+mkdir -p -- "$aur_scan_fakebin" "$aur_scan_pkgdir"
+printf '%s\n' 'pkgname=fixture' >"${aur_scan_pkgdir}/PKGBUILD"
+sed 's/^\[\[ \$- != \*i\* \]\] && return$/:/' "$BASHRC" >"$aur_guard_fixture"
+cat >"${aur_scan_fakebin}/aur-scan" <<'EOF_AUR_SCAN'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$@" >"${AWTARCHY_TEST_AUR_SCAN_LOG:?}"
+status="${AWTARCHY_TEST_AUR_SCAN_STATUS:-0}"
+(( status == 0 ))
+EOF_AUR_SCAN
+chmod 0755 "${aur_scan_fakebin}/aur-scan"
+
+if ! (
+  export PATH="${aur_scan_fakebin}:$PATH"
+  export AWTARCHY_TEST_AUR_SCAN_LOG="$aur_scan_log"
+  # shellcheck disable=SC1090
+  source "$aur_guard_fixture"
+  _aur_guard_scan_checkout_with_aur_scan fixture "$aur_scan_pkgdir"
+); then
+  fail 'AUR Guard rejected a clean exact-checkout aur-scan result'
+fi
+mapfile -t aur_scan_args <"$aur_scan_log"
+[[ ${#aur_scan_args[@]} -eq 4 ]] \
+  || fail 'AUR Guard passed unexpected arguments to aur-scan'
+[[ ${aur_scan_args[0]} == scan ]] \
+  || fail 'AUR Guard did not use aur-scan scan mode'
+[[ ${aur_scan_args[1]} == "$aur_scan_pkgdir" ]] \
+  || fail 'AUR Guard did not scan the exact fetched checkout'
+[[ ${aur_scan_args[2]} == --fail-on && ${aur_scan_args[3]} == high ]] \
+  || fail 'AUR Guard did not block high and critical aur-scan findings'
+
+if (
+  export PATH="${aur_scan_fakebin}:$PATH"
+  export AWTARCHY_TEST_AUR_SCAN_LOG="$aur_scan_log"
+  export AWTARCHY_TEST_AUR_SCAN_STATUS=42
+  # shellcheck disable=SC1090
+  source "$aur_guard_fixture"
+  _aur_guard_scan_checkout_with_aur_scan fixture "$aur_scan_pkgdir"
+) >/dev/null 2>&1; then
+  fail 'AUR Guard ignored a failing aur-scan result'
+fi
 
 # Once a launcher/runtime is target-user-owned, root must only invoke it after
 # dropping to that target user. Maintenance config operations are user-scoped.
