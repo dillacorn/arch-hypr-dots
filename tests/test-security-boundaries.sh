@@ -124,6 +124,47 @@ if env \
   fail 'AUR Guard ignored a failing aur-scan result'
 fi
 
+# AUR Guard bootstrap regression: missing aur-scan must bootstrap stable aur-scanner.
+aur_scan_bootstrap_runner="${TMPD}/aur-scan-bootstrap-runner"
+aur_scan_bootstrap_fakebin="${TMPD}/aur-scan-bootstrap-fakebin"
+aur_scan_bootstrap_log="${TMPD}/aur-scan-bootstrap.log"
+mkdir -p -- "$aur_scan_bootstrap_fakebin"
+cat >"$aur_scan_bootstrap_runner" <<'EOF_AUR_SCAN_BOOTSTRAP_RUNNER'
+#!/usr/bin/env bash
+set -euo pipefail
+# shellcheck disable=SC1090
+source "${AWTARCHY_TEST_AUR_GUARD_FIXTURE:?}"
+
+aurinstall() {
+  [[ $# -eq 1 ]]
+  printf '%s\n' "$1" >"${AWTARCHY_TEST_AUR_SCAN_BOOTSTRAP_LOG:?}"
+  [[ ${_AUR_GUARD_AUR_SCAN_BOOTSTRAP:-0} == 1 ]]
+
+  cat >"${AWTARCHY_TEST_AUR_SCAN_BOOTSTRAP_FAKEBIN:?}/aur-scan" <<'EOF_FAKE_AUR_SCAN'
+#!/usr/bin/env bash
+exit 0
+EOF_FAKE_AUR_SCAN
+  chmod 0755 "${AWTARCHY_TEST_AUR_SCAN_BOOTSTRAP_FAKEBIN:?}/aur-scan"
+}
+
+_AUR_GUARD_AUR_SCAN_BOOTSTRAP=0
+_aur_guard_ensure_aur_scan fixture
+[[ ${_AUR_GUARD_AUR_SCAN_BOOTSTRAP:-0} == 0 ]]
+type -P aur-scan >/dev/null 2>&1
+EOF_AUR_SCAN_BOOTSTRAP_RUNNER
+chmod 0755 "$aur_scan_bootstrap_runner"
+
+if ! env \
+    "PATH=${aur_scan_bootstrap_fakebin}:/usr/bin:/bin" \
+    AWTARCHY_TEST_AUR_GUARD_FIXTURE="$aur_guard_fixture" \
+    AWTARCHY_TEST_AUR_SCAN_BOOTSTRAP_FAKEBIN="$aur_scan_bootstrap_fakebin" \
+    AWTARCHY_TEST_AUR_SCAN_BOOTSTRAP_LOG="$aur_scan_bootstrap_log" \
+    "$aur_scan_bootstrap_runner"; then
+  fail 'AUR Guard could not bootstrap aur-scanner when aur-scan was absent'
+fi
+grep -Fxq -- 'aur-scanner' "$aur_scan_bootstrap_log" \
+  || fail 'AUR Guard did not bootstrap the stable aur-scanner package'
+
 # Once a launcher/runtime is target-user-owned, root must only invoke it after
 # dropping to that target user. Maintenance config operations are user-scoped.
 assert_contains "$INSTALLER" 'run_as_target env -u XDG_DATA_HOME -u XDG_STATE_HOME'
