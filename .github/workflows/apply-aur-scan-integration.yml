@@ -12,6 +12,7 @@ on:
       - tests/test-aur-scan-review-policy.sh
       - tests/test-aur-signed-metadata-chain.sh
       - tests/test-aurguard-runtime-refresh.sh
+      - tests/test-aurguard-runtime-cache-permissions.sh
       - .github/workflows/apply-aur-scan-integration.yml
   push:
     branches:
@@ -24,6 +25,7 @@ on:
       - tests/test-aur-scan-review-policy.sh
       - tests/test-aur-signed-metadata-chain.sh
       - tests/test-aurguard-runtime-refresh.sh
+      - tests/test-aurguard-runtime-cache-permissions.sh
       - .github/workflows/apply-aur-scan-integration.yml
 
 permissions:
@@ -47,11 +49,13 @@ jobs:
           bash -n tests/test-aur-scan-review-policy.sh
           bash -n tests/test-aur-signed-metadata-chain.sh
           bash -n tests/test-aurguard-runtime-refresh.sh
-          shellcheck bashrc tests/test-security-boundaries.sh tests/test-aur-scan-self-heal.sh tests/test-aur-scan-checkout-delegation.sh tests/test-aur-scan-review-policy.sh tests/test-aur-signed-metadata-chain.sh tests/test-aurguard-runtime-refresh.sh
+          bash -n tests/test-aurguard-runtime-cache-permissions.sh
+          shellcheck bashrc tests/test-security-boundaries.sh tests/test-aur-scan-self-heal.sh tests/test-aur-scan-checkout-delegation.sh tests/test-aur-scan-review-policy.sh tests/test-aur-signed-metadata-chain.sh tests/test-aurguard-runtime-refresh.sh tests/test-aurguard-runtime-cache-permissions.sh
           bash tests/test-security-boundaries.sh
           bash tests/test-aur-scan-self-heal.sh
           bash tests/test-aur-scan-checkout-delegation.sh
           bash tests/test-aur-scan-review-policy.sh
           bash tests/test-aur-signed-metadata-chain.sh
           bash tests/test-aurguard-runtime-refresh.sh
+          bash tests/test-aurguard-runtime-cache-permissions.sh
           git diff --check
