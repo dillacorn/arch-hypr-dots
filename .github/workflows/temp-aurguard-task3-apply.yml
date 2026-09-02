@@ -18,6 +18,18 @@ jobs:
         with:
           ref: feature/aur-scan-integration
 
+      - name: Correct applicator brace substitution
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/temp-aurguard-task3-apply.py')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace('guard_template.format(name=name)', 'guard_template.replace("{name}", name)')
+          text = text.replace('guard_template.format(name="aurguardtest")', 'guard_template.replace("{name}", "aurguardtest")')
+          path.write_text(text, encoding='utf-8')
+          PY
+
       - name: Validate applicator syntax
         run: python3 -m py_compile .github/temp-aurguard-task3-apply.py
 
