@@ -44,3 +44,68 @@ jobs:
           bash tests/test-quickshell-clipboard-thumbnails.sh
           bash tests/test-launcher-keyboard-focus.sh
           bash tests/test-quickshell-production-readiness.sh
+
+  publish-v3-4-7:
+    if: ${{ github.event_name == 'pull_request' && github.repository == 'dillacorn/awtarchy' && github.base_ref == 'main' && github.head_ref == 'release/v3.4.7-publish' && github.event.pull_request.title == 'Publish v3.4.7 release' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: v3.4.7
+      RELEASE_NAME: Awtarchy v3.4.7 Quickshell
+      TARGET_SHA: b9c2385dec61dab53002c08fcdf81a019b308691
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+
+      - name: Verify exact release target
+        run: |
+          set -euo pipefail
+          main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          test "${main_sha}" = "${TARGET_SHA}"
+          test -f .github/release-v3.4.7.md
+
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            printf 'Release %s already exists\n' "${RELEASE_TAG}" >&2
+            exit 1
+          fi
+
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            printf 'Tag %s already exists\n' "${RELEASE_TAG}" >&2
+            exit 1
+          fi
+
+      - name: Publish v3.4.7
+        run: |
+          set -euo pipefail
+          gh release create "${RELEASE_TAG}" \
+            --target "${TARGET_SHA}" \
+            --title "${RELEASE_NAME}" \
+            --notes-file .github/release-v3.4.7.md
+
+      - name: Verify published release
+        run: |
+          set -euo pipefail
+          tag_name="$(gh release view "${RELEASE_TAG}" --json tagName --jq '.tagName')"
+          release_name="$(gh release view "${RELEASE_TAG}" --json name --jq '.name')"
+          target_commitish="$(gh release view "${RELEASE_TAG}" --json targetCommitish --jq '.targetCommitish')"
+          is_draft="$(gh release view "${RELEASE_TAG}" --json isDraft --jq '.isDraft')"
+          is_prerelease="$(gh release view "${RELEASE_TAG}" --json isPrerelease --jq '.isPrerelease')"
+          tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha')"
+          expected_body="$(cat .github/release-v3.4.7.md)"
+          published_body="$(gh release view "${RELEASE_TAG}" --json body --jq '.body')"
+
+          test "${tag_name}" = "${RELEASE_TAG}"
+          test "${release_name}" = "${RELEASE_NAME}"
+          test "${target_commitish}" = "${TARGET_SHA}"
+          test "${tag_sha}" = "${TARGET_SHA}"
+          test "${is_draft}" = "false"
+          test "${is_prerelease}" = "false"
+          test "${published_body}" = "${expected_body}"
+
+      - name: Remove one-use release branch
+        run: |
+          set -euo pipefail
+          gh api \
+            --method DELETE \
+            "repos/${GITHUB_REPOSITORY}/git/refs/heads/release/v3.4.7-publish"
