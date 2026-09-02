@@ -1,49 +1,36 @@
-name: Apply AUR Scan Bootstrap Regression
+name: Validate AUR Scan Integration
 
 on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - bashrc
+      - tests/test-security-boundaries.sh
+      - .github/workflows/apply-aur-scan-integration.yml
   push:
     branches:
-      - feature/aur-scan-integration
+      - main
+    paths:
+      - bashrc
+      - tests/test-security-boundaries.sh
+      - .github/workflows/apply-aur-scan-integration.yml
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply-bootstrap-regression:
-    if: github.event.head_commit.message != 'Add aur-scanner bootstrap regression test'
+  validate-aur-scan:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout feature branch
+      - name: Checkout repository
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-        with:
-          ref: feature/aur-scan-integration
-          fetch-depth: 0
 
-      - name: Add bootstrap regression test
+      - name: Validate AUR Guard aur-scan boundary
         shell: bash
         run: |
           set -euo pipefail
-          block_b64='IyBBVVIgR3VhcmQgYm9vdHN0cmFwIHJlZ3Jlc3Npb246IG1pc3NpbmcgYXVyLXNjYW4gbXVzdCBib290c3RyYXAgc3RhYmxlIGF1ci1zY2FubmVyLgphdXJfc2Nhbl9ib290c3RyYXBfcnVubmVyPSIke1RNUER9L2F1ci1zY2FuLWJvb3RzdHJhcC1ydW5uZXIiCmF1cl9zY2FuX2Jvb3RzdHJhcF9mYWtlYmluPSIke1RNUER9L2F1ci1zY2FuLWJvb3RzdHJhcC1mYWtlYmluIgphdXJfc2Nhbl9ib290c3RyYXBfbG9nPSIke1RNUER9L2F1ci1zY2FuLWJvb3RzdHJhcC5sb2ciCm1rZGlyIC1wIC0tICIkYXVyX3NjYW5fYm9vdHN0cmFwX2Zha2ViaW4iCmNhdCA+IiRhdXJfc2Nhbl9ib290c3RyYXBfcnVubmVyIiA8PCdFT0ZfQVVSX1NDQU5fQk9PVFNUUkFQX1JVTk5FUicKIyEvdXNyL2Jpbi9lbnYgYmFzaApzZXQgLWV1byBwaXBlZmFpbAojIHNoZWxsY2hlY2sgZGlzYWJsZT1TQzEwOTAKc291cmNlICIke0FXVEFSQ0hZX1RFU1RfQVVSX0dVQVJEX0ZJWFRVUkU6P30iCgphdXJpbnN0YWxsKCkgewogIFtbICQjIC1lcSAxIF1dCiAgcHJpbnRmICclc1xuJyAiJDEiID4iJHtBV1RBUkNIWV9URVNUX0FVUl9TQ0FOX0JPT1RTVFJBUF9MT0c6P30iCiAgW1sgJHtfQVVSX0dVQVJEX0FVUl9TQ0FOX0JPT1RTVFJBUDotMH0gPT0gMSBdXQoKICBjYXQgPiIke0FXVEFSQ0hZX1RFU1RfQVVSX1NDQU5fQk9PVFNUUkFQX0ZBS0VCSU46P30vYXVyLXNjYW4iIDw8J0VPRl9GQUtFX0FVUl9TQ0FOJwojIS91c3IvYmluL2VudiBiYXNoCmV4aXQgMApFT0ZfRkFLRV9BVVJfU0NBTgogIGNobW9kIDA3NTUgIiR7QVdUQVJDSFlfVEVTVF9BVVJfU0NBTl9CT09UU1RSQVBfRkFLRUJJTjo/fS9hdXItc2NhbiIKfQoKX0FVUl9HVUFSRF9BVVJfU0NBTl9CT09UU1RSQVA9MApfYXVyX2d1YXJkX2Vuc3VyZV9hdXJfc2NhbiBmaXh0dXJlCltbICR7X0FVUl9HVUFSRF9BVVJfU0NBTl9CT09UU1RSQVA6LTB9ID09IDAgXV0KdHlwZSAtUCBhdXItc2NhbiA+L2Rldi9udWxsIDI+JjEKRU9GX0FVUl9TQ0FOX0JPT1RTVFJBUF9SVU5ORVIKY2htb2QgMDc1NSAiJGF1cl9zY2FuX2Jvb3RzdHJhcF9ydW5uZXIiCgppZiAhIGVudiBcCiAgICAiUEFUSD0ke2F1cl9zY2FuX2Jvb3RzdHJhcF9mYWtlYmlufTovdXNyL2JpbjovYmluIiBcCiAgICBBV1RBUkNIWV9URVNUX0FVUl9HVUFSRF9GSVhUVVJFPSIkYXVyX2d1YXJkX2ZpeHR1cmUiIFwKICAgIEFXVEFSQ0hZX1RFU1RfQVVSX1NDQU5fQk9PVFNUUkFQX0ZBS0VCSU49IiRhdXJfc2Nhbl9ib290c3RyYXBfZmFrZWJpbiIgXAogICAgQVdUQVJDSFlfVEVTVF9BVVJfU0NBTl9CT09UU1RSQVBfTE9HPSIkYXVyX3NjYW5fYm9vdHN0cmFwX2xvZyIgXAogICAgIiRhdXJfc2Nhbl9ib290c3RyYXBfcnVubmVyIjsgdGhlbgogIGZhaWwgJ0FVUiBHdWFyZCBjb3VsZCBub3QgYm9vdHN0cmFwIGF1ci1zY2FubmVyIHdoZW4gYXVyLXNjYW4gd2FzIGFic2VudCcKZmkKZ3JlcCAtRnhxIC0tICdhdXItc2Nhbm5lcicgIiRhdXJfc2Nhbl9ib290c3RyYXBfbG9nIiBcCiAgfHwgZmFpbCAnQVVSIEd1YXJkIGRpZCBub3QgYm9vdHN0cmFwIHRoZSBzdGFibGUgYXVyLXNjYW5uZXIgcGFja2FnZScKCg=='
-          python3 -c 'import base64,sys; from pathlib import Path; p=Path("tests/test-security-boundaries.sh"); t=p.read_text(encoding="utf-8"); marker="# AUR Guard bootstrap regression: missing aur-scan must bootstrap stable aur-scanner."; anchor="# Once a launcher/runtime is target-user-owned, root must only invoke it after\n"; block=base64.b64decode(sys.argv[1]).decode(); assert marker not in t, "bootstrap regression test already present"; assert t.count(anchor) == 1, f"expected one insertion anchor, found {t.count(anchor)}"; p.write_text(t.replace(anchor, block + anchor, 1), encoding="utf-8")' "$block_b64"
-
-      - name: Validate regression test
-        shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -t changed < <(git diff --name-only)
-          [[ ${#changed[@]} -eq 1 && ${changed[0]} == tests/test-security-boundaries.sh ]]
           bash -n bashrc
-          bash -n tests/test-security-boundaries.sh
           shellcheck bashrc tests/test-security-boundaries.sh
           bash tests/test-security-boundaries.sh
           git diff --check
-
-      - name: Commit regression test
-        shell: bash
-        run: |
-          set -euo pipefail
-          git add -- tests/test-security-boundaries.sh
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Add aur-scanner bootstrap regression test'
-          git push origin HEAD:feature/aur-scan-integration
