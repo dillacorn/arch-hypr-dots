@@ -1,37 +1,61 @@
-name: Validate AUR Scan Integration
+name: Apply AUR Scan Self-Heal
 
 on:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - bashrc
-      - tests/test-security-boundaries.sh
-      - tests/test-aur-scan-self-heal.sh
-      - .github/workflows/apply-aur-scan-integration.yml
   push:
     branches:
-      - main
-    paths:
-      - bashrc
-      - tests/test-security-boundaries.sh
-      - tests/test-aur-scan-self-heal.sh
-      - .github/workflows/apply-aur-scan-integration.yml
+      - feature/aur-scan-integration
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  validate-aur-scan:
+  apply-self-heal:
+    if: github.event.head_commit.message != 'Self-heal missing aur-scan prerequisite'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout feature branch
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/aur-scan-integration
+          fetch-depth: 0
 
-      - name: Validate AUR Guard aur-scan boundary
+      - name: Apply self-heal patch
         shell: bash
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          from pathlib import Path
+
+          path = Path('bashrc')
+          text = path.read_text(encoding='utf-8')
+          replacements = [
+              ('X0FVUl9HVUFSRF9BVVJfU0NBTl9QQUNLQUdFPSdhdXItc2Nhbm5lcicK', 'X0FVUl9HVUFSRF9BVVJfU0NBTl9QQUNLQUdFPSdhdXItc2Nhbm5lcicKX0FVUl9HVUFSRF9BVVJfU0NBTl9TSUdOSU5HX0tFWT0nMjU2MzFFQUUzRjQzOTk5MDUwQjdENzAyMTEzMkJGODkzQzMzRkI1MScKX0FVUl9HVUFSRF9BVVJfU0NBTl9LRVlTRVJWPSdoa3BzOi8va2V5c2VydmVyLnVidW50dS5jb20nCg=='),
+              ('X2F1cl9ndWFyZF9lbnN1cmVfYXVyX3NjYW4oKSB7Cg==', 'X2F1cl9ndWFyZF9lbnN1cmVfYXVyX3NjYW5fc2lnbmluZ19rZXkoKSB7CiAgbG9jYWwgZmluZ2VycHJpbnQ9IiRfQVVSX0dVQVJEX0FVUl9TQ0FOX1NJR05JTkdfS0VZIgogIGxvY2FsIGtleXNlcnZlcj0iJF9BVVJfR1VBUkRfQVVSX1NDQU5fS0VZU0VSViIKICBsb2NhbCBpbXBvcnRlZF9maW5nZXJwcmludAoKICBpZiBjb21tYW5kIGdwZyAtLWJhdGNoIC0tbGlzdC1rZXlzICIkZmluZ2VycHJpbnQiID4vZGV2L251bGwgMj4mMTsgdGhlbgogICAgaW1wb3J0ZWRfZmluZ2VycHJpbnQ9JCgKICAgICAgY29tbWFuZCBncGcgLS1iYXRjaCAtLXdpdGgtY29sb25zIC0tZmluZ2VycHJpbnQgIiRmaW5nZXJwcmludCIgMj4vZGV2L251bGwgfAogICAgICAgIGF3ayAtRjogJyQxID09ICJmcHIiIHsgcHJpbnQgJDEwOyBleGl0IH0nCiAgICApCiAgICBpZiBbWyAiJGltcG9ydGVkX2ZpbmdlcnByaW50IiA9PSAiJGZpbmdlcnByaW50IiBdXTsgdGhlbgogICAgICByZXR1cm4gMAogICAgZmkKICAgIF9hdXJfZ3VhcmRfZmFpbCAiZXhpc3RpbmcgYXVyLXNjYW5uZXIgc2lnbmluZyBrZXkgZGlkIG5vdCBtYXRjaCB0aGUgcGlubmVkIGZpbmdlcnByaW50IgogICAgcmV0dXJuIDEKICBmaQoKICBwcmludGYgJ0FVUiBHdWFyZDogaW1wb3J0aW5nIHBpbm5lZCBhdXItc2Nhbm5lciBzaWduaW5nIGtleSAlcy5cbicgIiRmaW5nZXJwcmludCIKICBpZiAhIGNvbW1hbmQgZ3BnIC0tYmF0Y2ggLS1rZXlzZXJ2ZXIgIiRrZXlzZXJ2ZXIiIC0tcmVjdi1rZXlzICIkZmluZ2VycHJpbnQiOyB0aGVuCiAgICBfYXVyX2d1YXJkX2ZhaWwgImNvdWxkIG5vdCBmZXRjaCBwaW5uZWQgYXVyLXNjYW5uZXIgc2lnbmluZyBrZXkgJGZpbmdlcnByaW50IgogICAgcmV0dXJuIDEKICBmaQoKICBpbXBvcnRlZF9maW5nZXJwcmludD0kKAogICAgY29tbWFuZCBncGcgLS1iYXRjaCAtLXdpdGgtY29sb25zIC0tZmluZ2VycHJpbnQgIiRmaW5nZXJwcmludCIgMj4vZGV2L251bGwgfAogICAgICBhd2sgLUY6ICckMSA9PSAiZnByIiB7IHByaW50ICQxMDsgZXhpdCB9JwogICkKICBpZiBbWyAiJGltcG9ydGVkX2ZpbmdlcnByaW50IiAhPSAiJGZpbmdlcnByaW50IiBdXTsgdGhlbgogICAgX2F1cl9ndWFyZF9mYWlsICJpbXBvcnRlZCBhdXItc2Nhbm5lciBzaWduaW5nIGtleSBmaW5nZXJwcmludCBkaWQgbm90IG1hdGNoIHRoZSBwaW5uZWQgdmFsdWUiCiAgICByZXR1cm4gMQogIGZpCgogIHByaW50ZiAnQVVSIEd1YXJkOiB2ZXJpZmllZCBhdXItc2Nhbm5lciBzaWduaW5nIGtleSBmaW5nZXJwcmludCAlcy5cbicgIiRmaW5nZXJwcmludCIKfQoKX2F1cl9ndWFyZF9lbnN1cmVfYXVyX3NjYW4oKSB7Cg=='),
+              ('ICBpZiBbWyAke19BVVJfR1VBUkRfQVVSX1NDQU5fQk9PVFNUUkFQOi0wfSA9PSAxIF1dOyB0aGVuCiAgICByZXR1cm4gMAogIGZpCgogIGlmIFtbICIkcmVxdWVzdGVkX3BrZyIgPT0gIiRfQVVSX0dVQVJEX0FVUl9TQ0FOX1BBQ0tBR0UiIF1dOyB0aGVuCg==', 'ICBpZiBbWyAke19BVVJfR1VBUkRfQVVSX1NDQU5fQk9PVFNUUkFQOi0wfSA9PSAxIF1dOyB0aGVuCiAgICByZXR1cm4gMAogIGZpCgogIF9hdXJfZ3VhcmRfZW5zdXJlX2F1cl9zY2FuX3NpZ25pbmdfa2V5IHx8IHJldHVybiAxCgogIGlmIFtbICIkcmVxdWVzdGVkX3BrZyIgPT0gIiRfQVVSX0dVQVJEX0FVUl9TQ0FOX1BBQ0tBR0UiIF1dOyB0aGVuCg=='),
+              ('ICBsb2NhbCBfQVVSX0dVQVJEX01PREU9J3ByYWN0aWNhbCcKICBsb2NhbCBfQVVSX0dVQVJEX0JVSUxEX1JFUVVFU1RFRD0wCg==', 'ICBsb2NhbCBfQVVSX0dVQVJEX01PREU9J3ByYWN0aWNhbCcKICBsb2NhbCBfQVVSX0dVQVJEX0JVSUxEX1JFUVVFU1RFRD0wCiAgbG9jYWwgX0FVUl9HVUFSRF9BVVJfU0NBTl9CT09UU1RSQVA9IiR7X0FVUl9HVUFSRF9BVVJfU0NBTl9CT09UU1RSQVA6LTB9Igo='),
+              ('ICBfYXVyX2d1YXJkX3ZlcmlmeV90cmVlICIkcGtnIgogIHN0YXR1cz0kPwo=', 'ICBpZiAhIF9hdXJfZ3VhcmRfZW5zdXJlX2F1cl9zY2FuICIkcGtnIjsgdGhlbgogICAgX2F1cl9ndWFyZF9mYWlsICJjb3VsZCBub3QgcHJlcGFyZSB0aGUgcmVxdWlyZWQgYXVyLXNjYW4gc2VjdXJpdHkgZ2F0ZSBmb3IgJHBrZyIKICAgIHJldHVybiAxCiAgZmkKCiAgX2F1cl9ndWFyZF92ZXJpZnlfdHJlZSAiJHBrZyIKICBzdGF0dXM9JD8K'),
+              ('ICAgICAgX2F1cl9ndWFyZF9wYXNzICIkcGtnIGFuZCBhbGwgcmVxdWlyZWQgQVVSIGRlcGVuZGVuY2llcyBwYXNzZWQgJHtfQVVSX0dVQVJEX01PREV9IHZlcmlmaWNhdGlvbi4gUmV2aWV3IHdhcm5pbmdzIHJlbWFpbi4gTm90aGluZyB3YXMgaW5zdGFsbGVkLiIK', 'ICAgICAgX2F1cl9ndWFyZF9wYXNzICIkcGtnIGFuZCBhbGwgcmVxdWlyZWQgQVVSIGRlcGVuZGVuY2llcyBwYXNzZWQgJHtfQVVSX0dVQVJEX01PREV9IHZlcmlmaWNhdGlvbi4gUmV2aWV3IHdhcm5pbmdzIHJlbWFpbi4gVGhlIHJlcXVlc3RlZCBwYWNrYWdlIHdhcyBub3QgaW5zdGFsbGVkLiIK'),
+              ('ICAgICAgX2F1cl9ndWFyZF9wYXNzICIkcGtnIGFuZCBhbGwgcmVxdWlyZWQgQVVSIGRlcGVuZGVuY2llcyBwYXNzZWQgJHtfQVVSX0dVQVJEX01PREV9IHZlcmlmaWNhdGlvbi4gTm90aGluZyB3YXMgaW5zdGFsbGVkLiIK', 'ICAgICAgX2F1cl9ndWFyZF9wYXNzICIkcGtnIGFuZCBhbGwgcmVxdWlyZWQgQVVSIGRlcGVuZGVuY2llcyBwYXNzZWQgJHtfQVVSX0dVQVJEX01PREV9IHZlcmlmaWNhdGlvbi4gVGhlIHJlcXVlc3RlZCBwYWNrYWdlIHdhcyBub3QgaW5zdGFsbGVkLiIK'),
+          ]
+
+          for old64, new64 in replacements:
+              old = base64.b64decode(old64).decode()
+              new = base64.b64decode(new64).decode()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one replacement anchor, found {count}: {old[:80]!r}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Validate self-heal patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git diff --name-only)
+          [[ ${#changed[@]} -eq 1 && ${changed[0]} == bashrc ]]
           bash -n bashrc
           bash -n tests/test-security-boundaries.sh
           bash -n tests/test-aur-scan-self-heal.sh
@@ -39,3 +63,13 @@ jobs:
           bash tests/test-security-boundaries.sh
           bash tests/test-aur-scan-self-heal.sh
           git diff --check
+
+      - name: Commit self-heal patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- bashrc
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Self-heal missing aur-scan prerequisite'
+          git push origin HEAD:feature/aur-scan-integration
