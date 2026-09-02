@@ -6,7 +6,9 @@ on:
       - main
     paths:
       - local/share/awtarchy/awtarchy-runtime.sh
+      - local/share/awtarchy/awtarchy-package-reconcile.sh
       - tests/test-installer-aur-scanner-delegation.sh
+      - tests/test-package-reconciler-aur-equivalents.sh
       - .github/workflows/validate-direct-aur-scanner.yml
   push:
     branches:
@@ -14,25 +16,30 @@ on:
       - feature/direct-aur-scanner
     paths:
       - local/share/awtarchy/awtarchy-runtime.sh
+      - local/share/awtarchy/awtarchy-package-reconcile.sh
       - tests/test-installer-aur-scanner-delegation.sh
+      - tests/test-package-reconciler-aur-equivalents.sh
       - .github/workflows/validate-direct-aur-scanner.yml
 
 permissions:
   contents: read
 
 jobs:
-  validate-installer-delegation:
+  validate-aur-scanner-delegation:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
 
-      - name: Validate installer aur-scanner delegation
+      - name: Validate direct aur-scanner delegation
         shell: bash
         run: |
           set -euo pipefail
           bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n local/share/awtarchy/awtarchy-package-reconcile.sh
           bash -n tests/test-installer-aur-scanner-delegation.sh
-          shellcheck tests/test-installer-aur-scanner-delegation.sh
+          bash -n tests/test-package-reconciler-aur-equivalents.sh
+          shellcheck tests/test-installer-aur-scanner-delegation.sh tests/test-package-reconciler-aur-equivalents.sh
           bash tests/test-installer-aur-scanner-delegation.sh
+          bash tests/test-package-reconciler-aur-equivalents.sh
           git diff --check
