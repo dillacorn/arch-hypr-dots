@@ -13,6 +13,16 @@ def replace_function(source: str, name: str, replacement: str) -> str:
     return source[: matches[0].start()] + replacement.rstrip() + "\n" + source[matches[0].end() :]
 
 
+def edit_function(source: str, name: str, editor) -> str:
+    pattern = re.compile(rf"(?ms)^{re.escape(name)}\(\)\s*\{{\n.*?^\}}\n")
+    matches = list(pattern.finditer(source))
+    if len(matches) != 1:
+        raise SystemExit(f"expected exactly one {name}() function, found {len(matches)}")
+    original = matches[0].group(0)
+    edited = editor(original)
+    return source[: matches[0].start()] + edited.rstrip() + "\n" + source[matches[0].end() :]
+
+
 text = replace_function(
     text,
     "ensure_aur_sudo_access",
@@ -35,7 +45,6 @@ text = replace_function(
 }''',
 )
 
-# Delete the installer-side bridge that sourced AurGuard out of the managed bashrc.
 bridge_pattern = re.compile(r"(?ms)^run_aur_guard_as_target\(\)\s*\{\n.*?^\}\n")
 bridge_matches = list(bridge_pattern.finditer(text))
 if len(bridge_matches) != 1:
@@ -83,8 +92,7 @@ text = replace_function(
 }''',
 )
 
-# Insert the upstream scanner bootstrap and the single normal AUR write helper.
-anchor = '''ensure_yay() {'''
+anchor = "ensure_yay() {"
 start = text.index(anchor)
 match = re.search(r"(?ms)^ensure_yay\(\)\s*\{\n.*?^\}\n", text[start:])
 if match is None:
@@ -126,31 +134,35 @@ install_aur_with_scanner() {
 '''
 text = text[:insert_at] + scanner_helpers + text[insert_at:]
 
-# OBS package path: scanner first, then preserve the existing upstream plugin fallback.
-text = text.replace(
-    '  if run_aur_guard_as_target aurinstall "$pkg"; then\n    return 0\n  fi\n\n  warn "${pkg} failed through AUR Guard. Falling back to upstream per-user OBS plugin install."',
-    '  if install_aur_with_scanner "$pkg"; then\n    return 0\n  fi\n\n  warn "${pkg} failed through aur-scanner. Falling back to upstream per-user OBS plugin install."',
-    1,
-)
+obs_old = '  if run_aur_guard_as_target aurinstall "$pkg"; then\n    return 0\n  fi\n\n  warn "${pkg} failed through AUR Guard. Falling back to upstream per-user OBS plugin install."'
+obs_new = '  if install_aur_with_scanner "$pkg"; then\n    return 0\n  fi\n\n  warn "${pkg} failed through aur-scanner. Falling back to upstream per-user OBS plugin install."'
+if text.count(obs_old) != 1:
+    raise SystemExit("could not locate OBS AurGuard install path")
+text = text.replace(obs_old, obs_new, 1)
 
-# Main selected-package stage.
-text = text.replace("  ensure_aur_guard_requirements\n", "  ensure_aur_install_requirements\n", 1)
-stage_preamble = "  ensure_aur_install_requirements\n  ensure_aur_sudo_access\n  ensure_yay\n"
-if text.count(stage_preamble) != 1:
-    raise SystemExit("could not locate installer AUR stage preamble")
-text = text.replace(stage_preamble, stage_preamble + "  ensure_aur_scanner\n", 1)
-text = text.replace(
-    '    log "Installing selected AUR packages through AUR Guard practical mode..."',
-    '    log "Installing selected AUR packages through upstream aur-scanner..."',
-    1,
-)
-old_selected = '''        if [[ "$pkg" == "obs-pipewire-audio-capture" ]]; then
+
+def edit_aur_stage(stage: str) -> str:
+    if stage.count("  ensure_aur_guard_requirements\n") != 1:
+        raise SystemExit("installer AUR stage has unexpected requirements call")
+    stage = stage.replace("  ensure_aur_guard_requirements\n", "  ensure_aur_install_requirements\n", 1)
+
+    preamble = "  ensure_aur_install_requirements\n  ensure_aur_sudo_access\n  ensure_yay\n"
+    if stage.count(preamble) != 1:
+        raise SystemExit("could not locate installer AUR stage preamble")
+    stage = stage.replace(preamble, preamble + "  ensure_aur_scanner\n", 1)
+
+    old_log = '    log "Installing selected AUR packages through AUR Guard practical mode..."'
+    if stage.count(old_log) != 1:
+        raise SystemExit("could not locate installer AUR stage log")
+    stage = stage.replace(old_log, '    log "Installing selected AUR packages through upstream aur-scanner..."', 1)
+
+    old_selected = '''        if [[ "$pkg" == "obs-pipewire-audio-capture" ]]; then
           install_obs_pipewire_audio_capture_package
         else
           run_aur_guard_as_target aurinstall "$pkg"
         fi
         printf '%s\n' "${COLOR_GREEN}${pkg} installed successfully.${COLOR_RESET}"'''
-new_selected = '''        if [[ "$pkg" == "obs-pipewire-audio-capture" ]]; then
+    new_selected = '''        if [[ "$pkg" == "obs-pipewire-audio-capture" ]]; then
           if ! install_obs_pipewire_audio_capture_package; then
             warn "AUR package failed: ${pkg}. Continuing with remaining selections."
             continue
@@ -164,18 +176,19 @@ new_selected = '''        if [[ "$pkg" == "obs-pipewire-audio-capture" ]]; then
           continue
         fi
         printf '%s\n' "${COLOR_GREEN}${pkg} installed successfully.${COLOR_RESET}"'''
-if text.count(old_selected) != 1:
-    raise SystemExit("could not locate selected AUR install block")
-text = text.replace(old_selected, new_selected, 1)
+    if stage.count(old_selected) != 1:
+        raise SystemExit("could not locate selected AUR install block")
+    stage = stage.replace(old_selected, new_selected, 1)
 
-text = text.replace(
-    '      log "Installing tlpui through AUR Guard practical mode..."\n      if run_aur_guard_as_target aurinstall tlpui && pacman -Qq tlpui >/dev/null 2>&1; then',
-    '      log "Installing tlpui through upstream aur-scanner..."\n      if install_aur_with_scanner tlpui && pacman -Qq tlpui >/dev/null 2>&1; then',
-    1,
-)
+    old_tlp = '      log "Installing tlpui through AUR Guard practical mode..."\n      if run_aur_guard_as_target aurinstall tlpui && pacman -Qq tlpui >/dev/null 2>&1; then'
+    new_tlp = '      log "Installing tlpui through upstream aur-scanner..."\n      if install_aur_with_scanner tlpui && pacman -Qq tlpui >/dev/null 2>&1; then'
+    if stage.count(old_tlp) != 1:
+        raise SystemExit("could not locate tlpui AurGuard install path")
+    return stage.replace(old_tlp, new_tlp, 1)
 
-# GPU legacy branches already have their own before/after managed-package accounting.
-# Replace only the transaction engine so that bookkeeping remains unchanged.
+
+text = edit_function(text, "install_aur_repo_apps_stage", edit_aur_stage)
+
 old_gpu_transaction = '''  if have paru; then
     as_user paru -S --needed --noconfirm "$@"
   elif have yay; then
@@ -188,19 +201,14 @@ if text.count(old_gpu_transaction) != 1:
     raise SystemExit("could not locate GPU AUR helper transaction block")
 text = text.replace(old_gpu_transaction, '  install_aur_with_scanner "$@"', 1)
 
-# The two GPU callers no longer need to pre-bootstrap yay; scanner bootstrap owns that.
 for name in ("install_nvidia_580xx_stack", "install_nvidia_legacy_branch"):
-    pattern = re.compile(rf"(?ms)^{name}\(\)\s*\{{\n.*?^\}}\n")
-    match = pattern.search(text)
-    if match is None:
-        raise SystemExit(f"missing {name}()")
-    function_text = match.group(0)
-    if "  bootstrap_yay\n" not in function_text:
-        raise SystemExit(f"{name}() did not contain expected yay bootstrap")
-    replacement = function_text.replace("  bootstrap_yay\n", "  ensure_aur_scanner\n", 1)
-    text = text[: match.start()] + replacement + text[match.end() :]
+    def replace_gpu_bootstrap(function_text: str, function_name=name) -> str:
+        if function_text.count("  bootstrap_yay\n") != 1:
+            raise SystemExit(f"{function_name}() did not contain expected yay bootstrap")
+        return function_text.replace("  bootstrap_yay\n", "  ensure_aur_scanner\n", 1)
 
-# Stage 1 must leave no installer invocation of AurGuard.
+    text = edit_function(text, name, replace_gpu_bootstrap)
+
 if "run_aur_guard_as_target" in text:
     raise SystemExit("run_aur_guard_as_target remains after Stage 1 rewrite")
 if "run_aur_guard_as_target aurinstall" in text:
