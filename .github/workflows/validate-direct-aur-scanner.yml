@@ -11,6 +11,7 @@ on:
   push:
     branches:
       - main
+      - feature/direct-aur-scanner
     paths:
       - local/share/awtarchy/awtarchy-runtime.sh
       - tests/test-installer-aur-scanner-delegation.sh
