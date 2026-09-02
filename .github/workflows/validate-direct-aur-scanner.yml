@@ -1,4 +1,5 @@
 name: Validate Direct AUR Scanner
+# Permanent read-only validation for the direct aur-scanner migration.
 
 on:
   pull_request:
