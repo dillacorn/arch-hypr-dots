@@ -18,30 +18,31 @@ jobs:
         with:
           ref: feature/aur-scan-integration
 
-      - name: Fix rollback regression harness
+      - name: Apply runtime activation rollback
         run: python3 .github/temp-runtime-rollback-apply.py
 
-      - name: Verify harness reaches behavioral regression
+      - name: Validate AurGuard rollback boundary
         shell: bash
         run: |
           set -euo pipefail
+          bash -n bashrc
           bash -n tests/test-aurguard-runtime-refresh.sh
-          shellcheck tests/test-aurguard-runtime-refresh.sh
-          set +e
-          output=$(bash tests/test-aurguard-runtime-refresh.sh 2>&1)
-          status=$?
-          set -e
-          printf '%s\n' "$output"
-          [[ $status -ne 0 ]]
-          grep -Fq 'metadata activation failure destroyed the previously validated runtime cache' <<<"$output"
+          shellcheck bashrc tests/test-aurguard-runtime-refresh.sh
+          bash tests/test-aurguard-runtime-refresh.sh
+          bash tests/test-security-boundaries.sh
+          bash tests/test-aur-scan-self-heal.sh
+          bash tests/test-aur-scan-checkout-delegation.sh
+          bash tests/test-aur-scan-review-policy.sh
+          bash tests/test-aur-signed-metadata-chain.sh
+          git diff --check
 
-      - name: Commit harness fix
+      - name: Commit runtime rollback fix
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add tests/test-aurguard-runtime-refresh.sh
+          git add bashrc
           git diff --cached --quiet && exit 0
-          git commit -m 'Fix runtime rollback regression harness'
+          git commit -m 'Preserve AurGuard cache on activation failure'
           git push origin HEAD:feature/aur-scan-integration
