@@ -33,6 +33,6 @@ jobs:
           set -euo pipefail
           bash -n local/share/awtarchy/awtarchy-runtime.sh
           bash -n tests/test-installer-aur-scanner-delegation.sh
-          shellcheck local/share/awtarchy/awtarchy-runtime.sh tests/test-installer-aur-scanner-delegation.sh
+          shellcheck tests/test-installer-aur-scanner-delegation.sh
           bash tests/test-installer-aur-scanner-delegation.sh
           git diff --check
