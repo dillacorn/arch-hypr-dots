@@ -1,4 +1,4 @@
-name: Validate Direct AUR Scanner Migration
+name: Validate Direct AUR Scanner
 
 on:
   pull_request:
