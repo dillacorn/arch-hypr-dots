@@ -56,6 +56,7 @@ assert_contains "$RUNTIME" 'ensure_aur_sudo_access()'
 # aur-scanner package is the automatic bootstrap target when the binary is absent.
 assert_contains "$BASHRC" "_AUR_GUARD_AUR_SCAN_PACKAGE='aur-scanner'"
 assert_contains "$BASHRC" '_aur_guard_scan_checkout_with_aur_scan()'
+# shellcheck disable=SC2016
 assert_contains "$BASHRC" '"$scanner" scan "$pkgdir" --fail-on high'
 # shellcheck disable=SC2016
 assert_contains "$BASHRC" '_aur_guard_scan_checkout_with_aur_scan "$pkg" "$pkgdir"'
