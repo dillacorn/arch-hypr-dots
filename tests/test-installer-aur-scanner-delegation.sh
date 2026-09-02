@@ -73,8 +73,8 @@ if "AUR Guard" in obs or "aurinstall" in obs:
     raise SystemExit("OBS installer fallback still depends on AurGuard")
 
 gpu_aur = function_body("aur_install")
-if "/usr/bin/aur-scan" not in gpu_aur or " install " not in gpu_aur:
-    raise SystemExit("GPU legacy AUR installs still bypass aur-scan install")
+if 'install_aur_with_scanner "$@"' not in gpu_aur:
+    raise SystemExit("GPU legacy AUR installs do not share the aur-scan install helper")
 if re.search(r"\b(?:yay|paru)\s+-S\b", gpu_aur):
     raise SystemExit("GPU legacy AUR install helper still writes packages through yay/paru")
 
