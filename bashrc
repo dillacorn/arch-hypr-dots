@@ -2760,10 +2760,64 @@ _aur_guard_scan_package_files() {
   _aur_guard_scan_source_tree "$pkg" "$pkgdir" recursive
 }
 
+declare -a _AUR_GUARD_SCAN_REVIEW_FINDINGS=()
+
+_aur_guard_has_scan_review() {
+  (( ${#_AUR_GUARD_SCAN_REVIEW_FINDINGS[@]} > 0 ))
+}
+
+_aur_guard_print_scan_review() {
+  local record pkg id severity title location snippet
+  local separator=$'\x1f'
+
+  _aur_guard_has_scan_review || return 0
+
+  printf '\nAUR Scan heuristic review findings:\n'
+  for record in "${_AUR_GUARD_SCAN_REVIEW_FINDINGS[@]}"; do
+    IFS="$separator" read -r pkg id severity title location snippet <<< "$record"
+    printf '  [%s] %s %s: %s\n' "$severity" "$id" "$pkg" "$title"
+    [[ -z "$location" ]] || printf '    Location: %s\n' "$location"
+    [[ -z "$snippet" ]] || printf '    Code: %s\n' "$snippet"
+  done
+}
+
+_aur_guard_review_required() {
+  local msg="$1"
+
+  printf '\n\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m\n'
+  printf '\033[1;33mREVIEW REQUIRED:\033[0m %s\n' "$msg"
+  printf '\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m\n'
+}
+
+_aur_guard_confirm_scan_review_install() {
+  local pkg="$1"
+  local answer
+
+  _aur_guard_has_scan_review || return 0
+
+  _aur_guard_print_scan_review
+  printf '\nAUR Guard: aur-scan reported HIGH/CRITICAL heuristic findings for this exact verified transaction.\n'
+  printf 'These findings require review but are not, by themselves, proof of malicious code.\n'
+
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    _aur_guard_fail "interactive confirmation is required before building $pkg with HIGH/CRITICAL aur-scan findings"
+    return 1
+  fi
+
+  printf 'Continue to the clean-root build and install for %s? [y/N]: ' "$pkg"
+  read -r answer || return 1
+  case "${answer,,}" in
+    y|yes) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 _aur_guard_scan_checkout_with_aur_scan() {
   local pkg="$1"
   local pkgdir="$2"
-  local scanner status
+  local scanner status scan_json parsed record
+  local severity id category title description location snippet recommendation
+  local separator=$'\x1f'
 
   if [[ ${_AUR_GUARD_AUR_SCAN_BOOTSTRAP:-0} == 1 ]]; then
     printf 'AUR Verify: aur-scan bootstrap is in progress; built-in AUR Guard checks remain active for %s.\n' \
@@ -2776,15 +2830,109 @@ _aur_guard_scan_checkout_with_aur_scan() {
     return 127
   }
 
+  scan_json=$(mktemp) || {
+    _aur_guard_fail "could not create temporary aur-scan result storage for $pkg"
+    return 1
+  }
+
   printf 'AUR Verify: running aur-scan on the exact fetched checkout for %s.\n' "$pkg"
-  if "$scanner" scan "$pkgdir" --fail-on high; then
-    return 0
+  if "$scanner" scan "$pkgdir" --format json >"$scan_json"; then
+    status=0
   else
     status=$?
   fi
 
-  _aur_guard_fail "aur-scan rejected or could not scan the exact fetched checkout for $pkg"
-  return "$status"
+  if (( status != 0 )); then
+    rm -f -- "$scan_json"
+    _aur_guard_fail "aur-scan could not scan the exact fetched checkout for $pkg"
+    return "$status"
+  fi
+
+  if ! parsed=$(python3 - "$scan_json" <<'PY_SCAN'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+    raise SystemExit(f"invalid aur-scan JSON: {exc}")
+
+if not isinstance(data, dict):
+    raise SystemExit("aur-scan result is not an object")
+if not isinstance(data.get("package_name"), str) or not isinstance(data.get("package_version"), str):
+    raise SystemExit("aur-scan result lacks package identity")
+findings = data.get("findings")
+if not isinstance(findings, list):
+    raise SystemExit("aur-scan result lacks findings array")
+
+allowed = {"critical", "high", "medium", "low", "info"}
+separator = "\x1f"
+
+def clean(value):
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise SystemExit("aur-scan finding text field is not a string")
+    return value.replace("\x1f", " ").replace("\t", " ").replace("\r", " ").replace("\n", " ").strip()
+
+for finding in findings:
+    if not isinstance(finding, dict):
+        raise SystemExit("aur-scan finding is not an object")
+    severity = clean(finding.get("severity")).lower()
+    if severity not in allowed:
+        raise SystemExit(f"unknown aur-scan severity: {severity}")
+    ident = clean(finding.get("id"))
+    category = clean(finding.get("category"))
+    title = clean(finding.get("title"))
+    description = clean(finding.get("description"))
+    recommendation = clean(finding.get("recommendation"))
+    if not all((ident, category, title, description, recommendation)):
+        raise SystemExit("aur-scan finding lacks required evidence")
+    location_obj = finding.get("location")
+    if not isinstance(location_obj, dict):
+        raise SystemExit("aur-scan finding lacks location")
+    file_name = clean(location_obj.get("file"))
+    line = location_obj.get("line")
+    if line is not None and (not isinstance(line, int) or isinstance(line, bool) or line < 1):
+        raise SystemExit("aur-scan finding has invalid line number")
+    location = file_name
+    if line is not None:
+        location = f"{file_name}:{line}" if file_name else str(line)
+    snippet = clean(location_obj.get("snippet"))
+    print(separator.join((severity.upper(), ident, category, title, description, location, snippet, recommendation)))
+PY_SCAN
+  ); then
+    rm -f -- "$scan_json"
+    _aur_guard_fail "aur-scan returned malformed or unsupported JSON for $pkg"
+    return 1
+  fi
+  rm -f -- "$scan_json"
+
+  if [[ -z "$parsed" ]]; then
+    printf 'AUR Scan: %s reported no security findings.\n' "$pkg"
+    return 0
+  fi
+
+  printf 'AUR Scan findings for %s:\n' "$pkg"
+  while IFS= read -r record; do
+    [[ -n "$record" ]] || continue
+    IFS="$separator" read -r severity id category title description location snippet recommendation <<< "$record"
+    printf '  [%s] %s %s\n' "$severity" "$id" "$title"
+    printf '    %s\n' "$description"
+    printf '    Category: %s\n' "$category"
+    [[ -z "$location" ]] || printf '    Location: %s\n' "$location"
+    [[ -z "$snippet" ]] || printf '    Code: %s\n' "$snippet"
+    printf '    Recommendation: %s\n' "$recommendation"
+
+    case "$severity" in
+      HIGH|CRITICAL)
+        _AUR_GUARD_SCAN_REVIEW_FINDINGS+=(
+          "${pkg}${separator}${id}${separator}${severity}${separator}${title}${separator}${location}${separator}${snippet}"
+        )
+        ;;
+    esac
+  done <<< "$parsed"
 }
 
 _aur_guard_normalize_srcinfo() {
@@ -4978,6 +5126,7 @@ _aur_guard_verify_tree() {
   declare -gA _AUR_GUARD_BASE_STATE=()
   _AUR_GUARD_HISTORICAL_MATCHES=()
   _AUR_GUARD_CONTEXT_WARNINGS=()
+  _AUR_GUARD_SCAN_REVIEW_FINDINGS=()
   _AUR_GUARD_INSTALL_STARTED=0
   _AUR_GUARD_IDENTITY_ASSESSED=0
 
@@ -6466,7 +6615,15 @@ aurverify() {
   status=$?
 
   if (( status == 0 )); then
-    if _aur_guard_has_guarded_matches; then
+    if _aur_guard_has_scan_review; then
+      if _aur_guard_has_guarded_matches; then
+        _aur_guard_print_historical_summary
+        _aur_guard_print_context_summary
+      fi
+      _aur_guard_print_scan_review
+      _aur_guard_review_required "$pkg and all required AUR dependencies passed ${_AUR_GUARD_MODE} hard verification, but HIGH/CRITICAL aur-scan heuristic findings require human review. The requested package was not installed."
+      status=2
+    elif _aur_guard_has_guarded_matches; then
       _aur_guard_print_historical_summary
       _aur_guard_print_context_summary
       _aur_guard_pass "$pkg and all required AUR dependencies passed ${_AUR_GUARD_MODE} verification. Review warnings remain. The requested package was not installed."
@@ -6604,6 +6761,12 @@ aurinstall() {
 
     if ! _aur_guard_confirm_identity_changes; then
       _aur_guard_refuse_install "$pkg" 'the maintainer-change confirmation was not accepted'
+      _aur_guard_cleanup_work
+      return 1
+    fi
+
+    if ! _aur_guard_confirm_scan_review_install "$pkg"; then
+      _aur_guard_refuse_install "$pkg" 'HIGH/CRITICAL aur-scan heuristic review was not accepted'
       _aur_guard_cleanup_work
       return 1
     fi

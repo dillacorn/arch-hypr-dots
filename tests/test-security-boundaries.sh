@@ -52,12 +52,13 @@ assert_not_contains "$RUNTIME" 'create_temp_sudoers_for_aur'
 assert_contains "$RUNTIME" 'ensure_aur_sudo_access()'
 
 # AUR Guard must scan the exact fetched checkout before makepkg evaluates the
-# PKGBUILD. High and critical aur-scan findings are a hard failure. The stable
-# aur-scanner package is the automatic bootstrap target when the binary is absent.
+# PKGBUILD. Scanner findings remain visible evidence; scanner execution or malformed
+# output fails closed. The stable aur-scanner package is the automatic bootstrap target.
 assert_contains "$BASHRC" "_AUR_GUARD_AUR_SCAN_PACKAGE='aur-scanner'"
 assert_contains "$BASHRC" '_aur_guard_scan_checkout_with_aur_scan()'
 # shellcheck disable=SC2016
-assert_contains "$BASHRC" '"$scanner" scan "$pkgdir" --fail-on high'
+assert_contains "$BASHRC" '"$scanner" scan "$pkgdir" --format json'
+assert_not_contains "$BASHRC" '--fail-on high'
 # shellcheck disable=SC2016
 assert_contains "$BASHRC" '_aur_guard_scan_checkout_with_aur_scan "$pkg" "$pkgdir"'
 python3 - "$BASHRC" <<'PY'
@@ -85,9 +86,12 @@ sed 's/^\[\[ \$- != \*i\* \]\] && return$/:/' "$BASHRC" >"$aur_guard_fixture"
 cat >"${aur_scan_fakebin}/aur-scan" <<'EOF_AUR_SCAN'
 #!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "$@" >"${AWTARCHY_TEST_AUR_SCAN_LOG:?}"
+printf '%s
+' "$@" >"${AWTARCHY_TEST_AUR_SCAN_LOG:?}"
 status="${AWTARCHY_TEST_AUR_SCAN_STATUS:-0}"
-(( status == 0 ))
+(( status == 0 )) || exit "$status"
+printf '%s
+' '{"package_name":"fixture","package_version":"1-1","findings":[],"scanned_files":["PKGBUILD"],"timestamp":"2026-09-02T00:00:00Z","scan_duration_ms":1}'
 EOF_AUR_SCAN
 cat >"$aur_scan_runner" <<'EOF_AUR_SCAN_RUNNER'
 #!/usr/bin/env bash
@@ -113,8 +117,9 @@ mapfile -t aur_scan_args <"$aur_scan_log"
   || fail 'AUR Guard did not use aur-scan scan mode'
 [[ ${aur_scan_args[1]} == "$aur_scan_pkgdir" ]] \
   || fail 'AUR Guard did not scan the exact fetched checkout'
-[[ ${aur_scan_args[2]} == --fail-on && ${aur_scan_args[3]} == high ]] \
-  || fail 'AUR Guard did not block high and critical aur-scan findings'
+[[ ${aur_scan_args[2]} == --format && ${aur_scan_args[3]} == json ]] \
+  || fail 'AUR Guard did not request structured aur-scan JSON output'
+
 
 if env \
     "PATH=${aur_scan_fakebin}:$PATH" \
