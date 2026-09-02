@@ -20,6 +20,7 @@ Singleton {
     property var otherTemps: []
     property bool idleInhibited: false
     property bool idleBroken: false
+    property bool idleReconcilePending: false
     property var coreUsage: ({})
 
     property real previousCpuTotal: 0
@@ -98,6 +99,8 @@ Singleton {
         command: ["sh", "-c", "if [ -x '" + root.idleScript + "' ]; then '" + root.idleScript + "'; fi"]
         stdout: StdioCollector {
             onStreamFinished: {
+                if (idleReconcilePending)
+                    return;
                 try {
                     const status = JSON.parse(text.trim());
                     const classes = status.class || [];
@@ -109,6 +112,15 @@ Singleton {
                 }
             }
         }
+        onExited: {
+            if (root.idleReconcilePending && !idleToggleProcess.running)
+                root.refreshIdleAfterToggle();
+        }
+    }
+
+    Process {
+        id: idleToggleProcess
+        onExited: root.refreshIdleAfterToggle()
     }
 
     Timer {
@@ -119,7 +131,7 @@ Singleton {
         onTriggered: {
             if (!metricsProcess.running)
                 metricsProcess.running = true;
-            if (!idleStatusProcess.running)
+            if (!idleStatusProcess.running && !idleToggleProcess.running && !root.idleReconcilePending)
                 idleStatusProcess.running = true;
         }
     }
@@ -354,18 +366,18 @@ Singleton {
         return name.length > 0 ? name : "Default audio output";
     }
 
-    function toggleIdle() {
-        Quickshell.execDetached([idleScript, "toggle"]);
-        refreshIdleTimer.restart();
+    function refreshIdleAfterToggle() {
+        if (!root.idleReconcilePending || idleToggleProcess.running || idleStatusProcess.running)
+            return;
+        root.idleReconcilePending = false;
+        idleStatusProcess.running = true;
     }
 
-    Timer {
-        id: refreshIdleTimer
-        interval: 350
-        repeat: false
-        onTriggered: {
-            if (!idleStatusProcess.running)
-                idleStatusProcess.running = true;
-        }
+    function toggleIdle() {
+        if (idleToggleProcess.running)
+            return;
+        root.idleInhibited = !root.idleInhibited;
+        root.idleReconcilePending = true;
+        idleToggleProcess.exec([idleScript, "toggle"]);
     }
 }
