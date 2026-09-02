@@ -64,6 +64,7 @@ chmod +x "$fakebin/aur-scan"
 
 export TEST_STATE="$state"
 export TEST_SCAN_LOG="$scan_log"
+export AWTARCHY_TEST_MODE=1
 export AWTARCHY_AUR_SCAN_BIN="$fakebin/aur-scan"
 export PATH="$fakebin:/usr/bin:/bin"
 export HOME="$home"
