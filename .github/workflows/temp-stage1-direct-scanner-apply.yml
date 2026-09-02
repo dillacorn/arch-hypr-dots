@@ -18,8 +18,8 @@ jobs:
         with:
           ref: feature/direct-aur-scanner
 
-      - name: Apply installer delegation
-        run: python3 .github/temp-stage1-direct-scanner-apply-v2.py
+      - name: Apply scanner PGP bootstrap
+        run: python3 .github/temp-stage1-pgpfetch-apply.py
 
       - name: Validate Stage 1
         shell: bash
@@ -40,5 +40,5 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add local/share/awtarchy/awtarchy-runtime.sh
           git diff --cached --quiet && exit 0
-          git commit -m 'Delegate installer AUR writes to aur-scanner'
+          git commit -m 'Fetch upstream scanner signing keys'
           git push origin HEAD:feature/direct-aur-scanner
