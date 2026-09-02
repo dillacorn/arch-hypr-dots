@@ -128,7 +128,6 @@ grep -Fq 'root.refreshIdleAfterToggle();' "$SYSTEM_STATE" \
 ! grep -Fq 'interval: 350' "$SYSTEM_STATE" \
   || fail "idle inhibitor still contains the 350 ms visual delay"
 
-
 grep -Fq 'repair_v347_idle_inhibitor_feedback_target()' "$RUNTIME" \
   || fail "runtime is missing the v3.4.7 idle-inhibitor post-release repair"
 grep -Fq '[[ "$tag" == "v3.4.7" ]] || return 0' "$RUNTIME" \
