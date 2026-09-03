@@ -68,8 +68,8 @@ reconciler = replace_once(
 
 reconciler = replace_once(
     reconciler,
-    "LY_STATUS=\"not installed\"\n",
-    "LY_STATUS=\"not installed\"\nCHEESE_REPLACEMENT_NEEDED=0\n",
+    'SYSTEM_TYPE="unknown"\nLY_STATUS="not installed"\nAUR_SCAN_BIN="/usr/bin/aur-scan"\n',
+    'SYSTEM_TYPE="unknown"\nLY_STATUS="not installed"\nCHEESE_REPLACEMENT_NEEDED=0\nAUR_SCAN_BIN="/usr/bin/aur-scan"\n',
     "replacement state variable",
 )
 
