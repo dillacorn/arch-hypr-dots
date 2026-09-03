@@ -1,15 +1,17 @@
 name: Validate Direct AUR Scanner
-# Permanent read-only validation for installer, reconciler, and updater migration.
+# Permanent read-only validation for installer, reconciler, updater, and shell migration.
 
 on:
   pull_request:
     branches:
       - main
     paths:
+      - bashrc
       - local/share/awtarchy/awtarchy-runtime.sh
       - local/share/awtarchy/awtarchy-package-reconcile.sh
       - tests/test-installer-aur-scanner-delegation.sh
       - tests/test-aur-scanner-updater-migration.sh
+      - tests/test-aur-helper-policy.sh
       - tests/test-package-reconciler.sh
       - tests/test-package-reconciler-alternatives.sh
       - tests/test-package-reconciler-interrupted-recovery.sh
@@ -20,10 +22,12 @@ on:
       - main
       - feature/direct-aur-scanner
     paths:
+      - bashrc
       - local/share/awtarchy/awtarchy-runtime.sh
       - local/share/awtarchy/awtarchy-package-reconcile.sh
       - tests/test-installer-aur-scanner-delegation.sh
       - tests/test-aur-scanner-updater-migration.sh
+      - tests/test-aur-helper-policy.sh
       - tests/test-package-reconciler.sh
       - tests/test-package-reconciler-alternatives.sh
       - tests/test-package-reconciler-interrupted-recovery.sh
@@ -44,23 +48,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          bash -n bashrc
           bash -n local/share/awtarchy/awtarchy-runtime.sh
           bash -n local/share/awtarchy/awtarchy-package-reconcile.sh
           bash -n tests/test-installer-aur-scanner-delegation.sh
           bash -n tests/test-aur-scanner-updater-migration.sh
+          bash -n tests/test-aur-helper-policy.sh
           bash -n tests/test-package-reconciler.sh
           bash -n tests/test-package-reconciler-alternatives.sh
           bash -n tests/test-package-reconciler-interrupted-recovery.sh
           bash -n tests/test-package-reconciler-aur-equivalents.sh
-          shellcheck local/share/awtarchy/awtarchy-package-reconcile.sh
           shellcheck tests/test-installer-aur-scanner-delegation.sh
           shellcheck tests/test-aur-scanner-updater-migration.sh
+          shellcheck tests/test-aur-helper-policy.sh
+          shellcheck local/share/awtarchy/awtarchy-package-reconcile.sh
           shellcheck tests/test-package-reconciler.sh
           shellcheck tests/test-package-reconciler-alternatives.sh
           shellcheck tests/test-package-reconciler-interrupted-recovery.sh
           shellcheck tests/test-package-reconciler-aur-equivalents.sh
           bash tests/test-installer-aur-scanner-delegation.sh
           bash tests/test-aur-scanner-updater-migration.sh
+          bash tests/test-aur-helper-policy.sh
           bash tests/test-package-reconciler.sh
           bash tests/test-package-reconciler-alternatives.sh
           bash tests/test-package-reconciler-interrupted-recovery.sh
