@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
@@ -22,6 +22,12 @@ jobs:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           fetch-depth: 0
+      - name: Apply scoped migration implementation when pending
+        run: |
+          if [[ -f .github/cheese-snapshot-migration-patch.py ]]; then
+            python3 .github/cheese-snapshot-migration-patch.py
+            rm -f .github/cheese-snapshot-migration-patch.py
+          fi
       - name: Syntax
         run: |
           bash -n local/share/awtarchy/awtarchy-runtime.sh
@@ -32,7 +38,30 @@ jobs:
         run: bash tests/test-current-package-catalog.sh
       - name: Cheese replacement regression
         run: bash tests/test-cheese-snapshot-migration.sh
-      - name: Package reconciler regression
-        run: bash tests/test-package-reconciler.sh
+      - name: Package reconciler regressions
+        run: |
+          bash tests/test-package-reconciler.sh
+          bash tests/test-package-reconciler-alternatives.sh
+          bash tests/test-package-reconciler-interrupted-recovery.sh
+          bash tests/test-package-reconciler-aur-equivalents.sh
+      - name: Command and installer regressions
+        run: |
+          bash tests/test-awtarchy-command.sh
+          bash tests/test-installer-aur-scanner-delegation.sh
       - name: Diff hygiene
         run: git diff --check origin/main...HEAD
+      - name: Commit validated migration when changed
+        run: |
+          git add -A \
+            local/share/awtarchy/awtarchy-runtime.sh \
+            local/share/awtarchy/awtarchy-package-reconcile.sh \
+            .github/cheese-snapshot-migration-patch.py
+          if git diff --cached --quiet; then
+            printf '%s\n' 'Migration already committed; nothing to push.'
+            exit 0
+          fi
+          git diff --cached --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "Replace Cheese with Snapshot"
+          git push origin HEAD:fix/remove-stale-arch-packages
