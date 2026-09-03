@@ -18,13 +18,21 @@ grep -Fq -- '--needs-action' "$RECONCILER" \
 grep -Fq -- 'offer_package_reconciliation_before_update' "$LAUNCHER" \
     || fail 'awtarchy update has no package reconciliation preflight helper'
 
-update_case="$({
-    awk '
-        /^[[:space:]]*update\)[[:space:]]*$/ { inside=1 }
-        inside { print }
-        inside && /^[[:space:]]*;;[[:space:]]*$/ { exit }
-    ' "$LAUNCHER"
-})"
+update_case="$(python3 - "$LAUNCHER" <<'PY'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text()
+start_marker = '    update)\n      reject_stable_testing_overrides "$@"\n'
+start = text.find(start_marker)
+if start < 0:
+    raise SystemExit(1)
+end = text.find('\n      ;;', start)
+if end < 0:
+    raise SystemExit(1)
+print(text[start:end + len('\n      ;;')])
+PY
+)" || fail 'could not locate the main awtarchy update dispatcher'
 
 ensure_line="$(grep -n -m1 -F 'ensure_latest_updater "$@"' <<<"$update_case" | cut -d: -f1 || true)"
 preflight_line="$(grep -n -m1 -F 'offer_package_reconciliation_before_update' <<<"$update_case" | cut -d: -f1 || true)"
