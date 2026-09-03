@@ -1,43 +1,166 @@
-name: Validate hyprmoncfg idle safety
+name: Apply and validate hyprmoncfg idle safety
 
 on:
   push:
     branches: [feature/hyprmoncfg-idle-safety]
-  pull_request:
-    paths:
-      - config/hypr/hyprland.lua
-      - config/hypr/hypridle.conf
-      - config/hypr/scripts/launch_handler.sh
-      - config/hypr/scripts/idle_inhibitor_global.sh
-      - config/hypr/scripts/hypridle_action.sh
-      - config/hypr/scripts/protected_idle_safety.sh
-      - config/quickshell/awtarchy/SystemState.qml
-      - config/quickshell/awtarchy/QuickSettings.qml
-      - config/quickshell/awtarchy/Bar.qml
-      - tests/test-hyprmoncfg-idle-safety.sh
-      - .github/workflows/validate-hyprmoncfg-idle-safety.yml
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  validate:
+  integrate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y desktop-file-utils lua5.4
+
+      - name: Apply scoped integration
+        run: |
+          python3 .github/feature-hyprmoncfg-idle-safety-patch.py
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          bar = Path("config/quickshell/awtarchy/Bar.qml")
+          text = bar.read_text(encoding="utf-8")
+          old = '''                foreground: SystemState.idleBroken ? Theme.urgent : Theme.foreground
+                          hoverBackground: Theme.strongHover
+          '''
+          new = '''                foreground: SystemState.idleBroken ? Theme.urgent : Theme.foreground
+                          normalBackground: SystemState.idleMode === "always-awake" ? Theme.subtleActive : "transparent"
+                          hoverBackground: Theme.strongHover
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f"Bar.qml: expected one idle-control background insertion point, found {text.count(old)}")
+          bar.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          test = Path("tests/test-hyprmoncfg-idle-safety.sh")
+          text = test.read_text(encoding="utf-8")
+          old = '''require_file_text "$BAR" 'SystemState.idleMode === "always-awake"' \\
+              'bar idle indicator does not distinguish Always Awake mode'
+          '''
+          new = old + '''require_file_text "$BAR" \\
+              'normalBackground: SystemState.idleMode === "always-awake" ? Theme.subtleActive : "transparent"' \\
+              'bar idle indicator does not visibly distinguish Always Awake mode'
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f"idle-safety test: expected one Always Awake bar assertion, found {text.count(old)}")
+          test.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+
+          chmod 0755 \
+            config/hypr/scripts/launch_handler.sh \
+            config/hypr/scripts/idle_inhibitor_global.sh \
+            config/hypr/scripts/protected_idle_safety.sh
+
+          git rm .github/feature-hyprmoncfg-idle-safety-patch.py
+
+          cat > .github/workflows/validate-hyprmoncfg-idle-safety.yml <<'EOF'
+          name: Validate hyprmoncfg idle safety
+
+          on:
+            push:
+              branches: [feature/hyprmoncfg-idle-safety]
+            pull_request:
+              paths:
+                - config/hypr/hyprland.lua
+                - config/hypr/hypridle.conf
+                - config/hypr/scripts/awtarchy-tips-tui.sh
+                - config/hypr/scripts/launch_handler.sh
+                - config/hypr/scripts/idle_inhibitor_global.sh
+                - config/hypr/scripts/hypridle_action.sh
+                - config/hypr/scripts/protected_idle_safety.sh
+                - config/quickshell/awtarchy/SystemState.qml
+                - config/quickshell/awtarchy/QuickSettings.qml
+                - config/quickshell/awtarchy/Bar.qml
+                - local/share/awtarchy/quickshell-managed-history.sha256
+                - tests/test-hyprmoncfg-idle-safety.sh
+                - tests/test-protected-idle-auto-game.sh
+                - tests/test-bar-control-actions.sh
+                - .github/workflows/validate-hyprmoncfg-idle-safety.yml
+            workflow_dispatch:
+
+          permissions:
+            contents: read
+
+          jobs:
+            validate:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+                  with:
+                    fetch-depth: 0
+                - name: Install validation tools
+                  run: sudo apt-get update && sudo apt-get install -y desktop-file-utils lua5.4
+                - name: Syntax
+                  run: |
+                    bash -n config/hypr/scripts/awtarchy-tips-tui.sh
+                    bash -n config/hypr/scripts/launch_handler.sh
+                    bash -n config/hypr/scripts/idle_inhibitor_global.sh
+                    bash -n config/hypr/scripts/hypridle_action.sh
+                    bash -n config/hypr/scripts/protected_idle_safety.sh
+                    bash -n tests/test-hyprmoncfg-idle-safety.sh
+                    bash -n tests/test-protected-idle-auto-game.sh
+                    bash -n tests/test-bar-control-actions.sh
+                - name: Focused regression
+                  run: |
+                    bash tests/test-hyprmoncfg-idle-safety.sh
+                    bash tests/test-protected-idle-auto-game.sh
+                - name: Existing idle and UI regressions
+                  run: |
+                    bash tests/test-bar-control-actions.sh
+                    bash tests/test-quick-settings-spacing.sh
+                    bash tests/test-quick-settings-layout.sh
+                    bash tests/test-battery-flyout.sh
+                    bash tests/test-lua-validation.sh
+                    bash tests/test-awtarchy-tips-links.sh
+                - name: Updater managed-history regression
+                  run: bash tests/test-quickshell-updater-migration.sh
+                - name: Diff hygiene
+                  run: git diff --check HEAD^
+          EOF
+
       - name: Syntax
         run: |
+          bash -n config/hypr/scripts/awtarchy-tips-tui.sh
           bash -n config/hypr/scripts/launch_handler.sh
           bash -n config/hypr/scripts/idle_inhibitor_global.sh
           bash -n config/hypr/scripts/hypridle_action.sh
           bash -n config/hypr/scripts/protected_idle_safety.sh
           bash -n tests/test-hyprmoncfg-idle-safety.sh
-      - name: Managed QML hashes
-        run: |
-          sha256sum \
-            config/quickshell/awtarchy/Bar.qml \
-            config/quickshell/awtarchy/QuickSettings.qml \
-            config/quickshell/awtarchy/SystemState.qml
+          bash -n tests/test-protected-idle-auto-game.sh
+          bash -n tests/test-bar-control-actions.sh
+
       - name: Focused regression
-        run: bash tests/test-hyprmoncfg-idle-safety.sh
+        run: |
+          bash tests/test-hyprmoncfg-idle-safety.sh
+          bash tests/test-protected-idle-auto-game.sh
+
+      - name: Existing idle and UI regressions
+        run: |
+          bash tests/test-bar-control-actions.sh
+          bash tests/test-quick-settings-spacing.sh
+          bash tests/test-quick-settings-layout.sh
+          bash tests/test-battery-flyout.sh
+          bash tests/test-lua-validation.sh
+          bash tests/test-awtarchy-tips-links.sh
+
+      - name: Updater managed-history regression
+        run: bash tests/test-quickshell-updater-migration.sh
+
+      - name: Diff hygiene
+        run: git diff --check
+
+      - name: Commit validated integration
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m "Finish hyprmoncfg idle safety integration"
+          git push origin HEAD:feature/hyprmoncfg-idle-safety
