@@ -12,6 +12,7 @@ on:
       - tests/test-cheese-snapshot-migration.sh
       - tests/test-update-package-preflight.sh
       - .github/scripts/apply_optional_package_defaults.py
+      - .github/scripts/fix_optional_package_parser.py
       - .github/workflows/validate-current-package-catalog.yml
   workflow_dispatch:
 
@@ -28,6 +29,9 @@ jobs:
       - name: Apply optional package defaults
         if: ${{ hashFiles('.github/scripts/apply_optional_package_defaults.py') != '' }}
         run: python3 .github/scripts/apply_optional_package_defaults.py
+      - name: Fix optional package parser
+        if: ${{ hashFiles('.github/scripts/fix_optional_package_parser.py') != '' }}
+        run: python3 .github/scripts/fix_optional_package_parser.py
       - name: Syntax
         run: |
           bash -n local/bin/awtarchy
@@ -62,6 +66,9 @@ jobs:
           git add local/share/awtarchy/awtarchy-runtime.sh
           git add local/share/awtarchy/awtarchy-package-reconcile.sh
           git rm .github/scripts/apply_optional_package_defaults.py
+          if [[ -e .github/scripts/fix_optional_package_parser.py ]]; then
+            git rm .github/scripts/fix_optional_package_parser.py
+          fi
           git diff --cached --check
           git commit -m 'Make optional apps native and opt-in'
           git push origin HEAD:fix/remove-stale-arch-packages
