@@ -23,6 +23,16 @@ def replace_once(path: str, old: str, new: str) -> None:
     write(path, text.replace(old, new, 1))
 
 
+def replace_count(path: str, old: str, new: str, expected: int) -> None:
+    text = read(path)
+    count = text.count(old)
+    if count != expected:
+        raise SystemExit(
+            f"{path}: expected exactly {expected} guarded matches, found {count}"
+        )
+    write(path, text.replace(old, new))
+
+
 def sha256(path: str) -> str:
     return hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
 
@@ -67,7 +77,10 @@ replace_once(
     '    hl.bind("SUPER + SHIFT + " .. key, hl.dsp.window.move({ direction = direction }), {})\nend\n\n-- Send current workspace to monitor',
 )
 hypr_path = ROOT / "config/hypr/hyprland.lua"
-hypr_path.write_text(hypr_path.read_text(encoding="utf-8").rstrip("\n") + "\n", encoding="utf-8")
+hypr_path.write_text(
+    hypr_path.read_text(encoding="utf-8").rstrip("\n") + "\n",
+    encoding="utf-8",
+)
 
 
 # Add the stronger session-only mode to the existing Awtarchy card rather than
@@ -128,9 +141,9 @@ quick_new = quick_old + '''
 replace_once("config/quickshell/awtarchy/QuickSettings.qml", quick_old, quick_new)
 
 
-# Keep the bar eye as the quick Keep Awake toggle, but make the stronger mode
-# visibly distinguishable and document the four-hour display safeguard.
-replace_once(
+# Keep both horizontal and vertical bar eyes as the quick Keep Awake toggle,
+# while making the stronger mode textually distinguishable in either layout.
+replace_count(
     "config/quickshell/awtarchy/Bar.qml",
     '                tooltip: SystemState.idleInhibited ? "Idle inhibitor: activated\\nClick to deactivate" : "Idle inhibitor: deactivated\\nClick to activate"',
     '''                tooltip: SystemState.idleMode === "always-awake"
@@ -138,6 +151,7 @@ replace_once(
                     : (SystemState.idleInhibited
                         ? "Keep Awake: activated\\nLocks and turns displays off after 4 hours idle\\nClick to deactivate"
                         : "Idle inhibitor: deactivated\\nClick to activate Keep Awake")''',
+    2,
 )
 
 
