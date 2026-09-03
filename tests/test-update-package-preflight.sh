@@ -50,8 +50,16 @@ cat >"$tmp/runtime.sh" <<'RUNTIME'
 declare -a PKG_GROUPS=(
   "Test:snapshot"
 )
+declare -a OPTIONAL_ARCH_PACKAGES=(
+  moonlight-qt
+)
 declare -a PACKAGES_AUR=()
-declare -a FLATPAK_CATALOG=()
+declare -a OPTIONAL_AUR_PACKAGES=(
+  vesktop-bin
+)
+declare -a FLATPAK_CATALOG=(
+  "0|Flatseal|com.github.tchx84.Flatseal"
+)
 RUNTIME
 
 cat >"$tmp/bin/pacman" <<'PACMAN'
@@ -64,6 +72,13 @@ fi
 exit 1
 PACMAN
 chmod +x "$tmp/bin/pacman"
+
+cat >"$tmp/bin/flatpak" <<'FLATPAK'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+exit 0
+FLATPAK
+chmod +x "$tmp/bin/flatpak"
 
 cat >"$tmp/hardware-state" <<'STATE'
 is_laptop=true
@@ -94,6 +109,18 @@ if ! grep -Fq -- '  - snapshot' <<<"$review_output"; then
     printf '%s\n' "$review_output" >&2
     fail 'fixture does not expose snapshot as a missing current Arch catalog package'
 fi
+if ! grep -Fq -- '  - moonlight-qt' <<<"$review_output"; then
+    printf '%s\n' "$review_output" >&2
+    fail 'fixture does not expose moonlight-qt as an available optional Arch package'
+fi
+if ! grep -Fq -- '  - vesktop-bin' <<<"$review_output"; then
+    printf '%s\n' "$review_output" >&2
+    fail 'fixture does not expose vesktop-bin as an available optional AUR package'
+fi
+if ! grep -Fq -- 'Flatseal (com.github.tchx84.Flatseal)' <<<"$review_output"; then
+    printf '%s\n' "$review_output" >&2
+    fail 'fixture does not expose Flatseal as an available optional Flatpak app'
+fi
 
 set +e
 AWTARCHY_RUNTIME="$tmp/runtime.sh" \
@@ -108,6 +135,8 @@ set -e
 
 printf '%s\n' snapshot >>"$tmp/installed"
 
+# Only optional apps remain missing now. That is a valid clean state and must
+# not trigger the awtarchy update package-drift preflight.
 set +e
 AWTARCHY_RUNTIME="$tmp/runtime.sh" \
 AWTARCHY_HARDWARE_FILE="$tmp/hardware-state" \
@@ -117,6 +146,6 @@ PATH="$tmp/bin:$PATH" \
 bash "$RECONCILER" --needs-action >/dev/null 2>&1
 rc=$?
 set -e
-[[ $rc -eq 0 ]] || fail "--needs-action should return 0 when package state is clean, got ${rc}"
+[[ $rc -eq 0 ]] || fail "--needs-action should ignore missing optional apps, got ${rc}"
 
-printf '%s\n' 'PASS: awtarchy update package preflight is wired and package drift status is machine-readable.'
+printf '%s\n' 'PASS: awtarchy update package preflight ignores optional apps while detecting real package drift.'
