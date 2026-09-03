@@ -6,6 +6,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 HYPR="$ROOT/config/hypr/hyprland.lua"
 HYPRIDLE_CONF="$ROOT/config/hypr/hypridle.conf"
 HYPRIDLE_ACTION="$ROOT/config/hypr/scripts/hypridle_action.sh"
+PROTECTED_IDLE_SAFETY="$ROOT/config/hypr/scripts/protected_idle_safety.sh"
 INHIBITOR="$ROOT/config/hypr/scripts/idle_inhibitor_global.sh"
 LAUNCH_HANDLER="$ROOT/config/hypr/scripts/launch_handler.sh"
 SYSTEM_STATE="$ROOT/config/quickshell/awtarchy/SystemState.qml"
@@ -98,9 +99,12 @@ sleep 0.15
 require_file_text "$HYPRIDLE_CONF" 'timeout = 14400 # 4 hours' \
     'hypridle lacks the four-hour protected-session safety timer'
 require_file_text "$HYPRIDLE_CONF" \
-    'on-timeout = ~/.config/hypr/scripts/hypridle_action.sh protected-lock-dpms' \
-    'four-hour safety timer does not use the protected lock+DPMS action'
+    'on-timeout = ~/.config/hypr/scripts/protected_idle_safety.sh' \
+    'four-hour safety timer does not use the protected-session safety coordinator'
 
+require_file_text "$PROTECTED_IDLE_SAFETY" \
+    'hypridle_action.sh' \
+    'protected-session safety does not reuse the authoritative hypridle probes'
 require_file_text "$INHIBITOR" 'set-mode)' \
     'idle inhibitor backend lacks explicit mode selection'
 require_file_text "$INHIBITOR" 'always-awake' \
@@ -185,7 +189,8 @@ IDLE_MODE_FILE="$mode_file" \
 ACTION_LOG="$action_log" \
 HYPRCTL_BIN="$stub_bin/hyprctl" \
 LOGINCTL_BIN="$stub_bin/loginctl" \
-    "$HYPRIDLE_ACTION" protected-lock-dpms
+HYPRIDLE_ACTION_SCRIPT="$HYPRIDLE_ACTION" \
+    "$PROTECTED_IDLE_SAFETY"
 
 require_file_text "$action_log" 'loginctl lock-session' \
     'Keep Awake did not permit the four-hour safety lock'
@@ -201,7 +206,8 @@ IDLE_MODE_FILE="$mode_file" \
 ACTION_LOG="$action_log" \
 HYPRCTL_BIN="$stub_bin/hyprctl" \
 LOGINCTL_BIN="$stub_bin/loginctl" \
-    "$HYPRIDLE_ACTION" protected-lock-dpms
+HYPRIDLE_ACTION_SCRIPT="$HYPRIDLE_ACTION" \
+    "$PROTECTED_IDLE_SAFETY"
 
 [[ ! -s "$action_log" ]] || fail 'Always Awake did not suppress the four-hour lock+DPMS safety action'
 
