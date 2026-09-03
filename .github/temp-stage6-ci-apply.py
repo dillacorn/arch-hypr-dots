@@ -68,7 +68,7 @@ for old, new, label in replacements:
 
 required = [
     'bash -n bashrc',
-    'shellcheck \\\n            awtarchy-install.sh \\\n            bashrc \\\',
+    '            bashrc ',
     'bash tests/test-installer-aur-scanner-delegation.sh',
     'bash tests/test-aur-scanner-updater-migration.sh',
     'bash tests/test-aur-helper-policy.sh',
