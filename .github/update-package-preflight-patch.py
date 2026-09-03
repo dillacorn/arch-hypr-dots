@@ -16,7 +16,7 @@ assert old in text
 text = text.replace(old, new, 1)
 
 old = '''collect_state\n\nif (( MIGRATE_REPLACEMENTS_ONLY == 1 )); then\n'''
-new = '''package_reconciliation_needs_action() {\n  (( CHEESE_REPLACEMENT_NEEDED == 1 \\n      || ${#MISSING_REQUIRED[@]} > 0 \\n      || ${#MISSING_ARCH[@]} > 0 \\n      || ${#MISSING_AUR[@]} > 0 \\n      || ${#MISSING_FLATPAK_IDS[@]} > 0 \\n      || ${#RETIRED_MANAGED[@]} > 0 ))\n}\n\ncollect_state\n\nif (( NEEDS_ACTION_ONLY == 1 )); then\n  if package_reconciliation_needs_action; then\n    exit 10\n  fi\n  exit 0\nfi\n\nif (( MIGRATE_REPLACEMENTS_ONLY == 1 )); then\n'''
+new = '''package_reconciliation_needs_action() {\n  (( CHEESE_REPLACEMENT_NEEDED == 1 )) && return 0\n  (( ${#MISSING_REQUIRED[@]} > 0 )) && return 0\n  (( ${#MISSING_ARCH[@]} > 0 )) && return 0\n  (( ${#MISSING_AUR[@]} > 0 )) && return 0\n  (( ${#MISSING_FLATPAK_IDS[@]} > 0 )) && return 0\n  (( ${#RETIRED_MANAGED[@]} > 0 )) && return 0\n  return 1\n}\n\ncollect_state\n\nif (( NEEDS_ACTION_ONLY == 1 )); then\n  if package_reconciliation_needs_action; then\n    exit 10\n  fi\n  exit 0\nfi\n\nif (( MIGRATE_REPLACEMENTS_ONLY == 1 )); then\n'''
 assert old in text
 text = text.replace(old, new, 1)
 reconciler.write_text(text)
