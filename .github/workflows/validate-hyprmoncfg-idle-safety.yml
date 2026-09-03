@@ -22,12 +22,11 @@ on:
       - tests/test-hyprmoncfg-preserve-migration.sh
       - tests/test-protected-idle-auto-game.sh
       - tests/test-bar-control-actions.sh
-      - .github/scripts/apply_hyprmoncfg_preserve_runtime.py
       - .github/workflows/validate-hyprmoncfg-idle-safety.yml
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate:
@@ -36,10 +35,6 @@ jobs:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           fetch-depth: 0
-
-      - name: Apply preserved-config updater hook
-        if: ${{ hashFiles('.github/scripts/apply_hyprmoncfg_preserve_runtime.py') != '' }}
-        run: python3 .github/scripts/apply_hyprmoncfg_preserve_runtime.py
 
       - name: Install validation tools
         run: sudo apt-get update && sudo apt-get install -y desktop-file-utils lua5.4
@@ -74,17 +69,4 @@ jobs:
           bash tests/test-awtarchy-tips-links.sh
 
       - name: Diff hygiene
-        run: |
-          git diff --check
-          git diff --check origin/main...HEAD
-
-      - name: Commit preserved-config updater hook
-        if: ${{ hashFiles('.github/scripts/apply_hyprmoncfg_preserve_runtime.py') != '' }}
-        run: |
-          git config user.name dillacorn
-          git config user.email '28743863+dillacorn@users.noreply.github.com'
-          git add local/share/awtarchy/awtarchy-runtime.sh
-          git rm .github/scripts/apply_hyprmoncfg_preserve_runtime.py
-          git diff --cached --check
-          git commit -m 'Preserve Hyprmoncfg bind through config conflicts'
-          git push origin HEAD:feature/hyprmoncfg-idle-safety
+        run: git diff --check origin/main...HEAD
