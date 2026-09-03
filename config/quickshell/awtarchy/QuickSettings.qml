@@ -2051,6 +2051,49 @@ Singleton {
                                     font.pixelSize: root.scaledText(8)
                                     wrapMode: Text.Wrap
                                 }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 1
+                                    color: Theme.active
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: "Always Awake"
+                                            color: Theme.foreground
+                                            font.family: Theme.fontFamily
+                                            font.pixelSize: root.scaledText(10)
+                                            font.bold: true
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: "Blocks lock, display-off, and suspend until disabled. Session only."
+                                            color: Theme.muted
+                                            font.family: Theme.fontFamily
+                                            font.pixelSize: root.scaledText(8)
+                                            wrapMode: Text.Wrap
+                                        }
+                                    }
+
+                                    SettingsButton {
+                                        label: SystemState.idleMode === "always-awake" ? "On" : "Off"
+                                        active: SystemState.idleMode === "always-awake"
+                                        textSize: root.scaledText(9)
+                                        onClicked: SystemState.setIdleMode(
+                                            SystemState.idleMode === "always-awake"
+                                                ? "off" : "always-awake")
+                                    }
+                                }
                             }
                         }
 

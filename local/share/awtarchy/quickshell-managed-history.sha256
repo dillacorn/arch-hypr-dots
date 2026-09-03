@@ -839,3 +839,8 @@ cd8f7a4395ba177a25a2c4fa2dc0b463942bc9e9bedf306474b402281d29341f	.config/quicksh
 
 # 2026-09-01 instant idle inhibitor bar feedback.
 e813a7a6c197df3df5cf57c0141c6912b89636a788d81057d45827b0e90765ce	.config/quickshell/awtarchy/SystemState.qml
+
+# 2026-09-03 hyprmoncfg and idle-safety final managed stock hashes.
+3117ba781d97fbdbdcc8cdfd11bef8d201582c48fcd5b6b59389296e4d622e83	.config/quickshell/awtarchy/QuickSettings.qml
+1c3eff7cbaa5d59a7273505a12e01957070437e7a58449da4b7c87b083cb12f1	.config/quickshell/awtarchy/Bar.qml
+16d0d79eea70f0d3896ba6c9b663517ac49288d562d9c635610134b20118ce00	.config/quickshell/awtarchy/SystemState.qml

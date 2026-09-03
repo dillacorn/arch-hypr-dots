@@ -289,7 +289,7 @@ for _, animation in ipairs({
     { leaf = "windowsIn", enabled = 1, speed = 2, bezier = "easeOutQuint", style = "popin 87%" },
     { leaf = "windowsOut", enabled = 1, speed = 1.5, bezier = "linear", style = "popin 87%" },
     { leaf = "fadeIn", enabled = 1, speed = 1.5, bezier = "softFade" },
-    { leaf = "fadeOut", enabled = 1, speed = 1.3, bezier = "linear", style = "popin 87%" },
+    { leaf = "fadeOut", enabled = 1, speed = 1.3, bezier = "softFade" },
     { leaf = "fade", enabled = 1, speed = 2, bezier = "softFade" },
     { leaf = "layers", enabled = 1, speed = 2.5, bezier = "easeInOutSlight" },
     { leaf = "layersIn", enabled = 1, speed = 2, bezier = "easeInOutSlight", style = "fade" },
@@ -779,6 +779,7 @@ for _, bind in ipairs(movement_keys) do
     hl.bind("ALT + SHIFT + " .. key, hl.dsp.window.move({ direction = direction }), {})
     hl.bind("SUPER + SHIFT + " .. key, hl.dsp.window.move({ direction = direction }), {})
 end
+
 -- Send current workspace to monitor (ALT/SUPER+CTRL+SHIFT arrows + brackets)
 for _, bind in ipairs({
     { "left", "-1" },

@@ -451,6 +451,7 @@ Core launchers
   SUPER+B                      Web browser
   SUPER+E                      PCManFM-Qt
   SUPER+SHIFT+E                Yazi
+  SUPER+CTRL+M                 Monitor configuration
   SUPER+P                      Power menu
   SUPER+W                      Wallpaper picker
   SUPER+C                      Clipboard history

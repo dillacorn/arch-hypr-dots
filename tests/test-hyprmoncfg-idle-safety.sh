@@ -119,6 +119,16 @@ require_file_text "$QUICK_SETTINGS" 'SystemState.setIdleMode(' \
     'Quick Settings Always Awake control does not use shared SystemState idle mode'
 require_file_text "$BAR" 'SystemState.idleMode === "always-awake"' \
     'bar idle indicator does not distinguish Always Awake mode'
+count="$(grep -Fc -- 'normalBackground: SystemState.idleMode === "always-awake" ? Theme.subtleActive : "transparent"' "$BAR" || true)"
+[[ "$count" == 2 ]] || fail "Always Awake background must exist on both bar orientations (expected 2, found $count)"
+
+MANAGED_HISTORY="$ROOT/local/share/awtarchy/quickshell-managed-history.sha256"
+for managed_file in "$BAR" "$QUICK_SETTINGS" "$SYSTEM_STATE"; do
+    repo_rel="${managed_file#$ROOT/}"
+    current_entry="$(sha256sum "$managed_file" | awk '{print $1}')"$'\t'".${repo_rel}"
+    grep -Fqx -- "$current_entry" "$MANAGED_HISTORY" \
+        || fail "managed history is missing current stock hash for $repo_rel"
+done
 
 # Exercise the long-idle action with controlled backends. Keep Awake must allow
 # lock+DPMS, while Always Awake must block that safety action too.

@@ -776,7 +776,12 @@ PanelWindow {
 
             BarControl {
                 label: SystemState.idleBroken ? "" : (SystemState.idleInhibited ? "" : "")
-                tooltip: SystemState.idleInhibited ? "Idle inhibitor: activated\nClick to deactivate" : "Idle inhibitor: deactivated\nClick to activate"
+                normalBackground: SystemState.idleMode === "always-awake" ? Theme.subtleActive : "transparent"
+                tooltip: SystemState.idleMode === "always-awake"
+                    ? "Always Awake: activated\nAll idle actions are blocked\nClick to deactivate"
+                    : (SystemState.idleInhibited
+                        ? "Keep Awake: activated\nLocks and turns displays off after 4 hours idle\nClick to deactivate"
+                        : "Idle inhibitor: deactivated\nClick to activate Keep Awake")
                 foreground: SystemState.idleBroken ? Theme.urgent : Theme.foreground
                 hoverBackground: Theme.strongHover
                 onClicked: SystemState.toggleIdle()
@@ -1012,8 +1017,13 @@ PanelWindow {
             BarControl {
                 vertical: true; fixedWidth: bar.barSize
                 label: SystemState.idleBroken ? "" : (SystemState.idleInhibited ? "" : "")
+                normalBackground: SystemState.idleMode === "always-awake" ? Theme.subtleActive : "transparent"
                 foreground: SystemState.idleBroken ? Theme.urgent : Theme.foreground
-                tooltip: SystemState.idleInhibited ? "Idle inhibitor: activated\nClick to deactivate" : "Idle inhibitor: deactivated\nClick to activate"
+                tooltip: SystemState.idleMode === "always-awake"
+                    ? "Always Awake: activated\nAll idle actions are blocked\nClick to deactivate"
+                    : (SystemState.idleInhibited
+                        ? "Keep Awake: activated\nLocks and turns displays off after 4 hours idle\nClick to deactivate"
+                        : "Idle inhibitor: deactivated\nClick to activate Keep Awake")
                 onClicked: SystemState.toggleIdle()
             }
 
