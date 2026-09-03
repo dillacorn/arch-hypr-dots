@@ -8,6 +8,7 @@ on:
     paths:
       - local/share/awtarchy/awtarchy-runtime.sh
       - tests/test-quickshell-update-interrupt-recovery.sh
+      - tests/test-quickshell-updater-bootstrap.sh
       - .github/workflows/validate-quickshell-interrupt-recovery.yml
 
 permissions:
@@ -24,7 +25,10 @@ jobs:
         run: |
           bash -n local/share/awtarchy/awtarchy-runtime.sh
           bash -n tests/test-quickshell-update-interrupt-recovery.sh
+          bash -n tests/test-quickshell-updater-bootstrap.sh
       - name: Quickshell interrupted-update recovery
         run: bash tests/test-quickshell-update-interrupt-recovery.sh
+      - name: Quickshell updater bootstrap
+        run: bash tests/test-quickshell-updater-bootstrap.sh
       - name: Diff hygiene
         run: git diff --check origin/main...HEAD
