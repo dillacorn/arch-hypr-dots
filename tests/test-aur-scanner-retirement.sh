@@ -45,9 +45,11 @@ done
 
 assert_contains "$BASHRC" 'aur-scan install <package>'
 assert_contains "$BASHRC" 'command aur-scan -h'
+# shellcheck disable=SC2016
 assert_contains "$RUNTIME" 'run_as_target /usr/bin/aur-scan install "$@" --noconfirm'
 assert_contains "$RUNTIME" 'target_uses_direct_aur_scanner()'
 assert_contains "$RUNTIME" 'ensure_update_aur_scanner()'
+# shellcheck disable=SC2016
 assert_contains "$RECONCILER" '"$scanner" install "$pkg" --noconfirm'
 
 required_tests=(
