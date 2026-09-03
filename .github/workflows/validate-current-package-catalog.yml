@@ -11,13 +11,37 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Remove stale Arch catalog entries
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('local/share/awtarchy/awtarchy-runtime.sh')
+          text = path.read_text(encoding='utf-8')
+          replacements = {
+              '  "Multimedia:ffmpeg avahi nss-mdns mpv cheese exiv2 zathura zathura-pdf-mupdf mousai"\n':
+                  '  "Multimedia:ffmpeg avahi nss-mdns mpv exiv2 zathura zathura-pdf-mupdf mousai"\n',
+              '  "Network Tools:firefox wireguard-tools wireplumber openssh iptables systemd-resolvconf bridge-utils qemu-guest-agent dnsmasq dhcpcd inetutils openbsd-netcat"\n':
+                  '  "Network Tools:firefox wireguard-tools wireplumber openssh iptables systemd-resolvconf qemu-guest-agent dnsmasq dhcpcd inetutils openbsd-netcat"\n',
+          }
+          for old, new in replacements.items():
+              count = text.count(old)
+              if count == 0 and new in text:
+                  continue
+              if count != 1:
+                  raise SystemExit(f'expected exactly one catalog line for replacement, found {count}')
+              text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
       - name: Syntax
         run: |
           bash -n local/share/awtarchy/awtarchy-runtime.sh
@@ -28,3 +52,15 @@ jobs:
         run: bash tests/test-package-reconciler.sh
       - name: Diff hygiene
         run: git diff --check origin/main...HEAD
+      - name: Commit validated catalog cleanup when changed
+        run: |
+          if git diff --quiet -- local/share/awtarchy/awtarchy-runtime.sh; then
+            printf '%s\n' 'Catalog already clean; nothing to commit.'
+          else
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add local/share/awtarchy/awtarchy-runtime.sh
+            git diff --cached --check
+            git commit -m "Remove stale Arch package catalog entries"
+            git push origin HEAD:fix/remove-stale-arch-packages
+          fi
