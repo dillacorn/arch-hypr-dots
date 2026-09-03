@@ -32,7 +32,7 @@ declare -a PKG_GROUPS=(
   "Window Management:hyprland hyprpaper hyprlock hypridle hyprpicker hyprsunset quickshell grim satty slurp wl-clipboard cliphist zbar wf-recorder zenity qt5ct qt5-wayland kvantum-qt5 qt6ct qt6-wayland xdg-desktop-portal-hyprland xdg-desktop-portal-gtk libnotify nwg-look"
   "Fonts:woff2-font-awesome otf-font-awesome ttf-dejavu ttf-liberation ttf-noto-nerd noto-fonts-emoji"
   "Themes:papirus-icon-theme materia-gtk-theme xcursor-comix kvantum-theme-materia"
-  "Terminal Apps:nano micro fastfetch btop htop curl passt devtools wget git dos2unix brightnessctl ipcalc cmatrix asciiquarium figlet termdown espeak-ng cava man-db man-pages unzip xarchiver ncdu ddcutil scx-scheds scx-tools"
+  "Terminal Apps:nano micro fastfetch btop htop curl passt devtools wget git dos2unix brightnessctl ipcalc cmatrix asciiquarium figlet espeak-ng cava man-db man-pages unzip xarchiver ncdu ddcutil scx-scheds scx-tools"
   "Utilities:upower polkit python-gobject gnome-keyring networkmanager bluez bluez-utils wiremix pcmanfm-qt gvfs gvfs-smb gvfs-mtp gvfs-afc speedcrunch imagemagick pipewire pipewire-pulse pipewire-alsa ufw jq earlyoom libsixel xdg-utils python usbutils awww"
   "Multimedia:ffmpeg avahi nss-mdns mpv snapshot exiv2 zathura zathura-pdf-mupdf mousai"
   "Development:base-devel archlinux-keyring bubblewrap gnupg coreutils clang ninja go rust virt-manager qemu qemu-hw-usb-host virt-viewer vde2 libguestfs dmidecode gamemode gamescope nftables swtpm"

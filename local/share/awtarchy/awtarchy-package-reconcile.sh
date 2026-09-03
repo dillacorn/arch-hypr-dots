@@ -39,6 +39,7 @@ declare -a RETIRED_ARCH=(
   wofi
   network-manager-applet
   blueman
+  termdown
 )
 
 declare -a ARCH_CATALOG=()
@@ -672,7 +673,7 @@ fi
 [[ -r /dev/tty && -w /dev/tty ]] || die "Interactive package reconciliation requires a terminal."
 
 print_review >/dev/tty
-printf '\nRequired missing packages above will be selected automatically.\n' >/dev/tty
+printf '\nMissing current packages below start selected; Space opts out.\n' >/dev/tty
 printf 'Installed current packages are preserved even when not selected here.\n\n' >/dev/tty
 confirm_yes_no 'Continue to package choices?' 1 || { log 'Package reconciliation canceled.'; exit 0; }
 
@@ -680,7 +681,7 @@ confirm_yes_no 'Continue to package choices?' 1 || { log 'Package reconciliation
 declare -a arch_labels=("${MISSING_ARCH[@]}")
 declare -a arch_flags=()
 declare -a selected_arch=()
-for _ in "${arch_labels[@]}"; do arch_flags+=(0); done
+for _ in "${arch_labels[@]}"; do arch_flags+=(1); done
 if (( ${#arch_labels[@]} )); then
   multi_select 'Optional missing Arch packages' arch_labels arch_flags \
     || { log 'Package reconciliation canceled.'; exit 0; }
@@ -691,7 +692,7 @@ selected_values arch_labels arch_flags selected_arch
 declare -a aur_labels=("${MISSING_AUR[@]}")
 declare -a aur_flags=()
 declare -a selected_aur=()
-for _ in "${aur_labels[@]}"; do aur_flags+=(0); done
+for _ in "${aur_labels[@]}"; do aur_flags+=(1); done
 if (( ${#aur_labels[@]} )); then
   multi_select 'Optional missing AUR packages' aur_labels aur_flags \
     || { log 'Package reconciliation canceled.'; exit 0; }
@@ -704,7 +705,7 @@ declare -a flatpak_flags=()
 declare -a selected_flatpak=()
 for i in "${!MISSING_FLATPAK_IDS[@]}"; do
   flatpak_labels+=("${MISSING_FLATPAK_NAMES[$i]} (${MISSING_FLATPAK_IDS[$i]})")
-  flatpak_flags+=(0)
+  flatpak_flags+=(1)
 done
 if (( ${#flatpak_labels[@]} )); then
   multi_select 'Optional missing Flatpak apps' flatpak_labels flatpak_flags \
