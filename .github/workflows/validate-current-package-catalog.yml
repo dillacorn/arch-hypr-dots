@@ -11,11 +11,12 @@ on:
       - tests/test-current-package-catalog.sh
       - tests/test-cheese-snapshot-migration.sh
       - tests/test-update-package-preflight.sh
+      - .github/scripts/fix_retired_package_removal.py
       - .github/workflows/validate-current-package-catalog.yml
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
@@ -24,6 +25,9 @@ jobs:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           fetch-depth: 0
+      - name: Apply conservative retired package removal
+        if: ${{ hashFiles('.github/scripts/fix_retired_package_removal.py') != '' }}
+        run: python3 .github/scripts/fix_retired_package_removal.py
       - name: Syntax
         run: |
           bash -n local/bin/awtarchy
@@ -47,4 +51,16 @@ jobs:
       - name: Installer regression
         run: bash tests/test-installer-aur-scanner-delegation.sh
       - name: Diff hygiene
-        run: git diff --check origin/main...HEAD
+        run: |
+          git diff --check
+          git diff --check origin/main...HEAD
+      - name: Commit conservative retired package removal
+        if: ${{ hashFiles('.github/scripts/fix_retired_package_removal.py') != '' }}
+        run: |
+          git config user.name dillacorn
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add local/share/awtarchy/awtarchy-package-reconcile.sh
+          git rm .github/scripts/fix_retired_package_removal.py
+          git diff --cached --check
+          git commit -m 'Avoid recursive retired package cleanup'
+          git push origin HEAD:fix/remove-stale-arch-packages
