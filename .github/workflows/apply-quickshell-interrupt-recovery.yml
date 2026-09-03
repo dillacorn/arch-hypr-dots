@@ -1,5 +1,6 @@
 name: Apply Quickshell Interrupt Recovery
 
+# Rerun after correcting the regression fixture.
 on:
   push:
     branches:
