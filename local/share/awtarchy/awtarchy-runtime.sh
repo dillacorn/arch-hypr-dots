@@ -8373,11 +8373,25 @@ PY
   return "$rc"
 }
 
-quickshell_update_instance_pids() {
-  local config_name="${QUICKSHELL_CONFIG_NAME:-awtarchy}" instances=""
+quickshell_update_target_has_process() {
+  local target_uid=""
+  command -v pgrep >/dev/null 2>&1 || return 2
+  target_uid="$(id -u "$TARGET_USER" 2>/dev/null || true)"
+  [[ "$target_uid" =~ ^[0-9]+$ ]] || return 2
+  run_target pgrep -u "$target_uid" -x quickshell >/dev/null 2>&1
+}
 
-  instances="$(run_target qs -c "$config_name" list --json 9>&- 2>/dev/null)" || return 1
-  jq -e 'type == "array"' <<<"$instances" >/dev/null 2>&1 || return 1
+quickshell_update_instance_pids() {
+  local config_name="${QUICKSHELL_CONFIG_NAME:-awtarchy}" instances="" list_rc=0 process_rc=0
+
+  instances="$(run_target qs -c "$config_name" list --json 9>&- 2>/dev/null)" || list_rc=$?
+  if (( list_rc != 0 )) || ! jq -e 'type == "array"' <<<"$instances" >/dev/null 2>&1; then
+    quickshell_update_target_has_process || process_rc=$?
+    case "$process_rc" in
+      1) return 0 ;;
+      *) return 1 ;;
+    esac
+  fi
   jq -r '.[] | .pid | select(type == "number" and . > 0)' <<<"$instances"
 }
 
