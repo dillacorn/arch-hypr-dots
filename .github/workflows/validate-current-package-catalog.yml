@@ -11,13 +11,11 @@ on:
       - tests/test-current-package-catalog.sh
       - tests/test-cheese-snapshot-migration.sh
       - tests/test-update-package-preflight.sh
-      - .github/scripts/apply_optional_package_defaults.py
-      - .github/scripts/fix_optional_package_parser.py
       - .github/workflows/validate-current-package-catalog.yml
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate:
@@ -26,12 +24,6 @@ jobs:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           fetch-depth: 0
-      - name: Apply optional package defaults
-        if: ${{ hashFiles('.github/scripts/apply_optional_package_defaults.py') != '' }}
-        run: python3 .github/scripts/apply_optional_package_defaults.py
-      - name: Fix optional package parser
-        if: ${{ hashFiles('.github/scripts/fix_optional_package_parser.py') != '' }}
-        run: python3 .github/scripts/fix_optional_package_parser.py
       - name: Syntax
         run: |
           bash -n local/bin/awtarchy
@@ -55,20 +47,4 @@ jobs:
       - name: Installer regression
         run: bash tests/test-installer-aur-scanner-delegation.sh
       - name: Diff hygiene
-        run: |
-          git diff --check
-          git diff --check origin/main...HEAD
-      - name: Commit production changes
-        if: ${{ hashFiles('.github/scripts/apply_optional_package_defaults.py') != '' }}
-        run: |
-          git config user.name dillacorn
-          git config user.email '28743863+dillacorn@users.noreply.github.com'
-          git add local/share/awtarchy/awtarchy-runtime.sh
-          git add local/share/awtarchy/awtarchy-package-reconcile.sh
-          git rm .github/scripts/apply_optional_package_defaults.py
-          if [[ -e .github/scripts/fix_optional_package_parser.py ]]; then
-            git rm .github/scripts/fix_optional_package_parser.py
-          fi
-          git diff --cached --check
-          git commit -m 'Make optional apps native and opt-in'
-          git push origin HEAD:fix/remove-stale-arch-packages
+        run: git diff --check origin/main...HEAD
