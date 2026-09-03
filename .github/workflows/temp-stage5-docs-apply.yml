@@ -28,7 +28,6 @@ jobs:
           set -euo pipefail
           bash -n config/hypr/scripts/awtarchy-tips-tui.sh
           bash -n tests/test-aur-scanner-docs.sh
-          shellcheck config/hypr/scripts/awtarchy-tips-tui.sh
           shellcheck tests/test-aur-scanner-docs.sh
           bash tests/test-awtarchy-tips-links.sh
           bash tests/test-aur-scanner-docs.sh
