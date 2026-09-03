@@ -1,5 +1,5 @@
 name: Validate Direct AUR Scanner
-# Permanent read-only validation for installer, reconciler, updater, shell, documentation migration, and cleaned Stage 5 state.
+# Permanent read-only validation for installer, reconciler, updater, shell, documentation, and final AurGuard retirement.
 
 on:
   pull_request:
@@ -17,11 +17,13 @@ on:
       - tests/test-aur-scanner-updater-migration.sh
       - tests/test-aur-helper-policy.sh
       - tests/test-aur-scanner-docs.sh
+      - tests/test-aur-scanner-retirement.sh
       - tests/test-package-reconciler.sh
       - tests/test-package-reconciler-alternatives.sh
       - tests/test-package-reconciler-interrupted-recovery.sh
       - tests/test-package-reconciler-aur-equivalents.sh
       - .github/workflows/validate-direct-aur-scanner.yml
+      - .github/workflows/validate-awtarchy.yml
   push:
     branches:
       - main
@@ -38,11 +40,13 @@ on:
       - tests/test-aur-scanner-updater-migration.sh
       - tests/test-aur-helper-policy.sh
       - tests/test-aur-scanner-docs.sh
+      - tests/test-aur-scanner-retirement.sh
       - tests/test-package-reconciler.sh
       - tests/test-package-reconciler-alternatives.sh
       - tests/test-package-reconciler-interrupted-recovery.sh
       - tests/test-package-reconciler-aur-equivalents.sh
       - .github/workflows/validate-direct-aur-scanner.yml
+      - .github/workflows/validate-awtarchy.yml
 
 permissions:
   contents: read
@@ -65,6 +69,7 @@ jobs:
           bash -n tests/test-aur-scanner-updater-migration.sh
           bash -n tests/test-aur-helper-policy.sh
           bash -n tests/test-aur-scanner-docs.sh
+          bash -n tests/test-aur-scanner-retirement.sh
           bash -n tests/test-package-reconciler.sh
           bash -n tests/test-package-reconciler-alternatives.sh
           bash -n tests/test-package-reconciler-interrupted-recovery.sh
@@ -74,6 +79,7 @@ jobs:
           shellcheck tests/test-aur-scanner-updater-migration.sh
           shellcheck tests/test-aur-helper-policy.sh
           shellcheck tests/test-aur-scanner-docs.sh
+          shellcheck tests/test-aur-scanner-retirement.sh
           shellcheck local/share/awtarchy/awtarchy-package-reconcile.sh
           shellcheck tests/test-package-reconciler.sh
           shellcheck tests/test-package-reconciler-alternatives.sh
@@ -83,6 +89,7 @@ jobs:
           bash tests/test-aur-scanner-updater-migration.sh
           bash tests/test-aur-helper-policy.sh
           bash tests/test-aur-scanner-docs.sh
+          bash tests/test-aur-scanner-retirement.sh
           bash tests/test-package-reconciler.sh
           bash tests/test-package-reconciler-alternatives.sh
           bash tests/test-package-reconciler-interrupted-recovery.sh
