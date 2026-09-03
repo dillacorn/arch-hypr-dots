@@ -28,25 +28,19 @@ jobs:
 
           bar = Path("config/quickshell/awtarchy/Bar.qml")
           text = bar.read_text(encoding="utf-8")
-          old = '''                foreground: SystemState.idleBroken ? Theme.urgent : Theme.foreground
-                          hoverBackground: Theme.strongHover
-          '''
-          new = '''                foreground: SystemState.idleBroken ? Theme.urgent : Theme.foreground
-                          normalBackground: SystemState.idleMode === "always-awake" ? Theme.subtleActive : "transparent"
-                          hoverBackground: Theme.strongHover
-          '''
-          if text.count(old) != 1:
-              raise SystemExit(f"Bar.qml: expected one idle-control background insertion point, found {text.count(old)}")
-          bar.write_text(text.replace(old, new, 1), encoding="utf-8")
+          old = '                label: SystemState.idleBroken ? "" : (SystemState.idleInhibited ? "" : "")\n'
+          new = old + '                normalBackground: SystemState.idleMode === "always-awake" ? Theme.subtleActive : "transparent"\n'
+          if text.count(old) != 2:
+              raise SystemExit(f"Bar.qml: expected two idle-control background insertion points, found {text.count(old)}")
+          bar.write_text(text.replace(old, new), encoding="utf-8")
 
           test = Path("tests/test-hyprmoncfg-idle-safety.sh")
           text = test.read_text(encoding="utf-8")
           old = '''require_file_text "$BAR" 'SystemState.idleMode === "always-awake"' \\
               'bar idle indicator does not distinguish Always Awake mode'
           '''
-          new = old + '''require_file_text "$BAR" \\
-              'normalBackground: SystemState.idleMode === "always-awake" ? Theme.subtleActive : "transparent"' \\
-              'bar idle indicator does not visibly distinguish Always Awake mode'
+          new = old + '''count="$(grep -Fc -- 'normalBackground: SystemState.idleMode === "always-awake" ? Theme.subtleActive : "transparent"' "$BAR" || true)"
+          [[ "$count" == 2 ]] || fail "Always Awake background must exist on both bar orientations (expected 2, found $count)"
           '''
           if text.count(old) != 1:
               raise SystemExit(f"idle-safety test: expected one Always Awake bar assertion, found {text.count(old)}")
