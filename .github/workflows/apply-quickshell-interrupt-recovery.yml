@@ -133,15 +133,16 @@ jobs:
 
           path.write_text(text, encoding='utf-8')
           PY
-      - name: Validate focused behavior
-        shell: bash
+      - name: Bash syntax
         run: |
-          set -euo pipefail
           bash -n local/share/awtarchy/awtarchy-runtime.sh
           bash -n tests/test-quickshell-update-interrupt-recovery.sh
-          bash tests/test-quickshell-update-interrupt-recovery.sh
-          bash tests/test-quickshell-updater-bootstrap.sh
-          git diff --check
+      - name: Interrupted-update recovery regression
+        run: bash tests/test-quickshell-update-interrupt-recovery.sh
+      - name: Existing updater bootstrap regression
+        run: bash tests/test-quickshell-updater-bootstrap.sh
+      - name: Diff hygiene
+        run: git diff --check
       - name: Commit production fix
         shell: bash
         run: |
