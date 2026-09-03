@@ -166,7 +166,7 @@ jobs:
           bash tests/test-awtarchy-tips-links.sh
 
       - name: Updater managed-history regression
-        run: bash tests/test-quickshell-updater-migration.sh
+        run: bash -x tests/test-quickshell-updater-migration.sh
 
       - name: Diff hygiene
         run: git diff --check
