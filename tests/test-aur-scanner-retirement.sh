@@ -61,7 +61,7 @@ required_tests=(
 )
 
 assert_contains "$VALIDATE" 'bash -n bashrc'
-assert_contains "$VALIDATE" '            bashrc \'
+assert_contains "$VALIDATE" "            bashrc \\"
 for test_path in "${required_tests[@]}"; do
   [[ -f "${ROOT}/${test_path}" ]] || fail "missing replacement scanner regression: $test_path"
   assert_contains "$VALIDATE" "bash -n ${test_path}"
