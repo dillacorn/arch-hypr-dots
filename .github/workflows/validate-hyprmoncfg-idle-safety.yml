@@ -10,6 +10,7 @@ on:
       - config/hypr/scripts/launch_handler.sh
       - config/hypr/scripts/idle_inhibitor_global.sh
       - config/hypr/scripts/hypridle_action.sh
+      - config/hypr/scripts/protected_idle_safety.sh
       - config/quickshell/awtarchy/SystemState.qml
       - config/quickshell/awtarchy/QuickSettings.qml
       - config/quickshell/awtarchy/Bar.qml
@@ -30,6 +31,13 @@ jobs:
           bash -n config/hypr/scripts/launch_handler.sh
           bash -n config/hypr/scripts/idle_inhibitor_global.sh
           bash -n config/hypr/scripts/hypridle_action.sh
+          bash -n config/hypr/scripts/protected_idle_safety.sh
           bash -n tests/test-hyprmoncfg-idle-safety.sh
+      - name: Managed QML hashes
+        run: |
+          sha256sum \
+            config/quickshell/awtarchy/Bar.qml \
+            config/quickshell/awtarchy/QuickSettings.qml \
+            config/quickshell/awtarchy/SystemState.qml
       - name: Focused regression
         run: bash tests/test-hyprmoncfg-idle-safety.sh
