@@ -30,7 +30,7 @@ sudo pacman -S ueberzugpp yazi chafa
 
 ### Drag & Drop Utility
 ```bash
-yay -S dragon-drop
+aur-scan install dragon-drop
 ```
 
 Simple GUI drag-and-drop from terminal.
@@ -38,7 +38,7 @@ Simple GUI drag-and-drop from terminal.
 ### Image previews in "alacritty" (replaces main-line alacritty)
 
 ```bash
-yay -S alacritty-graphics
+aur-scan install alacritty-graphics
 ```
 
 ---
@@ -56,7 +56,7 @@ PulseAudio Volume Control GUI. (wiremix is cooler IMO)
 
 ### YouTube Music Desktop Client
 ```bash
-yay -S pear-desktop-bin
+aur-scan install pear-desktop-bin
 ```
 
 Unofficial YouTube Music client.
@@ -81,7 +81,7 @@ sudo pacman -S obs-studio
 
 ### GPU Screen Recorder
 ```bash
-yay -S gpu-screen-recorder
+aur-scan install gpu-screen-recorder
 ```
 
 ### Optional AUR Recording Tools
@@ -89,12 +89,12 @@ Choose one:
 
 **Option A** – DroidCam (Android phone as webcam):
 ```bash
-yay -S droidcam v4l2loopback-dc-dkms obs-vkcapture
+aur-scan install droidcam v4l2loopback-dc-dkms obs-vkcapture
 ```
 
 **Option B** – DistroAV (alternative virtual capture):
 ```bash
-yay -S distroav obs-vkcapture
+aur-scan install distroav obs-vkcapture
 ```
 
 Usage example:
@@ -108,7 +108,7 @@ OBS_VKCAPTURE=1 gamemoderun %command%
 
 ### Sunshine (server)
 ```bash
-yay -S sunshine-bin
+aur-scan install sunshine-bin
 ```
 
 ### Moonlight (client)
@@ -122,7 +122,7 @@ sudo pacman -S moonlight-qt
 
 ### OTP client
 ```bash
-yay -S otpclient
+aur-scan install otpclient
 ```
 
 ### Tailscale
@@ -157,7 +157,7 @@ sudo pacman -S protonup-qt
 
 ### Discord (Vencord)
 ```bash
-yay -S vesktop-bin
+aur-scan install vesktop-bin
 ```
 
 ---
