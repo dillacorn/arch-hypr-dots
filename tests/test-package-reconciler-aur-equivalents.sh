@@ -93,6 +93,14 @@ else
   aur_package_satisfied qimgv-git \
     || fail 'installed qimgv did not satisfy qimgv-git'
 
+  printf '%s\n' hyprmoncfg-git >"$state"
+  aur_package_satisfied hyprmoncfg-bin \
+    || fail 'installed hyprmoncfg-git did not satisfy hyprmoncfg-bin'
+
+  printf '%s\n' hyprmoncfg >"$state"
+  aur_package_satisfied hyprmoncfg-bin \
+    || fail 'installed hyprmoncfg did not satisfy hyprmoncfg-bin'
+
   printf '%s\n' obs-pipewire-audio-capture >"$state"
   aur_package_satisfied obs-pipewire-audio-capture-bin \
     || fail 'installed OBS PipeWire source package did not satisfy bin package'
@@ -119,12 +127,13 @@ declare -a PKG_GROUPS=()
 declare -a PACKAGES_AUR=(
   alacritty-graphics
   qimgv
+  hyprmoncfg-bin
   obs-pipewire-audio-capture-bin
   smtty
 )
 declare -a FLATPAK_CATALOG=()
 EOF_RUNTIME
-printf '%s\n' alacritty qimgv-git >"$state"
+printf '%s\n' alacritty qimgv-git hyprmoncfg-git >"$state"
 review_output="$(bash "$RECONCILER" --review)"
 aur_section="$(printf '%s\n' "$review_output" | sed -n '/^Missing current AUR catalog packages:/,/^Missing current Flatpak catalog apps:/p')"
 
@@ -133,6 +142,9 @@ if printf '%s\n' "$aur_section" | grep -Fq 'alacritty-graphics'; then
 fi
 if printf '%s\n' "$aur_section" | grep -Fq 'qimgv'; then
   fail 'review still offered qimgv despite installed qimgv-git'
+fi
+if printf '%s\n' "$aur_section" | grep -Fq 'hyprmoncfg-bin'; then
+  fail 'review still offered hyprmoncfg-bin despite installed hyprmoncfg-git'
 fi
 if printf '%s\n' "$aur_section" | grep -Fq 'obs-pipewire-audio-capture-bin'; then
   fail 'review still offered OBS PipeWire package despite existing user plugin'

@@ -221,6 +221,12 @@ aur_package_satisfied() {
       done
       return 1
       ;;
+    hyprmoncfg|hyprmoncfg-bin|hyprmoncfg-git)
+      for alt in hyprmoncfg hyprmoncfg-bin hyprmoncfg-git; do
+        package_installed "$alt" && return 0
+      done
+      return 1
+      ;;
     obs-pipewire-audio-capture|obs-pipewire-audio-capture-bin)
       for alt in obs-pipewire-audio-capture obs-pipewire-audio-capture-bin; do
         package_installed "$alt" && return 0

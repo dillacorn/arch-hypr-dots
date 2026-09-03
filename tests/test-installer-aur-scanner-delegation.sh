@@ -84,6 +84,11 @@ for retained in ("build_aur_picker_arrays()", "aur_search_results()", "AUR_SELEC
     if retained not in text:
         raise SystemExit(f"installer AUR picker/search behavior was removed: {retained}")
 
+installed_check = function_body("aur_selected_package_installed")
+for variant in ("hyprmoncfg", "hyprmoncfg-bin", "hyprmoncfg-git"):
+    if variant not in installed_check:
+        raise SystemExit(f"installer AUR equivalence check does not recognize {variant}")
+
 catalog = re.search(r"(?ms)^declare -a PACKAGES_AUR=\(\n(.*?)^\)", text)
 if not catalog:
     raise SystemExit("missing PACKAGES_AUR catalog")
