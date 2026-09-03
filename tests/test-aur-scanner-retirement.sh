@@ -50,7 +50,7 @@ assert_contains "$RUNTIME" 'run_as_target /usr/bin/aur-scan install "$@" --nocon
 assert_contains "$RUNTIME" 'target_uses_direct_aur_scanner()'
 assert_contains "$RUNTIME" 'ensure_update_aur_scanner()'
 # shellcheck disable=SC2016
-assert_contains "$RECONCILER" '"$scanner" install "$pkg" --noconfirm'
+assert_contains "$RECONCILER" '"$AUR_SCAN_BIN" install "$pkg" --noconfirm'
 
 required_tests=(
   tests/test-installer-aur-scanner-delegation.sh
