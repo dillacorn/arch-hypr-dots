@@ -1,5 +1,5 @@
 name: Validate Direct AUR Scanner
-# Permanent read-only validation for installer, reconciler, updater, shell, and documentation migration.
+# Permanent read-only validation for installer, reconciler, updater, shell, documentation migration, and cleaned Stage 5 state.
 
 on:
   pull_request:
