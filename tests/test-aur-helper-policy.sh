@@ -5,6 +5,7 @@ IFS=$'\n\t'
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 BASHRC="${ROOT}/bashrc"
+RUNTIME="${ROOT}/local/share/awtarchy/awtarchy-runtime.sh"
 TMP="$(mktemp -d)"
 FAKEBIN="${TMP}/bin"
 HOME_DIR="${TMP}/home"
@@ -165,5 +166,51 @@ assert_logged $'pacman\t-Qm'
 run_shell 'sysupdate' >/dev/null 2>&1 \
   || fail 'sysupdate failed'
 assert_logged $'sudo\tpacman -Syu'
+
+grep -Fq 'repair_v350_aur_helper_policy_target()' "$RUNTIME" \
+  || fail 'runtime is missing the v3.5.0 AUR helper post-release repair'
+# shellcheck disable=SC2016
+grep -Fq '[[ "$tag" == "v3.5.0" ]] || return 0' "$RUNTIME" \
+  || fail 'v3.5.0 AUR helper repair is not scoped to the published release'
+# shellcheck disable=SC2016
+grep -Fq 'repair_v350_aur_helper_policy_target "$target_home" "$tag"' "$RUNTIME" \
+  || fail 'runtime does not apply the v3.5.0 AUR helper repair to the generated target'
+
+# shellcheck disable=SC2016
+prepare_line="$(grep -nF 'prepare_quickshell_update_target "$target_home"' "$RUNTIME" | head -n1 | cut -d: -f1)"
+# shellcheck disable=SC2016
+repair_line="$(grep -nF 'repair_v350_aur_helper_policy_target "$target_home" "$tag"' "$RUNTIME" | head -n1 | cut -d: -f1)"
+# shellcheck disable=SC2016
+baseline_line="$(grep -nF 'bootstrap_previous_baseline "$active_theme"' "$RUNTIME" | head -n1 | cut -d: -f1)"
+[[ "$prepare_line" =~ ^[0-9]+$ && "$repair_line" =~ ^[0-9]+$ && "$baseline_line" =~ ^[0-9]+$ ]] \
+  || fail 'could not locate v3.5.0 AUR helper target-repair ordering'
+(( prepare_line < repair_line && repair_line < baseline_line )) \
+  || fail 'v3.5.0 AUR helper target repair must run before baseline comparison'
+
+v350_target_home="${TMP}/v350-target"
+control_target_home="${TMP}/v350-control-target"
+v350_original="${TMP}/v350-original-bashrc"
+mkdir -p "$v350_target_home" "$control_target_home"
+git -C "$ROOT" show v3.5.0:bashrc >"$v350_original" \
+  || fail 'v3.5.0 bashrc fixture is unavailable'
+cp -- "$v350_original" "${v350_target_home}/.bashrc"
+cp -- "$v350_original" "${control_target_home}/.bashrc"
+
+repair_definition="$(
+  sed -n '/^repair_v350_aur_helper_policy_target() {/,/^prepare_quickshell_update_target() {/p' "$RUNTIME" |
+    sed '$d'
+)"
+[[ -n "$repair_definition" ]] || fail 'could not extract v3.5.0 AUR helper repair function'
+log() { :; }
+die() { fail "$*"; }
+eval "$repair_definition"
+
+repair_v350_aur_helper_policy_target "$v350_target_home" v3.5.0
+cmp -s "${v350_target_home}/.bashrc" "$BASHRC" \
+  || fail 'v3.5.0 post-release repair does not produce the current fixed bashrc'
+
+repair_v350_aur_helper_policy_target "$control_target_home" v3.4.7
+cmp -s "${control_target_home}/.bashrc" "$v350_original" \
+  || fail 'v3.5.0 AUR helper post-release repair changed another release target'
 
 printf '%s\n' 'PASS: bashrc delegates AUR installation/help to aur-scanner while allowing read-only yay/paru queries and explicit package removal.'

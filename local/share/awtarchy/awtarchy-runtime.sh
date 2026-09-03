@@ -7717,6 +7717,92 @@ PY_V347_IDLE_INHIBITOR
   log "Applied v3.4.7 idle-inhibitor post-release repair to generated target."
 }
 
+repair_v350_aur_helper_policy_target() {
+  local target_home="$1" tag="$2"
+  local bashrc_file="${target_home}/.bashrc"
+
+  [[ "$tag" == "v3.5.0" ]] || return 0
+  [[ -f "$bashrc_file" && ! -L "$bashrc_file" ]] \
+    || die "v3.5.0 post-release bashrc target is unavailable."
+
+  python3 - "$bashrc_file" <<'PY_V350_AUR_HELPER'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+
+
+def replace_once(old: str, new: str, label: str) -> None:
+    global text
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f"v3.5.0 AUR helper target repair anchor mismatch: {label} count={count}")
+    text = text.replace(old, new, 1)
+
+
+def replace_line_once(old: str, new: str, label: str) -> None:
+    global text
+    lines = text.splitlines(keepends=True)
+    matches = []
+    for index, line in enumerate(lines):
+        body = line[:-1] if line.endswith("\n") else line
+        if body == old:
+            matches.append(index)
+    if len(matches) != 1:
+        raise SystemExit(f"v3.5.0 AUR helper target repair line mismatch: {label} count={len(matches)}")
+    index = matches[0]
+    newline = "\n" if lines[index].endswith("\n") else ""
+    lines[index] = new + newline
+    text = "".join(lines)
+
+
+replace_once(
+    "# Upstream aur-scanner owns AUR scanning and installation. Keep yay/paru useful\n"
+    "# for read-only inspection while preventing accidental package transactions.\n"
+    "_awtarchy_aur_helper_is_read_only() {\n",
+    "# Upstream aur-scanner owns AUR scanning and installation. Keep yay/paru useful\n"
+    "# for read-only inspection and explicit package removal while blocking installs,\n"
+    "# upgrades, cleanup operations, and other unsupported package transactions.\n"
+    "_awtarchy_aur_helper_is_allowed() {\n",
+    "policy header",
+)
+replace_line_once(
+    "    -Ss|-Si|-Sl|-Sg)",
+    "    -Ss|-Si|-Sl|-Sg|-Sp|-R*|--remove|--remove=*)",
+    "first-argument allowlist",
+)
+replace_line_once(
+    "      -Ss|-Si|-Sl|-Sg)",
+    "      -Ss|-Si|-Sl|-Sg|-Sp|-R*|--remove|--remove=*)",
+    "per-argument allowlist",
+)
+replace_line_once(
+    "      -S*|-R*|-U*|-D*|-F*|-G*|-Y*|\\",
+    "      -S*|-U*|-D*|-F*|-G*|-Y*|\\",
+    "short-option mutation block",
+)
+replace_line_once(
+    "      --sync|--sync=*|--remove|--remove=*|--upgrade|--upgrade=*|\\",
+    "      --sync|--sync=*|--upgrade|--upgrade=*|\\",
+    "long-option mutation block",
+)
+replace_once(
+    'if _awtarchy_aur_helper_is_read_only "$@"; then',
+    'if _awtarchy_aur_helper_is_allowed "$@"; then',
+    "helper predicate call",
+)
+replace_once(
+    'printf \'Awtarchy blocks package-changing %s transactions.\\n\' "$helper" >&2',
+    'printf \'Awtarchy blocks this %s transaction.\\n\' "$helper" >&2',
+    "blocked-transaction message",
+)
+
+path.write_text(text, encoding="utf-8")
+PY_V350_AUR_HELPER
+  log "Applied v3.5.0 AUR helper post-release repair to generated target."
+}
+
 prepare_quickshell_update_target() {
   local target_home="$1" rel
 
@@ -8408,6 +8494,7 @@ main() {
   repair_v342_workspace_focus_target "$target_home" "$tag"
   repair_v343_transient_task_icons_target "$target_home" "$tag"
   repair_v347_idle_inhibitor_feedback_target "$target_home" "$tag"
+  repair_v350_aur_helper_policy_target "$target_home" "$tag"
 
   bootstrap_previous_baseline "$active_theme"
   augment_baseline_from_local_git_history "$target_home"
