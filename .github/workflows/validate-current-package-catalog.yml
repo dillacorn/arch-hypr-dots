@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
@@ -24,6 +24,8 @@ jobs:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           fetch-depth: 0
+      - name: Apply update package preflight patch
+        run: python .github/update-package-preflight-patch.py
       - name: Syntax
         run: |
           bash -n local/bin/awtarchy
@@ -48,3 +50,13 @@ jobs:
         run: bash tests/test-installer-aur-scanner-delegation.sh
       - name: Diff hygiene
         run: git diff --check origin/main...HEAD
+      - name: Commit update package preflight
+        if: github.event_name == 'push'
+        run: |
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          rm -f .github/update-package-preflight-patch.py
+          git add local/bin/awtarchy local/share/awtarchy/awtarchy-package-reconcile.sh .github/update-package-preflight-patch.py
+          git diff --cached --check
+          git commit -m "Prompt for package drift before updates"
+          git push origin HEAD:fix/remove-stale-arch-packages
