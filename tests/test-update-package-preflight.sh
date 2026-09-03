@@ -146,6 +146,17 @@ PATH="$tmp/bin:$PATH" \
 bash "$RECONCILER" --needs-action >/dev/null 2>&1
 rc=$?
 set -e
-[[ $rc -eq 0 ]] || fail "--needs-action should ignore missing optional apps, got ${rc}"
+if [[ $rc -ne 0 ]]; then
+    clean_review="$(
+    AWTARCHY_RUNTIME="$tmp/runtime.sh" \
+    AWTARCHY_HARDWARE_FILE="$tmp/hardware-state" \
+    AWTARCHY_MANAGED_PACKAGES_FILE="$tmp/managed-packages" \
+    FAKE_INSTALLED="$tmp/installed" \
+    PATH="$tmp/bin:$PATH" \
+    bash "$RECONCILER" --review
+    )"
+    printf '%s\n' "$clean_review" >&2
+    fail "--needs-action should ignore missing optional apps, got ${rc}"
+fi
 
 printf '%s\n' 'PASS: awtarchy update package preflight ignores optional apps while detecting real package drift.'
