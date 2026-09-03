@@ -33,7 +33,9 @@ cat "$TMPD/restore.fn" "$TMPD/cleanup.fn" >"$HARNESS"
 
 run_case() {
   local name="$1" restore_flag="$2" initial_state="$3" start_rc="$4" expected_start_count="$5"
-  local fixture="${TMPD}/${name}" child="$fixture/child.sh" rc=0 start_count=0
+  local fixture child rc=0 start_count=0
+  fixture="${TMPD}/${name}"
+  child="$fixture/child.sh"
 
   mkdir -p -- "$fixture/home/.config/hypr/scripts"
   : >"$fixture/manager.log"
