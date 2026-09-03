@@ -12,6 +12,7 @@ HARDWARE_FILE="${AWTARCHY_HARDWARE_FILE:-${STATE_DIR}/hardware-state}"
 MANAGED_PACKAGES_FILE="${AWTARCHY_MANAGED_PACKAGES_FILE:-/var/lib/awtarchy/managed-packages}"
 REVIEW_ONLY=0
 MIGRATE_REPLACEMENTS_ONLY=0
+NEEDS_ACTION_ONLY=0
 
 # Packages required by currently exposed Awtarchy shell/runtime features.
 # Keep this list small. The full installer catalog remains authoritative for
@@ -93,6 +94,9 @@ while (( $# )); do
       ;;
     --migrate-replacements)
       MIGRATE_REPLACEMENTS_ONLY=1
+      ;;
+    --needs-action)
+      NEEDS_ACTION_ONLY=1
       ;;
     -h|--help|help)
       usage
@@ -658,7 +662,24 @@ install_flatpak_apps() {
   "${cmd[@]}" install -y flathub "${apps[@]}"
 }
 
+package_reconciliation_needs_action() {
+  (( CHEESE_REPLACEMENT_NEEDED == 1 )) && return 0
+  (( ${#MISSING_REQUIRED[@]} > 0 )) && return 0
+  (( ${#MISSING_ARCH[@]} > 0 )) && return 0
+  (( ${#MISSING_AUR[@]} > 0 )) && return 0
+  (( ${#MISSING_FLATPAK_IDS[@]} > 0 )) && return 0
+  (( ${#RETIRED_MANAGED[@]} > 0 )) && return 0
+  return 1
+}
+
 collect_state
+
+if (( NEEDS_ACTION_ONLY == 1 )); then
+  if package_reconciliation_needs_action; then
+    exit 10
+  fi
+  exit 0
+fi
 
 if (( MIGRATE_REPLACEMENTS_ONLY == 1 )); then
   apply_cheese_snapshot_replacement
