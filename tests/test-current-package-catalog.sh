@@ -102,7 +102,8 @@ grep -Fq 'Select all in this category' "$RUNTIME" \
 grep -Fq 'sync_virt_manager_bundle_selection' "$RUNTIME" \
     || fail "installer does not link virt-manager to its virtualization stack"
 
-# Reconciler must distinguish optional apps from real package drift.
+# Reconciler must distinguish optional apps from real package drift and accept
+# equivalent native variants already present on the user's machine.
 grep -Fq 'OPTIONAL_ARCH_CATALOG' "$RECONCILER" \
     || fail "reconciler does not load optional Arch packages"
 grep -Fq 'OPTIONAL_AUR_CATALOG' "$RECONCILER" \
@@ -115,5 +116,7 @@ grep -Fq 'MISSING_OPTIONAL_FLATPAK_IDS' "$RECONCILER" \
     || fail "reconciler does not track missing optional Flatpak apps separately"
 grep -Fq 'vesktop|vesktop-bin' "$RECONCILER" \
     || fail "reconciler does not accept native Vesktop package equivalents"
+grep -Fq 'gamescope|gamescope-git' "$RECONCILER" \
+    || fail "reconciler does not accept installed gamescope-git as satisfying gamescope"
 
 printf '%s\n' 'PASS: package catalog cleanup, optional defaults, and native app sources are current.'
