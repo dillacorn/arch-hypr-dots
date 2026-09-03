@@ -19,11 +19,12 @@ jobs:
       - name: Install validation tools
         run: sudo apt-get update && sudo apt-get install -y desktop-file-utils lua5.4
 
-      - name: Apply scoped integration
+      - name: Apply scoped integration when pending
         run: |
-          python3 .github/feature-hyprmoncfg-idle-safety-patch.py
+          if [[ -f .github/feature-hyprmoncfg-idle-safety-patch.py ]]; then
+            python3 .github/feature-hyprmoncfg-idle-safety-patch.py
 
-          python3 - <<'PY'
+            python3 - <<'PY'
           import hashlib
           from pathlib import Path
 
@@ -76,75 +77,15 @@ jobs:
               history.write_text(history_text, encoding="utf-8")
           PY
 
-          chmod 0755 \
-            config/hypr/scripts/launch_handler.sh \
-            config/hypr/scripts/idle_inhibitor_global.sh \
-            config/hypr/scripts/protected_idle_safety.sh
+            chmod 0755 \
+              config/hypr/scripts/launch_handler.sh \
+              config/hypr/scripts/idle_inhibitor_global.sh \
+              config/hypr/scripts/protected_idle_safety.sh
 
-          git rm .github/feature-hyprmoncfg-idle-safety-patch.py
-
-          cat > .github/workflows/validate-hyprmoncfg-idle-safety.yml <<'EOF'
-          name: Validate hyprmoncfg idle safety
-
-          on:
-            push:
-              branches: [feature/hyprmoncfg-idle-safety]
-            pull_request:
-              paths:
-                - config/hypr/hyprland.lua
-                - config/hypr/hypridle.conf
-                - config/hypr/scripts/awtarchy-tips-tui.sh
-                - config/hypr/scripts/launch_handler.sh
-                - config/hypr/scripts/idle_inhibitor_global.sh
-                - config/hypr/scripts/hypridle_action.sh
-                - config/hypr/scripts/protected_idle_safety.sh
-                - config/quickshell/awtarchy/SystemState.qml
-                - config/quickshell/awtarchy/QuickSettings.qml
-                - config/quickshell/awtarchy/Bar.qml
-                - local/share/awtarchy/quickshell-managed-history.sha256
-                - tests/test-hyprmoncfg-idle-safety.sh
-                - tests/test-protected-idle-auto-game.sh
-                - tests/test-bar-control-actions.sh
-                - .github/workflows/validate-hyprmoncfg-idle-safety.yml
-            workflow_dispatch:
-
-          permissions:
-            contents: read
-
-          jobs:
-            validate:
-              runs-on: ubuntu-latest
-              steps:
-                - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-                  with:
-                    fetch-depth: 0
-                - name: Install validation tools
-                  run: sudo apt-get update && sudo apt-get install -y desktop-file-utils lua5.4
-                - name: Syntax
-                  run: |
-                    bash -n config/hypr/scripts/awtarchy-tips-tui.sh
-                    bash -n config/hypr/scripts/launch_handler.sh
-                    bash -n config/hypr/scripts/idle_inhibitor_global.sh
-                    bash -n config/hypr/scripts/hypridle_action.sh
-                    bash -n config/hypr/scripts/protected_idle_safety.sh
-                    bash -n tests/test-hyprmoncfg-idle-safety.sh
-                    bash -n tests/test-protected-idle-auto-game.sh
-                    bash -n tests/test-bar-control-actions.sh
-                - name: Focused regression
-                  run: |
-                    bash tests/test-hyprmoncfg-idle-safety.sh
-                    bash tests/test-protected-idle-auto-game.sh
-                - name: Existing idle and UI regressions
-                  run: |
-                    bash tests/test-bar-control-actions.sh
-                    bash tests/test-quick-settings-spacing.sh
-                    bash tests/test-quick-settings-layout.sh
-                    bash tests/test-battery-flyout.sh
-                    bash tests/test-lua-validation.sh
-                    bash tests/test-awtarchy-tips-links.sh
-                - name: Diff hygiene
-                  run: git diff --check HEAD^
-          EOF
+            git rm .github/feature-hyprmoncfg-idle-safety-patch.py
+          else
+            echo "Scoped integration is already applied on this branch head."
+          fi
 
       - name: Syntax
         run: |
@@ -174,8 +115,12 @@ jobs:
       - name: Diff hygiene
         run: git diff --check
 
-      - name: Commit validated integration
+      - name: Commit validated integration when changed
         run: |
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "No integration changes remain to commit."
+            exit 0
+          fi
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
