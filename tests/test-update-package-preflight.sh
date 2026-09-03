@@ -82,6 +82,19 @@ python-gobject
 jq
 PKGS
 
+review_output="$(
+AWTARCHY_RUNTIME="$tmp/runtime.sh" \
+AWTARCHY_HARDWARE_FILE="$tmp/hardware-state" \
+AWTARCHY_MANAGED_PACKAGES_FILE="$tmp/managed-packages" \
+FAKE_INSTALLED="$tmp/installed" \
+PATH="$tmp/bin:$PATH" \
+bash "$RECONCILER" --review
+)"
+if ! grep -Fq -- '  - snapshot' <<<"$review_output"; then
+    printf '%s\n' "$review_output" >&2
+    fail 'fixture does not expose snapshot as a missing current Arch catalog package'
+fi
+
 set +e
 AWTARCHY_RUNTIME="$tmp/runtime.sh" \
 AWTARCHY_HARDWARE_FILE="$tmp/hardware-state" \
