@@ -24,6 +24,7 @@ jobs:
           python3 .github/feature-hyprmoncfg-idle-safety-patch.py
 
           python3 - <<'PY'
+          import hashlib
           from pathlib import Path
 
           bar = Path("config/quickshell/awtarchy/Bar.qml")
@@ -45,6 +46,26 @@ jobs:
           if text.count(old) != 1:
               raise SystemExit(f"idle-safety test: expected one Always Awake bar assertion, found {text.count(old)}")
           test.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          history = Path("local/share/awtarchy/quickshell-managed-history.sha256")
+          history_text = history.read_text(encoding="utf-8")
+          final_entries = []
+          for source, installed in (
+              (Path("config/quickshell/awtarchy/QuickSettings.qml"), ".config/quickshell/awtarchy/QuickSettings.qml"),
+              (Path("config/quickshell/awtarchy/Bar.qml"), ".config/quickshell/awtarchy/Bar.qml"),
+              (Path("config/quickshell/awtarchy/SystemState.qml"), ".config/quickshell/awtarchy/SystemState.qml"),
+          ):
+              digest = hashlib.sha256(source.read_bytes()).hexdigest()
+              line = f"{digest}\t{installed}"
+              if line not in history_text:
+                  final_entries.append(line)
+          if final_entries:
+              history_text = history_text.rstrip("\n") + (
+                  "\n\n# 2026-09-03 hyprmoncfg and idle-safety final managed stock hashes.\n"
+                  + "\n".join(final_entries)
+                  + "\n"
+              )
+              history.write_text(history_text, encoding="utf-8")
           PY
 
           chmod 0755 \
