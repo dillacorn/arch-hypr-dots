@@ -6,7 +6,9 @@ on:
       - fix/quickshell-interrupt-recovery
   pull_request:
     paths:
+      - local/bin/awtarchy
       - local/share/awtarchy/awtarchy-runtime.sh
+      - tests/test-git-runtime-selection.sh
       - tests/test-quickshell-update-interrupt-recovery.sh
       - tests/test-quickshell-updater-bootstrap.sh
       - .github/workflows/validate-quickshell-interrupt-recovery.yml
@@ -23,9 +25,13 @@ jobs:
           fetch-depth: 0
       - name: Bash syntax
         run: |
+          bash -n local/bin/awtarchy
           bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n tests/test-git-runtime-selection.sh
           bash -n tests/test-quickshell-update-interrupt-recovery.sh
           bash -n tests/test-quickshell-updater-bootstrap.sh
+      - name: Exact Git runtime selection
+        run: bash tests/test-git-runtime-selection.sh
       - name: Quickshell interrupted-update recovery
         run: bash tests/test-quickshell-update-interrupt-recovery.sh
       - name: Quickshell updater bootstrap
