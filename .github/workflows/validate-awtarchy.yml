@@ -22,6 +22,7 @@ jobs:
         run: |
           test ! -e awtarchy.sh
           bash -n awtarchy-install.sh
+          bash -n bashrc
           bash -n local/bin/awtarchy
           grep -Fq 'exec "${TARGET_HOME}/.local/bin/awtarchy" "$@"' local/bin/awtarchy
           bash -n local/libexec/awtarchy/scxctl-helper
@@ -70,6 +71,15 @@ jobs:
           bash -n tests/test-awtarchy-command-shim.sh
           bash -n tests/test-awtarchy-legacy-cleanup.sh
           bash -n tests/test-awtarchy-update-notifications.sh
+          bash -n tests/test-installer-aur-scanner-delegation.sh
+          bash -n tests/test-aur-scanner-updater-migration.sh
+          bash -n tests/test-aur-helper-policy.sh
+          bash -n tests/test-aur-scanner-docs.sh
+          bash -n tests/test-aur-scanner-retirement.sh
+          bash -n tests/test-package-reconciler.sh
+          bash -n tests/test-package-reconciler-alternatives.sh
+          bash -n tests/test-package-reconciler-interrupted-recovery.sh
+          bash -n tests/test-package-reconciler-aur-equivalents.sh
           bash -n tests/test-bar-control-actions.sh
           bash -n tests/test-bar-icon-customization.sh
           bash -n tests/test-bar-module-visibility.sh
@@ -131,6 +141,7 @@ jobs:
         run: |
           shellcheck \
             awtarchy-install.sh \
+            bashrc \
             local/bin/awtarchy \
             local/libexec/awtarchy/scxctl-helper \
             local/libexec/awtarchy/power-profile-helper \
@@ -168,6 +179,15 @@ jobs:
             tests/test-awtarchy-command-shim.sh \
             tests/test-awtarchy-legacy-cleanup.sh \
             tests/test-awtarchy-update-notifications.sh \
+            tests/test-installer-aur-scanner-delegation.sh \
+            tests/test-aur-scanner-updater-migration.sh \
+            tests/test-aur-helper-policy.sh \
+            tests/test-aur-scanner-docs.sh \
+            tests/test-aur-scanner-retirement.sh \
+            tests/test-package-reconciler.sh \
+            tests/test-package-reconciler-alternatives.sh \
+            tests/test-package-reconciler-interrupted-recovery.sh \
+            tests/test-package-reconciler-aur-equivalents.sh \
             tests/test-bar-control-actions.sh \
             tests/test-bar-icon-customization.sh \
             tests/test-bar-module-visibility.sh \
@@ -239,6 +259,15 @@ jobs:
           bash tests/test-awtarchy-command-shim.sh
           bash tests/test-awtarchy-legacy-cleanup.sh
           bash tests/test-awtarchy-update-notifications.sh
+          bash tests/test-installer-aur-scanner-delegation.sh
+          bash tests/test-aur-scanner-updater-migration.sh
+          bash tests/test-aur-helper-policy.sh
+          bash tests/test-aur-scanner-docs.sh
+          bash tests/test-aur-scanner-retirement.sh
+          bash tests/test-package-reconciler.sh
+          bash tests/test-package-reconciler-alternatives.sh
+          bash tests/test-package-reconciler-interrupted-recovery.sh
+          bash tests/test-package-reconciler-aur-equivalents.sh
           bash tests/test-bar-control-actions.sh
           bash tests/test-bar-icon-customization.sh
           bash tests/test-bar-module-visibility.sh
