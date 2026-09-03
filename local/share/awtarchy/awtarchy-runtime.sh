@@ -2312,47 +2312,87 @@ install_arch_repo_apps_stage() {
 
 ensure_aur_sudo_access() {
   command -v sudo >/dev/null 2>&1 \
-    || die "sudo is required for AUR Guard's verified package transactions."
-  log "Confirming the target user's normal sudo authorization for AUR Guard..."
+    || die "sudo is required for AUR package transactions."
+  log "Confirming the target user's normal sudo authorization for AUR package installation..."
   if ! run_as_target sudo -v; then
     die "AUR installation requires the target user's normal sudo authorization."
   fi
 }
 
-ensure_aur_guard_requirements() {
-  log "Installing AUR Guard requirements..."
-  pacman -S --needed --noconfirm \
-    base-devel git bubblewrap devtools gnupg coreutils jq libarchive file curl
+ensure_aur_install_requirements() {
+  log "Installing AUR package build requirements..."
+  pacman -S --needed --noconfirm base-devel git gnupg
 }
 
-run_aur_guard_as_target() {
-  local command_name="$1"
-  shift
-
-  local guard_bashrc="${REPO_DIR}/bashrc"
-  [[ -f "$guard_bashrc" ]] || die "Missing AUR Guard configuration: ${guard_bashrc}"
-  grep -q '^aurinstall()' "$guard_bashrc" || die "${guard_bashrc} does not contain the AUR Guard aurinstall function."
-
-  # Variables in this embedded script intentionally expand in the child Bash.
-  # shellcheck disable=SC2016
-  run_as_target env \
-    HOME="$HOME_DIR" \
-    USER="$TARGET_USER" \
-    LOGNAME="$TARGET_USER" \
-    bash --noprofile --norc -c '
-      guard_bashrc=$1
-      shift
-      source <(sed -n "/^# --- AUR Guard ---/,\$p" "$guard_bashrc")
-      "$@"
-    ' awtarchy-aur-guard "$guard_bashrc" "$command_name" "$@"
-}
 
 ensure_yay() {
-  if have yay; then return 0; fi
-  if run_as_target bash -lc 'command -v yay >/dev/null 2>&1'; then return 0; fi
+  local tmp pkg
 
-  warn "yay not found. Installing it through AUR Guard practical mode..."
-  run_aur_guard_as_target aurinstall yay
+  if [[ -x /usr/bin/yay ]] && run_as_target /usr/bin/yay --version >/dev/null 2>&1; then
+    return 0
+  fi
+
+  warn "yay not found. Bootstrapping the standard AUR helper..."
+  tmp="$(run_as_target mktemp -d)" || die "Could not create a temporary yay build directory."
+
+  if ! run_as_target git clone --depth 1 https://aur.archlinux.org/yay.git "${tmp}/yay"; then
+    rm -rf -- "$tmp"
+    die "Failed to download yay from the AUR."
+  fi
+
+  if ! run_as_target bash --noprofile --norc -c \
+      'cd -- "$1" && makepkg -s --noconfirm --needed' awtarchy-yay "${tmp}/yay"; then
+    rm -rf -- "$tmp"
+    die "Failed to build yay."
+  fi
+
+  pkg="$(find "${tmp}/yay" -maxdepth 1 -type f -name 'yay-*.pkg.tar*' ! -name '*-debug*' -print -quit)"
+  if [[ -z "$pkg" ]]; then
+    rm -rf -- "$tmp"
+    die "Built yay package archive was not found."
+  fi
+
+  if ! pacman -U --noconfirm --needed "$pkg"; then
+    rm -rf -- "$tmp"
+    die "Failed to install yay."
+  fi
+  rm -rf -- "$tmp"
+
+  [[ -x /usr/bin/yay ]] && run_as_target /usr/bin/yay --version >/dev/null 2>&1 \
+    || die "yay bootstrap completed without a usable /usr/bin/yay."
+}
+
+
+ensure_aur_scanner() {
+  if [[ -x /usr/bin/aur-scan ]] \
+      && run_as_target /usr/bin/aur-scan --version >/dev/null 2>&1; then
+    return 0
+  fi
+
+  ensure_aur_install_requirements
+  ensure_aur_sudo_access
+  ensure_yay
+
+  log "Installing stable aur-scanner through yay for the initial bootstrap..."
+  if ! run_as_target /usr/bin/yay -S --noconfirm --pgpfetch aur-scanner; then
+    die "Failed to bootstrap stable aur-scanner."
+  fi
+
+  [[ -x /usr/bin/aur-scan ]] \
+    && run_as_target /usr/bin/aur-scan --version >/dev/null 2>&1 \
+    || die "aur-scanner installed without a usable /usr/bin/aur-scan."
+}
+
+install_aur_with_scanner() {
+  (( $# > 0 )) || return 0
+
+  if (( DRY_RUN == 1 )); then
+    log "DRY-RUN: would run aur-scan install for: $*"
+    return 0
+  fi
+
+  ensure_aur_scanner
+  run_as_target /usr/bin/aur-scan install "$@" --noconfirm
 }
 
 obs_pipewire_audio_capture_user_plugin_installed() {
@@ -2479,25 +2519,26 @@ install_obs_pipewire_audio_capture_package() {
     return 0
   fi
 
-  if run_aur_guard_as_target aurinstall "$pkg"; then
+  if install_aur_with_scanner "$pkg"; then
     return 0
   fi
 
-  warn "${pkg} failed through AUR Guard. Falling back to upstream per-user OBS plugin install."
+  warn "${pkg} failed through aur-scanner. Falling back to upstream per-user OBS plugin install."
   install_obs_pipewire_audio_capture_user_plugin
 }
 
 install_aur_repo_apps_stage() {
   (( INSTALL_AUR == 1 )) || { warn "Skipping AUR application install."; return 0; }
 
-  ensure_aur_guard_requirements
+  ensure_aur_install_requirements
   ensure_aur_sudo_access
   ensure_yay
+  ensure_aur_scanner
 
   if (( ${#AUR_SELECTED[@]} == 0 )); then
     warn "No AUR packages selected. Skipping package loop."
   else
-    log "Installing selected AUR packages through AUR Guard practical mode..."
+    log "Installing selected AUR packages through upstream aur-scanner..."
     local pkg
     for pkg in "${AUR_SELECTED[@]}"; do
       if aur_selected_package_installed "$pkg"; then
@@ -2505,9 +2546,15 @@ install_aur_repo_apps_stage() {
       else
         printf '%s\n' "${COLOR_CYAN}Verifying and installing ${pkg}...${COLOR_RESET}"
         if [[ "$pkg" == "obs-pipewire-audio-capture" ]]; then
-          install_obs_pipewire_audio_capture_package
+          if ! install_obs_pipewire_audio_capture_package; then
+            warn "AUR package failed: ${pkg}. Continuing with remaining selections."
+            continue
+          fi
         else
-          run_aur_guard_as_target aurinstall "$pkg"
+          if ! install_aur_with_scanner "$pkg"; then
+            warn "AUR package failed: ${pkg}. Continuing with remaining selections."
+            continue
+          fi
         fi
         printf '%s\n' "${COLOR_GREEN}${pkg} installed successfully.${COLOR_RESET}"
       fi
@@ -2518,8 +2565,8 @@ install_aur_repo_apps_stage() {
     if pacman -Q tlpui >/dev/null 2>&1; then
       printf '%s\n' "${COLOR_YELLOW}tlpui already installed. Skipping...${COLOR_RESET}"
     else
-      log "Installing tlpui through AUR Guard practical mode..."
-      if run_aur_guard_as_target aurinstall tlpui && pacman -Qq tlpui >/dev/null 2>&1; then
+      log "Installing tlpui through upstream aur-scanner..."
+      if install_aur_with_scanner tlpui && pacman -Qq tlpui >/dev/null 2>&1; then
         install -d -m 0755 /var/lib/awtarchy
         touch /var/lib/awtarchy/managed-packages
         grep -Fxq tlpui /var/lib/awtarchy/managed-packages \
@@ -3972,14 +4019,7 @@ aur_install(){
     pacman -Qq "$package" >/dev/null 2>&1 || newly_managed+=("$package")
   done
 
-  if have paru; then
-    as_user paru -S --needed --noconfirm "$@"
-  elif have yay; then
-    as_user yay -S --needed --noconfirm "$@"
-  else
-    bootstrap_yay
-    as_user yay -S --needed --noconfirm "$@"
-  fi
+  install_aur_with_scanner "$@"
 
   if (( ${#newly_managed[@]} )); then
     as_root install -d -m 0755 /var/lib/awtarchy
@@ -4544,7 +4584,7 @@ install_nvidia_open_stack(){
 install_nvidia_580xx_stack(){
   install_headers_for_installed_kernels 1
   ensure_tools
-  bootstrap_yay
+  ensure_aur_scanner
 
   aur_install nvidia-580xx-dkms nvidia-580xx-utils nvidia-580xx-settings
   pacman_install egl-wayland
@@ -4564,7 +4604,7 @@ install_nvidia_legacy_branch(){
   branch="$1"
   install_headers_for_installed_kernels 1
   ensure_tools
-  bootstrap_yay
+  ensure_aur_scanner
 
   case "$branch" in
     470)
@@ -5871,6 +5911,40 @@ install_managed_pacman_packages() {
   ask_yes_no "Install the missing ${label} packages?" || return 0
   run_update_root /usr/bin/pacman -S --needed --noconfirm "${missing[@]}"
   record_managed_packages "${missing[@]}"
+}
+
+target_uses_direct_aur_scanner() {
+  local target_home="$1"
+  local target_bashrc="${target_home}/.bashrc"
+
+  [[ -f "$target_bashrc" && ! -L "$target_bashrc" ]] || return 1
+  grep -Fq 'github.com/dillacorn/awtarchy' "$target_bashrc" || return 1
+  grep -Fq 'aur-scan' "$target_bashrc" || return 1
+  if grep -Eq '^(aurguard|aurverify|aurinstall)[[:space:]]*\(\)' "$target_bashrc"; then
+    return 1
+  fi
+}
+
+ensure_update_aur_scanner() {
+  if [[ -x /usr/bin/aur-scan ]] && /usr/bin/aur-scan --version >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [[ ! -x /usr/bin/yay ]] || ! /usr/bin/yay --version >/dev/null 2>&1; then
+    warn "The direct aur-scanner shell is ready to migrate, but /usr/bin/aur-scan is missing and a usable /usr/bin/yay is unavailable for bootstrap."
+    return 1
+  fi
+
+  log "Installing stable aur-scanner before replacing the AurGuard-era shell..."
+  if ! /usr/bin/yay -S --noconfirm --pgpfetch aur-scanner; then
+    warn "Failed to bootstrap stable aur-scanner; the managed shell has not been migrated."
+    return 1
+  fi
+
+  if [[ ! -x /usr/bin/aur-scan ]] || ! /usr/bin/aur-scan --version >/dev/null 2>&1; then
+    warn "aur-scanner bootstrap completed without a usable /usr/bin/aur-scan."
+    return 1
+  fi
 }
 
 multilib_enabled_update() {
@@ -8348,6 +8422,10 @@ main() {
     log "Selected update mode: preserve hyprland.lua; update other managed files"
   else
     log "Selected update mode: clean"
+  fi
+
+  if target_uses_direct_aur_scanner "$target_home"; then
+    ensure_update_aur_scanner       || die "aur-scanner is required before replacing the AurGuard-era managed shell. No managed files were changed."
   fi
 
   if [[ ${AWTARCHY_TEST_SKIP_SCXCTL_HELPER_REPAIR:-0} != 1 ]]; then

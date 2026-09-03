@@ -54,7 +54,10 @@ declare -a RETIRED_UNOWNED=()
 declare -a FAILED_AUR=()
 SYSTEM_TYPE="unknown"
 LY_STATUS="not installed"
-AUR_HELPER=""
+AUR_SCAN_BIN="/usr/bin/aur-scan"
+if [[ ${AWTARCHY_TEST_MODE:-0} == 1 && -n ${AWTARCHY_AUR_SCAN_BIN:-} ]]; then
+  AUR_SCAN_BIN="$AWTARCHY_AUR_SCAN_BIN"
+fi
 
 log()  { printf '%s\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
@@ -501,104 +504,33 @@ as_root() {
   fi
 }
 
-aur_helper_usable() {
-  local helper="$1"
-  have "$helper" || return 1
-  "$helper" --version >/dev/null 2>&1
-}
-
-rebuild_aur_helper() {
-  local helper="$1" tmp pkg
-
-  case "$helper" in
-    paru|yay) ;;
-    *)
-      warn "Unsupported AUR helper rebuild target: ${helper}"
-      return 1
-      ;;
-  esac
-
-  if ! package_installed "$helper"; then
-    warn "${helper} exists but is not installed as the standard ${helper} package; refusing to replace an unknown helper variant."
-    return 1
+ensure_aur_scanner() {
+  if [[ -x "$AUR_SCAN_BIN" ]] && "$AUR_SCAN_BIN" --version >/dev/null 2>&1; then
+    return 0
   fi
-  if ! have git; then
-    warn "git is required to rebuild the broken ${helper} AUR helper."
-    return 1
-  fi
-  if ! have makepkg; then
-    warn "makepkg is required to rebuild the broken ${helper} AUR helper."
-    return 1
-  fi
-  if (( EUID == 0 )); then
-    warn "AUR helper rebuild must run from the regular user account, not as root."
+
+  if [[ "$AUR_SCAN_BIN" != /usr/bin/aur-scan ]]; then
+    warn "Configured aur-scan test binary is unavailable: ${AUR_SCAN_BIN}"
     return 1
   fi
 
-  if ! tmp="$(mktemp -d)"; then
-    warn "Could not create a temporary directory to rebuild ${helper}."
-    return 1
-  fi
-  log "Rebuilding broken AUR helper ${helper} against the current pacman/libalpm..."
-
-  if ! git clone --depth 1 "https://aur.archlinux.org/${helper}.git" "${tmp}/${helper}"; then
-    rm -rf -- "$tmp"
-    warn "Failed to download ${helper} AUR source for rebuild."
+  if [[ ! -x /usr/bin/yay ]] || ! /usr/bin/yay --version >/dev/null 2>&1; then
+    warn "aur-scanner is missing and a usable /usr/bin/yay is unavailable for the one-time bootstrap."
     return 1
   fi
 
-  if ! (
-    cd -- "${tmp}/${helper}"
-    makepkg -s --noconfirm
-  ); then
-    rm -rf -- "$tmp"
-    warn "Failed to rebuild ${helper} against the current pacman/libalpm."
+  log "Installing stable aur-scanner through yay for the one-time bootstrap..."
+  if ! /usr/bin/yay -S --noconfirm --pgpfetch aur-scanner; then
+    warn "Failed to bootstrap stable aur-scanner."
     return 1
   fi
 
-  pkg="$(find "${tmp}/${helper}" -maxdepth 1 -type f -name "${helper}-*.pkg.tar*" ! -name '*-debug*' -print -quit)"
-  if [[ -z $pkg ]]; then
-    rm -rf -- "$tmp"
-    warn "Rebuilt ${helper} package archive was not found."
+  if [[ ! -x /usr/bin/aur-scan ]] || ! /usr/bin/aur-scan --version >/dev/null 2>&1; then
+    warn "aur-scanner installed without a usable /usr/bin/aur-scan."
     return 1
   fi
 
-  if ! as_root pacman -U --noconfirm "$pkg"; then
-    rm -rf -- "$tmp"
-    warn "Failed to reinstall rebuilt ${helper}."
-    return 1
-  fi
-
-  rm -rf -- "$tmp"
-  if ! aur_helper_usable "$helper"; then
-    warn "${helper} is still unusable after rebuild."
-    return 1
-  fi
-}
-
-ensure_aur_helper() {
-  local helper
-  AUR_HELPER=""
-
-  for helper in paru yay; do
-    if aur_helper_usable "$helper"; then
-      AUR_HELPER="$helper"
-      return 0
-    fi
-  done
-
-  for helper in paru yay; do
-    if have "$helper" && package_installed "$helper"; then
-      warn "${helper} is installed but cannot run after system package changes; rebuilding it."
-      if rebuild_aur_helper "$helper"; then
-        AUR_HELPER="$helper"
-        return 0
-      fi
-    fi
-  done
-
-  warn "No usable standard paru or yay installation is available for the selected AUR packages."
-  return 1
+  AUR_SCAN_BIN="/usr/bin/aur-scan"
 }
 
 install_selected_aur_packages() {
@@ -610,15 +542,15 @@ install_selected_aur_packages() {
       continue
     fi
 
-    log "Installing AUR package with ${AUR_HELPER}: ${pkg}"
-    if ! "$AUR_HELPER" -S --needed --noconfirm "$pkg"; then
+    log "Installing AUR package through upstream aur-scanner: ${pkg}"
+    if ! "$AUR_SCAN_BIN" install "$pkg" --noconfirm; then
       warn "AUR package failed: ${pkg}. Continuing with remaining package actions."
       FAILED_AUR+=("$pkg")
       continue
     fi
 
     if ! aur_package_satisfied "$pkg"; then
-      warn "AUR helper returned success but ${pkg} is still not detected. Continuing with remaining package actions."
+      warn "aur-scanner returned success but ${pkg} is still not detected. Continuing with remaining package actions."
       FAILED_AUR+=("$pkg")
       continue
     fi
@@ -809,10 +741,10 @@ if (( enable_ly == 1 )); then
 fi
 
 if (( ${#selected_aur[@]} )); then
-  if ensure_aur_helper; then
+  if ensure_aur_scanner; then
     install_selected_aur_packages "${selected_aur[@]}"
   else
-    warn 'AUR helper is unavailable; recording selected AUR packages as failed and continuing with remaining package actions.'
+    warn 'aur-scanner is unavailable; recording selected AUR packages as failed and continuing with remaining package actions.'
     FAILED_AUR+=("${selected_aur[@]}")
   fi
 fi

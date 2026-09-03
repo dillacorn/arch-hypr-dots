@@ -687,7 +687,22 @@ TEXT
             ;;
         packages-aur)
             cat <<'TEXT'
-AUR Guard wraps Awtarchy's yay/AUR workflow so AUR package installation is explicit and isolated from the normal Arch repository package stage.
+Awtarchy delegates AUR scanning and installation to upstream aur-scanner.
+
+Use yay for read-only AUR search and query commands such as:
+  yay -Ss package
+  yay -Si package
+  yay -Qm
+
+Awtarchy's interactive shell blocks package-changing yay/paru transactions. Install AUR packages with:
+  aur-scan install package
+
+Use:
+  aur-scan -h
+for the current upstream commands and options.
+
+Upstream documentation:
+  https://github.com/KiefStudioMA/ks-aur-scanner
 
 Keep Arch repository packages in the Arch package selector when they exist there. Use the AUR path only for packages that actually require it.
 
@@ -939,7 +954,7 @@ run_tui() {
 
     local -a package_labels=(
         "Package Selector"
-        "AUR Guard"
+        "AUR / aur-scanner"
         "Safe Orphan Cleanup"
     )
     local -a package_ids=(packages-selector packages-aur packages-orphans)

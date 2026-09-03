@@ -89,6 +89,18 @@ awtarchy help            Show the full command list
 
 `awtarchy git` is an explicit unreleased-testing mode. It shows the selected remote branch and exact commit and keeps git-testing state separate from stable release state.
 
+## AUR packages
+
+Awtarchy uses upstream [aur-scanner](https://github.com/KiefStudioMA/ks-aur-scanner) for AUR scanning and installation. `yay` remains available for read-only search and query commands such as `yay -Ss package`, `yay -Si package`, and `yay -Qm`; Awtarchy's interactive shell blocks package-changing `yay`/`paru` transactions.
+
+Install an AUR package with:
+
+```bash
+aur-scan install package
+```
+
+Use `aur-scan -h` for the current scanner commands and options. Awtarchy does not duplicate the complete upstream command reference here so the upstream project remains authoritative.
+
 ## Failure reporting
 
 Awtarchy can prepare a small sanitized report when it recognizes certain Awtarchy-owned Quickshell failures. Reports are **never submitted silently**. When an interactive terminal is available, Awtarchy offers to send the report, review it first, or not send it. Noninteractive failures can remain pending locally for later review.

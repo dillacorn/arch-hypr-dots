@@ -1,0 +1,97 @@
+name: Validate Direct AUR Scanner
+# Permanent read-only validation for installer, reconciler, updater, shell, documentation, and final AurGuard retirement.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - bashrc
+      - README.md
+      - browser_notes/**
+      - extra_notes/**
+      - config/hypr/scripts/awtarchy-tips-tui.sh
+      - local/share/awtarchy/awtarchy-runtime.sh
+      - local/share/awtarchy/awtarchy-package-reconcile.sh
+      - tests/test-installer-aur-scanner-delegation.sh
+      - tests/test-aur-scanner-updater-migration.sh
+      - tests/test-aur-helper-policy.sh
+      - tests/test-aur-scanner-docs.sh
+      - tests/test-aur-scanner-retirement.sh
+      - tests/test-package-reconciler.sh
+      - tests/test-package-reconciler-alternatives.sh
+      - tests/test-package-reconciler-interrupted-recovery.sh
+      - tests/test-package-reconciler-aur-equivalents.sh
+      - .github/workflows/validate-direct-aur-scanner.yml
+      - .github/workflows/validate-awtarchy.yml
+  push:
+    branches:
+      - main
+      - feature/direct-aur-scanner
+    paths:
+      - bashrc
+      - README.md
+      - browser_notes/**
+      - extra_notes/**
+      - config/hypr/scripts/awtarchy-tips-tui.sh
+      - local/share/awtarchy/awtarchy-runtime.sh
+      - local/share/awtarchy/awtarchy-package-reconcile.sh
+      - tests/test-installer-aur-scanner-delegation.sh
+      - tests/test-aur-scanner-updater-migration.sh
+      - tests/test-aur-helper-policy.sh
+      - tests/test-aur-scanner-docs.sh
+      - tests/test-aur-scanner-retirement.sh
+      - tests/test-package-reconciler.sh
+      - tests/test-package-reconciler-alternatives.sh
+      - tests/test-package-reconciler-interrupted-recovery.sh
+      - tests/test-package-reconciler-aur-equivalents.sh
+      - .github/workflows/validate-direct-aur-scanner.yml
+      - .github/workflows/validate-awtarchy.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate-aur-scanner-delegation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+
+      - name: Validate direct aur-scanner delegation
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n bashrc
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n local/share/awtarchy/awtarchy-package-reconcile.sh
+          bash -n tests/test-installer-aur-scanner-delegation.sh
+          bash -n tests/test-aur-scanner-updater-migration.sh
+          bash -n tests/test-aur-helper-policy.sh
+          bash -n tests/test-aur-scanner-docs.sh
+          bash -n tests/test-aur-scanner-retirement.sh
+          bash -n tests/test-package-reconciler.sh
+          bash -n tests/test-package-reconciler-alternatives.sh
+          bash -n tests/test-package-reconciler-interrupted-recovery.sh
+          bash -n tests/test-package-reconciler-aur-equivalents.sh
+          shellcheck bashrc
+          shellcheck tests/test-installer-aur-scanner-delegation.sh
+          shellcheck tests/test-aur-scanner-updater-migration.sh
+          shellcheck tests/test-aur-helper-policy.sh
+          shellcheck tests/test-aur-scanner-docs.sh
+          shellcheck tests/test-aur-scanner-retirement.sh
+          shellcheck local/share/awtarchy/awtarchy-package-reconcile.sh
+          shellcheck tests/test-package-reconciler.sh
+          shellcheck tests/test-package-reconciler-alternatives.sh
+          shellcheck tests/test-package-reconciler-interrupted-recovery.sh
+          shellcheck tests/test-package-reconciler-aur-equivalents.sh
+          bash tests/test-installer-aur-scanner-delegation.sh
+          bash tests/test-aur-scanner-updater-migration.sh
+          bash tests/test-aur-helper-policy.sh
+          bash tests/test-aur-scanner-docs.sh
+          bash tests/test-aur-scanner-retirement.sh
+          bash tests/test-package-reconciler.sh
+          bash tests/test-package-reconciler-alternatives.sh
+          bash tests/test-package-reconciler-interrupted-recovery.sh
+          bash tests/test-package-reconciler-aur-equivalents.sh
+          git diff --check

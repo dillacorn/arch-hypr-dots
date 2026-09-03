@@ -22,6 +22,7 @@ jobs:
         run: |
           test ! -e awtarchy.sh
           bash -n awtarchy-install.sh
+          bash -n bashrc
           bash -n local/bin/awtarchy
           grep -Fq 'exec "${TARGET_HOME}/.local/bin/awtarchy" "$@"' local/bin/awtarchy
           bash -n local/libexec/awtarchy/scxctl-helper
@@ -70,6 +71,15 @@ jobs:
           bash -n tests/test-awtarchy-command-shim.sh
           bash -n tests/test-awtarchy-legacy-cleanup.sh
           bash -n tests/test-awtarchy-update-notifications.sh
+          bash -n tests/test-installer-aur-scanner-delegation.sh
+          bash -n tests/test-aur-scanner-updater-migration.sh
+          bash -n tests/test-aur-helper-policy.sh
+          bash -n tests/test-aur-scanner-docs.sh
+          bash -n tests/test-aur-scanner-retirement.sh
+          bash -n tests/test-package-reconciler.sh
+          bash -n tests/test-package-reconciler-alternatives.sh
+          bash -n tests/test-package-reconciler-interrupted-recovery.sh
+          bash -n tests/test-package-reconciler-aur-equivalents.sh
           bash -n tests/test-bar-control-actions.sh
           bash -n tests/test-bar-icon-customization.sh
           bash -n tests/test-bar-module-visibility.sh
@@ -109,6 +119,7 @@ jobs:
           bash -n tests/test-quickshell-theme-catalog.sh
           bash -n tests/test-quickshell-theme-picker.sh
           bash -n tests/test-quickshell-updater-migration.sh
+          bash -n tests/fixtures/aur-scan-version-only.sh
           bash -n tests/test-hyprbars-quicksettings.sh
           bash -n tests/test-network-bar-state.sh
           bash -n tests/test-sched-ext-selection-persistence.sh
@@ -131,6 +142,7 @@ jobs:
         run: |
           shellcheck \
             awtarchy-install.sh \
+            bashrc \
             local/bin/awtarchy \
             local/libexec/awtarchy/scxctl-helper \
             local/libexec/awtarchy/power-profile-helper \
@@ -168,6 +180,15 @@ jobs:
             tests/test-awtarchy-command-shim.sh \
             tests/test-awtarchy-legacy-cleanup.sh \
             tests/test-awtarchy-update-notifications.sh \
+            tests/test-installer-aur-scanner-delegation.sh \
+            tests/test-aur-scanner-updater-migration.sh \
+            tests/test-aur-helper-policy.sh \
+            tests/test-aur-scanner-docs.sh \
+            tests/test-aur-scanner-retirement.sh \
+            tests/test-package-reconciler.sh \
+            tests/test-package-reconciler-alternatives.sh \
+            tests/test-package-reconciler-interrupted-recovery.sh \
+            tests/test-package-reconciler-aur-equivalents.sh \
             tests/test-bar-control-actions.sh \
             tests/test-bar-icon-customization.sh \
             tests/test-bar-module-visibility.sh \
@@ -204,6 +225,7 @@ jobs:
             tests/test-quickshell-theme-catalog.sh \
             tests/test-quickshell-theme-picker.sh \
             tests/test-quickshell-updater-migration.sh \
+            tests/fixtures/aur-scan-version-only.sh \
             tests/test-hyprbars-quicksettings.sh \
             tests/test-network-bar-state.sh \
             tests/test-sched-ext-selection-persistence.sh \
@@ -239,6 +261,15 @@ jobs:
           bash tests/test-awtarchy-command-shim.sh
           bash tests/test-awtarchy-legacy-cleanup.sh
           bash tests/test-awtarchy-update-notifications.sh
+          bash tests/test-installer-aur-scanner-delegation.sh
+          bash tests/test-aur-scanner-updater-migration.sh
+          bash tests/test-aur-helper-policy.sh
+          bash tests/test-aur-scanner-docs.sh
+          bash tests/test-aur-scanner-retirement.sh
+          bash tests/test-package-reconciler.sh
+          bash tests/test-package-reconciler-alternatives.sh
+          bash tests/test-package-reconciler-interrupted-recovery.sh
+          bash tests/test-package-reconciler-aur-equivalents.sh
           bash tests/test-bar-control-actions.sh
           bash tests/test-bar-icon-customization.sh
           bash tests/test-bar-module-visibility.sh
@@ -281,7 +312,21 @@ jobs:
           bash tests/test-hyprbars-quicksettings.sh
           bash tests/test-network-bar-state.sh
           python3 tests/test-config-noise-comparison.py
+          aur_scan_fixture_installed=0
+          cleanup_aur_scan_fixture() {
+            if (( aur_scan_fixture_installed == 1 )); then
+              sudo rm -f -- /usr/bin/aur-scan
+            fi
+          }
+          trap cleanup_aur_scan_fixture EXIT
+          if [[ ! -x /usr/bin/aur-scan ]]; then
+            sudo install -m 0755 tests/fixtures/aur-scan-version-only.sh /usr/bin/aur-scan
+            aur_scan_fixture_installed=1
+          fi
           bash tests/test-quickshell-updater-migration.sh
+          cleanup_aur_scan_fixture
+          aur_scan_fixture_installed=0
+          trap - EXIT
           bash tests/test-sched-ext-selection-persistence.sh
           bash tests/test-scxctl-auth-ui.sh
           bash tests/test-scxctl-auth-stale-rule.sh
