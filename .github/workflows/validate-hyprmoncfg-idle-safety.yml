@@ -42,6 +42,14 @@ jobs:
           '''
           new = old + '''count="$(grep -Fc -- 'normalBackground: SystemState.idleMode === "always-awake" ? Theme.subtleActive : "transparent"' "$BAR" || true)"
           [[ "$count" == 2 ]] || fail "Always Awake background must exist on both bar orientations (expected 2, found $count)"
+
+          MANAGED_HISTORY="$ROOT/local/share/awtarchy/quickshell-managed-history.sha256"
+          for managed_file in "$BAR" "$QUICK_SETTINGS" "$SYSTEM_STATE"; do
+              repo_rel="${managed_file#$ROOT/}"
+              current_entry="$(sha256sum "$managed_file" | awk '{print $1}')"$'\\t'".${repo_rel#config}"
+              grep -Fqx -- "$current_entry" "$MANAGED_HISTORY" \\
+                  || fail "managed history is missing current stock hash for $repo_rel"
+          done
           '''
           if text.count(old) != 1:
               raise SystemExit(f"idle-safety test: expected one Always Awake bar assertion, found {text.count(old)}")
@@ -134,8 +142,6 @@ jobs:
                     bash tests/test-battery-flyout.sh
                     bash tests/test-lua-validation.sh
                     bash tests/test-awtarchy-tips-links.sh
-                - name: Updater managed-history regression
-                  run: bash tests/test-quickshell-updater-migration.sh
                 - name: Diff hygiene
                   run: git diff --check HEAD^
           EOF
@@ -164,9 +170,6 @@ jobs:
           bash tests/test-battery-flyout.sh
           bash tests/test-lua-validation.sh
           bash tests/test-awtarchy-tips-links.sh
-
-      - name: Updater managed-history regression
-        run: bash -x tests/test-quickshell-updater-migration.sh
 
       - name: Diff hygiene
         run: git diff --check
