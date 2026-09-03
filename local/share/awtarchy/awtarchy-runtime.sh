@@ -5054,9 +5054,14 @@ GPU_DETECTION_RELIABLE=0
 TMPD=""
 TARGET_STAGE_HOME=""
 QUICKSHELL_UPDATE_RESTORE_ON_EXIT=0
+QUICKSHELL_UPDATE_RECOVERY_MARKER=""
 
 restore_quickshell_update_shell_on_exit() {
-  (( QUICKSHELL_UPDATE_RESTORE_ON_EXIT == 1 )) || return 0
+  local marker="${QUICKSHELL_UPDATE_RECOVERY_MARKER:-}" marker_pending=0
+  if [[ -n "$marker" && -f "$marker" && ! -L "$marker" ]]; then
+    marker_pending=1
+  fi
+  (( QUICKSHELL_UPDATE_RESTORE_ON_EXIT == 1 || marker_pending == 1 )) || return 0
   QUICKSHELL_UPDATE_RESTORE_ON_EXIT=0
 
   [[ -n "${HOME_DIR:-}" ]] || {
@@ -5072,7 +5077,10 @@ restore_quickshell_update_shell_on_exit() {
   }
 
   status="$(run_target bash "$manager" status 9>&- 2>/dev/null || true)"
-  [[ "$status" == "running" ]] && return 0
+  if [[ "$status" == "running" ]]; then
+    (( marker_pending == 0 )) || rm -f -- "$marker"
+    return 0
+  fi
 
   log "Update interrupted; restoring Quickshell..."
   if ! AWTARCHY_REPORT_SUPPRESS_QUICKSHELL=1 run_target bash "$manager" start 9>&-; then
@@ -5082,12 +5090,27 @@ restore_quickshell_update_shell_on_exit() {
 
   status="$(run_target bash "$manager" status 9>&- 2>/dev/null || true)"
   if [[ "$status" == "running" ]]; then
+    [[ -z "$marker" ]] || rm -f -- "$marker"
     log "Quickshell restored."
     return 0
   fi
 
-  warn "Could not restore Quickshell after interrupted update."
+  warn "Could not verify Quickshell after interrupted-update recovery."
   return 1
+}
+
+recover_interrupted_quickshell_update() {
+  local marker="${QUICKSHELL_UPDATE_RECOVERY_MARKER:-}"
+  [[ -n "$marker" ]] || return 0
+  if [[ -L "$marker" ]]; then
+    warn "Refusing unsafe Quickshell interrupted-update recovery marker: ${marker}"
+    return 1
+  fi
+  [[ -f "$marker" ]] || return 0
+
+  log "Recovering Quickshell from a previously interrupted update..."
+  QUICKSHELL_UPDATE_RESTORE_ON_EXIT=1
+  restore_quickshell_update_shell_on_exit
 }
 
 cleanup_update() {
@@ -5162,6 +5185,7 @@ init_target_user() {
   [[ -n "$HOME_DIR" && -d "$HOME_DIR" ]] || die "Could not resolve HOME for user: ${TARGET_USER}"
 
   STATE_DIR="${HOME_DIR}/.local/state/awtarchy"
+  QUICKSHELL_UPDATE_RECOVERY_MARKER="${STATE_DIR}/quickshell-update-stopped"
   BASELINE_HOME="${STATE_DIR}/baseline/home"
   MANIFEST_FILE="${STATE_DIR}/baseline/manifest.paths"
   HARDWARE_FILE="${STATE_DIR}/hardware-state"
@@ -8394,6 +8418,16 @@ stop_quickshell_update_instances() {
   (( identity_error == 0 )) || return 1
   (( ${#identities[@]} > 0 )) || return 0
 
+  QUICKSHELL_UPDATE_RESTORE_ON_EXIT=1
+  if [[ -n "${QUICKSHELL_UPDATE_RECOVERY_MARKER:-}" ]]; then
+    if [[ -L "$QUICKSHELL_UPDATE_RECOVERY_MARKER" ]]; then
+      warn "Refusing unsafe Quickshell interrupted-update recovery marker: ${QUICKSHELL_UPDATE_RECOVERY_MARKER}"
+      return 1
+    fi
+    mkdir -p -- "$(dirname -- "$QUICKSHELL_UPDATE_RECOVERY_MARKER")" || return 1
+    : >"$QUICKSHELL_UPDATE_RECOVERY_MARKER" || return 1
+  fi
+
   for identity in "${identities[@]}"; do
     IFS=: read -r pid start_time <<<"$identity"
     signal_rc=0
@@ -8428,8 +8462,7 @@ stop_quickshell_update_instances() {
       && alive_pids+=("$pid")
   done
   if (( ${#alive_pids[@]} == 0 )); then
-  QUICKSHELL_UPDATE_RESTORE_ON_EXIT=1
-  return 0
+    return 0
   fi
   warn "Updater recovery could not stop Quickshell PID(s): ${alive_pids[*]}"
   return 1
@@ -8477,6 +8510,9 @@ start_quickshell_update_shell() {
   status="$(run_target bash "$manager" status 9>&- 2>/dev/null || true)"
   if [[ "$status" == "running" ]]; then
     QUICKSHELL_UPDATE_RESTORE_ON_EXIT=0
+    if [[ -n "${QUICKSHELL_UPDATE_RECOVERY_MARKER:-}" && ! -L "$QUICKSHELL_UPDATE_RECOVERY_MARKER" ]]; then
+      rm -f -- "$QUICKSHELL_UPDATE_RECOVERY_MARKER"
+    fi
     return 0
   fi
   return 1
@@ -8583,6 +8619,8 @@ main() {
   init_target_user
   awtarchy_polkit_recover_session_environment || true
   acquire_lock
+  recover_interrupted_quickshell_update \
+    || die "Could not recover Quickshell from the previous interrupted update."
   curl_headers
 
   TMPD="$(mktemp -d)"
@@ -8692,7 +8730,7 @@ main() {
   apply_plan "$plan_file" || die "Update failed and user files were rolled back."
 
   if ! install_awtarchy_polkit_agent_runtime "$repo_dir"; then
-    rollback_changes
+    rollback_quickshell_update
     die "Could not install the root-owned Awtarchy PolicyKit authentication runtime."
   fi
 
