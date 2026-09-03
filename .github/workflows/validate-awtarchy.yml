@@ -119,6 +119,7 @@ jobs:
           bash -n tests/test-quickshell-theme-catalog.sh
           bash -n tests/test-quickshell-theme-picker.sh
           bash -n tests/test-quickshell-updater-migration.sh
+          bash -n tests/fixtures/aur-scan-version-only.sh
           bash -n tests/test-hyprbars-quicksettings.sh
           bash -n tests/test-network-bar-state.sh
           bash -n tests/test-sched-ext-selection-persistence.sh
@@ -224,6 +225,7 @@ jobs:
             tests/test-quickshell-theme-catalog.sh \
             tests/test-quickshell-theme-picker.sh \
             tests/test-quickshell-updater-migration.sh \
+            tests/fixtures/aur-scan-version-only.sh \
             tests/test-hyprbars-quicksettings.sh \
             tests/test-network-bar-state.sh \
             tests/test-sched-ext-selection-persistence.sh \
@@ -310,7 +312,21 @@ jobs:
           bash tests/test-hyprbars-quicksettings.sh
           bash tests/test-network-bar-state.sh
           python3 tests/test-config-noise-comparison.py
+          aur_scan_fixture_installed=0
+          cleanup_aur_scan_fixture() {
+            if (( aur_scan_fixture_installed == 1 )); then
+              sudo rm -f -- /usr/bin/aur-scan
+            fi
+          }
+          trap cleanup_aur_scan_fixture EXIT
+          if [[ ! -x /usr/bin/aur-scan ]]; then
+            sudo install -m 0755 tests/fixtures/aur-scan-version-only.sh /usr/bin/aur-scan
+            aur_scan_fixture_installed=1
+          fi
           bash tests/test-quickshell-updater-migration.sh
+          cleanup_aur_scan_fixture
+          aur_scan_fixture_installed=0
+          trap - EXIT
           bash tests/test-sched-ext-selection-persistence.sh
           bash tests/test-scxctl-auth-ui.sh
           bash tests/test-scxctl-auth-stale-rule.sh
