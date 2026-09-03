@@ -28,6 +28,13 @@ grep -Fq 'migrate_cheese_to_snapshot_stage()' "$RUNTIME" \
   || fail "Cheese migration is not wired into both install and update paths"
 grep -Fq -- '--migrate-replacements' "$RECONCILER" \
   || fail "package reconciler has no noninteractive replacement migration mode"
+if grep -Fq 'pacman -Rns --noconfirm' "$RECONCILER"; then
+  fail "retired package cleanup still recursively removes orphan dependencies with pacman -Rns"
+fi
+grep -Fq 'pacman -R --noconfirm cheese' "$RECONCILER" \
+  || fail "Cheese replacement does not use conservative package-only removal"
+grep -Fq 'pacman -R --noconfirm "${selected_retired[@]}"' "$RECONCILER" \
+  || fail "interactive retired package cleanup does not use conservative package-only removal"
 
 home="${TMP}/home"
 fakebin="${TMP}/fakebin"
@@ -65,11 +72,20 @@ case "${1:-}" in
     pkg="${@: -1}"
     grep -Fxq -- "$pkg" "$state" || printf '%s\n' "$pkg" >>"$state"
     ;;
-  -Rns)
-    pkg="${@: -1}"
+  -R)
+    shift
+    [[ ${1:-} == --noconfirm ]] && shift
     tmp="${state}.tmp"
-    grep -Fxv -- "$pkg" "$state" >"$tmp" || true
+    cp -- "$state" "$tmp"
+    for pkg in "$@"; do
+      grep -Fxv -- "$pkg" "$tmp" >"${tmp}.next" || true
+      mv -f -- "${tmp}.next" "$tmp"
+    done
     mv -f -- "$tmp" "$state"
+    ;;
+  -Rns)
+    printf '%s\n' 'unsafe recursive package removal invoked' >&2
+    exit 91
     ;;
   *)
     printf 'unexpected pacman invocation:' >&2
@@ -110,4 +126,4 @@ if grep -Fxq cheese "$managed"; then
   fail "replacement migration did not remove Cheese from the managed-package ledger"
 fi
 
-printf 'PASS: Cheese is replaced by Snapshot across package migration paths.\n'
+printf 'PASS: Cheese is replaced by Snapshot without recursively removing unrelated dependencies.\n'
