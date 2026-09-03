@@ -113,8 +113,9 @@ unset -f \
 
 # --- AUR helper policy ---
 # Upstream aur-scanner owns AUR scanning and installation. Keep yay/paru useful
-# for read-only inspection while preventing accidental package transactions.
-_awtarchy_aur_helper_is_read_only() {
+# for read-only inspection and explicit package removal while blocking installs,
+# upgrades, cleanup operations, and other unsupported package transactions.
+_awtarchy_aur_helper_is_allowed() {
   (( $# > 0 )) || return 1
 
   local first="$1"
@@ -122,7 +123,7 @@ _awtarchy_aur_helper_is_read_only() {
 
   case "$first" in
     -Q*|--query|--query=*|-P*|--show-stats|--help|-h|--version|-V|\
-    -Ss|-Si|-Sl|-Sg)
+    -Ss|-Si|-Sl|-Sg|-Sp|-R*|--remove|--remove=*)
       ;;
     *)
       return 1
@@ -131,10 +132,10 @@ _awtarchy_aur_helper_is_read_only() {
 
   for arg in "$@"; do
     case "$arg" in
-      -Ss|-Si|-Sl|-Sg)
+      -Ss|-Si|-Sl|-Sg|-Sp|-R*|--remove|--remove=*)
         ;;
-      -S*|-R*|-U*|-D*|-F*|-G*|-Y*|\
-      --sync|--sync=*|--remove|--remove=*|--upgrade|--upgrade=*|\
+      -S*|-U*|-D*|-F*|-G*|-Y*|\
+      --sync|--sync=*|--upgrade|--upgrade=*|\
       --database|--database=*|--files|--files=*|--getpkgbuild|--getpkgbuild=*|\
       --yay|--yay=*|--clean|--clean=*|--gendb|--save)
         return 1
@@ -154,12 +155,12 @@ _awtarchy_run_aur_helper() {
     return 127
   fi
 
-  if _awtarchy_aur_helper_is_read_only "$@"; then
+  if _awtarchy_aur_helper_is_allowed "$@"; then
     command "$helper" "$@"
     return $?
   fi
 
-  printf 'Awtarchy blocks package-changing %s transactions.\n' "$helper" >&2
+  printf 'Awtarchy blocks this %s transaction.\n' "$helper" >&2
   printf 'Install AUR packages with upstream aur-scanner instead:\n' >&2
   printf '  aur-scan install <package>\n' >&2
   printf 'Run aur-scan -h for upstream options.\n' >&2

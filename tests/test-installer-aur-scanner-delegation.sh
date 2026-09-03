@@ -83,6 +83,12 @@ if re.search(r"\b(?:yay|paru)\s+-S\b", gpu_aur):
 for retained in ("build_aur_picker_arrays()", "aur_search_results()", "AUR_SELECTED=()"):
     if retained not in text:
         raise SystemExit(f"installer AUR picker/search behavior was removed: {retained}")
+
+catalog = re.search(r"(?ms)^declare -a PACKAGES_AUR=\(\n(.*?)^\)", text)
+if not catalog:
+    raise SystemExit("missing PACKAGES_AUR catalog")
+if "hyprmoncfg-bin" not in catalog.group(1).split():
+    raise SystemExit("hyprmoncfg-bin is missing from the shared installer/reconciler AUR catalog")
 PY
 
 printf '%s\n' 'PASS: installer delegates AUR package writes to upstream aur-scan install while retaining yay and the existing AUR picker.'

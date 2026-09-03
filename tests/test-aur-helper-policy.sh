@@ -113,8 +113,14 @@ for command in \
   'yay -Qiu' \
   'yay -Ss example' \
   'yay -Si example' \
+  'yay -R example' \
+  'yay -Rns example' \
+  'yay --remove example' \
+  'yay -Sp example' \
   'yay --version' \
   'paru -Qm' \
+  'paru -R example' \
+  'paru -Rns example' \
   'paru --version'
 do
   : >"$HELPER_LOG"
@@ -128,8 +134,11 @@ done
 assert_blocked 'yay'
 assert_blocked 'yay -S example'
 assert_blocked 'yay -Syu'
+assert_blocked 'yay -Sc'
+assert_blocked 'yay -Yc'
+assert_blocked 'yay -D --asdeps example'
 assert_blocked 'yay -G example'
-assert_blocked 'paru -R example'
+assert_blocked 'yay -R example -S other'
 
 : >"$HELPER_LOG"
 help_output="$(run_shell 'aurhelp' 2>/dev/null)" \
@@ -157,4 +166,4 @@ run_shell 'sysupdate' >/dev/null 2>&1 \
   || fail 'sysupdate failed'
 assert_logged $'sudo\tpacman -Syu'
 
-printf '%s\n' 'PASS: bashrc delegates AUR installation/help to aur-scanner while retaining only a small read-only yay/paru policy.'
+printf '%s\n' 'PASS: bashrc delegates AUR installation/help to aur-scanner while allowing read-only yay/paru queries and explicit package removal.'

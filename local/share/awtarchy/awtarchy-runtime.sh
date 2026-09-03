@@ -42,6 +42,7 @@ declare -a PKG_GROUPS=(
 declare -a PACKAGES_AUR=(
   smtty
   awtwall
+  hyprmoncfg-bin
   mpvpaper
   qimgv
   alacritty-graphics
