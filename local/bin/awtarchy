@@ -835,6 +835,42 @@ run_package_reconciler() {
   AWTARCHY_RUNTIME="$RUNTIME" bash "$PACKAGE_RECONCILER" "$@"
 }
 
+offer_package_reconciliation_before_update() {
+  local arg="" answer="" rc=0
+
+  for arg in "$@"; do
+    [[ $arg == --review-only ]] && return 0
+  done
+
+  if [[ ! -t 0 || ! -t 1 || ! -r /dev/tty || ! -w /dev/tty ]]; then
+    return 0
+  fi
+
+  require_package_reconciler
+  if AWTARCHY_RUNTIME="$RUNTIME" bash "$PACKAGE_RECONCILER" --needs-action >/dev/null 2>&1; then
+    return 0
+  else
+    rc=$?
+  fi
+
+  if (( rc != 10 )); then
+    printf 'WARN: Could not determine Awtarchy package drift; continuing with the config update.\n' >&2
+    return 0
+  fi
+
+  printf '\nAwtarchy detected missing, replaced, or retired Awtarchy-managed packages.\n' >/dev/tty
+  printf 'Review/install package changes before updating configs? [Y/n] ' >/dev/tty
+  IFS= read -r answer </dev/tty || answer=''
+  case "$answer" in
+    n|N|no|NO)
+      printf 'Skipping package reconciliation; continuing with the config update.\n' >/dev/tty
+      return 0
+      ;;
+  esac
+
+  AWTARCHY_RUNTIME="$RUNTIME" bash "$PACKAGE_RECONCILER"
+}
+
 run_failure_reports() {
   local report_helper="${TARGET_HOME}/.config/hypr/scripts/awtarchy_report_failure.sh"
   [[ -f "$report_helper" && ! -L "$report_helper" && -O "$report_helper" ]] \
@@ -1163,7 +1199,8 @@ maintenance_menu() {
       1)
         protect_git_state_before_updater_refresh
         ensure_latest_updater update
-        if config_release_ready_or_noop; then
+        offer_package_reconciliation_before_update || rc=$?
+        if [[ -z ${rc:-} ]] && config_release_ready_or_noop; then
           run_runtime update-reset-backup --mode preserve || rc=$?
           if [[ -z ${rc:-} ]]; then
             reconcile_quickshell_ui_after_update
@@ -1307,6 +1344,7 @@ main() {
       protect_git_state_before_updater_refresh "$@"
       ensure_latest_updater "$@"
       shift
+      offer_package_reconciliation_before_update "$@"
       config_release_ready_or_noop "$@" || return 0
       run_runtime update-reset-backup --mode preserve "$@"
       reconcile_quickshell_ui_after_update

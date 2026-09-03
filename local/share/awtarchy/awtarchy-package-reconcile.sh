@@ -11,6 +11,8 @@ STATE_DIR="${XDG_STATE_HOME:-${HOME}/.local/state}/awtarchy"
 HARDWARE_FILE="${AWTARCHY_HARDWARE_FILE:-${STATE_DIR}/hardware-state}"
 MANAGED_PACKAGES_FILE="${AWTARCHY_MANAGED_PACKAGES_FILE:-/var/lib/awtarchy/managed-packages}"
 REVIEW_ONLY=0
+MIGRATE_REPLACEMENTS_ONLY=0
+NEEDS_ACTION_ONLY=0
 
 # Packages required by currently exposed Awtarchy shell/runtime features.
 # Keep this list small. The full installer catalog remains authoritative for
@@ -38,22 +40,32 @@ declare -a RETIRED_ARCH=(
   wofi
   network-manager-applet
   blueman
+  termdown
 )
 
 declare -a ARCH_CATALOG=()
+declare -a OPTIONAL_ARCH_CATALOG=()
 declare -a AUR_CATALOG=()
+declare -a OPTIONAL_AUR_CATALOG=()
 declare -a FLATPAK_IDS=()
 declare -a FLATPAK_NAMES=()
+declare -a OPTIONAL_FLATPAK_IDS=()
+declare -a OPTIONAL_FLATPAK_NAMES=()
 declare -a MISSING_REQUIRED=()
 declare -a MISSING_ARCH=()
+declare -a MISSING_OPTIONAL_ARCH=()
 declare -a MISSING_AUR=()
+declare -a MISSING_OPTIONAL_AUR=()
 declare -a MISSING_FLATPAK_IDS=()
 declare -a MISSING_FLATPAK_NAMES=()
+declare -a MISSING_OPTIONAL_FLATPAK_IDS=()
+declare -a MISSING_OPTIONAL_FLATPAK_NAMES=()
 declare -a RETIRED_MANAGED=()
 declare -a RETIRED_UNOWNED=()
 declare -a FAILED_AUR=()
 SYSTEM_TYPE="unknown"
 LY_STATUS="not installed"
+CHEESE_REPLACEMENT_NEEDED=0
 AUR_SCAN_BIN="/usr/bin/aur-scan"
 if [[ ${AWTARCHY_TEST_MODE:-0} == 1 && -n ${AWTARCHY_AUR_SCAN_BIN:-} ]]; then
   AUR_SCAN_BIN="$AWTARCHY_AUR_SCAN_BIN"
@@ -88,6 +100,12 @@ while (( $# )); do
     --review)
       REVIEW_ONLY=1
       ;;
+    --migrate-replacements)
+      MIGRATE_REPLACEMENTS_ONLY=1
+      ;;
+    --needs-action)
+      NEEDS_ACTION_ONLY=1
+      ;;
     -h|--help|help)
       usage
       exit 0
@@ -114,7 +132,19 @@ strip_outer_quotes() {
 runtime_array_lines() {
   local name="$1"
   awk -v name="$name" '
-    $0 ~ "^declare -a " name "=\\(" { inside=1; next }
+    $0 ~ "^declare -a " name "=\\(" {
+      line=$0
+      sub("^.*=\\(", "", line)
+      if (line ~ /\)[[:space:]]*$/) {
+        sub(/\)[[:space:]]*$/, "", line)
+        sub(/^[[:space:]]+/, "", line)
+        sub(/[[:space:]]+$/, "", line)
+        if (line != "" && line !~ /^#/) print line
+        exit
+      }
+      inside=1
+      next
+    }
     inside && /^[[:space:]]*\)[[:space:]]*$/ { exit }
     inside {
       line=$0
@@ -145,7 +175,7 @@ array_contains() {
 }
 
 load_catalogs() {
-  local raw entry package_text pkg friendly app_id
+  local raw entry package_text pkg selected friendly app_id
   local -a words=()
 
   while IFS= read -r raw; do
@@ -164,20 +194,41 @@ load_catalogs() {
     [[ -n $raw ]] || continue
     entry="$(strip_outer_quotes "$raw")"
     [[ $entry =~ ^[A-Za-z0-9@._+:-]+$ ]] || continue
+    OPTIONAL_ARCH_CATALOG+=("$entry")
+  done < <(runtime_array_lines OPTIONAL_ARCH_PACKAGES)
+
+  while IFS= read -r raw; do
+    [[ -n $raw ]] || continue
+    entry="$(strip_outer_quotes "$raw")"
+    [[ $entry =~ ^[A-Za-z0-9@._+:-]+$ ]] || continue
     AUR_CATALOG+=("$entry")
   done < <(runtime_array_lines PACKAGES_AUR)
 
   while IFS= read -r raw; do
     [[ -n $raw ]] || continue
     entry="$(strip_outer_quotes "$raw")"
-    IFS='|' read -r _ friendly app_id <<<"$entry"
+    [[ $entry =~ ^[A-Za-z0-9@._+:-]+$ ]] || continue
+    OPTIONAL_AUR_CATALOG+=("$entry")
+  done < <(runtime_array_lines OPTIONAL_AUR_PACKAGES)
+
+  while IFS= read -r raw; do
+    [[ -n $raw ]] || continue
+    entry="$(strip_outer_quotes "$raw")"
+    IFS='|' read -r selected friendly app_id <<<"$entry"
     [[ -n ${friendly:-} && -n ${app_id:-} ]] || continue
-    FLATPAK_NAMES+=("$friendly")
-    FLATPAK_IDS+=("$app_id")
+    if [[ $selected == 0 ]]; then
+      OPTIONAL_FLATPAK_NAMES+=("$friendly")
+      OPTIONAL_FLATPAK_IDS+=("$app_id")
+    else
+      FLATPAK_NAMES+=("$friendly")
+      FLATPAK_IDS+=("$app_id")
+    fi
   done < <(runtime_array_lines FLATPAK_CATALOG)
 
   sort_unique_array ARCH_CATALOG
+  sort_unique_array OPTIONAL_ARCH_CATALOG
   sort_unique_array AUR_CATALOG
+  sort_unique_array OPTIONAL_AUR_CATALOG
 }
 
 package_installed() {
@@ -194,6 +245,9 @@ package_satisfied() {
       ;;
     zathura-pdf-poppler)
       package_installed zathura-pdf-mupdf
+      ;;
+    gamescope|gamescope-git)
+      package_installed gamescope || package_installed gamescope-git
       ;;
     *)
       return 1
@@ -223,6 +277,12 @@ aur_package_satisfied() {
       ;;
     hyprmoncfg|hyprmoncfg-bin|hyprmoncfg-git)
       for alt in hyprmoncfg hyprmoncfg-bin hyprmoncfg-git; do
+        package_installed "$alt" && return 0
+      done
+      return 1
+      ;;
+    vesktop|vesktop-bin)
+      for alt in vesktop vesktop-bin; do
         package_installed "$alt" && return 0
       done
       return 1
@@ -298,6 +358,7 @@ collect_state() {
   load_catalogs
   detect_system_type
   detect_ly_status
+  package_installed cheese && CHEESE_REPLACEMENT_NEEDED=1
 
   for pkg in "${REQUIRED_ARCH[@]}"; do
     package_installed "$pkg" || MISSING_REQUIRED+=("$pkg")
@@ -310,14 +371,28 @@ collect_state() {
     MISSING_ARCH+=("$pkg")
   done
 
+  for pkg in "${OPTIONAL_ARCH_CATALOG[@]}"; do
+    package_satisfied "$pkg" || MISSING_OPTIONAL_ARCH+=("$pkg")
+  done
+
   for pkg in "${AUR_CATALOG[@]}"; do
     aur_package_satisfied "$pkg" || MISSING_AUR+=("$pkg")
+  done
+
+  for pkg in "${OPTIONAL_AUR_CATALOG[@]}"; do
+    aur_package_satisfied "$pkg" || MISSING_OPTIONAL_AUR+=("$pkg")
   done
 
   for i in "${!FLATPAK_IDS[@]}"; do
     flatpak_app_installed "${FLATPAK_IDS[$i]}" && continue
     MISSING_FLATPAK_IDS+=("${FLATPAK_IDS[$i]}")
     MISSING_FLATPAK_NAMES+=("${FLATPAK_NAMES[$i]}")
+  done
+
+  for i in "${!OPTIONAL_FLATPAK_IDS[@]}"; do
+    flatpak_app_installed "${OPTIONAL_FLATPAK_IDS[$i]}" && continue
+    MISSING_OPTIONAL_FLATPAK_IDS+=("${OPTIONAL_FLATPAK_IDS[$i]}")
+    MISSING_OPTIONAL_FLATPAK_NAMES+=("${OPTIONAL_FLATPAK_NAMES[$i]}")
   done
 
   for pkg in "${RETIRED_ARCH[@]}"; do
@@ -344,16 +419,27 @@ print_list() {
 print_review() {
   printf '%s\n' 'Awtarchy package reconciliation review'
   printf 'System type: %s\n' "$SYSTEM_TYPE"
-  printf 'Arch catalog packages: %d\n' "${#ARCH_CATALOG[@]}"
-  printf 'AUR catalog packages: %d\n' "${#AUR_CATALOG[@]}"
-  printf 'Flatpak catalog apps: %d\n' "${#FLATPAK_IDS[@]}"
+  printf 'Arch catalog packages: %d (%d default, %d optional)\n'     "$(( ${#ARCH_CATALOG[@]} + ${#OPTIONAL_ARCH_CATALOG[@]} ))"     "${#ARCH_CATALOG[@]}" "${#OPTIONAL_ARCH_CATALOG[@]}"
+  printf 'AUR catalog packages: %d (%d default, %d optional)\n'     "$(( ${#AUR_CATALOG[@]} + ${#OPTIONAL_AUR_CATALOG[@]} ))"     "${#AUR_CATALOG[@]}" "${#OPTIONAL_AUR_CATALOG[@]}"
+  printf 'Flatpak catalog apps: %d (%d default, %d optional)\n'     "$(( ${#FLATPAK_IDS[@]} + ${#OPTIONAL_FLATPAK_IDS[@]} ))"     "${#FLATPAK_IDS[@]}" "${#OPTIONAL_FLATPAK_IDS[@]}"
   printf 'Ly TTY login manager: %s\n' "$LY_STATUS"
+  printf '\n'
+  printf '%s\n' 'Required package replacements:'
+  if (( CHEESE_REPLACEMENT_NEEDED == 1 )); then
+    printf '  - cheese -> snapshot\n'
+  else
+    printf '  (none)\n'
+  fi
   printf '\n'
   print_list 'Missing required Awtarchy packages:' "${MISSING_REQUIRED[@]}"
   printf '\n'
   print_list 'Other missing current Arch catalog packages:' "${MISSING_ARCH[@]}"
   printf '\n'
+  print_list 'Optional Arch packages not installed:' "${MISSING_OPTIONAL_ARCH[@]}"
+  printf '\n'
   print_list 'Missing current AUR catalog packages:' "${MISSING_AUR[@]}"
+  printf '\n'
+  print_list 'Optional AUR packages not installed:' "${MISSING_OPTIONAL_AUR[@]}"
   printf '\n'
   if (( ${#MISSING_FLATPAK_IDS[@]} )); then
     printf '%s\n' 'Missing current Flatpak catalog apps:'
@@ -363,6 +449,16 @@ print_review() {
     done
   else
     printf '%s\n' 'Missing current Flatpak catalog apps:' '  (none)'
+  fi
+  printf '\n'
+  if (( ${#MISSING_OPTIONAL_FLATPAK_IDS[@]} )); then
+    printf '%s\n' 'Optional Flatpak apps not installed:'
+    local i
+    for i in "${!MISSING_OPTIONAL_FLATPAK_IDS[@]}"; do
+      printf '  - %s (%s)\n' "${MISSING_OPTIONAL_FLATPAK_NAMES[$i]}" "${MISSING_OPTIONAL_FLATPAK_IDS[$i]}"
+    done
+  else
+    printf '%s\n' 'Optional Flatpak apps not installed:' '  (none)'
   fi
   printf '\n'
   print_list 'Retired Awtarchy-owned packages eligible for removal:' "${RETIRED_MANAGED[@]}"
@@ -406,7 +502,7 @@ multi_select() {
 
     printf '\033[H\033[2J' >/dev/tty
     printf '%s\n\n' "$title" >/dev/tty
-    printf '%s\n\n' 'Arrow keys move, Space toggles, Enter accepts, Esc cancels.' >/dev/tty
+    printf '%s\n\n' 'Arrow keys move, Space toggles, A selects all, C clears all, Enter accepts, Esc cancels.' >/dev/tty
     for (( i=start; i<end; i++ )); do
       pointer=' '
       (( i == current )) && pointer='>'
@@ -432,6 +528,12 @@ multi_select() {
         ;;
       ' ')
         if (( selected[current] == 1 )); then selected[current]=0; else selected[current]=1; fi
+        ;;
+      a|A)
+        for i in "${!selected[@]}"; do selected[i]=1; done
+        ;;
+      c|C)
+        for i in "${!selected[@]}"; do selected[i]=0; done
         ;;
       ''|$'\n'|$'\r')
         return 0
@@ -603,6 +705,21 @@ forget_managed_packages() {
   rm -f -- "$tmp"
 }
 
+apply_cheese_snapshot_replacement() {
+  (( CHEESE_REPLACEMENT_NEEDED == 1 )) || return 0
+
+  require_sudo
+  log "Replacing retired Cheese camera app with Snapshot..."
+  if ! package_installed snapshot; then
+    as_root pacman -S --needed --noconfirm snapshot
+  fi
+  record_managed_packages snapshot
+  as_root pacman -R --noconfirm cheese
+  forget_managed_packages cheese
+  CHEESE_REPLACEMENT_NEEDED=0
+  log "Replaced Cheese with Snapshot."
+}
+
 flatpak_scope() {
   local fs=""
   if have findmnt; then
@@ -629,7 +746,29 @@ install_flatpak_apps() {
   "${cmd[@]}" install -y flathub "${apps[@]}"
 }
 
+package_reconciliation_needs_action() {
+  (( CHEESE_REPLACEMENT_NEEDED == 1 )) && return 0
+  (( ${#MISSING_REQUIRED[@]} > 0 )) && return 0
+  (( ${#MISSING_ARCH[@]} > 0 )) && return 0
+  (( ${#MISSING_AUR[@]} > 0 )) && return 0
+  (( ${#MISSING_FLATPAK_IDS[@]} > 0 )) && return 0
+  (( ${#RETIRED_MANAGED[@]} > 0 )) && return 0
+  return 1
+}
+
 collect_state
+
+if (( NEEDS_ACTION_ONLY == 1 )); then
+  if package_reconciliation_needs_action; then
+    exit 10
+  fi
+  exit 0
+fi
+
+if (( MIGRATE_REPLACEMENTS_ONLY == 1 )); then
+  apply_cheese_snapshot_replacement
+  exit 0
+fi
 
 if (( REVIEW_ONLY == 1 )); then
   print_review
@@ -639,47 +778,73 @@ fi
 [[ -r /dev/tty && -w /dev/tty ]] || die "Interactive package reconciliation requires a terminal."
 
 print_review >/dev/tty
-printf '\nRequired missing packages above will be selected automatically.\n' >/dev/tty
+printf '\nOptional choices are listed first and start unchecked.\n' >/dev/tty
+printf 'Missing default packages start selected; Space opts out.\n' >/dev/tty
 printf 'Installed current packages are preserved even when not selected here.\n\n' >/dev/tty
 confirm_yes_no 'Continue to package choices?' 1 || { log 'Package reconciliation canceled.'; exit 0; }
 
-# Missing optional Arch packages.
-declare -a arch_labels=("${MISSING_ARCH[@]}")
+# Optional Arch packages are shown first and unchecked; missing defaults follow selected.
+declare -a arch_labels=()
+declare -a arch_values=()
 declare -a arch_flags=()
 declare -a selected_arch=()
-for _ in "${arch_labels[@]}"; do arch_flags+=(0); done
+for pkg in "${MISSING_OPTIONAL_ARCH[@]}"; do
+  arch_labels+=("${pkg} (optional)")
+  arch_values+=("$pkg")
+  arch_flags+=(0)
+done
+for pkg in "${MISSING_ARCH[@]}"; do
+  arch_labels+=("$pkg")
+  arch_values+=("$pkg")
+  arch_flags+=(1)
+done
 if (( ${#arch_labels[@]} )); then
-  multi_select 'Optional missing Arch packages' arch_labels arch_flags \
+  multi_select 'Arch packages to install' arch_labels arch_flags \
     || { log 'Package reconciliation canceled.'; exit 0; }
 fi
-selected_values arch_labels arch_flags selected_arch
+selected_values arch_values arch_flags selected_arch
 
-# Missing AUR packages.
-declare -a aur_labels=("${MISSING_AUR[@]}")
+# Optional AUR packages are shown first and unchecked; missing defaults follow selected.
+declare -a aur_labels=()
+declare -a aur_values=()
 declare -a aur_flags=()
 declare -a selected_aur=()
-for _ in "${aur_labels[@]}"; do aur_flags+=(0); done
+for pkg in "${MISSING_OPTIONAL_AUR[@]}"; do
+  aur_labels+=("${pkg} (optional)")
+  aur_values+=("$pkg")
+  aur_flags+=(0)
+done
+for pkg in "${MISSING_AUR[@]}"; do
+  aur_labels+=("$pkg")
+  aur_values+=("$pkg")
+  aur_flags+=(1)
+done
 if (( ${#aur_labels[@]} )); then
-  multi_select 'Optional missing AUR packages' aur_labels aur_flags \
+  multi_select 'AUR packages to install' aur_labels aur_flags \
     || { log 'Package reconciliation canceled.'; exit 0; }
 fi
-selected_values aur_labels aur_flags selected_aur
+selected_values aur_values aur_flags selected_aur
 
-# Missing Flatpak apps.
+# Optional Flatpaks are shown first and unchecked; missing defaults follow selected.
 declare -a flatpak_labels=()
+declare -a flatpak_values=()
 declare -a flatpak_flags=()
 declare -a selected_flatpak=()
-for i in "${!MISSING_FLATPAK_IDS[@]}"; do
-  flatpak_labels+=("${MISSING_FLATPAK_NAMES[$i]} (${MISSING_FLATPAK_IDS[$i]})")
+for i in "${!MISSING_OPTIONAL_FLATPAK_IDS[@]}"; do
+  flatpak_labels+=("${MISSING_OPTIONAL_FLATPAK_NAMES[$i]} (${MISSING_OPTIONAL_FLATPAK_IDS[$i]}) (optional)")
+  flatpak_values+=("${MISSING_OPTIONAL_FLATPAK_IDS[$i]}")
   flatpak_flags+=(0)
 done
+for i in "${!MISSING_FLATPAK_IDS[@]}"; do
+  flatpak_labels+=("${MISSING_FLATPAK_NAMES[$i]} (${MISSING_FLATPAK_IDS[$i]})")
+  flatpak_values+=("${MISSING_FLATPAK_IDS[$i]}")
+  flatpak_flags+=(1)
+done
 if (( ${#flatpak_labels[@]} )); then
-  multi_select 'Optional missing Flatpak apps' flatpak_labels flatpak_flags \
+  multi_select 'Flatpak apps to install' flatpak_labels flatpak_flags \
     || { log 'Package reconciliation canceled.'; exit 0; }
-  for i in "${!MISSING_FLATPAK_IDS[@]}"; do
-    (( flatpak_flags[i] == 1 )) && selected_flatpak+=("${MISSING_FLATPAK_IDS[$i]}")
-  done
 fi
+selected_values flatpak_values flatpak_flags selected_flatpak
 
 install_ly=0
 enable_ly=0
@@ -706,7 +871,15 @@ if (( ${#retired_labels[@]} )); then
 fi
 selected_values retired_values retired_flags selected_retired
 
+if (( CHEESE_REPLACEMENT_NEEDED == 1 )); then
+  array_contains cheese "${selected_retired[@]}" || selected_retired+=(cheese)
+fi
+
 install_arch=("${MISSING_REQUIRED[@]}" "${selected_arch[@]}")
+if (( CHEESE_REPLACEMENT_NEEDED == 1 )) && ! package_installed snapshot; then
+  install_arch+=(snapshot)
+fi
+sort_unique_array install_arch
 if (( install_ly == 1 )); then install_arch+=(ly); fi
 if (( ${#selected_flatpak[@]} )) && ! have flatpak; then
   install_arch+=(flatpak)
@@ -723,7 +896,7 @@ print_list 'Install Flatpak apps:' "${selected_flatpak[@]}" >/dev/tty
 printf '\n' >/dev/tty
 print_list 'Remove retired/replaced packages:' "${selected_retired[@]}" >/dev/tty
 if (( enable_ly == 1 )); then printf '\nLy: enable ly@tty2.service and disable getty@tty2.service\n' >/dev/tty; fi
-printf '\nNo current installed package will be removed merely because it was not selected.\n\n' >/dev/tty
+printf '\nNo current installed package will be removed merely because it was not selected; explicit replacements may be migrated.\n\n' >/dev/tty
 
 if (( ${#install_arch[@]} == 0 && ${#selected_aur[@]} == 0 && ${#selected_flatpak[@]} == 0 && ${#selected_retired[@]} == 0 && enable_ly == 0 )); then
   log 'No package changes selected.'
@@ -764,7 +937,7 @@ fi
 
 if (( ${#selected_retired[@]} )); then
   log "Removing selected retired packages: ${selected_retired[*]}"
-  as_root pacman -Rns --noconfirm "${selected_retired[@]}"
+  as_root pacman -R --noconfirm "${selected_retired[@]}"
   forget_managed_packages "${selected_retired[@]}"
 fi
 

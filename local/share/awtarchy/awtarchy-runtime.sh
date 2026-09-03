@@ -32,11 +32,37 @@ declare -a PKG_GROUPS=(
   "Window Management:hyprland hyprpaper hyprlock hypridle hyprpicker hyprsunset quickshell grim satty slurp wl-clipboard cliphist zbar wf-recorder zenity qt5ct qt5-wayland kvantum-qt5 qt6ct qt6-wayland xdg-desktop-portal-hyprland xdg-desktop-portal-gtk libnotify nwg-look"
   "Fonts:woff2-font-awesome otf-font-awesome ttf-dejavu ttf-liberation ttf-noto-nerd noto-fonts-emoji"
   "Themes:papirus-icon-theme materia-gtk-theme xcursor-comix kvantum-theme-materia"
-  "Terminal Apps:nano micro fastfetch btop htop curl passt devtools wget git dos2unix brightnessctl ipcalc cmatrix asciiquarium figlet termdown espeak-ng cava man-db man-pages unzip xarchiver ncdu ddcutil scx-scheds scx-tools"
+  "Terminal Apps:nano micro fastfetch btop htop curl passt devtools wget git dos2unix brightnessctl ipcalc cmatrix asciiquarium figlet espeak-ng cava man-db man-pages unzip xarchiver ncdu ddcutil scx-scheds scx-tools"
   "Utilities:upower polkit python-gobject gnome-keyring networkmanager bluez bluez-utils wiremix pcmanfm-qt gvfs gvfs-smb gvfs-mtp gvfs-afc speedcrunch imagemagick pipewire pipewire-pulse pipewire-alsa ufw jq earlyoom libsixel xdg-utils python usbutils awww"
-  "Multimedia:ffmpeg avahi nss-mdns mpv cheese exiv2 zathura zathura-pdf-mupdf mousai"
-  "Development:base-devel archlinux-keyring bubblewrap gnupg coreutils clang ninja go rust virt-manager qemu qemu-hw-usb-host virt-viewer vde2 libguestfs dmidecode gamemode gamescope nftables swtpm"
-  "Network Tools:firefox wireguard-tools wireplumber openssh iptables systemd-resolvconf bridge-utils qemu-guest-agent dnsmasq dhcpcd inetutils openbsd-netcat"
+  "Multimedia:ffmpeg avahi nss-mdns mpv snapshot exiv2 zathura zathura-pdf-mupdf"
+  "Development:base-devel archlinux-keyring bubblewrap gnupg coreutils clang ninja go rust dmidecode nftables"
+  "Network Tools:firefox wireguard-tools wireplumber openssh iptables systemd-resolvconf qemu-guest-agent dnsmasq dhcpcd inetutils openbsd-netcat"
+)
+
+# Optional Arch packages are shown first and start unchecked.
+declare -a OPTIONAL_ARCH_PACKAGES=(
+  moonlight-qt
+  mousai
+  gamemode
+  gamescope
+  virt-manager
+  qemu
+  qemu-hw-usb-host
+  virt-viewer
+  vde2
+  libguestfs
+  swtpm
+)
+
+# Selecting virt-manager toggles this explicit virtualization stack together.
+declare -a VIRT_MANAGER_PACKAGES=(
+  virt-manager
+  qemu
+  qemu-hw-usb-host
+  virt-viewer
+  vde2
+  libguestfs
+  swtpm
 )
 
 declare -a PACKAGES_AUR=(
@@ -49,12 +75,15 @@ declare -a PACKAGES_AUR=(
   obs-pipewire-audio-capture-bin
 )
 
+# Optional AUR packages are shown first and start unchecked.
+declare -a OPTIONAL_AUR_PACKAGES=(
+  vesktop-bin
+)
+
 # Format: selected|friendly name|Flathub app ID
-# Selected defaults preserve the current install_flatpak_apps.sh behavior.
+# Flatseal is available as an opt-in Flatpak; native apps live in Arch/AUR.
 declare -a FLATPAK_CATALOG=(
-  "1|Flatseal|com.github.tchx84.Flatseal"
-  "0|Vesktop|dev.vencord.Vesktop"
-  "0|Moonlight|com.moonlight_stream.Moonlight"
+  "0|Flatseal|com.github.tchx84.Flatseal"
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -199,6 +228,20 @@ array_contains_exact() {
     [[ "$item" == "$needle" ]] && return 0
   done
   return 1
+}
+
+migrate_cheese_to_snapshot_stage() {
+  local reconciler="$1" runtime_source="$2"
+  local managed_file="${AWTARCHY_MANAGED_PACKAGES_FILE:-/var/lib/awtarchy/managed-packages}"
+
+  [[ -f "$reconciler" && ! -L "$reconciler" ]] \
+    || die "Package replacement reconciler is unavailable or unsafe: ${reconciler}"
+  [[ -r "$runtime_source" && ! -L "$runtime_source" ]] \
+    || die "Package replacement runtime is unavailable or unsafe: ${runtime_source}"
+
+  AWTARCHY_RUNTIME="$runtime_source" \
+    AWTARCHY_MANAGED_PACKAGES_FILE="$managed_file" \
+    bash "$reconciler" --migrate-replacements
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -482,6 +525,13 @@ build_arch_picker_arrays() {
   ARCH_KINDS=()
 
   local group group_name packages pkg
+  for pkg in "${OPTIONAL_ARCH_PACKAGES[@]}"; do
+    ARCH_LABELS+=("${pkg}    ${COLOR_DIM}(optional)${COLOR_RESET}")
+    ARCH_VALUES+=("${pkg}")
+    ARCH_SELECTED_FLAGS+=("0")
+    ARCH_KINDS+=("item")
+  done
+
   while IFS= read -r group; do
     [[ -n "$group" ]] || continue
     IFS=':' read -r group_name packages <<< "$group"
@@ -507,6 +557,14 @@ build_aur_picker_arrays() {
   AUR_SELECTED_FLAGS=()
   AUR_KINDS=()
   local pkg
+
+  for pkg in "${OPTIONAL_AUR_PACKAGES[@]}"; do
+    AUR_LABELS+=("${pkg}    ${COLOR_DIM}(optional)${COLOR_RESET}")
+    AUR_VALUES+=("${pkg}")
+    AUR_SELECTED_FLAGS+=("0")
+    AUR_KINDS+=("item")
+  done
+
   for pkg in "${PACKAGES_AUR[@]}"; do
     AUR_LABELS+=("${pkg}")
     AUR_VALUES+=("${pkg}")
@@ -527,6 +585,23 @@ build_flatpak_picker_arrays() {
     FLATPAK_VALUES+=("${friendly}|${appid}")
     FLATPAK_SELECTED_FLAGS+=("${selected}")
     FLATPAK_KINDS+=("item")
+  done
+}
+
+sync_virt_manager_bundle_selection() {
+  local trigger="$1" selected_value="$2" values_name="$3" selected_name="$4"
+  [[ "$trigger" == virt-manager ]] || return 0
+
+  local -n _values_ref="$values_name"
+  local -n _selected_ref="$selected_name"
+  local pkg i
+  for pkg in "${VIRT_MANAGER_PACKAGES[@]}"; do
+    for i in "${!_values_ref[@]}"; do
+      if [[ "${_values_ref[i]}" == "$pkg" ]]; then
+        _selected_ref[i]="$selected_value"
+        break
+      fi
+    done
   done
 }
 
@@ -1668,6 +1743,8 @@ package_picker() {
     local -a view_indices=()
     view_indices+=("-100")
     view_indices+=("-104")
+    view_indices+=("-201")
+    view_indices+=("-202")
     view_indices+=("-101")
     view_indices+=("-102")
     view_indices+=("-103")
@@ -1717,6 +1794,8 @@ package_picker() {
       case "$i" in
         -100) printf '%s [✓] Done with this list\n' "$prefix" ;;
         -104) printf '%s [<] Back\n' "$prefix" ;;
+        -201) printf '%s [✓] Select all in this list\n' "$prefix" ;;
+        -202) printf '%s [ ] Clear all in this list\n' "$prefix" ;;
         -101) printf '%s [?] Search/filter list\n' "$prefix" ;;
         -102) if [[ "$type" == "Flatpak app ID" ]]; then
           printf '%s [+] Search/add Flatpak app\n' "$prefix"
@@ -1782,6 +1861,16 @@ package_picker() {
           -104)
             return 2
             ;;
+          -201)
+            for i in "${!kinds_ref[@]}"; do
+              [[ "${kinds_ref[i]}" == "item" ]] && selected_ref[i]=1
+            done
+            ;;
+          -202)
+            for i in "${!kinds_ref[@]}"; do
+              [[ "${kinds_ref[i]}" == "item" ]] && selected_ref[i]=0
+            done
+            ;;
           -101)
             clear_screen
             filter="$(prompt_line "Search/filter ${type}: ")"
@@ -1810,6 +1899,7 @@ package_picker() {
               else
                 selected_ref[selected_index]=1
               fi
+              sync_virt_manager_bundle_selection                 "${values_ref[selected_index]}" "${selected_ref[selected_index]}"                 "$values_name" "$selected_name"
             fi
             ;;
         esac
@@ -1822,6 +1912,16 @@ package_picker() {
             ;;
           -104)
             return 2
+            ;;
+          -201)
+            for i in "${!kinds_ref[@]}"; do
+              [[ "${kinds_ref[i]}" == "item" ]] && selected_ref[i]=1
+            done
+            ;;
+          -202)
+            for i in "${!kinds_ref[@]}"; do
+              [[ "${kinds_ref[i]}" == "item" ]] && selected_ref[i]=0
+            done
             ;;
           -101)
             clear_screen
@@ -1847,6 +1947,7 @@ package_picker() {
               else
                 selected_ref[selected_index]=1
               fi
+              sync_virt_manager_bundle_selection                 "${values_ref[selected_index]}" "${selected_ref[selected_index]}"                 "$values_name" "$selected_name"
             fi
             ;;
         esac
@@ -3686,6 +3787,9 @@ run_install() {
   fi
   prepare_base_install
   install_arch_repo_apps_stage
+  migrate_cheese_to_snapshot_stage \
+    "${REPO_DIR}/local/share/awtarchy/awtarchy-package-reconcile.sh" \
+    "${BASH_SOURCE[0]}"
   if [[ "$IS_LAPTOP" == true && "$IS_VM" == false ]]; then
     reconcile_power_profile_backend "$REPO_DIR"
   fi
@@ -8532,6 +8636,9 @@ main() {
     cleanup_legacy_keyring_pam_stage "$repo_dir"
   fi
   ensure_quickshell_update_prerequisites
+  migrate_cheese_to_snapshot_stage \
+    "${repo_dir}/local/share/awtarchy/awtarchy-package-reconcile.sh" \
+    "${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
   snapshot_quickshell_update_legacy_paths
 
   stop_quickshell_update_shell \
