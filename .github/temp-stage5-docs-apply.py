@@ -42,10 +42,15 @@ TEXT
 
 if text.count(old) != 1:
     raise SystemExit("unexpected packages-aur article anchor")
+if text.count('        "AUR Guard"\n') != 1:
+    raise SystemExit("unexpected AUR Tips menu label anchor")
 
 updated = text.replace(old, new, 1)
-if "AUR Guard wraps" in updated:
-    raise SystemExit("retired AUR Guard tips text remains")
+updated = updated.replace('        "AUR Guard"\n', '        "AUR / aur-scanner"\n', 1)
+
+for retired in ("AUR Guard", "AurGuard", "aurguard", "aurverify", "aurinstall"):
+    if retired.lower() in updated.lower():
+        raise SystemExit(f"retired AurGuard Tips reference remains: {retired}")
 if "aur-scan install package" not in updated or "aur-scan -h" not in updated:
     raise SystemExit("new aur-scanner tips guidance is incomplete")
 
