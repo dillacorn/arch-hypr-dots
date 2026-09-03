@@ -36,8 +36,8 @@ manual_inhibitor_is_active() {
 
 probe_hypridle_guard() {
     local action="$1"
-    [[ -x "$HYPRIDLE_ACTION_SCRIPT" ]] || return 1
-    "$HYPRIDLE_ACTION_SCRIPT" "$action" >/dev/null 2>&1
+    [[ -r "$HYPRIDLE_ACTION_SCRIPT" ]] || return 1
+    bash "$HYPRIDLE_ACTION_SCRIPT" "$action" >/dev/null 2>&1
 }
 
 protected_reason() {
