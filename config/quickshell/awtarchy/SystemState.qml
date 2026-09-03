@@ -19,6 +19,7 @@ Singleton {
     property var driveTemps: []
     property var otherTemps: []
     property bool idleInhibited: false
+    property string idleMode: "off"
     property bool idleBroken: false
     property bool idleReconcilePending: false
     property var coreUsage: ({})
@@ -104,9 +105,12 @@ Singleton {
                 try {
                     const status = JSON.parse(text.trim());
                     const classes = status.class || [];
-                    root.idleInhibited = classes.indexOf("activated") >= 0;
+                    const active = classes.indexOf("activated") >= 0;
+                    root.idleMode = root.normalizeIdleMode(status.mode || (active ? "keep-awake" : "off"));
+                    root.idleInhibited = root.idleMode !== "off";
                     root.idleBroken = classes.indexOf("error") >= 0;
                 } catch (error) {
+                    root.idleMode = "off";
                     root.idleInhibited = false;
                     root.idleBroken = false;
                 }
@@ -366,6 +370,13 @@ Singleton {
         return name.length > 0 ? name : "Default audio output";
     }
 
+    function normalizeIdleMode(mode) {
+        const value = String(mode || "off");
+        if (value === "keep-awake" || value === "always-awake")
+            return value;
+        return "off";
+    }
+
     function refreshIdleAfterToggle() {
         if (!root.idleReconcilePending || idleToggleProcess.running || idleStatusProcess.running)
             return;
@@ -373,10 +384,24 @@ Singleton {
         idleStatusProcess.running = true;
     }
 
+    function setIdleMode(mode) {
+        if (idleToggleProcess.running)
+            return;
+
+        const requested = root.normalizeIdleMode(mode);
+        root.idleMode = requested;
+        root.idleInhibited = requested !== "off";
+        root.idleBroken = false;
+        root.idleReconcilePending = true;
+        idleToggleProcess.exec([idleScript, "set-mode", requested]);
+    }
+
     function toggleIdle() {
         if (idleToggleProcess.running)
             return;
         root.idleInhibited = !root.idleInhibited;
+        root.idleMode = root.idleInhibited ? "keep-awake" : "off";
+        root.idleBroken = false;
         root.idleReconcilePending = true;
         idleToggleProcess.exec([idleScript, "toggle"]);
     }

@@ -30,6 +30,7 @@ env_log="${TMP}/hypridle.env"
 pkill_log="${TMP}/pkill.log"
 fd_leak="${TMP}/fd-leak"
 restore_marker="${TMP}/restore.called"
+migration_marker="${TMP}/hyprmoncfg-migration.called"
 manager_env="${TMP}/user-manager.env"
 idle_state="${runtime_dir}/awtarchy-quickshell-idle-hidden"
 
@@ -103,7 +104,17 @@ printf '%s\n' '0' >"${AWTARCHY_TEST_IDLE_STATE:?}"
 : >"${AWTARCHY_TEST_RESTORE_MARKER:?}"
 EOF
 
-chmod 0755 "${fakebin}/"* "${config_home}/hypr/scripts/quickshell_bar_restore.sh"
+cat >"${config_home}/hypr/scripts/hyprmoncfg_config_migrate.py" <<'EOF'
+#!/usr/bin/env python3
+from pathlib import Path
+import os
+Path(os.environ["AWTARCHY_TEST_HYPRMONCFG_MIGRATION_MARKER"]).write_text("called\n", encoding="utf-8")
+EOF
+
+chmod 0755 \
+    "${fakebin}/"* \
+    "${config_home}/hypr/scripts/quickshell_bar_restore.sh" \
+    "${config_home}/hypr/scripts/hyprmoncfg_config_migrate.py"
 
 # shellcheck disable=SC2016 # Intentionally match the literal production assignment.
 grep -Fq 'export XDG_RUNTIME_DIR="$RUNTIME_DIR"' "$HELPER" \
@@ -134,9 +145,12 @@ env -u WAYLAND_DISPLAY -u HYPRLAND_INSTANCE_SIGNATURE -u XDG_CURRENT_DESKTOP -u 
     "AWTARCHY_TEST_PKILL_LOG=$pkill_log" \
     "AWTARCHY_TEST_IDLE_STATE=$idle_state" \
     "AWTARCHY_TEST_RESTORE_MARKER=$restore_marker" \
+    "AWTARCHY_TEST_HYPRMONCFG_MIGRATION_MARKER=$migration_marker" \
     "AWTARCHY_TEST_USER_MANAGER_ENV=$manager_env" \
     bash "$HELPER"
 
+[[ -e "$migration_marker" ]] \
+    || fail 'Hypridle restart helper did not run the preserved-config Hyprmoncfg migrator'
 [[ -s "$pid_file" ]] || fail 'replacement Hypridle process did not start'
 NEW_PID="$(cat "$pid_file")"
 kill -0 "$NEW_PID" 2>/dev/null || fail 'replacement Hypridle process is not running'

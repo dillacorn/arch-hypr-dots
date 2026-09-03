@@ -17,6 +17,20 @@ if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" && -S "${RUNTIME_DIR}/bus" ]]; then
     export DBUS_SESSION_BUS_ADDRESS="unix:path=${RUNTIME_DIR}/bus"
 fi
 
+# Git testing is launched by the currently installed stable Awtarchy runtime.
+# That older runtime can install a branch's new migration helper but cannot call
+# a post-update hook that only exists in the branch runtime. Run the migration
+# from this already-established post-update helper as a compatibility fallback.
+# The migrator is idempotent, so the normal runtime hook remains authoritative
+# once the feature reaches main/release.
+HYPRMONCFG_MIGRATOR="${CONFIG_HOME}/hypr/scripts/hyprmoncfg_config_migrate.py"
+if [[ -f "$HYPRMONCFG_MIGRATOR" ]] && command -v python3 >/dev/null 2>&1; then
+    HYPRLAND_CONFIG="${CONFIG_HOME}/hypr/hyprland.lua" \
+        python3 "$HYPRMONCFG_MIGRATOR" \
+        || printf '%s\n' \
+            'hypridle_restart.sh: preserved Hyprmoncfg config migration failed; continuing Hypridle restart' >&2
+fi
+
 recover_user_manager_session_environment() {
     local line key value
 

@@ -171,8 +171,14 @@ die() { fail "$*"; }
 eval "$repair_definition"
 
 repair_v347_idle_inhibitor_feedback_target "$v347_target_home" v3.4.7
-cmp -s "${v347_target_home}/${v347_rel}" "$SYSTEM_STATE" \
-  || fail "v3.4.7 post-release repair does not produce the current fixed SystemState.qml"
+grep -Fq 'property bool idleReconcilePending: false' "${v347_target_home}/${v347_rel}" \
+  || fail "v3.4.7 post-release repair does not add pending backend reconciliation"
+grep -Fq 'root.idleInhibited = !root.idleInhibited;' "${v347_target_home}/${v347_rel}" \
+  || fail "v3.4.7 post-release repair does not add immediate visual feedback"
+grep -Fq 'idleToggleProcess.exec([idleScript, "toggle"]);' "${v347_target_home}/${v347_rel}" \
+  || fail "v3.4.7 post-release repair does not use the managed toggle process"
+! grep -Fq 'property string idleMode:' "${v347_target_home}/${v347_rel}" \
+  || fail "v3.4.7 post-release repair unexpectedly backports later idle-mode behavior"
 
 repair_v347_idle_inhibitor_feedback_target "$v346_target_home" v3.4.6
 cmp -s "${v346_target_home}/${v347_rel}" "$v347_original" \

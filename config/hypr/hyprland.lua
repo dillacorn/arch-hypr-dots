@@ -573,6 +573,7 @@ local hyprsunset_ctl = "~/.config/hypr/scripts/hyprsunset_ctl.sh"
 
 -- Terminal tools
 local maccel = "~/.config/hypr/scripts/launch_handler.sh maccel \"alacritty --class maccel -e maccel\""
+local hyprmoncfg = "APP_NO_LAUNCH_IF_TILED=1 ~/.config/hypr/scripts/launch_handler.sh hyprmoncfg \"~/.config/hypr/scripts/default_terminal.sh --class hyprmoncfg -- hyprmoncfg\""
 local smtty = "~/.config/hypr/scripts/launch_handler.sh smtty \"~/.config/hypr/scripts/default_terminal.sh --class smtty -- smtty\""
 local btop = "~/.config/hypr/scripts/launch_handler.sh btop \"alacritty --class btop -e btop\""
 
@@ -661,6 +662,7 @@ for _, bind in ipairs({
 }) do
     hl.bind(bind[1], hl.dsp.exec_cmd(bind[2]), {})
 end
+hl.bind("SUPER + CTRL + M", hl.dsp.exec_cmd(hyprmoncfg), {})
 
 -- Audio mixer
 hl.bind("ALT + V", hl.dsp.exec_cmd(wiremix), {})
@@ -908,6 +910,7 @@ hl.define_submap("noalt", function()
     }) do
         hl.bind(bind[1], hl.dsp.exec_cmd(bind[2]), {})
     end
+    hl.bind("SUPER + CTRL + M", hl.dsp.exec_cmd(hyprmoncfg), {})
 
     -- Audio mixer in "noalt"
     hl.bind("ALT + V", hl.dsp.exec_cmd(wiremix), {})
@@ -1255,6 +1258,10 @@ hl.window_rule({ match = { class = "^(awtarchy-tips-tui)$" }, center = true })
 hl.window_rule({ match = { class = "^(maccel)$" }, float = true })
 hl.window_rule({ match = { class = "^(maccel)$" }, size = { "(monitor_w*0.90)", "(monitor_h*0.96)" } })
 hl.window_rule({ match = { class = "^(maccel)$" }, center = true })
+
+hl.window_rule({ match = { class = "^(hyprmoncfg)$" }, float = true })
+hl.window_rule({ match = { class = "^(hyprmoncfg)$" }, size = { "(monitor_w*0.85)", "(monitor_h*0.90)" } })
+hl.window_rule({ match = { class = "^(hyprmoncfg)$" }, center = true })
 
 hl.window_rule({ match = { class = "^(hyprbars)$" }, float = true })
 hl.window_rule({ match = { class = "^(hyprbars)$" }, size = { "(monitor_w*0.30)", "(monitor_h*0.10)" } })
