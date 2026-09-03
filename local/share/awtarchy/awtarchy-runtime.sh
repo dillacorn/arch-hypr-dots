@@ -5053,12 +5053,51 @@ MOUSE_ENABLED=0
 GPU_DETECTION_RELIABLE=0
 TMPD=""
 TARGET_STAGE_HOME=""
+QUICKSHELL_UPDATE_RESTORE_ON_EXIT=0
+
+restore_quickshell_update_shell_on_exit() {
+  (( QUICKSHELL_UPDATE_RESTORE_ON_EXIT == 1 )) || return 0
+  QUICKSHELL_UPDATE_RESTORE_ON_EXIT=0
+
+  [[ -n "${HOME_DIR:-}" ]] || {
+    warn "Could not restore Quickshell after interrupted update: target home is unavailable."
+    return 1
+  }
+
+  local manager="${HOME_DIR}/.config/hypr/scripts/quickshell.sh"
+  local status=""
+  [[ -f "$manager" && ! -L "$manager" ]] || {
+    warn "Could not restore Quickshell after interrupted update: manager is unavailable."
+    return 1
+  }
+
+  status="$(run_target bash "$manager" status 9>&- 2>/dev/null || true)"
+  [[ "$status" == "running" ]] && return 0
+
+  log "Update interrupted; restoring Quickshell..."
+  if ! AWTARCHY_REPORT_SUPPRESS_QUICKSHELL=1 run_target bash "$manager" start 9>&-; then
+    warn "Could not restore Quickshell after interrupted update."
+    return 1
+  fi
+
+  status="$(run_target bash "$manager" status 9>&- 2>/dev/null || true)"
+  if [[ "$status" == "running" ]]; then
+    log "Quickshell restored."
+    return 0
+  fi
+
+  warn "Could not restore Quickshell after interrupted update."
+  return 1
+}
 
 cleanup_update() {
+  local exit_rc=$?
   if (( MOUSE_ENABLED == 1 )); then
     printf '\033[?1000l\033[?1006l' >/dev/tty 2>/dev/null || true
   fi
   [[ -n "${TMPD:-}" ]] && rm -rf -- "$TMPD" 2>/dev/null || true
+  restore_quickshell_update_shell_on_exit || true
+  return "$exit_rc"
 }
 trap cleanup_update EXIT
 trap 'exit 129' HUP
@@ -8388,7 +8427,10 @@ stop_quickshell_update_instances() {
     quickshell_update_process_identity_is_running "$pid" "$start_time" \
       && alive_pids+=("$pid")
   done
-  (( ${#alive_pids[@]} > 0 )) || return 0
+  if (( ${#alive_pids[@]} == 0 )); then
+  QUICKSHELL_UPDATE_RESTORE_ON_EXIT=1
+  return 0
+  fi
   warn "Updater recovery could not stop Quickshell PID(s): ${alive_pids[*]}"
   return 1
 }
@@ -8433,7 +8475,11 @@ start_quickshell_update_shell() {
     AWTARCHY_REPORT_SUPPRESS_QUICKSHELL=1 run_target bash "$manager" start 9>&- || return 1
   fi
   status="$(run_target bash "$manager" status 9>&- 2>/dev/null || true)"
-  [[ "$status" == "running" ]]
+  if [[ "$status" == "running" ]]; then
+    QUICKSHELL_UPDATE_RESTORE_ON_EXIT=0
+    return 0
+  fi
+  return 1
 }
 
 rollback_quickshell_update() {
