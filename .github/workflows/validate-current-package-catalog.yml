@@ -1,0 +1,30 @@
+name: Validate current package catalog
+
+on:
+  push:
+    branches: [fix/remove-stale-arch-packages]
+  pull_request:
+    paths:
+      - local/share/awtarchy/awtarchy-runtime.sh
+      - tests/test-current-package-catalog.sh
+      - .github/workflows/validate-current-package-catalog.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Syntax
+        run: |
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n tests/test-current-package-catalog.sh
+      - name: Catalog regression
+        run: bash tests/test-current-package-catalog.sh
+      - name: Package reconciler regression
+        run: bash tests/test-package-reconciler.sh
+      - name: Diff hygiene
+        run: git diff --check origin/main...HEAD
