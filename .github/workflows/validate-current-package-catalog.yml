@@ -6,7 +6,9 @@ on:
   pull_request:
     paths:
       - local/share/awtarchy/awtarchy-runtime.sh
+      - local/share/awtarchy/awtarchy-package-reconcile.sh
       - tests/test-current-package-catalog.sh
+      - tests/test-cheese-snapshot-migration.sh
       - .github/workflows/validate-current-package-catalog.yml
   workflow_dispatch:
 
@@ -23,9 +25,13 @@ jobs:
       - name: Syntax
         run: |
           bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n local/share/awtarchy/awtarchy-package-reconcile.sh
           bash -n tests/test-current-package-catalog.sh
+          bash -n tests/test-cheese-snapshot-migration.sh
       - name: Catalog regression
         run: bash tests/test-current-package-catalog.sh
+      - name: Cheese replacement regression
+        run: bash tests/test-cheese-snapshot-migration.sh
       - name: Package reconciler regression
         run: bash tests/test-package-reconciler.sh
       - name: Diff hygiene
