@@ -11,6 +11,7 @@ PROC_NAME="${AWTARCHY_IDLE_PROC_NAME:-awtarchy-global-idle-inhibitor}"
 uid="$(id -u)"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${uid}}"
 PID_FILE="${RUNTIME_DIR}/awtarchy-global-idle-inhibitor.pid"
+MODE_FILE="${RUNTIME_DIR}/awtarchy-global-idle-inhibitor.mode"
 CONTROL_LOCK="${RUNTIME_DIR}/awtarchy-global-idle-inhibitor.lock"
 
 mkdir -p "$RUNTIME_DIR"
@@ -82,6 +83,47 @@ is_active() {
     real_inhibitor_active
 }
 
+read_mode_file() {
+    local mode
+    [[ -r "$MODE_FILE" ]] || return 1
+    mode="$(tr -d '[:space:]' <"$MODE_FILE")"
+    case "$mode" in
+        keep-awake|always-awake)
+            printf '%s\n' "$mode"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+current_mode() {
+    local mode
+    if ! is_active; then
+        printf '%s\n' off
+        return 0
+    fi
+
+    mode="$(read_mode_file 2>/dev/null || true)"
+    case "$mode" in
+        always-awake)
+            printf '%s\n' always-awake
+            ;;
+        *)
+            # Legacy/manual active locks predate the mode file. Treat them as
+            # normal Keep Awake so the four-hour display safeguard still works.
+            printf '%s\n' keep-awake
+            ;;
+    esac
+}
+
+write_mode() {
+    local mode="$1" temporary
+    temporary="${MODE_FILE}.tmp.$$"
+    printf '%s\n' "$mode" >"$temporary"
+    mv -f -- "$temporary" "$MODE_FILE"
+}
+
 kill_pid_and_group() {
     local pid="${1:-}"
     [[ "$pid" =~ ^[0-9]+$ ]] || return 0
@@ -112,14 +154,27 @@ stop_managed_processes() {
 }
 
 start_inhibitor() {
+    local requested_mode="${1:-keep-awake}"
     local pid holder_pid
+
+    case "$requested_mode" in
+        keep-awake|always-awake) ;;
+        *)
+            printf 'Unknown idle inhibitor mode: %s\n' "$requested_mode" >&2
+            return 2
+            ;;
+    esac
 
     command -v systemd-inhibit >/dev/null 2>&1 || {
         printf '%s\n' 'systemd-inhibit not found' >&2
         return 1
     }
 
-    is_active && return 0
+    if is_active; then
+        write_mode "$requested_mode"
+        return 0
+    fi
+
     stop_managed_processes
 
     # shellcheck disable=SC2016
@@ -138,12 +193,14 @@ start_inhibitor() {
         if is_active; then
             holder_pid="$(inhibitor_pids | sed -n '1p')"
             valid_pid "$holder_pid" && printf '%s\n' "$holder_pid" >"$PID_FILE"
+            write_mode "$requested_mode"
             return 0
         fi
         sleep 0.05
     done
 
     stop_managed_processes
+    rm -f "$MODE_FILE"
     printf '%s\n' 'Failed to acquire a real systemd idle inhibitor lock' >&2
     return 1
 }
@@ -151,43 +208,79 @@ start_inhibitor() {
 stop_inhibitor() {
     stop_managed_processes
     for _ in {1..20}; do
-        real_inhibitor_active || return 0
+        if ! real_inhibitor_active; then
+            rm -f "$MODE_FILE"
+            return 0
+        fi
         sleep 0.05
     done
     printf '%s\n' 'Failed to release the systemd idle inhibitor lock' >&2
     return 1
 }
 
+set_mode() {
+    local mode="${1:-}"
+    case "$mode" in
+        off)
+            stop_inhibitor
+            ;;
+        keep-awake|always-awake)
+            start_inhibitor "$mode"
+            ;;
+        *)
+            printf 'usage: %s set-mode {off|keep-awake|always-awake}\n' "${0##*/}" >&2
+            return 2
+            ;;
+    esac
+}
+
 print_status() {
-    if is_active; then
-        printf '{"text":"","tooltip":"Idle inhibitor: activated\\nReal systemd idle lock verified\\nClick to deactivate","class":["activated"]}\n'
+    local mode
+    mode="$(current_mode)"
+
+    if [[ "$mode" == always-awake ]]; then
+        printf '{"text":"","mode":"always-awake","tooltip":"Always Awake: activated\\nAll idle actions, including the 4-hour display safeguard, are blocked\\nUse Quick Settings or click the bar eye to deactivate","class":["activated","always-awake"]}\n'
+    elif [[ "$mode" == keep-awake ]]; then
+        printf '{"text":"","mode":"keep-awake","tooltip":"Keep Awake: activated\\nSleep is blocked; after 4 hours idle Awtarchy may lock and turn displays off\\nClick to deactivate","class":["activated","keep-awake"]}\n'
     elif managed_process_active; then
-        printf '{"text":"","tooltip":"Idle inhibitor: broken state\\nProcess exists without a real idle lock","class":["error"]}\n'
+        printf '{"text":"","mode":"off","tooltip":"Idle inhibitor: broken state\\nProcess exists without a real idle lock","class":["error"]}\n'
     else
-        printf '{"text":"","tooltip":"Idle inhibitor: deactivated\\nClick to activate","class":["deactivated"]}\n'
+        printf '{"text":"","mode":"off","tooltip":"Idle inhibitor: deactivated\\nClick to activate Keep Awake","class":["deactivated"]}\n'
     fi
 }
 
 case "${1:-status}" in
     toggle)
         lock_control
-        if is_active; then stop_inhibitor; else start_inhibitor; fi
+        if is_active; then stop_inhibitor; else start_inhibitor keep-awake; fi
         ;;
     on)
         lock_control
-        start_inhibitor
+        start_inhibitor keep-awake
         ;;
     off)
         lock_control
         stop_inhibitor
         ;;
+    set-mode)
+        lock_control
+        set_mode "${2:-}"
+        ;;
+    mode)
+        current_mode
+        ;;
     is-active)
         is_active
         ;;
+    is-always-awake)
+        [[ "$(current_mode)" == always-awake ]]
+        ;;
     diagnose)
+        printf 'mode=%s\n' "$(current_mode)"
         printf 'real_idle_lock=%s\n' "$(is_active && printf yes || printf no)"
         printf 'managed_process=%s\n' "$(managed_process_active && printf yes || printf no)"
         printf 'pid_file=%s\n' "$(read_pid_file 2>/dev/null || printf none)"
+        printf 'mode_file=%s\n' "$(read_mode_file 2>/dev/null || printf none)"
         printf 'hypridle_processes=%s\n' "$(pgrep -u "$uid" -x hypridle 2>/dev/null | wc -l)"
         printf '%s\n' 'matching_inhibitors:'
         inhibitor_lines
@@ -196,7 +289,7 @@ case "${1:-status}" in
         print_status
         ;;
     *)
-        printf '{"text":"","tooltip":"Unknown idle inhibitor command: %s","class":["error"]}\n' "${1:-}"
+        printf '{"text":"","mode":"off","tooltip":"Unknown idle inhibitor command: %s","class":["error"]}\n' "${1:-}"
         exit 1
         ;;
 esac
