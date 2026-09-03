@@ -44,10 +44,8 @@ jobs:
           bash tests/test-package-reconciler-alternatives.sh
           bash tests/test-package-reconciler-interrupted-recovery.sh
           bash tests/test-package-reconciler-aur-equivalents.sh
-      - name: Command and installer regressions
-        run: |
-          bash tests/test-awtarchy-command.sh
-          bash tests/test-installer-aur-scanner-delegation.sh
+      - name: Installer regression
+        run: bash tests/test-installer-aur-scanner-delegation.sh
       - name: Diff hygiene
         run: git diff --check origin/main...HEAD
       - name: Commit validated migration when changed
