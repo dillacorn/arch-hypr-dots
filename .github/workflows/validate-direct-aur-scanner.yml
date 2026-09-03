@@ -58,6 +58,7 @@ jobs:
           bash -n tests/test-package-reconciler-alternatives.sh
           bash -n tests/test-package-reconciler-interrupted-recovery.sh
           bash -n tests/test-package-reconciler-aur-equivalents.sh
+          shellcheck bashrc
           shellcheck tests/test-installer-aur-scanner-delegation.sh
           shellcheck tests/test-aur-scanner-updater-migration.sh
           shellcheck tests/test-aur-helper-policy.sh
