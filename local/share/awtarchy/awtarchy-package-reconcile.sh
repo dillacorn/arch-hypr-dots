@@ -11,6 +11,7 @@ STATE_DIR="${XDG_STATE_HOME:-${HOME}/.local/state}/awtarchy"
 HARDWARE_FILE="${AWTARCHY_HARDWARE_FILE:-${STATE_DIR}/hardware-state}"
 MANAGED_PACKAGES_FILE="${AWTARCHY_MANAGED_PACKAGES_FILE:-/var/lib/awtarchy/managed-packages}"
 REVIEW_ONLY=0
+MIGRATE_REPLACEMENTS_ONLY=0
 
 # Packages required by currently exposed Awtarchy shell/runtime features.
 # Keep this list small. The full installer catalog remains authoritative for
@@ -54,6 +55,7 @@ declare -a RETIRED_UNOWNED=()
 declare -a FAILED_AUR=()
 SYSTEM_TYPE="unknown"
 LY_STATUS="not installed"
+CHEESE_REPLACEMENT_NEEDED=0
 AUR_SCAN_BIN="/usr/bin/aur-scan"
 if [[ ${AWTARCHY_TEST_MODE:-0} == 1 && -n ${AWTARCHY_AUR_SCAN_BIN:-} ]]; then
   AUR_SCAN_BIN="$AWTARCHY_AUR_SCAN_BIN"
@@ -87,6 +89,9 @@ while (( $# )); do
   case "$1" in
     --review)
       REVIEW_ONLY=1
+      ;;
+    --migrate-replacements)
+      MIGRATE_REPLACEMENTS_ONLY=1
       ;;
     -h|--help|help)
       usage
@@ -298,6 +303,7 @@ collect_state() {
   load_catalogs
   detect_system_type
   detect_ly_status
+  package_installed cheese && CHEESE_REPLACEMENT_NEEDED=1
 
   for pkg in "${REQUIRED_ARCH[@]}"; do
     package_installed "$pkg" || MISSING_REQUIRED+=("$pkg")
@@ -348,6 +354,13 @@ print_review() {
   printf 'AUR catalog packages: %d\n' "${#AUR_CATALOG[@]}"
   printf 'Flatpak catalog apps: %d\n' "${#FLATPAK_IDS[@]}"
   printf 'Ly TTY login manager: %s\n' "$LY_STATUS"
+  printf '\n'
+  printf '%s\n' 'Required package replacements:'
+  if (( CHEESE_REPLACEMENT_NEEDED == 1 )); then
+    printf '  - cheese -> snapshot\n'
+  else
+    printf '  (none)\n'
+  fi
   printf '\n'
   print_list 'Missing required Awtarchy packages:' "${MISSING_REQUIRED[@]}"
   printf '\n'
@@ -603,6 +616,21 @@ forget_managed_packages() {
   rm -f -- "$tmp"
 }
 
+apply_cheese_snapshot_replacement() {
+  (( CHEESE_REPLACEMENT_NEEDED == 1 )) || return 0
+
+  require_sudo
+  log "Replacing retired Cheese camera app with Snapshot..."
+  if ! package_installed snapshot; then
+    as_root pacman -S --needed --noconfirm snapshot
+  fi
+  record_managed_packages snapshot
+  as_root pacman -Rns --noconfirm cheese
+  forget_managed_packages cheese
+  CHEESE_REPLACEMENT_NEEDED=0
+  log "Replaced Cheese with Snapshot."
+}
+
 flatpak_scope() {
   local fs=""
   if have findmnt; then
@@ -630,6 +658,11 @@ install_flatpak_apps() {
 }
 
 collect_state
+
+if (( MIGRATE_REPLACEMENTS_ONLY == 1 )); then
+  apply_cheese_snapshot_replacement
+  exit 0
+fi
 
 if (( REVIEW_ONLY == 1 )); then
   print_review
@@ -706,7 +739,15 @@ if (( ${#retired_labels[@]} )); then
 fi
 selected_values retired_values retired_flags selected_retired
 
+if (( CHEESE_REPLACEMENT_NEEDED == 1 )); then
+  array_contains cheese "${selected_retired[@]}" || selected_retired+=(cheese)
+fi
+
 install_arch=("${MISSING_REQUIRED[@]}" "${selected_arch[@]}")
+if (( CHEESE_REPLACEMENT_NEEDED == 1 )) && ! package_installed snapshot; then
+  install_arch+=(snapshot)
+fi
+sort_unique_array install_arch
 if (( install_ly == 1 )); then install_arch+=(ly); fi
 if (( ${#selected_flatpak[@]} )) && ! have flatpak; then
   install_arch+=(flatpak)
@@ -723,7 +764,7 @@ print_list 'Install Flatpak apps:' "${selected_flatpak[@]}" >/dev/tty
 printf '\n' >/dev/tty
 print_list 'Remove retired/replaced packages:' "${selected_retired[@]}" >/dev/tty
 if (( enable_ly == 1 )); then printf '\nLy: enable ly@tty2.service and disable getty@tty2.service\n' >/dev/tty; fi
-printf '\nNo current installed package will be removed merely because it was not selected.\n\n' >/dev/tty
+printf '\nNo current installed package will be removed merely because it was not selected; explicit replacements may be migrated.\n\n' >/dev/tty
 
 if (( ${#install_arch[@]} == 0 && ${#selected_aur[@]} == 0 && ${#selected_flatpak[@]} == 0 && ${#selected_retired[@]} == 0 && enable_ly == 0 )); then
   log 'No package changes selected.'

@@ -34,7 +34,7 @@ declare -a PKG_GROUPS=(
   "Themes:papirus-icon-theme materia-gtk-theme xcursor-comix kvantum-theme-materia"
   "Terminal Apps:nano micro fastfetch btop htop curl passt devtools wget git dos2unix brightnessctl ipcalc cmatrix asciiquarium figlet termdown espeak-ng cava man-db man-pages unzip xarchiver ncdu ddcutil scx-scheds scx-tools"
   "Utilities:upower polkit python-gobject gnome-keyring networkmanager bluez bluez-utils wiremix pcmanfm-qt gvfs gvfs-smb gvfs-mtp gvfs-afc speedcrunch imagemagick pipewire pipewire-pulse pipewire-alsa ufw jq earlyoom libsixel xdg-utils python usbutils awww"
-  "Multimedia:ffmpeg avahi nss-mdns mpv exiv2 zathura zathura-pdf-mupdf mousai"
+  "Multimedia:ffmpeg avahi nss-mdns mpv snapshot exiv2 zathura zathura-pdf-mupdf mousai"
   "Development:base-devel archlinux-keyring bubblewrap gnupg coreutils clang ninja go rust virt-manager qemu qemu-hw-usb-host virt-viewer vde2 libguestfs dmidecode gamemode gamescope nftables swtpm"
   "Network Tools:firefox wireguard-tools wireplumber openssh iptables systemd-resolvconf qemu-guest-agent dnsmasq dhcpcd inetutils openbsd-netcat"
 )
@@ -199,6 +199,20 @@ array_contains_exact() {
     [[ "$item" == "$needle" ]] && return 0
   done
   return 1
+}
+
+migrate_cheese_to_snapshot_stage() {
+  local reconciler="$1" runtime_source="$2"
+  local managed_file="${AWTARCHY_MANAGED_PACKAGES_FILE:-/var/lib/awtarchy/managed-packages}"
+
+  [[ -f "$reconciler" && ! -L "$reconciler" ]] \
+    || die "Package replacement reconciler is unavailable or unsafe: ${reconciler}"
+  [[ -r "$runtime_source" && ! -L "$runtime_source" ]] \
+    || die "Package replacement runtime is unavailable or unsafe: ${runtime_source}"
+
+  AWTARCHY_RUNTIME="$runtime_source" \
+    AWTARCHY_MANAGED_PACKAGES_FILE="$managed_file" \
+    bash "$reconciler" --migrate-replacements
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -3686,6 +3700,9 @@ run_install() {
   fi
   prepare_base_install
   install_arch_repo_apps_stage
+  migrate_cheese_to_snapshot_stage \
+    "${REPO_DIR}/local/share/awtarchy/awtarchy-package-reconcile.sh" \
+    "${BASH_SOURCE[0]}"
   if [[ "$IS_LAPTOP" == true && "$IS_VM" == false ]]; then
     reconcile_power_profile_backend "$REPO_DIR"
   fi
@@ -8532,6 +8549,9 @@ main() {
     cleanup_legacy_keyring_pam_stage "$repo_dir"
   fi
   ensure_quickshell_update_prerequisites
+  migrate_cheese_to_snapshot_stage \
+    "${repo_dir}/local/share/awtarchy/awtarchy-package-reconcile.sh" \
+    "${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
   snapshot_quickshell_update_legacy_paths
 
   stop_quickshell_update_shell \
