@@ -18,6 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
       - name: Bash syntax
         run: |
           bash -n local/share/awtarchy/awtarchy-runtime.sh
@@ -25,4 +27,4 @@ jobs:
       - name: Quickshell interrupted-update recovery
         run: bash tests/test-quickshell-update-interrupt-recovery.sh
       - name: Diff hygiene
-        run: git diff --check HEAD^
+        run: git diff --check origin/main...HEAD
