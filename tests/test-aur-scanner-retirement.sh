@@ -21,6 +21,8 @@ assert_contains() {
 }
 
 obsolete_paths=(
+  .github/temp-stage6-ci-apply.py
+  .github/workflows/temp-stage6-ci-apply.yml
   .github/workflows/apply-aur-scan-integration.yml
   tests/test-aur-scan-self-heal.sh
   tests/test-aur-scan-checkout-delegation.sh
