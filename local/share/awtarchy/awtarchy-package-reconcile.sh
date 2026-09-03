@@ -714,7 +714,7 @@ apply_cheese_snapshot_replacement() {
     as_root pacman -S --needed --noconfirm snapshot
   fi
   record_managed_packages snapshot
-  as_root pacman -Rns --noconfirm cheese
+  as_root pacman -R --noconfirm cheese
   forget_managed_packages cheese
   CHEESE_REPLACEMENT_NEEDED=0
   log "Replaced Cheese with Snapshot."
@@ -937,7 +937,7 @@ fi
 
 if (( ${#selected_retired[@]} )); then
   log "Removing selected retired packages: ${selected_retired[*]}"
-  as_root pacman -Rns --noconfirm "${selected_retired[@]}"
+  as_root pacman -R --noconfirm "${selected_retired[@]}"
   forget_managed_packages "${selected_retired[@]}"
 fi
 
