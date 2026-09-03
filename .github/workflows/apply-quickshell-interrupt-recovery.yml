@@ -1,0 +1,207 @@
+name: Apply Quickshell Interrupt Recovery Patch
+
+on:
+  push:
+    branches:
+      - fix/quickshell-interrupt-recovery
+    paths:
+      - .github/workflows/apply-quickshell-interrupt-recovery.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: fix/quickshell-interrupt-recovery
+          fetch-depth: 0
+
+      - name: Apply runtime recovery patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('local/share/awtarchy/awtarchy-runtime.sh')
+          text = path.read_text(encoding='utf-8')
+
+          old = 'QUICKSHELL_UPDATE_RESTORE_ON_EXIT=0\n'
+          new = 'QUICKSHELL_UPDATE_RESTORE_ON_EXIT=0\nQUICKSHELL_UPDATE_RECOVERY_MARKER=""\n'
+          if text.count(old) < 1:
+              raise SystemExit('missing recovery flag anchor')
+          text = text.replace(old, new, 1)
+
+          restore_pattern = re.compile(
+              r'restore_quickshell_update_shell_on_exit\(\) \{\n.*?\n\}\n',
+              re.S,
+          )
+          restore_replacement = r'''restore_quickshell_update_shell_on_exit() {
+            local marker="${QUICKSHELL_UPDATE_RECOVERY_MARKER:-}" marker_pending=0
+            if [[ -n "$marker" && -f "$marker" && ! -L "$marker" ]]; then
+              marker_pending=1
+            fi
+            (( QUICKSHELL_UPDATE_RESTORE_ON_EXIT == 1 || marker_pending == 1 )) || return 0
+            QUICKSHELL_UPDATE_RESTORE_ON_EXIT=0
+
+            [[ -n "${HOME_DIR:-}" ]] || {
+              warn "Could not restore Quickshell after interrupted update: target home is unavailable."
+              return 1
+            }
+
+            local manager="${HOME_DIR}/.config/hypr/scripts/quickshell.sh"
+            local status=""
+            [[ -f "$manager" && ! -L "$manager" ]] || {
+              warn "Could not restore Quickshell after interrupted update: manager is unavailable."
+              return 1
+            }
+
+            status="$(run_target bash "$manager" status 9>&- 2>/dev/null || true)"
+            if [[ "$status" == "running" ]]; then
+              (( marker_pending == 0 )) || rm -f -- "$marker"
+              return 0
+            fi
+
+            log "Update interrupted; restoring Quickshell..."
+            if ! AWTARCHY_REPORT_SUPPRESS_QUICKSHELL=1 run_target bash "$manager" start 9>&-; then
+              warn "Could not restore Quickshell after interrupted update."
+              return 1
+            fi
+
+            status="$(run_target bash "$manager" status 9>&- 2>/dev/null || true)"
+            if [[ "$status" == "running" ]]; then
+              [[ -z "$marker" ]] || rm -f -- "$marker"
+              log "Quickshell restored."
+              return 0
+            fi
+
+            warn "Could not verify Quickshell after interrupted-update recovery."
+            return 1
+          }
+
+          recover_interrupted_quickshell_update() {
+            local marker="${QUICKSHELL_UPDATE_RECOVERY_MARKER:-}"
+            [[ -n "$marker" ]] || return 0
+            if [[ -L "$marker" ]]; then
+              warn "Refusing unsafe Quickshell interrupted-update recovery marker: ${marker}"
+              return 1
+            fi
+            [[ -f "$marker" ]] || return 0
+
+            log "Recovering Quickshell from a previously interrupted update..."
+            QUICKSHELL_UPDATE_RESTORE_ON_EXIT=1
+            restore_quickshell_update_shell_on_exit
+          }
+          '''
+          text, count = restore_pattern.subn(restore_replacement, text, count=1)
+          if count != 1:
+              raise SystemExit('could not replace interrupted recovery function')
+
+          state_anchor = '  STATE_DIR="${HOME_DIR}/.local/state/awtarchy"\n  BASELINE_HOME="${STATE_DIR}/baseline/home"'
+          state_replacement = '  STATE_DIR="${HOME_DIR}/.local/state/awtarchy"\n  QUICKSHELL_UPDATE_RECOVERY_MARKER="${STATE_DIR}/quickshell-update-stopped"\n  BASELINE_HOME="${STATE_DIR}/baseline/home"'
+          if state_anchor not in text:
+              raise SystemExit('missing state directory anchor')
+          text = text.replace(state_anchor, state_replacement, 1)
+
+          init_anchor = '''  init_target_user
+            awtarchy_polkit_recover_session_environment || true
+            acquire_lock
+            curl_headers'''
+          init_replacement = '''  init_target_user
+            awtarchy_polkit_recover_session_environment || true
+            acquire_lock
+            recover_interrupted_quickshell_update \\
+              || die "Could not recover Quickshell from the previous interrupted update."
+            curl_headers'''
+          if init_anchor not in text:
+              raise SystemExit('missing update initialization anchor')
+          text = text.replace(init_anchor, init_replacement, 1)
+
+          arm_anchor = '''  (( identity_error == 0 )) || return 1
+            (( ${#identities[@]} > 0 )) || return 0
+
+            for identity in "${identities[@]}"; do'''
+          arm_replacement = '''  (( identity_error == 0 )) || return 1
+            (( ${#identities[@]} > 0 )) || return 0
+
+            QUICKSHELL_UPDATE_RESTORE_ON_EXIT=1
+            if [[ -n "${QUICKSHELL_UPDATE_RECOVERY_MARKER:-}" ]]; then
+              if [[ -L "$QUICKSHELL_UPDATE_RECOVERY_MARKER" ]]; then
+                warn "Refusing unsafe Quickshell interrupted-update recovery marker: ${QUICKSHELL_UPDATE_RECOVERY_MARKER}"
+                return 1
+              fi
+              mkdir -p -- "$(dirname -- "$QUICKSHELL_UPDATE_RECOVERY_MARKER")" || return 1
+              : >"$QUICKSHELL_UPDATE_RECOVERY_MARKER" || return 1
+            fi
+
+            for identity in "${identities[@]}"; do'''
+          if arm_anchor not in text:
+              raise SystemExit('missing stop arm anchor')
+          text = text.replace(arm_anchor, arm_replacement, 1)
+
+          final_arm = '''  if (( ${#alive_pids[@]} == 0 )); then
+            QUICKSHELL_UPDATE_RESTORE_ON_EXIT=1
+            return 0
+            fi'''
+          final_replacement = '''  if (( ${#alive_pids[@]} == 0 )); then
+              return 0
+            fi'''
+          if final_arm not in text:
+              raise SystemExit('missing final stop recovery anchor')
+          text = text.replace(final_arm, final_replacement, 1)
+
+          start_pattern = re.compile(
+              r'start_quickshell_update_shell\(\) \{\n.*?\n\}\n',
+              re.S,
+          )
+          match = start_pattern.search(text)
+          if not match:
+              raise SystemExit('missing Quickshell start helper')
+          start_body = match.group(0)
+          start_anchor = '''  if [[ "$status" == "running" ]]; then
+              QUICKSHELL_UPDATE_RESTORE_ON_EXIT=0
+              return 0
+            fi'''
+          start_replacement = '''  if [[ "$status" == "running" ]]; then
+              QUICKSHELL_UPDATE_RESTORE_ON_EXIT=0
+              if [[ -n "${QUICKSHELL_UPDATE_RECOVERY_MARKER:-}" && ! -L "$QUICKSHELL_UPDATE_RECOVERY_MARKER" ]]; then
+                rm -f -- "$QUICKSHELL_UPDATE_RECOVERY_MARKER"
+              fi
+              return 0
+            fi'''
+          if start_anchor not in start_body:
+              raise SystemExit('missing Quickshell start success anchor')
+          start_body = start_body.replace(start_anchor, start_replacement, 1)
+          text = text[:match.start()] + start_body + text[match.end():]
+
+          stop_stage = text.find('  stop_quickshell_update_shell \\\n')
+          normal_start = text.find('  if ! start_quickshell_update_shell; then', stop_stage)
+          if stop_stage < 0 or normal_start < 0:
+              raise SystemExit('could not isolate post-stop update stage')
+          segment = text[stop_stage:normal_start]
+          if '\n    rollback_changes\n' not in segment:
+              raise SystemExit('expected handled post-stop rollback anchors are missing')
+          segment = segment.replace('\n    rollback_changes\n', '\n    rollback_quickshell_update\n')
+          text = text[:stop_stage] + segment + text[normal_start:]
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash tests/test-quickshell-update-interrupt-recovery.sh
+          bash tests/test-quickshell-update-atomicity.sh
+          git diff --check
+
+      - name: Commit production patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add local/share/awtarchy/awtarchy-runtime.sh
+          git commit -m 'Make Quickshell interrupt recovery durable'
+          git push origin HEAD:fix/quickshell-interrupt-recovery
