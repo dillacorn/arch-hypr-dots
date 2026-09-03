@@ -5,10 +5,12 @@ on:
     branches: [fix/remove-stale-arch-packages]
   pull_request:
     paths:
+      - local/bin/awtarchy
       - local/share/awtarchy/awtarchy-runtime.sh
       - local/share/awtarchy/awtarchy-package-reconcile.sh
       - tests/test-current-package-catalog.sh
       - tests/test-cheese-snapshot-migration.sh
+      - tests/test-update-package-preflight.sh
       - .github/workflows/validate-current-package-catalog.yml
   workflow_dispatch:
 
@@ -24,14 +26,18 @@ jobs:
           fetch-depth: 0
       - name: Syntax
         run: |
+          bash -n local/bin/awtarchy
           bash -n local/share/awtarchy/awtarchy-runtime.sh
           bash -n local/share/awtarchy/awtarchy-package-reconcile.sh
           bash -n tests/test-current-package-catalog.sh
           bash -n tests/test-cheese-snapshot-migration.sh
+          bash -n tests/test-update-package-preflight.sh
       - name: Catalog regression
         run: bash tests/test-current-package-catalog.sh
       - name: Cheese replacement regression
         run: bash tests/test-cheese-snapshot-migration.sh
+      - name: Update package preflight regression
+        run: bash tests/test-update-package-preflight.sh
       - name: Package reconciler regressions
         run: |
           bash tests/test-package-reconciler.sh
