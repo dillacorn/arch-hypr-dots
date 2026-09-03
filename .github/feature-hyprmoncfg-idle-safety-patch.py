@@ -184,4 +184,23 @@ grep -Fq 'idleToggleProcess.exec([idleScript, "toggle"]);' "${v347_target_home}/
 ''',
 )
 
+
+# Make this broad updater regression self-diagnosing when the actual update
+# command fails. The command already captures its output; surface it before the
+# fixture exits so CI reports the updater's real reason instead of a silent 1.
+replace_once(
+    "tests/test-quickshell-updater-migration.sh",
+    '''env "${update_env[@]}" "$installed_launcher" git update \\
+  --branch "$TEST_BRANCH" --commit "$TEST_COMMIT" \\
+  >"${TMP}/update.out" 2>&1
+''',
+    '''if ! env "${update_env[@]}" "$installed_launcher" git update \\
+  --branch "$TEST_BRANCH" --commit "$TEST_COMMIT" \\
+  >"${TMP}/update.out" 2>&1; then
+  cat "${TMP}/update.out" >&2
+  fail "Git update failed before completing the updater migration checks"
+fi
+''',
+)
+
 print("Scoped hyprmoncfg / idle-safety patch applied.")
