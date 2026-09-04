@@ -2,7 +2,7 @@ name: Validate hyprmoncfg idle safety
 
 on:
   push:
-    branches: [feature/hyprmoncfg-idle-safety]
+    branches: [feature/hyprmoncfg-idle-safety, feature/always-awake-hover]
   pull_request:
     paths:
       - config/hypr/hyprland.lua
