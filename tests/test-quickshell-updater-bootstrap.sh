@@ -6,7 +6,6 @@ IFS=$'\n\t'
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 RUNTIME="${ROOT}/local/share/awtarchy/awtarchy-runtime.sh"
 TMPD="$(mktemp -d)"
-SYSTEM_PATH="$PATH"
 REAL_CHILD_PIDS=()
 
 cleanup() {
