@@ -6,8 +6,15 @@ on:
       - fix/quickshell-interrupt-recovery
   pull_request:
     paths:
+      - local/bin/awtarchy
       - local/share/awtarchy/awtarchy-runtime.sh
+      - tests/test-awtarchy-command.sh
+      - tests/test-awtarchy-command-shim.sh
+      - tests/test-awtarchy-git-mode.sh
+      - tests/test-git-runtime-selection.sh
+      - tests/test-security-boundaries.sh
       - tests/test-quickshell-update-interrupt-recovery.sh
+      - tests/test-quickshell-updater-bootstrap.sh
       - .github/workflows/validate-quickshell-interrupt-recovery.yml
 
 permissions:
@@ -22,9 +29,32 @@ jobs:
           fetch-depth: 0
       - name: Bash syntax
         run: |
+          bash -n local/bin/awtarchy
           bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n tests/test-awtarchy-command.sh
+          bash -n tests/test-awtarchy-command-shim.sh
+          bash -n tests/test-awtarchy-git-mode.sh
+          bash -n tests/test-git-runtime-selection.sh
+          bash -n tests/test-security-boundaries.sh
           bash -n tests/test-quickshell-update-interrupt-recovery.sh
+          bash -n tests/test-quickshell-updater-bootstrap.sh
+      - name: Maintenance command regressions
+        run: |
+          no_sudo_bin="$(mktemp -d)"
+          printf '%s\n' '#!/usr/bin/env bash' 'exit 1' >"${no_sudo_bin}/sudo"
+          chmod 0755 "${no_sudo_bin}/sudo"
+          PATH="${no_sudo_bin}:$PATH" bash tests/test-awtarchy-command.sh
+          rm -rf -- "$no_sudo_bin"
+          bash tests/test-awtarchy-command-shim.sh
+      - name: Existing Git testing flow
+        run: bash tests/test-awtarchy-git-mode.sh
+      - name: Exact Git runtime selection
+        run: bash tests/test-git-runtime-selection.sh
+      - name: Security boundaries
+        run: bash tests/test-security-boundaries.sh
       - name: Quickshell interrupted-update recovery
         run: bash tests/test-quickshell-update-interrupt-recovery.sh
+      - name: Quickshell updater bootstrap
+        run: bash tests/test-quickshell-updater-bootstrap.sh
       - name: Diff hygiene
         run: git diff --check origin/main...HEAD

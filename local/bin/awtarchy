@@ -743,6 +743,56 @@ run_runtime() {
   bash "$RUNTIME" "$@"
 }
 
+run_git_revision_runtime() {
+  local branch="$1" revision="$2"
+  shift 2
+  local tmp="" archive="" top="" repo_dir="" testing_runtime="" rc=0
+
+  have curl || die "curl is required for Git-testing runtime selection."
+  have tar || die "tar is required for Git-testing runtime selection."
+  have python3 || die "python3 is required for Git-testing runtime selection."
+  [[ $revision =~ ^[0-9a-fA-F]{40}$ ]]     || die "Git-testing runtime requires an exact 40-character commit SHA."
+  revision="${revision,,}"
+
+  tmp="$(mktemp -d)"
+  archive="${tmp}/awtarchy.tar.gz"
+  curl_args download
+  log "Loading Awtarchy runtime from Git testing ${branch}@${revision}..."
+  if ! curl "${CURL_ARGS[@]}" -o "$archive"     "https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/${revision}.tar.gz";
+  then
+    rm -rf -- "$tmp"
+    die "Failed to download Git-testing runtime revision ${revision}."
+  fi
+
+  if ! top="$(archive_topdir "$archive")"; then
+    rm -rf -- "$tmp"
+    die "Git-testing runtime archive validation failed."
+  fi
+  if ! [[ $top == "${REPO_NAME}-${revision}" ]]; then
+    rm -rf -- "$tmp"
+    die "Git-testing runtime archive does not match revision ${revision}."
+  fi
+  if ! tar -xzf "$archive" -C "$tmp"; then
+    rm -rf -- "$tmp"
+    die "Failed to extract Git-testing runtime revision ${revision}."
+  fi
+
+  repo_dir="${tmp}/${top}"
+  testing_runtime="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
+  if ! [[ -f $testing_runtime && ! -L $testing_runtime ]]; then
+    rm -rf -- "$tmp"
+    die "Git-testing revision ${revision} does not contain a safe Awtarchy runtime."
+  fi
+  if ! bash -n "$testing_runtime"; then
+    rm -rf -- "$tmp"
+    die "Git-testing runtime failed Bash syntax validation."
+  fi
+
+  bash "$testing_runtime" "$@" || rc=$?
+  rm -rf -- "$tmp"
+  return "$rc"
+}
+
 exec_runtime() {
   require_runtime
   exec bash "$RUNTIME" "$@"
@@ -1080,7 +1130,7 @@ run_git_operation() {
   printf 'Selected remote branch: %s\n' "$branch"
   printf 'Exact revision: %s\n' "$revision"
   printf 'Git testing action: %s\n' "$action"
-  run_runtime "${runtime_args[@]}"
+  run_git_revision_runtime "$branch" "$revision" "${runtime_args[@]}"
   if [[ "$action" == update ]]; then
     reconcile_quickshell_ui_after_update
   fi

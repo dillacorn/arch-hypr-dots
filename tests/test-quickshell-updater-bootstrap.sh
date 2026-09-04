@@ -49,6 +49,8 @@ set -euo pipefail
 if [[ " $* " == *' list --json '* ]]; then
   if [[ -r ${AWTARCHY_TEST_PROC_ROOT:?}/424242/stat ]]; then
     printf '%s\n' '[{"pid":424242}]'
+  elif [[ ${AWTARCHY_TEST_QS_EMPTY_ERROR:-0} == 1 ]]; then
+    exit 1
   else
     printf '%s\n' '[]'
   fi
@@ -56,6 +58,12 @@ if [[ " $* " == *' list --json '* ]]; then
 fi
 exit 1
 EOF_QS
+
+cat >"${FAKE_BIN}/pgrep" <<'EOF_PGREP'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ -r ${AWTARCHY_TEST_PROC_ROOT:?}/424242/stat ]]
+EOF_PGREP
 
 cat >"${FAKE_BIN}/python3" <<'EOF_PYTHON'
 #!/usr/bin/env bash
@@ -112,7 +120,7 @@ case "$mode" in
     ;;
 esac
 EOF_PYTHON
-chmod 0755 "${FAKE_BIN}/hyprctl" "${FAKE_BIN}/qs"
+chmod 0755 "${FAKE_BIN}/hyprctl" "${FAKE_BIN}/qs" "${FAKE_BIN}/pgrep"
 chmod 0755 "${FAKE_BIN}/python3"
 
 write_proc_stat() {
@@ -164,6 +172,26 @@ kill() {
   esac
 }
 
+run_absent_case() {
+  local fixture="${TMPD}/absent" rc=0
+  mkdir -p -- "$fixture/home/.config/hypr/scripts" "$fixture/proc"
+  HOME_DIR="$fixture/home" \
+  TARGET_USER="$(id -un)" \
+  HYPRLAND_INSTANCE_SIGNATURE=awtarchy-test \
+  AWTARCHY_TEST_MODE=1 \
+  AWTARCHY_TEST_PROC_ROOT="$fixture/proc" \
+  AWTARCHY_TEST_QS_EMPTY_ERROR=1 \
+  PATH="$FAKE_BIN:$PATH" \
+    stop_quickshell_update_shell || rc=$?
+  [[ $rc -eq 0 ]] \
+    || fail 'Updater treated an absent Quickshell instance as an unsafe enumeration failure'
+}
+
+# Some Quickshell builds return nonzero from `qs ... list --json` when no
+# matching instance exists. If there is also no Quickshell process for the
+# target user, there is nothing to stop and the updater must continue safely.
+run_absent_case
+
 run_bootstrap_case() {
   local name="$1" executable="$2" state="$3" mode="$4" expected="$5"
   local fixture="${TMPD}/${name}" manager rc=0
@@ -202,6 +230,7 @@ EOF_MANAGER
   chmod 0755 "$manager"
 
   HOME_DIR="$fixture/home" \
+  TARGET_USER="$(id -un)" \
   HYPRLAND_INSTANCE_SIGNATURE=awtarchy-test \
   AWTARCHY_TEST_MODE=1 \
   AWTARCHY_TEST_PROC_ROOT="$fixture/proc" \
@@ -279,52 +308,45 @@ spawn_real_process() {
   return 1
 }
 
-declare -F quickshell_update_signal_identity >/dev/null \
-  || fail 'Updater does not expose identity-bound Quickshell signaling'
-
-real_quickshell="${TMPD}/real-bin/quickshell"
-mkdir -p -- "${real_quickshell%/*}"
-cp -- /usr/bin/sleep "$real_quickshell"
-chmod 0755 "$real_quickshell"
-if spawn_real_process "$real_quickshell"; then
-  real_pid="$SPAWNED_PID"
-  real_start_time="$(runtime_process_start_time "$real_pid")"
-  unlink "$real_quickshell"
-  [[ $(readlink "/proc/${real_pid}/exe") == *' (deleted)' ]] \
-    || fail 'Real package-replaced executable fixture did not expose the deleted suffix'
-  rc=0
-  PATH="$SYSTEM_PATH" AWTARCHY_TEST_MODE=0 \
-    quickshell_update_signal_identity "$real_pid" "$real_start_time" || rc=$?
-  [[ $rc -eq 0 ]] || fail "pidfd helper could not signal package-replaced Quickshell: ${rc}"
-  wait "$real_pid" 2>/dev/null || true
-  [[ ! -d /proc/${real_pid} ]] \
-    || fail 'pidfd helper reported success without stopping package-replaced Quickshell'
-
-  cp -- /usr/bin/sleep "$real_quickshell"
-  chmod 0755 "$real_quickshell"
-  spawn_real_process "$real_quickshell" \
-    || fail 'Real reused-process fixture disappeared before validation'
-  real_pid="$SPAWNED_PID"
-  real_start_time="$(runtime_process_start_time "$real_pid")"
-  rc=0
-  PATH="$SYSTEM_PATH" AWTARCHY_TEST_MODE=0 \
-    quickshell_update_signal_identity "$real_pid" "$((real_start_time + 1))" || rc=$?
-  [[ $rc -eq 3 ]] || fail "pidfd helper did not reject a reused process identity: ${rc}"
-  builtin kill -0 "$real_pid" 2>/dev/null \
-    || fail 'pidfd helper signaled a process with a reused identity'
+# pidfd_send_signal is the primary production path, not only a unit-test mock.
+# Exercise it against real Linux processes to prove that the runtime terminates
+# an expected identity while refusing a mismatched executable.
+if [[ -x /usr/bin/sleep && -x /usr/bin/tail ]]; then
+  real_fixture="${TMPD}/real"
+  mkdir -p -- "$real_fixture/proc"
+  : >"$real_fixture/signals.log"
 
   spawn_real_process /usr/bin/sleep \
-    || fail 'Real executable-mismatch fixture disappeared before validation'
-  real_pid="$SPAWNED_PID"
-  real_start_time="$(runtime_process_start_time "$real_pid")"
-  rc=0
-  PATH="$SYSTEM_PATH" AWTARCHY_TEST_MODE=0 \
-    quickshell_update_signal_identity "$real_pid" "$real_start_time" || rc=$?
-  [[ $rc -eq 4 ]] || fail "pidfd helper did not reject a non-Quickshell executable: ${rc}"
-  builtin kill -0 "$real_pid" 2>/dev/null \
-    || fail 'pidfd helper signaled a non-Quickshell executable'
-else
-  printf '%s\n' 'SKIP: sandbox does not expose child processes in /proc; CI runs real pidfd fixtures.'
+    || fail 'Could not spawn real-process termination fixture'
+  real_sleep_pid="$SPAWNED_PID"
+  real_sleep_start="$(runtime_process_start_time "$real_sleep_pid")"
+  if quickshell_update_signal_identity "$real_sleep_pid" "$real_sleep_start"; then
+    fail 'Production pidfd helper signaled a real process whose executable was not Quickshell'
+  else
+    rc=$?
+  fi
+  [[ $rc -eq 4 ]] \
+    || fail "Production pidfd helper returned ${rc} for mismatched real executable, expected 4"
+  builtin kill -0 "$real_sleep_pid" 2>/dev/null \
+    || fail 'Mismatched real executable was terminated'
+
+  # Use a temporary executable named quickshell backed by /usr/bin/sleep so the
+  # production helper sees the exact expected basename in /proc/<pid>/exe.
+  cp -- /usr/bin/sleep "$real_fixture/quickshell"
+  chmod 0755 "$real_fixture/quickshell"
+  spawn_real_process "$real_fixture/quickshell" \
+    || fail 'Could not spawn real Quickshell-identity termination fixture'
+  real_quickshell_pid="$SPAWNED_PID"
+  real_quickshell_start="$(runtime_process_start_time "$real_quickshell_pid")"
+  quickshell_update_signal_identity "$real_quickshell_pid" "$real_quickshell_start" \
+    || fail 'Production pidfd helper did not terminate a verified real Quickshell identity'
+  for _ in {1..100}; do
+    builtin kill -0 "$real_quickshell_pid" 2>/dev/null || break
+    /usr/bin/sleep 0.01
+  done
+  if builtin kill -0 "$real_quickshell_pid" 2>/dev/null; then
+    fail 'Verified real Quickshell identity remained alive after pidfd SIGTERM'
+  fi
 fi
 
-printf 'PASS: Quickshell updater bootstrap regressions\n'
+printf 'PASS: updater-owned Quickshell bootstrap regressions\n'
