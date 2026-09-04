@@ -8,8 +8,11 @@ on:
     paths:
       - local/bin/awtarchy
       - local/share/awtarchy/awtarchy-runtime.sh
+      - tests/test-awtarchy-command.sh
+      - tests/test-awtarchy-command-shim.sh
       - tests/test-awtarchy-git-mode.sh
       - tests/test-git-runtime-selection.sh
+      - tests/test-security-boundaries.sh
       - tests/test-quickshell-update-interrupt-recovery.sh
       - tests/test-quickshell-updater-bootstrap.sh
       - .github/workflows/validate-quickshell-interrupt-recovery.yml
@@ -28,14 +31,23 @@ jobs:
         run: |
           bash -n local/bin/awtarchy
           bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n tests/test-awtarchy-command.sh
+          bash -n tests/test-awtarchy-command-shim.sh
           bash -n tests/test-awtarchy-git-mode.sh
           bash -n tests/test-git-runtime-selection.sh
+          bash -n tests/test-security-boundaries.sh
           bash -n tests/test-quickshell-update-interrupt-recovery.sh
           bash -n tests/test-quickshell-updater-bootstrap.sh
+      - name: Maintenance command regressions
+        run: |
+          bash tests/test-awtarchy-command.sh
+          bash tests/test-awtarchy-command-shim.sh
       - name: Existing Git testing flow
         run: bash tests/test-awtarchy-git-mode.sh
       - name: Exact Git runtime selection
         run: bash tests/test-git-runtime-selection.sh
+      - name: Security boundaries
+        run: bash tests/test-security-boundaries.sh
       - name: Quickshell interrupted-update recovery
         run: bash tests/test-quickshell-update-interrupt-recovery.sh
       - name: Quickshell updater bootstrap
