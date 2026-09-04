@@ -58,3 +58,154 @@ jobs:
         run: bash tests/test-quickshell-updater-bootstrap.sh
       - name: Diff hygiene
         run: git diff --check origin/main...HEAD
+
+  publish-v3-5-2:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.title == 'Publish v3.5.2 from verified main' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'release/v3.5.2-publish-bridge' &&
+      github.event.pull_request.base.ref == 'main'
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EXPECTED_SHA: f0332758f657da0d671b63022399b240830a2c50
+      EXPECTED_V351_SHA: 633e49594959102833fdc621f0a4ad409b7df61d
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact release target
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$main_sha" == "$EXPECTED_SHA" ]]
+
+          v351_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.5.1" --jq '.object.sha')"
+          [[ "$v351_sha" == "$EXPECTED_V351_SHA" ]]
+
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.5.2" >/dev/null 2>&1; then
+            printf '%s\n' 'v3.5.2 tag already exists; refusing to publish.' >&2
+            false
+          fi
+
+          if gh release view v3.5.2 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            printf '%s\n' 'v3.5.2 release already exists; refusing to publish.' >&2
+            false
+          fi
+
+      - name: Publish v3.5.2
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat >"${RUNNER_TEMP}/release-notes.md" <<'EOF_NOTES'
+          # Awtarchy v3.5.2 interrupted updater recovery + exact Git runtime
+
+          Awtarchy v3.5.2 rolls all post-v3.5.1 updater/runtime changes into a normal tagged release. It supersedes the v3.5.1 post-release interrupted-updater fix with the corrected real-session-tested recovery implementation and fixes Git testing so `awtarchy git` executes the runtime from the exact selected commit.
+
+          ## Getting started
+
+          Awtarchy is an Arch Linux overlay/environment, not a Linux distribution or an Arch Linux installer. Install it onto a working minimal Arch Linux system.
+
+          If you are starting from zero:
+
+          1. Download the official Arch Linux ISO from the [Arch Linux download page](https://archlinux.org/download/).
+          2. Boot the Arch Linux ISO.
+          3. Install a working minimal Arch Linux system first.
+             - For most users, Awtarchy recommends the official `archinstall` guided installer included with the Arch ISO as the easiest path. Run `archinstall` from the live environment and complete a minimal Arch installation.
+             - A normal manual Arch installation using the [ArchWiki Installation Guide](https://wiki.archlinux.org/title/Installation_guide) is also fine.
+          4. Boot into the installed Arch system.
+
+          Once you have a working minimal Arch installation, install Awtarchy:
+
+          ```bash
+          sudo pacman -S git --noconfirm
+          git clone https://github.com/dillacorn/awtarchy
+          cd awtarchy
+          sudo ./awtarchy-install.sh
+          ```
+
+          ## Existing Awtarchy users
+
+          ```bash
+          awtarchy update
+          ```
+
+          ## Corrected interrupted-update Quickshell recovery
+
+          - When Awtarchy itself stops a running Quickshell instance for an update, it records durable recovery state before continuing.
+          - Early updater exit, including `Ctrl+C`/SIGINT while waiting at the sudo password prompt, restores Quickshell through cleanup.
+          - The updater preserves the original exit status, including exit `130` for `Ctrl+C`.
+          - Successful recovery removes the durable marker.
+          - Quickshell is not started if it was already stopped before the update.
+          - A duplicate is not spawned if Quickshell has already returned.
+          - A durable marker left by an interrupted updater can be recovered safely on the next updater run.
+          - This is the corrected implementation that supersedes the v3.5.1 post-release interrupted-updater fix.
+
+          ## Safe already-stopped Quickshell handling
+
+          - If `qs -c awtarchy list --json` fails and there is genuinely no Quickshell process for the target user, the updater treats that state as nothing to stop.
+          - If a target-user Quickshell process does exist but instance enumeration fails, the updater still aborts instead of signaling processes blindly.
+
+          ## Exact Git-testing runtime selection
+
+          - `awtarchy git update --branch <branch> --commit <commit>` now downloads the immutable archive for the selected exact commit.
+          - The launcher validates the archive, extracts it, verifies and syntax-checks the selected runtime, then executes that runtime instead of the installed/main runtime.
+          - Stable `awtarchy update` continues using the normal trusted installed/main launcher/runtime architecture.
+          - Regression coverage now proves the selected Git-testing commit is the runtime actually executed.
+
+          ## Included post-v3.5.1 changes
+
+          All post-v3.5.1 changes present on `main` are included in this tagged tree. The earlier post-release updater-recovery attempt is superseded by the corrected final implementation rather than remaining a separate delivery path.
+
+          ## Validation
+
+          - Exact release target: `f0332758f657da0d671b63022399b240830a2c50`.
+          - Exact tested recovery branch head `52a3fa17413d9efe073ce3a7e74d947c038e85c8` passed focused Bash syntax, maintenance-command, Git-testing, exact-runtime-selection, security-boundary, interrupted-recovery, updater-bootstrap, and diff-hygiene regressions.
+          - Real-session validation loaded the exact selected branch runtime, interrupted the updater with `Ctrl+C` at the sudo password prompt, restored Quickshell, confirmed a live Awtarchy Quickshell instance, and confirmed the durable recovery marker was cleared afterward.
+          - PR #133 merged the corrected updater/runtime implementation from the exact tested branch head.
+          - PR #134 removed one stale test-only ShellCheck variable discovered by merged-main CI; all seven PR workflows then completed successfully.
+          - On the exact release target, all four push workflows triggered by the final test-only merge completed successfully, including the full `Validate Awtarchy` Bash syntax, ShellCheck, and command/updater integration suite.
+          - The published `v3.5.1` tag remains unchanged at `633e49594959102833fdc621f0a4ad409b7df61d`.
+
+          ## Post-release updates
+
+          _Placeholder for possible tested post-release patches to v3.5.2._
+          EOF_NOTES
+
+          gh release create v3.5.2 \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$EXPECTED_SHA" \
+            --title 'Awtarchy v3.5.2 interrupted updater recovery + exact Git runtime' \
+            --notes-file "${RUNNER_TEMP}/release-notes.md"
+
+      - name: Verify published release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.5.2" --jq '.object.sha')"
+          [[ "$tag_sha" == "$EXPECTED_SHA" ]]
+
+          v351_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.5.1" --jq '.object.sha')"
+          [[ "$v351_sha" == "$EXPECTED_V351_SHA" ]]
+
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v3.5.2")"
+          [[ "$(jq -r '.tag_name' <<<"$release_json")" == 'v3.5.2' ]]
+          [[ "$(jq -r '.target_commitish' <<<"$release_json")" == "$EXPECTED_SHA" ]]
+          [[ "$(jq -r '.name' <<<"$release_json")" == 'Awtarchy v3.5.2 interrupted updater recovery + exact Git runtime' ]]
+          [[ "$(jq -r '.draft' <<<"$release_json")" == 'false' ]]
+          [[ "$(jq -r '.prerelease' <<<"$release_json")" == 'false' ]]
+
+          published_body="$(jq -r '.body' <<<"$release_json")"
+          expected_body="$(cat "${RUNNER_TEMP}/release-notes.md")"
+          [[ "$published_body" == "$expected_body" ]]
+
+          jq -r '.html_url' <<<"$release_json"
