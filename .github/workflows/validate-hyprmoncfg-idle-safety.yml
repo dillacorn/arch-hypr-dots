@@ -17,9 +17,11 @@ on:
       - config/quickshell/awtarchy/SystemState.qml
       - config/quickshell/awtarchy/QuickSettings.qml
       - config/quickshell/awtarchy/Bar.qml
+      - config/quickshell/awtarchy/BarTooltip.qml
       - local/share/awtarchy/awtarchy-runtime.sh
       - local/share/awtarchy/quickshell-managed-history.sha256
       - tests/test-hyprmoncfg-idle-safety.sh
+      - tests/test-always-awake-hover.sh
       - tests/test-hyprmoncfg-preserve-migration.sh
       - tests/test-hypridle-restart.sh
       - tests/test-protected-idle-auto-game.sh
@@ -52,6 +54,7 @@ jobs:
           bash -n config/hypr/scripts/hypridle_restart.sh
           bash -n config/hypr/scripts/protected_idle_safety.sh
           bash -n tests/test-hyprmoncfg-idle-safety.sh
+          bash -n tests/test-always-awake-hover.sh
           bash -n tests/test-hyprmoncfg-preserve-migration.sh
           bash -n tests/test-hypridle-restart.sh
           bash -n tests/test-protected-idle-auto-game.sh
@@ -60,6 +63,7 @@ jobs:
       - name: Focused regression
         run: |
           bash tests/test-hyprmoncfg-idle-safety.sh
+          bash tests/test-always-awake-hover.sh
           bash tests/test-hyprmoncfg-preserve-migration.sh
           bash tests/test-hypridle-restart.sh
           bash tests/test-protected-idle-auto-game.sh
