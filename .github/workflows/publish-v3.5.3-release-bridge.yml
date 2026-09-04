@@ -1,0 +1,140 @@
+name: Publish Awtarchy v3.5.3 Quickshell
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  publish-release:
+    if: >-
+      github.event.pull_request.title == 'Publish Awtarchy v3.5.3 Quickshell' &&
+      github.event.pull_request.head.ref == 'release/v3.5.3-bridge' &&
+      github.event.pull_request.base.ref == 'main'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_SHA: 89f8ac995bcaa29835bf5fa9c9164a2712eb1e00
+      RELEASE_TAG: v3.5.3
+      RELEASE_TITLE: Awtarchy v3.5.3 Quickshell
+    steps:
+      - name: Verify exact release target and absence
+        shell: bash
+        run: |
+          set -euo pipefail
+          resolved="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${RELEASE_SHA}" --jq .sha)"
+          [[ "$resolved" == "$RELEASE_SHA" ]]
+
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists" >&2
+            exit 1
+          fi
+
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Tag $RELEASE_TAG already exists" >&2
+            exit 1
+          fi
+
+      - name: Create v3.5.3 Quickshell release
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >release-notes.md <<'EOF'
+          # Awtarchy v3.5.3 Quickshell
+
+          Awtarchy v3.5.3 is a Quickshell usability update focused on the idle-inhibitor control. It makes the stronger Always Awake mode discoverable directly from the bar while keeping normal Keep Awake as the recommended one-click behavior.
+
+          ## Getting started
+
+          Awtarchy is an Arch Linux overlay/environment, not a Linux distribution or an Arch Linux installer. Install it onto a working minimal Arch Linux system.
+
+          If you are starting from zero:
+
+          1. Download the official Arch Linux ISO from the [Arch Linux download page](https://archlinux.org/download/).
+          2. Boot the Arch Linux ISO.
+          3. Install a working minimal Arch Linux system first.
+             - For most users, Awtarchy recommends the official `archinstall` guided installer included with the Arch ISO as the easiest path. Run `archinstall` from the live environment and complete a minimal Arch installation.
+             - A normal manual Arch installation using the [ArchWiki Installation Guide](https://wiki.archlinux.org/title/Installation_guide) is also fine.
+          4. Boot into the installed Arch system.
+
+          Once you have a working minimal Arch installation, install Awtarchy:
+
+          ```bash
+          sudo pacman -S git --noconfirm
+          git clone https://github.com/dillacorn/awtarchy
+          cd awtarchy
+          sudo ./awtarchy-install.sh
+          ```
+
+          ## Existing Awtarchy users
+
+          ```bash
+          awtarchy update
+          ```
+
+          ## Idle-eye Always Awake control
+
+          - Hovering the idle-inhibitor eye now opens an interactive Quickshell card that exposes the stronger Always Awake mode directly from the bar.
+          - The existing normal eye click action continues to toggle standard Keep Awake.
+          - Keep Awake remains the recommended mode and preserves Awtarchy's four-hour protected-idle safety lock/display-off action.
+          - The hover card places Always Awake first as the stronger option and marks its enable action `(Not Recommended)` in the warning color.
+          - Always Awake keeps the session unlocked and displays on after four hours idle by disabling that safety action.
+          - The card changes its recommendation text while Always Awake is active so users can return to normal Keep Awake without ambiguity.
+          - The stronger mode continues to use the existing shared `SystemState` and idle-inhibitor backend rather than introducing a second state source.
+
+          ## Managed update safety
+
+          - The new `BarTooltip.qml` stock hash is recorded in Awtarchy's Quickshell managed-history data so future stable updates can recognize the v3.5.3 shipped state.
+          - Regression coverage protects the hover-card wording, stronger-mode action, normal click behavior, pointer interaction, and managed-history entry.
+
+          ## Validation
+
+          - Exact release target: `89f8ac995bcaa29835bf5fa9c9164a2712eb1e00`.
+          - Real-session testing confirmed the idle-eye hover card, normal Keep Awake behavior, stronger Always Awake enable/disable flow, and revised wording/layout.
+          - PR #136 passed all 17 pull-request workflows and merged the exact tested branch head `01d30d45c1c9c58ca1b8ffd6cee67b582c7a1f80`.
+          - The focused idle-safety workflow passed on the final feature branch and includes the Always Awake hover and managed-history regression.
+          - All seven push checks completed successfully on the exact merged release target, including `Validate Awtarchy` with Bash syntax, ShellCheck, Quickshell desktop-entry validation, and command/updater integration tests.
+
+          ## Post-release updates
+
+          _Placeholder for possible tested post-release patches to v3.5.3._
+          EOF
+
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$RELEASE_SHA" \
+            --title "$RELEASE_TITLE" \
+            --notes-file release-notes.md
+
+      - name: Verify published release and tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          name="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json name --jq .name)"
+          tag="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+          draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
+          prerelease="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)"
+
+          [[ "$name" == "$RELEASE_TITLE" ]]
+          [[ "$tag" == "$RELEASE_TAG" ]]
+          [[ "$draft" == false ]]
+          [[ "$prerelease" == false ]]
+
+          ref_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}")"
+          ref_type="$(jq -r '.object.type' <<<"$ref_json")"
+          ref_sha="$(jq -r '.object.sha' <<<"$ref_json")"
+
+          if [[ "$ref_type" == tag ]]; then
+            ref_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${ref_sha}" --jq .object.sha)"
+          fi
+
+          [[ "$ref_sha" == "$RELEASE_SHA" ]]
+
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json tagName,name,isDraft,isPrerelease,publishedAt,targetCommitish,url
