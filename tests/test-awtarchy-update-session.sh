@@ -40,9 +40,13 @@ for required in ("kill", "wait", "UPDATE_SUDO_KEEPALIVE_PID"):
     if required not in stop:
         raise SystemExit(f"update privilege cleanup is missing: {required}")
 
+root_free = function_body(launcher, "root_free_mib")
+if "/usr/bin/df" not in root_free:
+    raise SystemExit("root free-space probe does not use the trusted df path")
+
 space = function_body(launcher, "ensure_update_disk_headroom")
 for required in (
-    "/usr/bin/df",
+    "root_free_mib",
     "paccache",
     "-rk2",
     "sudo -n",
@@ -84,8 +88,8 @@ if "trap - EXIT HUP INT TERM" not in update_arm:
     raise SystemExit("stable update flow does not clear its temporary cleanup trap")
 
 launch = function_body(notifier, "launch_update")
-if "setsid" not in launch or "-f" not in launch:
-    raise SystemExit("notification update terminal is not detached into its own session")
+if "setsid" not in launch or "-f" not in launch or "--wait" not in launch:
+    raise SystemExit("notification update terminal is not detached into its own waited session")
 if "--hold" not in launch or "--no-profile" not in launch:
     raise SystemExit("detached notification launch lost held clean-terminal behavior")
 if '"$SCRIPT_PATH" run-stable-update' not in launch:
