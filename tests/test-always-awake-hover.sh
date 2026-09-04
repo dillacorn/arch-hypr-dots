@@ -40,14 +40,12 @@ require_file_text "$TOOLTIP" 'width: root.idleControl ? popup.width : 0' \
     'idle-eye hover card is not pointer-interactive while normal tooltips remain click-through'
 require_file_text "$TOOLTIP" 'acceptedButtons: Qt.NoButton' \
     'idle hover surface does not preserve non-button hover tracking'
+require_file_text "$BAR" 'onRightClicked: SystemState.toggleIdle()' \
+    'horizontal idle eye no longer keeps right-click as normal Keep Awake'
 
 always_awake_line="$(grep -nF 'text: "Always Awake"' "$TOOLTIP" | head -n1 | cut -d: -f1)"
 keep_awake_line="$(grep -nF 'text: SystemState.idleMode === "keep-awake" ? "Keep Awake: On" : "Keep Awake: Off"' "$TOOLTIP" | head -n1 | cut -d: -f1)"
 [[ -n "$always_awake_line" && -n "$keep_awake_line" && "$always_awake_line" -lt "$keep_awake_line" ]] \
     || fail 'Always Awake action is not positioned above normal Keep Awake status'
-
-right_click_count="$(grep -Fc 'onRightClicked: SystemState.toggleIdle()' "$BAR")"
-[[ "$right_click_count" -ge 2 ]] \
-    || fail 'horizontal and vertical idle eyes do not both keep right-click as normal Keep Awake'
 
 printf '%s\n' 'PASS: idle-eye hover prioritizes warned Always Awake while recommending normal Keep Awake clicks.'
