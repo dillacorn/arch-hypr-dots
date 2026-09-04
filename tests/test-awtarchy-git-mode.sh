@@ -61,9 +61,14 @@ set -Eeuo pipefail
 
 url=""
 data_ref=""
+output=""
 while (( $# )); do
   case "$1" in
-    -H|--connect-timeout|--max-time|--retry|--retry-delay|--speed-limit|--speed-time|-o|--output)
+    -H|--connect-timeout|--max-time|--retry|--retry-delay|--speed-limit|--speed-time)
+      shift 2
+      ;;
+    -o|--output)
+      output="$2"
       shift 2
       ;;
     --get|--silent|--show-error|--progress-bar|-f|-L|-fL)
@@ -116,6 +121,22 @@ case "$url" in
     printf '{"object":{"type":"commit","sha":"%s"}}\n' \
       "${AWTARCHY_TEST_RELEASE_COMMIT:?}"
     ;;
+  https://github.com/dillacorn/awtarchy/archive/*.tar.gz)
+  [[ -n $output ]] || exit 22
+  revision="${url%.tar.gz}"
+  revision="${revision##*/}"
+  [[ $revision =~ ^[0-9a-f]{40}$ ]] || exit 22
+  work="$(mktemp -d)"
+  top="awtarchy-${revision}"
+  mkdir -p -- "$work/$top/local/share/awtarchy"
+  cat >"$work/$top/local/share/awtarchy/awtarchy-runtime.sh" <<'EOF_ARCHIVE_RUNTIME'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\n' "$@" >"${AWTARCHY_TEST_RUNTIME_LOG:?}"
+EOF_ARCHIVE_RUNTIME
+  tar -czf "$output" -C "$work" "$top"
+  rm -rf -- "$work"
+  ;;
   'https://api.github.com/repos/dillacorn/awtarchy/contents/local/share/awtarchy/quickshell-managed-history.sha256')
     if [[ $data_ref == "${AWTARCHY_TEST_MAIN_COMMIT:?}" \
       && ${AWTARCHY_TEST_MAIN_HAS_QUICKSHELL:-0} == 1 ]];
