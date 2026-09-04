@@ -9,6 +9,9 @@ Item {
     property bool hovered: false
     property bool vertical: false
     property int delay: 350
+    property bool popupHovered: false
+    readonly property bool idleControl: ["", "", ""].indexOf(
+        String(anchorItem ? anchorItem.label : "")) >= 0
 
     implicitWidth: 0
     implicitHeight: 0
@@ -20,6 +23,15 @@ Item {
             showTimer.restart();
         } else {
             showTimer.stop();
+            if (!popupHovered)
+                hideTimer.restart();
+        }
+    }
+
+    onPopupHoveredChanged: {
+        if (popupHovered) {
+            hideTimer.stop();
+        } else if (!hovered) {
             hideTimer.restart();
         }
     }
@@ -45,7 +57,7 @@ Item {
 
     Timer {
         id: hideTimer
-        interval: 40
+        interval: root.idleControl ? 260 : 40
         repeat: false
         onTriggered: popup.visible = false
     }
@@ -55,12 +67,19 @@ Item {
         visible: false
         color: "transparent"
         surfaceFormat.opaque: false
-        implicitWidth: Math.min(360, Math.max(72, tooltipText.implicitWidth + 18))
-        implicitHeight: Math.max(28, tooltipText.implicitHeight + 10)
+        implicitWidth: root.idleControl
+            ? 340
+            : Math.min(360, Math.max(72, tooltipText.implicitWidth + 18))
+        implicitHeight: root.idleControl
+            ? 156
+            : Math.max(28, tooltipText.implicitHeight + 10)
 
-        // Tooltips are visual-only. They must never steal clicks from the bar
-        // or the application behind them.
-        mask: Region { width: 0; height: 0 }
+        // Normal tooltips remain visual-only and click-through. The idle-eye
+        // hover card alone accepts pointer input for its explicit stronger mode.
+        mask: Region {
+            width: root.idleControl ? popup.width : 0
+            height: root.idleControl ? popup.height : 0
+        }
 
         anchor.item: root.anchorItem
         anchor.edges: root.vertical
@@ -69,20 +88,119 @@ Item {
         anchor.gravity: Edges.Bottom | Edges.Right
         anchor.adjustment: PopupAdjustment.All
 
+        onVisibleChanged: {
+            if (!visible)
+                root.popupHovered = false;
+        }
+
         Rectangle {
             anchors.fill: parent
             color: Theme.background
+            border.width: root.idleControl ? 1 : 0
+            border.color: Theme.active
             radius: 0
 
             Text {
                 id: tooltipText
                 anchors.centerIn: parent
+                visible: !root.idleControl
                 text: root.text
                 color: Theme.foreground
                 font.family: Theme.fontFamily
                 font.pixelSize: 12
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
+            }
+
+            MouseArea {
+                id: idleHoverArea
+                anchors.fill: parent
+                visible: root.idleControl
+                hoverEnabled: true
+                acceptedButtons: Qt.NoButton
+                onContainsMouseChanged: root.popupHovered = containsMouse
+
+                Column {
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    spacing: 5
+
+                    Text {
+                        width: parent.width
+                        text: SystemState.idleMode === "always-awake"
+                            ? "Always Awake: On"
+                            : (SystemState.idleInhibited ? "Keep Awake: On" : "Keep Awake: Off")
+                        color: Theme.foreground
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 12
+                        font.bold: true
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: SystemState.idleMode === "always-awake"
+                            ? "4-hour safety lock and display timeout are disabled."
+                            : (SystemState.idleInhibited
+                                ? "Normal Keep Awake keeps the 4-hour safety active."
+                                : "Click the eye for normal Keep Awake; 4-hour safety stays active.")
+                        color: Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 10
+                        wrapMode: Text.Wrap
+                    }
+
+                    Rectangle {
+                        width: parent.width
+                        height: 1
+                        color: Theme.active
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: "Always Awake — Not Recommended"
+                        color: Theme.urgent
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 11
+                        font.bold: true
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: "Keeps the session unlocked and displays on after 4 hours idle."
+                        color: Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 10
+                        wrapMode: Text.Wrap
+                    }
+
+                    Rectangle {
+                        width: parent.width
+                        height: 28
+                        color: alwaysAwakeMouse.containsMouse
+                            ? Theme.strongHover
+                            : (SystemState.idleMode === "always-awake"
+                                ? Theme.subtleActive : Theme.subtleHover)
+                        radius: 0
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: SystemState.idleMode === "always-awake" ? "Disable" : "Enable"
+                            color: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 11
+                            font.bold: true
+                        }
+
+                        MouseArea {
+                            id: alwaysAwakeMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            acceptedButtons: Qt.LeftButton
+                            onClicked: SystemState.setIdleMode(
+                                SystemState.idleMode === "always-awake" ? "off" : "always-awake")
+                        }
+                    }
+                }
             }
         }
     }
