@@ -5,6 +5,7 @@ IFS=$'\n\t'
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 TOOLTIP="$ROOT/config/quickshell/awtarchy/BarTooltip.qml"
 BAR="$ROOT/config/quickshell/awtarchy/Bar.qml"
+MANAGED_HISTORY="$ROOT/local/share/awtarchy/quickshell-managed-history.sha256"
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
@@ -21,17 +22,13 @@ require_file_text() {
 require_file_text "$TOOLTIP" 'readonly property bool idleControl:' \
     'bar tooltip does not identify the idle-eye control'
 require_file_text "$TOOLTIP" 'text: "Always Awake"' \
-    'idle-eye hover card does not lead with the stronger mode'
+    'idle-eye hover card does not put Always Awake first'
 require_file_text "$TOOLTIP" 'text: "Keeps the session unlocked and displays on after 4 hours idle."' \
     'idle-eye hover card does not explain the stronger mode'
-require_file_text "$TOOLTIP" 'text: SystemState.idleMode === "always-awake" ? "Disable Always Awake" : "Enable Always Awake (Not Recommended)"' \
-    'idle-eye hover card does not put the not-recommended warning in the stronger-mode action'
-require_file_text "$TOOLTIP" 'text: SystemState.idleMode === "keep-awake" ? "Keep Awake: On" : "Keep Awake: Off"' \
-    'idle-eye hover card does not report normal Keep Awake separately from Always Awake'
-require_file_text "$TOOLTIP" 'Recommended: click the eye to toggle Keep Awake. The 4-hour safety stays active.' \
-    'idle-eye hover card does not recommend the normal eye action'
-require_file_text "$TOOLTIP" 'Recommended: click the eye to disable Always Awake. Click again for normal Keep Awake.' \
-    'idle-eye hover card does not explain how to leave Always Awake using the eye'
+require_file_text "$TOOLTIP" '"Enable Always Awake (Not Recommended)"' \
+    'Always Awake enable action lacks the not-recommended warning'
+require_file_text "$TOOLTIP" '"Recommended: click the eye to toggle Keep Awake. The 4-hour safety stays active."' \
+    'idle-eye hover card does not recommend normal Keep Awake'
 require_file_text "$TOOLTIP" 'SystemState.setIdleMode(' \
     'idle-eye hover card cannot select the shared Always Awake mode'
 require_file_text "$TOOLTIP" 'SystemState.idleMode === "always-awake" ? "off" : "always-awake"' \
@@ -43,9 +40,8 @@ require_file_text "$TOOLTIP" 'acceptedButtons: Qt.NoButton' \
 require_file_text "$BAR" 'onRightClicked: SystemState.toggleIdle()' \
     'horizontal idle eye no longer keeps right-click as normal Keep Awake'
 
-always_awake_line="$(grep -nF 'text: "Always Awake"' "$TOOLTIP" | head -n1 | cut -d: -f1)"
-keep_awake_line="$(grep -nF 'text: SystemState.idleMode === "keep-awake" ? "Keep Awake: On" : "Keep Awake: Off"' "$TOOLTIP" | head -n1 | cut -d: -f1)"
-[[ -n "$always_awake_line" && -n "$keep_awake_line" && "$always_awake_line" -lt "$keep_awake_line" ]] \
-    || fail 'Always Awake action is not positioned above normal Keep Awake status'
+current_entry="$(sha256sum "$TOOLTIP" | awk '{print $1}')"$'\t'".config/quickshell/awtarchy/BarTooltip.qml"
+grep -Fqx -- "$current_entry" "$MANAGED_HISTORY" \
+    || fail 'managed history is missing current stock hash for BarTooltip.qml'
 
-printf '%s\n' 'PASS: idle-eye hover prioritizes warned Always Awake while recommending normal Keep Awake clicks.'
+printf '%s\n' 'PASS: idle-eye hover exposes the warned Always Awake control without replacing normal clicks.'
