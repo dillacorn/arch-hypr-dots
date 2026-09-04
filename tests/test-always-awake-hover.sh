@@ -24,7 +24,7 @@ require_file_text "$TOOLTIP" 'text: "Always Awake — Not Recommended"' \
     'idle-eye hover card lacks the explicit not-recommended warning'
 require_file_text "$TOOLTIP" 'text: "Keeps the session unlocked and displays on after 4 hours idle."' \
     'idle-eye hover card does not explain the stronger mode'
-require_file_text "$TOOLTIP" 'text: "Normal Keep Awake keeps the 4-hour safety active."' \
+require_file_text "$TOOLTIP" 'Normal Keep Awake keeps the 4-hour safety active.' \
     'idle-eye hover card does not distinguish normal Keep Awake safety'
 require_file_text "$TOOLTIP" 'SystemState.setIdleMode(' \
     'idle-eye hover card cannot select the shared Always Awake mode'
