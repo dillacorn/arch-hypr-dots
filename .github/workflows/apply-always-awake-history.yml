@@ -1,0 +1,44 @@
+name: Apply Always Awake Managed History
+
+on:
+  push:
+    branches: [feature/always-awake-hover]
+    paths:
+      - .github/workflows/apply-always-awake-history.yml
+      - config/quickshell/awtarchy/BarTooltip.qml
+      - local/share/awtarchy/quickshell-managed-history.sha256
+      - tests/test-always-awake-hover.sh
+
+permissions:
+  contents: write
+
+jobs:
+  apply-managed-history:
+    if: github.ref == 'refs/heads/feature/always-awake-hover'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/always-awake-hover
+          fetch-depth: 0
+
+      - name: Record current BarTooltip managed hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          file='config/quickshell/awtarchy/BarTooltip.qml'
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          hash="$(sha256sum "$file" | awk '{print $1}')"
+          entry="${hash}"$'\t'".config/quickshell/awtarchy/BarTooltip.qml"
+
+          if grep -Fqx -- "$entry" "$history"; then
+            echo 'Managed-history entry already present.'
+            exit 0
+          fi
+
+          printf '%s\n' "$entry" >>"$history"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$history"
+          git commit -m 'Record Always Awake tooltip managed hash'
+          git push origin HEAD:feature/always-awake-hover
