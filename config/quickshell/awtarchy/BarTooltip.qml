@@ -71,7 +71,7 @@ Item {
             ? 340
             : Math.min(360, Math.max(72, tooltipText.implicitWidth + 18))
         implicitHeight: root.idleControl
-            ? 156
+            ? 166
             : Math.max(28, tooltipText.implicitHeight + 10)
 
         // Normal tooltips remain visual-only and click-through. The idle-eye
@@ -127,37 +127,7 @@ Item {
 
                     Text {
                         width: parent.width
-                        text: SystemState.idleMode === "always-awake"
-                            ? "Always Awake: On"
-                            : (SystemState.idleInhibited ? "Keep Awake: On" : "Keep Awake: Off")
-                        color: Theme.foreground
-                        font.family: Theme.fontFamily
-                        font.pixelSize: 12
-                        font.bold: true
-                    }
-
-                    Text {
-                        width: parent.width
-                        text: SystemState.idleMode === "always-awake"
-                            ? "4-hour safety lock and display timeout are disabled."
-                            : (SystemState.idleInhibited
-                                ? "Normal Keep Awake keeps the 4-hour safety active."
-                                : "Click the eye for normal Keep Awake; 4-hour safety stays active.")
-                        color: Theme.muted
-                        font.family: Theme.fontFamily
-                        font.pixelSize: 10
-                        wrapMode: Text.Wrap
-                    }
-
-                    Rectangle {
-                        width: parent.width
-                        height: 1
-                        color: Theme.active
-                    }
-
-                    Text {
-                        width: parent.width
-                        text: "Always Awake — Not Recommended"
+                        text: "Always Awake"
                         color: Theme.urgent
                         font.family: Theme.fontFamily
                         font.pixelSize: 11
@@ -184,8 +154,8 @@ Item {
 
                         Text {
                             anchors.centerIn: parent
-                            text: SystemState.idleMode === "always-awake" ? "Disable" : "Enable"
-                            color: Theme.foreground
+                            text: SystemState.idleMode === "always-awake" ? "Disable Always Awake" : "Enable Always Awake (Not Recommended)"
+                            color: SystemState.idleMode === "always-awake" ? Theme.foreground : Theme.urgent
                             font.family: Theme.fontFamily
                             font.pixelSize: 11
                             font.bold: true
@@ -199,6 +169,32 @@ Item {
                             onClicked: SystemState.setIdleMode(
                                 SystemState.idleMode === "always-awake" ? "off" : "always-awake")
                         }
+                    }
+
+                    Rectangle {
+                        width: parent.width
+                        height: 1
+                        color: Theme.active
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: SystemState.idleMode === "keep-awake" ? "Keep Awake: On" : "Keep Awake: Off"
+                        color: Theme.foreground
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 12
+                        font.bold: true
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: SystemState.idleMode === "always-awake"
+                            ? "Recommended: click the eye to disable Always Awake. Click again for normal Keep Awake."
+                            : "Recommended: click the eye to toggle Keep Awake. The 4-hour safety stays active."
+                        color: Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 10
+                        wrapMode: Text.Wrap
                     }
                 }
             }
