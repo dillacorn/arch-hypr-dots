@@ -20,12 +20,16 @@ require_file_text() {
 # exposes the stronger mode, but it must be explicit about the safety tradeoff.
 require_file_text "$TOOLTIP" 'readonly property bool idleControl:' \
     'bar tooltip does not identify the idle-eye control'
-require_file_text "$TOOLTIP" 'text: "Always Awake — Not Recommended"' \
-    'idle-eye hover card lacks the explicit not-recommended warning'
+require_file_text "$TOOLTIP" 'text: "Always Awake"' \
+    'idle-eye hover card does not lead with the stronger mode'
 require_file_text "$TOOLTIP" 'text: "Keeps the session unlocked and displays on after 4 hours idle."' \
     'idle-eye hover card does not explain the stronger mode'
-require_file_text "$TOOLTIP" 'Normal Keep Awake keeps the 4-hour safety active.' \
-    'idle-eye hover card does not distinguish normal Keep Awake safety'
+require_file_text "$TOOLTIP" 'text: SystemState.idleMode === "always-awake" ? "Disable Always Awake" : "Enable Always Awake (Not Recommended)"' \
+    'idle-eye hover card does not put the not-recommended warning in the stronger-mode action'
+require_file_text "$TOOLTIP" 'text: SystemState.idleMode === "keep-awake" ? "Keep Awake: On" : "Keep Awake: Off"' \
+    'idle-eye hover card does not report normal Keep Awake separately from Always Awake'
+require_file_text "$TOOLTIP" 'text: "Recommended: click the eye to toggle Keep Awake. The 4-hour safety stays active."' \
+    'idle-eye hover card does not recommend the normal eye action'
 require_file_text "$TOOLTIP" 'SystemState.setIdleMode(' \
     'idle-eye hover card cannot select the shared Always Awake mode'
 require_file_text "$TOOLTIP" 'SystemState.idleMode === "always-awake" ? "off" : "always-awake"' \
@@ -34,7 +38,14 @@ require_file_text "$TOOLTIP" 'width: root.idleControl ? popup.width : 0' \
     'idle-eye hover card is not pointer-interactive while normal tooltips remain click-through'
 require_file_text "$TOOLTIP" 'acceptedButtons: Qt.NoButton' \
     'idle hover surface does not preserve non-button hover tracking'
-require_file_text "$BAR" 'onRightClicked: SystemState.toggleIdle()' \
-    'horizontal idle eye no longer keeps right-click as normal Keep Awake'
 
-printf '%s\n' 'PASS: idle-eye hover exposes the warned Always Awake control without replacing normal clicks.'
+always_awake_line="$(grep -nF 'text: "Always Awake"' "$TOOLTIP" | head -n1 | cut -d: -f1)"
+keep_awake_line="$(grep -nF 'text: SystemState.idleMode === "keep-awake" ? "Keep Awake: On" : "Keep Awake: Off"' "$TOOLTIP" | head -n1 | cut -d: -f1)"
+[[ -n "$always_awake_line" && -n "$keep_awake_line" && "$always_awake_line" -lt "$keep_awake_line" ]] \
+    || fail 'Always Awake action is not positioned above normal Keep Awake status'
+
+right_click_count="$(grep -Fc 'onRightClicked: SystemState.toggleIdle()' "$BAR")"
+[[ "$right_click_count" -ge 2 ]] \
+    || fail 'horizontal and vertical idle eyes do not both keep right-click as normal Keep Awake'
+
+printf '%s\n' 'PASS: idle-eye hover prioritizes warned Always Awake while recommending normal Keep Awake clicks.'
