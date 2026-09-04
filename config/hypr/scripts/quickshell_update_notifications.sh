@@ -146,14 +146,14 @@ launch_update() {
     if [[ $command == update ]] \
         && valid_notification_id "$notification_id" \
         && valid_stable_tag "$target"; then
-        "$DEFAULT_TERMINAL" \
+        /usr/bin/setsid -f --wait "$DEFAULT_TERMINAL" \
             --class awtarchy-update \
             --hold \
             --no-profile \
             -- \
             "$SCRIPT_PATH" run-stable-update "$notification_id" "$target"
     else
-        "$DEFAULT_TERMINAL" \
+        /usr/bin/setsid -f --wait "$DEFAULT_TERMINAL" \
             --class awtarchy-update \
             --hold \
             --no-profile \
