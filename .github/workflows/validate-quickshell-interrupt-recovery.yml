@@ -40,7 +40,11 @@ jobs:
           bash -n tests/test-quickshell-updater-bootstrap.sh
       - name: Maintenance command regressions
         run: |
-          bash tests/test-awtarchy-command.sh
+          no_sudo_bin="$(mktemp -d)"
+          printf '%s\n' '#!/usr/bin/env bash' 'exit 1' >"${no_sudo_bin}/sudo"
+          chmod 0755 "${no_sudo_bin}/sudo"
+          PATH="${no_sudo_bin}:$PATH" bash tests/test-awtarchy-command.sh
+          rm -rf -- "$no_sudo_bin"
           bash tests/test-awtarchy-command-shim.sh
       - name: Existing Git testing flow
         run: bash tests/test-awtarchy-git-mode.sh
