@@ -28,8 +28,10 @@ require_file_text "$TOOLTIP" 'text: SystemState.idleMode === "always-awake" ? "D
     'idle-eye hover card does not put the not-recommended warning in the stronger-mode action'
 require_file_text "$TOOLTIP" 'text: SystemState.idleMode === "keep-awake" ? "Keep Awake: On" : "Keep Awake: Off"' \
     'idle-eye hover card does not report normal Keep Awake separately from Always Awake'
-require_file_text "$TOOLTIP" 'text: "Recommended: click the eye to toggle Keep Awake. The 4-hour safety stays active."' \
+require_file_text "$TOOLTIP" 'Recommended: click the eye to toggle Keep Awake. The 4-hour safety stays active.' \
     'idle-eye hover card does not recommend the normal eye action'
+require_file_text "$TOOLTIP" 'Recommended: click the eye to disable Always Awake. Click again for normal Keep Awake.' \
+    'idle-eye hover card does not explain how to leave Always Awake using the eye'
 require_file_text "$TOOLTIP" 'SystemState.setIdleMode(' \
     'idle-eye hover card cannot select the shared Always Awake mode'
 require_file_text "$TOOLTIP" 'SystemState.idleMode === "always-awake" ? "off" : "always-awake"' \
