@@ -8,6 +8,7 @@ on:
     paths:
       - local/bin/awtarchy
       - local/share/awtarchy/awtarchy-runtime.sh
+      - tests/test-awtarchy-git-mode.sh
       - tests/test-git-runtime-selection.sh
       - tests/test-quickshell-update-interrupt-recovery.sh
       - tests/test-quickshell-updater-bootstrap.sh
@@ -27,9 +28,12 @@ jobs:
         run: |
           bash -n local/bin/awtarchy
           bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n tests/test-awtarchy-git-mode.sh
           bash -n tests/test-git-runtime-selection.sh
           bash -n tests/test-quickshell-update-interrupt-recovery.sh
           bash -n tests/test-quickshell-updater-bootstrap.sh
+      - name: Existing Git testing flow
+        run: bash tests/test-awtarchy-git-mode.sh
       - name: Exact Git runtime selection
         run: bash tests/test-git-runtime-selection.sh
       - name: Quickshell interrupted-update recovery
