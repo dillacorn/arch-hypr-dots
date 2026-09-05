@@ -65,6 +65,9 @@ cat >"$FAKE_BIN/tlp" <<'FAKE_TLP'
 set -euo pipefail
 printf '%s\n' "$*" >>"${AWTARCHY_TEST_LOG:?}"
 [[ ${1:-} == fullcharge ]] || exit 64
+if [[ ${AWTARCHY_FAIL_FULLCHARGE_BAT0:-0} == 1 && ${2:-} == BAT0 ]]; then
+  exit 5
+fi
 FAKE_TLP
 chmod 0755 "$FAKE_BIN/tlp"
 
@@ -167,6 +170,19 @@ grep -Fxq 'fullcharge BAT0' "$LOG" || fail 'rollback did not restore BAT0 full c
 grep -Fxq 'fullcharge BAT1' "$LOG" || fail 'rollback did not restore BAT1 full charge'
 [[ "$(grep -Fc 'fullcharge' "$LOG")" -eq 2 ]] \
   || fail 'rollback issued an unexpected number of fullcharge operations'
+
+# Recovery must still attempt later batteries if an earlier fullcharge fails.
+# Returning failure is correct, but fail-fast would leave the remaining pack untouched.
+: >"$LOG"
+set +e
+AWTARCHY_TEST_LOG="$LOG" AWTARCHY_FAIL_FULLCHARGE_BAT0=1 battery_fullcharge_all
+fullcharge_rc=$?
+set -e
+[[ "$fullcharge_rc" -ne 0 ]] || fail 'multi-battery fullcharge hid a BAT0 failure'
+grep -Fxq 'fullcharge BAT0' "$LOG" || fail 'multi-battery recovery did not attempt BAT0'
+grep -Fxq 'fullcharge BAT1' "$LOG" || fail 'multi-battery recovery stopped before attempting BAT1 after BAT0 failed'
+[[ "$(grep -Fc 'fullcharge' "$LOG")" -eq 2 ]] \
+  || fail 'multi-battery recovery issued an unexpected number of fullcharge operations after a pack failure'
 
 json="$(
   AWTARCHY_POWER_SUPPLY_ROOT="$POWER_ROOT" \
