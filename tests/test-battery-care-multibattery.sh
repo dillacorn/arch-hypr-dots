@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC1090
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -145,6 +146,18 @@ Parameter value range:
 EOF
 FAKE_LENOVO_MIXED
 chmod 0755 "$FAKE_BIN/tlp-stat"
+
+# The privileged verifier must reject a partial multi-battery transition too.
+# Otherwise a successful BAT0 write could hide a failed BAT1 write or vice versa.
+VERIFY_HELPER="$TMP/power-profile-helper-source"
+sed '/^main "\$@"$/d' "$TEST_HELPER" >"$VERIFY_HELPER"
+source "$VERIFY_HELPER"
+if verify_enabled_state lenovo 1; then
+  fail 'Lenovo enabled-state verification accepted mixed Long_Life/Standard batteries'
+fi
+if verify_disabled_state lenovo; then
+  fail 'Lenovo disabled-state verification accepted mixed Long_Life/Standard batteries'
+fi
 
 json="$(
   AWTARCHY_POWER_SUPPLY_ROOT="$POWER_ROOT" \
