@@ -25,6 +25,8 @@ require_absent() {
   ! grep -Fq -- "$needle" "$file" || fail "$message"
 }
 
+bash "$ROOT/tests/test-battery-status-helper.sh"
+
 [[ -f "$HELPER" ]] || fail 'trusted Power Mode helper source is missing'
 
 # The shared laptop reconciler already runs on fresh installs and normal updates.
