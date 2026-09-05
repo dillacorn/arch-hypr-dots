@@ -74,6 +74,7 @@ grep -Fxq 'fullcharge BAT1' "$LOG" || fail 'battery-disable did not restore BAT1
 [[ "$(grep -Fc 'fullcharge' "$LOG")" -eq 2 ]] \
   || fail 'battery-disable issued an unexpected number of fullcharge operations'
 
+# Divergent live limits must remain per-battery facts, never a fabricated global target.
 POWER_ROOT="$TMP/power"
 for battery in BAT0 BAT1; do
   mkdir -p -- "$POWER_ROOT/$battery"
