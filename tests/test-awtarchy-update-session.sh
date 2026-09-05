@@ -5,10 +5,12 @@ IFS=$'\n\t'
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 LAUNCHER="${ROOT}/local/bin/awtarchy"
+RUNTIME="${ROOT}/local/share/awtarchy/awtarchy-runtime.sh"
 RECONCILER="${ROOT}/local/share/awtarchy/awtarchy-package-reconcile.sh"
 NOTIFIER="${ROOT}/config/hypr/scripts/quickshell_update_notifications.sh"
 
 bash -n "$LAUNCHER"
+bash -n "$RUNTIME"
 bash -n "$RECONCILER"
 bash -n "$NOTIFIER"
 
@@ -126,4 +128,57 @@ if '"$SCRIPT_PATH" run-stable-update' not in launch:
     raise SystemExit("stable notification launch no longer routes through run-stable-update")
 PY
 
-printf '%s\n' 'PASS: notification detachment, AUR-only no-preauth, low-disk recovery, and per-package AUR sudo isolation are enforced.'
+grep -Fq 'repair_v353_update_notifier_target()' "$RUNTIME" \
+  || { printf '%s\n' 'FAIL: runtime is missing the v3.5.3 update-notifier post-release repair' >&2; exit 1; }
+# shellcheck disable=SC2016
+grep -Fq '[[ "$tag" == "v3.5.3" ]] || return 0' "$RUNTIME" \
+  || { printf '%s\n' 'FAIL: v3.5.3 notifier repair is not scoped to the published release' >&2; exit 1; }
+# shellcheck disable=SC2016
+grep -Fq 'repair_v353_update_notifier_target "$target_home" "$tag"' "$RUNTIME" \
+  || { printf '%s\n' 'FAIL: runtime does not apply the v3.5.3 notifier repair to the generated target' >&2; exit 1; }
+
+# shellcheck disable=SC2016
+repair_line="$(grep -nF 'repair_v353_update_notifier_target "$target_home" "$tag"' "$RUNTIME" | head -n1 | cut -d: -f1)"
+# shellcheck disable=SC2016
+baseline_line="$(grep -nF 'bootstrap_previous_baseline "$active_theme"' "$RUNTIME" | head -n1 | cut -d: -f1)"
+[[ "$repair_line" =~ ^[0-9]+$ && "$baseline_line" =~ ^[0-9]+$ ]] \
+  || { printf '%s\n' 'FAIL: could not locate v3.5.3 notifier target-repair ordering' >&2; exit 1; }
+(( repair_line < baseline_line )) \
+  || { printf '%s\n' 'FAIL: v3.5.3 notifier target repair must run before baseline comparison' >&2; exit 1; }
+
+TMP="$(mktemp -d)"
+cleanup() {
+  rm -rf -- "$TMP"
+}
+trap cleanup EXIT
+
+v353_target_home="${TMP}/v353-target"
+control_target_home="${TMP}/control-target"
+original_notifier="${TMP}/v353-original-notifier"
+mkdir -p \
+  "${v353_target_home}/.config/hypr/scripts" \
+  "${control_target_home}/.config/hypr/scripts"
+git -C "$ROOT" show v3.5.3:config/hypr/scripts/quickshell_update_notifications.sh >"$original_notifier" \
+  || { printf '%s\n' 'FAIL: v3.5.3 notifier fixture is unavailable' >&2; exit 1; }
+cp -- "$original_notifier" "${v353_target_home}/.config/hypr/scripts/quickshell_update_notifications.sh"
+cp -- "$original_notifier" "${control_target_home}/.config/hypr/scripts/quickshell_update_notifications.sh"
+
+repair_definition="$(
+  sed -n '/^repair_v353_update_notifier_target() {/,/^prepare_quickshell_update_target() {/p' "$RUNTIME" |
+    sed '$d'
+)"
+[[ -n "$repair_definition" ]] \
+  || { printf '%s\n' 'FAIL: could not extract v3.5.3 notifier repair function' >&2; exit 1; }
+log() { :; }
+die() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
+eval "$repair_definition"
+
+repair_v353_update_notifier_target "$v353_target_home" v3.5.3
+cmp -s "${v353_target_home}/.config/hypr/scripts/quickshell_update_notifications.sh" "$NOTIFIER" \
+  || { printf '%s\n' 'FAIL: v3.5.3 post-release repair does not produce the current fixed notifier' >&2; exit 1; }
+
+repair_v353_update_notifier_target "$control_target_home" v3.5.2
+cmp -s "${control_target_home}/.config/hypr/scripts/quickshell_update_notifications.sh" "$original_notifier" \
+  || { printf '%s\n' 'FAIL: v3.5.3 notifier post-release repair changed another release target' >&2; exit 1; }
+
+printf '%s\n' 'PASS: notification detachment, v3.5.3 post-release delivery, AUR-only no-preauth, low-disk recovery, and per-package AUR sudo isolation are enforced.'
