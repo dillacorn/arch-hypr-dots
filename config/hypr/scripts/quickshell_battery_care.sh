@@ -6,6 +6,8 @@ export LC_ALL=C
 
 POWER_SUPPLY_ROOT="${AWTARCHY_POWER_SUPPLY_ROOT:-/sys/class/power_supply}"
 TLP_STAT_BIN="${AWTARCHY_TLP_STAT_BIN:-/usr/bin/tlp-stat}"
+BATTERY_STATUS_HELPER="${AWTARCHY_BATTERY_STATUS_HELPER:-/usr/local/libexec/awtarchy/battery-status-helper}"
+SUDO_BIN="${AWTARCHY_SUDO_BIN:-/usr/bin/sudo}"
 TLP_CONFIG_DIR="${AWTARCHY_TLP_CONFIG_DIR:-/etc/tlp.d}"
 TLP_USER_CONFIG="${AWTARCHY_TLP_USER_CONFIG:-/etc/tlp.conf}"
 MANAGED_CONFIG="${TLP_CONFIG_DIR}/00-awtarchy-battery-care.conf"
@@ -133,9 +135,31 @@ battery_plugin_writable() {
     esac
 }
 
-if [[ -x "$TLP_STAT_BIN" ]]; then
+read_tlp_battery_report() {
+    local report=""
+
+    if [[ -x "$BATTERY_STATUS_HELPER" && -x "$SUDO_BIN" ]]; then
+        report="$("$SUDO_BIN" -n -- "$BATTERY_STATUS_HELPER" 2>/dev/null || true)"
+        if [[ -n "$report" ]]; then
+            printf '%s\n' "$report"
+            return 0
+        fi
+    fi
+
+    if [[ -x "$TLP_STAT_BIN" ]]; then
+        report="$("$TLP_STAT_BIN" -b 2>/dev/null || true)"
+        if [[ -n "$report" ]]; then
+            printf '%s\n' "$report"
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+if [[ -x "$BATTERY_STATUS_HELPER" || -x "$TLP_STAT_BIN" ]]; then
     tlp_available=true
-    tlp_output="$("$TLP_STAT_BIN" -b 2>/dev/null || true)"
+    tlp_output="$(read_tlp_battery_report 2>/dev/null || true)"
     plugin="$(
         awk -F: '/^Plugin:[[:space:]]*/ {
             sub(/^[[:space:]]+/, "", $2); sub(/[[:space:]]+$/, "", $2); print $2; exit
@@ -159,8 +183,8 @@ fi
 # `tlp-stat -b` is documented by TLP as a root command, while this detector is
 # intentionally unprivileged. sony_laptop exposes its actual limiter through a
 # read-only sysfs attribute, so use the kernel interface to recover capability
-# and current state when TLP's user-level report is empty. Writes still go only
-# through the root-owned TLP helper.
+# and current state when the authoritative TLP report is temporarily unavailable.
+# Writes still go only through the root-owned TLP helper.
 sony_limit=null
 if value="$(read_percent "$SONY_BATTERY_CARE_PATH" 2>/dev/null)"; then
     case "$value" in
