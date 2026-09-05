@@ -392,6 +392,9 @@ verify_disabled_state() {
     huawei)
       /usr/bin/grep -Eq 'charge_control_thresholds[^=]*=[[:space:]]*[0-9]+[[:space:]]+100([^0-9]|$)' <<<"$report"
       ;;
+    sony)
+      /usr/bin/grep -Eq 'battery_care_limiter[^=]*=[[:space:]]*0([^0-9]|$)' <<<"$report"
+      ;;
     *)
       while IFS= read -r value; do
         [[ -n "$value" ]] || continue
