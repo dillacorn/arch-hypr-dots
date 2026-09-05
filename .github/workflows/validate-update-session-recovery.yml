@@ -39,52 +39,8 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "91bebb2b1362c2e44d89ca7f0f048554005c5474"
       - name: Add v3.5.4 delivery regression
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('tests/test-battery-care-control.sh')
-          text = path.read_text(encoding='utf-8')
-          replacements = [
-              ('CARD="${ROOT}/config/quickshell/awtarchy/BatteryCareCard.qml"\nTMP="$(mktemp -d)"', 'CARD="${ROOT}/config/quickshell/awtarchy/BatteryCareCard.qml"\nRUNTIME="${ROOT}/local/share/awtarchy/awtarchy-runtime.sh"\nTMP="$(mktemp -d)"'),
-              ('require_file "$CARD"\n\nrequire_source "$HELPER"', 'require_file "$CARD"\nrequire_file "$RUNTIME"\n\nrequire_source "$HELPER"'),
-              ("require_source \"$DETECTOR\" 'target' 'detector does not expose observed target'\n", """require_source \"$DETECTOR\" 'target' 'detector does not expose observed target'
-
-require_source \"$RUNTIME\" 'repair_v354_sony_battery_disable_repo()' 'runtime has no v3.5.4 Sony battery helper repair'
-require_source \"$RUNTIME\" '[[ \"$tag\" == \"v3.5.4\" ]] || return 0' 'v3.5.4 Sony battery repair is not tag scoped'
-require_source \"$RUNTIME\" 'repair_v354_sony_battery_disable_repo \"$repo_dir\" \"$tag\"' 'stable update path does not repair the v3.5.4 helper source'
-repair_line=\"$(grep -nF 'repair_v354_sony_battery_disable_repo \"$repo_dir\" \"$tag\"' \"$RUNTIME\" | tail -n1 | cut -d: -f1)\"
-reconcile_line=\"$(grep -nF 'reconcile_power_profile_backend \"$repo_dir\"' \"$RUNTIME\" | tail -n1 | cut -d: -f1)\"
-[[ \"$repair_line\" =~ ^[0-9]+$ && \"$reconcile_line\" =~ ^[0-9]+$ && \"$repair_line\" -lt \"$reconcile_line\" ]] \\
-  || fail 'v3.5.4 Sony battery repair does not run before the release helper is reconciled'
-"""),
-              ("grep -Fxq 'STOP_CHARGE_THRESH_BAT0=80' \"$MANAGED\" || fail 'previous managed config was not restored after readback failure'\n\nprintf '%s\\n' 'PASS: battery care controls validate, persist, verify, and roll back safely.'", """grep -Fxq 'STOP_CHARGE_THRESH_BAT0=80' \"$MANAGED\" || fail 'previous managed config was not restored after readback failure'
-
-V354_FIXTURE=\"$TMP/v354-power-profile-helper\"
-V354_REPO=\"$TMP/v354-repo\"
-V353_CONTROL_REPO=\"$TMP/v353-control-repo\"
-mkdir -p -- \"$V354_REPO/local/libexec/awtarchy\" \"$V353_CONTROL_REPO/local/libexec/awtarchy\"
-git -c safe.directory=\"$ROOT\" -C \"$ROOT\" show v3.5.4:local/libexec/awtarchy/power-profile-helper >\"$V354_FIXTURE\"
-cp -- \"$V354_FIXTURE\" \"$V354_REPO/local/libexec/awtarchy/power-profile-helper\"
-cp -- \"$V354_FIXTURE\" \"$V353_CONTROL_REPO/local/libexec/awtarchy/power-profile-helper\"
-repair_definition=\"$(sed -n '/^repair_v354_sony_battery_disable_repo() {/,/^}/p' \"$RUNTIME\")\"
-[[ -n \"$repair_definition\" ]] || fail 'could not extract v3.5.4 Sony battery repair function'
-log() { :; }
-die() { fail \"$*\"; }
-eval \"$repair_definition\"
-repair_v354_sony_battery_disable_repo \"$V354_REPO\" v3.5.4
-cmp -s -- \"$HELPER\" \"$V354_REPO/local/libexec/awtarchy/power-profile-helper\" || fail 'v3.5.4 post-release repair did not reconstruct the tested Sony helper'
-bash -n \"$V354_REPO/local/libexec/awtarchy/power-profile-helper\" || fail 'v3.5.4 repaired Sony helper failed Bash syntax validation'
-repair_v354_sony_battery_disable_repo \"$V353_CONTROL_REPO\" v3.5.3
-cmp -s -- \"$V354_FIXTURE\" \"$V353_CONTROL_REPO/local/libexec/awtarchy/power-profile-helper\" || fail 'v3.5.4 Sony repair changed a non-v3.5.4 release target'
-
-printf '%s\\n' 'PASS: battery care controls validate, persist, verify, and roll back safely.'"""),
-          ]
-          for old, new in replacements:
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'expected one test insertion anchor, found {count}: {old[:80]!r}')
-              text = text.replace(old, new, 1)
-          path.write_text(text, encoding='utf-8')
-          PY
+          printf '%s' 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCnBhdGggPSBQYXRoKCJ0ZXN0cy90ZXN0LWJhdHRlcnktY2FyZS1jb250cm9sLnNoIikKdGV4dCA9IHBhdGgucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpCnJlcGxhY2VtZW50cyA9IFsoJ0NBUkQ9IiR7Uk9PVH0vY29uZmlnL3F1aWNrc2hlbGwvYXd0YXJjaHkvQmF0dGVyeUNhcmVDYXJkLnFtbCJcblRNUD0iJChta3RlbXAgLWQpIicsCiAgJ0NBUkQ9IiR7Uk9PVH0vY29uZmlnL3F1aWNrc2hlbGwvYXd0YXJjaHkvQmF0dGVyeUNhcmVDYXJkLnFtbCJcblJVTlRJTUU9IiR7Uk9PVH0vbG9jYWwvc2hhcmUvYXd0YXJjaHkvYXd0YXJjaHktcnVudGltZS5zaCJcblRNUD0iJChta3RlbXAgLWQpIicpLAogKCdyZXF1aXJlX2ZpbGUgIiRDQVJEIlxuXG5yZXF1aXJlX3NvdXJjZSAiJEhFTFBFUiInLCAncmVxdWlyZV9maWxlICIkQ0FSRCJcbnJlcXVpcmVfZmlsZSAiJFJVTlRJTUUiXG5cbnJlcXVpcmVfc291cmNlICIkSEVMUEVSIicpLAogKCdyZXF1aXJlX3NvdXJjZSAiJERFVEVDVE9SIiBcJ3RhcmdldFwnIFwnZGV0ZWN0b3IgZG9lcyBub3QgZXhwb3NlIG9ic2VydmVkIHRhcmdldFwnXG4nLAogICdyZXF1aXJlX3NvdXJjZSAiJERFVEVDVE9SIiBcJ3RhcmdldFwnIFwnZGV0ZWN0b3IgZG9lcyBub3QgZXhwb3NlIG9ic2VydmVkIHRhcmdldFwnXG4nCiAgJ1xuJwogICdyZXF1aXJlX3NvdXJjZSAiJFJVTlRJTUUiIFwncmVwYWlyX3YzNTRfc29ueV9iYXR0ZXJ5X2Rpc2FibGVfcmVwbygpXCcgXCdydW50aW1lIGhhcyBubyB2My41LjQgU29ueSBiYXR0ZXJ5IGhlbHBlciByZXBhaXJcJ1xuJwogICdyZXF1aXJlX3NvdXJjZSAiJFJVTlRJTUUiIFwnW1sgIiR0YWciID09ICJ2My41LjQiIF1dIHx8IHJldHVybiAwXCcgXCd2My41LjQgU29ueSBiYXR0ZXJ5IHJlcGFpciBpcyBub3QgdGFnIHNjb3BlZFwnXG4nCiAgJ3JlcXVpcmVfc291cmNlICIkUlVOVElNRSIgXCdyZXBhaXJfdjM1NF9zb255X2JhdHRlcnlfZGlzYWJsZV9yZXBvICIkcmVwb19kaXIiICIkdGFnIlwnIFwnc3RhYmxlIHVwZGF0ZSBwYXRoIGRvZXMgbm90IHJlcGFpciB0aGUgdjMuNS40IGhlbHBlciBzb3VyY2VcJ1xuJwogICdyZXBhaXJfbGluZT0iJChncmVwIC1uRiBcJ3JlcGFpcl92MzU0X3NvbnlfYmF0dGVyeV9kaXNhYmxlX3JlcG8gIiRyZXBvX2RpciIgIiR0YWciXCcgIiRSVU5USU1FIiB8IHRhaWwgLW4xIHwgY3V0IC1kOiAtZjEpIlxuJwogICdyZWNvbmNpbGVfbGluZT0iJChncmVwIC1uRiBcJ3JlY29uY2lsZV9wb3dlcl9wcm9maWxlX2JhY2tlbmQgIiRyZXBvX2RpciJcJyAiJFJVTlRJTUUiIHwgdGFpbCAtbjEgfCBjdXQgLWQ6IC1mMSkiXG4nCiAgJ1tbICIkcmVwYWlyX2xpbmUiID1+IF5bMC05XSskICYmICIkcmVjb25jaWxlX2xpbmUiID1+IF5bMC05XSskICYmICIkcmVwYWlyX2xpbmUiIC1sdCAiJHJlY29uY2lsZV9saW5lIiBdXSBcXFxuJwogICIgIHx8IGZhaWwgJ3YzLjUuNCBTb255IGJhdHRlcnkgcmVwYWlyIGRvZXMgbm90IHJ1biBiZWZvcmUgdGhlIHJlbGVhc2UgaGVscGVyIGlzIHJlY29uY2lsZWQnXG4iKSwKICgnZ3JlcCAtRnhxIFwnU1RPUF9DSEFSR0VfVEhSRVNIX0JBVDA9ODBcJyAiJE1BTkFHRUQiIHx8IGZhaWwgXCdwcmV2aW91cyBtYW5hZ2VkIGNvbmZpZyB3YXMgbm90IHJlc3RvcmVkIGFmdGVyIHJlYWRiYWNrIGZhaWx1cmVcJ1xuJwogICdcbicKICAicHJpbnRmICclc1xcbicgJ1BBU1M6IGJhdHRlcnkgY2FyZSBjb250cm9scyB2YWxpZGF0ZSwgcGVyc2lzdCwgdmVyaWZ5LCBhbmQgcm9sbCBiYWNrIHNhZmVseS4nIiwKICAnZ3JlcCAtRnhxIFwnU1RPUF9DSEFSR0VfVEhSRVNIX0JBVDA9ODBcJyAiJE1BTkFHRUQiIHx8IGZhaWwgXCdwcmV2aW91cyBtYW5hZ2VkIGNvbmZpZyB3YXMgbm90IHJlc3RvcmVkIGFmdGVyIHJlYWRiYWNrIGZhaWx1cmVcJ1xuJwogICdcbicKICAnVjM1NF9GSVhUVVJFPSIkVE1QL3YzNTQtcG93ZXItcHJvZmlsZS1oZWxwZXIiXG4nCiAgJ1YzNTRfUkVQTz0iJFRNUC92MzU0LXJlcG8iXG4nCiAgJ1YzNTNfQ09OVFJPTF9SRVBPPSIkVE1QL3YzNTMtY29udHJvbC1yZXBvIlxuJwogICdta2RpciAtcCAtLSAiJFYzNTRfUkVQTy9sb2NhbC9saWJleGVjL2F3dGFyY2h5IiAiJFYzNTNfQ09OVFJPTF9SRVBPL2xvY2FsL2xpYmV4ZWMvYXd0YXJjaHkiXG4nCiAgJ2dpdCAtYyBzYWZlLmRpcmVjdG9yeT0iJFJPT1QiIC1DICIkUk9PVCIgc2hvdyBcXFxuJwogICcgIHYzLjUuNDpsb2NhbC9saWJleGVjL2F3dGFyY2h5L3Bvd2VyLXByb2ZpbGUtaGVscGVyID4iJFYzNTRfRklYVFVSRSJcbicKICAnY3AgLS0gIiRWMzU0X0ZJWFRVUkUiICIkVjM1NF9SRVBPL2xvY2FsL2xpYmV4ZWMvYXd0YXJjaHkvcG93ZXItcHJvZmlsZS1oZWxwZXIiXG4nCiAgJ2NwIC0tICIkVjM1NF9GSVhUVVJFIiAiJFYzNTNfQ09OVFJPTF9SRVBPL2xvY2FsL2xpYmV4ZWMvYXd0YXJjaHkvcG93ZXItcHJvZmlsZS1oZWxwZXIiXG4nCiAgJ3JlcGFpcl9kZWZpbml0aW9uPSIkKHNlZCAtbiBcJy9ecmVwYWlyX3YzNTRfc29ueV9iYXR0ZXJ5X2Rpc2FibGVfcmVwbygpIHsvLC9efS9wXCcgIiRSVU5USU1FIikiXG4nCiAgJ1tbIC1uICIkcmVwYWlyX2RlZmluaXRpb24iIF1dIHx8IGZhaWwgXCdjb3VsZCBub3QgZXh0cmFjdCB2My41LjQgU29ueSBiYXR0ZXJ5IHJlcGFpciBmdW5jdGlvblwnXG4nCiAgJ2xvZygpIHsgOjsgfVxuJwogICdkaWUoKSB7IGZhaWwgIiQqIjsgfVxuJwogICdldmFsICIkcmVwYWlyX2RlZmluaXRpb24iXG4nCiAgJ3JlcGFpcl92MzU0X3NvbnlfYmF0dGVyeV9kaXNhYmxlX3JlcG8gIiRWMzU0X1JFUE8iIHYzLjUuNFxuJwogICdjbXAgLXMgLS0gIiRIRUxQRVIiICIkVjM1NF9SRVBPL2xvY2FsL2xpYmV4ZWMvYXd0YXJjaHkvcG93ZXItcHJvZmlsZS1oZWxwZXIiIFxcXG4nCiAgIiAgfHwgZmFpbCAndjMuNS40IHBvc3QtcmVsZWFzZSByZXBhaXIgZGlkIG5vdCByZWNvbnN0cnVjdCB0aGUgdGVzdGVkIFNvbnkgaGVscGVyJ1xuIgogICdiYXNoIC1uICIkVjM1NF9SRVBPL2xvY2FsL2xpYmV4ZWMvYXd0YXJjaHkvcG93ZXItcHJvZmlsZS1oZWxwZXIiIFxcXG4nCiAgIiAgfHwgZmFpbCAndjMuNS40IHJlcGFpcmVkIFNvbnkgaGVscGVyIGZhaWxlZCBCYXNoIHN5bnRheCB2YWxpZGF0aW9uJ1xuIgogICdyZXBhaXJfdjM1NF9zb255X2JhdHRlcnlfZGlzYWJsZV9yZXBvICIkVjM1M19DT05UUk9MX1JFUE8iIHYzLjUuM1xuJwogICdjbXAgLXMgLS0gIiRWMzU0X0ZJWFRVUkUiICIkVjM1M19DT05UUk9MX1JFUE8vbG9jYWwvbGliZXhlYy9hd3RhcmNoeS9wb3dlci1wcm9maWxlLWhlbHBlciIgXFxcbicKICAiICB8fCBmYWlsICd2My41LjQgU29ueSByZXBhaXIgY2hhbmdlZCBhIG5vbi12My41LjQgcmVsZWFzZSB0YXJnZXQnXG4iCiAgJ1xuJwogICJwcmludGYgJyVzXFxuJyAnUEFTUzogYmF0dGVyeSBjYXJlIGNvbnRyb2xzIHZhbGlkYXRlLCBwZXJzaXN0LCB2ZXJpZnksIGFuZCByb2xsIGJhY2sgc2FmZWx5LiciKV0KZm9yIG9sZCwgbmV3IGluIHJlcGxhY2VtZW50czoKICAgIGNvdW50ID0gdGV4dC5jb3VudChvbGQpCiAgICBpZiBjb3VudCAhPSAxOgogICAgICAgIHJhaXNlIFN5c3RlbUV4aXQoZiJleHBlY3RlZCBvbmUgdGVzdCBpbnNlcnRpb24gYW5jaG9yLCBmb3VuZCB7Y291bnR9OiB7b2xkWzo4MF0hcn0iKQogICAgdGV4dCA9IHRleHQucmVwbGFjZShvbGQsIG5ldywgMSkKcGF0aC53cml0ZV90ZXh0KHRleHQsIGVuY29kaW5nPSJ1dGYtOCIpCg==' | base64 -d >/tmp/patch-test.py
+          python3 /tmp/patch-test.py
           bash -n tests/test-battery-care-control.sh
       - name: Commit regression to target branch
         run: |
