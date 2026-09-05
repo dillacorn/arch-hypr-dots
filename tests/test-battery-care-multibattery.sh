@@ -147,7 +147,7 @@ EOF
 FAKE_LENOVO_MIXED
 chmod 0755 "$FAKE_BIN/tlp-stat"
 
-# The privileged verifier must reject a partial multi-battery transition too.
+# Both verifier directions must require every reported Lenovo battery to agree.
 # Otherwise a successful BAT0 write could hide a failed BAT1 write or vice versa.
 VERIFY_HELPER="$TMP/power-profile-helper-source"
 sed '/^main "\$@"$/d' "$TEST_HELPER" >"$VERIFY_HELPER"
