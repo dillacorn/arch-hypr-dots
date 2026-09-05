@@ -90,7 +90,7 @@ second_path="$(env "${common_env[@]}" "$BACKEND" thumb 1)"
 [[ "$(grep -c '^magick$' "$log")" -eq 1 ]] \
   || fail 'cached thumbnail was rendered more than once'
 
-# A thumbnail is untrusted decoded clipboard media: bound frame count, memory, mapped cache, disk cache, and wall time.
+# ImageMagick can spill pixel-cache work from RAM/map into disk, so all three resource classes are bounded.
 grep -Eq '^magick-args:.*-limit memory 256MiB.*-limit map 256MiB.*-limit disk 512MiB.*\.tmp\[0\].*png:' "$log" \
   || fail 'ImageMagick thumbnail render is not limited to the first frame with bounded memory/map/disk resources'
 grep -Fq 'THUMB_TIMEOUT="${THUMB_TIMEOUT:-2s}"' "$BACKEND" \
