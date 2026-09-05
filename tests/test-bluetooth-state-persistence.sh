@@ -5,6 +5,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 HELPER="${ROOT}/config/hypr/scripts/quickshell_bluetooth_state.sh"
 MENU="${ROOT}/config/quickshell/awtarchy/BluetoothMenu.qml"
 MANAGER="${ROOT}/config/hypr/scripts/quickshell.sh"
+MANAGED_HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
 tmp="$(mktemp -d)"
 trap 'rm -rf -- "$tmp"' EXIT
 
@@ -108,6 +109,32 @@ grep -Fq 'bluetoothPowerProbe.exec([bluetoothStateScript, "actual"])' "$MENU"
 grep -Fq 'id: bluetoothPowerProbe' "$MENU"
 grep -Fq 'stdout: StdioCollector' "$MENU"
 
+grep -Fq 'property bool bluetoothPowerProbePending: false' "$MENU" || {
+    printf '%s\n' 'Bluetooth power-state refreshes can still be dropped while a probe is already running.' >&2
+    exit 1
+}
+probe_refresh_block="$(sed -n '/function refreshActualAdapterPower()/,/^    }/p' "$MENU")"
+grep -Fq 'if (bluetoothPowerProbe.running)' <<<"$probe_refresh_block" || {
+    printf '%s\n' 'Bluetooth refresh does not detect an in-flight power probe.' >&2
+    exit 1
+}
+grep -Fq 'bluetoothPowerProbePending = true;' <<<"$probe_refresh_block" || {
+    printf '%s\n' 'Bluetooth refresh does not preserve a refresh requested during an in-flight probe.' >&2
+    exit 1
+}
+grep -Fq 'bluetoothPowerProbePending = false;' <<<"$probe_refresh_block" || {
+    printf '%s\n' 'Bluetooth refresh does not clear the pending marker before starting the authoritative probe.' >&2
+    exit 1
+}
+grep -Fq 'if (root.bluetoothPowerProbePending)' "$MENU" || {
+    printf '%s\n' 'Bluetooth power probe does not schedule a queued authoritative refresh after it exits.' >&2
+    exit 1
+}
+grep -Fq 'Qt.callLater(() => root.refreshActualAdapterPower());' "$MENU" || {
+    printf '%s\n' 'Bluetooth power probe does not re-run the queued authoritative refresh.' >&2
+    exit 1
+}
+
 open_block="$(sed -n '/function openForScreen(targetScreen)/,/^    }/p' "$MENU")"
 grep -Fq 'refreshActualAdapterPower();' <<<"$open_block" || {
     printf '%s\n' 'Bluetooth flyout does not refresh the authoritative BlueZ power state when opened.' >&2
@@ -127,5 +154,11 @@ if grep -Fq 'signal.SIGKILL' "$MANAGER" || grep -Fq 'kill -KILL' "$MANAGER"; the
     printf '%s\n' 'Quickshell updater still contains a SIGKILL fallback.' >&2
     exit 1
 fi
+
+current_entry="$(sha256sum "$MENU" | awk '{print $1}')"$'\t'".config/quickshell/awtarchy/BluetoothMenu.qml"
+grep -Fqx -- "$current_entry" "$MANAGED_HISTORY" || {
+    printf 'Managed history is missing current BluetoothMenu.qml hash: %s\n' "$current_entry" >&2
+    exit 1
+}
 
 printf '%s\n' 'Bluetooth persistence/state-sync regression test: PASS'

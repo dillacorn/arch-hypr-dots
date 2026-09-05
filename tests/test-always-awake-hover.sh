@@ -22,7 +22,7 @@ require_file_text() {
 require_file_text "$TOOLTIP" 'readonly property bool idleControl:' \
     'bar tooltip does not identify the idle-eye control'
 require_file_text "$TOOLTIP" 'text: "Always Awake"' \
-    'idle-eye hover card does not put Always Awake first'
+    'idle-eye hover card does not expose the Always Awake control'
 require_file_text "$TOOLTIP" 'text: "Keeps the session unlocked and displays on after 4 hours idle."' \
     'idle-eye hover card does not explain the stronger mode'
 require_file_text "$TOOLTIP" '"Enable Always Awake (Not Recommended)"' \
@@ -40,8 +40,21 @@ require_file_text "$TOOLTIP" 'acceptedButtons: Qt.NoButton' \
 require_file_text "$BAR" 'onRightClicked: SystemState.toggleIdle()' \
     'horizontal idle eye no longer keeps right-click as normal Keep Awake'
 
+# On a top bar, Keep Awake stays nearest the bar and the stronger Always Awake
+# action moves below it. Bottom, left, and right bars keep the existing ordering.
+require_file_text "$TOOLTIP" 'readonly property string barPosition:' \
+    'idle-eye hover card does not resolve the bar edge'
+require_file_text "$TOOLTIP" 'BarState.positionFor(monitorName)' \
+    'idle-eye hover card does not use the monitor-specific bar position'
+require_file_text "$TOOLTIP" 'readonly property bool keepAwakeFirst: idleControl && barPosition === "top"' \
+    'top-bar hover card does not select Keep Awake as the near-bar section'
+require_file_text "$TOOLTIP" 'Layout.row: root.keepAwakeFirst ? 2 : 0' \
+    'Always Awake section does not move away from a top bar'
+require_file_text "$TOOLTIP" 'Layout.row: root.keepAwakeFirst ? 0 : 2' \
+    'Keep Awake section does not move next to a top bar'
+
 current_entry="$(sha256sum "$TOOLTIP" | awk '{print $1}')"$'\t'".config/quickshell/awtarchy/BarTooltip.qml"
 grep -Fqx -- "$current_entry" "$MANAGED_HISTORY" \
-    || fail 'managed history is missing current stock hash for BarTooltip.qml'
+    || fail "managed history is missing current stock hash for BarTooltip.qml: $current_entry"
 
-printf '%s\n' 'PASS: idle-eye hover exposes the warned Always Awake control without replacing normal clicks.'
+printf '%s\n' 'PASS: idle-eye hover exposes the warned Always Awake control with edge-aware ordering.'

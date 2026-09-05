@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Layouts
 import Quickshell
 
 Item {
@@ -12,6 +13,12 @@ Item {
     property bool popupHovered: false
     readonly property bool idleControl: ["", "", ""].indexOf(
         String(anchorItem ? anchorItem.label : "")) >= 0
+    readonly property string barPosition: {
+        const item = anchorItem;
+        const monitorName = item && item.monitorName ? String(item.monitorName) : "";
+        return monitorName.length > 0 ? BarState.positionFor(monitorName) : "";
+    }
+    readonly property bool keepAwakeFirst: idleControl && barPosition === "top"
 
     implicitWidth: 0
     implicitHeight: 0
@@ -120,81 +127,96 @@ Item {
                 acceptedButtons: Qt.NoButton
                 onContainsMouseChanged: root.popupHovered = containsMouse
 
-                Column {
+                GridLayout {
                     anchors.fill: parent
                     anchors.margins: 10
-                    spacing: 5
+                    columns: 1
+                    rowSpacing: 5
+                    columnSpacing: 0
 
-                    Text {
-                        width: parent.width
-                        text: "Always Awake"
-                        color: Theme.urgent
-                        font.family: Theme.fontFamily
-                        font.pixelSize: 11
-                        font.bold: true
-                    }
-
-                    Text {
-                        width: parent.width
-                        text: "Keeps the session unlocked and displays on after 4 hours idle."
-                        color: Theme.muted
-                        font.family: Theme.fontFamily
-                        font.pixelSize: 10
-                        wrapMode: Text.Wrap
-                    }
-
-                    Rectangle {
-                        width: parent.width
-                        height: 28
-                        color: alwaysAwakeMouse.containsMouse
-                            ? Theme.strongHover
-                            : (SystemState.idleMode === "always-awake"
-                                ? Theme.subtleActive : Theme.subtleHover)
-                        radius: 0
+                    ColumnLayout {
+                        Layout.row: root.keepAwakeFirst ? 2 : 0
+                        Layout.fillWidth: true
+                        spacing: 5
 
                         Text {
-                            anchors.centerIn: parent
-                            text: SystemState.idleMode === "always-awake" ? "Disable Always Awake" : "Enable Always Awake (Not Recommended)"
-                            color: SystemState.idleMode === "always-awake" ? Theme.foreground : Theme.urgent
+                            Layout.fillWidth: true
+                            text: "Always Awake"
+                            color: Theme.urgent
                             font.family: Theme.fontFamily
                             font.pixelSize: 11
                             font.bold: true
                         }
 
-                        MouseArea {
-                            id: alwaysAwakeMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            acceptedButtons: Qt.LeftButton
-                            onClicked: SystemState.setIdleMode(
-                                SystemState.idleMode === "always-awake" ? "off" : "always-awake")
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Keeps the session unlocked and displays on after 4 hours idle."
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 10
+                            wrapMode: Text.Wrap
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 28
+                            color: alwaysAwakeMouse.containsMouse
+                                ? Theme.strongHover
+                                : (SystemState.idleMode === "always-awake"
+                                    ? Theme.subtleActive : Theme.subtleHover)
+                            radius: 0
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: SystemState.idleMode === "always-awake" ? "Disable Always Awake" : "Enable Always Awake (Not Recommended)"
+                                color: SystemState.idleMode === "always-awake" ? Theme.foreground : Theme.urgent
+                                font.family: Theme.fontFamily
+                                font.pixelSize: 11
+                                font.bold: true
+                            }
+
+                            MouseArea {
+                                id: alwaysAwakeMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                acceptedButtons: Qt.LeftButton
+                                onClicked: SystemState.setIdleMode(
+                                    SystemState.idleMode === "always-awake" ? "off" : "always-awake")
+                            }
                         }
                     }
 
                     Rectangle {
-                        width: parent.width
-                        height: 1
+                        Layout.row: 1
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 1
                         color: Theme.active
                     }
 
-                    Text {
-                        width: parent.width
-                        text: SystemState.idleMode === "keep-awake" ? "Keep Awake: On" : "Keep Awake: Off"
-                        color: Theme.foreground
-                        font.family: Theme.fontFamily
-                        font.pixelSize: 12
-                        font.bold: true
-                    }
+                    ColumnLayout {
+                        Layout.row: root.keepAwakeFirst ? 0 : 2
+                        Layout.fillWidth: true
+                        spacing: 5
 
-                    Text {
-                        width: parent.width
-                        text: SystemState.idleMode === "always-awake"
-                            ? "Recommended: click the eye to disable Always Awake. Click again for normal Keep Awake."
-                            : "Recommended: click the eye to toggle Keep Awake. The 4-hour safety stays active."
-                        color: Theme.muted
-                        font.family: Theme.fontFamily
-                        font.pixelSize: 10
-                        wrapMode: Text.Wrap
+                        Text {
+                            Layout.fillWidth: true
+                            text: SystemState.idleMode === "keep-awake" ? "Keep Awake: On" : "Keep Awake: Off"
+                            color: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 12
+                            font.bold: true
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: SystemState.idleMode === "always-awake"
+                                ? "Recommended: click the eye to disable Always Awake. Click again for normal Keep Awake."
+                                : "Recommended: click the eye to toggle Keep Awake. The 4-hour safety stays active."
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 10
+                            wrapMode: Text.Wrap
+                        }
                     }
                 }
             }

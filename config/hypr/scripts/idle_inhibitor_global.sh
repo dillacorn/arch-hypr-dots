@@ -239,7 +239,7 @@ print_status() {
     mode="$(current_mode)"
 
     if [[ "$mode" == always-awake ]]; then
-        printf '{"text":"","mode":"always-awake","tooltip":"Always Awake: activated\\nAll idle actions, including the 4-hour display safeguard, are blocked\\nUse Quick Settings or click the bar eye to deactivate","class":["activated","always-awake"]}\n'
+        printf '{"text":"","mode":"always-awake","tooltip":"Always Awake: activated\\nAll idle actions, including the 4-hour display safeguard, are blocked\\nClick the bar eye to deactivate","class":["activated","always-awake"]}\n'
     elif [[ "$mode" == keep-awake ]]; then
         printf '{"text":"","mode":"keep-awake","tooltip":"Keep Awake: activated\\nSleep is blocked; after 4 hours idle Awtarchy may lock and turn displays off\\nClick to deactivate","class":["activated","keep-awake"]}\n'
     elif managed_process_active; then
