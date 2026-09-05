@@ -67,10 +67,12 @@ jobs:
           if body.count(placeholder) != 1:
               raise SystemExit('expected exactly one v3.5.4 post-release placeholder')
 
-          replacement = '''- Sony battery-care OFF verification now accepts the `sony_laptop` driver's raw `battery_care_limiter=0` as TLP's logical `100% (off)` state, preventing a successful OFF request from being falsely rejected and rolled back to the prior limit.
-- Stable v3.5.4 updates receive this fix through a tag-scoped maintenance-runtime repair that patches the immutable v3.5.4 helper source before the root-owned Power Mode helper is reconciled; the published `v3.5.4` tag itself remains unchanged at `4a7cb022c7001650cfe77467ba94d548e6d0e34a`.
-- Real-machine validation on Sony hardware with TLP 1.10.2 confirmed Battery Care OFF changed the raw limiter from `80` to `0`, removed Awtarchy's managed threshold file, and `tlp-stat -b` reported `0 (100) [%]`.
-- PR #144 passed all 14 pull-request workflows on exact tested head `74478811896306665dd1868e750c32833431dcd5`; all eight push workflows then passed on merged `main` commit `eb0f9bf39c87fa97d0948b87be00220d1a8ba4be`.'''
+          replacement = '\n'.join([
+              "- Sony battery-care OFF verification now accepts the `sony_laptop` driver's raw `battery_care_limiter=0` as TLP's logical `100% (off)` state, preventing a successful OFF request from being falsely rejected and rolled back to the prior limit.",
+              "- Stable v3.5.4 updates receive this fix through a tag-scoped maintenance-runtime repair that patches the immutable v3.5.4 helper source before the root-owned Power Mode helper is reconciled; the published `v3.5.4` tag itself remains unchanged at `4a7cb022c7001650cfe77467ba94d548e6d0e34a`.",
+              "- Real-machine validation on Sony hardware with TLP 1.10.2 confirmed Battery Care OFF changed the raw limiter from `80` to `0`, removed Awtarchy's managed threshold file, and `tlp-stat -b` reported `0 (100) [%]`.",
+              "- PR #144 passed all 14 pull-request workflows on exact tested head `74478811896306665dd1868e750c32833431dcd5`; all eight push workflows then passed on merged `main` commit `eb0f9bf39c87fa97d0948b87be00220d1a8ba4be`.",
+          ])
 
           updated = body.replace(placeholder, replacement, 1)
           Path('/tmp/v354-notes.md').write_text(updated)
