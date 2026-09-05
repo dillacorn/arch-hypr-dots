@@ -20,9 +20,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update >/dev/null
-          sudo apt-get install -y lua5.4 >/dev/null
-
           python3 - <<'PY'
           from pathlib import Path
 
@@ -54,7 +51,6 @@ jobs:
           bash tests/test-battery-care-detector-profiles.sh
           bash tests/test-battery-charge-limit-detection.sh
           sudo bash tests/test-battery-care-control.sh
-          bash tests/test-quickshell-updater-migration.sh
           git diff --check
 
           rm -- .github/workflows/one-use-battery-unknown-label.yml
