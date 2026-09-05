@@ -147,7 +147,7 @@ for managed_file in "$BAR" "$QUICK_SETTINGS" "$SYSTEM_STATE"; do
     repo_rel="${managed_file#$ROOT/}"
     current_entry="$(sha256sum "$managed_file" | awk '{print $1}')"$'\t'".${repo_rel}"
     grep -Fqx -- "$current_entry" "$MANAGED_HISTORY" \
-        || fail "managed history is missing current stock hash for $repo_rel"
+        || fail "managed history is missing current stock hash for $repo_rel: $current_entry"
 done
 
 # Exercise the long-idle action with controlled backends. Keep Awake must allow
