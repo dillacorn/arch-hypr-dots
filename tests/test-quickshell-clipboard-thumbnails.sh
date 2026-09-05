@@ -43,6 +43,10 @@ cat >"${TMPD}/bin/magick" <<'EOF'
 set -euo pipefail
 
 printf 'magick\n' >>"$AWTARCHY_CLIPBOARD_TEST_LOG"
+printf 'magick-args:%s\n' "$*" >>"$AWTARCHY_CLIPBOARD_TEST_LOG"
+if [[ ${AWTARCHY_MAGICK_HANG:-0} == 1 ]]; then
+  sleep 5
+fi
 output="${!#}"
 output="${output#png:}"
 printf 'fake thumbnail' >"$output"
@@ -85,8 +89,24 @@ second_path="$(env "${common_env[@]}" "$BACKEND" thumb 1)"
 [[ "$(grep -c '^magick$' "$log")" -eq 1 ]] \
   || fail 'cached thumbnail was rendered more than once'
 
+grep -Eq '^magick-args:.*-limit memory 256MiB.*-limit map 256MiB.*\.tmp\[0\].*png:' "$log" \
+  || fail 'ImageMagick thumbnail render is not limited to the first frame with bounded memory/map resources'
+grep -Fq 'THUMB_TIMEOUT="${THUMB_TIMEOUT:-2s}"' "$BACKEND" \
+  || fail 'clipboard thumbnail rendering has no dedicated timeout'
+grep -Fq 'timeout --kill-after=1s "$THUMB_TIMEOUT" magick' "$BACKEND" \
+  || fail 'ImageMagick thumbnail rendering is not time bounded'
+
+rm -f -- "$first_path"
+set +e
+AWTARCHY_MAGICK_HANG=1 THUMB_TIMEOUT=0.05s \
+  timeout 1 env "${common_env[@]}" "$BACKEND" thumb 1 >/dev/null 2>&1
+hang_rc=$?
+set -e
+[[ "$hang_rc" -ne 124 ]] \
+  || fail 'a hung ImageMagick thumbnail render escaped the backend timeout'
+
 if env "${common_env[@]}" "$BACKEND" thumb 0 >/dev/null 2>&1; then
   fail 'text clipboard entry unexpectedly produced an image thumbnail'
 fi
 
-printf '%s\n' 'PASS: clipboard thumbnails load lazily and reuse the cache.'
+printf '%s\n' 'PASS: clipboard thumbnails load lazily, reuse the cache, and bound ImageMagick work.'
