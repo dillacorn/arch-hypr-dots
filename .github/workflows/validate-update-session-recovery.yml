@@ -19,3 +19,111 @@ jobs:
         run: |
           bash -n tests/test-awtarchy-update-session.sh
           bash tests/test-awtarchy-update-session.sh
+
+  release_v353_notes:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.head_ref == 'ops/v353-post-release-notes' &&
+      github.event.pull_request.title == 'Update v3.5.3 post-release notes'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: ops/v353-post-release-notes
+          fetch-depth: 0
+
+      - name: Update and verify v3.5.3 release body only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EXPECTED_TAG_SHA: 89f8ac995bcaa29835bf5fa9c9164a2712eb1e00
+          MAINTENANCE_MAIN_SHA: 7f96e7141dda9ea9d14fa255c9e18ba48143c049
+        run: |
+          set -Eeuo pipefail
+
+          gh api "repos/${REPO}/releases/tags/v3.5.3" > /tmp/v353-before.json
+          gh api "repos/${REPO}/git/ref/tags/v3.5.3" --jq '.object.sha' > /tmp/v353-tag-before
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          before = json.loads(Path('/tmp/v353-before.json').read_text(encoding='utf-8'))
+          tag_sha = Path('/tmp/v353-tag-before').read_text(encoding='utf-8').strip()
+          expected_tag_sha = os.environ['EXPECTED_TAG_SHA']
+
+          expected_metadata = {
+              'id': 382750353,
+              'tag_name': 'v3.5.3',
+              'name': 'Awtarchy v3.5.3 Quickshell',
+              'target_commitish': expected_tag_sha,
+              'draft': False,
+              'prerelease': False,
+          }
+          actual_metadata = {key: before.get(key) for key in expected_metadata}
+          if actual_metadata != expected_metadata:
+              raise SystemExit(f'unexpected v3.5.3 release metadata before edit: {actual_metadata!r}')
+          if tag_sha != expected_tag_sha:
+              raise SystemExit(f'v3.5.3 tag moved before release-body edit: {tag_sha}')
+
+          marker = '## Post-release updates\n\n_Placeholder for possible tested post-release patches to v3.5.3._\n'
+          body = str(before.get('body') or '')
+          if body.count(marker) != 1:
+              raise SystemExit('v3.5.3 post-release placeholder is missing or ambiguous')
+
+          replacement = '\n'.join([
+              '## Post-release updates',
+              '',
+              '### Updater reliability and package recovery',
+              '',
+              '- Notification-launched updates now run their held terminal in an independent waited session so stopping or restarting Quickshell cannot tear down the updater terminal.',
+              '- Package reconciliation no longer pre-authenticates or keeps an Awtarchy-managed reusable sudo ticket alive for an AUR-only plan. Privileged Awtarchy work authenticates only when the actual root operation runs.',
+              '- Awtarchy still invalidates sudo before each upstream `aur-scan install` so a previous package cannot leave reusable authorization exposed while the next PKGBUILD begins. Stock `aur-scanner` / `makepkg -si` may therefore request sudo independently during dependency and package installation.',
+              '- Updates now check root-filesystem headroom and can conservatively prune stale pacman cache entries with `paccache -rk2` before refusing to continue below the hard free-space minimum.',
+              '- Real-machine validation completed the Git-testing update and package reconciliation for `obs-pipewire-audio-capture-bin`; the AUR-only plan added no Awtarchy pre-authentication prompt, upstream makepkg prompts occurred as expected, the package installed, and reconciliation completed.',
+              '- PR #138 merged the updater-session, disk-recovery, and sudo-boundary changes after all 22 PR workflows passed on exact tested head `34569609ede7225ed6bfe4ae0f4f1bcc0072af48`.',
+              '- PR #139 added the v3.5.3 tag-scoped notifier delivery repair after all 14 PR workflows passed on exact tested head `bf9f48629276f801c692ca0b9773b62fea5e8b22`. All eight push workflows then passed on exact maintenance `main` commit `7f96e7141dda9ea9d14fa255c9e18ba48143c049`.',
+              '- The published `v3.5.3` tag remains unchanged at `89f8ac995bcaa29835bf5fa9c9164a2712eb1e00`. Updater/runtime maintenance is delivered from current `main`, while the managed notifier correction is applied by the v3.5.3 tag-scoped post-release target repair.',
+              '',
+          ])
+          updated = body.replace(marker, replacement, 1)
+          Path('/tmp/v353-notes.md').write_text(updated, encoding='utf-8')
+          Path('/tmp/v353-expected-body').write_text(updated, encoding='utf-8')
+          Path('/tmp/v353-metadata-before.json').write_text(
+              json.dumps(actual_metadata, sort_keys=True), encoding='utf-8'
+          )
+          PY
+
+          gh release edit v3.5.3 --repo "$REPO" --notes-file /tmp/v353-notes.md
+
+          gh api "repos/${REPO}/releases/tags/v3.5.3" > /tmp/v353-after.json
+          gh api "repos/${REPO}/git/ref/tags/v3.5.3" --jq '.object.sha' > /tmp/v353-tag-after
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          after = json.loads(Path('/tmp/v353-after.json').read_text(encoding='utf-8'))
+          expected_body = Path('/tmp/v353-expected-body').read_text(encoding='utf-8')
+          before_metadata = json.loads(Path('/tmp/v353-metadata-before.json').read_text(encoding='utf-8'))
+          after_metadata = {key: after.get(key) for key in before_metadata}
+          tag_sha = Path('/tmp/v353-tag-after').read_text(encoding='utf-8').strip()
+
+          if str(after.get('body') or '') != expected_body:
+              raise SystemExit('published v3.5.3 body does not exactly match intended post-release notes')
+          if after_metadata != before_metadata:
+              raise SystemExit(f'v3.5.3 release metadata changed unexpectedly: {after_metadata!r}')
+          if tag_sha != os.environ['EXPECTED_TAG_SHA']:
+              raise SystemExit(f'v3.5.3 tag moved during release-body edit: {tag_sha}')
+          if os.environ['MAINTENANCE_MAIN_SHA'] not in expected_body:
+              raise SystemExit('post-release notes lost the verified maintenance main SHA')
+          print('PASS: v3.5.3 release body updated; release metadata and tag SHA unchanged.')
+          PY
+
+      - name: Remove one-use helper branch
+        if: success()
+        run: git push origin --delete ops/v353-post-release-notes
