@@ -120,6 +120,49 @@ jq -e '
 ' <<<"$json" >/dev/null \
   || fail "mixed BAT0/BAT1 stop thresholds were collapsed into one global state: $json"
 
+# Current TLP Lenovo supports BAT0 and BAT1 charge_types independently. A mixed
+# Long_Life/Standard state must not be collapsed to globally On just because the
+# first matching line happens to be Long_Life.
+rm -f -- \
+  "$POWER_ROOT/BAT0/charge_control_start_threshold" \
+  "$POWER_ROOT/BAT0/charge_control_end_threshold" \
+  "$POWER_ROOT/BAT1/charge_control_start_threshold" \
+  "$POWER_ROOT/BAT1/charge_control_end_threshold"
+
+cat >"$FAKE_BIN/tlp-stat" <<'FAKE_LENOVO_MIXED'
+#!/usr/bin/env bash
+set -euo pipefail
+cat <<'EOF'
++++ Battery Care
+Plugin: lenovo
+Supported features: charge threshold
+Parameter value range:
+* STOP_CHARGE_THRESH_BAT0/1: 0(Standard)..1(Long_Life) -- charge_types
++++ Battery Status: BAT0
+/sys/class/power_supply/BAT0/charge_types = Standard [Long_Life]
++++ Battery Status: BAT1
+/sys/class/power_supply/BAT1/charge_types = [Standard] Long_Life
+EOF
+FAKE_LENOVO_MIXED
+chmod 0755 "$FAKE_BIN/tlp-stat"
+
+json="$(
+  AWTARCHY_POWER_SUPPLY_ROOT="$POWER_ROOT" \
+  AWTARCHY_TLP_STAT_BIN="$FAKE_BIN/tlp-stat" \
+  AWTARCHY_TLP_CONFIG_DIR="$CONF_DIR" \
+  AWTARCHY_TLP_USER_CONFIG="$USER_CONF" \
+  AWTARCHY_SONY_BATTERY_CARE_PATH="$TMP/no-sony-limiter" \
+    bash "$DETECTOR" --status-json
+)"
+
+jq -e '
+  .plugin == "lenovo"
+  and .mixed_stop_thresholds == true
+  and .target == null
+  and .enabled == null
+' <<<"$json" >/dev/null \
+  || fail "mixed Lenovo BAT0/BAT1 charge types were collapsed into one global state: $json"
+
 grep -Fq 'readonly property bool mixedStopThresholds: Boolean(statusData.mixed_stop_thresholds)' "$CARD" \
   || fail 'Battery Care QML does not expose mixed stop-threshold state'
 grep -Fq 'mixed_stop_thresholds: false' "$CARD" \
