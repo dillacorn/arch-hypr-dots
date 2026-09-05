@@ -90,6 +90,7 @@ jobs:
           if aur_install.find('sudo -k') < 0 or aur_install.find('sudo -k') > aur_install.find('"$AUR_SCAN_BIN" install'):
               raise SystemExit('per-package AUR sudo invalidation was lost')
 
+          text = text.rstrip('\n') + '\n'
           path.write_text(text, encoding='utf-8')
 
           launcher = Path('local/bin/awtarchy')
