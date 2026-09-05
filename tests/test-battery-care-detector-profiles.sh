@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 DETECTOR="${ROOT}/config/hypr/scripts/quickshell_battery_care.sh"
+CARD="${ROOT}/config/quickshell/awtarchy/BatteryCareCard.qml"
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 
@@ -75,6 +76,12 @@ assert_validated_stop_range asus '' '1..100(default)' 1 100
 assert_validated_range cros-ec '0..99' '1..100(default)' 0 99 1 100
 assert_validated_range dell '50..95(default)' '55..100(default)' 50 95 55 100
 
+# Current ASUS kernels may report no threshold data after boot until the first
+# successful write. Capability remains valid, but the current state is unknown.
+json="$(run_profile asus 'charge threshold' '' '1..100(default)' '/sys/class/power_supply/BAT0/charge_control_end_threshold = (no data) [%]')"
+assert_json "$json" '.plugin == "asus" and .supported == true and .writable == true and .compatibility == "validated" and .target == null and .enabled == null' \
+    'ASUS no-data state was incorrectly fabricated as an active or disabled limit'
+
 json="$(run_profile huawei 'charge thresholds' '0(default)..99' '1..100(default)' '/sys/devices/platform/huawei-wmi/charge_control_thresholds = 75 80')"
 assert_json "$json" '.supported == true and .writable == true and .compatibility == "validated" and .mode == "range" and .start_min == 0 and .start_max == 99 and .stop_min == 1 and .stop_max == 100 and .target == 80 and .enabled == true' \
     'Huawei threshold pair was not normalized correctly'
@@ -131,8 +138,19 @@ json="$(run_profile generic 'none available' '' '' '')"
 assert_json "$json" '.supported == false and .writable == false and .compatibility == "unsupported" and .backend == "none"' \
     'TLP generic backend was not kept unsupported'
 
-# QML filters logical 100/off out of selectable target buttons.
-grep -Fq 'value >= 1 && value < 100' "$ROOT/config/quickshell/awtarchy/BatteryCareCard.qml" \
+# QML filters logical 100/off out of selectable target buttons and must not
+# label an unreadable/indeterminate state as definitely Off.
+grep -Fq 'value >= 1 && value < 100' "$CARD" \
     || fail 'Battery Care QML no longer excludes logical 100/off from numeric target buttons'
+python3 - "$CARD" <<'PY'
+from pathlib import Path
+import sys
+text = Path(sys.argv[1]).read_text()
+start = text.index('    function statusControlLabel() {')
+end = text.index('\n    function openAuthorization(', start)
+block = text[start:end]
+if 'return "Unknown";' not in block:
+    raise SystemExit('Battery Care labels an unreadable current limit as Off instead of Unknown')
+PY
 
 printf '%s\n' 'PASS: current TLP battery detector vendor profiles are classified and normalized.'
