@@ -208,10 +208,16 @@ battery_status_policy_user() {
   printf '%s\n' "$candidate"
 }
 
+battery_status_policy_content() {
+  local policy_file="$1"
+  run_root /usr/bin/cat -- "$policy_file"
+}
+
 battery_status_policy_is_current() {
-  local user="$1" policy_file owner mode dir_owner dir_mode expected_rule
+  local user="$1" policy_file owner mode dir_owner dir_mode expected_rule expected_content content
   policy_file="${SUDOERS_DIR}/awtarchy-battery-status-${user}"
   expected_rule="${user} ALL=(root) NOPASSWD: ${BATTERY_STATUS_HELPER_DESTINATION} \"\""
+  expected_content="${BATTERY_STATUS_POLICY_MARKER}"$'\n'"${expected_rule}"
 
   [[ -d $SUDOERS_DIR && ! -L $SUDOERS_DIR ]] || return 1
   dir_owner="$(/usr/bin/stat -c %u -- "$SUDOERS_DIR" 2>/dev/null)" || return 1
@@ -223,14 +229,13 @@ battery_status_policy_is_current() {
   owner="$(/usr/bin/stat -c %u -- "$policy_file" 2>/dev/null)" || return 1
   mode="$(/usr/bin/stat -c %a -- "$policy_file" 2>/dev/null)" || return 1
   [[ $owner == 0 && $mode == 440 ]] || return 1
-  /usr/bin/grep -Fxq -- "$BATTERY_STATUS_POLICY_MARKER" "$policy_file" || return 1
-  /usr/bin/grep -Fxq -- "$expected_rule" "$policy_file" || return 1
-  [[ $(/usr/bin/wc -l <"$policy_file") -eq 2 ]] || return 1
+  content="$(battery_status_policy_content "$policy_file" 2>/dev/null)" || return 1
+  [[ $content == "$expected_content" ]] || return 1
   run_root /usr/sbin/visudo -cf "$policy_file" >/dev/null 2>&1
 }
 
 install_battery_status_policy() {
-  local user policy_file expected_rule temporary dir_owner dir_mode
+  local user policy_file expected_rule temporary dir_owner dir_mode content
   user="$(battery_status_policy_user)"
   policy_file="${SUDOERS_DIR}/awtarchy-battery-status-${user}"
   expected_rule="${user} ALL=(root) NOPASSWD: ${BATTERY_STATUS_HELPER_DESTINATION} \"\""
@@ -251,7 +256,9 @@ install_battery_status_policy() {
   if [[ -e $policy_file || -L $policy_file ]]; then
     [[ -f $policy_file && ! -L $policy_file ]] \
       || die "Refusing unsafe Battery Care sudoers policy: $policy_file"
-    /usr/bin/grep -Fxq -- "$BATTERY_STATUS_POLICY_MARKER" "$policy_file" \
+    content="$(battery_status_policy_content "$policy_file" 2>/dev/null)" \
+      || die "Cannot read existing Battery Care sudoers policy: $policy_file"
+    [[ ${content%%$'\n'*} == "$BATTERY_STATUS_POLICY_MARKER" ]] \
       || die "Refusing to replace non-Awtarchy sudoers policy: $policy_file"
   fi
 
