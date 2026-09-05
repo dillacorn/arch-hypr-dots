@@ -1,0 +1,81 @@
+name: One-use Sony v3.5.4 post-release patch bridge
+
+on:
+  push:
+    branches: [automation/sony-v354-postrelease-patch]
+    paths: [.github/workflows/one-use-sony-v354-postrelease-patch.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  add-postrelease-regression:
+    if: >-
+      github.repository == 'dillacorn/awtarchy' &&
+      github.actor == 'dillacorn'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: fix/sony-battery-disable
+          fetch-depth: 0
+      - name: Guard exact target head
+        run: test "$(git rev-parse HEAD)" = "91bebb2b1362c2e44d89ca7f0f048554005c5474"
+      - name: Add v3.5.4 delivery regression
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tests/test-battery-care-control.sh')
+          text = path.read_text(encoding='utf-8')
+          replacements = [
+              ('CARD="${ROOT}/config/quickshell/awtarchy/BatteryCareCard.qml"\nTMP="$(mktemp -d)"', 'CARD="${ROOT}/config/quickshell/awtarchy/BatteryCareCard.qml"\nRUNTIME="${ROOT}/local/share/awtarchy/awtarchy-runtime.sh"\nTMP="$(mktemp -d)"'),
+              ('require_file "$CARD"\n\nrequire_source "$HELPER"', 'require_file "$CARD"\nrequire_file "$RUNTIME"\n\nrequire_source "$HELPER"'),
+              ("require_source \"$DETECTOR\" 'target' 'detector does not expose observed target'\n", """require_source \"$DETECTOR\" 'target' 'detector does not expose observed target'
+
+require_source \"$RUNTIME\" 'repair_v354_sony_battery_disable_repo()' 'runtime has no v3.5.4 Sony battery helper repair'
+require_source \"$RUNTIME\" '[[ \"$tag\" == \"v3.5.4\" ]] || return 0' 'v3.5.4 Sony battery repair is not tag scoped'
+require_source \"$RUNTIME\" 'repair_v354_sony_battery_disable_repo \"$repo_dir\" \"$tag\"' 'stable update path does not repair the v3.5.4 helper source'
+repair_line=\"$(grep -nF 'repair_v354_sony_battery_disable_repo \"$repo_dir\" \"$tag\"' \"$RUNTIME\" | tail -n1 | cut -d: -f1)\"
+reconcile_line=\"$(grep -nF 'reconcile_power_profile_backend \"$repo_dir\"' \"$RUNTIME\" | tail -n1 | cut -d: -f1)\"
+[[ \"$repair_line\" =~ ^[0-9]+$ && \"$reconcile_line\" =~ ^[0-9]+$ && \"$repair_line\" -lt \"$reconcile_line\" ]] \\
+  || fail 'v3.5.4 Sony battery repair does not run before the release helper is reconciled'
+"""),
+              ("grep -Fxq 'STOP_CHARGE_THRESH_BAT0=80' \"$MANAGED\" || fail 'previous managed config was not restored after readback failure'\n\nprintf '%s\\n' 'PASS: battery care controls validate, persist, verify, and roll back safely.'", """grep -Fxq 'STOP_CHARGE_THRESH_BAT0=80' \"$MANAGED\" || fail 'previous managed config was not restored after readback failure'
+
+V354_FIXTURE=\"$TMP/v354-power-profile-helper\"
+V354_REPO=\"$TMP/v354-repo\"
+V353_CONTROL_REPO=\"$TMP/v353-control-repo\"
+mkdir -p -- \"$V354_REPO/local/libexec/awtarchy\" \"$V353_CONTROL_REPO/local/libexec/awtarchy\"
+git -c safe.directory=\"$ROOT\" -C \"$ROOT\" show v3.5.4:local/libexec/awtarchy/power-profile-helper >\"$V354_FIXTURE\"
+cp -- \"$V354_FIXTURE\" \"$V354_REPO/local/libexec/awtarchy/power-profile-helper\"
+cp -- \"$V354_FIXTURE\" \"$V353_CONTROL_REPO/local/libexec/awtarchy/power-profile-helper\"
+repair_definition=\"$(sed -n '/^repair_v354_sony_battery_disable_repo() {/,/^}/p' \"$RUNTIME\")\"
+[[ -n \"$repair_definition\" ]] || fail 'could not extract v3.5.4 Sony battery repair function'
+log() { :; }
+die() { fail \"$*\"; }
+eval \"$repair_definition\"
+repair_v354_sony_battery_disable_repo \"$V354_REPO\" v3.5.4
+cmp -s -- \"$HELPER\" \"$V354_REPO/local/libexec/awtarchy/power-profile-helper\" || fail 'v3.5.4 post-release repair did not reconstruct the tested Sony helper'
+bash -n \"$V354_REPO/local/libexec/awtarchy/power-profile-helper\" || fail 'v3.5.4 repaired Sony helper failed Bash syntax validation'
+repair_v354_sony_battery_disable_repo \"$V353_CONTROL_REPO\" v3.5.3
+cmp -s -- \"$V354_FIXTURE\" \"$V353_CONTROL_REPO/local/libexec/awtarchy/power-profile-helper\" || fail 'v3.5.4 Sony repair changed a non-v3.5.4 release target'
+
+printf '%s\\n' 'PASS: battery care controls validate, persist, verify, and roll back safely.'"""),
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one test insertion anchor, found {count}: {old[:80]!r}')
+              text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+          bash -n tests/test-battery-care-control.sh
+      - name: Commit regression to target branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tests/test-battery-care-control.sh
+          git commit -m 'Test v3.5.4 Sony battery fix delivery'
+          git push origin HEAD:fix/sony-battery-disable
+      - name: Verify regression fails before delivery code
+        run: sudo bash tests/test-battery-care-control.sh
