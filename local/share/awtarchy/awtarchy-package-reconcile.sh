@@ -722,6 +722,9 @@ install_selected_aur_packages() {
       continue
     fi
 
+    if (( EUID != 0 )); then
+      sudo -k
+    fi
     log "Installing AUR package through upstream aur-scanner: ${pkg}"
     if ! "$AUR_SCAN_BIN" install "$pkg" --noconfirm; then
       warn "AUR package failed: ${pkg}. Continuing with remaining package actions."
