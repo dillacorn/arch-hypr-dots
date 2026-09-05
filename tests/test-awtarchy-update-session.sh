@@ -67,49 +67,41 @@ for needle in ordered:
         raise SystemExit(f"stable update flow is missing ordered step: {needle}")
     position = next_position
 
-# Package reconciliation must authenticate only after Apply-plan approval, keep
-# that credential alive during trusted package-manager work, recover low disk
-# space before installations, then explicitly discard it before any AUR build.
-require = function_body(reconciler, "require_sudo")
-if "sudo -v" not in require:
-    raise SystemExit("package reconciler does not authenticate sudo")
-
-keepalive = function_body(reconciler, "start_package_privilege_keepalive")
-for required in ("sudo -n -v", "PACKAGE_SUDO_KEEPALIVE_PID"):
-    if required not in keepalive:
-        raise SystemExit(f"package sudo keepalive is missing: {required}")
-
-stop = function_body(reconciler, "stop_package_privilege_keepalive")
-for required in ("kill", "wait", "PACKAGE_SUDO_KEEPALIVE_PID"):
-    if required not in stop:
-        raise SystemExit(f"package sudo cleanup is missing: {required}")
+# Package reconciliation must not keep a reusable sudo ticket alive or
+# authenticate merely because an AUR-only plan was approved. Privileged
+# Awtarchy work should authenticate only when the actual root operation runs.
+for forbidden in (
+    "PACKAGE_SUDO_KEEPALIVE_PID",
+    "start_package_privilege_keepalive",
+    "stop_package_privilege_keepalive",
+    "resume_package_privilege_keepalive",
+):
+    if forbidden in reconciler:
+        raise SystemExit(f"stale package sudo keepalive remains: {forbidden}")
 
 recovery = function_body(reconciler, "recover_package_disk_headroom")
-for required in ("root_free_mib", "paccache", "-rk2", "sudo -n"):
+for required in ("root_free_mib", "paccache", "-rk2", "as_root"):
     if required not in recovery:
         raise SystemExit(f"package-plan disk recovery is missing: {required}")
+if "sudo -n" in recovery:
+    raise SystemExit("package disk recovery still depends on a pre-authenticated sudo ticket")
 
 confirm = "confirm_yes_no 'Apply this package plan?' 0"
 confirm_pos = reconciler.find(confirm)
-require_pos = reconciler.find("require_sudo", confirm_pos)
-keepalive_pos = reconciler.find("start_package_privilege_keepalive", require_pos)
-recovery_pos = reconciler.find("recover_package_disk_headroom", keepalive_pos)
-aur_stop_pos = reconciler.find("stop_package_privilege_keepalive", recovery_pos)
-aur_invalidate_pos = reconciler.find("sudo -k", aur_stop_pos)
-aur_pos = reconciler.find("ensure_aur_scanner", aur_invalidate_pos)
+recovery_pos = reconciler.find("recover_package_disk_headroom", confirm_pos)
+arch_pos = reconciler.find('if (( ${#install_arch[@]} )); then', recovery_pos)
 for label, pos in (
     ("plan confirmation", confirm_pos),
-    ("sudo authentication", require_pos),
-    ("trusted keepalive", keepalive_pos),
     ("disk recovery", recovery_pos),
-    ("AUR keepalive stop", aur_stop_pos),
-    ("AUR sudo invalidation", aur_invalidate_pos),
-    ("AUR scanner", aur_pos),
+    ("first package action", arch_pos),
 ):
     if pos < 0:
         raise SystemExit(f"package reconciliation flow is missing: {label}")
-if not confirm_pos < require_pos < keepalive_pos < recovery_pos < aur_stop_pos < aur_invalidate_pos < aur_pos:
-    raise SystemExit("package sudo/disk/AUR security boundary is out of order")
+if not confirm_pos < recovery_pos < arch_pos:
+    raise SystemExit("package approval/disk/action ordering is incorrect")
+pre_action = reconciler[confirm_pos:arch_pos]
+if "require_sudo" in pre_action or "sudo -v" in pre_action:
+    raise SystemExit("AUR-only package approval still authenticates sudo before privileged work")
 
 # Each individual aur-scan invocation must invalidate any ticket left by the
 # previous package's final pacman install. Otherwise the next PKGBUILD could run
