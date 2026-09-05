@@ -6,6 +6,7 @@ on:
       - hardening/tlp-battery-compatibility
     paths:
       - '.github/battery-compatibility-trigger'
+      - '.github/battery-compatibility-trigger-2'
 
 permissions:
   contents: write
@@ -87,7 +88,8 @@ jobs:
             .github/scripts/apply-battery-compatibility-dev.py \
             .github/scripts/apply-battery-compatibility-dev-v2.py \
             .github/scripts/finalize-battery-compatibility-dev.py \
-            .github/battery-compatibility-trigger
+            .github/battery-compatibility-trigger \
+            .github/battery-compatibility-trigger-2
           git config user.name dillacorn
           git config user.email 28743863+dillacorn@users.noreply.github.com
           git add -A
