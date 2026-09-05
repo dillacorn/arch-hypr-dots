@@ -55,6 +55,6 @@ require_file_text "$TOOLTIP" 'Layout.row: root.keepAwakeFirst ? 0 : 2' \
 
 current_entry="$(sha256sum "$TOOLTIP" | awk '{print $1}')"$'\t'".config/quickshell/awtarchy/BarTooltip.qml"
 grep -Fqx -- "$current_entry" "$MANAGED_HISTORY" \
-    || fail 'managed history is missing current stock hash for BarTooltip.qml'
+    || fail "managed history is missing current stock hash for BarTooltip.qml: $current_entry"
 
 printf '%s\n' 'PASS: idle-eye hover exposes the warned Always Awake control with edge-aware ordering.'
