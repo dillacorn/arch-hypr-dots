@@ -111,6 +111,15 @@ for label, pos in (
 if not confirm_pos < require_pos < keepalive_pos < recovery_pos < aur_stop_pos < aur_invalidate_pos < aur_pos:
     raise SystemExit("package sudo/disk/AUR security boundary is out of order")
 
+# Each individual aur-scan invocation must invalidate any ticket left by the
+# previous package's final pacman install. Otherwise the next PKGBUILD could run
+# before makepkg reaches its own sudo -k boundary.
+aur_install = function_body(reconciler, "install_selected_aur_packages")
+per_package_k = aur_install.find("sudo -k")
+per_package_install = aur_install.find('"$AUR_SCAN_BIN" install')
+if per_package_k < 0 or per_package_install < 0 or per_package_k > per_package_install:
+    raise SystemExit("each aur-scan install is not preceded by sudo credential invalidation")
+
 # Do not suppress makepkg's deliberate `sudo -k` behavior by injecting a global
 # PACMAN_AUTH override. That would expose a reusable sudo ticket to PKGBUILD code.
 if "PACMAN_AUTH" in reconciler or "PACMAN_AUTH" in launcher:
@@ -125,4 +134,4 @@ if '"$SCRIPT_PATH" run-stable-update' not in launch:
     raise SystemExit("stable notification launch no longer routes through run-stable-update")
 PY
 
-printf '%s\n' 'PASS: notification detachment, approval-timed sudo, trusted keepalive cleanup, low-disk recovery, and AUR sudo isolation are enforced.'
+printf '%s\n' 'PASS: notification detachment, approval-timed sudo, trusted keepalive cleanup, low-disk recovery, and per-package AUR sudo isolation are enforced.'
