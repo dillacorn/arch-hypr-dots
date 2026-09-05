@@ -111,6 +111,14 @@ jobs:
               text = text.replace(old, new_readback)
           helper.write_text(text)
 
+          multi = Path('tests/test-battery-care-multibattery.sh')
+          m = multi.read_text()
+          old_multi = ''': >"$LOG"\nAWTARCHY_TEST_LOG="$LOG" rollback_apply absent "$TMP/no-backup"\n'''
+          new_multi = ''': >"$LOG"\n# This fixture isolates all-pack fullcharge fanout; rollback readback itself is\n# covered by test-battery-care-rollback-verification.sh.\nverify_disabled_state() { return 0; }\nAWTARCHY_TEST_LOG="$LOG" rollback_apply absent "$TMP/no-backup" dell\n'''
+          if m.count(old_multi) != 1:
+              raise SystemExit('multi-battery rollback fixture anchor not found exactly once')
+          multi.write_text(m.replace(old_multi, new_multi, 1))
+
           workflow = Path('.github/workflows/validate-awtarchy.yml')
           w = workflow.read_text()
           edits = [
@@ -136,7 +144,10 @@ jobs:
 
           bash -n local/libexec/awtarchy/power-profile-helper
           bash -n tests/test-battery-care-rollback-verification.sh
-          shellcheck local/libexec/awtarchy/power-profile-helper tests/test-battery-care-rollback-verification.sh
+          bash -n tests/test-battery-care-multibattery.sh
+          shellcheck local/libexec/awtarchy/power-profile-helper \
+            tests/test-battery-care-rollback-verification.sh \
+            tests/test-battery-care-multibattery.sh
           bash tests/test-battery-care-rollback-verification.sh
           bash tests/test-battery-care-multibattery.sh
           sudo bash tests/test-battery-care-control.sh
@@ -152,6 +163,7 @@ jobs:
           git config user.email 'actions@users.noreply.github.com'
           git add local/libexec/awtarchy/power-profile-helper \
                   tests/test-battery-care-rollback-verification.sh \
+                  tests/test-battery-care-multibattery.sh \
                   .github/workflows/validate-awtarchy.yml \
                   .github/workflows/one-use-battery-rollback-red.yml \
                   .github/workflows/one-use-battery-rollback-fix.yml
