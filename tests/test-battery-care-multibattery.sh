@@ -159,6 +159,15 @@ if verify_disabled_state lenovo; then
   fail 'Lenovo disabled-state verification accepted mixed Long_Life/Standard batteries'
 fi
 
+# TLP documents that an omitted battery argument targets only the main battery.
+# Rollback from an absent managed config must therefore restore every reported pack.
+: >"$LOG"
+AWTARCHY_TEST_LOG="$LOG" rollback_apply absent "$TMP/no-backup"
+grep -Fxq 'fullcharge BAT0' "$LOG" || fail 'rollback did not restore BAT0 full charge'
+grep -Fxq 'fullcharge BAT1' "$LOG" || fail 'rollback did not restore BAT1 full charge'
+[[ "$(grep -Fc 'fullcharge' "$LOG")" -eq 2 ]] \
+  || fail 'rollback issued an unexpected number of fullcharge operations'
+
 json="$(
   AWTARCHY_POWER_SUPPLY_ROOT="$POWER_ROOT" \
   AWTARCHY_TLP_STAT_BIN="$FAKE_BIN/tlp-stat" \
