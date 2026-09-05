@@ -10,6 +10,8 @@ on:
       - 'config/quickshell/awtarchy/BatteryCareCard.qml'
       - 'local/libexec/awtarchy/power-profile-helper'
       - 'tests/test-battery-care-compatibility.sh'
+      - 'tests/test-battery-care-vendor-semantics.sh'
+      - 'tests/test-battery-care-write-gating.sh'
       - '.github/workflows/validate-battery-compatibility-dev.yml'
 
 permissions:
@@ -26,20 +28,18 @@ jobs:
         run: |
           bash -n config/hypr/scripts/quickshell_battery_care.sh
           bash -n local/libexec/awtarchy/power-profile-helper
-          if [[ -f tests/test-battery-care-compatibility.sh ]]; then
-            bash -n tests/test-battery-care-compatibility.sh
-          fi
+          bash -n tests/test-battery-care-compatibility.sh
+          bash -n tests/test-battery-care-vendor-semantics.sh
+          bash -n tests/test-battery-care-write-gating.sh
       - name: Battery compatibility ShellCheck
         run: |
           shellcheck config/hypr/scripts/quickshell_battery_care.sh
           shellcheck local/libexec/awtarchy/power-profile-helper
-          if [[ -f tests/test-battery-care-compatibility.sh ]]; then
-            shellcheck tests/test-battery-care-compatibility.sh
-          fi
+          shellcheck tests/test-battery-care-compatibility.sh
+          shellcheck tests/test-battery-care-vendor-semantics.sh
+          shellcheck tests/test-battery-care-write-gating.sh
       - name: Battery compatibility regression
         run: |
-          if [[ -f tests/test-battery-care-compatibility.sh ]]; then
-            bash tests/test-battery-care-compatibility.sh
-          else
-            echo 'compatibility test not added yet'
-          fi
+          bash tests/test-battery-care-compatibility.sh
+          bash tests/test-battery-care-vendor-semantics.sh
+          bash tests/test-battery-care-write-gating.sh
