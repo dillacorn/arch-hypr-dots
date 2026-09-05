@@ -7995,6 +7995,42 @@ PY_V353_UPDATE_NOTIFIER
   log "Applied v3.5.3 update-notifier post-release repair to generated target."
 }
 
+repair_v354_sony_battery_disable_repo() {
+  local repo_dir="$1" tag="$2"
+  local helper="${repo_dir}/local/libexec/awtarchy/power-profile-helper"
+
+  [[ "$tag" == "v3.5.4" ]] || return 0
+  [[ -f "$helper" && ! -L "$helper" ]]     || die "v3.5.4 post-release battery helper source is unavailable."
+
+  python3 - "$helper" <<'PY_V354_SONY_BATTERY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+old = """    huawei)
+      /usr/bin/grep -Eq 'charge_control_thresholds[^=]*=[[:space:]]*[0-9]+[[:space:]]+100([^0-9]|$)' <<<"$report"
+      ;;
+    *)
+"""
+new = """    huawei)
+      /usr/bin/grep -Eq 'charge_control_thresholds[^=]*=[[:space:]]*[0-9]+[[:space:]]+100([^0-9]|$)' <<<"$report"
+      ;;
+    sony)
+      /usr/bin/grep -Eq 'battery_care_limiter[^=]*=[[:space:]]*0([^0-9]|$)' <<<"$report"
+      ;;
+    *)
+"""
+if new in text:
+    raise SystemExit(0)
+if text.count(old) != 1:
+    raise SystemExit("v3.5.4 Sony battery helper repair could not find the expected release source")
+path.write_text(text.replace(old, new, 1), encoding="utf-8")
+PY_V354_SONY_BATTERY
+  /usr/bin/bash -n "$helper"     || die "v3.5.4 post-release Sony battery helper failed Bash syntax validation."
+  log "Applied v3.5.4 Sony battery-disable post-release repair to release helper source."
+}
+
 prepare_quickshell_update_target() {
   local target_home="$1" rel
 
@@ -8704,6 +8740,8 @@ main() {
   tar -xzf "$tgz" -C "$TMPD"
   repo_dir="${TMPD}/${top}"
   [[ -d "$repo_dir" ]] || die "Extracted repo directory is missing"
+
+  repair_v354_sony_battery_disable_repo "$repo_dir" "$tag"
 
   target_home="${TMPD}/target-home"
   TARGET_STAGE_HOME="$target_home"
