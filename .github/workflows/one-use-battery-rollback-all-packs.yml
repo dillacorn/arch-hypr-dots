@@ -25,20 +25,10 @@ jobs:
 
           path = Path('local/libexec/awtarchy/power-profile-helper')
           text = path.read_text()
-          old = '''  else
-            /usr/bin/rm -f -- "$MANAGED_CONFIG"
-            "$TLP" fullcharge >/dev/null 2>&1 || true
-          fi
-          }
-          '''
-          new = '''  else
-            /usr/bin/rm -f -- "$MANAGED_CONFIG"
-            battery_fullcharge_all >/dev/null 2>&1 || true
-          fi
-          }
-          '''
+          old = '    "$TLP" fullcharge >/dev/null 2>&1 || true'
+          new = '    battery_fullcharge_all >/dev/null 2>&1 || true'
           if text.count(old) != 1:
-              raise SystemExit('rollback fullcharge block not found exactly once')
+              raise SystemExit('rollback fullcharge call not found exactly once')
           path.write_text(text.replace(old, new, 1))
           PY
 
