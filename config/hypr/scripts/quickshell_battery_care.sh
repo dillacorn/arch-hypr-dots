@@ -121,6 +121,13 @@ stop_spec=""
 tlp_output=""
 tlp_available=false
 
+battery_plugin_writable() {
+    case "$1" in
+        asus|cros-ec|dell|huawei|thinkpad|thinkpad-legacy|lenovo|lenovo-legacy|lg|macbook|msi|samsung|sony|system76|toshiba|tuxedo|wilco-ec) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 if [[ -x "$TLP_STAT_BIN" ]]; then
     tlp_available=true
     tlp_output="$("$TLP_STAT_BIN" -b 2>/dev/null || true)"
@@ -177,6 +184,8 @@ fi
 mode="unsupported"
 backend="none"
 supported=false
+writable=false
+compatibility="unsupported"
 start_min=null
 start_max=null
 stop_min=null
@@ -211,6 +220,12 @@ parse_presets() {
 if [[ "$tlp_supported" == true ]]; then
     supported=true
     backend="tlp"
+    if battery_plugin_writable "$plugin_lower"; then
+        writable=true
+        compatibility="validated"
+    else
+        compatibility="unvalidated"
+    fi
 
     case "$plugin_lower" in
         lenovo|lenovo-legacy)
@@ -246,8 +261,10 @@ if [[ "$tlp_supported" == true ]]; then
             fi
             ;;
     esac
-elif [[ "$sysfs_supported" == true ]]; then
+elif [[ "$sysfs_supported" == true && "$plugin_lower" != "generic" ]]; then
     supported=true
+    writable=false
+    compatibility="unvalidated"
     backend="sysfs"
     mode="sysfs"
 fi
@@ -370,8 +387,15 @@ if [[ "$supported" == true ]]; then
     esac
 fi
 
+if [[ "$compatibility" == "unvalidated" && "$backend" == "tlp" ]]; then
+    summary="Battery Care detected but not validated by Awtarchy"
+    detail="Write controls are disabled for this backend."
+fi
+
 jq -cn \
     --argjson supported "$supported" \
+    --argjson writable "$writable" \
+    --arg compatibility "$compatibility" \
     --arg backend "$backend" \
     --arg plugin "$plugin" \
     --arg mode "$mode" \
@@ -396,6 +420,8 @@ jq -cn \
     --argjson batteries "$batteries" '
     {
         supported:$supported,
+        writable:$writable,
+        compatibility:$compatibility,
         backend:$backend,
         plugin:$plugin,
         mode:$mode,

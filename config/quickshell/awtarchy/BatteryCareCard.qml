@@ -34,6 +34,7 @@ Rectangle {
     readonly property bool limitEnabled: statusData.enabled === true
         || (statusData.enabled !== false && Boolean(statusData.managed_config))
     readonly property bool controlsAvailable: Boolean(statusData.supported)
+        && Boolean(statusData.writable)
         && String(statusData.backend || "") === "tlp"
         && !Boolean(statusData.config_conflict)
         && (fixedUnknownTarget || root.hasNumericControl())
@@ -53,6 +54,8 @@ Rectangle {
     function emptyStatus() {
         return ({
             supported: false,
+            writable: false,
+            compatibility: "unsupported",
             backend: "none",
             plugin: "",
             mode: "unsupported",

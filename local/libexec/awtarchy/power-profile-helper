@@ -125,9 +125,9 @@ battery_parse_spec() {
     <<<"$report" | /usr/bin/head -n1
 }
 
-battery_plugin_allowed() {
+battery_plugin_writable() {
   case "$1" in
-    macbook|asus|cros-ec|dell|huawei|thinkpad|thinkpad-legacy|lenovo|lenovo-legacy|lg|lg-legacy|msi|samsung|sony|system76|toshiba|tuxedo|wilco-ec) return 0 ;;
+    macbook|asus|cros-ec|dell|huawei|thinkpad|thinkpad-legacy|lenovo|lenovo-legacy|lg|msi|samsung|sony|system76|toshiba|tuxedo|wilco-ec) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -140,7 +140,7 @@ battery_require_capability() {
   features="${features,,}"
 
   [[ -n "$plugin" ]] || fail 'TLP did not report a battery-care plugin'
-  battery_plugin_allowed "$plugin" || fail "unsupported TLP battery-care plugin: $plugin"
+  battery_plugin_writable "$plugin" || fail "unsupported TLP battery-care plugin: $plugin"
   if [[ "$features" != *"charge threshold"* && "$features" != *"charge type"* ]]; then
     fail 'TLP does not report charge-threshold support on this hardware'
   fi
@@ -252,7 +252,7 @@ battery_validate_target() {
 
 battery_dual_config_plugin() {
   case "$1" in
-    asus|cros-ec|dell|thinkpad|thinkpad-legacy|msi|toshiba) return 0 ;;
+    asus|cros-ec|dell|thinkpad|thinkpad-legacy|msi|toshiba|lenovo|tuxedo) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -421,10 +421,10 @@ battery_set_target() {
     lenovo|lenovo-legacy)
       fail 'this Lenovo uses a hardware-defined conservation mode; use the Battery Health toggle instead of a percentage target'
       ;;
-    lg|lg-legacy)
+    lg)
       [[ "$target" == 80 ]] || fail 'LG battery care mode only supports an 80% health target'
       start_value=0
-      stop_value=1
+      stop_value=80
       ;;
     samsung)
       [[ "$target" == 80 ]] || fail 'Samsung battery life extender only supports an 80% health target'
