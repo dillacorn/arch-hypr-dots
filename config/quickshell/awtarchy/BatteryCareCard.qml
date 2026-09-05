@@ -267,7 +267,7 @@ Rectangle {
             return "Off";
         if (statusData.managed_config)
             return "Managed";
-        return "Off";
+        return "Unknown";
     }
 
     function openAuthorization(action, target, message) {
