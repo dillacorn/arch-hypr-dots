@@ -33,6 +33,10 @@ text = text.replace('TLP_STAT="/usr/bin/tlp-stat"', f'TLP_STAT="{sys.argv[3]}"')
 text = text.replace('CONFIG_DIR="/etc/tlp.d"', f'CONFIG_DIR="{sys.argv[4]}"')
 text = text.replace('USER_CONFIG="/etc/tlp.conf"', f'USER_CONFIG="{sys.argv[5]}"')
 text = text.replace("(( EUID == 0 )) || fail 'must run as root'", ': # test copy: root check bypassed')
+text = text.replace(
+    '  battery_require_config_path_safe\n\n  temporary=',
+    '  : # test copy: config path safety bypassed\n\n  temporary='
+)
 path.write_text(text)
 PY
 
