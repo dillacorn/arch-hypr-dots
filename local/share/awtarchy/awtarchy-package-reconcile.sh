@@ -67,7 +67,6 @@ SYSTEM_TYPE="unknown"
 LY_STATUS="not installed"
 CHEESE_REPLACEMENT_NEEDED=0
 AUR_SCAN_BIN="/usr/bin/aur-scan"
-PACKAGE_SUDO_KEEPALIVE_PID=""
 if [[ ${AWTARCHY_TEST_MODE:-0} == 1 && -n ${AWTARCHY_AUR_SCAN_BIN:-} ]]; then
   AUR_SCAN_BIN="$AWTARCHY_AUR_SCAN_BIN"
 fi
@@ -597,40 +596,6 @@ selected_values() {
   done
 }
 
-require_sudo() {
-  if (( EUID == 0 )); then
-    return 0
-  fi
-  have sudo || die "sudo is required to apply package reconciliation."
-  sudo -v || die "sudo authentication failed; no package changes were applied."
-}
-
-stop_package_privilege_keepalive() {
-  local pid="${PACKAGE_SUDO_KEEPALIVE_PID:-}"
-  PACKAGE_SUDO_KEEPALIVE_PID=""
-  [[ $pid =~ ^[1-9][0-9]*$ ]] || return 0
-  kill "$pid" >/dev/null 2>&1 || true
-  wait "$pid" 2>/dev/null || true
-}
-
-start_package_privilege_keepalive() {
-  (( EUID != 0 )) || return 0
-  [[ -z ${PACKAGE_SUDO_KEEPALIVE_PID:-} ]] || return 0
-  (
-    while sleep "${AWTARCHY_SUDO_KEEPALIVE_SECONDS:-45}"; do
-      sudo -n -v >/dev/null 2>&1 || break
-    done
-  ) &
-  PACKAGE_SUDO_KEEPALIVE_PID=$!
-}
-
-resume_package_privilege_keepalive() {
-  (( EUID != 0 )) || return 0
-  sudo -n -v >/dev/null 2>&1 || return 0
-  start_package_privilege_keepalive
-  trap stop_package_privilege_keepalive EXIT HUP INT TERM
-}
-
 root_free_mib() {
   local available_kib=""
   available_kib="$(/usr/bin/df -Pk / 2>/dev/null | awk 'NR == 2 { print $4 }')"
@@ -659,10 +624,8 @@ recover_package_disk_headroom() {
 
   if [[ -n $paccache_bin ]]; then
     log "Root filesystem has ${free_mib} MiB free; pruning old pacman cache entries while keeping two package versions..."
-    if (( EUID == 0 )); then
-      "$paccache_bin" -rk2
-    elif ! sudo -n "$paccache_bin" -rk2; then
-      die "Automatic pacman cache pruning failed after sudo authorization."
+    if ! as_root "$paccache_bin" -rk2; then
+      die "Automatic pacman cache pruning failed."
     fi
     free_mib="$(root_free_mib)" \
       || die "Could not re-check free space after pacman cache pruning."
@@ -783,7 +746,6 @@ forget_managed_packages() {
 apply_cheese_snapshot_replacement() {
   (( CHEESE_REPLACEMENT_NEEDED == 1 )) || return 0
 
-  require_sudo
   log "Replacing retired Cheese camera app with Snapshot..."
   if ! package_installed snapshot; then
     as_root pacman -S --needed --noconfirm snapshot
@@ -979,9 +941,6 @@ if (( ${#install_arch[@]} == 0 && ${#selected_aur[@]} == 0 && ${#selected_flatpa
 fi
 
 confirm_yes_no 'Apply this package plan?' 0 || { log 'Package reconciliation canceled.'; exit 0; }
-require_sudo
-start_package_privilege_keepalive
-trap stop_package_privilege_keepalive EXIT HUP INT TERM
 recover_package_disk_headroom
 
 if (( ${#install_arch[@]} )); then
@@ -998,11 +957,6 @@ if (( enable_ly == 1 )); then
 fi
 
 if (( ${#selected_aur[@]} )); then
-  stop_package_privilege_keepalive
-  trap - EXIT HUP INT TERM
-  if (( EUID != 0 )); then
-    sudo -k
-  fi
   log 'AUR build privilege isolation enabled; makepkg may request sudo independently.'
   if ensure_aur_scanner; then
     install_selected_aur_packages "${selected_aur[@]}"
@@ -1010,7 +964,6 @@ if (( ${#selected_aur[@]} )); then
     warn 'aur-scanner is unavailable; recording selected AUR packages as failed and continuing with remaining package actions.'
     FAILED_AUR+=("${selected_aur[@]}")
   fi
-  resume_package_privilege_keepalive
 fi
 
 if (( ${#selected_flatpak[@]} )); then
@@ -1035,6 +988,3 @@ if (( ${#FAILED_AUR[@]} )); then
 else
   log 'Package reconciliation complete.'
 fi
-
-stop_package_privilege_keepalive
-trap - EXIT HUP INT TERM

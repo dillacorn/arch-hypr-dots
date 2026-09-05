@@ -1439,13 +1439,13 @@ main() {
       ensure_latest_updater "$@"
       shift
       offer_package_reconciliation_before_update "$@"
-ensure_update_disk_headroom
-if ! config_release_ready_or_noop "$@"; then
-  return 0
-fi
-run_runtime update-reset-backup --mode preserve "$@"
-reconcile_quickshell_ui_after_update
-;;
+      ensure_update_disk_headroom
+      if ! config_release_ready_or_noop "$@"; then
+        return 0
+      fi
+      run_runtime update-reset-backup --mode preserve "$@"
+      reconcile_quickshell_ui_after_update
+      ;;
     reset)
       reject_stable_testing_overrides "$@"
       protect_git_state_before_updater_refresh "$@"

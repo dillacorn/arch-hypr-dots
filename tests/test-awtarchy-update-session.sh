@@ -126,4 +126,4 @@ if '"$SCRIPT_PATH" run-stable-update' not in launch:
     raise SystemExit("stable notification launch no longer routes through run-stable-update")
 PY
 
-printf '%s\n' 'PASS: notification detachment, approval-timed sudo, trusted keepalive cleanup, low-disk recovery, and per-package AUR sudo isolation are enforced.'
+printf '%s\n' 'PASS: notification detachment, AUR-only no-preauth, low-disk recovery, and per-package AUR sudo isolation are enforced.'
