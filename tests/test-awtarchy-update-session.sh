@@ -39,7 +39,7 @@ for required in ("root_free_mib", "paccache", "-rk2", "sudo -n"):
         raise SystemExit(f"post-package update disk recovery is missing: {required}")
 
 # Opening `awtarchy update` must not authenticate before the user has reviewed
-# and approved a concrete package plan. The package reconciler owns that prompt.
+# and approved a concrete package plan. Privileged work authenticates only when needed.
 main = function_body(launcher, "main")
 update_marker = "    update)"
 update_pos = main.find(update_marker)
