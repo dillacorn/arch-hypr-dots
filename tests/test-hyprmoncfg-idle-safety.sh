@@ -12,6 +12,7 @@ LAUNCH_HANDLER="$ROOT/config/hypr/scripts/launch_handler.sh"
 SYSTEM_STATE="$ROOT/config/quickshell/awtarchy/SystemState.qml"
 QUICK_SETTINGS="$ROOT/config/quickshell/awtarchy/QuickSettings.qml"
 BAR="$ROOT/config/quickshell/awtarchy/Bar.qml"
+BAR_TOOLTIP="$ROOT/config/quickshell/awtarchy/BarTooltip.qml"
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
@@ -21,6 +22,13 @@ fail() {
 require_file_text() {
     local file="$1" needle="$2" message="$3"
     grep -Fq -- "$needle" "$file" || fail "$message"
+}
+
+reject_file_text() {
+    local file="$1" needle="$2" message="$3"
+    if grep -Fq -- "$needle" "$file"; then
+        fail "$message"
+    fi
 }
 
 require_hypr_count() {
@@ -113,10 +121,22 @@ require_file_text "$SYSTEM_STATE" 'property string idleMode: "off"' \
     'Quickshell SystemState does not track the authoritative idle mode'
 require_file_text "$SYSTEM_STATE" 'function setIdleMode(mode)' \
     'Quickshell SystemState cannot explicitly select an idle mode'
-require_file_text "$QUICK_SETTINGS" 'text: "Always Awake"' \
-    'Quick Settings lacks the explicit Always Awake control'
-require_file_text "$QUICK_SETTINGS" 'SystemState.setIdleMode(' \
-    'Quick Settings Always Awake control does not use shared SystemState idle mode'
+
+# Always Awake now belongs only to the idle-eye hover card. Quick Settings must
+# not retain a second control or stale guidance pointing users there.
+reject_file_text "$QUICK_SETTINGS" 'text: "Always Awake"' \
+    'Quick Settings still exposes a duplicate Always Awake control'
+reject_file_text "$QUICK_SETTINGS" 'SystemState.idleMode === "always-awake" ? "On" : "Off"' \
+    'Quick Settings still contains the duplicate Always Awake toggle'
+require_file_text "$BAR_TOOLTIP" 'text: "Always Awake"' \
+    'idle-eye hover card lacks the explicit Always Awake control'
+require_file_text "$BAR_TOOLTIP" 'SystemState.setIdleMode(' \
+    'idle-eye hover card Always Awake control does not use shared SystemState idle mode'
+reject_file_text "$HYPRIDLE_CONF" 'Quick Settings "Always Awake"' \
+    'hypridle guidance still points to the retired Quick Settings Always Awake control'
+reject_file_text "$INHIBITOR" 'Use Quick Settings' \
+    'idle-inhibitor tooltip still points to the retired Quick Settings Always Awake control'
+
 require_file_text "$BAR" 'SystemState.idleMode === "always-awake"' \
     'bar idle indicator does not distinguish Always Awake mode'
 count="$(grep -Fc -- 'normalBackground: SystemState.idleMode === "always-awake" ? Theme.subtleActive : "transparent"' "$BAR" || true)"
