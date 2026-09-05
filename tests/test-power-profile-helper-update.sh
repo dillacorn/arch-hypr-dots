@@ -82,8 +82,79 @@ require_literal "$RECONCILER" 'BATTERY_STATUS_HELPER_SOURCE="${REPO_ROOT}/local/
   'power reconciler does not use the fixed read-only status helper source'
 require_literal "$RECONCILER" 'BATTERY_STATUS_HELPER_DESTINATION="/usr/local/libexec/awtarchy/battery-status-helper"' \
   'power reconciler does not target the fixed read-only status helper path'
+require_literal "$RECONCILER" 'SUDOERS_DIR="/etc/sudoers.d"' \
+  'power reconciler does not pin the sudoers policy directory'
+require_literal "$RECONCILER" 'install_battery_status_helper()' \
+  'power reconciler has no read-only status helper install/repair function'
+require_literal "$RECONCILER" 'install_battery_status_policy()' \
+  'power reconciler has no read-only status policy install/repair function'
 require_literal "$RECONCILER" 'NOPASSWD: ${BATTERY_STATUS_HELPER_DESTINATION} ""' \
   'power reconciler does not restrict passwordless access to the no-argument read-only status helper'
+require_literal "$RECONCILER" '/usr/sbin/visudo -cf' \
+  'power reconciler does not validate the generated battery status sudoers rule'
+
+# Exercise install and repair with a sandboxed copy. The real source keeps fixed
+# system destinations; only this disposable test copy redirects them under /tmp.
+command -v sudo >/dev/null 2>&1 || fail 'sudo is required for status-helper install regression'
+sudo -n true >/dev/null 2>&1 || fail 'noninteractive sudo is required for status-helper install regression'
+policy_user="$(id -un)"
+[[ "$policy_user" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] || fail 'test username is incompatible with sudoers regression'
+mkdir -p -- "$TMP/system/libexec" "$TMP/system/sudoers"
+sudo -n /usr/bin/chown root:root "$TMP/system/libexec" "$TMP/system/sudoers"
+sudo -n /usr/bin/chmod 0755 "$TMP/system/libexec" "$TMP/system/sudoers"
+cp -- "$RECONCILER" "$TMP/reconciler-under-test"
+python3 - "$TMP/reconciler-under-test" "$TMP/system/libexec/battery-status-helper" "$TMP/system/sudoers" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+text = path.read_text()
+replacements = {
+    'BATTERY_STATUS_HELPER_DESTINATION="/usr/local/libexec/awtarchy/battery-status-helper"':
+        f'BATTERY_STATUS_HELPER_DESTINATION="{sys.argv[2]}"',
+    'SUDOERS_DIR="/etc/sudoers.d"': f'SUDOERS_DIR="{sys.argv[3]}"',
+    'main "$@"': ': # test copy: do not run reconciler main',
+}
+for old, new in replacements.items():
+    if text.count(old) != 1:
+        raise SystemExit(f'expected exactly one reconciler anchor: {old}')
+    text = text.replace(old, new)
+path.write_text(text)
+PY
+cat >>"$TMP/reconciler-under-test" <<'EOF_TEST_CALLS'
+install_battery_status_helper
+install_battery_status_policy
+EOF_TEST_CALLS
+
+sudo -n /usr/bin/bash "$TMP/reconciler-under-test"
+installed_status="$TMP/system/libexec/battery-status-helper"
+policy_file="$TMP/system/sudoers/awtarchy-battery-status-${policy_user}"
+[[ -f "$installed_status" && ! -L "$installed_status" && -x "$installed_status" ]] \
+  || fail 'status helper was not installed as an executable regular file'
+[[ $(stat -c %u -- "$installed_status") == 0 && $(stat -c %a -- "$installed_status") == 755 ]] \
+  || fail 'status helper install ownership/mode is not root:0755'
+cmp -s -- "$STATUS_HELPER" "$installed_status" \
+  || fail 'installed status helper does not match trusted repository source'
+[[ -f "$policy_file" && ! -L "$policy_file" ]] || fail 'battery status sudoers policy was not installed'
+[[ $(stat -c %u -- "$policy_file") == 0 && $(stat -c %a -- "$policy_file") == 440 ]] \
+  || fail 'battery status sudoers policy ownership/mode is not root:0440'
+sudo -n /usr/sbin/visudo -cf "$policy_file" >/dev/null \
+  || fail 'installed battery status sudoers policy is invalid'
+grep -Fxq "${policy_user} ALL=(root) NOPASSWD: ${installed_status} \"\"" "$policy_file" \
+  || fail 'installed sudoers policy does not restrict the helper to zero arguments'
+! grep -Fq 'power-profile-helper' "$policy_file" \
+  || fail 'read-only status policy accidentally grants write-helper access'
+
+# Corrupt Awtarchy-owned installed state and prove a second reconciliation repairs
+# both artifacts rather than accepting stale helper/policy content.
+printf '%s\n' '# corrupted' | sudo -n /usr/bin/tee "$installed_status" >/dev/null
+sudo -n /usr/bin/chmod 0755 "$installed_status"
+sudo -n /usr/bin/sed -i 's/NOPASSWD:/PASSWD:/' "$policy_file"
+sudo -n /usr/bin/bash "$TMP/reconciler-under-test"
+cmp -s -- "$STATUS_HELPER" "$installed_status" \
+  || fail 'status helper reconciliation did not repair changed installed content'
+grep -Fxq "${policy_user} ALL=(root) NOPASSWD: ${installed_status} \"\"" "$policy_file" \
+  || fail 'status policy reconciliation did not repair changed Awtarchy-owned content'
+
 require_literal "$DETECTOR" 'BATTERY_STATUS_HELPER="${AWTARCHY_BATTERY_STATUS_HELPER:-/usr/local/libexec/awtarchy/battery-status-helper}"' \
   'Battery Care detector does not use the installed root-only status bridge'
 require_literal "$DETECTOR" 'SUDO_BIN="${AWTARCHY_SUDO_BIN:-/usr/bin/sudo}"' \
