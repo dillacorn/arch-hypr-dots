@@ -322,7 +322,7 @@ rollback_apply() {
     "$TLP" start >/dev/null 2>&1 || true
   else
     /usr/bin/rm -f -- "$MANAGED_CONFIG"
-    "$TLP" fullcharge >/dev/null 2>&1 || true
+    battery_fullcharge_all >/dev/null 2>&1 || true
   fi
 }
 
