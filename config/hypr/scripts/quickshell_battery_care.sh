@@ -280,9 +280,20 @@ enabled=null
 if [[ "$backend" == tlp ]]; then
     case "$plugin_lower" in
         lenovo)
+            lenovo_long_life=false
+            lenovo_standard=false
             if grep -Eq 'charge_types[^=]*=.*\[Long_Life\]' <<<"$tlp_output"; then
+                lenovo_long_life=true
+            fi
+            if grep -Eq 'charge_types[^=]*=.*\[Standard\]' <<<"$tlp_output"; then
+                lenovo_standard=true
+            fi
+
+            if [[ "$lenovo_long_life" == true && "$lenovo_standard" == true ]]; then
+                mixed_stop_thresholds=true
+            elif [[ "$lenovo_long_life" == true ]]; then
                 enabled=true
-            elif grep -Eq 'charge_types[^=]*=.*\[Standard\]' <<<"$tlp_output"; then
+            elif [[ "$lenovo_standard" == true ]]; then
                 enabled=false
                 observed_target=100
             fi
