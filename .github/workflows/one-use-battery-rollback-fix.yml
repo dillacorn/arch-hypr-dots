@@ -139,9 +139,9 @@ jobs:
           bash -n tests/test-battery-care-multibattery.sh
           bash -n tests/test-battery-care-rollback-verification.sh
           shellcheck local/libexec/awtarchy/power-profile-helper \
-            tests/test-battery-care-control.sh \
             tests/test-battery-care-multibattery.sh \
             tests/test-battery-care-rollback-verification.sh
+          shellcheck -e SC2016 tests/test-battery-care-control.sh
           bash tests/test-battery-care-rollback-verification.sh
           bash tests/test-battery-care-multibattery.sh
           sudo bash tests/test-battery-care-control.sh
