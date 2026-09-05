@@ -1,0 +1,74 @@
+name: One-use fullcharge best effort
+
+on:
+  push:
+    branches: [hardening/tlp-battery-compatibility]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.repository == 'dillacorn/awtarchy' && github.actor == 'dillacorn'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: hardening/tlp-battery-compatibility
+          fetch-depth: 0
+      - name: Make full-charge recovery best effort across all packs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('local/libexec/awtarchy/power-profile-helper')
+          text = path.read_text()
+          old = '''battery_fullcharge_all() {
+            local report name any=0
+            report="$(battery_tlp_report)"
+            while IFS= read -r name; do
+              [[ -n "$name" ]] || continue
+              any=1
+              "$TLP" fullcharge "$name" >/dev/null || return 1
+            done < <(/usr/bin/sed -n -E 's/^\\+\\+\\+[[:space:]]+.*Battery Status:[[:space:]]*([^[:space:]]+).*$/\\1/p' <<<"$report")
+            (( any == 1 )) || "$TLP" fullcharge >/dev/null
+          }
+          '''
+          new = '''battery_fullcharge_all() {
+            local report name any=0 rc=0
+            report="$(battery_tlp_report)"
+            while IFS= read -r name; do
+              [[ -n "$name" ]] || continue
+              any=1
+              if ! "$TLP" fullcharge "$name" >/dev/null; then
+                rc=1
+              fi
+            done < <(/usr/bin/sed -n -E 's/^\\+\\+\\+[[:space:]]+.*Battery Status:[[:space:]]*([^[:space:]]+).*$/\\1/p' <<<"$report")
+            if (( any == 0 )) && ! "$TLP" fullcharge >/dev/null; then
+              rc=1
+            fi
+            return "$rc"
+          }
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('battery_fullcharge_all block not found exactly once')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+          bash -n local/libexec/awtarchy/power-profile-helper
+          shellcheck local/libexec/awtarchy/power-profile-helper
+          bash tests/test-battery-care-multibattery.sh
+          sudo bash tests/test-battery-care-control.sh
+          bash tests/test-battery-care-compatibility.sh
+          bash tests/test-battery-care-vendor-semantics.sh
+          git diff --check
+
+          rm -- .github/workflows/one-use-fullcharge-best-effort.yml
+          git config user.name 'Awtarchy CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add local/libexec/awtarchy/power-profile-helper \
+                  .github/workflows/one-use-fullcharge-best-effort.yml
+          git commit -m 'Attempt full-charge recovery on every battery'
+          git push origin HEAD:hardening/tlp-battery-compatibility
