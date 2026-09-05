@@ -16,10 +16,16 @@ jobs:
         with:
           ref: hardening/tlp-battery-compatibility
           fetch-depth: 0
-      - name: Verify rollback hardware state before claiming restoration
+      - name: Apply verified rollback handling
         shell: bash
         run: |
           set -euo pipefail
+
+          if grep -Fq 'battery_fail_after_rollback()' local/libexec/awtarchy/power-profile-helper; then
+            echo 'Verified rollback patch is already present.'
+            exit 0
+          fi
+
           python3 - <<'PY'
           from pathlib import Path
 
@@ -119,35 +125,23 @@ jobs:
               raise SystemExit('multi-battery rollback fixture anchor not found exactly once')
           multi.write_text(m.replace(old_multi, new_multi, 1))
 
-          workflow = Path('.github/workflows/validate-awtarchy.yml')
-          w = workflow.read_text()
-          edits = [
-              (
-                  '          bash -n tests/test-battery-care-multibattery.sh\n',
-                  '          bash -n tests/test-battery-care-multibattery.sh\n          bash -n tests/test-battery-care-rollback-verification.sh\n',
-              ),
-              (
-                  '            tests/test-battery-care-multibattery.sh \\\n',
-                  '            tests/test-battery-care-multibattery.sh \\\n            tests/test-battery-care-rollback-verification.sh \\\n',
-              ),
-              (
-                  '          bash tests/test-battery-care-multibattery.sh\n',
-                  '          bash tests/test-battery-care-multibattery.sh\n          bash tests/test-battery-care-rollback-verification.sh\n',
-              ),
-          ]
-          for old, new in edits:
-              if w.count(old) != 1:
-                  raise SystemExit(f'validate-awtarchy insertion anchor not found exactly once: {old!r}')
-              w = w.replace(old, new, 1)
-          workflow.write_text(w)
+          control = Path('tests/test-battery-care-control.sh')
+          c = control.read_text()
+          old_control = "\nprintf '%s\\n' 'PASS: battery care controls validate, persist, verify, and roll back safely.'\n"
+          new_control = "\nbash \"$ROOT/tests/test-battery-care-rollback-verification.sh\"\n\nprintf '%s\\n' 'PASS: battery care controls validate, persist, verify, and roll back safely.'\n"
+          if c.count(old_control) != 1:
+              raise SystemExit('battery control final PASS anchor not found exactly once')
+          control.write_text(c.replace(old_control, new_control, 1))
           PY
 
           bash -n local/libexec/awtarchy/power-profile-helper
-          bash -n tests/test-battery-care-rollback-verification.sh
+          bash -n tests/test-battery-care-control.sh
           bash -n tests/test-battery-care-multibattery.sh
+          bash -n tests/test-battery-care-rollback-verification.sh
           shellcheck local/libexec/awtarchy/power-profile-helper \
-            tests/test-battery-care-rollback-verification.sh \
-            tests/test-battery-care-multibattery.sh
+            tests/test-battery-care-control.sh \
+            tests/test-battery-care-multibattery.sh \
+            tests/test-battery-care-rollback-verification.sh
           bash tests/test-battery-care-rollback-verification.sh
           bash tests/test-battery-care-multibattery.sh
           sudo bash tests/test-battery-care-control.sh
@@ -157,15 +151,10 @@ jobs:
           bash tests/test-battery-care-write-gating.sh
           git diff --check
 
-          rm -- .github/workflows/one-use-battery-rollback-red.yml
-          rm -- .github/workflows/one-use-battery-rollback-fix.yml
           git config user.name 'Awtarchy CI'
           git config user.email 'actions@users.noreply.github.com'
           git add local/libexec/awtarchy/power-profile-helper \
-                  tests/test-battery-care-rollback-verification.sh \
-                  tests/test-battery-care-multibattery.sh \
-                  .github/workflows/validate-awtarchy.yml \
-                  .github/workflows/one-use-battery-rollback-red.yml \
-                  .github/workflows/one-use-battery-rollback-fix.yml
+                  tests/test-battery-care-control.sh \
+                  tests/test-battery-care-multibattery.sh
           git commit -m 'Verify battery rollback hardware state'
           git push origin HEAD:hardening/tlp-battery-compatibility
