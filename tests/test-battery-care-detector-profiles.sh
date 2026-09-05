@@ -79,14 +79,14 @@ json="$(run_profile huawei 'charge thresholds' '0(default)..99' '1..100(default)
 assert_json "$json" '.supported == true and .writable == true and .compatibility == "validated" and .mode == "range" and .start_min == 0 and .start_max == 99 and .stop_min == 1 and .stop_max == 100 and .target == 80 and .enabled == true' \
     'Huawei threshold pair was not normalized correctly'
 
-assert_validated_stop_range msi 'don\x27t care (hardware enforces stop - 10)' '10..100(default)' 10 100
+assert_validated_stop_range msi "don't care (hardware enforces stop - 10)" '10..100(default)' 10 100
 assert_validated_range system76 '0(off)..99' '1..100(default)' 0 99 1 100
 assert_validated_range thinkpad '0(off)..99' '1..100(default)' 0 99 1 100
 assert_validated_range thinkpad-legacy '2..96(default)' '6..100(default)' 2 96 6 100
 assert_validated_range wilco-ec '50..95(default)' '55..100(default)' 50 95 55 100
 
 # Preset and fixed-percentage plugins.
-json="$(run_profile macbook 'charge threshold' 'don\x27t care (hardware enforces 75, 100)' '80, 100(default)' '/sys/class/power_supply/macsmc-battery/charge_control_end_threshold = 80 [%]')"
+json="$(run_profile macbook 'charge threshold' "don't care (hardware enforces 75, 100)" '80, 100(default)' '/sys/class/power_supply/macsmc-battery/charge_control_end_threshold = 80 [%]')"
 assert_json "$json" '.supported == true and .writable == true and .compatibility == "validated" and .mode == "presets" and (.stop_presets | index(80)) != null and (.stop_presets | index(100)) != null and .target == 80' \
     'MacBook preset semantics were not normalized correctly'
 
