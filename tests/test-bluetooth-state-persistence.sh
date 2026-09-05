@@ -5,6 +5,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 HELPER="${ROOT}/config/hypr/scripts/quickshell_bluetooth_state.sh"
 MENU="${ROOT}/config/quickshell/awtarchy/BluetoothMenu.qml"
 MANAGER="${ROOT}/config/hypr/scripts/quickshell.sh"
+MANAGED_HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
 tmp="$(mktemp -d)"
 trap 'rm -rf -- "$tmp"' EXIT
 
@@ -153,5 +154,11 @@ if grep -Fq 'signal.SIGKILL' "$MANAGER" || grep -Fq 'kill -KILL' "$MANAGER"; the
     printf '%s\n' 'Quickshell updater still contains a SIGKILL fallback.' >&2
     exit 1
 fi
+
+current_entry="$(sha256sum "$MENU" | awk '{print $1}')"$'\t'".config/quickshell/awtarchy/BluetoothMenu.qml"
+grep -Fqx -- "$current_entry" "$MANAGED_HISTORY" || {
+    printf 'Managed history is missing current BluetoothMenu.qml hash: %s\n' "$current_entry" >&2
+    exit 1
+}
 
 printf '%s\n' 'Bluetooth persistence/state-sync regression test: PASS'
