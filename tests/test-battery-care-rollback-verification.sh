@@ -115,4 +115,9 @@ rollback_apply absent "$TMP/no-backup" dell \
   || fail 'verified restoration to full charge was rejected'
 grep -Fxq '100' "$STATE" || fail 'full-charge hardware state was not restored'
 
+# Callers must not tell the user that prior settings were restored if the
+# hardware readback does not prove it.
+grep -Fq 'hardware rollback could not be verified' "$HELPER" \
+  || fail 'helper has no truthful error path for an unverified hardware rollback'
+
 printf '%s\n' 'PASS: battery rollback claims require hardware read-back verification.'
