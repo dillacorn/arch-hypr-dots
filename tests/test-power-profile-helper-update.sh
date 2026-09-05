@@ -100,8 +100,9 @@ require_literal "$RECONCILER" 'NOPASSWD: ${BATTERY_STATUS_HELPER_DESTINATION} \"
 require_literal "$RECONCILER" '/usr/sbin/visudo -cf' \
   'power reconciler does not validate the generated battery status sudoers rule'
 
-# Exercise install and repair with a sandboxed copy. The real source keeps fixed
-# system destinations; only this disposable test copy redirects them under /tmp.
+# Exercise install and repair with a sandboxed copy launched the same way normal
+# updater reconciliation runs: as the desktop user, elevating only individual
+# privileged filesystem/visudo actions through run_root.
 command -v sudo >/dev/null 2>&1 || fail 'sudo is required for status-helper install regression'
 sudo -n true >/dev/null 2>&1 || fail 'noninteractive sudo is required for status-helper install regression'
 policy_user="$(id -un)"
@@ -134,7 +135,7 @@ install_battery_status_helper
 install_battery_status_policy
 EOF_TEST_CALLS
 
-sudo -n /usr/bin/bash "$TMP/reconciler-under-test"
+/usr/bin/bash "$TMP/reconciler-under-test"
 installed_status="$TMP/system/libexec/battery-status-helper"
 policy_file="$TMP/system/sudoers/awtarchy-battery-status-${policy_user}"
 [[ -f "$installed_status" && ! -L "$installed_status" && -x "$installed_status" ]] \
@@ -153,12 +154,12 @@ sudo -n /usr/bin/grep -Fxq "${policy_user} ALL=(root) NOPASSWD: ${installed_stat
 ! sudo -n /usr/bin/grep -Fq 'power-profile-helper' "$policy_file" \
   || fail 'read-only status policy accidentally grants write-helper access'
 
-# Corrupt Awtarchy-owned installed state and prove a second reconciliation repairs
-# both artifacts rather than accepting stale helper/policy content.
+# Corrupt Awtarchy-owned installed state and prove a second unprivileged
+# reconciliation repairs both artifacts rather than accepting stale content.
 printf '%s\n' '# corrupted' | sudo -n /usr/bin/tee "$installed_status" >/dev/null
 sudo -n /usr/bin/chmod 0755 "$installed_status"
 sudo -n /usr/bin/sed -i 's/NOPASSWD:/PASSWD:/' "$policy_file"
-sudo -n /usr/bin/bash "$TMP/reconciler-under-test"
+/usr/bin/bash "$TMP/reconciler-under-test"
 cmp -s -- "$STATUS_HELPER" "$installed_status" \
   || fail 'status helper reconciliation did not repair changed installed content'
 sudo -n /usr/bin/grep -Fxq "${policy_user} ALL=(root) NOPASSWD: ${installed_status} \"\"" "$policy_file" \
