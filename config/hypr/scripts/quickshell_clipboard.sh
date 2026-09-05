@@ -88,7 +88,7 @@ make_thumb() {
     if timeout "$DECODE_TIMEOUT" cliphist decode <<<"$raw" >"$tmp" 2>/dev/null \
         && [[ -s "$tmp" ]] \
         && timeout --kill-after=1s "$THUMB_TIMEOUT" magick \
-            -limit memory 256MiB -limit map 256MiB \
+            -limit memory 256MiB -limit map 256MiB -limit disk 512MiB \
             "${tmp}[0]" -thumbnail "${THUMB_SIZE}x${THUMB_SIZE}>" "png:$png" >/dev/null 2>&1; then
         rm -f -- "$tmp"
         printf '%s\n' "$png"
