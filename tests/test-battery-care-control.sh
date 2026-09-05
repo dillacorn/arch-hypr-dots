@@ -5,6 +5,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 HELPER="${ROOT}/local/libexec/awtarchy/power-profile-helper"
 DETECTOR="${ROOT}/config/hypr/scripts/quickshell_battery_care.sh"
 CARD="${ROOT}/config/quickshell/awtarchy/BatteryCareCard.qml"
+RUNTIME="${ROOT}/local/share/awtarchy/awtarchy-runtime.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 
@@ -30,6 +31,7 @@ require_absent() {
 require_file "$HELPER"
 require_file "$DETECTOR"
 require_file "$CARD"
+require_file "$RUNTIME"
 
 require_source "$HELPER" 'TLP="/usr/bin/tlp"' 'helper does not pin the TLP executable'
 require_source "$HELPER" 'TLP_STAT="/usr/bin/tlp-stat"' 'helper does not pin tlp-stat'
@@ -56,6 +58,14 @@ require_source "$DETECTOR" 'config_conflict' 'detector does not expose external 
 require_source "$DETECTOR" 'managed_config' 'detector does not expose Awtarchy-managed persistence state'
 require_source "$DETECTOR" 'enabled' 'detector does not expose observed charge-limit state'
 require_source "$DETECTOR" 'target' 'detector does not expose observed target'
+
+require_source "$RUNTIME" 'repair_v354_sony_battery_disable_repo()' 'runtime has no v3.5.4 Sony battery helper repair'
+require_source "$RUNTIME" '[[ "$tag" == "v3.5.4" ]] || return 0' 'v3.5.4 Sony battery repair is not tag scoped'
+require_source "$RUNTIME" 'repair_v354_sony_battery_disable_repo "$repo_dir" "$tag"' 'stable update path does not repair the v3.5.4 helper source'
+repair_line="$(grep -nF 'repair_v354_sony_battery_disable_repo "$repo_dir" "$tag"' "$RUNTIME" | tail -n1 | cut -d: -f1)"
+reconcile_line="$(grep -nF 'reconcile_power_profile_backend "$repo_dir"' "$RUNTIME" | tail -n1 | cut -d: -f1)"
+[[ "$repair_line" =~ ^[0-9]+$ && "$reconcile_line" =~ ^[0-9]+$ && "$repair_line" -lt "$reconcile_line" ]] \
+  || fail 'v3.5.4 Sony battery repair does not run before the release helper is reconciled'
 
 TEST_HELPER="$TMP/power-profile-helper"
 cp -- "$HELPER" "$TEST_HELPER"
@@ -193,7 +203,11 @@ case "${1:-}" in
     fi
     ;;
   fullcharge)
-    target=100
+    if [[ "$plugin" == sony ]]; then
+      target=0
+    else
+      target=100
+    fi
     enabled=0
     start=95
     ;;
@@ -237,6 +251,11 @@ if run_helper battery-set 70 >"$TMP/preset.out" 2>"$TMP/preset.err"; then fail '
 run_helper battery-set 80
 grep -Fxq 'START_CHARGE_THRESH_BAT0=0' "$MANAGED" || fail 'stop-only hardware did not use dummy start threshold'
 grep -Fxq 'STOP_CHARGE_THRESH_BAT0=80' "$MANAGED" || fail 'Sony 80% preset was not persisted'
+: >"$LOG"
+run_helper battery-disable
+[[ ! -e "$MANAGED" ]] || fail 'Sony disable left Awtarchy threshold persistence behind'
+grep -Fxq 'fullcharge' "$LOG" || fail 'Sony disable did not restore the vendor full-charge state'
+grep -Fq 'target=0' "$STATE" || fail 'Sony raw limiter 0 was not accepted as the disabled state'
 
 printf '%s\n' 'plugin=tuxedo' 'target=100' 'enabled=0' 'start=95' >"$STATE"
 rm -f -- "$MANAGED"
@@ -289,5 +308,27 @@ PY
 if run_helper battery-set 85 >"$TMP/readback.out" 2>"$TMP/readback.err"; then fail 'helper reported success when hardware readback disagreed'; fi
 grep -Fq 'hardware read-back verification failed' "$TMP/readback.err" || fail 'readback failure was not explained'
 grep -Fxq 'STOP_CHARGE_THRESH_BAT0=80' "$MANAGED" || fail 'previous managed config was not restored after readback failure'
+
+V354_FIXTURE="$TMP/v354-power-profile-helper"
+V354_REPO="$TMP/v354-repo"
+V353_CONTROL_REPO="$TMP/v353-control-repo"
+mkdir -p -- "$V354_REPO/local/libexec/awtarchy" "$V353_CONTROL_REPO/local/libexec/awtarchy"
+git -c safe.directory="$ROOT" -C "$ROOT" show \
+  v3.5.4:local/libexec/awtarchy/power-profile-helper >"$V354_FIXTURE"
+cp -- "$V354_FIXTURE" "$V354_REPO/local/libexec/awtarchy/power-profile-helper"
+cp -- "$V354_FIXTURE" "$V353_CONTROL_REPO/local/libexec/awtarchy/power-profile-helper"
+repair_definition="$(sed -n '/^repair_v354_sony_battery_disable_repo() {/,/^}/p' "$RUNTIME")"
+[[ -n "$repair_definition" ]] || fail 'could not extract v3.5.4 Sony battery repair function'
+log() { :; }
+die() { fail "$*"; }
+eval "$repair_definition"
+repair_v354_sony_battery_disable_repo "$V354_REPO" v3.5.4
+cmp -s -- "$HELPER" "$V354_REPO/local/libexec/awtarchy/power-profile-helper" \
+  || fail 'v3.5.4 post-release repair did not reconstruct the tested Sony helper'
+bash -n "$V354_REPO/local/libexec/awtarchy/power-profile-helper" \
+  || fail 'v3.5.4 repaired Sony helper failed Bash syntax validation'
+repair_v354_sony_battery_disable_repo "$V353_CONTROL_REPO" v3.5.3
+cmp -s -- "$V354_FIXTURE" "$V353_CONTROL_REPO/local/libexec/awtarchy/power-profile-helper" \
+  || fail 'v3.5.4 Sony repair changed a non-v3.5.4 release target'
 
 printf '%s\n' 'PASS: battery care controls validate, persist, verify, and roll back safely.'
