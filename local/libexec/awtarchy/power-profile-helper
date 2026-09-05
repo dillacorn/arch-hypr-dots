@@ -494,14 +494,19 @@ battery_enable_fixed() {
 }
 
 battery_fullcharge_all() {
-  local report name any=0
+  local report name any=0 rc=0
   report="$(battery_tlp_report)"
   while IFS= read -r name; do
     [[ -n "$name" ]] || continue
     any=1
-    "$TLP" fullcharge "$name" >/dev/null || return 1
+    if ! "$TLP" fullcharge "$name" >/dev/null; then
+      rc=1
+    fi
   done < <(/usr/bin/sed -n -E 's/^\+\+\+[[:space:]]+.*Battery Status:[[:space:]]*([^[:space:]]+).*$/\1/p' <<<"$report")
-  (( any == 1 )) || "$TLP" fullcharge >/dev/null
+  if (( any == 0 )) && ! "$TLP" fullcharge >/dev/null; then
+    rc=1
+  fi
+  return "$rc"
 }
 
 battery_disable() {
