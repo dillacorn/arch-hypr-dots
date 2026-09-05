@@ -1,0 +1,89 @@
+name: Apply v3.5.3 Post-Release Repair
+
+on:
+  push:
+    branches:
+      - fix/v353-post-release-update-repair
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: fix/v353-post-release-update-repair
+          fetch-depth: 0
+
+      - name: Apply scoped runtime repair
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('local/share/awtarchy/awtarchy-runtime.sh')
+          text = path.read_text(encoding='utf-8')
+
+          if 'repair_v353_update_notifier_target()' in text:
+              raise SystemExit('v3.5.3 notifier repair already exists')
+
+          function_marker = '\nprepare_quickshell_update_target() {\n'
+          if text.count(function_marker) != 1:
+              raise SystemExit('could not uniquely locate prepare_quickshell_update_target()')
+
+          repair = r'''
+repair_v353_update_notifier_target() {
+  local target_home="$1" tag="$2"
+  local notifier_file="${target_home}/.config/hypr/scripts/quickshell_update_notifications.sh"
+
+  [[ "$tag" == "v3.5.3" ]] || return 0
+  [[ -f "$notifier_file" && ! -L "$notifier_file" ]] \
+    || die "v3.5.3 post-release update notifier target is unavailable."
+
+  python3 - "$notifier_file" <<'PY_V353_UPDATE_NOTIFIER'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+old = '        "$DEFAULT_TERMINAL" \\\n'
+new = '        /usr/bin/setsid -f --wait "$DEFAULT_TERMINAL" \\\n'
+count = text.count(old)
+if count != 2:
+    raise SystemExit(f"expected 2 legacy notifier terminal launches, found {count}")
+text = text.replace(old, new)
+path.write_text(text, encoding="utf-8")
+PY_V353_UPDATE_NOTIFIER
+  log "Applied v3.5.3 update-notifier post-release repair to generated target."
+}
+'''
+          text = text.replace(function_marker, '\n' + repair + function_marker, 1)
+
+          call_marker = '  repair_v350_aur_helper_policy_target "$target_home" "$tag"\n\n  bootstrap_previous_baseline "$active_theme"\n'
+          if text.count(call_marker) != 1:
+              raise SystemExit('could not uniquely locate post-release repair ordering')
+          replacement = (
+              '  repair_v350_aur_helper_policy_target "$target_home" "$tag"\n'
+              '  repair_v353_update_notifier_target "$target_home" "$tag"\n\n'
+              '  bootstrap_previous_baseline "$active_theme"\n'
+          )
+          text = text.replace(call_marker, replacement, 1)
+          path.write_text(text.rstrip('\n') + '\n', encoding='utf-8')
+          PY
+
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n tests/test-awtarchy-update-session.sh
+          bash tests/test-awtarchy-update-session.sh
+          git diff --check
+
+      - name: Commit verified repair and remove applicator
+        run: |
+          git rm -- .github/workflows/apply-v353-post-release-repair.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add local/share/awtarchy/awtarchy-runtime.sh tests/test-awtarchy-update-session.sh
+          git diff --cached --check
+          git commit -m 'Deliver v3.5.3 notifier post-release repair'
+          git push origin HEAD:fix/v353-post-release-update-repair
