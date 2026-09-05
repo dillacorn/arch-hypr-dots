@@ -22,18 +22,11 @@ jobs:
           set -euo pipefail
           python3 <<'PY'
           from pathlib import Path
+          import re
 
           detector = Path('config/hypr/scripts/quickshell_battery_care.sh')
           text = detector.read_text()
-          old = '''        lenovo)
-              if grep -Eq 'charge_types[^=]*=.*\\[Long_Life\\]' <<<"$tlp_output"; then
-                  enabled=true
-              elif grep -Eq 'charge_types[^=]*=.*\\[Standard\\]' <<<"$tlp_output"; then
-                  enabled=false
-                  observed_target=100
-              fi
-              ;;
-          '''
+          pattern = r'(?ms)^        lenovo\)\n.*?^            ;;\n(?=        lenovo-legacy\))'
           new = '''        lenovo)
               lenovo_long_life=false
               lenovo_standard=false
@@ -53,10 +46,11 @@ jobs:
                   observed_target=100
               fi
               ;;
-          '''
-          if text.count(old) != 1:
+'''
+          text, count = re.subn(pattern, lambda _: new, text, count=1)
+          if count != 1:
               raise SystemExit('expected Lenovo detector block not found exactly once')
-          detector.write_text(text.replace(old, new, 1))
+          detector.write_text(text)
 
           profiles = Path('tests/test-battery-care-detector-profiles.sh')
           ptext = profiles.read_text()
