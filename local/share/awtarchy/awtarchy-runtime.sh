@@ -7970,6 +7970,31 @@ PY_V350_AUR_HELPER
   log "Applied v3.5.0 AUR helper post-release repair to generated target."
 }
 
+repair_v353_update_notifier_target() {
+  local target_home="$1" tag="$2"
+  local notifier_file="${target_home}/.config/hypr/scripts/quickshell_update_notifications.sh"
+
+  [[ "$tag" == "v3.5.3" ]] || return 0
+  [[ -f "$notifier_file" && ! -L "$notifier_file" ]] \
+    || die "v3.5.3 post-release update notifier target is unavailable."
+
+  python3 - "$notifier_file" <<'PY_V353_UPDATE_NOTIFIER'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+old = '        "$DEFAULT_TERMINAL" \\\n'
+new = '        /usr/bin/setsid -f --wait "$DEFAULT_TERMINAL" \\\n'
+count = text.count(old)
+if count != 2:
+    raise SystemExit(f"expected 2 legacy notifier terminal launches, found {count}")
+text = text.replace(old, new)
+path.write_text(text, encoding="utf-8")
+PY_V353_UPDATE_NOTIFIER
+  log "Applied v3.5.3 update-notifier post-release repair to generated target."
+}
+
 prepare_quickshell_update_target() {
   local target_home="$1" rel
 
@@ -8697,6 +8722,7 @@ main() {
   repair_v343_transient_task_icons_target "$target_home" "$tag"
   repair_v347_idle_inhibitor_feedback_target "$target_home" "$tag"
   repair_v350_aur_helper_policy_target "$target_home" "$tag"
+  repair_v353_update_notifier_target "$target_home" "$tag"
 
   bootstrap_previous_baseline "$active_theme"
   augment_baseline_from_local_git_history "$target_home"
