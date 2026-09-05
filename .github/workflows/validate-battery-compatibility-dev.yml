@@ -10,6 +10,7 @@ on:
       - 'config/quickshell/awtarchy/BatteryCareCard.qml'
       - 'local/libexec/awtarchy/power-profile-helper'
       - 'tests/test-battery-care-compatibility.sh'
+      - 'tests/test-battery-care-detector-profiles.sh'
       - 'tests/test-battery-care-vendor-semantics.sh'
       - 'tests/test-battery-care-write-gating.sh'
       - '.github/workflows/validate-battery-compatibility-dev.yml'
@@ -29,6 +30,7 @@ jobs:
           bash -n config/hypr/scripts/quickshell_battery_care.sh
           bash -n local/libexec/awtarchy/power-profile-helper
           bash -n tests/test-battery-care-compatibility.sh
+          bash -n tests/test-battery-care-detector-profiles.sh
           bash -n tests/test-battery-care-vendor-semantics.sh
           bash -n tests/test-battery-care-write-gating.sh
       - name: Battery compatibility ShellCheck
@@ -36,6 +38,7 @@ jobs:
           shellcheck config/hypr/scripts/quickshell_battery_care.sh
           shellcheck local/libexec/awtarchy/power-profile-helper
           shellcheck tests/test-battery-care-compatibility.sh
+          shellcheck tests/test-battery-care-detector-profiles.sh
           shellcheck tests/test-battery-care-vendor-semantics.sh
           shellcheck tests/test-battery-care-write-gating.sh
       - name: Battery compatibility regression
@@ -43,6 +46,7 @@ jobs:
           status=0
           for test_file in \
             tests/test-battery-care-compatibility.sh \
+            tests/test-battery-care-detector-profiles.sh \
             tests/test-battery-care-vendor-semantics.sh \
             tests/test-battery-care-write-gating.sh
           do
