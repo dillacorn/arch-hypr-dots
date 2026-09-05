@@ -108,6 +108,32 @@ grep -Fq 'bluetoothPowerProbe.exec([bluetoothStateScript, "actual"])' "$MENU"
 grep -Fq 'id: bluetoothPowerProbe' "$MENU"
 grep -Fq 'stdout: StdioCollector' "$MENU"
 
+grep -Fq 'property bool bluetoothPowerProbePending: false' "$MENU" || {
+    printf '%s\n' 'Bluetooth power-state refreshes can still be dropped while a probe is already running.' >&2
+    exit 1
+}
+probe_refresh_block="$(sed -n '/function refreshActualAdapterPower()/,/^    }/p' "$MENU")"
+grep -Fq 'if (bluetoothPowerProbe.running)' <<<"$probe_refresh_block" || {
+    printf '%s\n' 'Bluetooth refresh does not detect an in-flight power probe.' >&2
+    exit 1
+}
+grep -Fq 'bluetoothPowerProbePending = true;' <<<"$probe_refresh_block" || {
+    printf '%s\n' 'Bluetooth refresh does not preserve a refresh requested during an in-flight probe.' >&2
+    exit 1
+}
+grep -Fq 'bluetoothPowerProbePending = false;' <<<"$probe_refresh_block" || {
+    printf '%s\n' 'Bluetooth refresh does not clear the pending marker before starting the authoritative probe.' >&2
+    exit 1
+}
+grep -Fq 'if (root.bluetoothPowerProbePending)' "$MENU" || {
+    printf '%s\n' 'Bluetooth power probe does not schedule a queued authoritative refresh after it exits.' >&2
+    exit 1
+}
+grep -Fq 'Qt.callLater(() => root.refreshActualAdapterPower());' "$MENU" || {
+    printf '%s\n' 'Bluetooth power probe does not re-run the queued authoritative refresh.' >&2
+    exit 1
+}
+
 open_block="$(sed -n '/function openForScreen(targetScreen)/,/^    }/p' "$MENU")"
 grep -Fq 'refreshActualAdapterPower();' <<<"$open_block" || {
     printf '%s\n' 'Bluetooth flyout does not refresh the authoritative BlueZ power state when opened.' >&2
