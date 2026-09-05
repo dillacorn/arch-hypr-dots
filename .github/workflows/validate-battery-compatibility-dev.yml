@@ -1,0 +1,45 @@
+name: Validate Battery Compatibility Dev
+
+on:
+  push:
+    branches:
+      - hardening/tlp-battery-compatibility
+  pull_request:
+    paths:
+      - 'config/hypr/scripts/quickshell_battery_care.sh'
+      - 'config/quickshell/awtarchy/BatteryCareCard.qml'
+      - 'local/libexec/awtarchy/power-profile-helper'
+      - 'tests/test-battery-care-compatibility.sh'
+      - '.github/workflows/validate-battery-compatibility-dev.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+      - name: Battery compatibility syntax
+        run: |
+          bash -n config/hypr/scripts/quickshell_battery_care.sh
+          bash -n local/libexec/awtarchy/power-profile-helper
+          if [[ -f tests/test-battery-care-compatibility.sh ]]; then
+            bash -n tests/test-battery-care-compatibility.sh
+          fi
+      - name: Battery compatibility ShellCheck
+        run: |
+          shellcheck config/hypr/scripts/quickshell_battery_care.sh
+          shellcheck local/libexec/awtarchy/power-profile-helper
+          if [[ -f tests/test-battery-care-compatibility.sh ]]; then
+            shellcheck tests/test-battery-care-compatibility.sh
+          fi
+      - name: Battery compatibility regression
+        run: |
+          if [[ -f tests/test-battery-care-compatibility.sh ]]; then
+            bash tests/test-battery-care-compatibility.sh
+          else
+            echo 'compatibility test not added yet'
+          fi
