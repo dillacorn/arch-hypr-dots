@@ -105,6 +105,7 @@ for plugin in lg toshiba; do
 done
 
 # Selector/boolean plugins are normalized to user-facing on/off state.
+# Current TLP Lenovo reports charge threshold support through per-battery charge_types.
 json="$(run_profile lenovo 'charge threshold' '' '0(Standard)..1(Long_Life) -- charge_types' '/sys/class/power_supply/BAT0/charge_types = Standard [Long_Life]')"
 assert_json "$json" '.supported == true and .writable == true and .compatibility == "validated" and .mode == "fixed" and .enabled == true and .target == null' \
     'Lenovo Long_Life state was not normalized correctly'
