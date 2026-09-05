@@ -193,7 +193,11 @@ case "${1:-}" in
     fi
     ;;
   fullcharge)
-    target=100
+    if [[ "$plugin" == sony ]]; then
+      target=0
+    else
+      target=100
+    fi
     enabled=0
     start=95
     ;;
@@ -237,6 +241,11 @@ if run_helper battery-set 70 >"$TMP/preset.out" 2>"$TMP/preset.err"; then fail '
 run_helper battery-set 80
 grep -Fxq 'START_CHARGE_THRESH_BAT0=0' "$MANAGED" || fail 'stop-only hardware did not use dummy start threshold'
 grep -Fxq 'STOP_CHARGE_THRESH_BAT0=80' "$MANAGED" || fail 'Sony 80% preset was not persisted'
+: >"$LOG"
+run_helper battery-disable
+[[ ! -e "$MANAGED" ]] || fail 'Sony disable left Awtarchy threshold persistence behind'
+grep -Fxq 'fullcharge' "$LOG" || fail 'Sony disable did not restore the vendor full-charge state'
+grep -Fq 'target=0' "$STATE" || fail 'Sony raw limiter 0 was not accepted as the disabled state'
 
 printf '%s\n' 'plugin=tuxedo' 'target=100' 'enabled=0' 'start=95' >"$STATE"
 rm -f -- "$MANAGED"
