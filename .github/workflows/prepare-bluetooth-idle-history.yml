@@ -1,17 +1,18 @@
 name: Prepare Bluetooth and idle managed history
 
 on:
-  pull_request:
+  push:
+    branches: [fix/bluetooth-idle-ui-polish]
 
 permissions:
   contents: write
 
 jobs:
   prepare-history:
-    if: github.event.pull_request.number == 141 && github.event.pull_request.head.ref == 'fix/bluetooth-idle-ui-polish'
+    if: github.ref_name == 'fix/bluetooth-idle-ui-polish'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout exact PR head
+      - name: Checkout exact branch head
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           ref: fix/bluetooth-idle-ui-polish
