@@ -22,6 +22,7 @@ Singleton {
     property int iconScaleOverride: -1
     property int captureAllowedOverride: -1
     property int actualAdapterEnabled: -1
+    property bool bluetoothPowerProbePending: false
     property bool privacyRemapPending: false
     property string settingsMessage: ""
     property var savedView: ({
@@ -146,8 +147,12 @@ Singleton {
     }
 
     function refreshActualAdapterPower() {
-        if (!bluetoothPowerProbe.running)
-            bluetoothPowerProbe.exec([bluetoothStateScript, "actual"]);
+        if (bluetoothPowerProbe.running) {
+            bluetoothPowerProbePending = true;
+            return;
+        }
+        bluetoothPowerProbePending = false;
+        bluetoothPowerProbe.exec([bluetoothStateScript, "actual"]);
     }
 
     function applyActualAdapterPower(text) {
@@ -567,6 +572,10 @@ Singleton {
         id: bluetoothPowerProbe
         stdout: StdioCollector {
             onStreamFinished: root.applyActualAdapterPower(text)
+        }
+        onExited: {
+            if (root.bluetoothPowerProbePending)
+                Qt.callLater(() => root.refreshActualAdapterPower());
         }
     }
 
