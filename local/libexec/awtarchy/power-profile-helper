@@ -316,14 +316,43 @@ battery_saved_config_create() {
 }
 
 rollback_apply() {
-  local previous_state="$1" backup="$2"
+  local previous_state="$1" backup="$2" plugin="$3"
+  local target_label target_num
+
   if [[ "$previous_state" == present && -f "$backup" ]]; then
-    /usr/bin/cp -a -- "$backup" "$MANAGED_CONFIG"
+    /usr/bin/cp -a -- "$backup" "$MANAGED_CONFIG" || return 1
     "$TLP" start >/dev/null 2>&1 || true
+
+    target_label="$(/usr/bin/sed -n -E 's/^# target=([^[:space:]]+)$/\1/p' "$backup" | /usr/bin/head -n1)"
+    if [[ "$target_label" == fixed ]]; then
+      case "$plugin" in
+        lenovo|lenovo-legacy) verify_enabled_state "$plugin" 1 ;;
+        *) return 1 ;;
+      esac
+      return $?
+    fi
+
+    [[ "$target_label" =~ ^[0-9]+$ ]] || return 1
+    target_num=$((10#$target_label))
+    (( target_num >= 1 && target_num < 100 )) || return 1
+    verify_enabled_state "$plugin" "$target_num"
   else
-    /usr/bin/rm -f -- "$MANAGED_CONFIG"
+    /usr/bin/rm -f -- "$MANAGED_CONFIG" || return 1
     battery_fullcharge_all >/dev/null 2>&1 || true
+    verify_disabled_state "$plugin"
   fi
+}
+
+battery_fail_after_rollback() {
+  local previous_state="$1" backup="$2" plugin="$3" reason="$4"
+
+  if rollback_apply "$previous_state" "$backup" "$plugin"; then
+    /usr/bin/rm -f -- "$backup"
+    fail "${reason}; previous settings were restored"
+  fi
+
+  /usr/bin/rm -f -- "$backup"
+  fail "${reason}; previous configuration state was restored, but hardware rollback could not be verified"
 }
 
 battery_observed_stop_values() {
@@ -454,14 +483,10 @@ battery_set_target() {
   previous_state="$(battery_saved_config_create "$backup")"
   battery_write_config "$plugin" "$target" "$start_value" "$stop_value"
   if ! "$TLP" start >/dev/null; then
-    rollback_apply "$previous_state" "$backup"
-    /usr/bin/rm -f -- "$backup"
-    fail 'TLP failed to apply the requested battery charge limit; previous settings were restored'
+    battery_fail_after_rollback "$previous_state" "$backup" "$plugin" 'TLP failed to apply the requested battery charge limit'
   fi
   if ! verify_enabled_state "$plugin" "$target"; then
-    rollback_apply "$previous_state" "$backup"
-    /usr/bin/rm -f -- "$backup"
-    fail 'hardware read-back verification failed; previous battery settings were restored'
+    battery_fail_after_rollback "$previous_state" "$backup" "$plugin" 'hardware read-back verification failed'
   fi
   /usr/bin/rm -f -- "$backup"
 }
@@ -481,14 +506,10 @@ battery_enable_fixed() {
   previous_state="$(battery_saved_config_create "$backup")"
   battery_write_config "$plugin" fixed 0 1
   if ! "$TLP" start >/dev/null; then
-    rollback_apply "$previous_state" "$backup"
-    /usr/bin/rm -f -- "$backup"
-    fail 'TLP failed to enable the hardware conservation mode; previous settings were restored'
+    battery_fail_after_rollback "$previous_state" "$backup" "$plugin" 'TLP failed to enable the hardware conservation mode'
   fi
   if ! verify_enabled_state "$plugin" 1; then
-    rollback_apply "$previous_state" "$backup"
-    /usr/bin/rm -f -- "$backup"
-    fail 'hardware read-back verification failed; previous settings were restored'
+    battery_fail_after_rollback "$previous_state" "$backup" "$plugin" 'hardware read-back verification failed'
   fi
   /usr/bin/rm -f -- "$backup"
 }
@@ -520,14 +541,10 @@ battery_disable() {
   previous_state="$(battery_saved_config_create "$backup")"
   /usr/bin/rm -f -- "$MANAGED_CONFIG"
   if ! battery_fullcharge_all; then
-    rollback_apply "$previous_state" "$backup"
-    /usr/bin/rm -f -- "$backup"
-    fail 'TLP failed to restore full-charge defaults; previous settings were restored'
+    battery_fail_after_rollback "$previous_state" "$backup" "$plugin" 'TLP failed to restore full-charge defaults'
   fi
   if ! verify_disabled_state "$plugin"; then
-    rollback_apply "$previous_state" "$backup"
-    /usr/bin/rm -f -- "$backup"
-    fail 'hardware read-back verification failed; previous battery settings were restored'
+    battery_fail_after_rollback "$previous_state" "$backup" "$plugin" 'hardware read-back verification failed'
   fi
   /usr/bin/rm -f -- "$backup"
 }

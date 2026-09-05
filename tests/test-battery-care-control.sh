@@ -359,4 +359,6 @@ repair_v354_sony_battery_disable_repo "$V353_CONTROL_REPO" v3.5.3
 cmp -s -- "$V354_FIXTURE" "$V353_CONTROL_REPO/local/libexec/awtarchy/power-profile-helper" \
   || fail 'v3.5.4 Sony repair changed a non-v3.5.4 release target'
 
+bash "$ROOT/tests/test-battery-care-rollback-verification.sh"
+
 printf '%s\n' 'PASS: battery care controls validate, persist, verify, and roll back safely.'

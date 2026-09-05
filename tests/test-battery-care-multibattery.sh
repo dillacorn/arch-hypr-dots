@@ -165,7 +165,10 @@ fi
 # TLP documents that an omitted battery argument targets only the main battery.
 # Rollback from an absent managed config must therefore restore every reported pack.
 : >"$LOG"
-AWTARCHY_TEST_LOG="$LOG" rollback_apply absent "$TMP/no-backup"
+# This fixture isolates all-pack fullcharge fanout; rollback readback itself is
+# covered by test-battery-care-rollback-verification.sh.
+verify_disabled_state() { return 0; }
+AWTARCHY_TEST_LOG="$LOG" rollback_apply absent "$TMP/no-backup" dell
 grep -Fxq 'fullcharge BAT0' "$LOG" || fail 'rollback did not restore BAT0 full charge'
 grep -Fxq 'fullcharge BAT1' "$LOG" || fail 'rollback did not restore BAT1 full charge'
 [[ "$(grep -Fc 'fullcharge' "$LOG")" -eq 2 ]] \
