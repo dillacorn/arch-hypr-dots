@@ -1,0 +1,73 @@
+name: Publish Awtarchy v3.5.4
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  publish-v3-5-4:
+    if: github.event.pull_request.head.ref == 'release/v3.5.4-bridge' && github.event.pull_request.title == 'Release bridge: publish v3.5.4'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release bridge
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: release/v3.5.4-bridge
+          fetch-depth: 0
+
+      - name: Verify target and publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: 4a7cb022c7001650cfe77467ba94d548e6d0e34a
+        run: |
+          set -euo pipefail
+
+          current_main="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          test "$current_main" = "$EXPECTED_SHA" || {
+            printf 'Refusing release: main moved from %s to %s\n' "$EXPECTED_SHA" "$current_main" >&2
+            false
+          }
+
+          if gh release view v3.5.4 >/dev/null 2>&1; then
+            printf '%s\n' 'Refusing release: v3.5.4 release already exists.' >&2
+            false
+          fi
+
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.5.4" >/dev/null 2>&1; then
+            printf '%s\n' 'Refusing release: v3.5.4 tag already exists.' >&2
+            false
+          fi
+
+          gh release create v3.5.4 \
+            --target "$EXPECTED_SHA" \
+            --title 'Awtarchy v3.5.4 Quickshell' \
+            --notes-file .github/release-v3.5.4.md
+
+          release_name="$(gh release view v3.5.4 --json name --jq '.name')"
+          release_tag="$(gh release view v3.5.4 --json tagName --jq '.tagName')"
+          release_draft="$(gh release view v3.5.4 --json isDraft --jq '.isDraft')"
+          release_prerelease="$(gh release view v3.5.4 --json isPrerelease --jq '.isPrerelease')"
+
+          test "$release_name" = 'Awtarchy v3.5.4 Quickshell'
+          test "$release_tag" = 'v3.5.4'
+          test "$release_draft" = 'false'
+          test "$release_prerelease" = 'false'
+
+          tag_type="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.5.4" --jq '.object.type')"
+          tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.5.4" --jq '.object.sha')"
+          if [[ "$tag_type" == 'tag' ]]; then
+            tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq '.object.sha')"
+          fi
+          test "$tag_sha" = "$EXPECTED_SHA" || {
+            printf 'Release tag points to %s, expected %s\n' "$tag_sha" "$EXPECTED_SHA" >&2
+            false
+          }
+
+          gh release view v3.5.4 --json name,tagName,isDraft,isPrerelease,url
+          printf 'Verified v3.5.4 tag target: %s\n' "$tag_sha"
