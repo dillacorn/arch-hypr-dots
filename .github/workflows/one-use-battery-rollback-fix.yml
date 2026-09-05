@@ -94,11 +94,21 @@ jobs:
                   raise SystemExit(f'rollback caller block not found exactly once: {old!r}')
               text = text.replace(old, new, 1)
 
-          old_readback = '''    rollback_apply "$previous_state" "$backup"\n    /usr/bin/rm -f -- "$backup"\n    fail 'hardware read-back verification failed; previous settings were restored'\n'''
+          readback_variants = [
+              (
+                  '''    rollback_apply "$previous_state" "$backup"\n    /usr/bin/rm -f -- "$backup"\n    fail 'hardware read-back verification failed; previous settings were restored'\n''',
+                  1,
+              ),
+              (
+                  '''    rollback_apply "$previous_state" "$backup"\n    /usr/bin/rm -f -- "$backup"\n    fail 'hardware read-back verification failed; previous battery settings were restored'\n''',
+                  2,
+              ),
+          ]
           new_readback = '''    battery_fail_after_rollback "$previous_state" "$backup" "$plugin" 'hardware read-back verification failed'\n'''
-          if text.count(old_readback) != 3:
-              raise SystemExit(f'expected three readback rollback caller blocks, found {text.count(old_readback)}')
-          text = text.replace(old_readback, new_readback)
+          for old, expected in readback_variants:
+              if text.count(old) != expected:
+                  raise SystemExit(f'expected {expected} readback rollback blocks, found {text.count(old)}: {old!r}')
+              text = text.replace(old, new_readback)
           helper.write_text(text)
 
           workflow = Path('.github/workflows/validate-awtarchy.yml')
