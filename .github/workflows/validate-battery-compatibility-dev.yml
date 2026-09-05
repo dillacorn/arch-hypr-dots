@@ -40,6 +40,14 @@ jobs:
           shellcheck tests/test-battery-care-write-gating.sh
       - name: Battery compatibility regression
         run: |
-          bash tests/test-battery-care-compatibility.sh
-          bash tests/test-battery-care-vendor-semantics.sh
-          bash tests/test-battery-care-write-gating.sh
+          status=0
+          for test_file in \
+            tests/test-battery-care-compatibility.sh \
+            tests/test-battery-care-vendor-semantics.sh \
+            tests/test-battery-care-write-gating.sh
+          do
+            if ! bash "$test_file"; then
+              status=1
+            fi
+          done
+          exit "$status"
