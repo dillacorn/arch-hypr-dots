@@ -103,12 +103,14 @@ mkdir -p -- "$TMP/system/libexec" "$TMP/system/sudoers"
 sudo -n /usr/bin/chown root:root "$TMP/system/libexec" "$TMP/system/sudoers"
 sudo -n /usr/bin/chmod 0755 "$TMP/system/libexec" "$TMP/system/sudoers"
 cp -- "$RECONCILER" "$TMP/reconciler-under-test"
-python3 - "$TMP/reconciler-under-test" "$TMP/system/libexec/battery-status-helper" "$TMP/system/sudoers" <<'PY'
+python3 - "$TMP/reconciler-under-test" "$TMP/system/libexec/battery-status-helper" "$TMP/system/sudoers" "$STATUS_HELPER" <<'PY'
 from pathlib import Path
 import sys
 path = Path(sys.argv[1])
 text = path.read_text()
 replacements = {
+    'BATTERY_STATUS_HELPER_SOURCE="${REPO_ROOT}/local/libexec/awtarchy/battery-status-helper"':
+        f'BATTERY_STATUS_HELPER_SOURCE="{sys.argv[4]}"',
     'BATTERY_STATUS_HELPER_DESTINATION="/usr/local/libexec/awtarchy/battery-status-helper"':
         f'BATTERY_STATUS_HELPER_DESTINATION="{sys.argv[2]}"',
     'SUDOERS_DIR="/etc/sudoers.d"': f'SUDOERS_DIR="{sys.argv[3]}"',
