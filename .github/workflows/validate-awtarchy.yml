@@ -91,6 +91,10 @@ jobs:
           bash -n tests/test-battery-flyout-position.sh
           bash -n tests/test-battery-charge-limit-detection.sh
           bash -n tests/test-battery-care-control.sh
+          bash -n tests/test-battery-care-compatibility.sh
+          bash -n tests/test-battery-care-detector-profiles.sh
+          bash -n tests/test-battery-care-vendor-semantics.sh
+          bash -n tests/test-battery-care-write-gating.sh
           bash -n tests/test-battery-care-annotated-range.sh
           bash -n tests/test-battery-care-thinkpad-readback.sh
           bash -n tests/test-battery-care-multibattery.sh
@@ -199,6 +203,10 @@ jobs:
             tests/test-battery-flyout-state.sh \
             tests/test-battery-flyout-position.sh \
             tests/test-battery-charge-limit-detection.sh \
+            tests/test-battery-care-compatibility.sh \
+            tests/test-battery-care-detector-profiles.sh \
+            tests/test-battery-care-vendor-semantics.sh \
+            tests/test-battery-care-write-gating.sh \
             tests/test-battery-care-annotated-range.sh \
             tests/test-battery-care-thinkpad-readback.sh \
             tests/test-battery-care-multibattery.sh \
@@ -281,6 +289,10 @@ jobs:
           bash tests/test-battery-flyout-position.sh
           bash tests/test-battery-charge-limit-detection.sh
           sudo bash tests/test-battery-care-control.sh
+          bash tests/test-battery-care-compatibility.sh
+          bash tests/test-battery-care-detector-profiles.sh
+          bash tests/test-battery-care-vendor-semantics.sh
+          bash tests/test-battery-care-write-gating.sh
           bash tests/test-battery-care-annotated-range.sh
           bash tests/test-battery-care-thinkpad-readback.sh
           bash tests/test-battery-care-multibattery.sh
