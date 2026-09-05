@@ -1,0 +1,42 @@
+name: One-use Lenovo readback fix
+
+on:
+  push:
+    branches: [hardening/tlp-battery-compatibility]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.repository == 'dillacorn/awtarchy' && github.actor == 'dillacorn'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: hardening/tlp-battery-compatibility
+          fetch-depth: 0
+      - name: Fix Lenovo all-battery readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCgpwYXRoID0gUGF0aCgibG9jYWwvbGliZXhlYy9hd3RhcmNoeS9wb3dlci1wcm9maWxlLWhlbHBlciIpCnRleHQgPSBwYXRoLnJlYWRfdGV4dCgpCgphbmNob3IgPSByJycnYmF0dGVyeV9vYnNlcnZlZF9zdG9wX3ZhbHVlcygpIHsKICBsb2NhbCByZXBvcnQ9IiQxIgogIC91c3IvYmluL2F3ayAnCiAgICAve2NoYXJnZV9jb250cm9sX2VuZF90aHJlc2hvbGR8c3RvcF9jaGFyZ2VfdGhyZXNofGJhdHRlcnlfY2FyZV9saW1pdHxiYXR0ZXJ5X2NhcmVfbGltaXRlcn1bXj1dKj0vIHsKICAgICAgdmFsdWU9JDAKICAgICAgc3ViKC9eLio9W1s6c3BhY2U6XV0qLywgIiIsIHZhbHVlKQogICAgICBpZiAobWF0Y2godmFsdWUsIC9eWzAtOV0rLykpIHByaW50IHN1YnN0cih2YWx1ZSwgUlNUQVJULCBSTEVOR1RIKQogICAgfQogICcgPDw8IiRyZXBvcnQiCn0KCicnJwppbnNlcnQgPSBhbmNob3IgKyByJycnYmF0dGVyeV92ZXJpZnlfbGVub3ZvX2NoYXJnZV90eXBlKCkgewogIGxvY2FsIHJlcG9ydD0iJDEiIGV4cGVjdGVkPSIkMiIgbGluZSBmb3VuZD0wCgogIHdoaWxlIElGUz0gcmVhZCAtciBsaW5lOyBkbwogICAgW1sgLW4gIiRsaW5lIiBdXSB8fCBjb250aW51ZQogICAgZm91bmQ9MQogICAgL3Vzci9iaW4vZ3JlcCAtRnEgIlskZXhwZWN0ZWRdIiA8PDwiJGxpbmUiIHx8IHJldHVybiAxCiAgZG9uZSA8IDwoL3Vzci9iaW4vZ3JlcCAtRSAnY2hhcmdlX3R5cGVzW149XSo9JyA8PDwiJHJlcG9ydCIpCiAgKCggZm91bmQgPT0gMSApKQp9CgonJycKaWYgdGV4dC5jb3VudChhbmNob3IpICE9IDE6CiAgICByYWlzZSBTeXN0ZW1FeGl0KCJiYXR0ZXJ5X29ic2VydmVkX3N0b3BfdmFsdWVzIGFuY2hvciBub3QgZm91bmQgZXhhY3RseSBvbmNlIikKdGV4dCA9IHRleHQucmVwbGFjZShhbmNob3IsIGluc2VydCwgMSkKCm9sZF9lbmFibGVkID0gcicnJyAgICBsZW5vdm8pCiAgICAgIC91c3IvYmluL2dyZXAgLUVxICdjaGFyZ2VfdHlwZXNbXj1dKj0uKlxcW0xvbmdfTGlmZVxcXScgPDw8IiRyZXBvcnQiCiAgICAgIDs7CicnJwpuZXdfZW5hYmxlZCA9IHInJycgICAgbGVub3ZvKQogICAgICBiYXR0ZXJ5X3ZlcmlmeV9sZW5vdm9fY2hhcmdlX3R5cGUgIiRyZXBvcnQiIExvbmdfTGlmZQogICAgICA7OwonJycKaWYgdGV4dC5jb3VudChvbGRfZW5hYmxlZCkgIT0gMToKICAgIHJhaXNlIFN5c3RlbUV4aXQoIkxlbm92byBlbmFibGVkIHZlcmlmaWVyIGJsb2NrIG5vdCBmb3VuZCBleGFjdGx5IG9uY2UiKQp0ZXh0ID0gdGV4dC5yZXBsYWNlKG9sZF9lbmFibGVkLCBuZXdfZW5hYmxlZCwgMSkKCm9sZF9kaXNhYmxlZCA9IHInJycgICAgbGVub3ZvKQogICAgICAvdXNyL2Jpbi9ncmVwIC1FcSAnY2hhcmdlX3R5cGVzW149XSo9LipcXFtTdGFuZGFyZFxcXScgPDw8IiRyZXBvcnQiCiAgICAgIDs7CicnJwpuZXdfZGlzYWJsZWQgPSByJycnICAgIGxlbm92bykKICAgICAgYmF0dGVyeV92ZXJpZnlfbGVub3ZvX2NoYXJnZV90eXBlICIkcmVwb3J0IiBTdGFuZGFyZAogICAgICA7OwonJycKaWYgdGV4dC5jb3VudChvbGRfZGlzYWJsZWQpICE9IDE6CiAgICByYWlzZSBTeXN0ZW1FeGl0KCJMZW5vdm8gZGlzYWJsZWQgdmVyaWZpZXIgYmxvY2sgbm90IGZvdW5kIGV4YWN0bHkgb25jZSIpCnRleHQgPSB0ZXh0LnJlcGxhY2Uob2xkX2Rpc2FibGVkLCBuZXdfZGlzYWJsZWQsIDEpCgpwYXRoLndyaXRlX3RleHQodGV4dCkK' | base64 -d > /tmp/awtarchy-lenovo-readback.py
+          python3 /tmp/awtarchy-lenovo-readback.py
+
+          bash -n local/libexec/awtarchy/power-profile-helper
+          bash -n tests/test-battery-care-multibattery.sh
+          shellcheck local/libexec/awtarchy/power-profile-helper tests/test-battery-care-multibattery.sh
+          bash tests/test-battery-care-multibattery.sh
+          bash tests/test-battery-care-compatibility.sh
+          bash tests/test-battery-care-detector-profiles.sh
+          bash tests/test-battery-care-vendor-semantics.sh
+          bash tests/test-battery-care-write-gating.sh
+          git diff --check
+
+          rm -- .github/workflows/one-use-lenovo-readback.yml
+          git config user.name 'Awtarchy CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add local/libexec/awtarchy/power-profile-helper \
+                  .github/workflows/one-use-lenovo-readback.yml
+          git commit -m 'Verify Lenovo battery mode on every pack'
+          git push origin HEAD:hardening/tlp-battery-compatibility
