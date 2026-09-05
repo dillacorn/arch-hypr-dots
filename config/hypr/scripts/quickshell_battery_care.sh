@@ -37,6 +37,7 @@ batteries='[]'
 sysfs_supported=false
 first_start=null
 first_stop=null
+mixed_stop_thresholds=false
 
 shopt -s nullglob
 for battery_dir in "$POWER_SUPPLY_ROOT"/*; do
@@ -67,7 +68,11 @@ for battery_dir in "$POWER_SUPPLY_ROOT"/*; do
         sysfs_supported=true
         if value="$(read_percent "$battery_dir/charge_control_end_threshold" 2>/dev/null)"; then
             stop_threshold="$value"
-            [[ "$first_stop" != null ]] || first_stop="$value"
+            if [[ "$first_stop" == null ]]; then
+                first_stop="$value"
+            elif [[ "$first_stop" != "$value" ]]; then
+                mixed_stop_thresholds=true
+            fi
         fi
     fi
 
@@ -340,7 +345,11 @@ if [[ "$backend" == tlp ]]; then
     esac
 fi
 
-if [[ "$observed_target" == null && "$first_stop" != null ]]; then
+if [[ "$mixed_stop_thresholds" == true ]]; then
+    observed_target=null
+    enabled=null
+    first_stop=null
+elif [[ "$observed_target" == null && "$first_stop" != null ]]; then
     observed_target="$first_stop"
 fi
 if [[ "$enabled" == null && "$observed_target" != null ]]; then
@@ -410,6 +419,7 @@ jq -cn \
     --argjson stop_presets "$stop_presets" \
     --argjson current_start "$first_start" \
     --argjson current_stop "$first_stop" \
+    --argjson mixed_stop_thresholds "$mixed_stop_thresholds" \
     --argjson tlp_available "$tlp_available" \
     --argjson managed_config "$managed_config" \
     --argjson managed_target "$managed_target" \
@@ -436,6 +446,7 @@ jq -cn \
         stop_presets:$stop_presets,
         current_start:$current_start,
         current_stop:$current_stop,
+        mixed_stop_thresholds:$mixed_stop_thresholds,
         tlp_available:$tlp_available,
         managed_config:$managed_config,
         managed_target:$managed_target,
