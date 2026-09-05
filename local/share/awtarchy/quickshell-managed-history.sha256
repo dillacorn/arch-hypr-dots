@@ -850,3 +850,4 @@ e813a7a6c197df3df5cf57c0141c6912b89636a788d81057d45827b0e90765ce	.config/quicksh
 # 2026-09-05 Bluetooth startup state and idle-eye UI polish.
 4e32df116b0bedb3146e49300eb9a01cb144ff25fdc524d5c1ac2de45304e18f	.config/quickshell/awtarchy/BarTooltip.qml
 14bcb1ac56d7e2a0c9875efc93f5f293ed7417037e4d6d9313b77c3689a06320	.config/quickshell/awtarchy/BluetoothMenu.qml
+8891de8271fa22f3932e7f9ee355c47f0807ab27f1151c77abf54bf10603fd02	.config/hypr/scripts/quickshell_clipboard.sh
