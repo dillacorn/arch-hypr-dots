@@ -8,7 +8,14 @@ HELPER="${ROOT}/local/libexec/awtarchy/power-profile-helper"
 STATUS_HELPER="${ROOT}/local/libexec/awtarchy/battery-status-helper"
 DETECTOR="${ROOT}/config/hypr/scripts/quickshell_battery_care.sh"
 TMP="$(mktemp -d)"
-trap 'rm -rf -- "$TMP"' EXIT
+cleanup() {
+  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+    sudo -n /usr/bin/rm -rf -- "$TMP" 2>/dev/null || true
+  else
+    rm -rf -- "$TMP" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -141,9 +148,9 @@ cmp -s -- "$STATUS_HELPER" "$installed_status" \
   || fail 'battery status sudoers policy ownership/mode is not root:0440'
 sudo -n /usr/sbin/visudo -cf "$policy_file" >/dev/null \
   || fail 'installed battery status sudoers policy is invalid'
-grep -Fxq "${policy_user} ALL=(root) NOPASSWD: ${installed_status} \"\"" "$policy_file" \
+sudo -n /usr/bin/grep -Fxq "${policy_user} ALL=(root) NOPASSWD: ${installed_status} \"\"" "$policy_file" \
   || fail 'installed sudoers policy does not restrict the helper to zero arguments'
-! grep -Fq 'power-profile-helper' "$policy_file" \
+! sudo -n /usr/bin/grep -Fq 'power-profile-helper' "$policy_file" \
   || fail 'read-only status policy accidentally grants write-helper access'
 
 # Corrupt Awtarchy-owned installed state and prove a second reconciliation repairs
@@ -154,7 +161,7 @@ sudo -n /usr/bin/sed -i 's/NOPASSWD:/PASSWD:/' "$policy_file"
 sudo -n /usr/bin/bash "$TMP/reconciler-under-test"
 cmp -s -- "$STATUS_HELPER" "$installed_status" \
   || fail 'status helper reconciliation did not repair changed installed content'
-grep -Fxq "${policy_user} ALL=(root) NOPASSWD: ${installed_status} \"\"" "$policy_file" \
+sudo -n /usr/bin/grep -Fxq "${policy_user} ALL=(root) NOPASSWD: ${installed_status} \"\"" "$policy_file" \
   || fail 'status policy reconciliation did not repair changed Awtarchy-owned content'
 
 require_literal "$DETECTOR" 'BATTERY_STATUS_HELPER="${AWTARCHY_BATTERY_STATUS_HELPER:-/usr/local/libexec/awtarchy/battery-status-helper}"' \
