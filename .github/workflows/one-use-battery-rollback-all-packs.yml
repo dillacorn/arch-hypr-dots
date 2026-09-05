@@ -35,7 +35,7 @@ jobs:
           bash -n local/libexec/awtarchy/power-profile-helper
           shellcheck local/libexec/awtarchy/power-profile-helper
           bash tests/test-battery-care-multibattery.sh
-          bash tests/test-battery-care-control.sh
+          sudo bash tests/test-battery-care-control.sh
           bash tests/test-battery-care-compatibility.sh
           bash tests/test-battery-care-vendor-semantics.sh
           git diff --check
