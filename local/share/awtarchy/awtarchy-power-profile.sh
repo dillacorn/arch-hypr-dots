@@ -11,6 +11,10 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../../.." && pwd -P)"
 MANAGED_FILE="${AWTARCHY_MANAGED_PACKAGES_FILE:-/var/lib/awtarchy/managed-packages}"
 POWER_PROFILE_HELPER_SOURCE="${REPO_ROOT}/local/libexec/awtarchy/power-profile-helper"
 POWER_PROFILE_HELPER_DESTINATION="/usr/local/libexec/awtarchy/power-profile-helper"
+BATTERY_STATUS_HELPER_SOURCE="${REPO_ROOT}/local/libexec/awtarchy/battery-status-helper"
+BATTERY_STATUS_HELPER_DESTINATION="/usr/local/libexec/awtarchy/battery-status-helper"
+SUDOERS_DIR="/etc/sudoers.d"
+BATTERY_STATUS_POLICY_MARKER='# Managed by Awtarchy: read-only Battery Care TLP status.'
 
 log()  { printf '[awtarchy-power] %s\n' "$*"; }
 warn() { printf '[awtarchy-power] WARN: %s\n' "$*" >&2; }
@@ -130,6 +134,145 @@ install_power_profile_helper() {
     || die "Trusted Power Mode helper verification failed after install."
 }
 
+battery_status_helper_is_current() {
+  local owner mode destination_dir dir_owner dir_mode
+  destination_dir="$(dirname -- "$BATTERY_STATUS_HELPER_DESTINATION")"
+
+  [[ -f $BATTERY_STATUS_HELPER_SOURCE && ! -L $BATTERY_STATUS_HELPER_SOURCE ]] || return 1
+  [[ -d $destination_dir && ! -L $destination_dir ]] || return 1
+  [[ -f $BATTERY_STATUS_HELPER_DESTINATION && ! -L $BATTERY_STATUS_HELPER_DESTINATION \
+    && -x $BATTERY_STATUS_HELPER_DESTINATION ]] || return 1
+
+  dir_owner="$(/usr/bin/stat -c %u -- "$destination_dir" 2>/dev/null)" || return 1
+  dir_mode="$(/usr/bin/stat -c %a -- "$destination_dir" 2>/dev/null)" || return 1
+  [[ $dir_owner == 0 && $dir_mode =~ ^[0-7]{3,4}$ ]] || return 1
+  (( (8#$dir_mode & 8#022) == 0 )) || return 1
+
+  owner="$(/usr/bin/stat -c %u -- "$BATTERY_STATUS_HELPER_DESTINATION" 2>/dev/null)" || return 1
+  mode="$(/usr/bin/stat -c %a -- "$BATTERY_STATUS_HELPER_DESTINATION" 2>/dev/null)" || return 1
+  [[ $owner == 0 && $mode == 755 ]] || return 1
+  /usr/bin/cmp -s -- "$BATTERY_STATUS_HELPER_SOURCE" "$BATTERY_STATUS_HELPER_DESTINATION"
+}
+
+install_battery_status_helper() {
+  local destination_dir temporary source_hash installed_hash
+  destination_dir="$(dirname -- "$BATTERY_STATUS_HELPER_DESTINATION")"
+
+  [[ -f $BATTERY_STATUS_HELPER_SOURCE && ! -L $BATTERY_STATUS_HELPER_SOURCE ]] \
+    || die "Battery status helper source is missing: $BATTERY_STATUS_HELPER_SOURCE"
+  [[ $(/usr/bin/head -n1 -- "$BATTERY_STATUS_HELPER_SOURCE") == '#!/usr/bin/bash' ]] \
+    || die "Battery status helper must use /usr/bin/bash."
+  /usr/bin/bash -n "$BATTERY_STATUS_HELPER_SOURCE" \
+    || die "Battery status helper failed Bash syntax validation."
+
+  battery_status_helper_is_current && return 0
+  [[ ! -L $destination_dir ]] \
+    || die "Refusing symlinked battery status helper directory: $destination_dir"
+
+  run_root /usr/bin/install -d -m 0755 -o root -g root "$destination_dir"
+  temporary="${BATTERY_STATUS_HELPER_DESTINATION}.tmp.$$"
+  run_root /usr/bin/rm -f -- "$temporary"
+  run_root /usr/bin/install -m 0755 -o root -g root "$BATTERY_STATUS_HELPER_SOURCE" "$temporary"
+
+  source_hash="$(/usr/bin/sha256sum "$BATTERY_STATUS_HELPER_SOURCE" | /usr/bin/awk '{print $1}')"
+  installed_hash="$(/usr/bin/sha256sum "$temporary" | /usr/bin/awk '{print $1}')"
+  if [[ $source_hash != "$installed_hash" ]]; then
+    run_root /usr/bin/rm -f -- "$temporary"
+    die "Battery status helper staging hash mismatch."
+  fi
+
+  run_root /usr/bin/mv -Tf -- "$temporary" "$BATTERY_STATUS_HELPER_DESTINATION"
+  battery_status_helper_is_current \
+    || die "Battery status helper verification failed after install."
+}
+
+battery_status_policy_user() {
+  local candidate="" passwd_entry="" account="" uid=""
+
+  if [[ ${EUID} -eq 0 ]]; then
+    candidate="${SUDO_USER:-${AWTARCHY_TARGET_USER:-}}"
+  else
+    candidate="${USER:-}"
+    [[ -n $candidate ]] || candidate="$(/usr/bin/id -un 2>/dev/null || true)"
+  fi
+
+  [[ -n $candidate && $candidate != root \
+    && $candidate =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] \
+    || die "Could not validate a non-root user for the Battery Care status policy."
+
+  passwd_entry="$(/usr/bin/getent passwd "$candidate" 2>/dev/null || true)"
+  IFS=: read -r account _ uid _ _ _ _ <<<"$passwd_entry"
+  [[ $account == "$candidate" && $uid =~ ^[0-9]+$ && $uid -ne 0 ]] \
+    || die "Could not validate the Battery Care status policy account: $candidate"
+
+  printf '%s\n' "$candidate"
+}
+
+battery_status_policy_is_current() {
+  local user="$1" policy_file owner mode dir_owner dir_mode expected_rule
+  policy_file="${SUDOERS_DIR}/awtarchy-battery-status-${user}"
+  expected_rule="${user} ALL=(root) NOPASSWD: ${BATTERY_STATUS_HELPER_DESTINATION} \"\""
+
+  [[ -d $SUDOERS_DIR && ! -L $SUDOERS_DIR ]] || return 1
+  dir_owner="$(/usr/bin/stat -c %u -- "$SUDOERS_DIR" 2>/dev/null)" || return 1
+  dir_mode="$(/usr/bin/stat -c %a -- "$SUDOERS_DIR" 2>/dev/null)" || return 1
+  [[ $dir_owner == 0 && $dir_mode =~ ^[0-7]{3,4}$ ]] || return 1
+  (( (8#$dir_mode & 8#022) == 0 )) || return 1
+
+  [[ -f $policy_file && ! -L $policy_file ]] || return 1
+  owner="$(/usr/bin/stat -c %u -- "$policy_file" 2>/dev/null)" || return 1
+  mode="$(/usr/bin/stat -c %a -- "$policy_file" 2>/dev/null)" || return 1
+  [[ $owner == 0 && $mode == 440 ]] || return 1
+  /usr/bin/grep -Fxq -- "$BATTERY_STATUS_POLICY_MARKER" "$policy_file" || return 1
+  /usr/bin/grep -Fxq -- "$expected_rule" "$policy_file" || return 1
+  [[ $(/usr/bin/wc -l <"$policy_file") -eq 2 ]] || return 1
+  run_root /usr/sbin/visudo -cf "$policy_file" >/dev/null 2>&1
+}
+
+install_battery_status_policy() {
+  local user policy_file expected_rule temporary dir_owner dir_mode
+  user="$(battery_status_policy_user)"
+  policy_file="${SUDOERS_DIR}/awtarchy-battery-status-${user}"
+  expected_rule="${user} ALL=(root) NOPASSWD: ${BATTERY_STATUS_HELPER_DESTINATION} \"\""
+
+  [[ -d $SUDOERS_DIR && ! -L $SUDOERS_DIR ]] \
+    || die "Unsafe or missing sudoers directory: $SUDOERS_DIR"
+  dir_owner="$(/usr/bin/stat -c %u -- "$SUDOERS_DIR" 2>/dev/null)" \
+    || die "Cannot inspect sudoers directory ownership."
+  dir_mode="$(/usr/bin/stat -c %a -- "$SUDOERS_DIR" 2>/dev/null)" \
+    || die "Cannot inspect sudoers directory permissions."
+  [[ $dir_owner == 0 && $dir_mode =~ ^[0-7]{3,4}$ ]] \
+    || die "Unsafe sudoers directory ownership: $SUDOERS_DIR"
+  (( (8#$dir_mode & 8#022) == 0 )) \
+    || die "Sudoers directory is group/world writable: $SUDOERS_DIR"
+
+  battery_status_policy_is_current "$user" && return 0
+
+  if [[ -e $policy_file || -L $policy_file ]]; then
+    [[ -f $policy_file && ! -L $policy_file ]] \
+      || die "Refusing unsafe Battery Care sudoers policy: $policy_file"
+    /usr/bin/grep -Fxq -- "$BATTERY_STATUS_POLICY_MARKER" "$policy_file" \
+      || die "Refusing to replace non-Awtarchy sudoers policy: $policy_file"
+  fi
+
+  temporary="$(run_root /usr/bin/mktemp "${SUDOERS_DIR}/.awtarchy-battery-status.XXXXXX")"
+  {
+    printf '%s\n' "$BATTERY_STATUS_POLICY_MARKER"
+    printf '%s\n' "$expected_rule"
+  } | run_root /usr/bin/tee -- "$temporary" >/dev/null
+  run_root /usr/bin/chmod 0440 "$temporary"
+  run_root /usr/bin/chown root:root "$temporary"
+
+  if ! run_root /usr/sbin/visudo -cf "$temporary" >/dev/null; then
+    run_root /usr/bin/rm -f -- "$temporary"
+    die "Generated Battery Care status sudoers policy is invalid."
+  fi
+
+  run_root /usr/bin/mv -Tf -- "$temporary" "$policy_file"
+  battery_status_policy_is_current "$user" \
+    || die "Battery Care status sudoers policy verification failed after install."
+}
+
 ask_replace_ppd() {
   local answer=""
   if [[ ! -t 0 || ! -t 1 ]]; then
@@ -162,6 +305,8 @@ install_laptop_backend() {
   local -a newly_managed=()
 
   install_power_profile_helper
+  install_battery_status_helper
+  install_battery_status_policy
 
   if package_installed power-profiles-daemon; then
     remove_ppd_for_tlp || return 0
