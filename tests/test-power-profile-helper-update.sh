@@ -88,7 +88,7 @@ require_literal "$RECONCILER" 'install_battery_status_helper()' \
   'power reconciler has no read-only status helper install/repair function'
 require_literal "$RECONCILER" 'install_battery_status_policy()' \
   'power reconciler has no read-only status policy install/repair function'
-require_literal "$RECONCILER" 'NOPASSWD: ${BATTERY_STATUS_HELPER_DESTINATION} ""' \
+require_literal "$RECONCILER" 'NOPASSWD: ${BATTERY_STATUS_HELPER_DESTINATION} \"\"' \
   'power reconciler does not restrict passwordless access to the no-argument read-only status helper'
 require_literal "$RECONCILER" '/usr/sbin/visudo -cf' \
   'power reconciler does not validate the generated battery status sudoers rule'
