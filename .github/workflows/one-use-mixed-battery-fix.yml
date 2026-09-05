@@ -1,0 +1,126 @@
+name: One-use mixed battery fix
+
+on:
+  push:
+    branches:
+      - hardening/tlp-battery-compatibility
+    paths:
+      - .github/workflows/one-use-mixed-battery-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: >-
+      github.repository == 'dillacorn/awtarchy' &&
+      github.ref == 'refs/heads/hardening/tlp-battery-compatibility' &&
+      github.event.head_commit.message == 'Apply mixed battery threshold fix bridge'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch mixed threshold handling
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          detector = Path('config/hypr/scripts/quickshell_battery_care.sh')
+          text = detector.read_text()
+
+          replacements = [
+              (
+                  "batteries='[]'\nsysfs_supported=false\nfirst_start=null\nfirst_stop=null\n\nshopt -s nullglob",
+                  "batteries='[]'\nsysfs_supported=false\nfirst_start=null\nfirst_stop=null\nmixed_stop_thresholds=false\n\nshopt -s nullglob",
+              ),
+              (
+                  '            stop_threshold="$value"\n            [[ "$first_stop" != null ]] || first_stop="$value"',
+                  '            stop_threshold="$value"\n            if [[ "$first_stop" == null ]]; then\n                first_stop="$value"\n            elif [[ "$first_stop" != "$value" ]]; then\n                mixed_stop_thresholds=true\n            fi',
+              ),
+              (
+                  'if [[ "$observed_target" == null && "$first_stop" != null ]]; then\n    observed_target="$first_stop"\nfi',
+                  'if [[ "$mixed_stop_thresholds" == true ]]; then\n    observed_target=null\n    enabled=null\n    first_stop=null\nelif [[ "$observed_target" == null && "$first_stop" != null ]]; then\n    observed_target="$first_stop"\nfi',
+              ),
+              (
+                  '    --argjson current_stop "$first_stop" \\\n    --argjson tlp_available "$tlp_available"',
+                  '    --argjson current_stop "$first_stop" \\\n    --argjson mixed_stop_thresholds "$mixed_stop_thresholds" \\\n    --argjson tlp_available "$tlp_available"',
+              ),
+              (
+                  '        current_stop:$current_stop,\n        tlp_available:$tlp_available,',
+                  '        current_stop:$current_stop,\n        mixed_stop_thresholds:$mixed_stop_thresholds,\n        tlp_available:$tlp_available,',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'detector anchor count {count}, expected 1: {old!r}')
+              text = text.replace(old, new, 1)
+          detector.write_text(text)
+
+          card = Path('config/quickshell/awtarchy/BatteryCareCard.qml')
+          text = card.read_text()
+          replacements = [
+              (
+                  '    readonly property bool fixedUnknownTarget: pluginName === "lenovo" || pluginName === "lenovo-legacy"\n    readonly property bool limitEnabled: statusData.enabled === true\n        || (statusData.enabled !== false && Boolean(statusData.managed_config))',
+                  '    readonly property bool fixedUnknownTarget: pluginName === "lenovo" || pluginName === "lenovo-legacy"\n    readonly property bool mixedStopThresholds: Boolean(statusData.mixed_stop_thresholds)\n    readonly property bool limitEnabled: mixedStopThresholds || statusData.enabled === true\n        || (statusData.enabled !== false && Boolean(statusData.managed_config))',
+              ),
+              (
+                  '            current_start: null,\n            current_stop: null,\n            managed_config: false,',
+                  '            current_start: null,\n            current_stop: null,\n            mixed_stop_thresholds: false,\n            managed_config: false,',
+              ),
+              (
+                  '        if (statusData.target !== null && statusData.target !== undefined) {',
+                  '        if (!mixedStopThresholds && statusData.target !== null && statusData.target !== undefined) {',
+              ),
+              (
+                  '    function statusControlLabel() {\n        if (statusData.enabled === true)',
+                  '    function statusControlLabel() {\n        if (mixedStopThresholds)\n            return "Mixed";\n        if (statusData.enabled === true)',
+              ),
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'QML anchor count {count}, expected 1: {old!r}')
+              text = text.replace(old, new, 1)
+          card.write_text(text)
+          PY
+
+      - name: Refresh managed history
+        run: |
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          for spec in \
+            'config/hypr/scripts/quickshell_battery_care.sh:.config/hypr/scripts/quickshell_battery_care.sh' \
+            'config/quickshell/awtarchy/BatteryCareCard.qml:.config/quickshell/awtarchy/BatteryCareCard.qml'
+          do
+            source_path="${spec%%:*}"
+            managed_path="${spec#*:}"
+            hash="$(sha256sum -- "$source_path" | awk '{print $1}')"
+            line="${hash}"$'\t'"${managed_path}"
+            grep -Fxq -- "$line" "$history" || printf '%s\n' "$line" >>"$history"
+          done
+
+      - name: Verify focused battery suite
+        run: |
+          bash -n config/hypr/scripts/quickshell_battery_care.sh
+          bash tests/test-battery-care-multibattery.sh
+          bash tests/test-battery-care-detector-profiles.sh
+          bash tests/test-battery-care-write-gating.sh
+          bash tests/test-battery-flyout.sh
+          git diff --check
+
+      - name: Commit implementation and remove bridge
+        run: |
+          rm -- .github/workflows/one-use-mixed-battery-fix.yml
+          git add -- \
+            .github/workflows/one-use-mixed-battery-fix.yml \
+            config/hypr/scripts/quickshell_battery_care.sh \
+            config/quickshell/awtarchy/BatteryCareCard.qml \
+            local/share/awtarchy/quickshell-managed-history.sha256
+          git diff --cached --check
+          git config user.name 'Awtarchy CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'Handle mixed battery charge thresholds'
+          git push origin HEAD:hardening/tlp-battery-compatibility
