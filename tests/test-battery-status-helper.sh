@@ -20,14 +20,17 @@ grep -Fq '/usr/bin/tlp-stat -b' "$HELPER" || fail 'helper does not execute the f
 ! grep -Fq '"$@"' "$HELPER" || fail 'helper forwards caller-controlled arguments'
 ! grep -Eq '/usr/bin/tlp([[:space:]]|$)' "$HELPER" || fail 'helper contains a battery write command'
 
-if "$HELPER" unexpected >"$TMP/arg.out" 2>"$TMP/arg.err"; then
+# Privileged helper sources are regular repository files and are installed as
+# executable root-owned copies by the reconciler. Exercise the source through
+# its fixed interpreter rather than depending on repository file mode.
+if /usr/bin/bash "$HELPER" unexpected >"$TMP/arg.out" 2>"$TMP/arg.err"; then
   fail 'helper accepted an argument'
 fi
 grep -Fq 'no arguments are accepted' "$TMP/arg.err" \
   || fail 'argument rejection did not fail for the intended reason'
 
 if (( EUID != 0 )); then
-  if "$HELPER" >"$TMP/root.out" 2>"$TMP/root.err"; then
+  if /usr/bin/bash "$HELPER" >"$TMP/root.out" 2>"$TMP/root.err"; then
     fail 'helper executed without root privileges'
   fi
   grep -Fq 'root privileges are required' "$TMP/root.err" \
@@ -54,13 +57,12 @@ if text.count(old) != 1:
     raise SystemExit('expected exactly one fixed tlp-stat invocation')
 path.write_text(text.replace(old, new))
 PY
-chmod 0755 "$TMP/helper-under-test"
 
 command -v sudo >/dev/null 2>&1 || fail 'sudo is required for the root helper behavior test'
 sudo -n true >/dev/null 2>&1 || fail 'passwordless/noninteractive sudo is required for the root helper behavior test'
 
 set +e
-sudo -n /usr/bin/env ATTACK=present "$TMP/helper-under-test" >"$TMP/report.out" 2>"$TMP/report.err"
+sudo -n /usr/bin/env ATTACK=present /usr/bin/bash "$TMP/helper-under-test" >"$TMP/report.out" 2>"$TMP/report.err"
 rc=$?
 set -e
 [[ $rc -eq 23 ]] || fail "helper did not preserve tlp-stat exit status (got $rc)"
