@@ -52,7 +52,11 @@ jobs:
           (( missing == 0 ))
 
   publish-v3-5-4:
-    if: github.event_name == 'pull_request' && github.event.pull_request.number == 142 && github.event.pull_request.head.ref == 'release/v3.5.4-bridge' && github.event.pull_request.title == 'Release bridge: publish v3.5.4'
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.number == 142 &&
+      github.event.pull_request.head.ref == 'release/v3.5.4-bridge' &&
+      github.event.pull_request.title == 'Release bridge: publish v3.5.4'
     needs: bluetooth-state
     permissions:
       contents: write
