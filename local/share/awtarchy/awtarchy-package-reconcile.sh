@@ -596,12 +596,47 @@ selected_values() {
   done
 }
 
-require_sudo() {
-  if (( EUID == 0 )); then
-    return 0
+root_free_mib() {
+  local available_kib=""
+  available_kib="$(/usr/bin/df -Pk / 2>/dev/null | awk 'NR == 2 { print $4 }')"
+  [[ $available_kib =~ ^[0-9]+$ ]] || return 1
+  printf '%s\n' "$(( available_kib / 1024 ))"
+}
+
+recover_package_disk_headroom() {
+  local preferred_mib="${AWTARCHY_UPDATE_PREFERRED_FREE_MIB:-4096}"
+  local required_mib="${AWTARCHY_UPDATE_REQUIRED_FREE_MIB:-1024}"
+  local free_mib="" paccache_bin=""
+
+  [[ $preferred_mib =~ ^[0-9]+$ && $required_mib =~ ^[0-9]+$ ]] \
+    || die "Invalid update disk-space threshold override."
+  (( preferred_mib >= required_mib )) \
+    || die "Preferred update disk-space threshold cannot be below the required threshold."
+
+  free_mib="$(root_free_mib)" \
+    || die "Could not determine free space on the root filesystem."
+  (( free_mib >= preferred_mib )) && return 0
+
+  for paccache_bin in /usr/bin/paccache /usr/sbin/paccache; do
+    [[ -x $paccache_bin ]] && break
+    paccache_bin=""
+  done
+
+  if [[ -n $paccache_bin ]]; then
+    log "Root filesystem has ${free_mib} MiB free; pruning old pacman cache entries while keeping two package versions..."
+    if ! as_root "$paccache_bin" -rk2; then
+      die "Automatic pacman cache pruning failed."
+    fi
+    free_mib="$(root_free_mib)" \
+      || die "Could not re-check free space after pacman cache pruning."
   fi
-  have sudo || die "sudo is required to apply package reconciliation."
-  sudo -v || die "sudo authentication failed; no package changes were applied."
+
+  (( free_mib >= required_mib )) \
+    || die "Root filesystem has only ${free_mib} MiB free; at least ${required_mib} MiB is required before continuing package installation."
+
+  if (( free_mib < preferred_mib )); then
+    warn "Root filesystem has ${free_mib} MiB free; continuing above the ${required_mib} MiB hard minimum."
+  fi
 }
 
 as_root() {
@@ -650,6 +685,9 @@ install_selected_aur_packages() {
       continue
     fi
 
+    if (( EUID != 0 )); then
+      sudo -k
+    fi
     log "Installing AUR package through upstream aur-scanner: ${pkg}"
     if ! "$AUR_SCAN_BIN" install "$pkg" --noconfirm; then
       warn "AUR package failed: ${pkg}. Continuing with remaining package actions."
@@ -708,7 +746,6 @@ forget_managed_packages() {
 apply_cheese_snapshot_replacement() {
   (( CHEESE_REPLACEMENT_NEEDED == 1 )) || return 0
 
-  require_sudo
   log "Replacing retired Cheese camera app with Snapshot..."
   if ! package_installed snapshot; then
     as_root pacman -S --needed --noconfirm snapshot
@@ -904,7 +941,7 @@ if (( ${#install_arch[@]} == 0 && ${#selected_aur[@]} == 0 && ${#selected_flatpa
 fi
 
 confirm_yes_no 'Apply this package plan?' 0 || { log 'Package reconciliation canceled.'; exit 0; }
-require_sudo
+recover_package_disk_headroom
 
 if (( ${#install_arch[@]} )); then
   log "Installing Arch packages with a full system upgrade: ${install_arch[*]}"
@@ -920,6 +957,7 @@ if (( enable_ly == 1 )); then
 fi
 
 if (( ${#selected_aur[@]} )); then
+  log 'AUR build privilege isolation enabled; makepkg may request sudo independently.'
   if ensure_aur_scanner; then
     install_selected_aur_packages "${selected_aur[@]}"
   else
