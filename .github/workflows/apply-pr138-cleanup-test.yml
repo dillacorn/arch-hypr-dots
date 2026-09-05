@@ -1,0 +1,39 @@
+name: Apply PR138 Cleanup Test
+
+on:
+  push:
+    branches: [fix/update-terminal-sudo-disk-recovery]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.head_commit.message == 'Add PR138 cleanup test applicator'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Replace stale sudo-session assertions with AUR-only no-preauth regression
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('tests/test-awtarchy-update-session.sh')
+          text = path.read_text(encoding='utf-8')
+          start = text.index('# Package reconciliation must authenticate only after Apply-plan approval')
+          end = text.index('# Each individual aur-scan invocation must invalidate any ticket left by the')
+          replacement = '''# Package reconciliation must not keep a reusable sudo ticket alive or\n# authenticate merely because an AUR-only plan was approved. Privileged\n# Awtarchy work should authenticate only when the actual root operation runs.\nfor forbidden in (\n    "PACKAGE_SUDO_KEEPALIVE_PID",\n    "start_package_privilege_keepalive",\n    "stop_package_privilege_keepalive",\n    "resume_package_privilege_keepalive",\n):\n    if forbidden in reconciler:\n        raise SystemExit(f"stale package sudo keepalive remains: {forbidden}")\n\nrecovery = function_body(reconciler, "recover_package_disk_headroom")\nfor required in ("root_free_mib", "paccache", "-rk2", "as_root"):\n    if required not in recovery:\n        raise SystemExit(f"package-plan disk recovery is missing: {required}")\nif "sudo -n" in recovery:\n    raise SystemExit("package disk recovery still depends on a pre-authenticated sudo ticket")\n\nconfirm = "confirm_yes_no 'Apply this package plan?' 0"\nconfirm_pos = reconciler.find(confirm)\nrecovery_pos = reconciler.find("recover_package_disk_headroom", confirm_pos)\narch_pos = reconciler.find('if (( ${#install_arch[@]} )); then', recovery_pos)\nfor label, pos in (\n    ("plan confirmation", confirm_pos),\n    ("disk recovery", recovery_pos),\n    ("first package action", arch_pos),\n):\n    if pos < 0:\n        raise SystemExit(f"package reconciliation flow is missing: {label}")\nif not confirm_pos < recovery_pos < arch_pos:\n    raise SystemExit("package approval/disk/action ordering is incorrect")\npre_action = reconciler[confirm_pos:arch_pos]\nif "require_sudo" in pre_action or "sudo -v" in pre_action:\n    raise SystemExit("AUR-only package approval still authenticates sudo before privileged work")\n\n'''
+          text = text[:start] + replacement + text[end:]
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          rm -f .github/workflows/apply-pr138-cleanup-test.yml
+          bash -n tests/test-awtarchy-update-session.sh
+          git diff --check
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add tests/test-awtarchy-update-session.sh .github/workflows/apply-pr138-cleanup-test.yml
+          git commit -m 'Test AUR-only plans skip Awtarchy sudo preauth'
+          git push origin HEAD:fix/update-terminal-sudo-disk-recovery
