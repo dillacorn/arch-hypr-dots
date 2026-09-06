@@ -71,9 +71,11 @@ The detector must not read vendor-specific sysfs paths or interpret fields such 
 
 Awtarchy may normalize TLP's advertised stop specification into only these generic modes:
 
-- `range`: TLP advertises a numeric range;
-- `presets`: TLP advertises multiple numeric values;
-- `unsupported`: TLP does not advertise a usable charge-threshold setting.
+- `range`: TLP advertises a numeric percentage threshold range;
+- `presets`: TLP advertises multiple numeric percentage threshold values;
+- `unsupported`: TLP does not advertise a usable percentage charge-threshold setting.
+
+Only TLP's `charge threshold` capability may become a writable Quickshell percentage control. `charge type` is a selector capability and remains read-only/TLPUI fallback even if its selector labels contain numeric values that resemble a threshold range.
 
 Selector/fixed vendor modes that cannot be represented by standard percentage values are not reimplemented. The UI may show TLP Battery Care as available but direct the user to TLPUI for advanced/vendor-defined modes instead of adding Awtarchy compatibility code.
 
@@ -107,7 +109,7 @@ Preserve the existing Battery Care card layout and normal percentage slider/pres
 
 Remove UI policy based on `pluginName`, including Lenovo-specific fixed-mode handling. `controlsAvailable` depends only on normalized generic capability, TLP availability, and config ownership/conflict state.
 
-When TLP reports Battery Care but not a generic numeric control, show a concise read-only state such as:
+When TLP reports Battery Care but not a generic numeric threshold control, show a concise read-only state such as:
 
 `Advanced Battery Care is available through TLP/TLPUI.`
 
@@ -144,13 +146,14 @@ Required coverage:
 3. stop-only interface -> generic target with start `0`;
 4. no charge-threshold capability -> controls unavailable;
 5. unknown/future plugin name with valid generic range -> works without code changes;
-6. vendor/fixed/selector output without a numeric percentage spec -> read-only/TLPUI fallback, not a new Awtarchy branch;
-7. TLP rejects an invalid/application request -> helper reports failure and preserves/restores the previous Awtarchy drop-in;
-8. successful `tlp start` is authoritative even if read-back differs from the requested numeric value;
-9. reported battery names determine which `BATx` config keys are written;
-10. external threshold config remains a fail-closed conflict;
-11. existing Awtarchy managed drop-in remains compatible;
-12. `tlpui` is installed as an official repository package rather than via AUR scanner.
+6. vendor/fixed/selector output without a numeric percentage threshold spec -> read-only/TLPUI fallback, not a new Awtarchy branch;
+7. `charge type` selector output remains read-only even when its numeric selector values resemble a percentage range;
+8. TLP rejects an invalid/application request -> helper reports failure and preserves/restores the previous Awtarchy drop-in;
+9. successful `tlp start` is authoritative even if read-back differs from the requested numeric value;
+10. reported battery names determine which `BATx` config keys are written;
+11. external threshold config remains a fail-closed conflict;
+12. existing Awtarchy managed drop-in remains compatible;
+13. `tlpui` is installed as an official repository package rather than via AUR scanner.
 
 Tests simulating specific vendors may remain only when they exercise a generic TLP contract. They must not assert that Awtarchy has special code for that vendor.
 
@@ -168,8 +171,9 @@ Delete or retire code whose only purpose is Awtarchy-owned hardware compatibilit
 
 ## Acceptance criteria
 
-- Quickshell Battery Care remains usable for TLP-advertised numeric threshold hardware.
-- A new TLP plugin with the same generic numeric interface requires no Awtarchy code change.
+- Quickshell Battery Care remains usable for TLP-advertised numeric charge-threshold hardware.
+- A new TLP plugin with the same generic numeric threshold interface requires no Awtarchy code change.
+- TLP `charge type` selectors cannot be exposed as percentage controls solely because their labels contain numbers.
 - No privileged or unprivileged Battery Care code branches on a vendor/plugin name for write policy.
 - All battery hardware writes go through TLP.
 - TLP's success/failure is authoritative; Awtarchy does not maintain firmware-specific read-back rules.
