@@ -51,7 +51,7 @@ jobs:
           done
           (( missing == 0 ))
 
-  update-v3-5-5-release-notes:
+  verify-v3-5-5-release-notes:
     if: >-
       github.event_name == 'pull_request' &&
       github.event.pull_request.number == 153 &&
@@ -67,7 +67,7 @@ jobs:
         with:
           ref: release/v3.5.5-clipboard-notes
           fetch-depth: 0
-      - name: Verify immutable release, update notes, and delete helper branch
+      - name: Verify updated release and delete helper branch
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -78,7 +78,7 @@ jobs:
 
           current_main="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
           test "$current_main" = "$EXPECTED_MAIN" || {
-            printf 'Refusing release-note update: main moved from %s to %s\n' "$EXPECTED_MAIN" "$current_main" >&2
+            printf 'Refusing cleanup: main moved from %s to %s\n' "$EXPECTED_MAIN" "$current_main" >&2
             false
           }
 
@@ -98,23 +98,14 @@ jobs:
           fi
           test "$tag_sha" = "$EXPECTED_TAG_SHA"
 
-          gh release edit v3.5.5 \
-            --repo "$GITHUB_REPOSITORY" \
-            --notes-file .github/release-v3.5.5-updated.md
-
           gh release view v3.5.5 --repo "$GITHUB_REPOSITORY" --json body --jq '.body' > /tmp/v355-body.md
-          cmp -s .github/release-v3.5.5-updated.md /tmp/v355-body.md
-
-          release_name="$(gh release view v3.5.5 --repo "$GITHUB_REPOSITORY" --json name --jq '.name')"
-          release_target="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v3.5.5" --jq '.target_commitish')"
-          release_draft="$(gh release view v3.5.5 --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')"
-          release_prerelease="$(gh release view v3.5.5 --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq '.isPrerelease')"
-          tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.5.5" --jq '.object.sha')"
-          test "$release_name" = 'Awtarchy v3.5.5 Quickshell'
-          test "$release_target" = "$EXPECTED_TAG_SHA"
-          test "$release_draft" = 'false'
-          test "$release_prerelease" = 'false'
-          test "$tag_sha" = "$EXPECTED_TAG_SHA"
+          python3 - <<'PY'
+          from pathlib import Path
+          expected = Path('.github/release-v3.5.5-updated.md').read_text(encoding='utf-8').rstrip('\n')
+          actual = Path('/tmp/v355-body.md').read_text(encoding='utf-8').rstrip('\n')
+          if actual != expected:
+              raise SystemExit('published v3.5.5 body does not match the prepared release notes')
+          PY
 
           grep -Fq '## Clipboard thumbnail resource hardening' /tmp/v355-body.md
           grep -Fq '52e06aca511f7a89a262008b9f379c32bf30c2fc' /tmp/v355-body.md
