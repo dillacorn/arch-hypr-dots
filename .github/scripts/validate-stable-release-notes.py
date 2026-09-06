@@ -9,23 +9,14 @@ import sys
 from pathlib import Path
 
 
-PROTECTED_HEADINGS = (
-    "## Getting started",
-    "## Existing Awtarchy users",
+REQUIRED_HEADINGS = (
+    "## Install and update",
     "## Validation",
     "## Post-release updates",
 )
 
-GETTING_STARTED_REQUIRED = (
-    "Arch Linux overlay/environment, not a Linux distribution or an Arch Linux installer",
-    "https://archlinux.org/download/",
-    "archinstall",
-    "https://wiki.archlinux.org/title/Installation_guide",
-    "sudo pacman -S git --noconfirm",
-    "git clone https://github.com/dillacorn/awtarchy",
-    "cd awtarchy",
-    "sudo ./awtarchy-install.sh",
-)
+INSTALL_GUIDE_URL = "https://github.com/dillacorn/awtarchy/blob/main/INSTALL.md"
+UPDATING_GUIDE_URL = "https://github.com/dillacorn/awtarchy/blob/main/UPDATING.md"
 
 
 def fail(message: str) -> None:
@@ -58,12 +49,12 @@ def validate(version: str, notes_path: Path, previous_path: Path | None) -> None
         fail(f"release must start with {expected_title!r}")
 
     title_end = len(expected_title) + 1
-    getting_started_pos = body.find("## Getting started")
-    if getting_started_pos < 0 or not body[title_end:getting_started_pos].strip():
-        fail("release overview is missing before Getting started")
+    install_update_pos = body.find("## Install and update")
+    if install_update_pos < 0 or not body[title_end:install_update_pos].strip():
+        fail("release overview is missing before Install and update")
 
     positions: list[int] = []
-    for heading in PROTECTED_HEADINGS:
+    for heading in REQUIRED_HEADINGS:
         marker = f"{heading}\n"
         if body.count(marker) != 1:
             fail(f"expected exactly one {heading!r} heading")
@@ -71,12 +62,9 @@ def validate(version: str, notes_path: Path, previous_path: Path | None) -> None
     if positions != sorted(positions):
         fail("required stable release sections are out of order")
 
-    getting_started = section(body, "## Getting started")
-    for required in GETTING_STARTED_REQUIRED:
-        require_text(getting_started, required, "Getting started")
-
-    existing_users = section(body, "## Existing Awtarchy users")
-    require_text(existing_users, "awtarchy update", "Existing Awtarchy users")
+    install_update = section(body, "## Install and update")
+    require_text(install_update, INSTALL_GUIDE_URL, "Install and update")
+    require_text(install_update, UPDATING_GUIDE_URL, "Install and update")
 
     validation = section(body, "## Validation")
     if not validation:
@@ -90,7 +78,7 @@ def validate(version: str, notes_path: Path, previous_path: Path | None) -> None
 
     if previous_path is not None:
         previous = previous_path.read_text(encoding="utf-8")
-        for heading in PROTECTED_HEADINGS:
+        for heading in REQUIRED_HEADINGS:
             if heading in previous and heading not in body:
                 fail(f"protected section from previous stable release disappeared: {heading}")
 
