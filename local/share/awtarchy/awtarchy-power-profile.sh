@@ -324,6 +324,9 @@ install_laptop_backend() {
   if ! package_installed tlp-pd; then
     newly_managed+=(tlp-pd)
   fi
+  if ! package_installed tlpui; then
+    newly_managed+=(tlpui)
+  fi
 
   if (( ${#newly_managed[@]} )); then
     log "Installing laptop power-profile backend: ${newly_managed[*]}"
