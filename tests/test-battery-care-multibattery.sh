@@ -17,6 +17,7 @@ fail() {
 [[ -f "$HELPER" ]] || fail 'power-profile-helper is missing'
 [[ -f "$DETECTOR" ]] || fail 'battery-care detector is missing'
 [[ -f "$CARD" ]] || fail 'BatteryCareCard.qml is missing'
+command -v jq >/dev/null 2>&1 || fail 'jq is required'
 
 TEST_HELPER="$TMP/power-profile-helper"
 FAKE_BIN="$TMP/bin"
@@ -29,7 +30,7 @@ mkdir -p -- "$FAKE_BIN" "$CONF_DIR"
 cp -- "$HELPER" "$TEST_HELPER"
 chmod 0755 "$TEST_HELPER"
 
-python3 - "$TEST_HELPER" "$FAKE_BIN/tlp" "$FAKE_BIN/tlp-stat" "$CONF_DIR" "$USER_CONF" <<'PY'
+python3 - "$TEST_HELPER" "$FAKE_BIN/tlp" "$FAKE_BIN/tlp-stat" "$CONF_DIR" "$USER_CONF" "$(id -u)" <<'PY'
 from pathlib import Path
 import sys
 path = Path(sys.argv[1])
@@ -39,6 +40,8 @@ text = text.replace('TLP_STAT="/usr/bin/tlp-stat"', f'TLP_STAT="{sys.argv[3]}"')
 text = text.replace('CONFIG_DIR="/etc/tlp.d"', f'CONFIG_DIR="{sys.argv[4]}"')
 text = text.replace('USER_CONFIG="/etc/tlp.conf"', f'USER_CONFIG="{sys.argv[5]}"')
 text = text.replace("(( EUID == 0 )) || fail 'must run as root'", ': # test copy: root check bypassed')
+text = text.replace('[[ "$dir_owner" == 0 && "$dir_mode" =~ ^[0-7]{3,4}$ ]]',
+                    f'[[ "$dir_owner" == {sys.argv[6]} && "$dir_mode" =~ ^[0-7]{{3,4}}$ ]]')
 path.write_text(text)
 PY
 
@@ -47,14 +50,14 @@ cat >"$FAKE_BIN/tlp-stat" <<'FAKE_STAT'
 set -euo pipefail
 cat <<'EOF'
 +++ Battery Care
-Plugin: dell
+Plugin: arbitrary-range
 Supported features: charge thresholds
 Parameter value ranges:
 * START_CHARGE_THRESH_BAT0/1: 50..95(default)
 * STOP_CHARGE_THRESH_BAT0/1: 55..100(default)
-+++ ThinkPad Battery Status: BAT0
++++ Battery Status: BAT0
 /sys/class/power_supply/BAT0/charge_control_end_threshold = 100 [%]
-+++ ThinkPad Battery Status: BAT1
++++ Battery Status: BAT1
 /sys/class/power_supply/BAT1/charge_control_end_threshold = 100 [%]
 EOF
 FAKE_STAT
@@ -64,10 +67,15 @@ cat >"$FAKE_BIN/tlp" <<'FAKE_TLP'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"${AWTARCHY_TEST_LOG:?}"
-[[ ${1:-} == fullcharge ]] || exit 64
-if [[ ${AWTARCHY_FAIL_FULLCHARGE_BAT0:-0} == 1 && ${2:-} == BAT0 ]]; then
-  exit 5
-fi
+case "${1:-}" in
+  fullcharge)
+    if [[ ${AWTARCHY_FAIL_FULLCHARGE_BAT0:-0} == 1 && ${2:-} == BAT0 ]]; then
+      exit 5
+    fi
+    ;;
+  setcharge) ;;
+  *) exit 64 ;;
+esac
 FAKE_TLP
 chmod 0755 "$FAKE_BIN/tlp"
 
@@ -78,7 +86,23 @@ grep -Fxq 'fullcharge BAT1' "$LOG" || fail 'battery-disable did not restore BAT1
 [[ "$(grep -Fc 'fullcharge' "$LOG")" -eq 2 ]] \
   || fail 'battery-disable issued an unexpected number of fullcharge operations'
 
-# Divergent live limits must remain per-battery facts, never a fabricated global target.
+# Recovery must still attempt later batteries if an earlier fullcharge fails.
+SOURCE_HELPER="$TMP/power-profile-helper-source"
+sed '/^main "\$@"$/d' "$TEST_HELPER" >"$SOURCE_HELPER"
+source "$SOURCE_HELPER"
+: >"$LOG"
+set +e
+AWTARCHY_TEST_LOG="$LOG" AWTARCHY_FAIL_FULLCHARGE_BAT0=1 battery_fullcharge_all
+fullcharge_rc=$?
+set -e
+[[ "$fullcharge_rc" -ne 0 ]] || fail 'multi-battery fullcharge hid a BAT0 failure'
+grep -Fxq 'fullcharge BAT0' "$LOG" || fail 'multi-battery recovery did not attempt BAT0'
+grep -Fxq 'fullcharge BAT1' "$LOG" || fail 'multi-battery recovery stopped before BAT1 after BAT0 failed'
+[[ "$(grep -Fc 'fullcharge' "$LOG")" -eq 2 ]] \
+  || fail 'multi-battery recovery issued an unexpected number of fullcharge operations'
+
+# Divergent live percentage limits remain per-battery facts, never a fabricated
+# singular target.
 POWER_ROOT="$TMP/power"
 for battery in BAT0 BAT1; do
   mkdir -p -- "$POWER_ROOT/$battery"
@@ -95,7 +119,7 @@ cat >"$FAKE_BIN/tlp-stat" <<'FAKE_MIXED_STAT'
 set -euo pipefail
 cat <<'EOF'
 +++ Battery Care
-Plugin: dell
+Plugin: arbitrary-range
 Supported features: charge thresholds
 Parameter value ranges:
 * START_CHARGE_THRESH_BAT0/1: 50..95(default)
@@ -111,7 +135,6 @@ json="$(
   AWTARCHY_TLP_STAT_BIN="$FAKE_BIN/tlp-stat" \
   AWTARCHY_TLP_CONFIG_DIR="$CONF_DIR" \
   AWTARCHY_TLP_USER_CONFIG="$USER_CONF" \
-  AWTARCHY_SONY_BATTERY_CARE_PATH="$TMP/no-sony-limiter" \
     bash "$DETECTOR" --status-json
 )"
 
@@ -124,86 +147,6 @@ jq -e '
 ' <<<"$json" >/dev/null \
   || fail "mixed BAT0/BAT1 stop thresholds were collapsed into one global state: $json"
 
-# Current TLP Lenovo supports BAT0 and BAT1 charge_types independently. A mixed
-# Long_Life/Standard state must not be collapsed to globally On just because the
-# first matching line happens to be Long_Life.
-rm -f -- \
-  "$POWER_ROOT/BAT0/charge_control_start_threshold" \
-  "$POWER_ROOT/BAT0/charge_control_end_threshold" \
-  "$POWER_ROOT/BAT1/charge_control_start_threshold" \
-  "$POWER_ROOT/BAT1/charge_control_end_threshold"
-
-cat >"$FAKE_BIN/tlp-stat" <<'FAKE_LENOVO_MIXED'
-#!/usr/bin/env bash
-set -euo pipefail
-cat <<'EOF'
-+++ Battery Care
-Plugin: lenovo
-Supported features: charge threshold
-Parameter value range:
-* STOP_CHARGE_THRESH_BAT0/1: 0(Standard)..1(Long_Life) -- charge_types
-+++ Battery Status: BAT0
-/sys/class/power_supply/BAT0/charge_types = Standard [Long_Life]
-+++ Battery Status: BAT1
-/sys/class/power_supply/BAT1/charge_types = [Standard] Long_Life
-EOF
-FAKE_LENOVO_MIXED
-chmod 0755 "$FAKE_BIN/tlp-stat"
-
-# Both verifier directions must require every reported Lenovo battery to agree.
-# Otherwise a successful BAT0 write could hide a failed BAT1 write or vice versa.
-VERIFY_HELPER="$TMP/power-profile-helper-source"
-sed '/^main "\$@"$/d' "$TEST_HELPER" >"$VERIFY_HELPER"
-source "$VERIFY_HELPER"
-if verify_enabled_state lenovo 1; then
-  fail 'Lenovo enabled-state verification accepted mixed Long_Life/Standard batteries'
-fi
-if verify_disabled_state lenovo; then
-  fail 'Lenovo disabled-state verification accepted mixed Long_Life/Standard batteries'
-fi
-
-# TLP documents that an omitted battery argument targets only the main battery.
-# Rollback from an absent managed config must therefore restore every reported pack.
-: >"$LOG"
-# This fixture isolates all-pack fullcharge fanout; rollback readback itself is
-# covered by test-battery-care-rollback-verification.sh.
-verify_disabled_state() { return 0; }
-AWTARCHY_TEST_LOG="$LOG" rollback_apply absent "$TMP/no-backup" dell
-grep -Fxq 'fullcharge BAT0' "$LOG" || fail 'rollback did not restore BAT0 full charge'
-grep -Fxq 'fullcharge BAT1' "$LOG" || fail 'rollback did not restore BAT1 full charge'
-[[ "$(grep -Fc 'fullcharge' "$LOG")" -eq 2 ]] \
-  || fail 'rollback issued an unexpected number of fullcharge operations'
-
-# Recovery must still attempt later batteries if an earlier fullcharge fails.
-# Returning failure is correct, but fail-fast would leave the remaining pack untouched.
-: >"$LOG"
-set +e
-AWTARCHY_TEST_LOG="$LOG" AWTARCHY_FAIL_FULLCHARGE_BAT0=1 battery_fullcharge_all
-fullcharge_rc=$?
-set -e
-[[ "$fullcharge_rc" -ne 0 ]] || fail 'multi-battery fullcharge hid a BAT0 failure'
-grep -Fxq 'fullcharge BAT0' "$LOG" || fail 'multi-battery recovery did not attempt BAT0'
-grep -Fxq 'fullcharge BAT1' "$LOG" || fail 'multi-battery recovery stopped before attempting BAT1 after BAT0 failed'
-[[ "$(grep -Fc 'fullcharge' "$LOG")" -eq 2 ]] \
-  || fail 'multi-battery recovery issued an unexpected number of fullcharge operations after a pack failure'
-
-json="$(
-  AWTARCHY_POWER_SUPPLY_ROOT="$POWER_ROOT" \
-  AWTARCHY_TLP_STAT_BIN="$FAKE_BIN/tlp-stat" \
-  AWTARCHY_TLP_CONFIG_DIR="$CONF_DIR" \
-  AWTARCHY_TLP_USER_CONFIG="$USER_CONF" \
-  AWTARCHY_SONY_BATTERY_CARE_PATH="$TMP/no-sony-limiter" \
-    bash "$DETECTOR" --status-json
-)"
-
-jq -e '
-  .plugin == "lenovo"
-  and .mixed_stop_thresholds == true
-  and .target == null
-  and .enabled == null
-' <<<"$json" >/dev/null \
-  || fail "mixed Lenovo BAT0/BAT1 charge types were collapsed into one global state: $json"
-
 grep -Fq 'readonly property bool mixedStopThresholds: Boolean(statusData.mixed_stop_thresholds)' "$CARD" \
   || fail 'Battery Care QML does not expose mixed stop-threshold state'
 grep -Fq 'mixed_stop_thresholds: false' "$CARD" \
@@ -212,9 +155,7 @@ grep -Fq 'mixedStopThresholds || statusData.enabled === true' "$CARD" \
   || fail 'mixed battery limits are not treated as an active limit for the OFF toggle'
 grep -Fq 'if (!mixedStopThresholds && statusData.target !== null && statusData.target !== undefined)' "$CARD" \
   || fail 'Battery Care can still collapse mixed thresholds into a singular maximum-charge label'
-grep -Fq 'if (mixedStopThresholds)' "$CARD" \
-  || fail 'Battery Care has no explicit mixed-state control label'
 grep -Fq 'return "Mixed";' "$CARD" \
   || fail 'Battery Care mixed-state control label is missing'
 
-printf '%s\n' 'Battery multi-battery regression tests passed.'
+printf '%s\n' 'PASS: multi-battery Battery Care behavior is generic and preserves per-pack state.'

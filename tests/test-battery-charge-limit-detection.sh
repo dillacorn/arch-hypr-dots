@@ -47,18 +47,16 @@ require_file "$CARE_CARD"
 require_file "$POWER_CARD"
 command -v jq >/dev/null 2>&1 || fail 'jq is required'
 
-# Range-capable hardware: TLP is authoritative for vendor-specific writable ranges,
-# while current values are read from the kernel power-supply attributes.
+# Numeric threshold ranges are a generic TLP contract. Plugin identity is only
+# diagnostic text and must not govern whether Quickshell can expose the control.
 range_root="$TMP/range-power"
 make_battery "$range_root" BAT0 75 80
 cat >"$TMP/tlp-range" <<'EOF_TLP_RANGE'
 #!/usr/bin/env bash
 cat <<'EOF_STATUS'
 +++ Battery Care
-Plugin: dell
+Plugin: future-vendor
 Supported features: charge thresholds
-Driver usage:
-* natacpi (dell_laptop) = active (charge thresholds)
 Parameter value ranges:
 * START_CHARGE_THRESH_BAT0/1: 50..95(default)
 * STOP_CHARGE_THRESH_BAT0/1: 55..100(default)
@@ -71,102 +69,67 @@ json="$(
     AWTARCHY_TLP_STAT_BIN="$TMP/tlp-range" \
     bash "$SCRIPT" --status-json
 )"
-assert_json "$json" '.supported == true' 'range hardware was not detected as supported'
-assert_json "$json" '.backend == "tlp"' 'TLP backend was not selected'
-assert_json "$json" '.plugin == "dell"' 'TLP plugin was not parsed'
-assert_json "$json" '.mode == "range"' 'range mode was not classified'
-assert_json "$json" '.start_min == 50 and .start_max == 95' 'start threshold range was not parsed'
-assert_json "$json" '.stop_min == 55 and .stop_max == 100' 'stop threshold range was not parsed'
+assert_json "$json" '.supported == true and .writable == true and .backend == "tlp"' \
+    'numeric TLP range was not detected as writable'
+assert_json "$json" '.plugin == "future-vendor" and .mode == "range"' \
+    'generic TLP range was classified using plugin policy'
+assert_json "$json" '.start_min == 50 and .start_max == 95 and .stop_min == 55 and .stop_max == 100' \
+    'generic threshold ranges were not parsed'
 assert_json "$json" '.batteries[0].name == "BAT0" and .batteries[0].start_threshold == 75 and .batteries[0].stop_threshold == 80' \
-    'current BAT0 thresholds were not read'
+    'current standard kernel threshold telemetry was not retained'
 
-# Fixed hardware with literal percentage presets can expose those presets safely.
-fixed_root="$TMP/fixed-power"
-make_battery "$fixed_root" BAT0 '' 80
-cat >"$TMP/tlp-fixed" <<'EOF_TLP_FIXED'
+# Literal percentage presets are generic too. No LG-specific mode is needed.
+preset_root="$TMP/preset-power"
+make_battery "$preset_root" BAT0 '' 80
+cat >"$TMP/tlp-presets" <<'EOF_TLP_PRESETS'
 #!/usr/bin/env bash
 cat <<'EOF_STATUS'
 +++ Battery Care
-Plugin: lg
+Plugin: another-future-vendor
 Supported features: charge threshold
-Driver usage:
-* natacpi (lg_laptop) = active (charge threshold)
 Parameter value range:
-* STOP_CHARGE_THRESH_BAT0: 80(on), 100(off)
+* STOP_CHARGE_THRESH_BAT0: 80, 100(default)
 EOF_STATUS
-EOF_TLP_FIXED
-chmod +x "$TMP/tlp-fixed"
+EOF_TLP_PRESETS
+chmod +x "$TMP/tlp-presets"
 
 json="$(
-    AWTARCHY_POWER_SUPPLY_ROOT="$fixed_root" \
-    AWTARCHY_TLP_STAT_BIN="$TMP/tlp-fixed" \
+    AWTARCHY_POWER_SUPPLY_ROOT="$preset_root" \
+    AWTARCHY_TLP_STAT_BIN="$TMP/tlp-presets" \
     bash "$SCRIPT" --status-json
 )"
-assert_json "$json" '.supported == true and .backend == "tlp" and .plugin == "lg"' \
-    'fixed hardware TLP capability was not detected'
-assert_json "$json" '.mode == "fixed"' 'fixed hardware was not classified as fixed'
-assert_json "$json" '.stop_presets == [80,100]' 'fixed stop presets were not parsed'
-assert_json "$json" '.batteries[0].stop_threshold == 80' 'fixed current stop threshold was not read'
+assert_json "$json" '.supported == true and .writable == true and .mode == "presets"' \
+    'numeric TLP presets were not exposed generically'
+assert_json "$json" '.stop_presets == [80,100]' 'generic stop presets were not parsed'
 
-# Lenovo conservation mode uses 0/1 mode selectors rather than percentages. Newer
-# TLP reports this as "charge type". It is supported, but the actual fixed limit
-# varies by model and must not be presented as 0%/1%.
-lenovo_root="$TMP/lenovo-power"
-make_battery "$lenovo_root" BAT0
-cat >"$TMP/tlp-lenovo" <<'EOF_TLP_LENOVO'
+# 0/1 charge-type selectors are not percentages. Awtarchy deliberately does not
+# translate those vendor semantics; TLPUI remains the advanced configuration UI.
+selector_root="$TMP/selector-power"
+make_battery "$selector_root" BAT0
+cat >"$TMP/tlp-selector" <<'EOF_TLP_SELECTOR'
 #!/usr/bin/env bash
 cat <<'EOF_STATUS'
 +++ Battery Care
-Plugin: lenovo
+Plugin: selector-vendor
 Supported features: charge type
-Driver usage:
-* vendor (ideapad_laptop) = active (charge type)
 Parameter value range:
 * STOP_CHARGE_THRESH_BAT0/1: 0(Standard)..1(Long_Life) -- charge type
 EOF_STATUS
-EOF_TLP_LENOVO
-chmod +x "$TMP/tlp-lenovo"
+EOF_TLP_SELECTOR
+chmod +x "$TMP/tlp-selector"
 
 json="$(
-    AWTARCHY_POWER_SUPPLY_ROOT="$lenovo_root" \
-    AWTARCHY_TLP_STAT_BIN="$TMP/tlp-lenovo" \
+    AWTARCHY_POWER_SUPPLY_ROOT="$selector_root" \
+    AWTARCHY_TLP_STAT_BIN="$TMP/tlp-selector" \
     bash "$SCRIPT" --status-json
 )"
-assert_json "$json" '.supported == true and .backend == "tlp" and .plugin == "lenovo" and .mode == "fixed"' \
-    'Lenovo charge-type conservation mode was not detected'
+assert_json "$json" '.supported == true and .writable == false and .backend == "tlp" and .mode == "unsupported"' \
+    '0/1 selector mode was misrepresented as a percentage control'
 assert_json "$json" '.stop_presets == [] and .stop_min == null and .stop_max == null' \
-    'Lenovo 0/1 mode selectors were misreported as charge percentages'
+    'selector values leaked into percentage controls'
 
-# Samsung also uses 0/1 control values, but TLP documents the actual battery-life
-# extender target as 80%, so it may safely advertise 80%/100% choices.
-samsung_root="$TMP/samsung-power"
-make_battery "$samsung_root" BAT0
-cat >"$TMP/tlp-samsung" <<'EOF_TLP_SAMSUNG'
-#!/usr/bin/env bash
-cat <<'EOF_STATUS'
-+++ Battery Care
-Plugin: samsung
-Supported features: charge threshold
-Driver usage:
-* vendor (samsung_laptop) = active (charge threshold)
-Parameter value range:
-* STOP_CHARGE_THRESH_BAT0: 0(off), 1(on) -- battery life extender
-EOF_STATUS
-EOF_TLP_SAMSUNG
-chmod +x "$TMP/tlp-samsung"
-
-json="$(
-    AWTARCHY_POWER_SUPPLY_ROOT="$samsung_root" \
-    AWTARCHY_TLP_STAT_BIN="$TMP/tlp-samsung" \
-    bash "$SCRIPT" --status-json
-)"
-assert_json "$json" '.supported == true and .backend == "tlp" and .plugin == "samsung" and .mode == "fixed"' \
-    'Samsung battery-life extender was not detected'
-assert_json "$json" '.stop_presets == [80,100]' \
-    'Samsung 0/1 selectors were not translated to documented 80%/100% targets'
-
-# If TLP is absent, standardized kernel threshold files still provide useful
-# read-only capability/current-value reporting without guessing the writable range.
+# A battery exposing sysfs thresholds is useful telemetry, but Awtarchy no longer
+# declares hardware writable without TLP's authoritative capability report.
 sysfs_root="$TMP/sysfs-power"
 make_battery "$sysfs_root" BAT1 70 85
 json="$(
@@ -174,25 +137,32 @@ json="$(
     AWTARCHY_TLP_STAT_BIN="$TMP/does-not-exist" \
     bash "$SCRIPT" --status-json
 )"
-assert_json "$json" '.supported == true and .backend == "sysfs" and .mode == "sysfs"' \
-    'standard sysfs fallback was not detected'
+assert_json "$json" '.supported == false and .writable == false and .backend == "none" and .mode == "unsupported"' \
+    'sysfs presence bypassed TLP authority'
 assert_json "$json" '.batteries[0].name == "BAT1" and .batteries[0].stop_threshold == 85' \
-    'sysfs fallback did not report the current threshold'
+    'read-only kernel threshold telemetry disappeared'
 
-# No exposed threshold interface means unsupported. The detector must not claim a
-# control exists merely because a battery exists.
 unsupported_root="$TMP/unsupported-power"
 make_battery "$unsupported_root" BAT0
+cat >"$TMP/tlp-unsupported" <<'EOF_TLP_UNSUPPORTED'
+#!/usr/bin/env bash
+cat <<'EOF_STATUS'
++++ Battery Care
+Plugin: generic
+Supported features: none available
+EOF_STATUS
+EOF_TLP_UNSUPPORTED
+chmod +x "$TMP/tlp-unsupported"
 json="$(
     AWTARCHY_POWER_SUPPLY_ROOT="$unsupported_root" \
-    AWTARCHY_TLP_STAT_BIN="$TMP/does-not-exist" \
+    AWTARCHY_TLP_STAT_BIN="$TMP/tlp-unsupported" \
     bash "$SCRIPT" --status-json
 )"
-assert_json "$json" '.supported == false and .backend == "none" and .mode == "unsupported"' \
-    'unsupported hardware was incorrectly advertised as charge-limit capable'
+assert_json "$json" '.supported == false and .writable == false and .backend == "none" and .mode == "unsupported"' \
+    'TLP without battery-care capability was incorrectly exposed'
 
-# Capability detection itself remains unprivileged. The Battery Care card consumes
-# that detector while mutations are handled separately by the root-owned helper.
+# Capability detection remains unprivileged and read-only. QML consumes the
+# normalized status while mutations remain behind the root-owned helper.
 require_source "$SCRIPT" 'AWTARCHY_POWER_SUPPLY_ROOT'
 require_source "$SCRIPT" 'AWTARCHY_TLP_STAT_BIN'
 require_source "$CARE_CARD" 'quickshell_battery_care.sh'
@@ -202,9 +172,10 @@ require_source "$CARE_CARD" 'text: "Battery Health"'
 require_source "$CARE_CARD" 'text: "Battery Care"'
 require_source "$POWER_CARD" 'BatteryCareCard {'
 
-if grep -Eq '(^|[[:space:]])(sudo|pkexec)([[:space:]]|$)' "$SCRIPT" \
-    || grep -Fq 'tlp setcharge' "$SCRIPT"; then
-    fail 'battery capability detector contains a privileged charge-write path'
+if grep -Eq '(^|[[:space:]])(pkexec)([[:space:]]|$)' "$SCRIPT" \
+    || grep -Fq 'tlp setcharge' "$SCRIPT" \
+    || grep -Eq '>[[:space:]]*"?[^"[:space:]]*/charge_control_(start|end)_threshold' "$SCRIPT"; then
+    fail 'battery capability detector contains a privileged/direct charge-write path'
 fi
 
 printf '%s\n' 'Battery charge-limit capability detection regression tests passed.'

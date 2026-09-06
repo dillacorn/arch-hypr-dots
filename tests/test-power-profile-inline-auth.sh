@@ -59,10 +59,12 @@ assert_not_contains "$QML" 'setupTerminal' \
 
 assert_contains "$HELPER" '[[ $# -eq 1 ]]' \
   'Power Mode helper does not reject extra arguments'
-assert_contains "$HELPER" 'setup|resolve-tlp-conflict|battery-enable-fixed|battery-disable)' \
-  'Power Mode helper does not restrict no-argument actions to the fixed allowlist'
+assert_contains "$HELPER" 'setup|resolve-tlp-conflict|battery-disable)' \
+  'Power Mode helper no-argument action allowlist is not restricted'
 assert_contains "$HELPER" 'battery-set)' \
   'Power Mode helper does not explicitly validate the battery-set action'
+assert_not_contains "$HELPER" 'battery-enable-fixed' \
+  'Power Mode helper still exposes the retired vendor selector action'
 assert_contains "$HELPER" '/usr/bin/pacman' \
   'Power Mode helper does not use the fixed pacman path'
 assert_contains "$HELPER" '/usr/bin/systemctl' \
@@ -83,4 +85,4 @@ if /usr/bin/bash "$HELPER" arbitrary-action >/dev/null 2>&1; then
   fail 'Power Mode helper accepted an unknown action'
 fi
 
-printf '%s\n' 'PASS: Power Mode and Battery Health use masked inline authorization through a restricted root-owned helper.'
+printf '%s\n' 'PASS: Power Mode and Battery Care keep authenticated writes behind a restricted root-owned helper.'

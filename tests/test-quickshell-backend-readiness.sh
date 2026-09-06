@@ -45,6 +45,18 @@ assert_contains "$POWER_RECONCILER" 'systemctl enable --now tlp.service tlp-pd.s
 assert_contains "$RUNTIME" 'reconcile_power_profile_backend "$REPO_DIR"'
 assert_contains "$RUNTIME" 'reconcile_power_profile_backend "$repo_dir"'
 
+# tlpui is now an official Arch Extra package and depends on TLP. It belongs to
+# the selected TLP backend, not the generic laptop path: if a user declines to
+# replace user-owned power-profiles-daemon, reconciliation returns before tlpui
+# can pull TLP in as a dependency.
+assert_contains "$POWER_RECONCILER" 'newly_managed+=(tlpui)'
+ppd_guard_line="$(grep -nF 'remove_ppd_for_tlp || return 0' "$POWER_RECONCILER" | head -n1 | cut -d: -f1)"
+tlpui_line="$(grep -nF 'newly_managed+=(tlpui)' "$POWER_RECONCILER" | head -n1 | cut -d: -f1)"
+[[ "$ppd_guard_line" =~ ^[0-9]+$ && "$tlpui_line" =~ ^[0-9]+$ && "$tlpui_line" -gt "$ppd_guard_line" ]] \
+  || fail 'tlpui can be selected before the power-profiles-daemon conflict is resolved'
+assert_not_contains "$RUNTIME" 'install_aur_with_scanner tlpui'
+assert_not_contains "$RUNTIME" 'Installing tlpui through upstream aur-scanner'
+
 # A successful tlpctl command only proves the tlp-pd CLI path works. The
 # Quickshell PowerProfiles singleton talks to the org.freedesktop D-Bus API,
 # so the card must probe that exact service/interface before exposing controls.

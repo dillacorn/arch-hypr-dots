@@ -14,9 +14,19 @@ require_source() {
     grep -Fq -- "$needle" "$CARD" || fail "$message"
 }
 
+require_absent() {
+    local needle="$1" message="$2"
+    ! grep -Fq -- "$needle" "$CARD" || fail "$message"
+}
+
 [[ -f "$CARD" ]] || fail 'BatteryCareCard.qml is missing'
 require_source 'writable: false' 'Battery Care empty status does not default writes to disabled'
 require_source 'compatibility: "unsupported"' 'Battery Care empty status has no compatibility classification'
-require_source '&& Boolean(statusData.writable)' 'Battery Care controls do not require validated writable support'
+require_source '&& Boolean(statusData.writable)' 'Battery Care controls do not require writable TLP capability'
+require_source 'root.hasNumericControl()' 'Battery Care controls do not require a generic numeric interface'
+require_absent 'fixedUnknownTarget' 'Battery Care UI still owns a vendor-specific fixed-mode exception'
+require_absent 'battery-enable-fixed' 'Battery Care UI still invokes the retired vendor selector action'
+require_absent 'pluginName ===' 'Battery Care UI still gates behavior on a TLP plugin name'
+require_absent 'hardware state verified after every change' 'Battery Care UI still claims Awtarchy performs hardware verification'
 
-printf '%s\n' 'PASS: Battery Care QML gates writes on validated detector support.'
+printf '%s\n' 'PASS: Battery Care QML exposes only generic writable TLP percentage controls.'

@@ -29,8 +29,6 @@ Rectangle {
     readonly property string batteryCareScript: configHome + "/hypr/scripts/quickshell_battery_care.sh"
     readonly property string batteryHealthScript: configHome + "/hypr/scripts/quickshell_battery_health.sh"
     readonly property string batteryCareHelper: "/usr/local/libexec/awtarchy/power-profile-helper"
-    readonly property string pluginName: String(statusData.plugin || "").toLowerCase()
-    readonly property bool fixedUnknownTarget: pluginName === "lenovo" || pluginName === "lenovo-legacy"
     readonly property bool mixedStopThresholds: Boolean(statusData.mixed_stop_thresholds)
     readonly property bool limitEnabled: mixedStopThresholds || statusData.enabled === true
         || (statusData.enabled !== false && Boolean(statusData.managed_config))
@@ -38,7 +36,7 @@ Rectangle {
         && Boolean(statusData.writable)
         && String(statusData.backend || "") === "tlp"
         && !Boolean(statusData.config_conflict)
-        && (fixedUnknownTarget || root.hasNumericControl())
+        && root.hasNumericControl()
     readonly property bool showFallbackHealth: !BatteryState.healthSupported
         && Boolean(healthData.supported)
 
@@ -222,18 +220,13 @@ Rectangle {
             && statusData.stop_max !== null && statusData.stop_max !== undefined) {
             return "Custom target range: " + statusData.stop_min + "–" + statusData.stop_max + "%";
         }
-        if ((mode === "fixed" || mode === "presets")
-            && numericTargets().length > 0) {
+        if (mode === "presets" && numericTargets().length > 0) {
             return "Supported charge targets: " + numericTargets().map(value => value + "%").join(", ");
         }
         return String(statusData.detail || "");
     }
 
     function currentThresholdText() {
-        if (fixedUnknownTarget && statusData.enabled === true)
-            return "Conservation mode: On · hardware-defined target";
-        if (fixedUnknownTarget && statusData.enabled === false)
-            return "Conservation mode: Off · full charge allowed";
         if (!mixedStopThresholds && statusData.target !== null && statusData.target !== undefined) {
             const target = Number(statusData.target);
             if (Number.isFinite(target))
@@ -289,18 +282,13 @@ Rectangle {
             openAuthorization(root.pendingAction, 100, "Authorize full charging to 100%.");
             return;
         }
-        if (fixedUnknownTarget) {
-            root.pendingAction = "battery-enable-fixed";
-            openAuthorization(root.pendingAction, 0, "Authorize the hardware-defined conservation mode.");
-            return;
-        }
         root.pendingAction = "battery-set";
         const target = normalizedTarget(targetDraft);
         openAuthorization(root.pendingAction, target, "Authorize a " + target + "% maximum charge target.");
     }
 
     function requestTarget(value) {
-        if (!controlsAvailable || fixedUnknownTarget)
+        if (!controlsAvailable)
             return;
         const target = normalizedTarget(value);
         if (!targetIsSupported(target)) {
@@ -583,7 +571,7 @@ Rectangle {
 
             Text {
                 Layout.fillWidth: true
-                text: root.fixedUnknownTarget ? "Charge preservation" : "Limit charging"
+                text: "Limit charging"
                 color: Theme.foreground
                 font.family: Theme.fontFamily
                 font.pixelSize: root.scaledText(10)
@@ -688,7 +676,7 @@ Rectangle {
         Flow {
             Layout.fillWidth: true
             Layout.preferredHeight: childrenRect.height
-            visible: root.controlsAvailable && !root.fixedUnknownTarget
+            visible: root.controlsAvailable
                 && String(root.statusData.mode || "") !== "range"
                 && root.numericTargets().length > 0
             spacing: 5
@@ -705,16 +693,6 @@ Rectangle {
                     onClicked: root.requestTarget(Number(modelData))
                 }
             }
-        }
-
-        Text {
-            Layout.fillWidth: true
-            visible: root.controlsAvailable && root.fixedUnknownTarget
-            text: "This hardware exposes only a conservation-mode switch. Linux does not report its model-specific charge target."
-            color: Theme.muted
-            font.family: Theme.fontFamily
-            font.pixelSize: root.scaledText(8)
-            wrapMode: Text.Wrap
         }
 
         ColumnLayout {
@@ -801,7 +779,7 @@ Rectangle {
         Text {
             Layout.fillWidth: true
             text: root.controlsAvailable
-                ? "Persistent through TLP · hardware state verified after every change"
+                ? "Persistent through TLP · TLP validates and applies hardware changes"
                 : (String(root.statusData.backend || "") === "sysfs"
                     ? "Read-only kernel status · managed controls require TLP battery-care support"
                     : "Charge-limit controls are unavailable on this hardware")

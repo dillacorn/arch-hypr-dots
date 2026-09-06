@@ -2669,22 +2669,6 @@ install_aur_repo_apps_stage() {
     done
   fi
 
-  if [[ "$IS_LAPTOP" == true && "$IS_VM" == false ]]; then
-    if pacman -Q tlpui >/dev/null 2>&1; then
-      printf '%s\n' "${COLOR_YELLOW}tlpui already installed. Skipping...${COLOR_RESET}"
-    else
-      log "Installing tlpui through upstream aur-scanner..."
-      if install_aur_with_scanner tlpui && pacman -Qq tlpui >/dev/null 2>&1; then
-        install -d -m 0755 /var/lib/awtarchy
-        touch /var/lib/awtarchy/managed-packages
-        grep -Fxq tlpui /var/lib/awtarchy/managed-packages \
-          || printf '%s\n' tlpui >>/var/lib/awtarchy/managed-packages
-        LC_ALL=C sort -u -o /var/lib/awtarchy/managed-packages /var/lib/awtarchy/managed-packages
-        chmod 0644 /var/lib/awtarchy/managed-packages
-      fi
-    fi
-  fi
-
   if pacman -Q moonlight-qt-bin >/dev/null 2>&1; then
     log "Moonlight AUR package detected. Configuring UFW rules for Moonlight..."
     if have ufw; then

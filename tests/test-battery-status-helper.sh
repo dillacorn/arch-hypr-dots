@@ -5,7 +5,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 HELPER="${ROOT}/local/libexec/awtarchy/battery-status-helper"
 RECONCILER="${ROOT}/local/share/awtarchy/awtarchy-power-profile.sh"
 TMP="$(mktemp -d)"
-trap 'rm -rf -- "$TMP"' EXIT
+trap 'sudo -n rm -rf -- "$TMP/protected-sudoers" 2>/dev/null || true; rm -rf -- "$TMP"' EXIT
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -103,6 +103,58 @@ PY
 command -v sudo >/dev/null 2>&1 || fail 'sudo is required for the root helper behavior test'
 sudo -n true >/dev/null 2>&1 || fail 'passwordless/noninteractive sudo is required for the root helper behavior test'
 
+# /etc/sudoers.d is commonly root-owned 0750. The reconciler must inspect
+# policy entries through root rather than relying on the desktop user being able
+# to traverse the directory. This reproduces the real Arch failure where the
+# installed policy was valid but the unprivileged post-install verifier could
+# not see it.
+if (( EUID != 0 )); then
+  protected_sudoers="$TMP/protected-sudoers"
+  reconciler_protected="$TMP/reconciler-protected-sudoers"
+  sudo install -d -m 0750 -o root -g root "$protected_sudoers"
+  cp -- "$RECONCILER" "$reconciler_protected"
+  python3 - "$reconciler_protected" "$protected_sudoers" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+sudoers_dir = sys.argv[2]
+text = path.read_text()
+old_dir = 'SUDOERS_DIR="/etc/sudoers.d"'
+old_main = 'main "$@"'
+if text.count(old_dir) != 1:
+    raise SystemExit('expected exactly one sudoers directory assignment')
+if text.count(old_main) != 1:
+    raise SystemExit('expected exactly one reconciler main invocation')
+text = text.replace(old_dir, f'SUDOERS_DIR="{sudoers_dir}"', 1)
+text = text.replace(old_main, ': # test copy: do not run reconciler main', 1)
+path.write_text(text)
+PY
+
+  if ! /usr/bin/bash -c 'source "$1"; install_battery_status_policy' _ "$reconciler_protected" \
+      >"$TMP/protected-install.out" 2>"$TMP/protected-install.err"; then
+    fail "Battery Care policy could not verify inside root-only sudoers directory: $(cat "$TMP/protected-install.err")"
+  fi
+
+  protected_policy="${protected_sudoers}/awtarchy-battery-status-${expected_user}"
+  sudo stat -c '%F %u %a' -- "$protected_policy" | grep -Fxq 'regular file 0 440' \
+    || fail 'protected sudoers policy was not installed root-owned mode 0440'
+
+  printf '%s\n' '# Foreign policy: must not be overwritten.' \
+    | sudo tee -- "$protected_policy" >/dev/null
+  sudo chmod 0440 "$protected_policy"
+  sudo chown root:root "$protected_policy"
+
+  set +e
+  /usr/bin/bash -c 'source "$1"; install_battery_status_policy' _ "$reconciler_protected" \
+    >"$TMP/protected-foreign.out" 2>"$TMP/protected-foreign.err"
+  protected_rc=$?
+  set -e
+  (( protected_rc != 0 )) \
+    || fail 'reconciler overwrote a non-Awtarchy policy hidden behind root-only sudoers permissions'
+  sudo cat -- "$protected_policy" | grep -Fxq '# Foreign policy: must not be overwritten.' \
+    || fail 'non-Awtarchy protected sudoers policy content was modified'
+fi
+
 set +e
 # The redirects intentionally belong to this unprivileged test shell. Only the
 # helper process needs elevation; the captured files stay user-owned under TMP.
@@ -115,4 +167,4 @@ grep -Fxq 'fixed-report' "$TMP/report.out" || fail 'helper did not preserve tlp-
 grep -Fxq 'attack=unset' "$TMP/report.out" || fail 'helper leaked caller environment into tlp-stat'
 [[ ! -s "$TMP/report.err" ]] || fail 'helper added unexpected stderr around tlp-stat output'
 
-printf '%s\n' 'PASS: battery status helper is root-only, zero-argument, environment-sanitized, and read-only.'
+printf '%s\n' 'PASS: battery status helper and protected sudoers policy handling remain narrow, root-safe, and read-only.'
