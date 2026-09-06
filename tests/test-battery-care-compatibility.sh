@@ -9,7 +9,7 @@ trap 'rm -rf -- "$TMP"' EXIT
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
-    exit 1
+    return 1
 }
 
 assert_json() {
@@ -17,132 +17,95 @@ assert_json() {
     jq -e "$filter" <<<"$json" >/dev/null || fail "$description: $json"
 }
 
-make_battery() {
-    local root="$1" name="$2" start="${3:-}" stop="${4:-}"
-    mkdir -p -- "$root/$name"
-    printf '%s\n' Battery >"$root/$name/type"
-    printf '%s\n' TestVendor >"$root/$name/manufacturer"
-    printf '%s\n' TestModel >"$root/$name/model_name"
-    [[ -z "$start" ]] || printf '%s\n' "$start" >"$root/$name/charge_control_start_threshold"
-    [[ -z "$stop" ]] || printf '%s\n' "$stop" >"$root/$name/charge_control_end_threshold"
-}
-
-extract_writable_plugins() {
-    local file="$1" body line
-    body="$(sed -n '/^battery_plugin_writable() {/,/^}/p' "$file")"
-    [[ -n "$body" ]] || fail "${file#"$ROOT"/} has no battery_plugin_writable policy"
-    line="$(sed -n -E 's/^[[:space:]]*([a-z0-9|-]+)\)[[:space:]]+return 0.*$/\1/p' <<<"$body" | head -n1)"
-    [[ -n "$line" ]] || fail "${file#"$ROOT"/} writable plugin policy could not be parsed"
-    tr '|' '\n' <<<"$line" | sed '/^$/d' | LC_ALL=C sort
-}
-
-expected_plugins="$(cat <<'EOF_EXPECTED'
-asus
-cros-ec
-dell
-huawei
-lenovo
-lenovo-legacy
-lg
-macbook
-msi
-samsung
-sony
-system76
-thinkpad
-thinkpad-legacy
-toshiba
-tuxedo
-wilco-ec
-EOF_EXPECTED
-)"
-
 command -v jq >/dev/null 2>&1 || fail 'jq is required'
 [[ -f "$DETECTOR" ]] || fail 'battery detector is missing'
 [[ -f "$HELPER" ]] || fail 'battery helper is missing'
 
-actual_detector="$(extract_writable_plugins "$DETECTOR")"
-actual_helper="$(extract_writable_plugins "$HELPER")"
-[[ "$actual_detector" == "$expected_plugins" ]] \
-    || fail "detector writable plugin set differs from expected current TLP compatibility set"
-[[ "$actual_helper" == "$expected_plugins" ]] \
-    || fail "helper writable plugin set differs from expected current TLP compatibility set"
-[[ "$actual_detector" == "$actual_helper" ]] \
-    || fail 'detector/helper writable plugin sets disagree'
-! grep -qx 'lg-legacy' <<<"$actual_detector" || fail 'obsolete lg-legacy plugin is still writable'
-! grep -qx 'generic' <<<"$actual_detector" || fail 'generic plugin is writable'
+POWER_ROOT="$TMP/power"
+mkdir -p -- "$POWER_ROOT/BAT0"
+printf '%s\n' Battery >"$POWER_ROOT/BAT0/type"
+printf '%s\n' TestVendor >"$POWER_ROOT/BAT0/manufacturer"
+printf '%s\n' TestModel >"$POWER_ROOT/BAT0/model_name"
+printf '%s\n' 75 >"$POWER_ROOT/BAT0/charge_control_start_threshold"
+printf '%s\n' 80 >"$POWER_ROOT/BAT0/charge_control_end_threshold"
 
-power_root="$TMP/power"
-make_battery "$power_root" BAT0 75 80
-
-cat >"$TMP/tlp-dell" <<'EOF_TLP_DELL'
+cat >"$TMP/tlp-stat" <<'EOF_TLP_STAT'
 #!/usr/bin/env bash
-cat <<'EOF_STATUS'
-+++ Battery Care
-Plugin: dell
-Supported features: charge thresholds
-Parameter value ranges:
-* START_CHARGE_THRESH_BAT0/1: 50..95(default)
-* STOP_CHARGE_THRESH_BAT0/1: 55..100(default)
-/sys/class/power_supply/BAT0/charge_control_start_threshold = 75 [%]
-/sys/class/power_supply/BAT0/charge_control_end_threshold = 80 [%]
-EOF_STATUS
-EOF_TLP_DELL
-chmod 0755 "$TMP/tlp-dell"
+set -euo pipefail
+printf '%s\n' '+++ Battery Care'
+printf 'Plugin: %s\n' "${TEST_PLUGIN:?}"
+printf 'Supported features: %s\n' "${TEST_FEATURES:?}"
+if [[ -n ${TEST_START_SPEC:-} ]]; then
+    printf '* START_CHARGE_THRESH_BAT0: %s\n' "$TEST_START_SPEC"
+fi
+if [[ -n ${TEST_STOP_SPEC:-} ]]; then
+    printf '* STOP_CHARGE_THRESH_BAT0: %s\n' "$TEST_STOP_SPEC"
+fi
+if [[ -n ${TEST_STATE_LINES:-} ]]; then
+    printf '%s\n' "$TEST_STATE_LINES"
+fi
+EOF_TLP_STAT
+chmod 0755 "$TMP/tlp-stat"
 
-json="$(
-    AWTARCHY_POWER_SUPPLY_ROOT="$power_root" \
-    AWTARCHY_TLP_STAT_BIN="$TMP/tlp-dell" \
-    bash "$DETECTOR" --status-json
-)"
-assert_json "$json" '.supported == true and .writable == true and .compatibility == "validated" and .plugin == "dell"' \
-    'validated Dell backend was not marked writable'
+run_detector() {
+    local plugin="$1" features="$2" start_spec="$3" stop_spec="$4" state_lines="$5"
+    TEST_PLUGIN="$plugin" \
+    TEST_FEATURES="$features" \
+    TEST_START_SPEC="$start_spec" \
+    TEST_STOP_SPEC="$stop_spec" \
+    TEST_STATE_LINES="$state_lines" \
+    AWTARCHY_POWER_SUPPLY_ROOT="$POWER_ROOT" \
+    AWTARCHY_TLP_STAT_BIN="$TMP/tlp-stat" \
+        bash "$DETECTOR" --status-json
+}
 
-cat >"$TMP/tlp-unknown" <<'EOF_TLP_UNKNOWN'
-#!/usr/bin/env bash
-cat <<'EOF_STATUS'
-+++ Battery Care
-Plugin: future-vendor
-Supported features: charge threshold
-Parameter value range:
-* STOP_CHARGE_THRESH_BAT0: 50..100(default)
-/sys/class/power_supply/BAT0/charge_control_end_threshold = 80 [%]
-EOF_STATUS
-EOF_TLP_UNKNOWN
-chmod 0755 "$TMP/tlp-unknown"
+# Awtarchy must consume TLP's advertised generic interface, not recognize a
+# hard-coded list of today's plugins. A new plugin with ordinary numeric ranges
+# must therefore work without any Awtarchy code change.
+json="$(run_detector \
+    future-vendor \
+    'charge thresholds' \
+    '50..95(default)' \
+    '55..100(default)' \
+    $'/sys/class/power_supply/BAT0/charge_control_start_threshold = 75 [%]\n/sys/class/power_supply/BAT0/charge_control_end_threshold = 80 [%]')"
+assert_json "$json" \
+    '.supported == true and .writable == true and .backend == "tlp" and .mode == "range" and .plugin == "future-vendor" and .start_min == 50 and .start_max == 95 and .stop_min == 55 and .stop_max == 100' \
+    'future TLP plugin with a normal numeric range was not accepted generically'
 
-json="$(
-    AWTARCHY_POWER_SUPPLY_ROOT="$power_root" \
-    AWTARCHY_TLP_STAT_BIN="$TMP/tlp-unknown" \
-    bash "$DETECTOR" --status-json
-)"
-assert_json "$json" '.supported == true and .writable == false and .compatibility == "unvalidated" and .backend == "tlp" and .plugin == "future-vendor"' \
-    'unknown TLP backend did not fail closed'
+json="$(run_detector \
+    another-future-vendor \
+    'charge threshold' \
+    '' \
+    '50, 80, 100(default)' \
+    '/sys/class/power_supply/BAT0/charge_control_end_threshold = 80 [%]')"
+assert_json "$json" \
+    '.supported == true and .writable == true and .backend == "tlp" and .mode == "presets" and (.stop_presets | index(50)) != null and (.stop_presets | index(80)) != null and (.stop_presets | index(100)) != null' \
+    'future TLP plugin with numeric presets was not accepted generically'
 
-cat >"$TMP/tlp-generic" <<'EOF_TLP_GENERIC'
-#!/usr/bin/env bash
-cat <<'EOF_STATUS'
-+++ Battery Care
-Plugin: generic
-Supported features: none available
-EOF_STATUS
-EOF_TLP_GENERIC
-chmod 0755 "$TMP/tlp-generic"
+# Vendor selector/boolean semantics are intentionally not reimplemented. A
+# 0/1 selector is not a meaningful percentage control, so Quickshell must defer
+# that advanced mode to TLP/TLPUI rather than presenting a 1% charge target.
+json="$(run_detector \
+    selector-vendor \
+    'charge threshold' \
+    '' \
+    '0(off), 1(on) -- vendor selector' \
+    '/sys/devices/platform/example/selector = 1')"
+assert_json "$json" \
+    '.supported == true and .writable == false and .backend == "tlp" and .mode == "unsupported"' \
+    'selector-only TLP mode was exposed as a numeric Awtarchy control'
 
-json="$(
-    AWTARCHY_POWER_SUPPLY_ROOT="$power_root" \
-    AWTARCHY_TLP_STAT_BIN="$TMP/tlp-generic" \
-    bash "$DETECTOR" --status-json
-)"
-assert_json "$json" '.supported == false and .writable == false and .compatibility == "unsupported" and .plugin == "generic"' \
-    'generic TLP backend was not kept unsupported/non-writable'
+json="$(run_detector generic 'none available' '' '' '')"
+assert_json "$json" \
+    '.supported == false and .writable == false and .mode == "unsupported"' \
+    'TLP without battery-care capability was exposed as writable'
 
-json="$(
-    AWTARCHY_POWER_SUPPLY_ROOT="$power_root" \
-    AWTARCHY_TLP_STAT_BIN="$TMP/does-not-exist" \
-    bash "$DETECTOR" --status-json
-)"
-assert_json "$json" '.supported == true and .writable == false and .compatibility == "unvalidated" and .backend == "sysfs"' \
-    'sysfs-only threshold reporting was not kept read-only/unvalidated'
+# The production boundary itself must stay generic. Plugin names may remain in
+# status text for diagnostics, but there must be no plugin allowlist governing
+# write eligibility on either side of the privilege boundary.
+! grep -Fq 'battery_plugin_writable()' "$DETECTOR" \
+    || fail 'detector still owns a TLP battery-plugin allowlist'
+! grep -Fq 'battery_plugin_writable()' "$HELPER" \
+    || fail 'privileged helper still owns a TLP battery-plugin allowlist'
 
-printf '%s\n' 'PASS: TLP battery compatibility policy is explicit and fail-closed.'
+printf '%s\n' 'PASS: Battery Care consumes generic TLP capability instead of an Awtarchy vendor matrix.'
