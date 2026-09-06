@@ -19,31 +19,41 @@ jobs:
       - name: Install updater regression dependency
         run: sudo apt-get update && sudo apt-get install -y lua5.4
 
-      - name: Refresh exact Battery Care stock hash
+      - name: Refresh current managed stock hashes
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          expected_parent='662442eba30a2217cc052d765a42ec9d794c36ad'
+          expected_parent='0695e697a7970c0269340a4f171bf80913430916'
           actual_parent="$(git rev-parse HEAD^)"
           if [[ "$actual_parent" != "$expected_parent" ]]; then
             printf 'No-op: expected parent %s, found %s\n' "$expected_parent" "$actual_parent"
             exit 0
           fi
 
-          target='config/hypr/scripts/quickshell_battery_care.sh'
           history='local/share/awtarchy/quickshell-managed-history.sha256'
-          rel='.config/hypr/scripts/quickshell_battery_care.sh'
-          hash="$(sha256sum "$target" | awk '{print $1}')"
-          entry="${hash}"$'\t'"${rel}"
+          added=0
+          while IFS= read -r repo_path; do
+            repo_rel="${repo_path#./}"
+            hash="$(sha256sum "$repo_path" | awk '{print $1}')"
+            entry="${hash}"$'\t'".${repo_rel}"
+            if ! grep -Fqx -- "$entry" "$history"; then
+              printf '%s\t.%s\n' "$hash" "$repo_rel" >>"$history"
+              printf 'Added managed hash: %s  .%s\n' "$hash" "$repo_rel"
+              added=$((added + 1))
+            fi
+          done < <(
+            {
+              find ./config/quickshell/awtarchy -maxdepth 1 -type f -print
+              find ./config/hypr/scripts -maxdepth 1 -type f \
+                \( -name 'quickshell*' -o -name 'ddc_brightness.sh' -o -name 'hypr-ddc-brightness.sh' \) -print
+            } | sort
+          )
 
-          printf 'Battery Care SHA-256: %s\n' "$hash"
-          if grep -Fqx "$entry" "$history"; then
-            printf 'Managed history already contains the exact entry.\n'
+          (( added > 0 )) || {
+            printf 'No missing current managed hashes.\n'
             exit 0
-          fi
-
-          printf '%s\t%s\n' "$hash" "$rel" >>"$history"
+          }
 
           aur_scan_fixture_installed=0
           cleanup_fixture() {
@@ -64,5 +74,5 @@ jobs:
           git config user.name 'dillacorn'
           git config user.email '28743863+dillacorn@users.noreply.github.com'
           git add -- "$history"
-          git commit -m 'chore: refresh Battery Care managed hash'
+          git commit -m 'chore: refresh Battery Care managed hashes'
           git push origin HEAD:refactor/tlp-battery-care-thin-client
