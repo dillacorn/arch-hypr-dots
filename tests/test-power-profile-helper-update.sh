@@ -236,4 +236,34 @@ jq -e '
 ' <<<"$json" >/dev/null \
   || fail "root-only TLP status bridge was not used: $json"
 
+# A stale installed bridge by itself must never prove that TLP is still present.
+# Otherwise Sony's sysfs-only readback could be misclassified as writable after
+# the TLP package was removed, leaving the UI to authorize a write path that the
+# privileged helper will correctly reject.
+printf '%s\n' 80 >"$TMP/sony-limiter"
+cat >"$TMP/stale-battery-status-helper" <<'EOF_STALE_STATUS'
+#!/usr/bin/env bash
+exit 127
+EOF_STALE_STATUS
+chmod 0755 "$TMP/stale-battery-status-helper"
+
+json="$(
+  AWTARCHY_POWER_SUPPLY_ROOT="$POWER_ROOT" \
+  AWTARCHY_TLP_STAT_BIN="$TMP/missing-tlp-stat" \
+  AWTARCHY_BATTERY_STATUS_HELPER="$TMP/stale-battery-status-helper" \
+  AWTARCHY_SUDO_BIN="$TMP/sudo" \
+  AWTARCHY_TLP_CONFIG_DIR="$TMP/tlp.d" \
+  AWTARCHY_TLP_USER_CONFIG="$TMP/tlp.conf" \
+  AWTARCHY_SONY_BATTERY_CARE_PATH="$TMP/sony-limiter" \
+    bash "$DETECTOR" --status-json
+)"
+jq -e '
+  .tlp_available == false
+  and .supported == false
+  and .writable == false
+  and .compatibility == "unsupported"
+  and .backend == "none"
+' <<<"$json" >/dev/null \
+  || fail "stale Battery Care status bridge did not fail closed without TLP: $json"
+
 printf '%s\n' 'PASS: install/update power reconciliation keeps writes authenticated and exposes root-only TLP battery status through a narrow read-only bridge.'
