@@ -45,6 +45,13 @@ assert_contains "$POWER_RECONCILER" 'systemctl enable --now tlp.service tlp-pd.s
 assert_contains "$RUNTIME" 'reconcile_power_profile_backend "$REPO_DIR"'
 assert_contains "$RUNTIME" 'reconcile_power_profile_backend "$repo_dir"'
 
+# tlpui is now an official Arch Extra package. The laptop reconciler runs before
+# the runtime AUR stage, so it must install tlpui with pacman even when a user
+# keeps an existing power-profiles-daemon backend.
+assert_contains "$POWER_RECONCILER" 'install_tlpui()'
+assert_contains "$POWER_RECONCILER" 'run_root pacman -S --needed --noconfirm tlpui'
+assert_contains "$POWER_RECONCILER" 'record_managed tlpui'
+
 # A successful tlpctl command only proves the tlp-pd CLI path works. The
 # Quickshell PowerProfiles singleton talks to the org.freedesktop D-Bus API,
 # so the card must probe that exact service/interface before exposing controls.
