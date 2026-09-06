@@ -67,7 +67,7 @@ jobs:
           done
           (( missing == 0 ))
 
-  repair-v3-5-6-release-notes:
+  cleanup-v3-5-6-notes-bridge:
     if: >-
       github.event_name == 'pull_request' &&
       github.event.pull_request.number == 158 &&
@@ -78,13 +78,7 @@ jobs:
       contents: write
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout exact release notes bridge
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-        with:
-          ref: release/v3.5.6-notes-bridge
-          fetch-depth: 0
-
-      - name: Restore Getting started section without moving release
+      - name: Verify corrected release and delete helper branch
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -95,17 +89,24 @@ jobs:
           current_main="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
           test "$current_main" = "$EXPECTED_SHA"
 
-          release_name="$(gh release view v3.5.6 --repo "$GITHUB_REPOSITORY" --json name --jq '.name')"
-          release_tag="$(gh release view v3.5.6 --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName')"
-          release_draft="$(gh release view v3.5.6 --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')"
-          release_prerelease="$(gh release view v3.5.6 --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq '.isPrerelease')"
-          release_target="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v3.5.6" --jq '.target_commitish')"
+          test "$(gh release view v3.5.6 --repo "$GITHUB_REPOSITORY" --json name --jq '.name')" = 'Awtarchy v3.5.6 Quickshell'
+          test "$(gh release view v3.5.6 --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName')" = 'v3.5.6'
+          test "$(gh release view v3.5.6 --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = 'false'
+          test "$(gh release view v3.5.6 --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq '.isPrerelease')" = 'false'
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v3.5.6" --jq '.target_commitish')" = "$EXPECTED_SHA"
 
-          test "$release_name" = 'Awtarchy v3.5.6 Quickshell'
-          test "$release_tag" = 'v3.5.6'
-          test "$release_draft" = 'false'
-          test "$release_prerelease" = 'false'
-          test "$release_target" = "$EXPECTED_SHA"
+          gh release view v3.5.6 --repo "$GITHUB_REPOSITORY" --json body --jq '.body' > /tmp/v3.5.6-published.md
+          grep -Fq '## Getting started' /tmp/v3.5.6-published.md
+          grep -Fq 'https://archlinux.org/download/' /tmp/v3.5.6-published.md
+          grep -Fq 'https://wiki.archlinux.org/title/Installation_guide' /tmp/v3.5.6-published.md
+          grep -Fq 'sudo pacman -S git --noconfirm' /tmp/v3.5.6-published.md
+          grep -Fq 'git clone https://github.com/dillacorn/awtarchy' /tmp/v3.5.6-published.md
+          grep -Fq 'sudo ./awtarchy-install.sh' /tmp/v3.5.6-published.md
+          grep -Fq '## Existing Awtarchy users' /tmp/v3.5.6-published.md
+          grep -Fq 'awtarchy update' /tmp/v3.5.6-published.md
+          grep -Fq '## Why Battery Care is changing again' /tmp/v3.5.6-published.md
+          grep -Fq '## Validation' /tmp/v3.5.6-published.md
+          grep -Fq '_Placeholder for possible tested post-release patches to v3.5.6._' /tmp/v3.5.6-published.md
 
           tag_type="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.5.6" --jq '.object.type')"
           tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.5.6" --jq '.object.sha')"
@@ -113,65 +114,5 @@ jobs:
             tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq '.object.sha')"
           fi
           test "$tag_sha" = "$EXPECTED_SHA"
-
-          gh release view v3.5.6 --repo "$GITHUB_REPOSITORY" --json body --jq '.body' > /tmp/v3.5.6-current.md
-          ! grep -Fq '## Getting started' /tmp/v3.5.6-current.md
-          grep -Fq '## Existing Awtarchy users' /tmp/v3.5.6-current.md
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('/tmp/v3.5.6-current.md')
-          body = path.read_text()
-          marker = '## Existing Awtarchy users\n'
-          section = (
-              '## Getting started\n\n'
-              'Awtarchy is an Arch Linux overlay/environment, not a Linux distribution or an Arch Linux installer. Install it onto a working minimal Arch Linux system.\n\n'
-              'If you are starting from zero:\n\n'
-              '1. Download the official Arch Linux ISO from the [Arch Linux download page](https://archlinux.org/download/).\n'
-              '2. Boot the Arch Linux ISO.\n'
-              '3. Install a working minimal Arch Linux system first.\n'
-              '   - For most users, Awtarchy recommends the official `archinstall` guided installer included with the Arch ISO as the easiest path. Run `archinstall` from the live environment and complete a minimal Arch installation.\n'
-              '   - A normal manual Arch installation using the [ArchWiki Installation Guide](https://wiki.archlinux.org/title/Installation_guide) is also fine.\n'
-              '4. Boot into the installed Arch system.\n\n'
-              'Once you have a working minimal Arch installation, install Awtarchy:\n\n'
-              '```bash\n'
-              'sudo pacman -S git --noconfirm\n'
-              'git clone https://github.com/dillacorn/awtarchy\n'
-              'cd awtarchy\n'
-              'sudo ./awtarchy-install.sh\n'
-              '```\n\n'
-          )
-          if body.count(marker) != 1:
-              raise SystemExit('Expected exactly one Existing Awtarchy users heading')
-          updated = body.replace(marker, section + marker, 1)
-          Path('/tmp/v3.5.6-updated.md').write_text(updated)
-          PY
-
-          gh release edit v3.5.6 --repo "$GITHUB_REPOSITORY" --notes-file /tmp/v3.5.6-updated.md
-
-          gh release view v3.5.6 --repo "$GITHUB_REPOSITORY" --json body --jq '.body' > /tmp/v3.5.6-published.md
-          cmp -s /tmp/v3.5.6-updated.md /tmp/v3.5.6-published.md
-          grep -Fq '## Getting started' /tmp/v3.5.6-published.md
-          grep -Fq 'https://archlinux.org/download/' /tmp/v3.5.6-published.md
-          grep -Fq 'https://wiki.archlinux.org/title/Installation_guide' /tmp/v3.5.6-published.md
-          grep -Fq 'sudo ./awtarchy-install.sh' /tmp/v3.5.6-published.md
-          grep -Fq '## Existing Awtarchy users' /tmp/v3.5.6-published.md
-          grep -Fq 'awtarchy update' /tmp/v3.5.6-published.md
-          grep -Fq '## Validation' /tmp/v3.5.6-published.md
-          grep -Fq '_Placeholder for possible tested post-release patches to v3.5.6._' /tmp/v3.5.6-published.md
-
-          test "$(gh release view v3.5.6 --repo "$GITHUB_REPOSITORY" --json name --jq '.name')" = "$release_name"
-          test "$(gh release view v3.5.6 --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName')" = "$release_tag"
-          test "$(gh release view v3.5.6 --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = "$release_draft"
-          test "$(gh release view v3.5.6 --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq '.isPrerelease')" = "$release_prerelease"
-          test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v3.5.6" --jq '.target_commitish')" = "$release_target"
-
-          final_tag_type="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.5.6" --jq '.object.type')"
-          final_tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.5.6" --jq '.object.sha')"
-          if [[ "$final_tag_type" == 'tag' ]]; then
-            final_tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${final_tag_sha}" --jq '.object.sha')"
-          fi
-          test "$final_tag_sha" = "$tag_sha"
 
           gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/release/v3.5.6-notes-bridge"
