@@ -1,0 +1,98 @@
+name: Apply Release Gate Guidance
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  apply-release-gate-guidance:
+    if: >-
+      github.event.pull_request.number == 159 &&
+      github.event.pull_request.head.ref == 'hardening/stable-release-notes-gate' &&
+      github.event.pull_request.title == 'Harden stable release notes validation'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: hardening/stable-release-notes-gate
+          fetch-depth: 0
+      - name: Apply exact AGENTS.md release-gate update
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if grep -Fq '### Mandatory stable release gate' AGENTS.md; then
+            printf '%s\n' 'Release gate guidance already applied.'
+            exit 0
+          fi
+
+          test "$(git hash-object AGENTS.md)" = '642ee0e2d0c8addfa4e8d335ec456ea7a23b5c23'
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('AGENTS.md')
+          body = path.read_text()
+          old = '''A normal Awtarchy stable release body should include:
+
+- the release title and a short overview of the release;
+- a **Getting started** section that keeps the fresh-Arch explanation, recommends the official `archinstall` guided installer while allowing a normal manual Arch installation, and includes the current copy/paste installation commands;
+- an **Existing Awtarchy users** update command using `awtarchy update`;
+- feature/change sections appropriate to the release;
+- a **Validation** section grounded in tests and CI that actually passed for the release target;
+- a final **Post-release updates** section containing a version-specific placeholder such as `_Placeholder for possible tested post-release patches to vX.Y.Z._`.
+
+Keep installation directions, useful links, and the post-release placeholder when carrying the prior stable release structure forward unless they are demonstrably obsolete or the user asks to remove them. Verify the complete published release body after creation.
+'''
+          new = '''A normal Awtarchy stable release body must include:
+
+- the release title and a short overview of the release;
+- a **Getting started** section that keeps the fresh-Arch explanation, recommends the official `archinstall` guided installer while allowing a normal manual Arch installation, and includes the current copy/paste installation commands;
+- an **Existing Awtarchy users** update command using `awtarchy update`;
+- feature/change sections appropriate to the release;
+- a **Validation** section grounded in tests and CI that actually passed for the release target;
+- a final **Post-release updates** section containing a version-specific placeholder such as `_Placeholder for possible tested post-release patches to vX.Y.Z._`.
+
+Keep installation directions, useful links, and the post-release placeholder when carrying the prior stable release structure forward unless they are demonstrably obsolete or the user asks to remove them. Verify the complete published release body after creation.
+
+### Mandatory stable release gate
+
+Release-note structure is enforced mechanically. Do not rely on memory or a manually repeated checklist when creating or editing a stable release.
+
+Before any `gh release create` or `gh release edit` operation:
+
+1. Save the proposed release body to a file.
+2. Save the latest published stable release body to a second file for structural comparison.
+3. Run the permanent validator and require a zero exit status:
+
+```bash
+python3 .github/scripts/validate-stable-release-notes.py \\
+  --version vX.Y.Z \\
+  --notes /path/to/proposed-release.md \\
+  --previous /path/to/previous-stable-release.md
+```
+
+A release bridge or other automated release writer must run this validator as a hard pre-write dependency. If validation fails, the release write must not execute.
+
+After publishing or editing a release, re-read the complete published body into a file and run the same validator against that published body before declaring the release complete. Continue to verify the release name, draft/prerelease state, target commit, and tag SHA separately; release-note validation does not replace tag/target verification.
+
+`tests/test-stable-release-notes-validator.sh` and `.github/workflows/validate-stable-release-notes.yml` are the permanent regression guard for this contract. Update the validator and its tests together when the intentionally supported stable-release structure changes.
+'''
+          if body.count(old) != 1:
+              raise SystemExit('Expected exactly one stable release notes contract block')
+          path.write_text(body.replace(old, new, 1))
+          PY
+
+          git diff --check
+          grep -Fq '### Mandatory stable release gate' AGENTS.md
+          grep -Fq 'validate-stable-release-notes.py' AGENTS.md
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add AGENTS.md
+          git commit -m 'docs: require stable release notes validation'
+          git push origin HEAD:hardening/stable-release-notes-gate
