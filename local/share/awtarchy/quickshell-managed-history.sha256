@@ -872,3 +872,6 @@ f9a373581ddb471d5bdafe26abdd9cf07ad7a2d1cc8a2177cb8d69d0ed31be72	.config/hypr/sc
 8bdcae2c6f30395aff05d74a74d6a7d43b4a42af364c12511094e11d2293a1ea	.config/hypr/scripts/quickshell_battery_care.sh
 7ea794a7aa78a37776d91b85fab94fb5aa87b21d3e4a2a8ac131561a744122c3	.config/quickshell/awtarchy/BatteryCareCard.qml
 781c7c0d171a402715fe7c20d276d97618956f3640d23fba56dc35294fe4d4e7	.config/hypr/scripts/quickshell_battery_care.sh
+
+# 2026-09-06 generic TLP stop-only logical readback.
+1b76cc179a1f3aa13a98fad6abc566bf88dbde3b26e905fbc86196d0d8a1b93a	.config/hypr/scripts/quickshell_battery_care.sh
