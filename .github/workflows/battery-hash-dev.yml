@@ -1,9 +1,7 @@
 name: Battery Care Managed Hash (temporary)
 
 on:
-  push:
-    branches:
-      - hardening/tlp-battery-compatibility
+  pull_request:
 
 permissions:
   contents: read
