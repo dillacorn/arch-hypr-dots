@@ -1,4 +1,3 @@
-
 # Current Quickshell managed stock hashes refreshed by updater-policy validation.
 # Current testing-branch hashes are appended so the next release can identify them.
 # Cursor-preserving launcher keyboard-focus correction.
@@ -46,7 +45,7 @@
 146ff83d178cc4c2082ea250223892c922953cfa61aabaa3fb9cdc79219bbd0e	.config/hypr/scripts/quickshell_clipboard.sh
 1540173cccc05bb191fb6f8df4b39bb249428b601ab3b22aeb995b30375c7051	.config/hypr/scripts/quickshell_flyout_prepare.sh
 160f65419d4aafacdd9bd07b3d90ac62bdebfc145e2dbaa3ce2dac64ab928a7d	.config/quickshell/awtarchy/Theme.qml
-164f0fc8b1a26307797b125b406bf8fa8b15da55b7dc86a4ac666c6fa670a50f	.config/quickshell/awtarchy/ThemePicker.qml
+164f0fc8b5731927d0b2ba80bab3ad6c5298cbd49e88128e21527bd7913c75bd	.config/quickshell/awtarchy/ThemePicker.qml
 1699801a96eeca73ec4b87fd21437d04d99ea5328320acde4c95a841be327b8c	.config/hypr/scripts/quickshell_runtime_rules.sh
 173f964b1e57e028b4efef94ef74b9b17a10eab2dd485eae9e615fcf8b557dc0	.config/hypr/scripts/quickshell_clipboard.sh
 185dc3aa8a786111814e54568e1c60d931c286f5a52615702475889fc1a04368	.config/quickshell/awtarchy/FlyoutSettings.qml
@@ -862,3 +861,7 @@ b9f4443a55ed4cef9f56b147726ee07928e21f44ce3fa5eccbbc3b3a9a9cfb63	.config/quicksh
 e2f9bfc815421e0732fa1a9b9d317343655a1f8f2137e7e5827ebe6e28dc90af	.config/hypr/scripts/quickshell_battery_care.sh
 8891de8271fa22f3932e7f9ee355c47f0807ab27f1151c77abf54bf10603fd02	.config/hypr/scripts/quickshell_clipboard.sh
 ab73a9056ecd3cd692112cf218464c9abe1de5792b0fdaad1f6401b063a0d967	.config/hypr/scripts/quickshell_clipboard.sh
+
+# 2026-09-05 phantom battery telemetry correction.
+47e867d2068784aa6850deb4c9e9c014f24110458378534724dc00546040a86c	.config/hypr/scripts/quickshell_battery_telemetry.sh
+e510b4b5ec3262870d7c9a9551e5a9e07fd30ae93416818b8578270aa42a31a0	.config/quickshell/awtarchy/BatteryState.qml
