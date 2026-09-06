@@ -382,32 +382,24 @@ jobs:
 
           python3 - "$runtime" "$workflow" <<'PY'
           from pathlib import Path
+          import re
           import sys
 
           runtime = Path(sys.argv[1])
           workflow = Path(sys.argv[2])
 
           text = runtime.read_text(encoding='utf-8')
-          old = r'''  if [[ "$IS_LAPTOP" == true && "$IS_VM" == false ]]; then
-            if pacman -Q tlpui >/dev/null 2>&1; then
-              printf '%s\n' "${COLOR_YELLOW}tlpui already installed. Skipping...${COLOR_RESET}"
-            else
-              log "Installing tlpui through upstream aur-scanner..."
-              if install_aur_with_scanner tlpui && pacman -Qq tlpui >/dev/null 2>&1; then
-                install -d -m 0755 /var/lib/awtarchy
-                touch /var/lib/awtarchy/managed-packages
-                grep -Fxq tlpui /var/lib/awtarchy/managed-packages \
-                  || printf '%s\n' tlpui >>/var/lib/awtarchy/managed-packages
-                LC_ALL=C sort -u -o /var/lib/awtarchy/managed-packages /var/lib/awtarchy/managed-packages
-                chmod 0644 /var/lib/awtarchy/managed-packages
-              fi
-            fi
-          fi
-
-          '''
-          if text.count(old) != 1:
-              raise SystemExit(f'expected exactly one legacy tlpui AUR block, found {text.count(old)}')
-          runtime.write_text(text.replace(old, '', 1), encoding='utf-8')
+          pattern = re.compile(
+              r'\n  if \[\[ "\$IS_LAPTOP" == true && "\$IS_VM" == false \]\]; then\n'
+              r'    if pacman -Q tlpui >/dev/null 2>&1; then\n'
+              r'.*?'
+              r'\n  fi\n\n(?=  if pacman -Q moonlight-qt-bin >/dev/null 2>&1; then)',
+              re.DOTALL,
+          )
+          matches = list(pattern.finditer(text))
+          if len(matches) != 1:
+              raise SystemExit(f'expected exactly one structurally anchored legacy tlpui AUR block, found {len(matches)}')
+          runtime.write_text(pattern.sub('\n', text, count=1), encoding='utf-8')
 
           marker = '  # BEGIN ONE-USE TLPUI RUNTIME CLEANUP\n'
           wtext = workflow.read_text(encoding='utf-8')
