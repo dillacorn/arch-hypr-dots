@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Read-only battery charge-limit capability detection for Awtarchy Quickshell.
+# Read-only Battery Care status adapter for Awtarchy Quickshell.
+# TLP owns hardware/vendor compatibility; this script only normalizes TLP's
+# generic advertised percentage interface for the UI.
 
 set -euo pipefail
 export LC_ALL=C
@@ -11,14 +13,13 @@ SUDO_BIN="${AWTARCHY_SUDO_BIN:-/usr/bin/sudo}"
 TLP_CONFIG_DIR="${AWTARCHY_TLP_CONFIG_DIR:-/etc/tlp.d}"
 TLP_USER_CONFIG="${AWTARCHY_TLP_USER_CONFIG:-/etc/tlp.conf}"
 MANAGED_CONFIG="${TLP_CONFIG_DIR}/00-awtarchy-battery-care.conf"
-SONY_BATTERY_CARE_PATH="${AWTARCHY_SONY_BATTERY_CARE_PATH:-/sys/devices/platform/sony-laptop/battery_care_limiter}"
 
 usage() {
     printf 'usage: %s --status-json\n' "${0##*/}" >&2
-    exit 2
+    return 2
 }
 
-[[ ${1:-} == --status-json && $# -eq 1 ]] || usage
+[[ ${1:-} == --status-json && $# -eq 1 ]] || { usage; exit $?; }
 command -v jq >/dev/null 2>&1 || exit 127
 
 read_text() {
@@ -35,8 +36,42 @@ read_percent() {
     printf '%s\n' "$value"
 }
 
+parse_range() {
+    local spec="$1" first last min max
+    [[ "$spec" == *..* ]] || return 1
+
+    first="${spec%%..*}"
+    last="${spec##*..}"
+    [[ "$first" =~ ([0-9]+) ]] || return 1
+    min="${BASH_REMATCH[1]}"
+    [[ "$last" =~ ([0-9]+) ]] || return 1
+    max="${BASH_REMATCH[1]}"
+    (( min <= max )) || return 1
+
+    printf '%s\t%s\n' "$min" "$max"
+}
+
+parse_presets() {
+    local spec="$1" numbers
+    numbers="$(grep -oE '[0-9]+' <<<"$spec" | paste -sd, -)"
+    [[ -n "$numbers" ]] || {
+        printf '[]\n'
+        return 0
+    }
+    printf '[%s]\n' "$numbers" | jq -c '[.[] | select(. >= 0 and . <= 100)] | unique'
+}
+
+range_is_percentage_control() {
+    local min="$1" max="$2"
+    (( min >= 0 && max <= 100 && max > 1 && min < 100 ))
+}
+
+presets_have_percentage_target() {
+    local presets="$1"
+    jq -e 'any(.[]; . >= 2 and . < 100)' <<<"$presets" >/dev/null
+}
+
 batteries='[]'
-sysfs_supported=false
 first_start=null
 first_stop=null
 mixed_stop_thresholds=false
@@ -58,7 +93,6 @@ for battery_dir in "$POWER_SUPPLY_ROOT"/*; do
 
     if [[ -e "$battery_dir/charge_control_start_threshold" ]]; then
         start_supported=true
-        sysfs_supported=true
         if value="$(read_percent "$battery_dir/charge_control_start_threshold" 2>/dev/null)"; then
             start_threshold="$value"
             [[ "$first_start" != null ]] || first_start="$value"
@@ -67,7 +101,6 @@ for battery_dir in "$POWER_SUPPLY_ROOT"/*; do
 
     if [[ -e "$battery_dir/charge_control_end_threshold" ]]; then
         stop_supported=true
-        sysfs_supported=true
         if value="$(read_percent "$battery_dir/charge_control_end_threshold" 2>/dev/null)"; then
             stop_threshold="$value"
             if [[ "$first_stop" == null ]]; then
@@ -105,7 +138,11 @@ managed_target=null
 if [[ -f "$MANAGED_CONFIG" && ! -L "$MANAGED_CONFIG" ]]; then
     managed_config=true
     managed_target_text="$(sed -n -E 's/^#[[:space:]]*target=([0-9]+).*$/\1/p' "$MANAGED_CONFIG" | head -n1)"
-    if [[ "$managed_target_text" =~ ^[0-9]+$ ]] && (( managed_target_text >= 1 && managed_target_text <= 100 )); then
+    if [[ ! "$managed_target_text" =~ ^[0-9]+$ ]]; then
+        managed_target_text="$(sed -n -E 's/^[[:space:]]*STOP_CHARGE_THRESH_BAT[0-9]+[[:space:]]*=[[:space:]]*([0-9]+).*$/\1/p' "$MANAGED_CONFIG" | head -n1)"
+    fi
+    if [[ "$managed_target_text" =~ ^[0-9]+$ ]] \
+        && (( managed_target_text >= 2 && managed_target_text <= 100 )); then
         managed_target="$managed_target_text"
     fi
 fi
@@ -115,25 +152,11 @@ config_conflict=false
 for config_file in "$TLP_CONFIG_DIR"/*.conf "$TLP_USER_CONFIG"; do
     [[ -f "$config_file" ]] || continue
     [[ "$config_file" == "$MANAGED_CONFIG" ]] && continue
-    if grep -Eq '^[[:space:]]*(START|STOP)_CHARGE_THRESH_BAT[01][[:space:]]*=' "$config_file"; then
+    if grep -Eq '^[[:space:]]*(START|STOP)_CHARGE_THRESH_BAT[0-9]+[[:space:]]*=' "$config_file"; then
         config_conflict=true
         conflict_sources="$(jq -cn --argjson current "$conflict_sources" --arg file "$config_file" '$current + [$file]')"
     fi
 done
-
-plugin=""
-features=""
-start_spec=""
-stop_spec=""
-tlp_output=""
-tlp_available=false
-
-battery_plugin_writable() {
-    case "$1" in
-        asus|cros-ec|dell|huawei|thinkpad|thinkpad-legacy|lenovo|lenovo-legacy|lg|macbook|msi|samsung|sony|system76|toshiba|tuxedo|wilco-ec) return 0 ;;
-        *) return 1 ;;
-    esac
-}
 
 read_tlp_battery_report() {
     local report=""
@@ -157,285 +180,115 @@ read_tlp_battery_report() {
     return 1
 }
 
-if [[ -x "$BATTERY_STATUS_HELPER" || -x "$TLP_STAT_BIN" ]]; then
-    tlp_output="$(read_tlp_battery_report 2>/dev/null || true)"
-    if [[ -x "$TLP_STAT_BIN" || -n "$tlp_output" ]]; then
-        tlp_available=true
-    fi
-    plugin="$(
-        awk -F: '/^Plugin:[[:space:]]*/ {
-            sub(/^[[:space:]]+/, "", $2); sub(/[[:space:]]+$/, "", $2); print $2; exit
-        }' <<<"$tlp_output"
-    )"
-    features="$(
-        awk -F: '/^Supported features:[[:space:]]*/ {
-            sub(/^[[:space:]]+/, "", $2); sub(/[[:space:]]+$/, "", $2); print $2; exit
-        }' <<<"$tlp_output"
-    )"
-    start_spec="$(
-        sed -n -E 's/^\*[[:space:]]+START_CHARGE_THRESH_[^:]+:[[:space:]]*(.*)$/\1/p' \
-            <<<"$tlp_output" | head -n1
-    )"
-    stop_spec="$(
-        sed -n -E 's/^\*[[:space:]]+STOP_CHARGE_THRESH_[^:]+:[[:space:]]*(.*)$/\1/p' \
-            <<<"$tlp_output" | head -n1
-    )"
-fi
+tlp_output="$(read_tlp_battery_report 2>/dev/null || true)"
+tlp_available=false
+[[ -n "$tlp_output" ]] && tlp_available=true
 
-# `tlp-stat -b` is documented by TLP as a root command, while this detector is
-# intentionally unprivileged. sony_laptop exposes its actual limiter through a
-# read-only sysfs attribute, so use the kernel interface to recover capability
-# and current state when the authoritative TLP report is temporarily unavailable.
-# Writes still go only through the root-owned TLP helper.
-sony_limit=null
-if value="$(read_percent "$SONY_BATTERY_CARE_PATH" 2>/dev/null)"; then
-    case "$value" in
-        0) sony_limit=100 ;;
-        50|80|100) sony_limit="$value" ;;
-    esac
-fi
-if [[ "$sony_limit" != null && "$tlp_available" == true ]]; then
-    features_lower_probe="${features,,}"
-    if [[ -z "$plugin" || "$features_lower_probe" != *"charge threshold"* || -z "$stop_spec" ]]; then
-        plugin="sony"
-        features="charge threshold"
-        stop_spec="50, 80, 100(off) -- battery care limiter"
-    fi
-fi
+plugin="$(
+    awk -F: '/^Plugin:[[:space:]]*/ {
+        sub(/^[[:space:]]+/, "", $2); sub(/[[:space:]]+$/, "", $2); print $2; exit
+    }' <<<"$tlp_output"
+)"
+features="$(
+    awk -F: '/^Supported features:[[:space:]]*/ {
+        sub(/^[[:space:]]+/, "", $2); sub(/[[:space:]]+$/, "", $2); print $2; exit
+    }' <<<"$tlp_output"
+)"
+start_spec="$(
+    sed -n -E 's/^\*[[:space:]]+START_CHARGE_THRESH_[^:]+:[[:space:]]*(.*)$/\1/p' \
+        <<<"$tlp_output" | head -n1
+)"
+stop_spec="$(
+    sed -n -E 's/^\*[[:space:]]+STOP_CHARGE_THRESH_[^:]+:[[:space:]]*(.*)$/\1/p' \
+        <<<"$tlp_output" | head -n1
+)"
 
-plugin_lower="${plugin,,}"
 features_lower="${features,,}"
-tlp_supported=false
-if [[ "$features_lower" == *"charge threshold"* ]]; then
-    tlp_supported=true
-elif [[ "$features_lower" == *"charge type"* && -n "$stop_spec" ]]; then
-    tlp_supported=true
-fi
-
-mode="unsupported"
-backend="none"
 supported=false
 writable=false
 compatibility="unsupported"
+backend="none"
+mode="unsupported"
 start_min=null
 start_max=null
 stop_min=null
 stop_max=null
 stop_presets='[]'
 
-parse_range() {
-    local spec="$1" first last min max
-    [[ "$spec" == *..* ]] || return 1
-
-    first="${spec%%..*}"
-    last="${spec##*..}"
-    [[ "$first" =~ ([0-9]+) ]] || return 1
-    min="${BASH_REMATCH[1]}"
-    [[ "$last" =~ ([0-9]+) ]] || return 1
-    max="${BASH_REMATCH[1]}"
-    (( min <= max )) || return 1
-
-    printf '%s\t%s\n' "$min" "$max"
-}
-
-parse_presets() {
-    local spec="$1" numbers
-    numbers="$(grep -oE '[0-9]+' <<<"$spec" | paste -sd, -)"
-    [[ -n "$numbers" ]] || {
-        printf '[]\n'
-        return 0
-    }
-    printf '[%s]\n' "$numbers" | jq -c 'unique'
-}
-
-if [[ "$tlp_supported" == true ]]; then
+if [[ "$features_lower" == *"charge threshold"* || "$features_lower" == *"charge type"* ]]; then
     supported=true
     backend="tlp"
-    if battery_plugin_writable "$plugin_lower"; then
-        writable=true
-        compatibility="validated"
-    else
-        compatibility="unvalidated"
-    fi
-
-    case "$plugin_lower" in
-        lenovo|lenovo-legacy)
-            mode="fixed"
-            ;;
-        samsung)
-            mode="fixed"
-            stop_presets='[80,100]'
-            ;;
-        *)
-            if range="$(parse_range "$start_spec" 2>/dev/null)"; then
-                IFS=$'\t' read -r start_min start_max <<<"$range"
-            fi
-            if range="$(parse_range "$stop_spec" 2>/dev/null)"; then
-                IFS=$'\t' read -r stop_min stop_max <<<"$range"
-            fi
-
-            if [[ "$features_lower" == *"charge type"* ]]; then
-                mode="fixed"
-            elif [[ "$stop_min" != null && "$stop_max" != null ]]; then
-                mode="range"
-            elif [[ -n "$stop_spec" ]]; then
-                stop_presets="$(parse_presets "$stop_spec")"
-                if [[ "${stop_spec,,}" == *"(on)"* && "${stop_spec,,}" == *"(off)"* ]]; then
-                    mode="fixed"
-                elif (( $(jq 'length' <<<"$stop_presets") >= 2 )); then
-                    mode="presets"
-                else
-                    mode="tlp"
-                fi
-            else
-                mode="tlp"
-            fi
-            ;;
-    esac
-elif [[ "$sysfs_supported" == true && "$plugin_lower" != "generic" ]]; then
-    supported=true
-    writable=false
     compatibility="unvalidated"
-    backend="sysfs"
-    mode="sysfs"
+
+    if range="$(parse_range "$stop_spec" 2>/dev/null)"; then
+        IFS=$'\t' read -r candidate_stop_min candidate_stop_max <<<"$range"
+        if range_is_percentage_control "$candidate_stop_min" "$candidate_stop_max"; then
+            stop_min="$candidate_stop_min"
+            stop_max="$candidate_stop_max"
+            mode="range"
+            writable=true
+            compatibility="validated"
+
+            if range="$(parse_range "$start_spec" 2>/dev/null)"; then
+                IFS=$'\t' read -r candidate_start_min candidate_start_max <<<"$range"
+                if (( candidate_start_min >= 0 && candidate_start_max <= 100 )); then
+                    start_min="$candidate_start_min"
+                    start_max="$candidate_start_max"
+                fi
+            fi
+        fi
+    else
+        stop_presets="$(parse_presets "$stop_spec")"
+        if presets_have_percentage_target "$stop_presets"; then
+            mode="presets"
+            writable=true
+            compatibility="validated"
+        else
+            stop_presets='[]'
+        fi
+    fi
 fi
 
 observed_target=null
 enabled=null
+if [[ "$mode" == range || "$mode" == presets ]]; then
+    if [[ "$mixed_stop_thresholds" == true ]]; then
+        first_stop=null
+    elif [[ "$first_stop" != null ]]; then
+        observed_target="$first_stop"
+    fi
 
-if [[ "$backend" == tlp ]]; then
-    case "$plugin_lower" in
-        lenovo)
-            lenovo_long_life=false
-            lenovo_standard=false
-            if grep -Eq 'charge_types[^=]*=.*\[Long_Life\]' <<<"$tlp_output"; then
-                lenovo_long_life=true
-            fi
-            if grep -Eq 'charge_types[^=]*=.*\[Standard\]' <<<"$tlp_output"; then
-                lenovo_standard=true
-            fi
-
-            if [[ "$lenovo_long_life" == true && "$lenovo_standard" == true ]]; then
-                mixed_stop_thresholds=true
-            elif [[ "$lenovo_long_life" == true ]]; then
-                enabled=true
-            elif [[ "$lenovo_standard" == true ]]; then
-                enabled=false
-                observed_target=100
-            fi
-            ;;
-        lenovo-legacy)
-            if grep -Eq 'conservation_mode[^=]*=[[:space:]]*1([^0-9]|$)' <<<"$tlp_output"; then
-                enabled=true
-            elif grep -Eq 'conservation_mode[^=]*=[[:space:]]*0([^0-9]|$)' <<<"$tlp_output"; then
-                enabled=false
-                observed_target=100
-            fi
-            ;;
-        samsung)
-            if grep -Eq 'battery_life_extender[^=]*=[[:space:]]*1([^0-9]|$)' <<<"$tlp_output"; then
-                enabled=true
-                observed_target=80
-            elif grep -Eq 'battery_life_extender[^=]*=[[:space:]]*0([^0-9]|$)' <<<"$tlp_output"; then
-                enabled=false
-                observed_target=100
-            fi
-            ;;
-        sony)
-            if [[ "$sony_limit" != null ]]; then
-                observed_target="$sony_limit"
-            else
-                observed="$(awk '
-                    /battery_care_limiter[^=]*=/ {
-                        value=$0
-                        sub(/^.*=[[:space:]]*/, "", value)
-                        if (match(value, /^[0-9]+/)) { print substr(value, RSTART, RLENGTH); exit }
-                    }
-                ' <<<"$tlp_output")"
-                if [[ "$observed" =~ ^[0-9]+$ ]]; then
-                    if (( observed == 0 )); then
-                        observed_target=100
-                    else
-                        observed_target="$observed"
-                    fi
-                fi
-            fi
-            ;;
-        huawei)
-            observed="$(sed -n -E 's/^.*charge_control_thresholds[^=]*=[[:space:]]*[0-9]+[[:space:]]+([0-9]+).*$/\1/p' <<<"$tlp_output" | head -n1)"
-            if [[ "$observed" =~ ^[0-9]+$ ]]; then
-                observed_target="$observed"
-            fi
-            ;;
-        *)
-            observed="$(awk '
-                /(charge_control_end_threshold|stop_charge_thresh|battery_care_limit|battery_care_limiter)[^=]*=/ {
-                    value=$0
-                    sub(/^.*=[[:space:]]*/, "", value)
-                    if (match(value, /^[0-9]+/)) { print substr(value, RSTART, RLENGTH); exit }
-                }
-            ' <<<"$tlp_output")"
-            if [[ "$observed" =~ ^[0-9]+$ ]]; then
-                observed_target="$observed"
-            fi
-            ;;
-    esac
-fi
-
-if [[ "$mixed_stop_thresholds" == true ]]; then
-    observed_target=null
-    enabled=null
-    first_stop=null
-elif [[ "$observed_target" == null && "$first_stop" != null ]]; then
-    observed_target="$first_stop"
-fi
-if [[ "$enabled" == null && "$observed_target" != null ]]; then
-    if (( observed_target < 100 )); then
-        enabled=true
-    else
-        enabled=false
+    if [[ "$observed_target" != null ]]; then
+        if (( observed_target < 100 )); then
+            enabled=true
+        else
+            enabled=false
+        fi
+    elif [[ "$managed_target" != null ]]; then
+        if (( managed_target < 100 )); then
+            enabled=true
+        else
+            enabled=false
+        fi
     fi
 fi
 
 summary="Charge limiting unavailable"
-detail="This laptop does not expose a supported charge-threshold interface."
-
-if [[ "$supported" == true ]]; then
+detail="TLP does not report a usable battery charge-limit interface."
+if [[ "$supported" == true && "$writable" == true ]]; then
     case "$mode" in
         range)
             summary="Charge limiting available"
-            if [[ "$stop_min" != null && "$stop_max" != null ]]; then
-                detail="Custom stop threshold ${stop_min}-${stop_max}%"
-            else
-                detail="Custom charge thresholds supported"
-            fi
-            ;;
-        fixed)
-            summary="Battery health limit available"
-            if [[ "$plugin_lower" == lenovo || "$plugin_lower" == lenovo-legacy ]]; then
-                detail="Hardware-defined conservation mode; the exact fixed target is not exposed by Linux"
-            else
-                detail="Hardware-defined charge limit presets"
-            fi
+            detail="TLP supports a ${stop_min}-${stop_max}% stop threshold"
             ;;
         presets)
             summary="Charge limit presets available"
-            detail="Hardware accepts specific charge targets"
-            ;;
-        tlp)
-            summary="Charge limiting available"
-            detail="TLP reports charge-threshold support"
-            ;;
-        sysfs)
-            summary="Charge limiting available"
-            detail="Kernel exposes standard charge-threshold controls; writable range not yet validated"
+            detail="TLP reports specific percentage charge targets"
             ;;
     esac
-fi
-
-if [[ "$compatibility" == "unvalidated" && "$backend" == "tlp" ]]; then
-    summary="Battery Care detected but not validated by Awtarchy"
-    detail="Write controls are disabled for this backend."
+elif [[ "$supported" == true ]]; then
+    summary="Advanced Battery Care available"
+    detail="TLP reports a non-percentage battery-care mode; configure it with TLPUI."
 fi
 
 jq -cn \
