@@ -1,0 +1,34 @@
+name: Battery Care Managed Hash Update (temporary)
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: hardening/tlp-battery-compatibility
+          fetch-depth: 0
+      - name: Append current detector hash
+        run: |
+          set -euo pipefail
+          line=$'e2f9bfc815421e0732fa1a9b9d317343655a1f8f2137e7e5827ebe6e28dc90af\t.config/hypr/scripts/quickshell_battery_care.sh'
+          manifest=local/share/awtarchy/quickshell-managed-history.sha256
+          if ! grep -Fxq -- "$line" "$manifest"; then
+            printf '%s\n' "$line" >> "$manifest"
+          fi
+          git diff --check
+          if git diff --quiet -- "$manifest"; then
+            echo 'Managed hash already present.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "$manifest"
+          git commit -m 'chore: refresh Battery Care managed hash'
+          git push origin HEAD:hardening/tlp-battery-compatibility
