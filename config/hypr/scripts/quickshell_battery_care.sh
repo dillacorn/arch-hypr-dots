@@ -158,8 +158,10 @@ read_tlp_battery_report() {
 }
 
 if [[ -x "$BATTERY_STATUS_HELPER" || -x "$TLP_STAT_BIN" ]]; then
-    tlp_available=true
     tlp_output="$(read_tlp_battery_report 2>/dev/null || true)"
+    if [[ -x "$TLP_STAT_BIN" || -n "$tlp_output" ]]; then
+        tlp_available=true
+    fi
     plugin="$(
         awk -F: '/^Plugin:[[:space:]]*/ {
             sub(/^[[:space:]]+/, "", $2); sub(/[[:space:]]+$/, "", $2); print $2; exit
