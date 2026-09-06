@@ -54,6 +54,8 @@ ppd_guard_line="$(grep -nF 'remove_ppd_for_tlp || return 0' "$POWER_RECONCILER" 
 tlpui_line="$(grep -nF 'newly_managed+=(tlpui)' "$POWER_RECONCILER" | head -n1 | cut -d: -f1)"
 [[ "$ppd_guard_line" =~ ^[0-9]+$ && "$tlpui_line" =~ ^[0-9]+$ && "$tlpui_line" -gt "$ppd_guard_line" ]] \
   || fail 'tlpui can be selected before the power-profiles-daemon conflict is resolved'
+assert_not_contains "$RUNTIME" 'install_aur_with_scanner tlpui'
+assert_not_contains "$RUNTIME" 'Installing tlpui through upstream aur-scanner'
 
 # A successful tlpctl command only proves the tlp-pd CLI path works. The
 # Quickshell PowerProfiles singleton talks to the org.freedesktop D-Bus API,
