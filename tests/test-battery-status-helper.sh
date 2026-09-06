@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 HELPER="${ROOT}/local/libexec/awtarchy/battery-status-helper"
+RECONCILER="${ROOT}/local/share/awtarchy/awtarchy-power-profile.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 
@@ -19,6 +20,27 @@ grep -Fq '/usr/bin/env -i' "$HELPER" || fail 'helper does not sanitize its envir
 grep -Fq '/usr/bin/tlp-stat -b' "$HELPER" || fail 'helper does not execute the fixed battery report'
 ! grep -Fq '"$@"' "$HELPER" || fail 'helper forwards caller-controlled arguments'
 ! grep -Eq '/usr/bin/tlp([[:space:]]|$)' "$HELPER" || fail 'helper contains a battery write command'
+
+# The sudoers principal must come from the actual invoking UID, not a caller-
+# controlled USER environment variable. A malicious/stale USER value must not
+# redirect the passwordless read-only helper rule to another account.
+cp -- "$RECONCILER" "$TMP/reconciler-policy-user"
+python3 - "$TMP/reconciler-policy-user" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+text = path.read_text()
+old = 'main "$@"'
+if text.count(old) != 1:
+    raise SystemExit('expected exactly one reconciler main invocation')
+path.write_text(text.replace(old, ': # test copy: do not run reconciler main'))
+PY
+expected_user="$(/usr/bin/id -un)"
+if ! policy_user="$(USER=root /usr/bin/bash -c 'source "$1"; battery_status_policy_user' _ "$TMP/reconciler-policy-user" 2>"$TMP/policy-user.err")"; then
+  fail "Battery Care status policy trusted spoofed USER instead of the invoking UID: $(cat "$TMP/policy-user.err")"
+fi
+[[ "$policy_user" == "$expected_user" ]] \
+  || fail "Battery Care status policy resolved '$policy_user' instead of invoking user '$expected_user'"
 
 # Privileged helper sources are regular repository files and are installed as
 # executable root-owned copies by the reconciler. Exercise the source through
