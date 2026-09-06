@@ -51,7 +51,7 @@ jobs:
           done
           (( missing == 0 ))
 
-  publish-v3-5-5:
+  cleanup-v3-5-5-bridge:
     if: >-
       github.event_name == 'pull_request' &&
       github.event.pull_request.number == 151 &&
@@ -68,7 +68,7 @@ jobs:
           ref: release/v3.5.5-bridge
           fetch-depth: 0
 
-      - name: Verify target and publish release
+      - name: Verify published release and delete helper branch
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -77,26 +77,7 @@ jobs:
           set -euo pipefail
 
           current_main="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
-          test "$current_main" = "$EXPECTED_SHA" || {
-            printf 'Refusing release: main moved from %s to %s\n' "$EXPECTED_SHA" "$current_main" >&2
-            false
-          }
-
-          if gh release view v3.5.5 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            printf '%s\n' 'Refusing release: v3.5.5 release already exists.' >&2
-            false
-          fi
-
-          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.5.5" >/dev/null 2>&1; then
-            printf '%s\n' 'Refusing release: v3.5.5 tag already exists.' >&2
-            false
-          fi
-
-          gh release create v3.5.5 \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$EXPECTED_SHA" \
-            --title 'Awtarchy v3.5.5 Quickshell' \
-            --notes-file .github/release-v3.5.5.md
+          test "$current_main" = "$EXPECTED_SHA"
 
           release_name="$(gh release view v3.5.5 --repo "$GITHUB_REPOSITORY" --json name --jq '.name')"
           release_tag="$(gh release view v3.5.5 --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName')"
@@ -118,10 +99,6 @@ jobs:
           if [[ "$tag_type" == 'tag' ]]; then
             tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq '.object.sha')"
           fi
-          test "$tag_sha" = "$EXPECTED_SHA" || {
-            printf 'Release tag points to %s, expected %s\n' "$tag_sha" "$EXPECTED_SHA" >&2
-            false
-          }
+          test "$tag_sha" = "$EXPECTED_SHA"
 
-          gh release view v3.5.5 --repo "$GITHUB_REPOSITORY" --json name,tagName,isDraft,isPrerelease,url
-          printf 'Verified v3.5.5 tag target: %s\n' "$tag_sha"
+          gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/release/v3.5.5-bridge"
