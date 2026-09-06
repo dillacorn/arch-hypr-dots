@@ -866,3 +866,6 @@ ab73a9056ecd3cd692112cf218464c9abe1de5792b0fdaad1f6401b063a0d967	.config/hypr/sc
 # 2026-09-05 phantom battery telemetry correction.
 47e867d2068784aa6850deb4c9e9c014f24110458378534724dc00546040a86c	.config/hypr/scripts/quickshell_battery_telemetry.sh
 e510b4b5ec3262870d7c9a9551e5a9e07fd30ae93416818b8578270aa42a31a0	.config/quickshell/awtarchy/BatteryState.qml
+
+# 2026-09-06 Bluetooth resume diagnostic capture.
+f9a373581ddb471d5bdafe26abdd9cf07ad7a2d1cc8a2177cb8d69d0ed31be72	.config/hypr/scripts/quickshell_bluetooth_resume_diagnostic.sh
