@@ -16,12 +16,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install updater regression dependency
+        run: sudo apt-get update && sudo apt-get install -y lua5.4
+
       - name: Refresh exact Battery Care stock hash
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          expected_parent='a395aaabb985336021d202b677c122658f2b04cf'
+          expected_parent='662442eba30a2217cc052d765a42ec9d794c36ad'
           actual_parent="$(git rev-parse HEAD^)"
           if [[ "$actual_parent" != "$expected_parent" ]]; then
             printf 'No-op: expected parent %s, found %s\n' "$expected_parent" "$actual_parent"
