@@ -50,7 +50,7 @@ set -euo pipefail
 source "${AWTARCHY_TEST_STATE:?}"
 cat <<EOF
 +++ Battery Care
-Plugin: asus
+Plugin: arbitrary-range
 Supported features: charge threshold
 Parameter value range:
 * STOP_CHARGE_THRESH_BAT0/1: 0(off)..100(default)
@@ -66,7 +66,7 @@ set -euo pipefail
 source "${AWTARCHY_TEST_STATE:?}"
 config=${AWTARCHY_TEST_CONFIG:?}
 case "${1:-}" in
-  start)
+  setcharge)
     target="$(awk -F= '/^STOP_CHARGE_THRESH_BAT0=/{print $2; exit}' "$config")"
     start="$(awk -F= '/^START_CHARGE_THRESH_BAT0=/{print $2; exit}' "$config")"
     ;;
@@ -85,9 +85,9 @@ AWTARCHY_TEST_CONFIG="$CONF_DIR/00-awtarchy-battery-care.conf" \
   "$TEST_HELPER" battery-set 80
 
 grep -Fxq 'START_CHARGE_THRESH_BAT0=0' "$CONF_DIR/00-awtarchy-battery-care.conf" \
-  || fail 'ASUS stop-only hardware did not use dummy start threshold'
+  || fail 'stop-only hardware did not use dummy start threshold'
 grep -Fxq 'STOP_CHARGE_THRESH_BAT0=80' "$CONF_DIR/00-awtarchy-battery-care.conf" \
-  || fail 'ASUS annotated range rejected an in-range 80% target'
+  || fail 'annotated range rejected an in-range 80% target'
 
 POWER_ROOT="$TMP/power"
 mkdir -p -- "$POWER_ROOT/BAT0"
@@ -104,16 +104,15 @@ json="$(
 )"
 jq -e '.backend == "tlp" and .mode == "range" and .stop_min == 0 and .stop_max == 100' \
   <<<"$json" >/dev/null \
-  || fail "detector did not classify ASUS annotated range correctly: $json"
+  || fail "detector did not classify annotated range correctly: $json"
 
-# ThinkPad reports an annotated intermediate default. The parser must preserve
-# the complete 0..99 supported span rather than stopping at 96(default).
-cat >"$FAKE_STAT" <<'FAKE_THINKPAD_EOF'
+# An annotated intermediate default must not truncate the full numeric span.
+cat >"$FAKE_STAT" <<'FAKE_ANNOTATED_EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 cat <<'EOF'
 +++ Battery Care
-Plugin: thinkpad
+Plugin: another-arbitrary-range
 Supported features: charge thresholds
 Parameter value ranges:
 * START_CHARGE_THRESH_BAT0/1: 0(off)..96(default)..99
@@ -121,7 +120,7 @@ Parameter value ranges:
 /sys/class/power_supply/BAT0/charge_control_start_threshold = 75 [%]
 /sys/class/power_supply/BAT0/charge_control_end_threshold = 80 [%]
 EOF
-FAKE_THINKPAD_EOF
+FAKE_ANNOTATED_EOF
 chmod 0755 "$FAKE_STAT"
 
 json="$(
@@ -133,6 +132,6 @@ json="$(
 )"
 jq -e '.backend == "tlp" and .mode == "range" and .start_min == 0 and .start_max == 99 and .stop_min == 1 and .stop_max == 100' \
   <<<"$json" >/dev/null \
-  || fail "detector truncated ThinkPad annotated range: $json"
+  || fail "detector truncated annotated range: $json"
 
 printf '%s\n' 'PASS: annotated TLP battery ranges retain their full numeric endpoints.'
