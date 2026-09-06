@@ -6,16 +6,20 @@ on:
       - main
     paths:
       - config/hypr/scripts/quickshell_bluetooth_state.sh
+      - config/hypr/scripts/quickshell_bluetooth_resume_diagnostic.sh
       - config/quickshell/awtarchy/BluetoothMenu.qml
       - local/share/awtarchy/quickshell-managed-history.sha256
       - tests/test-bluetooth-state-persistence.sh
+      - tests/test-bluetooth-resume-diagnostic.sh
       - .github/workflows/validate-bluetooth-state.yml
   pull_request:
     paths:
       - config/hypr/scripts/quickshell_bluetooth_state.sh
+      - config/hypr/scripts/quickshell_bluetooth_resume_diagnostic.sh
       - config/quickshell/awtarchy/BluetoothMenu.qml
       - local/share/awtarchy/quickshell-managed-history.sha256
       - tests/test-bluetooth-state-persistence.sh
+      - tests/test-bluetooth-resume-diagnostic.sh
       - .github/workflows/validate-bluetooth-state.yml
 
 permissions:
@@ -29,11 +33,23 @@ jobs:
       - name: Bash syntax
         run: |
           bash -n config/hypr/scripts/quickshell_bluetooth_state.sh
+          bash -n config/hypr/scripts/quickshell_bluetooth_resume_diagnostic.sh
           bash -n tests/test-bluetooth-state-persistence.sh
+          bash -n tests/test-bluetooth-resume-diagnostic.sh
       - name: ShellCheck
-        run: shellcheck config/hypr/scripts/quickshell_bluetooth_state.sh tests/test-bluetooth-state-persistence.sh
+        run: |
+          shellcheck \
+            config/hypr/scripts/quickshell_bluetooth_state.sh \
+            tests/test-bluetooth-state-persistence.sh \
+            tests/test-bluetooth-resume-diagnostic.sh
+          # The diagnostic intentionally appends many report fragments and treats
+          # optional command failures as non-fatal evidence gaps. Errors and
+          # warnings remain fatal; ShellCheck info/style findings are not.
+          shellcheck -S warning config/hypr/scripts/quickshell_bluetooth_resume_diagnostic.sh
       - name: Bluetooth persistence and state sync
         run: bash tests/test-bluetooth-state-persistence.sh
+      - name: Bluetooth suspend/resume diagnostic
+        run: bash tests/test-bluetooth-resume-diagnostic.sh
       - name: Managed history
         run: |
           history='local/share/awtarchy/quickshell-managed-history.sha256'
