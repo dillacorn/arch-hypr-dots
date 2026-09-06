@@ -1,6 +1,6 @@
 # `awtarchy-shell`
 
-#### See the [Release Page](https://github.com/dillacorn/awtarchy/releases) for install directions.
+#### [Installation guide](INSTALL.md) · [Updating guide](UPDATING.md) · [Releases](https://github.com/dillacorn/awtarchy/releases)
 
 ---
 
@@ -10,8 +10,10 @@ pronounced: **aw-tar-chee**
 
 ## Install model
 
-1. Install Arch with `archinstall` and select the Minimal profile.
+1. Install Arch with `archinstall` and select the Minimal profile, or install Arch manually.
 2. Apply the awtarchy overlay on top of that base system.
+
+For the current commands and install behavior, use the [Installation guide](INSTALL.md). Existing users should use the [Updating guide](UPDATING.md).
 
 > **Development note:** Awtarchy is a personal passion project maintained in spare time. Large language models have been used as development tools to assist with writing, reviewing, refactoring, documentation, and troubleshooting parts of the project. I use that assistance to spend more of my limited project time testing changes on real systems, diagnosing failures, and validating releases. LLM-assisted changes are not assumed correct simply because they were generated; they are reviewed and tested as part of the normal development process.
 
@@ -48,46 +50,13 @@ Awtarchy-authored code and configuration is licensed under MIT unless otherwise 
 | **Shell**          | [Quickshell](https://github.com/quickshell-mirror/quickshell) ([Awtarchy config](https://github.com/dillacorn/awtarchy/tree/main/config/quickshell/awtarchy))                                          |
 | **Kernel**         | [Arch Linux](https://archlinux.org/packages/core/x86_64/linux/) · [Arch Linux LTS](https://archlinux.org/packages/core/x86_64/linux-lts/) · [CachyOS kernel](https://github.com/CachyOS/linux-cachyos) |
 
-## Install
+## Install and maintenance
 
-Awtarchy expects a minimal vanilla Arch installation. `archinstall` with the Minimal profile is the recommended starting point.
+- **Fresh installation:** [INSTALL.md](INSTALL.md)
+- **Stable updates, review/reset, version state, and Git-testing:** [UPDATING.md](UPDATING.md)
+- **Published release notes:** [Releases](https://github.com/dillacorn/awtarchy/releases)
 
-```bash
-sudo pacman -S git --noconfirm
-git clone https://github.com/dillacorn/awtarchy
-cd awtarchy
-sudo ./awtarchy-install.sh
-```
-
-After installation, use:
-
-```bash
-awtarchy
-```
-
-The installed maintenance command lives at `~/.local/bin/awtarchy`.
-
-If Awtarchy is already installed, running the installer refreshes the maintenance command without reinstalling packages or replacing managed configs. Use `sudo ./awtarchy-install.sh --reinstall` only when you intentionally want the full installer again.
-
-## Maintenance
-
-Run `awtarchy` with no arguments for the interactive maintenance menu.
-
-Common commands:
-
-```text
-awtarchy update          Update release-managed files; preserve hyprland.lua and back up overwritten local edits
-awtarchy reset           Reset managed configs to published release defaults
-awtarchy review          Preview managed config changes without applying them
-awtarchy version         Show updater, config release, and git-testing status
-awtarchy git             Test an unreleased remote branch or exact branch commit
-awtarchy clean-backups   Review and clean Awtarchy backup files
-awtarchy help            Show the full command list
-```
-
-`awtarchy update`, `reset`, and `review` remain release-based; `--tag` accepts only an exact published release tag. The launcher/runtime can refresh from `main` independently so updater fixes do not require a config release.
-
-`awtarchy git` is an explicit unreleased-testing mode. It shows the selected remote branch and exact commit and keeps git-testing state separate from stable release state.
+Run `awtarchy` with no arguments for the interactive maintenance menu after installation.
 
 ## AUR packages
 
@@ -110,14 +79,6 @@ Submitted reports contain only a strict allowlist of failure identifiers and bro
 Accepted reports are sent through an Awtarchy Cloudflare Worker and may create a deduplicated public GitHub issue through the restricted Awtarchy Report Bot. Cloudflare necessarily processes network connection metadata to receive the request, so Awtarchy does not claim absolute network-layer anonymity.
 
 See [PRIVACY.md](PRIVACY.md) for the exact reporting and data-handling model.
-
-## Dry-run
-
-Review the installer questionnaire and install plan without changing the system:
-
-```bash
-./awtarchy-install.sh --dry-run
-```
 
 ## Wallpaper Collections
 
