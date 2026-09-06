@@ -1,1 +1,0 @@
-RED checkpoint for v3.5.5 clipboard delivery. Remove before merge.

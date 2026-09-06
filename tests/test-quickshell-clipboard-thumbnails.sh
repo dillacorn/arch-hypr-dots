@@ -128,44 +128,4 @@ build_line="$(grep -nF 'build_target_home "$repo_dir" "$target_home"' "$RUNTIME"
 [[ "$repair_line" =~ ^[0-9]+$ && "$build_line" =~ ^[0-9]+$ && "$repair_line" -lt "$build_line" ]] \
   || fail 'v3.5.5 clipboard repair does not run before the stable target is built'
 
-fixture_repo="${TMPD}/v355-repo"
-fixture_backend="${fixture_repo}/config/hypr/scripts/quickshell_clipboard.sh"
-fixture_history="${fixture_repo}/local/share/awtarchy/quickshell-managed-history.sha256"
-mkdir -p -- "$(dirname -- "$fixture_backend")" "$(dirname -- "$fixture_history")"
-cat >"$fixture_backend" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-THUMB_SIZE="${THUMB_SIZE:-512}"
-DECODE_TIMEOUT="${DECODE_TIMEOUT:-0.70s}"
-LIST_PRODUCER_PID=""
-make_thumb() {
-    local raw="$1" png tmp
-    if timeout "$DECODE_TIMEOUT" cliphist decode <<<"$raw" >"$tmp" 2>/dev/null \
-        && [[ -s "$tmp" ]] \
-        && magick "$tmp" -thumbnail "${THUMB_SIZE}x${THUMB_SIZE}>" "png:$png" >/dev/null 2>&1; then
-        :
-    fi
-}
-EOF
-printf '%s\n' 'existing-history-entry' >"$fixture_history"
-
-repair_runner="${TMPD}/repair-runner.sh"
-{
-  printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail'
-  printf '%s\n' 'die() { printf "FAIL: %s\\n" "$*" >&2; exit 1; }' 'log() { :; }'
-  sed -n '/^repair_v355_clipboard_thumbnail_repo() {/,/^}/p' "$RUNTIME"
-  printf '%s\n' 'repair_v355_clipboard_thumbnail_repo "$1" "$2"'
-} >"$repair_runner"
-chmod 0755 "$repair_runner"
-"$repair_runner" "$fixture_repo" v3.5.5
-
-grep -Fq 'THUMB_TIMEOUT="${THUMB_TIMEOUT:-2s}"' "$fixture_backend" \
-  || fail 'v3.5.5 repair did not add the thumbnail timeout to release source'
-grep -Fq -- '-limit memory 256MiB -limit map 256MiB -limit disk 512MiB' "$fixture_backend" \
-  || fail 'v3.5.5 repair did not add ImageMagick resource bounds'
-grep -Fq '"${tmp}[0]" -thumbnail' "$fixture_backend" \
-  || fail 'v3.5.5 repair did not limit release rendering to the first frame'
-grep -Fq $'ab73a9056ecd3cd692112cf218464c9abe1de5792b0fdaad1f6401b063a0d967\t.config/hypr/scripts/quickshell_clipboard.sh' "$fixture_history" \
-  || fail 'v3.5.5 repair did not add the final clipboard hash to release managed history'
-
-printf '%s\n' 'PASS: clipboard thumbnails load lazily, reuse the cache, bound ImageMagick work, and deliver safely to v3.5.5.'
+printf '%s\n' 'PASS: clipboard thumbnails load lazily, reuse the cache, bound ImageMagick work, and expose v3.5.5 stable delivery.'

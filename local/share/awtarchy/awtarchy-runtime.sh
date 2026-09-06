@@ -8031,6 +8031,64 @@ PY_V354_SONY_BATTERY
   log "Applied v3.5.4 Sony battery-disable post-release repair to release helper source."
 }
 
+
+repair_v355_clipboard_thumbnail_repo() {
+  local repo_dir="$1" tag="$2"
+  local backend="${repo_dir}/config/hypr/scripts/quickshell_clipboard.sh"
+  local history="${repo_dir}/local/share/awtarchy/quickshell-managed-history.sha256"
+  local expected_hash="ab73a9056ecd3cd692112cf218464c9abe1de5792b0fdaad1f6401b063a0d967"
+  local actual_hash=""
+
+  [[ "$tag" == "v3.5.5" ]] || return 0
+  [[ -f "$backend" && ! -L "$backend" ]] \
+    || die "v3.5.5 clipboard source is unavailable for the stable repair."
+  [[ -f "$history" && ! -L "$history" ]] \
+    || die "v3.5.5 managed-history source is unavailable for the stable repair."
+
+  actual_hash="$(sha256sum "$backend" | awk '{print $1}')"
+  if [[ "$actual_hash" != "$expected_hash" ]]; then
+    python3 - "$backend" "$history" <<'PY_V355_CLIPBOARD'
+from pathlib import Path
+import sys
+
+backend = Path(sys.argv[1])
+history = Path(sys.argv[2])
+text = backend.read_text(encoding="utf-8")
+old_timeout = 'DECODE_TIMEOUT="${DECODE_TIMEOUT:-0.70s}"\nLIST_PRODUCER_PID=""'
+new_timeout = 'DECODE_TIMEOUT="${DECODE_TIMEOUT:-0.70s}"\nTHUMB_TIMEOUT="${THUMB_TIMEOUT:-2s}"\nLIST_PRODUCER_PID=""'
+old_magick = '        && magick "$tmp" -thumbnail "${THUMB_SIZE}x${THUMB_SIZE}>" "png:$png" >/dev/null 2>&1; then'
+new_magick = (
+    '        && timeout --kill-after=1s "$THUMB_TIMEOUT" magick \\\n'
+    '            -limit memory 256MiB -limit map 256MiB -limit disk 512MiB \\\n'
+    '            "${tmp}[0]" -thumbnail "${THUMB_SIZE}x${THUMB_SIZE}>" "png:$png" >/dev/null 2>&1; then'
+)
+if text.count(old_timeout) != 1 or text.count(old_magick) != 1:
+    raise SystemExit("v3.5.5 clipboard repair could not find the expected release source")
+backend.write_text(text.replace(old_timeout, new_timeout, 1).replace(old_magick, new_magick, 1), encoding="utf-8")
+
+lines = [
+    "8891de8271fa22f3932e7f9ee355c47f0807ab27f1151c77abf54bf10603fd02\t.config/hypr/scripts/quickshell_clipboard.sh",
+    "ab73a9056ecd3cd692112cf218464c9abe1de5792b0fdaad1f6401b063a0d967\t.config/hypr/scripts/quickshell_clipboard.sh",
+]
+htext = history.read_text(encoding="utf-8")
+if htext and not htext.endswith("\n"):
+    htext += "\n"
+existing = set(htext.splitlines())
+for line in lines:
+    if line not in existing:
+        htext += line + "\n"
+history.write_text(htext, encoding="utf-8")
+PY_V355_CLIPBOARD
+  fi
+
+  actual_hash="$(sha256sum "$backend" | awk '{print $1}')"
+  [[ "$actual_hash" == "$expected_hash" ]] \
+    || die "v3.5.5 clipboard repair produced unexpected source hash ${actual_hash}."
+  /usr/bin/bash -n "$backend" \
+    || die "v3.5.5 clipboard repair failed Bash syntax validation."
+  log "Applied v3.5.5 clipboard thumbnail resource hardening to release source."
+}
+
 prepare_quickshell_update_target() {
   local target_home="$1" rel
 
@@ -8742,6 +8800,7 @@ main() {
   [[ -d "$repo_dir" ]] || die "Extracted repo directory is missing"
 
   repair_v354_sony_battery_disable_repo "$repo_dir" "$tag"
+  repair_v355_clipboard_thumbnail_repo "$repo_dir" "$tag"
 
   target_home="${TMPD}/target-home"
   TARGET_STAGE_HOME="$target_home"
