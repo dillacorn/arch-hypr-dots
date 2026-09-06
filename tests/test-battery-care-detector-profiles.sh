@@ -69,6 +69,14 @@ assert_json "$json" \
     '.plugin == "arbitrary-selector" and .supported == true and .writable == false and .mode == "unsupported"' \
     'selector semantics leaked into the percentage UI'
 
+# TLP charge-type modes are selectors, not percentage thresholds. Even when
+# their numeric selector values extend above 1, they must never become writable
+# Quickshell percentage controls.
+json="$(run_profile arbitrary-charge-type 'charge type' '' '0(Standard)..2(Smart) -- selector')"
+assert_json "$json" \
+    '.plugin == "arbitrary-charge-type" and .supported == true and .writable == false and .mode == "unsupported"' \
+    'charge-type selector values leaked into the percentage UI'
+
 # No advertised threshold capability remains unsupported.
 json="$(run_profile generic 'none available' '' '')"
 assert_json "$json" \
