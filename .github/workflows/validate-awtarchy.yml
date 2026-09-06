@@ -340,7 +340,6 @@ jobs:
             sudo install -m 0755 tests/fixtures/aur-scan-version-only.sh /usr/bin/aur-scan
             aur_scan_fixture_installed=1
           fi
-          sha256sum config/hypr/scripts/quickshell_battery_care.sh
           bash tests/test-quickshell-updater-migration.sh
           cleanup_aur_scan_fixture
           aur_scan_fixture_installed=0
