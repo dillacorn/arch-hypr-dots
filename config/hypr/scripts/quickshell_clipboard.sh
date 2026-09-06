@@ -13,6 +13,7 @@ LIST_LIMIT="${LIST_LIMIT:-60}"
 PREVIEW_WIDTH="${PREVIEW_WIDTH:-1000}"
 THUMB_SIZE="${THUMB_SIZE:-512}"
 DECODE_TIMEOUT="${DECODE_TIMEOUT:-0.70s}"
+THUMB_TIMEOUT="${THUMB_TIMEOUT:-2s}"
 LIST_PRODUCER_PID=""
 LIST_PRODUCER_FD=""
 
@@ -86,7 +87,9 @@ make_thumb() {
 
     if timeout "$DECODE_TIMEOUT" cliphist decode <<<"$raw" >"$tmp" 2>/dev/null \
         && [[ -s "$tmp" ]] \
-        && magick "$tmp" -thumbnail "${THUMB_SIZE}x${THUMB_SIZE}>" "png:$png" >/dev/null 2>&1; then
+        && timeout --kill-after=1s "$THUMB_TIMEOUT" magick \
+            -limit memory 256MiB -limit map 256MiB -limit disk 512MiB \
+            "${tmp}[0]" -thumbnail "${THUMB_SIZE}x${THUMB_SIZE}>" "png:$png" >/dev/null 2>&1; then
         rm -f -- "$tmp"
         printf '%s\n' "$png"
         return 0
