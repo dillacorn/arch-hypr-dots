@@ -80,6 +80,18 @@ if run_validator "${TMP_DIR}/stale-install-link.md" "${TMP_DIR}/previous.md" >/d
   fail "release with non-canonical INSTALL.md link was accepted"
 fi
 
+python3 - "${TMP_DIR}/valid.md" "${TMP_DIR}/overlong.md" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1]).read_text()
+insert = "## Exhaustive implementation detail\n\n" + ("detail " * 700).strip() + "\n\n"
+Path(sys.argv[2]).write_text(source.replace("## Validation\n", insert + "## Validation\n", 1))
+PY
+if run_validator "${TMP_DIR}/overlong.md" "${TMP_DIR}/previous.md" >/dev/null 2>&1; then
+  fail "release above the 650-word default budget was accepted"
+fi
+
 sed 's/_Placeholder for possible tested post-release patches to v3\.5\.6\._/_Placeholder for possible tested post-release patches to v3.5.5._/' \
   "${TMP_DIR}/valid.md" >"${TMP_DIR}/wrong-placeholder.md"
 if run_validator "${TMP_DIR}/wrong-placeholder.md" "${TMP_DIR}/previous.md" >/dev/null 2>&1; then
@@ -92,4 +104,4 @@ if run_validator "${TMP_DIR}/missing-validation.md" "${TMP_DIR}/previous.md" >/d
   fail "release without Validation was accepted"
 fi
 
-printf '%s\n' 'PASS: stable release notes validator enforces canonical guide links and release structure'
+printf '%s\n' 'PASS: stable release notes validator enforces canonical guide links, concise notes, and release structure'
