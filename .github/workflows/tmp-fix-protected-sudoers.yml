@@ -1,0 +1,103 @@
+name: One-use protected sudoers fix
+
+on:
+  push:
+    branches:
+      - refactor/tlp-battery-care-thin-client
+
+permissions:
+  contents: write
+
+jobs:
+  green:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+
+      - name: Install focused test dependencies
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Apply and verify protected sudoers fix
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          expected_parent='e1871f0c26e01ec215a4a8615f2ac99463ad82f8'
+          actual_parent="$(git rev-parse HEAD^)"
+          if [[ "$actual_parent" != "$expected_parent" ]]; then
+            printf 'No-op: expected parent %s, found %s\n' "$expected_parent" "$actual_parent"
+            exit 0
+          fi
+
+          reconciler='local/share/awtarchy/awtarchy-power-profile.sh'
+
+          python3 - "$reconciler" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding='utf-8')
+
+          old_verify = '''  [[ -f $policy_file && ! -L $policy_file ]] || return 1
+          owner="$(/usr/bin/stat -c %u -- "$policy_file" 2>/dev/null)" || return 1
+          mode="$(/usr/bin/stat -c %a -- "$policy_file" 2>/dev/null)" || return 1
+          '''
+          new_verify = '''  run_root /usr/bin/test -f "$policy_file" || return 1
+          if run_root /usr/bin/test -L "$policy_file"; then
+            return 1
+          fi
+          owner="$(run_root /usr/bin/stat -c %u -- "$policy_file")" || return 1
+          mode="$(run_root /usr/bin/stat -c %a -- "$policy_file")" || return 1
+          '''
+
+          old_existing = '''  if [[ -e $policy_file || -L $policy_file ]]; then
+            [[ -f $policy_file && ! -L $policy_file ]] \\
+              || die "Refusing unsafe Battery Care sudoers policy: $policy_file"
+            content="$(battery_status_policy_content "$policy_file" 2>/dev/null)" \\
+              || die "Cannot read existing Battery Care sudoers policy: $policy_file"
+            [[ ${content%%$'\\n'*} == "$BATTERY_STATUS_POLICY_MARKER" ]] \\
+              || die "Refusing to replace non-Awtarchy sudoers policy: $policy_file"
+          fi
+          '''
+          new_existing = '''  if run_root /usr/bin/test -e "$policy_file" || run_root /usr/bin/test -L "$policy_file"; then
+            run_root /usr/bin/test -f "$policy_file" \\
+              || die "Refusing unsafe Battery Care sudoers policy: $policy_file"
+            if run_root /usr/bin/test -L "$policy_file"; then
+              die "Refusing unsafe Battery Care sudoers policy: $policy_file"
+            fi
+            content="$(battery_status_policy_content "$policy_file")" \\
+              || die "Cannot read existing Battery Care sudoers policy: $policy_file"
+            [[ ${content%%$'\\n'*} == "$BATTERY_STATUS_POLICY_MARKER" ]] \\
+              || die "Refusing to replace non-Awtarchy sudoers policy: $policy_file"
+          fi
+          '''
+
+          if text.count(old_verify) != 1:
+              raise SystemExit(f'expected one unprivileged verifier block, found {text.count(old_verify)}')
+          if text.count(old_existing) != 1:
+              raise SystemExit(f'expected one unprivileged existing-policy block, found {text.count(old_existing)}')
+
+          text = text.replace(old_verify, new_verify, 1)
+          text = text.replace(old_existing, new_existing, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          bash -n "$reconciler"
+          shellcheck "$reconciler" tests/test-battery-status-helper.sh
+          bash tests/test-battery-status-helper.sh
+          bash tests/test-power-profile-helper-update.sh
+          git diff --check
+
+          changed="$(git diff --name-only)"
+          [[ "$changed" == "$reconciler" ]] || {
+            printf 'Unexpected changed files:\n%s\n' "$changed" >&2
+            exit 1
+          }
+
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add -- "$reconciler"
+          git commit -m 'fix: inspect Battery Care sudoers policy as root'
+          git push origin HEAD:refactor/tlp-battery-care-thin-client
