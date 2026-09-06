@@ -30,7 +30,7 @@ mkdir -p -- "$FAKE_BIN" "$CONF_DIR"
 cp -- "$HELPER" "$TEST_HELPER"
 chmod 0755 "$TEST_HELPER"
 
-python3 - "$TEST_HELPER" "$FAKE_BIN/tlp" "$FAKE_BIN/tlp-stat" "$CONF_DIR" "$USER_CONF" <<'PY'
+python3 - "$TEST_HELPER" "$FAKE_BIN/tlp" "$FAKE_BIN/tlp-stat" "$CONF_DIR" "$USER_CONF" "$(id -u)" <<'PY'
 from pathlib import Path
 import sys
 path = Path(sys.argv[1])
@@ -40,6 +40,8 @@ text = text.replace('TLP_STAT="/usr/bin/tlp-stat"', f'TLP_STAT="{sys.argv[3]}"')
 text = text.replace('CONFIG_DIR="/etc/tlp.d"', f'CONFIG_DIR="{sys.argv[4]}"')
 text = text.replace('USER_CONFIG="/etc/tlp.conf"', f'USER_CONFIG="{sys.argv[5]}"')
 text = text.replace("(( EUID == 0 )) || fail 'must run as root'", ': # test copy: root check bypassed')
+text = text.replace('[[ "$dir_owner" == 0 && "$dir_mode" =~ ^[0-7]{3,4}$ ]]',
+                    f'[[ "$dir_owner" == {sys.argv[6]} && "$dir_mode" =~ ^[0-7]{{3,4}}$ ]]')
 path.write_text(text)
 PY
 
