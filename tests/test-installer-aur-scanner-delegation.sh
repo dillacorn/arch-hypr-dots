@@ -65,8 +65,8 @@ if "AUR Guard" in stage or "aurinstall" in stage:
     raise SystemExit("installer AUR stage still advertises or invokes AurGuard")
 if 'if ! install_aur_with_scanner "$pkg"; then' not in stage:
     raise SystemExit("selected AUR package failures are not isolated before continuing")
-if 'install_aur_with_scanner tlpui' not in stage:
-    raise SystemExit("installer laptop AUR package still bypasses aur-scanner")
+if 'install_aur_with_scanner tlpui' in stage:
+    raise SystemExit("official tlpui package is still routed through aur-scanner")
 
 obs = function_body("install_obs_pipewire_audio_capture_package")
 if 'install_aur_with_scanner "$pkg"' not in obs:
