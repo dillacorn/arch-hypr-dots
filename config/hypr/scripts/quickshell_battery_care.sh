@@ -61,6 +61,41 @@ parse_presets() {
     printf '[%s]\n' "$numbers" | jq -c '[.[] | select(. >= 0 and . <= 100)] | unique'
 }
 
+parse_stop_only_tlp_readback() {
+    local report="$1" line rhs value first=""
+    local in_battery_care=false
+
+    while IFS= read -r line; do
+        if [[ "$line" == '+++ Battery Care' ]]; then
+            in_battery_care=true
+            continue
+        fi
+        if [[ "$in_battery_care" == true && "$line" == '+++'* ]]; then
+            break
+        fi
+        [[ "$in_battery_care" == true && "$line" == *'='* && "$line" == *'[%]'* ]] || continue
+
+        rhs="${line#*=}"
+        if [[ "$rhs" =~ \(([0-9]+)\)[[:space:]]*\[%\] ]]; then
+            value="${BASH_REMATCH[1]}"
+        elif [[ "$rhs" =~ ([0-9]+)[[:space:]]*\[%\] ]]; then
+            value="${BASH_REMATCH[1]}"
+        else
+            continue
+        fi
+        (( value >= 0 && value <= 100 )) || continue
+
+        if [[ -z "$first" ]]; then
+            first="$value"
+        elif [[ "$first" != "$value" ]]; then
+            return 1
+        fi
+    done <<<"$report"
+
+    [[ -n "$first" ]] || return 1
+    printf '%s\n' "$first"
+}
+
 range_is_percentage_control() {
     local min="$1" max="$2"
     (( min >= 0 && max <= 100 && max > 1 && min < 100 ))
@@ -258,6 +293,17 @@ if [[ "$mode" == range || "$mode" == presets ]]; then
         first_stop=null
     elif [[ "$first_stop" != null ]]; then
         observed_target="$first_stop"
+    elif [[ -z "$start_spec" ]]; then
+        if tlp_stop="$(parse_stop_only_tlp_readback "$tlp_output" 2>/dev/null)"; then
+            if [[ "$mode" == range ]] \
+                && (( tlp_stop >= stop_min && tlp_stop <= stop_max )); then
+                observed_target="$tlp_stop"
+            elif [[ "$mode" == presets ]] \
+                && jq -e --argjson value "$tlp_stop" 'index($value) != null' \
+                    <<<"$stop_presets" >/dev/null; then
+                observed_target="$tlp_stop"
+            fi
+        fi
     fi
 
     if [[ "$observed_target" != null ]]; then
