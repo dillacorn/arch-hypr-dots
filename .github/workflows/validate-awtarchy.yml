@@ -27,6 +27,7 @@ jobs:
           grep -Fq 'exec "${TARGET_HOME}/.local/bin/awtarchy" "$@"' local/bin/awtarchy
           bash -n local/libexec/awtarchy/scxctl-helper
           bash -n local/libexec/awtarchy/power-profile-helper
+          bash -n local/libexec/awtarchy/battery-status-helper
           bash -n local/share/awtarchy/awtarchy-runtime.sh
           bash -n local/share/awtarchy/awtarchy-power-profile.sh
           bash -n config/hypr/scripts/awtarchy-tips-tui.sh
@@ -91,6 +92,7 @@ jobs:
           bash -n tests/test-battery-flyout-position.sh
           bash -n tests/test-battery-charge-limit-detection.sh
           bash -n tests/test-battery-care-control.sh
+          bash -n tests/test-battery-status-helper.sh
           bash -n tests/test-battery-care-compatibility.sh
           bash -n tests/test-battery-care-detector-profiles.sh
           bash -n tests/test-battery-care-vendor-semantics.sh
@@ -150,6 +152,7 @@ jobs:
             local/bin/awtarchy \
             local/libexec/awtarchy/scxctl-helper \
             local/libexec/awtarchy/power-profile-helper \
+            local/libexec/awtarchy/battery-status-helper \
             local/share/awtarchy/awtarchy-power-profile.sh \
             config/hypr/scripts/ddc_brightness.sh \
             config/hypr/scripts/default_terminal.sh \
@@ -203,6 +206,7 @@ jobs:
             tests/test-battery-flyout-state.sh \
             tests/test-battery-flyout-position.sh \
             tests/test-battery-charge-limit-detection.sh \
+            tests/test-battery-status-helper.sh \
             tests/test-battery-care-compatibility.sh \
             tests/test-battery-care-detector-profiles.sh \
             tests/test-battery-care-vendor-semantics.sh \
@@ -289,6 +293,7 @@ jobs:
           bash tests/test-battery-flyout-position.sh
           bash tests/test-battery-charge-limit-detection.sh
           sudo bash tests/test-battery-care-control.sh
+          sudo bash tests/test-battery-status-helper.sh
           bash tests/test-battery-care-compatibility.sh
           bash tests/test-battery-care-detector-profiles.sh
           bash tests/test-battery-care-vendor-semantics.sh
@@ -335,6 +340,7 @@ jobs:
             sudo install -m 0755 tests/fixtures/aur-scan-version-only.sh /usr/bin/aur-scan
             aur_scan_fixture_installed=1
           fi
+          sha256sum config/hypr/scripts/quickshell_battery_care.sh
           bash tests/test-quickshell-updater-migration.sh
           cleanup_aur_scan_fixture
           aur_scan_fixture_installed=0
