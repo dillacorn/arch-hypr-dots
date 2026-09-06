@@ -22,31 +22,11 @@ Previous stable release.
 
 ## Getting started
 
-Awtarchy is an Arch Linux overlay/environment, not a Linux distribution or an Arch Linux installer. Install it onto a working minimal Arch Linux system.
-
-If you are starting from zero:
-
-1. Download the official Arch Linux ISO from the [Arch Linux download page](https://archlinux.org/download/).
-2. Boot the Arch Linux ISO.
-3. Install a working minimal Arch Linux system first.
-   - For most users, Awtarchy recommends the official `archinstall` guided installer included with the Arch ISO as the easiest path.
-   - A normal manual Arch installation using the [ArchWiki Installation Guide](https://wiki.archlinux.org/title/Installation_guide) is also fine.
-4. Boot into the installed Arch system.
-
-Once you have a working minimal Arch installation, install Awtarchy:
-
-```bash
-sudo pacman -S git --noconfirm
-git clone https://github.com/dillacorn/awtarchy
-cd awtarchy
-sudo ./awtarchy-install.sh
-```
+Legacy duplicated installation directions lived here.
 
 ## Existing Awtarchy users
 
-```bash
-awtarchy update
-```
+Legacy duplicated update directions lived here.
 
 ## Validation
 
@@ -57,21 +37,47 @@ awtarchy update
 _Placeholder for possible tested post-release patches to v3.5.5._
 EOF
 
-sed 's/v3\.5\.5/v3.5.6/g; s/Previous stable release\./New stable release./; s/Previous validation evidence\./New validation evidence./' \
-  "${TMP_DIR}/previous.md" >"${TMP_DIR}/valid.md"
+cat >"${TMP_DIR}/valid.md" <<'EOF'
+# Awtarchy v3.5.6 Quickshell
+
+New stable release with release-specific changes and canonical documentation links.
+
+## Install and update
+
+- New installation: [INSTALL.md](https://github.com/dillacorn/awtarchy/blob/main/INSTALL.md)
+- Existing Awtarchy users: [UPDATING.md](https://github.com/dillacorn/awtarchy/blob/main/UPDATING.md) or run `awtarchy update`.
+
+## Changes
+
+- New release-specific behavior.
+
+## Validation
+
+- New validation evidence.
+
+## Post-release updates
+
+_Placeholder for possible tested post-release patches to v3.5.6._
+EOF
 
 [[ -f "$VALIDATOR" ]] || fail "stable release notes validator is missing"
 run_validator "${TMP_DIR}/valid.md" "${TMP_DIR}/previous.md" >/dev/null \
-  || fail "complete stable release notes were rejected"
+  || fail "canonical-guide stable release notes were rejected"
 
-grep -v '^## Getting started$' "${TMP_DIR}/valid.md" >"${TMP_DIR}/missing-getting-started.md"
-if run_validator "${TMP_DIR}/missing-getting-started.md" "${TMP_DIR}/previous.md" >/dev/null 2>&1; then
-  fail "release without Getting started was accepted"
+sed '/INSTALL\.md/d' "${TMP_DIR}/valid.md" >"${TMP_DIR}/missing-install-link.md"
+if run_validator "${TMP_DIR}/missing-install-link.md" "${TMP_DIR}/previous.md" >/dev/null 2>&1; then
+  fail "release without canonical INSTALL.md link was accepted"
 fi
 
-grep -v '^sudo ./awtarchy-install\.sh$' "${TMP_DIR}/valid.md" >"${TMP_DIR}/missing-install-command.md"
-if run_validator "${TMP_DIR}/missing-install-command.md" "${TMP_DIR}/previous.md" >/dev/null 2>&1; then
-  fail "release without the current install command was accepted"
+sed '/UPDATING\.md/d' "${TMP_DIR}/valid.md" >"${TMP_DIR}/missing-update-link.md"
+if run_validator "${TMP_DIR}/missing-update-link.md" "${TMP_DIR}/previous.md" >/dev/null 2>&1; then
+  fail "release without canonical UPDATING.md link was accepted"
+fi
+
+sed 's#blob/main/INSTALL\.md#blob/v3.5.5/INSTALL.md#' \
+  "${TMP_DIR}/valid.md" >"${TMP_DIR}/stale-install-link.md"
+if run_validator "${TMP_DIR}/stale-install-link.md" "${TMP_DIR}/previous.md" >/dev/null 2>&1; then
+  fail "release with non-canonical INSTALL.md link was accepted"
 fi
 
 sed 's/_Placeholder for possible tested post-release patches to v3\.5\.6\._/_Placeholder for possible tested post-release patches to v3.5.5._/' \
@@ -86,4 +92,4 @@ if run_validator "${TMP_DIR}/missing-validation.md" "${TMP_DIR}/previous.md" >/d
   fail "release without Validation was accepted"
 fi
 
-printf '%s\n' 'PASS: stable release notes validator enforces the release contract'
+printf '%s\n' 'PASS: stable release notes validator enforces canonical guide links and release structure'
