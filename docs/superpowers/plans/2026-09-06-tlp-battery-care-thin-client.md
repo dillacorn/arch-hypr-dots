@@ -19,6 +19,9 @@
 - Never silently overwrite threshold configuration from any other TLP config file.
 - No Awtarchy Battery Care code may branch on a TLP plugin/vendor name for write policy.
 - TLP command success/failure is authoritative; no vendor-specific hardware read-back verifier remains.
+- Derive TLP config suffixes from TLP's advertised parameter qualifiers, not from physical battery status names.
+- Use physical battery status names only for commands that take a battery selector, such as `tlp fullcharge`.
+- Use `tlp setcharge` with no threshold arguments to apply Awtarchy's persisted standard TLP configuration.
 - Use GitHub Actions as the executable test environment because the current sandbox cannot resolve GitHub for a local clone.
 
 ---
@@ -61,7 +64,7 @@ Lenovo/Samsung/Sony/Huawei state decoding
 sysfs threshold fallback as a writable/capability source
 ```
 
-Keep only TLP-advertised generic range/preset parsing, Awtarchy managed config state, conflict detection, and display-only plugin text.
+Keep only TLP-advertised generic range/preset parsing, generic TLP-normalized status readback, Awtarchy managed config state, conflict detection, and display-only plugin text.
 
 - [ ] **Step 4: Run CI and verify the compatibility test passes before moving to helper writes**
 
@@ -85,9 +88,11 @@ Cover:
 future-vendor + 50..100 range -> accepted
 stop-only spec -> START=0
 range/list start spec -> generic valid start chosen below stop
+advertised parameter qualifiers -> config BATx suffixes
+physical Battery Status names -> command selectors only
 invalid requested target -> rejected before config replacement
-TLP start failure -> previous managed drop-in restored
-successful TLP start + transformed/different read-back -> still succeeds
+TLP setcharge failure -> previous managed drop-in restored
+successful TLP setcharge + transformed/different read-back -> still succeeds
 external config -> fail closed
 selector-only 0..1 spec -> no percentage write path
 ```
@@ -106,12 +111,13 @@ Delete plugin allowlists, per-plugin translations, `battery_dual_config_plugin()
 read tlp-stat -b
 validate generic numeric STOP spec
 derive START only from advertised generic START spec
+derive BATx config suffixes from advertised START/STOP parameter qualifiers
 write Awtarchy drop-in
-run tlp start
-rollback the drop-in and re-run tlp start if TLP fails
+run tlp setcharge with no threshold arguments
+rollback the drop-in and re-run the configured TLP apply path if TLP fails
 ```
 
-`battery-disable` must remove only the Awtarchy drop-in, apply remaining TLP configuration, and use TLP's full-charge operation only as a generic temporary full-charge action when appropriate.
+`battery-disable` must remove only the Awtarchy drop-in and use TLP's `fullcharge` operation as the generic temporary full-charge action for physical battery names TLP actually reports. It must not invent BAT names or encode vendor-specific OFF values.
 
 - [ ] **Step 4: Verify helper tests and compatibility tests green**
 
@@ -120,7 +126,7 @@ rollback the drop-in and re-run tlp start if TLP fails
 **Files:**
 - Modify: `tests/test-battery-care-detector-profiles.sh`
 - Modify: `config/quickshell/awtarchy/BatteryCareCard.qml`
-- Modify: `tests/test-battery-care-sony-unprivileged.sh`
+- Modify/remove obsolete vendor-focused detector tests as required.
 
 **Interfaces:**
 - Consumes: generic detector range/preset/managed/conflict fields.
@@ -131,19 +137,23 @@ rollback the drop-in and re-run tlp start if TLP fails
 Required assertions:
 
 ```text
-future-vendor numeric range behaves identically to a known plugin
+future-vendor numeric range behaves identically to any other plugin
 0..1 selector-only stop spec is read-only/advanced rather than exposed as 1%
 QML has no pluginName/fixedUnknownTarget/battery-enable-fixed policy
-unavailable privileged TLP report does not resurrect capability from Sony-specific sysfs
+unavailable privileged TLP report does not resurrect capability from vendor-specific sysfs
+stop-only TLP percentage readback without power_supply threshold attributes drives target/enabled state generically
+TLP-normalized readback must match the advertised range/preset before Awtarchy accepts it
 ```
 
 - [ ] **Step 2: Verify RED**
 
-Expected: current detector/QML fail because they special-case plugin names and Sony sysfs.
+Expected: old detector/QML fail because they special-case plugin names/vendor sysfs and cannot expose a stop-only logical target when TLP is the only current-state source.
 
-- [ ] **Step 3: Simplify BatteryCareCard.qml**
+- [ ] **Step 3: Simplify BatteryCareCard.qml and status normalization**
 
 `controlsAvailable` becomes generic TLP numeric capability + no conflict. Toggle OFF uses `battery-disable`; toggle ON uses `battery-set` with the selected generic target. Preserve visual layout and existing range/preset controls.
+
+For a stop-only percentage interface where no standard `power_supply` threshold file exists, consume only TLP's normalized logical percentage from its `Battery Care` section, never the opaque hardware path/raw value, and accept the percentage only if TLP's advertised range/presets validate it.
 
 - [ ] **Step 4: Verify focused UI/detector tests green**
 
@@ -161,7 +171,7 @@ Expected: current detector/QML fail because they special-case plugin names and S
 
 - [ ] **Step 1: Add failing backend-readiness regression**
 
-Require `tlpui` alongside `tlp` and `tlp-pd` in `install_laptop_backend()`.
+Require `tlpui` alongside `tlp` and `tlp-pd` in `install_laptop_backend()` and require the `power-profiles-daemon` conflict to be resolved before the TLP/TLPUI package transaction can occur.
 
 - [ ] **Step 2: Verify RED**
 
@@ -171,9 +181,9 @@ Expected: current reconciler installs only `tlp` and `tlp-pd`.
 
 Use the same `newly_managed` and `record_managed` behavior as TLP/TLP-PD. Do not add a new installer subsystem.
 
-- [ ] **Step 4: Remove the obsolete runtime AUR-only `tlpui` install block if the exact large-file target can be updated safely through available GitHub tooling**
+- [ ] **Step 4: Remove the obsolete runtime AUR-only `tlpui` install block**
 
-If the connector cannot replace the large runtime file without reconstructing unrelated content, do not perform a partial/unsafe replacement. Keep the now-redundant block temporarily and report that exact limitation; because pacman reconciliation installs `tlpui` first, the old block must only encounter an already-installed package before it can invoke AUR tooling. Verify actual call order before relying on this.
+The runtime path must not install `tlpui` through AUR scanning. Otherwise a user who declines replacement of a user-owned `power-profiles-daemon` could reach a later AUR stage that pulls TLP indirectly and undermines the conflict guard.
 
 ### Task 5: Retire obsolete vendor regression files and align CI/managed history
 
