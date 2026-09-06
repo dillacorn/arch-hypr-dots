@@ -62,6 +62,9 @@ command -v sudo >/dev/null 2>&1 || fail 'sudo is required for the root helper be
 sudo -n true >/dev/null 2>&1 || fail 'passwordless/noninteractive sudo is required for the root helper behavior test'
 
 set +e
+# The redirects intentionally belong to this unprivileged test shell. Only the
+# helper process needs elevation; the captured files stay user-owned under TMP.
+# shellcheck disable=SC2024
 sudo -n /usr/bin/env ATTACK=present /usr/bin/bash "$TMP/helper-under-test" >"$TMP/report.out" 2>"$TMP/report.err"
 rc=$?
 set -e
