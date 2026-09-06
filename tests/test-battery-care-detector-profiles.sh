@@ -24,6 +24,12 @@ printf '%s\n' TestModel >"$POWER_ROOT/BAT0/model_name"
 printf '%s\n' 75 >"$POWER_ROOT/BAT0/charge_control_start_threshold"
 printf '%s\n' 80 >"$POWER_ROOT/BAT0/charge_control_end_threshold"
 
+TLP_ONLY_POWER_ROOT="$TMP/power-tlp-only"
+mkdir -p -- "$TLP_ONLY_POWER_ROOT/BAT0"
+printf '%s\n' Battery >"$TLP_ONLY_POWER_ROOT/BAT0/type"
+printf '%s\n' TestVendor >"$TLP_ONLY_POWER_ROOT/BAT0/manufacturer"
+printf '%s\n' TestModel >"$TLP_ONLY_POWER_ROOT/BAT0/model_name"
+
 cat >"$TMP/tlp-stat" <<'EOF_TLP_STAT'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -36,16 +42,21 @@ fi
 if [[ -n ${TEST_STOP_SPEC:-} ]]; then
     printf '* STOP_CHARGE_THRESH_BAT0/1: %s\n' "$TEST_STOP_SPEC"
 fi
+if [[ -n ${TEST_CURRENT_LINE:-} ]]; then
+    printf '%s\n' "$TEST_CURRENT_LINE"
+fi
 EOF_TLP_STAT
 chmod 0755 "$TMP/tlp-stat"
 
 run_profile() {
     local plugin="$1" features="$2" start_spec="$3" stop_spec="$4"
+    local current_line="${5:-}" power_root="${6:-$POWER_ROOT}"
     TEST_PLUGIN="$plugin" \
     TEST_FEATURES="$features" \
     TEST_START_SPEC="$start_spec" \
     TEST_STOP_SPEC="$stop_spec" \
-    AWTARCHY_POWER_SUPPLY_ROOT="$POWER_ROOT" \
+    TEST_CURRENT_LINE="$current_line" \
+    AWTARCHY_POWER_SUPPLY_ROOT="$power_root" \
     AWTARCHY_TLP_STAT_BIN="$TMP/tlp-stat" \
         bash "$DETECTOR" --status-json
 }
@@ -61,6 +72,20 @@ json="$(run_profile arbitrary-presets 'charge threshold' '' '50, 80, 100(default
 assert_json "$json" \
     '.plugin == "arbitrary-presets" and .supported == true and .writable == true and .mode == "presets" and .stop_presets == [50,80,100] and .target == 80 and .enabled == true' \
     'numeric presets were not normalized generically'
+
+# Stop-only TLP plugins may expose their logical applied percentage only in the
+# Battery Care report instead of standard power_supply threshold attributes.
+# The detector must consume TLP's normalized percentage without knowing the
+# plugin/vendor-specific sysfs path or its raw hardware encoding.
+json="$(run_profile arbitrary-tlp-readback 'charge threshold' '' '50, 80, 100(off)' '/sys/devices/platform/example/battery_control = 0 (80) [%]' "$TLP_ONLY_POWER_ROOT")"
+assert_json "$json" \
+    '.supported == true and .writable == true and .mode == "presets" and .target == 80 and .enabled == true' \
+    'TLP-only logical stop-threshold readback was not exposed as the active target'
+
+json="$(run_profile arbitrary-tlp-readback 'charge threshold' '' '50, 80, 100(off)' '/sys/devices/platform/example/battery_control = 0 (100) [%]' "$TLP_ONLY_POWER_ROOT")"
+assert_json "$json" \
+    '.target == 100 and .enabled == false' \
+    'TLP-only logical full-charge readback was not exposed as disabled'
 
 # Raw selector/boolean controls are not percentages. They stay detected for
 # diagnostics but are intentionally read-only in Awtarchy.
