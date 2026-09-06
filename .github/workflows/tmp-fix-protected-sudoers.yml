@@ -24,7 +24,7 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          expected_parent='e1871f0c26e01ec215a4a8615f2ac99463ad82f8'
+          expected_parent='fffc72c043842772400cbfd0d016862a63092f3d'
           actual_parent="$(git rev-parse HEAD^)"
           if [[ "$actual_parent" != "$expected_parent" ]]; then
             printf 'No-op: expected parent %s, found %s\n' "$expected_parent" "$actual_parent"
@@ -40,39 +40,43 @@ jobs:
           path = Path(sys.argv[1])
           text = path.read_text(encoding='utf-8')
 
-          old_verify = '''  [[ -f $policy_file && ! -L $policy_file ]] || return 1
-          owner="$(/usr/bin/stat -c %u -- "$policy_file" 2>/dev/null)" || return 1
-          mode="$(/usr/bin/stat -c %a -- "$policy_file" 2>/dev/null)" || return 1
-          '''
-          new_verify = '''  run_root /usr/bin/test -f "$policy_file" || return 1
-          if run_root /usr/bin/test -L "$policy_file"; then
-            return 1
-          fi
-          owner="$(run_root /usr/bin/stat -c %u -- "$policy_file")" || return 1
-          mode="$(run_root /usr/bin/stat -c %a -- "$policy_file")" || return 1
-          '''
+          old_verify = (
+              '  [[ -f $policy_file && ! -L $policy_file ]] || return 1\n'
+              '  owner="$(/usr/bin/stat -c %u -- "$policy_file" 2>/dev/null)" || return 1\n'
+              '  mode="$(/usr/bin/stat -c %a -- "$policy_file" 2>/dev/null)" || return 1\n'
+          )
+          new_verify = (
+              '  run_root /usr/bin/test -f "$policy_file" || return 1\n'
+              '  if run_root /usr/bin/test -L "$policy_file"; then\n'
+              '    return 1\n'
+              '  fi\n'
+              '  owner="$(run_root /usr/bin/stat -c %u -- "$policy_file")" || return 1\n'
+              '  mode="$(run_root /usr/bin/stat -c %a -- "$policy_file")" || return 1\n'
+          )
 
-          old_existing = '''  if [[ -e $policy_file || -L $policy_file ]]; then
-            [[ -f $policy_file && ! -L $policy_file ]] \\
-              || die "Refusing unsafe Battery Care sudoers policy: $policy_file"
-            content="$(battery_status_policy_content "$policy_file" 2>/dev/null)" \\
-              || die "Cannot read existing Battery Care sudoers policy: $policy_file"
-            [[ ${content%%$'\\n'*} == "$BATTERY_STATUS_POLICY_MARKER" ]] \\
-              || die "Refusing to replace non-Awtarchy sudoers policy: $policy_file"
-          fi
-          '''
-          new_existing = '''  if run_root /usr/bin/test -e "$policy_file" || run_root /usr/bin/test -L "$policy_file"; then
-            run_root /usr/bin/test -f "$policy_file" \\
-              || die "Refusing unsafe Battery Care sudoers policy: $policy_file"
-            if run_root /usr/bin/test -L "$policy_file"; then
-              die "Refusing unsafe Battery Care sudoers policy: $policy_file"
-            fi
-            content="$(battery_status_policy_content "$policy_file")" \\
-              || die "Cannot read existing Battery Care sudoers policy: $policy_file"
-            [[ ${content%%$'\\n'*} == "$BATTERY_STATUS_POLICY_MARKER" ]] \\
-              || die "Refusing to replace non-Awtarchy sudoers policy: $policy_file"
-          fi
-          '''
+          old_existing = (
+              '  if [[ -e $policy_file || -L $policy_file ]]; then\n'
+              '    [[ -f $policy_file && ! -L $policy_file ]] \\\n'
+              '      || die "Refusing unsafe Battery Care sudoers policy: $policy_file"\n'
+              '    content="$(battery_status_policy_content "$policy_file" 2>/dev/null)" \\\n'
+              '      || die "Cannot read existing Battery Care sudoers policy: $policy_file"\n'
+              '    [[ ${content%%$\'\\n\'*} == "$BATTERY_STATUS_POLICY_MARKER" ]] \\\n'
+              '      || die "Refusing to replace non-Awtarchy sudoers policy: $policy_file"\n'
+              '  fi\n'
+          )
+          new_existing = (
+              '  if run_root /usr/bin/test -e "$policy_file" || run_root /usr/bin/test -L "$policy_file"; then\n'
+              '    run_root /usr/bin/test -f "$policy_file" \\\n'
+              '      || die "Refusing unsafe Battery Care sudoers policy: $policy_file"\n'
+              '    if run_root /usr/bin/test -L "$policy_file"; then\n'
+              '      die "Refusing unsafe Battery Care sudoers policy: $policy_file"\n'
+              '    fi\n'
+              '    content="$(battery_status_policy_content "$policy_file")" \\\n'
+              '      || die "Cannot read existing Battery Care sudoers policy: $policy_file"\n'
+              '    [[ ${content%%$\'\\n\'*} == "$BATTERY_STATUS_POLICY_MARKER" ]] \\\n'
+              '      || die "Refusing to replace non-Awtarchy sudoers policy: $policy_file"\n'
+              '  fi\n'
+          )
 
           if text.count(old_verify) != 1:
               raise SystemExit(f'expected one unprivileged verifier block, found {text.count(old_verify)}')
