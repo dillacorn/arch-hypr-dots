@@ -869,3 +869,5 @@ e510b4b5ec3262870d7c9a9551e5a9e07fd30ae93416818b8578270aa42a31a0	.config/quicksh
 
 # 2026-09-06 Bluetooth resume diagnostic capture.
 f9a373581ddb471d5bdafe26abdd9cf07ad7a2d1cc8a2177cb8d69d0ed31be72	.config/hypr/scripts/quickshell_bluetooth_resume_diagnostic.sh
+8bdcae2c6f30395aff05d74a74d6a7d43b4a42af364c12511094e11d2293a1ea	.config/hypr/scripts/quickshell_battery_care.sh
+7ea794a7aa78a37776d91b85fab94fb5aa87b21d3e4a2a8ac131561a744122c3	.config/quickshell/awtarchy/BatteryCareCard.qml
