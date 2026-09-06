@@ -17,7 +17,7 @@ This work starts from `main` commit `07dd758e8d81fe3379c63739388581688254f659`. 
 - allowed start/stop values reported by `tlp-stat -b`;
 - validation of requested threshold values;
 - vendor-specific conversion and kernel/sysfs writes;
-- application of configured thresholds through `tlp start` / `tlp setcharge` / `tlp fullcharge`;
+- application of configured thresholds through `tlp setcharge` and temporary full-charge restoration through `tlp fullcharge`;
 - future hardware support and compatibility fixes.
 
 ### Awtarchy owns
@@ -60,12 +60,13 @@ It may parse only generic TLP concepts:
 
 - `Plugin:` for display/debug text only, never policy;
 - `Supported features:`;
-- advertised `START_CHARGE_THRESH_*` and `STOP_CHARGE_THRESH_*` parameter specifications;
+- advertised `START_CHARGE_THRESH_*` and `STOP_CHARGE_THRESH_*` parameter specifications and their qualifiers;
 - battery names exposed in TLP's battery status sections;
-- generic reported current threshold values where TLP exposes them;
+- generic current threshold values where TLP exposes them;
+- for stop-only percentage interfaces, TLP's normalized logical percentage from the `Battery Care` section when that value matches the advertised range/presets;
 - Awtarchy's own managed target metadata/config ownership.
 
-The detector must not read vendor-specific sysfs paths or interpret fields such as Lenovo `charge_types`, Samsung `battery_life_extender`, Sony `battery_care_limiter`, Huawei pairs, or vendor plugin names.
+The detector must not read vendor-specific sysfs paths as a compatibility/write source or interpret fields such as Lenovo `charge_types`, Samsung `battery_life_extender`, Sony `battery_care_limiter`, Huawei pairs, or vendor plugin names. A path printed by TLP may be treated only as opaque status text surrounding a TLP-normalized percentage; Awtarchy does not assign meaning to the path or its raw hardware value.
 
 ### Normalized UI modes
 
@@ -89,17 +90,20 @@ For a percentage target:
 4. Derive a generic start value only from TLP's advertised start specification:
    - if TLP reports no usable start control, use `0`, which TLP documents as the vendor default/disabled value;
    - for a numeric range/list, choose the highest valid advertised start value below the requested stop, preferring approximately five percentage points below where possible.
-5. Write ordinary TLP `START_CHARGE_THRESH_BATx` and `STOP_CHARGE_THRESH_BATx` values for battery names TLP actually reports. Do not infer BAT0/BAT1 from vendor identity.
-6. Run `tlp start` and trust its exit status/validation. Do not duplicate plugin-specific hardware read-back verification.
-7. Re-run `tlp-stat -b` for UI refresh/debug status only. Do not reject a successful TLP operation because firmware reports a vendor-specific transformed value.
+5. Derive the standard TLP config suffixes from the advertised parameter qualifiers themselves, such as `BAT0`, `BAT1`, or `BAT0/1`. Do not derive config keys from physical battery names or vendor identity.
+6. Write ordinary TLP `START_CHARGE_THRESH_BATx` and `STOP_CHARGE_THRESH_BATx` values for those advertised config suffixes.
+7. Run `tlp setcharge` with no threshold arguments so TLP applies and validates the configured values. Trust its exit status; do not duplicate plugin-specific hardware read-back verification.
+8. Re-run `tlp-stat -b` for UI refresh/debug status only. Do not reject a successful TLP operation because firmware reports a vendor-specific transformed raw value.
+
+Physical battery names from `+++ Battery Status:` sections are command-selection names only where TLP needs them, notably `tlp fullcharge BATx`; they are not configuration-key authority.
 
 TLP itself documents that `tlp setcharge` validates configuration and that some hardware reports values differently from what was written. Therefore Awtarchy must not second-guess successful TLP writes with its own vendor-specific verifier.
 
 ## Disable path
 
-Disabling Awtarchy Battery Care removes only Awtarchy's managed drop-in and asks TLP to restore/apply its remaining effective configuration.
+Disabling Awtarchy Battery Care removes only Awtarchy's managed drop-in and asks TLP to restore full charge through TLP's own command path.
 
-Use `tlp fullcharge` only as the temporary hardware action needed to permit full charge when no remaining configured threshold policy exists. Do not encode vendor-specific OFF values.
+Use `tlp fullcharge [battery]` as the temporary hardware action needed to permit full charge when Awtarchy removes its threshold policy. Select only physical battery names that TLP itself reports, and attempt each reported battery without inventing BAT names. Do not encode vendor-specific OFF values.
 
 If external threshold configuration exists, Awtarchy must not claim that Battery Care is globally disabled; the remaining TLP/TLPUI policy is authoritative.
 
@@ -144,16 +148,18 @@ Required coverage:
 1. numeric range advertised by TLP -> Quickshell range control;
 2. numeric preset list -> preset control;
 3. stop-only interface -> generic target with start `0`;
-4. no charge-threshold capability -> controls unavailable;
-5. unknown/future plugin name with valid generic range -> works without code changes;
-6. vendor/fixed/selector output without a numeric percentage threshold spec -> read-only/TLPUI fallback, not a new Awtarchy branch;
-7. `charge type` selector output remains read-only even when its numeric selector values resemble a percentage range;
-8. TLP rejects an invalid/application request -> helper reports failure and preserves/restores the previous Awtarchy drop-in;
-9. successful `tlp start` is authoritative even if read-back differs from the requested numeric value;
-10. reported battery names determine which `BATx` config keys are written;
-11. external threshold config remains a fail-closed conflict;
-12. existing Awtarchy managed drop-in remains compatible;
-13. `tlpui` is installed as an official repository package rather than via AUR scanner.
+4. stop-only interface with no standard `power_supply` threshold file -> TLP-normalized logical percentage drives current target/enabled state only when it matches the advertised range/presets;
+5. no charge-threshold capability -> controls unavailable;
+6. unknown/future plugin name with valid generic range -> works without code changes;
+7. vendor/fixed/selector output without a numeric percentage threshold spec -> read-only/TLPUI fallback, not a new Awtarchy branch;
+8. `charge type` selector output remains read-only even when its numeric selector values resemble a percentage range;
+9. TLP rejects an invalid/application request -> helper reports failure and preserves/restores the previous Awtarchy drop-in;
+10. successful `tlp setcharge` is authoritative even if read-back differs from the requested numeric value;
+11. advertised TLP parameter qualifiers determine which `BATx` config keys are written;
+12. physical battery status names are used only for commands such as `tlp fullcharge`;
+13. external threshold config remains a fail-closed conflict;
+14. existing Awtarchy managed drop-in remains compatible;
+15. `tlpui` is installed as an official repository package rather than via AUR scanner.
 
 Tests simulating specific vendors may remain only when they exercise a generic TLP contract. They must not assert that Awtarchy has special code for that vendor.
 
@@ -175,7 +181,7 @@ Delete or retire code whose only purpose is Awtarchy-owned hardware compatibilit
 - A new TLP plugin with the same generic numeric threshold interface requires no Awtarchy code change.
 - TLP `charge type` selectors cannot be exposed as percentage controls solely because their labels contain numbers.
 - No privileged or unprivileged Battery Care code branches on a vendor/plugin name for write policy.
-- All battery hardware writes go through TLP.
+- No direct sysfs write fallback exists; all battery hardware writes go through TLP.
 - TLP's success/failure is authoritative; Awtarchy does not maintain firmware-specific read-back rules.
 - Existing user-managed TLP threshold configuration is never silently overwritten.
 - TLPUI sees the same effective standard TLP settings Awtarchy manages.
