@@ -1,0 +1,19 @@
+name: Battery Care Managed Hash (temporary)
+
+on:
+  push:
+    branches:
+      - hardening/tlp-battery-compatibility
+
+permissions:
+  contents: read
+
+jobs:
+  hash:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+      - name: Print managed hashes
+        run: |
+          sha256sum config/hypr/scripts/quickshell_battery_care.sh
+          sha256sum config/quickshell/awtarchy/BatteryCareCard.qml
