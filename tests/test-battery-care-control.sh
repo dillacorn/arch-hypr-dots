@@ -187,7 +187,7 @@ case "${1:-}" in
           enabled="$stop"
           ;;
         lg)
-          target=$([[ "$stop" == 1 ]] && printf 80 || printf 100)
+          target="$stop"
           enabled=$([[ "$target" -lt 100 ]] && printf 1 || printf 0)
           ;;
         samsung)
@@ -262,19 +262,23 @@ rm -f -- "$MANAGED"
 run_helper battery-set 80
 grep -Fxq 'START_CHARGE_THRESH_BAT0=70' "$MANAGED" || fail 'Tuxedo supported start threshold was not selected'
 grep -Fxq 'STOP_CHARGE_THRESH_BAT0=80' "$MANAGED" || fail 'Tuxedo stop preset was not persisted'
+grep -Fxq 'START_CHARGE_THRESH_BAT1=70' "$MANAGED" || fail 'Tuxedo BAT1 supported start threshold was not selected'
+grep -Fxq 'STOP_CHARGE_THRESH_BAT1=80' "$MANAGED" || fail 'Tuxedo BAT1 stop preset was not persisted'
 
 printf '%s\n' 'plugin=lenovo' 'target=100' 'enabled=0' 'start=0' >"$STATE"
 rm -f -- "$MANAGED"
 run_helper battery-enable-fixed
 grep -Fxq 'START_CHARGE_THRESH_BAT0=0' "$MANAGED" || fail 'Lenovo dummy start threshold missing'
 grep -Fxq 'STOP_CHARGE_THRESH_BAT0=1' "$MANAGED" || fail 'Lenovo Long_Life selector was not persisted'
+grep -Fxq 'START_CHARGE_THRESH_BAT1=0' "$MANAGED" || fail 'Lenovo BAT1 dummy start threshold missing'
+grep -Fxq 'STOP_CHARGE_THRESH_BAT1=1' "$MANAGED" || fail 'Lenovo BAT1 Long_Life selector was not persisted'
 grep -Fq 'enabled=1' "$STATE" || fail 'Lenovo fixed mode was not read back as enabled'
 
 printf '%s\n' 'plugin=lg' 'target=100' 'enabled=0' 'start=0' >"$STATE"
 rm -f -- "$MANAGED"
 run_helper battery-set 80
 grep -Fxq 'START_CHARGE_THRESH_BAT0=0' "$MANAGED" || fail 'LG dummy start threshold missing'
-grep -Fxq 'STOP_CHARGE_THRESH_BAT0=1' "$MANAGED" || fail 'LG 80% target was not translated to battery-care selector 1'
+grep -Fxq 'STOP_CHARGE_THRESH_BAT0=80' "$MANAGED" || fail 'LG 80% target was not persisted literally'
 grep -Fq 'target=80' "$STATE" || fail 'LG 80% state was not verified'
 
 printf '%s\n' 'plugin=samsung' 'target=100' 'enabled=0' 'start=0' >"$STATE"
@@ -323,12 +327,38 @@ log() { :; }
 die() { fail "$*"; }
 eval "$repair_definition"
 repair_v354_sony_battery_disable_repo "$V354_REPO" v3.5.4
-cmp -s -- "$HELPER" "$V354_REPO/local/libexec/awtarchy/power-profile-helper" \
-  || fail 'v3.5.4 post-release repair did not reconstruct the tested Sony helper'
+V354_EXPECTED="$TMP/v354-expected-power-profile-helper"
+cp -- "$V354_FIXTURE" "$V354_EXPECTED"
+python3 - "$V354_EXPECTED" <<'PY_V354_EXPECTED'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+old = """    huawei)
+      /usr/bin/grep -Eq 'charge_control_thresholds[^=]*=[[:space:]]*[0-9]+[[:space:]]+100([^0-9]|$)' <<<"$report"
+      ;;
+    *)
+"""
+new = """    huawei)
+      /usr/bin/grep -Eq 'charge_control_thresholds[^=]*=[[:space:]]*[0-9]+[[:space:]]+100([^0-9]|$)' <<<"$report"
+      ;;
+    sony)
+      /usr/bin/grep -Eq 'battery_care_limiter[^=]*=[[:space:]]*0([^0-9]|$)' <<<"$report"
+      ;;
+    *)
+"""
+if text.count(old) != 1:
+    raise SystemExit("v3.5.4 fixture did not contain the expected pre-repair helper source")
+path.write_text(text.replace(old, new, 1), encoding="utf-8")
+PY_V354_EXPECTED
+cmp -s -- "$V354_EXPECTED" "$V354_REPO/local/libexec/awtarchy/power-profile-helper" \
+  || fail 'v3.5.4 post-release repair changed more than the Sony disable verifier'
 bash -n "$V354_REPO/local/libexec/awtarchy/power-profile-helper" \
   || fail 'v3.5.4 repaired Sony helper failed Bash syntax validation'
 repair_v354_sony_battery_disable_repo "$V353_CONTROL_REPO" v3.5.3
 cmp -s -- "$V354_FIXTURE" "$V353_CONTROL_REPO/local/libexec/awtarchy/power-profile-helper" \
   || fail 'v3.5.4 Sony repair changed a non-v3.5.4 release target'
+
+bash "$ROOT/tests/test-battery-care-rollback-verification.sh"
 
 printf '%s\n' 'PASS: battery care controls validate, persist, verify, and roll back safely.'

@@ -31,9 +31,11 @@ Rectangle {
     readonly property string batteryCareHelper: "/usr/local/libexec/awtarchy/power-profile-helper"
     readonly property string pluginName: String(statusData.plugin || "").toLowerCase()
     readonly property bool fixedUnknownTarget: pluginName === "lenovo" || pluginName === "lenovo-legacy"
-    readonly property bool limitEnabled: statusData.enabled === true
+    readonly property bool mixedStopThresholds: Boolean(statusData.mixed_stop_thresholds)
+    readonly property bool limitEnabled: mixedStopThresholds || statusData.enabled === true
         || (statusData.enabled !== false && Boolean(statusData.managed_config))
     readonly property bool controlsAvailable: Boolean(statusData.supported)
+        && Boolean(statusData.writable)
         && String(statusData.backend || "") === "tlp"
         && !Boolean(statusData.config_conflict)
         && (fixedUnknownTarget || root.hasNumericControl())
@@ -53,6 +55,8 @@ Rectangle {
     function emptyStatus() {
         return ({
             supported: false,
+            writable: false,
+            compatibility: "unsupported",
             backend: "none",
             plugin: "",
             mode: "unsupported",
@@ -65,6 +69,7 @@ Rectangle {
             stop_presets: [],
             current_start: null,
             current_stop: null,
+            mixed_stop_thresholds: false,
             managed_config: false,
             managed_target: null,
             config_conflict: false,
@@ -229,7 +234,7 @@ Rectangle {
             return "Conservation mode: On · hardware-defined target";
         if (fixedUnknownTarget && statusData.enabled === false)
             return "Conservation mode: Off · full charge allowed";
-        if (statusData.target !== null && statusData.target !== undefined) {
+        if (!mixedStopThresholds && statusData.target !== null && statusData.target !== undefined) {
             const target = Number(statusData.target);
             if (Number.isFinite(target))
                 return target >= 100 ? "Maximum charge: 100% · limit off" : "Maximum charge: " + target + "%";
@@ -254,13 +259,15 @@ Rectangle {
     }
 
     function statusControlLabel() {
+        if (mixedStopThresholds)
+            return "Mixed";
         if (statusData.enabled === true)
             return "On";
         if (statusData.enabled === false)
             return "Off";
         if (statusData.managed_config)
             return "Managed";
-        return "Off";
+        return "Unknown";
     }
 
     function openAuthorization(action, target, message) {

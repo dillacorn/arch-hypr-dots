@@ -1,0 +1,17 @@
+#!/usr/bin/bash
+set -euo pipefail
+
+[[ $# -eq 0 ]] || {
+  printf 'battery-status-helper: no arguments are accepted\n' >&2
+  exit 2
+}
+
+(( EUID == 0 )) || {
+  printf 'battery-status-helper: root privileges are required\n' >&2
+  exit 1
+}
+
+exec /usr/bin/env -i \
+  PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin \
+  LC_ALL=C \
+  /usr/bin/tlp-stat -b

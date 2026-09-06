@@ -6,6 +6,8 @@ export LC_ALL=C
 
 POWER_SUPPLY_ROOT="${AWTARCHY_POWER_SUPPLY_ROOT:-/sys/class/power_supply}"
 TLP_STAT_BIN="${AWTARCHY_TLP_STAT_BIN:-/usr/bin/tlp-stat}"
+BATTERY_STATUS_HELPER="${AWTARCHY_BATTERY_STATUS_HELPER:-/usr/local/libexec/awtarchy/battery-status-helper}"
+SUDO_BIN="${AWTARCHY_SUDO_BIN:-/usr/bin/sudo}"
 TLP_CONFIG_DIR="${AWTARCHY_TLP_CONFIG_DIR:-/etc/tlp.d}"
 TLP_USER_CONFIG="${AWTARCHY_TLP_USER_CONFIG:-/etc/tlp.conf}"
 MANAGED_CONFIG="${TLP_CONFIG_DIR}/00-awtarchy-battery-care.conf"
@@ -37,6 +39,7 @@ batteries='[]'
 sysfs_supported=false
 first_start=null
 first_stop=null
+mixed_stop_thresholds=false
 
 shopt -s nullglob
 for battery_dir in "$POWER_SUPPLY_ROOT"/*; do
@@ -67,7 +70,11 @@ for battery_dir in "$POWER_SUPPLY_ROOT"/*; do
         sysfs_supported=true
         if value="$(read_percent "$battery_dir/charge_control_end_threshold" 2>/dev/null)"; then
             stop_threshold="$value"
-            [[ "$first_stop" != null ]] || first_stop="$value"
+            if [[ "$first_stop" == null ]]; then
+                first_stop="$value"
+            elif [[ "$first_stop" != "$value" ]]; then
+                mixed_stop_thresholds=true
+            fi
         fi
     fi
 
@@ -121,9 +128,40 @@ stop_spec=""
 tlp_output=""
 tlp_available=false
 
-if [[ -x "$TLP_STAT_BIN" ]]; then
-    tlp_available=true
-    tlp_output="$("$TLP_STAT_BIN" -b 2>/dev/null || true)"
+battery_plugin_writable() {
+    case "$1" in
+        asus|cros-ec|dell|huawei|thinkpad|thinkpad-legacy|lenovo|lenovo-legacy|lg|macbook|msi|samsung|sony|system76|toshiba|tuxedo|wilco-ec) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+read_tlp_battery_report() {
+    local report=""
+
+    if [[ -x "$BATTERY_STATUS_HELPER" && -x "$SUDO_BIN" ]]; then
+        report="$("$SUDO_BIN" -n -- "$BATTERY_STATUS_HELPER" 2>/dev/null || true)"
+        if [[ -n "$report" ]]; then
+            printf '%s\n' "$report"
+            return 0
+        fi
+    fi
+
+    if [[ -x "$TLP_STAT_BIN" ]]; then
+        report="$("$TLP_STAT_BIN" -b 2>/dev/null || true)"
+        if [[ -n "$report" ]]; then
+            printf '%s\n' "$report"
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+if [[ -x "$BATTERY_STATUS_HELPER" || -x "$TLP_STAT_BIN" ]]; then
+    tlp_output="$(read_tlp_battery_report 2>/dev/null || true)"
+    if [[ -x "$TLP_STAT_BIN" || -n "$tlp_output" ]]; then
+        tlp_available=true
+    fi
     plugin="$(
         awk -F: '/^Plugin:[[:space:]]*/ {
             sub(/^[[:space:]]+/, "", $2); sub(/[[:space:]]+$/, "", $2); print $2; exit
@@ -147,8 +185,8 @@ fi
 # `tlp-stat -b` is documented by TLP as a root command, while this detector is
 # intentionally unprivileged. sony_laptop exposes its actual limiter through a
 # read-only sysfs attribute, so use the kernel interface to recover capability
-# and current state when TLP's user-level report is empty. Writes still go only
-# through the root-owned TLP helper.
+# and current state when the authoritative TLP report is temporarily unavailable.
+# Writes still go only through the root-owned TLP helper.
 sony_limit=null
 if value="$(read_percent "$SONY_BATTERY_CARE_PATH" 2>/dev/null)"; then
     case "$value" in
@@ -177,6 +215,8 @@ fi
 mode="unsupported"
 backend="none"
 supported=false
+writable=false
+compatibility="unsupported"
 start_min=null
 start_max=null
 stop_min=null
@@ -211,6 +251,12 @@ parse_presets() {
 if [[ "$tlp_supported" == true ]]; then
     supported=true
     backend="tlp"
+    if battery_plugin_writable "$plugin_lower"; then
+        writable=true
+        compatibility="validated"
+    else
+        compatibility="unvalidated"
+    fi
 
     case "$plugin_lower" in
         lenovo|lenovo-legacy)
@@ -246,8 +292,10 @@ if [[ "$tlp_supported" == true ]]; then
             fi
             ;;
     esac
-elif [[ "$sysfs_supported" == true ]]; then
+elif [[ "$sysfs_supported" == true && "$plugin_lower" != "generic" ]]; then
     supported=true
+    writable=false
+    compatibility="unvalidated"
     backend="sysfs"
     mode="sysfs"
 fi
@@ -258,9 +306,20 @@ enabled=null
 if [[ "$backend" == tlp ]]; then
     case "$plugin_lower" in
         lenovo)
+            lenovo_long_life=false
+            lenovo_standard=false
             if grep -Eq 'charge_types[^=]*=.*\[Long_Life\]' <<<"$tlp_output"; then
+                lenovo_long_life=true
+            fi
+            if grep -Eq 'charge_types[^=]*=.*\[Standard\]' <<<"$tlp_output"; then
+                lenovo_standard=true
+            fi
+
+            if [[ "$lenovo_long_life" == true && "$lenovo_standard" == true ]]; then
+                mixed_stop_thresholds=true
+            elif [[ "$lenovo_long_life" == true ]]; then
                 enabled=true
-            elif grep -Eq 'charge_types[^=]*=.*\[Standard\]' <<<"$tlp_output"; then
+            elif [[ "$lenovo_standard" == true ]]; then
                 enabled=false
                 observed_target=100
             fi
@@ -323,7 +382,11 @@ if [[ "$backend" == tlp ]]; then
     esac
 fi
 
-if [[ "$observed_target" == null && "$first_stop" != null ]]; then
+if [[ "$mixed_stop_thresholds" == true ]]; then
+    observed_target=null
+    enabled=null
+    first_stop=null
+elif [[ "$observed_target" == null && "$first_stop" != null ]]; then
     observed_target="$first_stop"
 fi
 if [[ "$enabled" == null && "$observed_target" != null ]]; then
@@ -370,8 +433,15 @@ if [[ "$supported" == true ]]; then
     esac
 fi
 
+if [[ "$compatibility" == "unvalidated" && "$backend" == "tlp" ]]; then
+    summary="Battery Care detected but not validated by Awtarchy"
+    detail="Write controls are disabled for this backend."
+fi
+
 jq -cn \
     --argjson supported "$supported" \
+    --argjson writable "$writable" \
+    --arg compatibility "$compatibility" \
     --arg backend "$backend" \
     --arg plugin "$plugin" \
     --arg mode "$mode" \
@@ -386,6 +456,7 @@ jq -cn \
     --argjson stop_presets "$stop_presets" \
     --argjson current_start "$first_start" \
     --argjson current_stop "$first_stop" \
+    --argjson mixed_stop_thresholds "$mixed_stop_thresholds" \
     --argjson tlp_available "$tlp_available" \
     --argjson managed_config "$managed_config" \
     --argjson managed_target "$managed_target" \
@@ -396,6 +467,8 @@ jq -cn \
     --argjson batteries "$batteries" '
     {
         supported:$supported,
+        writable:$writable,
+        compatibility:$compatibility,
         backend:$backend,
         plugin:$plugin,
         mode:$mode,
@@ -410,6 +483,7 @@ jq -cn \
         stop_presets:$stop_presets,
         current_start:$current_start,
         current_stop:$current_stop,
+        mixed_stop_thresholds:$mixed_stop_thresholds,
         tlp_available:$tlp_available,
         managed_config:$managed_config,
         managed_target:$managed_target,

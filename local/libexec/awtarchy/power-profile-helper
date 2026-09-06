@@ -125,9 +125,9 @@ battery_parse_spec() {
     <<<"$report" | /usr/bin/head -n1
 }
 
-battery_plugin_allowed() {
+battery_plugin_writable() {
   case "$1" in
-    macbook|asus|cros-ec|dell|huawei|thinkpad|thinkpad-legacy|lenovo|lenovo-legacy|lg|lg-legacy|msi|samsung|sony|system76|toshiba|tuxedo|wilco-ec) return 0 ;;
+    macbook|asus|cros-ec|dell|huawei|thinkpad|thinkpad-legacy|lenovo|lenovo-legacy|lg|msi|samsung|sony|system76|toshiba|tuxedo|wilco-ec) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -140,7 +140,7 @@ battery_require_capability() {
   features="${features,,}"
 
   [[ -n "$plugin" ]] || fail 'TLP did not report a battery-care plugin'
-  battery_plugin_allowed "$plugin" || fail "unsupported TLP battery-care plugin: $plugin"
+  battery_plugin_writable "$plugin" || fail "unsupported TLP battery-care plugin: $plugin"
   if [[ "$features" != *"charge threshold"* && "$features" != *"charge type"* ]]; then
     fail 'TLP does not report charge-threshold support on this hardware'
   fi
@@ -252,7 +252,7 @@ battery_validate_target() {
 
 battery_dual_config_plugin() {
   case "$1" in
-    asus|cros-ec|dell|thinkpad|thinkpad-legacy|msi|toshiba) return 0 ;;
+    asus|cros-ec|dell|thinkpad|thinkpad-legacy|msi|toshiba|lenovo|tuxedo) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -316,14 +316,43 @@ battery_saved_config_create() {
 }
 
 rollback_apply() {
-  local previous_state="$1" backup="$2"
+  local previous_state="$1" backup="$2" plugin="$3"
+  local target_label target_num
+
   if [[ "$previous_state" == present && -f "$backup" ]]; then
-    /usr/bin/cp -a -- "$backup" "$MANAGED_CONFIG"
+    /usr/bin/cp -a -- "$backup" "$MANAGED_CONFIG" || return 1
     "$TLP" start >/dev/null 2>&1 || true
+
+    target_label="$(/usr/bin/sed -n -E 's/^# target=([^[:space:]]+)$/\1/p' "$backup" | /usr/bin/head -n1)"
+    if [[ "$target_label" == fixed ]]; then
+      case "$plugin" in
+        lenovo|lenovo-legacy) verify_enabled_state "$plugin" 1 ;;
+        *) return 1 ;;
+      esac
+      return $?
+    fi
+
+    [[ "$target_label" =~ ^[0-9]+$ ]] || return 1
+    target_num=$((10#$target_label))
+    (( target_num >= 1 && target_num < 100 )) || return 1
+    verify_enabled_state "$plugin" "$target_num"
   else
-    /usr/bin/rm -f -- "$MANAGED_CONFIG"
-    "$TLP" fullcharge >/dev/null 2>&1 || true
+    /usr/bin/rm -f -- "$MANAGED_CONFIG" || return 1
+    battery_fullcharge_all >/dev/null 2>&1 || true
+    verify_disabled_state "$plugin"
   fi
+}
+
+battery_fail_after_rollback() {
+  local previous_state="$1" backup="$2" plugin="$3" reason="$4"
+
+  if rollback_apply "$previous_state" "$backup" "$plugin"; then
+    /usr/bin/rm -f -- "$backup"
+    fail "${reason}; previous settings were restored"
+  fi
+
+  /usr/bin/rm -f -- "$backup"
+  fail "${reason}; previous configuration state was restored, but hardware rollback could not be verified"
 }
 
 battery_observed_stop_values() {
@@ -337,12 +366,24 @@ battery_observed_stop_values() {
   ' <<<"$report"
 }
 
+
+battery_verify_lenovo_charge_type() {
+  local report="$1" expected="$2" line found=0
+
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    found=1
+    /usr/bin/grep -Fq "[$expected]" <<<"$line" || return 1
+  done < <(/usr/bin/grep -E 'charge_types[^=]*=' <<<"$report")
+  (( found == 1 ))
+}
+
 verify_enabled_state() {
   local plugin="$1" expected="$2" report value found=0
   report="$(battery_tlp_report)"
   case "$plugin" in
     lenovo)
-      /usr/bin/grep -Eq 'charge_types[^=]*=.*\[Long_Life\]' <<<"$report"
+      battery_verify_lenovo_charge_type "$report" Long_Life
       ;;
     lenovo-legacy)
       /usr/bin/grep -Eq 'conservation_mode[^=]*=[[:space:]]*1([^0-9]|$)' <<<"$report"
@@ -381,7 +422,7 @@ verify_disabled_state() {
   report="$(battery_tlp_report)"
   case "$plugin" in
     lenovo)
-      /usr/bin/grep -Eq 'charge_types[^=]*=.*\[Standard\]' <<<"$report"
+      battery_verify_lenovo_charge_type "$report" Standard
       ;;
     lenovo-legacy)
       /usr/bin/grep -Eq 'conservation_mode[^=]*=[[:space:]]*0([^0-9]|$)' <<<"$report"
@@ -421,10 +462,10 @@ battery_set_target() {
     lenovo|lenovo-legacy)
       fail 'this Lenovo uses a hardware-defined conservation mode; use the Battery Health toggle instead of a percentage target'
       ;;
-    lg|lg-legacy)
+    lg)
       [[ "$target" == 80 ]] || fail 'LG battery care mode only supports an 80% health target'
       start_value=0
-      stop_value=1
+      stop_value=80
       ;;
     samsung)
       [[ "$target" == 80 ]] || fail 'Samsung battery life extender only supports an 80% health target'
@@ -442,14 +483,10 @@ battery_set_target() {
   previous_state="$(battery_saved_config_create "$backup")"
   battery_write_config "$plugin" "$target" "$start_value" "$stop_value"
   if ! "$TLP" start >/dev/null; then
-    rollback_apply "$previous_state" "$backup"
-    /usr/bin/rm -f -- "$backup"
-    fail 'TLP failed to apply the requested battery charge limit; previous settings were restored'
+    battery_fail_after_rollback "$previous_state" "$backup" "$plugin" 'TLP failed to apply the requested battery charge limit'
   fi
   if ! verify_enabled_state "$plugin" "$target"; then
-    rollback_apply "$previous_state" "$backup"
-    /usr/bin/rm -f -- "$backup"
-    fail 'hardware read-back verification failed; previous battery settings were restored'
+    battery_fail_after_rollback "$previous_state" "$backup" "$plugin" 'hardware read-back verification failed'
   fi
   /usr/bin/rm -f -- "$backup"
 }
@@ -469,27 +506,28 @@ battery_enable_fixed() {
   previous_state="$(battery_saved_config_create "$backup")"
   battery_write_config "$plugin" fixed 0 1
   if ! "$TLP" start >/dev/null; then
-    rollback_apply "$previous_state" "$backup"
-    /usr/bin/rm -f -- "$backup"
-    fail 'TLP failed to enable the hardware conservation mode; previous settings were restored'
+    battery_fail_after_rollback "$previous_state" "$backup" "$plugin" 'TLP failed to enable the hardware conservation mode'
   fi
   if ! verify_enabled_state "$plugin" 1; then
-    rollback_apply "$previous_state" "$backup"
-    /usr/bin/rm -f -- "$backup"
-    fail 'hardware read-back verification failed; previous settings were restored'
+    battery_fail_after_rollback "$previous_state" "$backup" "$plugin" 'hardware read-back verification failed'
   fi
   /usr/bin/rm -f -- "$backup"
 }
 
 battery_fullcharge_all() {
-  local report name any=0
+  local report name any=0 rc=0
   report="$(battery_tlp_report)"
   while IFS= read -r name; do
     [[ -n "$name" ]] || continue
     any=1
-    "$TLP" fullcharge "$name" >/dev/null || return 1
+    if ! "$TLP" fullcharge "$name" >/dev/null; then
+      rc=1
+    fi
   done < <(/usr/bin/sed -n -E 's/^\+\+\+[[:space:]]+.*Battery Status:[[:space:]]*([^[:space:]]+).*$/\1/p' <<<"$report")
-  (( any == 1 )) || "$TLP" fullcharge >/dev/null
+  if (( any == 0 )) && ! "$TLP" fullcharge >/dev/null; then
+    rc=1
+  fi
+  return "$rc"
 }
 
 battery_disable() {
@@ -503,14 +541,10 @@ battery_disable() {
   previous_state="$(battery_saved_config_create "$backup")"
   /usr/bin/rm -f -- "$MANAGED_CONFIG"
   if ! battery_fullcharge_all; then
-    rollback_apply "$previous_state" "$backup"
-    /usr/bin/rm -f -- "$backup"
-    fail 'TLP failed to restore full-charge defaults; previous settings were restored'
+    battery_fail_after_rollback "$previous_state" "$backup" "$plugin" 'TLP failed to restore full-charge defaults'
   fi
   if ! verify_disabled_state "$plugin"; then
-    rollback_apply "$previous_state" "$backup"
-    /usr/bin/rm -f -- "$backup"
-    fail 'hardware read-back verification failed; previous battery settings were restored'
+    battery_fail_after_rollback "$previous_state" "$backup" "$plugin" 'hardware read-back verification failed'
   fi
   /usr/bin/rm -f -- "$backup"
 }
