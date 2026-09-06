@@ -1,0 +1,65 @@
+name: One-use Battery Care managed-history refresh
+
+on:
+  push:
+    branches:
+      - refactor/tlp-battery-care-thin-client
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+
+      - name: Refresh exact Battery Care stock hash
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          expected_parent='a395aaabb985336021d202b677c122658f2b04cf'
+          actual_parent="$(git rev-parse HEAD^)"
+          if [[ "$actual_parent" != "$expected_parent" ]]; then
+            printf 'No-op: expected parent %s, found %s\n' "$expected_parent" "$actual_parent"
+            exit 0
+          fi
+
+          target='config/hypr/scripts/quickshell_battery_care.sh'
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          rel='.config/hypr/scripts/quickshell_battery_care.sh'
+          hash="$(sha256sum "$target" | awk '{print $1}')"
+          entry="${hash}"$'\t'"${rel}"
+
+          printf 'Battery Care SHA-256: %s\n' "$hash"
+          if grep -Fqx "$entry" "$history"; then
+            printf 'Managed history already contains the exact entry.\n'
+            exit 0
+          fi
+
+          printf '%s\t%s\n' "$hash" "$rel" >>"$history"
+
+          aur_scan_fixture_installed=0
+          cleanup_fixture() {
+            if (( aur_scan_fixture_installed == 1 )); then
+              sudo rm -f -- /usr/bin/aur-scan
+            fi
+          }
+          trap cleanup_fixture EXIT
+          if [[ ! -x /usr/bin/aur-scan ]]; then
+            sudo install -m 0755 tests/fixtures/aur-scan-version-only.sh /usr/bin/aur-scan
+            aur_scan_fixture_installed=1
+          fi
+
+          bash tests/test-quickshell-updater-migration.sh
+          git diff --check
+          [[ "$(git diff --name-only)" == "$history" ]]
+
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add -- "$history"
+          git commit -m 'chore: refresh Battery Care managed hash'
+          git push origin HEAD:refactor/tlp-battery-care-thin-client
