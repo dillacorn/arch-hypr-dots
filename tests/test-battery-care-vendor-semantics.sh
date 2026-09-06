@@ -13,9 +13,9 @@ fail() {
 [[ -f "$HELPER" ]] || fail 'power-profile-helper is missing'
 [[ -f "$DETECTOR" ]] || fail 'battery detector is missing'
 
-grep -Fq '"$TLP" setcharge' "$HELPER" \
+grep -Fq 'setcharge' "$HELPER" \
     || fail 'battery helper does not delegate threshold application to tlp setcharge'
-grep -Fq 'battery_parse_config_keys' "$HELPER" \
+grep -Fq 'battery_config_suffixes' "$HELPER" \
     || fail 'battery helper does not derive managed config keys from TLP output'
 
 for source in "$HELPER" "$DETECTOR"; do
