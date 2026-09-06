@@ -220,7 +220,9 @@ if [[ "$features_lower" == *"charge threshold"* || "$features_lower" == *"charge
     backend="tlp"
     compatibility="unvalidated"
 
-    if range="$(parse_range "$stop_spec" 2>/dev/null)"; then
+    if [[ "$features_lower" != *"charge threshold"* ]]; then
+        :
+    elif range="$(parse_range "$stop_spec" 2>/dev/null)"; then
         IFS=$'\t' read -r candidate_stop_min candidate_stop_max <<<"$range"
         if range_is_percentage_control "$candidate_stop_min" "$candidate_stop_max"; then
             stop_min="$candidate_stop_min"
