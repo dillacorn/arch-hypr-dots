@@ -50,3 +50,74 @@ jobs:
             fi
           done
           (( missing == 0 ))
+
+  update-v3-5-5-release-notes:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.number == 153 &&
+      github.event.pull_request.head.ref == 'release/v3.5.5-clipboard-notes' &&
+      github.event.pull_request.title == 'TEMP: Update v3.5.5 clipboard release notes'
+    needs: bluetooth-state
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact release-note bridge
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: release/v3.5.5-clipboard-notes
+          fetch-depth: 0
+      - name: Verify immutable release, update notes, and delete helper branch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_MAIN: 8a9e8f61bbb024c0a1bd9962b2a674392a7e878f
+          EXPECTED_TAG_SHA: 609e5aebe02bd53460ebd80d3cd12993d4707744
+        run: |
+          set -euo pipefail
+
+          current_main="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          test "$current_main" = "$EXPECTED_MAIN" || {
+            printf 'Refusing release-note update: main moved from %s to %s\n' "$EXPECTED_MAIN" "$current_main" >&2
+            false
+          }
+
+          release_name="$(gh release view v3.5.5 --repo "$GITHUB_REPOSITORY" --json name --jq '.name')"
+          release_target="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v3.5.5" --jq '.target_commitish')"
+          release_draft="$(gh release view v3.5.5 --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')"
+          release_prerelease="$(gh release view v3.5.5 --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq '.isPrerelease')"
+          test "$release_name" = 'Awtarchy v3.5.5 Quickshell'
+          test "$release_target" = "$EXPECTED_TAG_SHA"
+          test "$release_draft" = 'false'
+          test "$release_prerelease" = 'false'
+
+          tag_type="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.5.5" --jq '.object.type')"
+          tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.5.5" --jq '.object.sha')"
+          if [[ "$tag_type" == 'tag' ]]; then
+            tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq '.object.sha')"
+          fi
+          test "$tag_sha" = "$EXPECTED_TAG_SHA"
+
+          gh release edit v3.5.5 \
+            --repo "$GITHUB_REPOSITORY" \
+            --notes-file .github/release-v3.5.5-updated.md
+
+          gh release view v3.5.5 --repo "$GITHUB_REPOSITORY" --json body --jq '.body' > /tmp/v355-body.md
+          cmp -s .github/release-v3.5.5-updated.md /tmp/v355-body.md
+
+          release_name="$(gh release view v3.5.5 --repo "$GITHUB_REPOSITORY" --json name --jq '.name')"
+          release_target="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v3.5.5" --jq '.target_commitish')"
+          release_draft="$(gh release view v3.5.5 --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')"
+          release_prerelease="$(gh release view v3.5.5 --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq '.isPrerelease')"
+          tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.5.5" --jq '.object.sha')"
+          test "$release_name" = 'Awtarchy v3.5.5 Quickshell'
+          test "$release_target" = "$EXPECTED_TAG_SHA"
+          test "$release_draft" = 'false'
+          test "$release_prerelease" = 'false'
+          test "$tag_sha" = "$EXPECTED_TAG_SHA"
+
+          grep -Fq '## Clipboard thumbnail resource hardening' /tmp/v355-body.md
+          grep -Fq '52e06aca511f7a89a262008b9f379c32bf30c2fc' /tmp/v355-body.md
+          grep -Fq '8a9e8f61bbb024c0a1bd9962b2a674392a7e878f' /tmp/v355-body.md
+
+          gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/release/v3.5.5-clipboard-notes"
