@@ -192,8 +192,7 @@ battery_status_policy_user() {
   if [[ ${EUID} -eq 0 ]]; then
     candidate="${SUDO_USER:-${AWTARCHY_TARGET_USER:-}}"
   else
-    candidate="${USER:-}"
-    [[ -n $candidate ]] || candidate="$(/usr/bin/id -un 2>/dev/null || true)"
+    candidate="$(/usr/bin/id -un 2>/dev/null || true)"
   fi
 
   [[ -n $candidate && $candidate != root \
