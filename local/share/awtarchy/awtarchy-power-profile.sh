@@ -224,9 +224,12 @@ battery_status_policy_is_current() {
   [[ $dir_owner == 0 && $dir_mode =~ ^[0-7]{3,4}$ ]] || return 1
   (( (8#$dir_mode & 8#022) == 0 )) || return 1
 
-  [[ -f $policy_file && ! -L $policy_file ]] || return 1
-  owner="$(/usr/bin/stat -c %u -- "$policy_file" 2>/dev/null)" || return 1
-  mode="$(/usr/bin/stat -c %a -- "$policy_file" 2>/dev/null)" || return 1
+  run_root /usr/bin/test -f "$policy_file" || return 1
+  if run_root /usr/bin/test -L "$policy_file"; then
+    return 1
+  fi
+  owner="$(run_root /usr/bin/stat -c %u -- "$policy_file")" || return 1
+  mode="$(run_root /usr/bin/stat -c %a -- "$policy_file")" || return 1
   [[ $owner == 0 && $mode == 440 ]] || return 1
   content="$(battery_status_policy_content "$policy_file" 2>/dev/null)" || return 1
   [[ $content == "$expected_content" ]] || return 1
@@ -252,10 +255,13 @@ install_battery_status_policy() {
 
   battery_status_policy_is_current "$user" && return 0
 
-  if [[ -e $policy_file || -L $policy_file ]]; then
-    [[ -f $policy_file && ! -L $policy_file ]] \
+  if run_root /usr/bin/test -e "$policy_file" || run_root /usr/bin/test -L "$policy_file"; then
+    run_root /usr/bin/test -f "$policy_file" \
       || die "Refusing unsafe Battery Care sudoers policy: $policy_file"
-    content="$(battery_status_policy_content "$policy_file" 2>/dev/null)" \
+    if run_root /usr/bin/test -L "$policy_file"; then
+      die "Refusing unsafe Battery Care sudoers policy: $policy_file"
+    fi
+    content="$(battery_status_policy_content "$policy_file")" \
       || die "Cannot read existing Battery Care sudoers policy: $policy_file"
     [[ ${content%%$'\n'*} == "$BATTERY_STATUS_POLICY_MARKER" ]] \
       || die "Refusing to replace non-Awtarchy sudoers policy: $policy_file"
