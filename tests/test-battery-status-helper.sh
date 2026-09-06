@@ -35,9 +35,29 @@ if text.count(old) != 1:
     raise SystemExit('expected exactly one reconciler main invocation')
 path.write_text(text.replace(old, ': # test copy: do not run reconciler main'))
 PY
-expected_user="$(/usr/bin/id -un)"
-if ! policy_user="$(USER=root /usr/bin/bash -c 'source "$1"; battery_status_policy_user' _ "$TMP/reconciler-policy-user" 2>"$TMP/policy-user.err")"; then
-  fail "Battery Care status policy trusted spoofed USER instead of the invoking UID: $(cat "$TMP/policy-user.err")"
+chmod 0755 "$TMP"
+chmod 0644 "$TMP/reconciler-policy-user"
+
+if (( EUID == 0 )); then
+  policy_test_user="${SUDO_USER:-}"
+  [[ -n "$policy_test_user" && "$policy_test_user" != root ]] \
+    || fail 'root-run policy-user regression requires a non-root SUDO_USER'
+  expected_user="$policy_test_user"
+  if ! policy_user="$(
+    /usr/bin/sudo -u "$policy_test_user" /usr/bin/env USER=root \
+      /usr/bin/bash -c 'source "$1"; battery_status_policy_user' _ "$TMP/reconciler-policy-user" \
+      2>"$TMP/policy-user.err"
+  )"; then
+    fail "Battery Care status policy trusted spoofed USER instead of the invoking UID: $(cat "$TMP/policy-user.err")"
+  fi
+else
+  expected_user="$(/usr/bin/id -un)"
+  if ! policy_user="$(
+    USER=root /usr/bin/bash -c 'source "$1"; battery_status_policy_user' _ "$TMP/reconciler-policy-user" \
+      2>"$TMP/policy-user.err"
+  )"; then
+    fail "Battery Care status policy trusted spoofed USER instead of the invoking UID: $(cat "$TMP/policy-user.err")"
+  fi
 fi
 [[ "$policy_user" == "$expected_user" ]] \
   || fail "Battery Care status policy resolved '$policy_user' instead of invoking user '$expected_user'"
