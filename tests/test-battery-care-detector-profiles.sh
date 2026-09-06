@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 DETECTOR="${ROOT}/config/hypr/scripts/quickshell_battery_care.sh"
+MANAGED_HISTORY="${ROOT}/local/share/awtarchy/quickshell-managed-history.sha256"
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 
@@ -113,5 +114,12 @@ assert_json "$json" \
 if grep -Eq '(^|[^[:alnum:]_-])(asus|dell|huawei|lenovo|lg|samsung|sony|thinkpad|tuxedo)([^[:alnum:]_-]|$)' "$DETECTOR"; then
     fail 'battery detector still contains vendor-specific compatibility policy'
 fi
+
+# Battery Care is updater-managed stock. Keep its exact current hash in the
+# migration history so an older shipped copy is recognized during updates.
+detector_hash="$(sha256sum "$DETECTOR" | awk '{print $1}')"
+detector_entry="${detector_hash}"$'\t''.config/hypr/scripts/quickshell_battery_care.sh'
+grep -Fqx "$detector_entry" "$MANAGED_HISTORY" \
+    || fail "managed history is missing current Battery Care detector hash: $detector_entry"
 
 printf '%s\n' 'PASS: TLP battery capability profiles are normalized generically.'
