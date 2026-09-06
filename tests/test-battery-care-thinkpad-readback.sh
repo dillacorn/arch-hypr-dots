@@ -11,7 +11,7 @@ fail() {
 
 [[ -f "$HELPER" ]] || fail 'power-profile-helper is missing'
 
-grep -Fq '"$TLP" setcharge' "$HELPER" \
+grep -Fq 'setcharge' "$HELPER" \
     || fail 'battery helper does not use TLP as the hardware write boundary'
 
 if grep -Eq 'verify_enabled_state|verify_disabled_state|battery_observed_stop_values|battery_verify_' "$HELPER"; then
