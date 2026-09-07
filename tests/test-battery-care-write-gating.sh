@@ -33,4 +33,5 @@ require_absent 'battery-enable-fixed' 'Battery Care UI still invokes the retired
 require_absent 'pluginName ===' 'Battery Care UI still gates behavior on a TLP plugin name'
 require_absent 'hardware state verified after every change' 'Battery Care UI still claims Awtarchy performs hardware verification'
 
+printf 'DEBUG_BATTERY_CARE_CARD_SHA256=%s\n' "$(sha256sum "$CARD" | awk '{print $1}')"
 printf '%s\n' 'PASS: Battery Care QML exposes only generic writable TLP percentage controls and surfaces readback mismatches.'
