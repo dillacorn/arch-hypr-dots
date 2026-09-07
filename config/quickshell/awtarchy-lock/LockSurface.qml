@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
-import Quickshell.Io
 import Quickshell.Wayland
 
 WlSessionLockSurface {
@@ -12,15 +11,11 @@ WlSessionLockSurface {
 
     color: "#000000"
 
-    readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
-        || (Quickshell.env("HOME") + "/.config")
-    readonly property string logoPath: configHome + "/fastfetch/ascii/awtarchy.txt"
     readonly property real uiScale: Math.max(0.72, Math.min(1.35,
         Math.min(width / 1920, height / 1080)))
     readonly property int maskedCount: Math.min(password.text.length, 10)
-    readonly property real maskSpread: password.text.length === 0 ? 0
-        : Math.min(250 * uiScale,
-            (28 + maskedCount * 16 + Math.min(password.text.length, 18) * 3) * uiScale)
+    readonly property real maskSpread: maskedCount === 0 ? 0
+        : Math.round((24 + maskedCount * 14) * uiScale)
 
     property string timeText: ""
     property string dateText: ""
@@ -38,13 +33,6 @@ WlSessionLockSurface {
         const response = password.text;
         if (auth.submit(response))
             password.text = "";
-    }
-
-    FileView {
-        id: logoFile
-        path: root.logoPath
-        blockLoading: true
-        printErrors: false
     }
 
     Timer {
@@ -77,26 +65,22 @@ WlSessionLockSurface {
     }
 
     ColumnLayout {
-        id: content
         anchors.centerIn: parent
-        width: Math.min(root.width * 0.78, 620 * root.uiScale)
+        width: Math.min(root.width * 0.78, 560 * root.uiScale)
         spacing: Math.round(12 * root.uiScale)
 
         Text {
             Layout.alignment: Qt.AlignHCenter
-            text: {
-                const raw = logoFile.text();
-                return raw && raw.length > 0 ? raw.replace(/\n$/, "") : "AWTARCHY";
-            }
+            text: "── AWTARCHY ──"
             color: root.theme.foreground
             font.family: root.theme.fontFamily
-            font.pixelSize: Math.round(15 * root.uiScale)
-            textFormat: Text.PlainText
+            font.pixelSize: Math.round(13 * root.uiScale)
+            font.letterSpacing: 1.2
             horizontalAlignment: Text.AlignHCenter
         }
 
         Item {
-            Layout.preferredHeight: Math.round(12 * root.uiScale)
+            Layout.preferredHeight: Math.round(8 * root.uiScale)
         }
 
         Text {
@@ -104,7 +88,7 @@ WlSessionLockSurface {
             text: root.timeText
             color: root.theme.foreground
             font.family: root.theme.fontFamily
-            font.pixelSize: Math.round(78 * root.uiScale)
+            font.pixelSize: Math.round(76 * root.uiScale)
             font.weight: Font.Light
         }
 
@@ -113,11 +97,11 @@ WlSessionLockSurface {
             text: root.dateText
             color: root.theme.muted
             font.family: root.theme.fontFamily
-            font.pixelSize: Math.round(16 * root.uiScale)
+            font.pixelSize: Math.round(15 * root.uiScale)
         }
 
         Item {
-            Layout.preferredHeight: Math.round(20 * root.uiScale)
+            Layout.preferredHeight: Math.round(18 * root.uiScale)
         }
 
         Text {
@@ -125,7 +109,7 @@ WlSessionLockSurface {
             text: Quickshell.env("USER") || ""
             color: root.theme.foreground
             font.family: root.theme.fontFamily
-            font.pixelSize: Math.round(15 * root.uiScale)
+            font.pixelSize: Math.round(14 * root.uiScale)
             font.weight: Font.Medium
         }
 
@@ -141,29 +125,14 @@ WlSessionLockSurface {
         Item {
             Layout.alignment: Qt.AlignHCenter
             Layout.preferredWidth: Math.round(290 * root.uiScale)
-            Layout.preferredHeight: Math.round(36 * root.uiScale)
+            Layout.preferredHeight: Math.round(34 * root.uiScale)
 
             Rectangle {
                 anchors.centerIn: parent
                 width: root.maskSpread
                 height: Math.round(14 * root.uiScale)
                 color: root.theme.accent
-                opacity: password.text.length > 0 ? 0.08 : 0
-            }
-
-            Repeater {
-                model: 3
-
-                Rectangle {
-                    required property int index
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.verticalCenter: parent.verticalCenter
-                    y: Math.round((index - 1) * 3 * root.uiScale)
-                    width: Math.max(0, root.maskSpread - index * 8 * root.uiScale)
-                    height: Math.round((2 + index) * root.uiScale)
-                    color: root.theme.accent
-                    opacity: password.text.length > 0 ? 0.12 - index * 0.025 : 0
-                }
+                opacity: password.text.length > 0 ? 0.10 : 0
             }
 
             Row {
@@ -174,11 +143,10 @@ WlSessionLockSurface {
                     model: root.maskedCount
 
                     Rectangle {
-                        required property int index
                         width: Math.round(7 * root.uiScale)
-                        height: Math.round((9 + (index % 3)) * root.uiScale)
+                        height: Math.round(10 * root.uiScale)
                         color: root.theme.foreground
-                        opacity: 0.78 - (index % 4) * 0.05
+                        opacity: 0.82
                     }
                 }
             }
