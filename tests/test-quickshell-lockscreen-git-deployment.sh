@@ -19,11 +19,14 @@ fail() {
 # dedicated lock config is included without a second installer source of truth.
 grep -Fq 'local -a config_dirs=(hypr quickshell ' "$RUNTIME" \
     || fail 'installer config tree no longer includes both hypr and quickshell'
+# The expansions below are intentionally matched as literal runtime source.
+# shellcheck disable=SC2016
 grep -Fq 'cp -r -- "${REPO_DIR}/config/${dir}" "${HOME_DIR}/.config/"' "$RUNTIME" \
     || fail 'installer no longer copies the complete selected config tree'
 
 # The installer normalizes config files and then restores executability for all
 # managed Hypr helper scripts, including awtarchy_lock.sh.
+# shellcheck disable=SC2016
 grep -Fq 'find "${HOME_DIR}/.config/hypr/scripts" -type f -exec chmod +x {} +' "$RUNTIME" \
     || fail 'installer no longer restores executable mode for Hypr helper scripts'
 
@@ -33,6 +36,7 @@ grep -Fq '.config/hypr/*|.config/quickshell/*|.config/alacritty/*' "$RUNTIME" \
     || fail 'managed update path no longer includes the full Quickshell subtree'
 grep -Fq '.config/hypr/scripts/*|.config/hypr/themes/*|.config/waybar/scripts/*)' "$RUNTIME" \
     || fail 'Git-testing staging no longer recognizes executable Hypr scripts'
+# shellcheck disable=SC2016
 grep -Fq 'chmod 0755 "${augmented_home}/${rel}"' "$RUNTIME" \
     || fail 'Git-testing staging no longer restores executable mode'
 
