@@ -13,6 +13,7 @@ Item {
 
     readonly property bool busy: pam.active
     readonly property bool responseVisible: pam.responseVisible
+    readonly property bool responseRequired: pam.responseRequired
 
     signal authenticated()
     signal authenticationFailed()
@@ -24,9 +25,28 @@ Item {
         statusIsError = false;
     }
 
-    function submit(response) {
-        if (pam.active || response.length === 0)
+    function answerPendingResponse() {
+        if (!pam.responseRequired || pendingResponse.length === 0)
             return false;
+
+        pam.respond(pendingResponse);
+        pendingResponse = "";
+        return true;
+    }
+
+    function submit(response) {
+        if (response.length === 0)
+            return false;
+
+        if (pam.active) {
+            if (!pam.responseRequired)
+                return false;
+
+            pendingResponse = response;
+            statusText = "Authenticating…";
+            statusIsError = false;
+            return answerPendingResponse();
+        }
 
         pendingResponse = response;
         statusText = "Authenticating…";
@@ -51,12 +71,17 @@ Item {
             if (!responseRequired || root.pendingResponse.length === 0)
                 return;
 
-            pam.respond(pendingResponse);
-            root.pendingResponse = "";
+            root.answerPendingResponse();
         }
 
         onPamMessage: {
-            if (!responseRequired && messageIsError) {
+            if (responseRequired) {
+                root.statusText = pam.message;
+                root.statusIsError = pam.messageIsError;
+                return;
+            }
+
+            if (messageIsError) {
                 root.statusText = "Authentication failed";
                 root.statusIsError = true;
             }
