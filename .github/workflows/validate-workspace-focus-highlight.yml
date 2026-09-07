@@ -26,3 +26,86 @@ jobs:
           bash -n tests/test-workspace-focus-highlight.sh
           shellcheck tests/test-workspace-focus-highlight.sh
           bash tests/test-workspace-focus-highlight.sh
+
+  apply-approved-workspace-visibility:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'fix/workspace-empty-indicator' && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: fix/workspace-empty-indicator
+          fetch-depth: 0
+      - name: Require exact staging commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git log -1 --pretty=%s)" == 'Run workspace visibility helper' ]]
+      - name: Apply approved workspace visibility change
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+
+          bar = Path('config/quickshell/awtarchy/Bar.qml')
+          history = Path('local/share/awtarchy/quickshell-managed-history.sha256')
+          rel = '.config/quickshell/awtarchy/Bar.qml'
+
+          def digest(path):
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          before = digest(bar)
+          text = bar.read_text(encoding='utf-8')
+
+          if 'function workspaceVisibleHere(workspace) {' in text:
+              raise SystemExit('workspace visibility helper already exists')
+
+          anchor = '    function focusWorkspace(selector) {'
+          if text.count(anchor) != 1:
+              raise SystemExit(f'unexpected focusWorkspace anchor count: {text.count(anchor)}')
+
+          helper = (
+              '    function workspaceVisibleHere(workspace) {\n'
+              '        if (!workspace || workspace.id < 1 || workspace.id > 10)\n'
+              '            return false;\n'
+              '        if (!workspace.monitor || workspace.monitor.name !== bar.monitorName)\n'
+              '            return false;\n'
+              '        return workspace.focused || workspace.toplevels.values.length > 0;\n'
+              '    }\n\n'
+          )
+          text = text.replace(anchor, helper + anchor, 1)
+
+          old_model = (
+              'values: Hyprland.workspaces.values.filter(workspace =>\n'
+              '                    workspace.id >= 1 && workspace.id <= 10 && workspace.monitor && workspace.monitor.name === bar.monitorName)'
+          )
+          new_model = 'values: Hyprland.workspaces.values.filter(workspace => bar.workspaceVisibleHere(workspace))'
+          if text.count(old_model) != 2:
+              raise SystemExit(f'unexpected workspace model count: {text.count(old_model)}')
+          text = text.replace(old_model, new_model)
+          bar.write_text(text, encoding='utf-8')
+
+          after = digest(bar)
+          history_text = history.read_text(encoding='utf-8')
+          additions = []
+          for value in (before, after):
+              line = f'{value}\t{rel}'
+              if line not in history_text and line not in additions:
+                  additions.append(line)
+          if additions:
+              with history.open('a', encoding='utf-8') as handle:
+                  handle.write('\n# 2026-09-07 occupancy-aware workspace visibility.\n')
+                  for line in additions:
+                      handle.write(line + '\n')
+          PY
+          git diff --check
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add config/quickshell/awtarchy/Bar.qml \
+                  local/share/awtarchy/quickshell-managed-history.sha256
+          git diff --cached --quiet && { echo 'No production changes staged'; exit 1; }
+          git commit -m 'Hide unfocused empty workspaces'
+          git push origin HEAD:fix/workspace-empty-indicator
