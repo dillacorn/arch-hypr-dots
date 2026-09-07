@@ -17,6 +17,10 @@ WlSessionLockSurface {
     readonly property string logoPath: configHome + "/fastfetch/ascii/awtarchy.txt"
     readonly property real uiScale: Math.max(0.72, Math.min(1.35,
         Math.min(width / 1920, height / 1080)))
+    readonly property int maskedCount: Math.min(password.text.length, 10)
+    readonly property real maskSpread: password.text.length === 0 ? 0
+        : Math.min(250 * uiScale,
+            (28 + maskedCount * 16 + Math.min(password.text.length, 18) * 3) * uiScale)
 
     property string timeText: ""
     property string dateText: ""
@@ -134,37 +138,83 @@ WlSessionLockSurface {
             font.letterSpacing: 1.4
         }
 
-        TextInput {
-            id: password
+        Item {
             Layout.alignment: Qt.AlignHCenter
             Layout.preferredWidth: Math.round(290 * root.uiScale)
             Layout.preferredHeight: Math.round(36 * root.uiScale)
 
-            color: root.theme.foreground
-            selectionColor: root.theme.accent
-            selectedTextColor: root.theme.foreground
-            font.family: root.theme.fontFamily
-            font.pixelSize: Math.round(18 * root.uiScale)
-            horizontalAlignment: TextInput.AlignHCenter
-            verticalAlignment: TextInput.AlignVCenter
-            echoMode: auth.responseVisible ? TextInput.Normal : TextInput.Password
-            enabled: !auth.busy || auth.responseRequired
-            activeFocusOnTab: true
-
-            Keys.onReturnPressed: event => {
-                root.submitPassword();
-                event.accepted = true;
+            Rectangle {
+                anchors.centerIn: parent
+                width: root.maskSpread
+                height: Math.round(14 * root.uiScale)
+                color: root.theme.accent
+                opacity: password.text.length > 0 ? 0.08 : 0
             }
 
-            Keys.onEnterPressed: event => {
-                root.submitPassword();
-                event.accepted = true;
+            Repeater {
+                model: 3
+
+                Rectangle {
+                    required property int index
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.verticalCenter: parent.verticalCenter
+                    y: Math.round((index - 1) * 3 * root.uiScale)
+                    width: Math.max(0, root.maskSpread - index * 8 * root.uiScale)
+                    height: Math.round((2 + index) * root.uiScale)
+                    color: root.theme.accent
+                    opacity: password.text.length > 0 ? 0.12 - index * 0.025 : 0
+                }
             }
 
-            Keys.onEscapePressed: event => {
-                password.text = "";
-                auth.clearStatus();
-                event.accepted = true;
+            Row {
+                anchors.centerIn: parent
+                spacing: Math.round(7 * root.uiScale)
+
+                Repeater {
+                    model: root.maskedCount
+
+                    Rectangle {
+                        required property int index
+                        width: Math.round(7 * root.uiScale)
+                        height: Math.round((9 + (index % 3)) * root.uiScale)
+                        color: root.theme.foreground
+                        opacity: 0.78 - (index % 4) * 0.05
+                    }
+                }
+            }
+
+            TextInput {
+                id: password
+                anchors.fill: parent
+
+                color: "transparent"
+                selectionColor: "transparent"
+                selectedTextColor: "transparent"
+                cursorVisible: false
+                font.family: root.theme.fontFamily
+                font.pixelSize: Math.round(18 * root.uiScale)
+                horizontalAlignment: TextInput.AlignHCenter
+                verticalAlignment: TextInput.AlignVCenter
+                echoMode: TextInput.Password
+                inputMethodHints: Qt.ImhSensitiveData
+                enabled: !auth.busy || auth.responseRequired
+                activeFocusOnTab: true
+
+                Keys.onReturnPressed: event => {
+                    root.submitPassword();
+                    event.accepted = true;
+                }
+
+                Keys.onEnterPressed: event => {
+                    root.submitPassword();
+                    event.accepted = true;
+                }
+
+                Keys.onEscapePressed: event => {
+                    password.text = "";
+                    auth.clearStatus();
+                    event.accepted = true;
+                }
             }
         }
 
@@ -203,10 +253,8 @@ WlSessionLockSurface {
         }
 
         function onResponseRequiredChanged() {
-            if (root.auth.responseRequired) {
-                password.text = "";
+            if (root.auth.responseRequired)
                 Qt.callLater(() => password.forceActiveFocus());
-            }
         }
     }
 
