@@ -17,6 +17,9 @@ jobs:
         run: |
           bash -n config/hypr/scripts/awtarchy_lock.sh
           bash -n tests/test-quickshell-lockscreen-foundation.sh
+          bash -n tests/test-quickshell-lockscreen-manager-mode.sh
           shellcheck config/hypr/scripts/awtarchy_lock.sh
           shellcheck tests/test-quickshell-lockscreen-foundation.sh
+          shellcheck tests/test-quickshell-lockscreen-manager-mode.sh
           bash tests/test-quickshell-lockscreen-foundation.sh
+          bash tests/test-quickshell-lockscreen-manager-mode.sh
