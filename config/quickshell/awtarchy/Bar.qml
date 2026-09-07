@@ -71,6 +71,14 @@ PanelWindow {
                 && workspace.active && workspace.hasFullscreen);
     }
 
+    function workspaceVisibleHere(workspace) {
+        if (!workspace || workspace.id < 1 || workspace.id > 10)
+            return false;
+        if (!workspace.monitor || workspace.monitor.name !== bar.monitorName)
+            return false;
+        return workspace.focused || workspace.toplevels.values.length > 0;
+    }
+
     function focusWorkspace(selector) {
         Quickshell.execDetached([
             "hyprctl",
@@ -355,8 +363,7 @@ PanelWindow {
 
         Repeater {
             model: ScriptModel {
-                values: Hyprland.workspaces.values.filter(workspace =>
-                    workspace.id >= 1 && workspace.id <= 10 && workspace.monitor && workspace.monitor.name === bar.monitorName)
+                values: Hyprland.workspaces.values.filter(workspace => bar.workspaceVisibleHere(workspace))
             }
 
             delegate: BarControl {
@@ -381,8 +388,7 @@ PanelWindow {
 
         Repeater {
             model: ScriptModel {
-                values: Hyprland.workspaces.values.filter(workspace =>
-                    workspace.id >= 1 && workspace.id <= 10 && workspace.monitor && workspace.monitor.name === bar.monitorName)
+                values: Hyprland.workspaces.values.filter(workspace => bar.workspaceVisibleHere(workspace))
             }
 
             delegate: BarControl {
