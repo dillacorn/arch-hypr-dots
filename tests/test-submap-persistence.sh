@@ -3,8 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 HELPER="${ROOT}/config/hypr/scripts/submap_state.sh"
-HYPRLAND="${ROOT}/config/hypr/hyprland.lua"
-QUICKSHELL_MANAGER="${ROOT}/config/hypr/scripts/quickshell.sh"
+READY_SOUND="${ROOT}/config/hypr/scripts/quickshell_ready_sound.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 
@@ -14,10 +13,8 @@ fail() {
 }
 
 [[ -f "$HELPER" ]] || fail 'submap persistence helper is missing'
-grep -Fq '~/.config/hypr/scripts/submap_state.sh init' "$HYPRLAND" \
-    || fail 'Hyprland startup does not initialize persistent submap state'
-grep -Fq 'submap_state.sh" init' "$QUICKSHELL_MANAGER" \
-    || fail 'Quickshell startup does not provide personalized-hyprland migration fallback'
+grep -Fq 'submap_state.sh" init' "$READY_SOUND" \
+    || fail 'login startup does not initialize persistent submap state'
 
 fakebin="${TMP}/bin"
 mkdir -p -- "$fakebin"
