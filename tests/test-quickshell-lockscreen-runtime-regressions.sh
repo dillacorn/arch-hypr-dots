@@ -32,14 +32,24 @@ require_text "$SHELL_QML" 'auth: lockAuth' \
 reject_text "$SHELL_QML" 'auth: auth' \
     'lock surface still self-binds auth and loses the authentication object'
 
-# Simplified lockscreen presentation: no Fastfetch mark, one small TUI-style
-# Awtarchy heading, and uniform password blocks.
+# Minimal Awtarchy presentation: large Option-B ASCII wordmark, no conventional
+# lockscreen metadata, and uniform password blocks.
 reject_text "$SURFACE_QML" '/fastfetch/ascii/awtarchy.txt' \
     'lockscreen still loads the Fastfetch ASCII mark'
 reject_text "$SURFACE_QML" 'id: logoFile' \
     'lockscreen still owns the removed Fastfetch FileView'
-require_text "$SURFACE_QML" 'text: "── AWTARCHY ──"' \
-    'lockscreen does not use the approved compact TUI-style Awtarchy heading'
+require_text "$SURFACE_QML" '▄▄▄· ▄▄▌ ▐ ▄▌▄▄▄▄▄ ▄▄▄· ▄▄▄' \
+    'lockscreen does not use the approved large Option-B ASCII Awtarchy wordmark'
+reject_text "$SURFACE_QML" 'text: "── AWTARCHY ──"' \
+    'lockscreen still uses the old tiny Awtarchy heading'
+reject_text "$SURFACE_QML" 'property string timeText' \
+    'lockscreen still owns clock state'
+reject_text "$SURFACE_QML" 'property string dateText' \
+    'lockscreen still owns date state'
+reject_text "$SURFACE_QML" 'Quickshell.env("USER")' \
+    'lockscreen still displays the username'
+reject_text "$SURFACE_QML" 'text: "PASSWORD"' \
+    'lockscreen still displays a PASSWORD label'
 require_text "$SURFACE_QML" 'readonly property int maskedCount: Math.min(password.text.length, 10)' \
     'lockscreen does not cap visible password length'
 require_text "$SURFACE_QML" 'width: Math.round(7 * root.uiScale)' \
@@ -50,5 +60,22 @@ reject_text "$SURFACE_QML" 'index % 3' \
     'password blocks still vary in height by index'
 reject_text "$SURFACE_QML" 'index % 4' \
     'password blocks still vary in opacity by index'
+
+# The secure session lock must stay held while the visible lockscreen content
+# fades out. Only after that short fade may the shell release WlSessionLock.
+require_text "$SURFACE_QML" 'required property bool unlocking' \
+    'lock surface does not receive the shared unlock-fade state'
+require_text "$SURFACE_QML" 'property bool entered: false' \
+    'lock surface has no fade-in entry state'
+require_text "$SURFACE_QML" 'opacity: root.unlocking ? 0 : root.entered ? 1 : 0' \
+    'lockscreen content does not fade for lock and unlock transitions'
+require_text "$SURFACE_QML" 'Behavior on opacity' \
+    'lockscreen has no opacity transition animation'
+require_text "$SHELL_QML" 'unlocking: root.unlockRequested' \
+    'lock surfaces do not receive the shared unlock-fade state'
+require_text "$SHELL_QML" 'unlockFadeTimer.restart()' \
+    'successful authentication does not start the safe unlock fade'
+require_text "$SHELL_QML" 'id: unlockFadeTimer' \
+    'lock shell has no unlock fade timer'
 
 printf 'PASS: lockscreen runtime regressions\n'
