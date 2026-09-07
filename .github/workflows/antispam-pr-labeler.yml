@@ -33,7 +33,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if grep -Fq 'INSTALL.md and UPDATING.md are the canonical user instructions' AGENTS.md; then
+          if grep -Fq 'canonical user instructions for installation and maintenance' AGENTS.md; then
             printf '%s\n' 'Canonical release guidance already applied.'
             exit 0
           fi
@@ -86,7 +86,7 @@ jobs:
           path.write_text(body.replace(old_intro, new_intro, 1).replace(old_contract, new_contract, 1))
           PY
           git diff --check
-          grep -Fq 'INSTALL.md and UPDATING.md are the canonical user instructions' AGENTS.md
+          grep -Fq 'canonical user instructions for installation and maintenance' AGENTS.md
           grep -Fq 'There is no fixed word-count ceiling' AGENTS.md
           grep -Fq 'validate-stable-release-notes.py' AGENTS.md
           git config user.name 'github-actions[bot]'
