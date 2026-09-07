@@ -102,8 +102,8 @@ require_text "$RECONCILER" 'AWTARCHY_LOCKSCREEN_RETIRE_CONFIRMED' \
     'package reconciler does not require explicit retirement confirmation'
 require_text "$RECONCILER" 'managed_package hyprlock' \
     'package reconciler does not ownership-gate Hyprlock removal'
-require_text "$RECONCILER" 'pacman -Rns --noconfirm hyprlock' \
-    'package reconciler does not use exact Hyprlock package removal'
+require_text "$RECONCILER" 'pacman -R --noconfirm hyprlock' \
+    'package reconciler does not use conservative exact Hyprlock package removal'
 require_text "$RECONCILER" 'forget_managed_packages hyprlock' \
     'package reconciler does not clear retired Hyprlock ownership state'
 
@@ -135,7 +135,7 @@ case "$action" in
             printf '%s\n' "$pkg"
         fi
         ;;
-    -Rns)
+    -R)
         [[ ${1:-} == --noconfirm ]] && shift
         [[ ${1:-} == hyprlock && $# == 1 ]] || exit 64
         grep -Fxq hyprlock "$state" || exit 1

@@ -776,7 +776,7 @@ migrate_lockscreen_retirement() {
   fi
 
   log "Removing retired Awtarchy-owned Hyprlock package..."
-  if ! as_root pacman -Rns --noconfirm hyprlock; then
+  if ! as_root pacman -R --noconfirm hyprlock; then
     warn "Could not remove retired Awtarchy-owned Hyprlock; leaving package ownership recorded for a later retry."
     return 0
   fi
