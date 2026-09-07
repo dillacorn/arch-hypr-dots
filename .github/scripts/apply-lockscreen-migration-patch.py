@@ -59,12 +59,12 @@ lockscreen_target_retires_hyprlock() {
 }
 
 retired_hyprlock_backup_path() {
-  local live="$1" stamp candidate suffix=0
+  local stamp candidate suffix=0
   stamp="$(date '+%Y%m%d-%H%M%S')"
-  candidate="${live}.backup.${stamp}"
+  candidate="${HOME_DIR}/.config/hypr/hyprlock.conf.backup.${stamp}"
   while [[ -e "$candidate" || -L "$candidate" ]]; do
     ((suffix += 1))
-    candidate="${live}.backup.${stamp}.${suffix}"
+    candidate="${HOME_DIR}/.config/hypr/hyprlock.conf.backup.${stamp}.${suffix}"
   done
   printf '%s\n' "$candidate"
 }
@@ -89,7 +89,7 @@ migrate_retired_hyprlock_stage() {
     || die "Lockscreen package migration runtime is unavailable or unsafe: ${runtime_source}"
 
   if [[ -e "$live" || -L "$live" ]]; then
-    backup="$(retired_hyprlock_backup_path "$live")"
+    backup="$(retired_hyprlock_backup_path)"
     retry_command run_as_target mv -- "$live" "$backup" \
       || die "Could not preserve retired Hyprlock config: ${live}"
     log "Preserved retired Hyprlock config: ${backup}"
