@@ -54,7 +54,8 @@ printf '%s\n' mouse >"$runtime_file"
 [[ "$(cat "$persist_file")" == mouse ]] \
     || fail 'runtime submap write did not persist through the compatibility link'
 
-# Simulate another login: runtime state is new, persistent preference survives.
+# Simulate a later login: the runtime state is recreated while the persistent
+# preference survives and must be dispatched automatically.
 rm -f -- "$runtime_file"
 : >"$log"
 run_helper init
