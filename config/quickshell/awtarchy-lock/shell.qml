@@ -22,10 +22,11 @@ ShellRoot {
         id: lockAuth
 
         onAuthenticated: {
+            if (root.unlockRequested)
+                return;
+
             root.unlockRequested = true;
-            sessionLock.locked = false;
-            if (!sessionLock.secure)
-                quitAfterUnlock.restart();
+            unlockFadeTimer.restart();
         }
     }
 
@@ -37,6 +38,7 @@ ShellRoot {
             LockSurface {
                 auth: lockAuth
                 theme: lockTheme
+                unlocking: root.unlockRequested
             }
         }
 
@@ -62,6 +64,17 @@ ShellRoot {
             sessionLock.locked = false;
             quitAfterUnlock.restart();
             return true;
+        }
+    }
+
+    Timer {
+        id: unlockFadeTimer
+        interval: 170
+        repeat: false
+        onTriggered: {
+            sessionLock.locked = false;
+            if (!sessionLock.secure)
+                quitAfterUnlock.restart();
         }
     }
 
