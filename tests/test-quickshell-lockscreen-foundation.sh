@@ -61,8 +61,10 @@ require_text "$SURFACE_QML" 'color: "#000000"' \
     'lock surface does not use an opaque black stock background'
 reject_text "$SURFACE_QML" '/fastfetch/ascii/awtarchy.txt' \
     'lock surface still references the retired Fastfetch ASCII mark'
-require_text "$SURFACE_QML" 'text: "── AWTARCHY ──"' \
-    'lock surface does not use the compact TUI-style Awtarchy heading'
+require_text "$SURFACE_QML" '▄▄▄· ▄▄▌ ▐ ▄▌▄▄▄▄▄ ▄▄▄· ▄▄▄' \
+    'lock surface does not use the approved large Option-B ASCII Awtarchy wordmark'
+reject_text "$SURFACE_QML" 'text: "── AWTARCHY ──"' \
+    'lock surface still uses the retired compact Awtarchy heading'
 require_text "$SURFACE_QML" 'echoMode: TextInput.Password' \
     'password field is not always masked for the password-only PAM service'
 require_text "$SURFACE_QML" 'inputMethodHints: Qt.ImhSensitiveData' \
