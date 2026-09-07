@@ -16,6 +16,8 @@ jobs:
         with:
           ref: feature/quickshell-lockscreen
           fetch-depth: 0
+      - name: Install updater validation dependency
+        run: sudo apt-get update && sudo apt-get install -y lua5.4
       - name: Refresh exact managed hash
         run: |
           path='.config/hypr/scripts/quickshell_ready_sound.sh'
