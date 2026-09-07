@@ -19,6 +19,8 @@ Singleton {
         { label: "", text: "Logout (O)", key: "o", command: "loginctl kill-session \"$XDG_SESSION_ID\"" },
         { label: "", text: "Suspend (Z)", key: "z", command: "~/.config/hypr/scripts/awtarchy_lock.sh suspend" }
     ]
+    readonly property color shadeColor: Qt.rgba(
+        Theme.background.r, Theme.background.g, Theme.background.b, 0.85)
 
     function focusedScreen() {
         const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
@@ -73,7 +75,7 @@ Singleton {
 
         Rectangle {
             anchors.fill: parent
-            color: Qt.rgba(Theme.background.r, Theme.background.g, Theme.background.b, 0.85)
+            color: root.shadeColor
             border.width: 0
         }
 
@@ -155,6 +157,40 @@ Singleton {
                         onClicked: root.runAction(actionTile.modelData)
                     }
                 }
+            }
+        }
+    }
+
+    Variants {
+        id: secondaryShadeVariants
+        model: Quickshell.screens
+
+        PanelWindow {
+            id: secondaryShadeWindow
+            required property var modelData
+
+            screen: modelData
+            visible: powerWindow.visible
+                && powerWindow.screen
+                && modelData.name !== powerWindow.screen.name
+            color: "transparent"
+            focusable: false
+            aboveWindows: true
+            exclusionMode: ExclusionMode.Ignore
+            anchors.top: true
+            anchors.bottom: true
+            anchors.left: true
+            anchors.right: true
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: root.close()
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                color: root.shadeColor
+                border.width: 0
             }
         }
     }
