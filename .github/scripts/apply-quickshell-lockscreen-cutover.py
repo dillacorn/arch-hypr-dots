@@ -109,7 +109,7 @@ animations_path.write_text(animations, encoding="utf-8")
 reject("config/hypr/scripts/toggle_animations.sh", "hyprlock")
 
 # Installer/runtime target no longer depends on Hyprlock, and Git testing now
-# exercises the exact same ownership-safe retirement stage as a future stable target.
+# exercises the same ownership-safe retirement stage as a future stable target.
 replace_exact(
     "local/share/awtarchy/awtarchy-runtime.sh",
     "hyprland hyprpaper hyprlock hypridle hyprpicker",
@@ -123,6 +123,64 @@ replace_exact(
     '  fi\n\n',
     "",
 )
+
+runtime = read("local/share/awtarchy/awtarchy-runtime.sh")
+live_migration_anchor = "migrate_retired_hyprlock_stage() {\n"
+live_migration_function = r'''migrate_live_hyprlock_hyprland() {
+  local repo_dir="$1"
+  local helper="${repo_dir}/local/share/awtarchy/awtarchy-lockscreen-hyprland-migrate.py"
+  local live="${HOME_DIR}/.config/hypr/hyprland.lua"
+  local dir="" tmp="" backup="" stamp="" suffix=0
+
+  [[ -e "$live" || -L "$live" ]] || return 0
+  [[ -f "$live" && ! -L "$live" ]] \
+    || die "Live Hyprland config is unavailable or unsafe during Hyprlock retirement: ${live}"
+  grep -Fqi -- hyprlock "$live" || return 0
+  [[ -f "$helper" && ! -L "$helper" ]] \
+    || die "Live Hyprland lockscreen migration helper is unavailable or unsafe: ${helper}"
+
+  dir="$(dirname -- "$live")"
+  tmp="$(run_as_target mktemp --tmpdir="$dir" '.awtarchy-hyprland-lock.tmp.XXXXXX')" \
+    || die "Could not stage the personalized Hyprland lockscreen migration."
+
+  if ! run_as_target python3 "$helper" "$live" "$tmp"; then
+    run_as_target rm -f -- "$tmp" >/dev/null 2>&1 || true
+    die "Personalized hyprland.lua contains an unknown Hyprlock reference; Hyprlock was not retired."
+  fi
+
+  stamp="$(date '+%Y%m%d-%H%M%S')"
+  backup="${live}.backup.${stamp}"
+  while [[ -e "$backup" || -L "$backup" ]]; do
+    ((suffix += 1))
+    backup="${live}.backup.${stamp}.${suffix}"
+  done
+
+  retry_command run_as_target cp -a -- "$live" "$backup" \
+    || die "Could not back up personalized Hyprland config before lockscreen migration."
+  retry_command run_as_target chmod --reference="$live" "$tmp" \
+    || die "Could not preserve personalized Hyprland config permissions during lockscreen migration."
+  retry_command run_as_target mv -f -- "$tmp" "$live" \
+    || die "Could not install the personalized Hyprland lockscreen migration."
+
+  log "Migrated known Hyprlock references in personalized hyprland.lua; backup: ${backup}"
+}
+
+migrate_retired_hyprlock_stage() {
+'''
+if runtime.count(live_migration_anchor) != 1:
+    raise SystemExit("runtime: expected one Hyprlock retirement-stage anchor")
+runtime = runtime.replace(live_migration_anchor, live_migration_function, 1)
+old_gate = '''  lockscreen_target_retires_hyprlock "$repo_dir" || return 0
+
+  [[ -f "$reconciler" && ! -L "$reconciler" ]]'''
+new_gate = '''  lockscreen_target_retires_hyprlock "$repo_dir" || return 0
+  migrate_live_hyprlock_hyprland "$repo_dir"
+
+  [[ -f "$reconciler" && ! -L "$reconciler" ]]'''
+if runtime.count(old_gate) != 1:
+    raise SystemExit("runtime: could not place live personalized Hyprland migration")
+runtime = runtime.replace(old_gate, new_gate, 1)
+write("local/share/awtarchy/awtarchy-runtime.sh", runtime)
 
 # Lock manager owns secure-before-power sequencing.
 replace_exact(
@@ -183,7 +241,7 @@ if migration.count(old_block) != 1:
 migration = migration.replace(old_block, new_block, 1)
 migration = migration.replace(
     '''require_text "$RUNTIME" 'Git testing keeps Hyprlock installed as an emergency lock fallback.' \\\n    'Git-testing fallback contract is missing'\n''',
-    '''if grep -Fq 'Git testing keeps Hyprlock installed as an emergency lock fallback.' "$RUNTIME"; then\n    fail 'Git testing still suppresses Hyprlock retirement'\nfi\n''',
+    '''if grep -Fq 'Git testing keeps Hyprlock installed as an emergency lock fallback.' "$RUNTIME"; then\n    fail 'Git testing still suppresses Hyprlock retirement'\nfi\nrequire_text "$RUNTIME" 'migrate_live_hyprlock_hyprland "$repo_dir"' \\\n    'retirement does not migrate a preserved personalized hyprland.lua before package removal'\n''',
     1,
 )
 migration_path.write_text(migration, encoding="utf-8")
