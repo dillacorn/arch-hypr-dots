@@ -43,6 +43,8 @@ require_file "$MANAGER"
 
 require_text "$SHELL_QML" 'import Quickshell.Wayland' \
     'lock shell does not import Quickshell.Wayland'
+require_text "$SHELL_QML" 'import Quickshell.Io' \
+    'lock shell does not import Quickshell.Io for IpcHandler'
 require_text "$SHELL_QML" 'WlSessionLock {' \
     'lock shell does not own a WlSessionLock'
 require_text "$SHELL_QML" 'locked: true' \
