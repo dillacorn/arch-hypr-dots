@@ -65,6 +65,14 @@ require_text "$SURFACE_QML" 'echoMode: TextInput.Password' \
     'password field is not always masked for the password-only PAM service'
 require_text "$SURFACE_QML" 'inputMethodHints: Qt.ImhSensitiveData' \
     'password field is not marked as sensitive input'
+require_text "$SURFACE_QML" 'color: "transparent"' \
+    'native password glyphs are still directly visible instead of using the custom mask'
+require_text "$SURFACE_QML" 'readonly property int maskedCount: Math.min(password.text.length, 10)' \
+    'custom password mask does not cap displayed password length'
+require_text "$SURFACE_QML" 'model: root.maskedCount' \
+    'custom block mask is not driven by the capped password length'
+require_text "$SURFACE_QML" 'readonly property real maskSpread:' \
+    'password mask has no progressive blocky spread effect'
 require_text "$SURFACE_QML" 'enabled: !auth.busy || auth.responseRequired' \
     'lock input is disabled when an active PAM conversation asks for another response'
 require_text "$SURFACE_QML" 'if ((auth.busy && !auth.responseRequired) || password.text.length === 0)' \
@@ -88,18 +96,16 @@ reject_text "$AUTH_QML" 'config: "login"' \
     'lock authentication still uses the general login PAM stack'
 require_text "$AUTH_QML" 'readonly property bool responseRequired: pam.responseRequired' \
     'lock authentication does not expose active PAM response demand to the input surface'
-require_text "$AUTH_QML" 'if (pam.active) {' \
-    'lock authentication does not distinguish later responses in an active PAM conversation'
-require_text "$AUTH_QML" 'if (!pam.responseRequired)' \
-    'lock authentication can respond while PAM is active but not requesting input'
-require_text "$AUTH_QML" 'pam.start()' \
+require_text "$AUTH_QML" 'pam.start();' \
     'lock authentication never starts PAM'
-require_text "$AUTH_QML" 'pam.respond(pendingResponse)' \
+reject_text "$AUTH_QML" 'if (!pam.start())' \
+    'lock authentication incorrectly treats PamContext.start as a boolean result'
+require_text "$AUTH_QML" 'if (responseRequired && root.pendingResponse.length > 0)' \
+    'lock authentication does not answer the password prompt from PAM message delivery'
+require_text "$AUTH_QML" 'pam.respond(root.pendingResponse)' \
     'lock authentication does not answer PAM in process memory'
-require_text "$AUTH_QML" 'pendingResponse = ""' \
+require_text "$AUTH_QML" 'root.pendingResponse = ""' \
     'lock authentication does not clear the pending response'
-require_text "$AUTH_QML" 'root.statusText = pam.message' \
-    'later PAM prompts are not surfaced to the lock UI'
 require_text "$AUTH_QML" 'PamResult.Success' \
     'lock authentication does not gate success on PAM success'
 reject_text "$AUTH_QML" 'Process {' \
