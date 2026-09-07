@@ -1,0 +1,23 @@
+name: Validate Submap Persistence
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Syntax
+        run: |
+          bash -n tests/test-submap-persistence.sh
+          if [[ -f config/hypr/scripts/submap_state.sh ]]; then
+            bash -n config/hypr/scripts/submap_state.sh
+          fi
+      - name: Persistence contract
+        run: bash tests/test-submap-persistence.sh
