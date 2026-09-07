@@ -1,0 +1,50 @@
+name: Apply Lockscreen Foundation Contract Refresh
+
+on:
+  push:
+    branches: [feature/quickshell-lockscreen]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.repository == 'dillacorn/awtarchy' && github.event.head_commit.message == 'Stage lockscreen foundation contract refresh'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/quickshell-lockscreen
+          fetch-depth: 0
+      - name: Refresh exact foundation contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tests/test-quickshell-lockscreen-foundation.sh')
+          text = path.read_text(encoding='utf-8')
+          old = '''require_text "$SURFACE_QML" '/fastfetch/ascii/awtarchy.txt' \\
+              'lock surface does not use the local Awtarchy Fastfetch ASCII mark'
+          '''
+          new = '''reject_text "$SURFACE_QML" '/fastfetch/ascii/awtarchy.txt' \\
+              'lock surface still references the retired Fastfetch ASCII mark'
+          require_text "$SURFACE_QML" 'text: "── AWTARCHY ──"' \\
+              'lock surface does not use the compact TUI-style Awtarchy heading'
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('expected Fastfetch foundation assertion exactly once')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+      - name: Verify focused tests
+        run: |
+          bash -n tests/test-quickshell-lockscreen-foundation.sh
+          bash -n tests/test-quickshell-lockscreen-runtime-regressions.sh
+          bash tests/test-quickshell-lockscreen-foundation.sh
+          bash tests/test-quickshell-lockscreen-runtime-regressions.sh
+      - name: Commit contract refresh
+        run: |
+          git config user.name dillacorn
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git rm .github/workflows/apply-lockscreen-foundation-contract-refresh.yml
+          git add tests/test-quickshell-lockscreen-foundation.sh
+          git commit -m 'Align lockscreen foundation contracts'
+          git push origin HEAD:feature/quickshell-lockscreen
