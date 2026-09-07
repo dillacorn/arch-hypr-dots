@@ -16,6 +16,18 @@ WlSessionLockSurface {
     readonly property int maskedCount: Math.min(password.text.length, 10)
     readonly property real maskSpread: maskedCount === 0 ? 0
         : Math.round((24 + maskedCount * 14) * uiScale)
+    readonly property var wordmarkRows: [
+        " ▄▄▄      ██     █ ▄▄▄█████ ▄▄▄      ██▀███  ▄████▄  ██  ██ ██   ██",
+        " ████▄     █  █  █ █  ██  █ ████▄    ██   ██ ██▀ ▀█  ██  ██  ██  ██",
+        " ██  ▀█▄  ██  █  ██   ██    ██  ▀█▄  ██  ▄█  ██    ▄ ██▀▀██   ██ ██",
+        " ██▄▄▄▄██ ██  █  ██   ██    ██▄▄▄▄██ ██▀▀█▄  ██▄ ▄██ ██  ██    ▐██",
+        "███    ██  ███████    ██    ██    ██ ██   ██  ████▀  ██  ██    ██",
+        "             ███                                              ██",
+        "                                                              ██"
+    ]
+    readonly property int wordmarkColumns: 67
+    readonly property int wordmarkCellWidth: Math.max(8, Math.floor(18 * uiScale))
+    readonly property int wordmarkCellHeight: Math.max(12, Math.floor(24 * uiScale))
 
     property bool entered: false
 
@@ -66,25 +78,61 @@ WlSessionLockSurface {
             width: Math.min(root.width * 0.94, 1260 * root.uiScale)
             spacing: Math.round(34 * root.uiScale)
 
-            Text {
-                Layout.fillWidth: true
+            Item {
                 Layout.alignment: Qt.AlignHCenter
-                text: " ▄▄▄      ██     █ ▄▄▄█████ ▄▄▄      ██▀███  ▄████▄  ██  ██ ██   ██\n"
-                    + " ████▄     █  █  █ █  ██  █ ████▄    ██   ██ ██▀ ▀█  ██  ██  ██  ██\n"
-                    + " ██  ▀█▄  ██  █  ██   ██    ██  ▀█▄  ██  ▄█  ██    ▄ ██▀▀██   ██ ██\n"
-                    + " ██▄▄▄▄██ ██  █  ██   ██    ██▄▄▄▄██ ██▀▀█▄  ██▄ ▄██ ██  ██    ▐██\n"
-                    + "███    ██  ███████    ██    ██    ██ ██   ██  ████▀  ██  ██    ██\n"
-                    + "             ███                                              ██\n"
-                    + "                                                              ██"
-                color: root.theme.foreground
-                font.family: root.theme.fontFamily
-                font.pixelSize: Math.round(25 * root.uiScale)
-                fontSizeMode: Text.HorizontalFit
-                minimumPixelSize: Math.round(12 * root.uiScale)
-                textFormat: Text.PlainText
-                wrapMode: Text.NoWrap
-                horizontalAlignment: Text.AlignHCenter
-                lineHeight: 0.92
+                Layout.preferredWidth: root.wordmarkColumns * root.wordmarkCellWidth
+                Layout.preferredHeight: root.wordmarkRows.length * root.wordmarkCellHeight
+
+                Repeater {
+                    model: root.wordmarkRows.length
+
+                    delegate: Item {
+                        id: wordmarkRow
+                        readonly property int rowIndex: index
+                        readonly property string rowText: root.wordmarkRows[rowIndex]
+
+                        x: 0
+                        y: rowIndex * root.wordmarkCellHeight
+                        width: root.wordmarkColumns * root.wordmarkCellWidth
+                        height: root.wordmarkCellHeight
+
+                        Repeater {
+                            model: wordmarkRow.rowText.length
+
+                            delegate: Item {
+                                id: wordmarkCell
+                                readonly property int columnIndex: index
+                                property string glyph: wordmarkRow.rowText.charAt(columnIndex)
+                                readonly property int halfWidth: Math.floor(root.wordmarkCellWidth / 2)
+                                readonly property int halfHeight: Math.floor(root.wordmarkCellHeight / 2)
+
+                                x: columnIndex * root.wordmarkCellWidth
+                                y: 0
+                                width: root.wordmarkCellWidth
+                                height: root.wordmarkCellHeight
+
+                                Rectangle {
+                                    x: wordmarkCell.glyph === "▐" ? wordmarkCell.halfWidth : 0
+                                    y: wordmarkCell.glyph === "▄" ? wordmarkCell.halfHeight : 0
+                                    width: wordmarkCell.glyph === "▐"
+                                        ? root.wordmarkCellWidth - wordmarkCell.halfWidth
+                                        : root.wordmarkCellWidth
+                                    height: wordmarkCell.glyph === "▄"
+                                        ? root.wordmarkCellHeight - wordmarkCell.halfHeight
+                                        : wordmarkCell.glyph === "▀"
+                                            ? wordmarkCell.halfHeight
+                                            : root.wordmarkCellHeight
+                                    visible: wordmarkCell.glyph === "█"
+                                        || wordmarkCell.glyph === "▄"
+                                        || wordmarkCell.glyph === "▀"
+                                        || wordmarkCell.glyph === "▐"
+                                    color: root.theme.foreground
+                                    antialiasing: false
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             Item {
