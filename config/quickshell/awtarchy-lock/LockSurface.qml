@@ -28,7 +28,7 @@ WlSessionLockSurface {
     }
 
     function submitPassword() {
-        if (auth.busy || password.text.length === 0)
+        if ((auth.busy && !auth.responseRequired) || password.text.length === 0)
             return;
 
         const response = password.text;
@@ -148,7 +148,7 @@ WlSessionLockSurface {
             horizontalAlignment: TextInput.AlignHCenter
             verticalAlignment: TextInput.AlignVCenter
             echoMode: auth.responseVisible ? TextInput.Normal : TextInput.Password
-            enabled: !auth.busy
+            enabled: !auth.busy || auth.responseRequired
             activeFocusOnTab: true
 
             Keys.onReturnPressed: event => {
@@ -200,6 +200,13 @@ WlSessionLockSurface {
         function onBusyChanged() {
             if (!root.auth.busy)
                 Qt.callLater(() => password.forceActiveFocus());
+        }
+
+        function onResponseRequiredChanged() {
+            if (root.auth.responseRequired) {
+                password.text = "";
+                Qt.callLater(() => password.forceActiveFocus());
+            }
         }
     }
 
