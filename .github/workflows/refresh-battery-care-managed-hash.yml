@@ -1,0 +1,33 @@
+name: Refresh Battery Care managed hash
+
+on:
+  push:
+    branches: [hardening/battery-care-readback-feedback]
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.sha == '614efdd1ee746220059974cf480f48f96e1b62c8'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: hardening/battery-care-readback-feedback
+      - name: Record current Battery Care stock hash
+        run: |
+          set -euo pipefail
+          path='config/quickshell/awtarchy/BatteryCareCard.qml'
+          managed='.config/quickshell/awtarchy/BatteryCareCard.qml'
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          hash="$(sha256sum "$path" | awk '{print $1}')"
+          entry="${hash}"$'\t'"${managed}"
+          grep -Fqx -- "$entry" "$history" || printf '%s\n' "$entry" >>"$history"
+          git diff --check
+          git diff -- "$history"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "$history"
+          git diff --cached --quiet || git commit -m 'chore: record Battery Care managed hash'
+          git push origin HEAD:hardening/battery-care-readback-feedback
