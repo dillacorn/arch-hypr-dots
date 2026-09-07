@@ -19,7 +19,7 @@ ShellRoot {
     }
 
     LockAuth {
-        id: auth
+        id: lockAuth
 
         onAuthenticated: {
             root.unlockRequested = true;
@@ -35,7 +35,7 @@ ShellRoot {
 
         surface: Component {
             LockSurface {
-                auth: auth
+                auth: lockAuth
                 theme: lockTheme
             }
         }
