@@ -19,6 +19,17 @@ jobs:
         run: |
           python3 -m py_compile .github/scripts/apply-lockscreen-migration-patch.py
           python3 .github/scripts/apply-lockscreen-migration-patch.py
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('tests/test-quickshell-lockscreen-migration.sh')
+          text = path.read_text(encoding='utf-8')
+          old = "        [[ $action == -Qq ]] && printf '%s\\n' \"$pkg\"\n"
+          new = "        if [[ $action == -Qq ]]; then\n            printf '%s\\n' \"$pkg\"\n        fi\n"
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one fake pacman -Qq fixture anchor')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Validate migration before commit
         run: |
           bash -n local/share/awtarchy/awtarchy-runtime.sh
