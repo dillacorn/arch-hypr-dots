@@ -62,6 +62,12 @@ require_text "$SURFACE_QML" '/fastfetch/ascii/awtarchy.txt' \
     'lock surface does not use the local Awtarchy Fastfetch ASCII mark'
 require_text "$SURFACE_QML" 'echoMode: auth.responseVisible ? TextInput.Normal : TextInput.Password' \
     'password response visibility does not follow the PAM prompt safely'
+require_text "$SURFACE_QML" 'enabled: !auth.busy || auth.responseRequired' \
+    'lock input is disabled when an active PAM conversation asks for another response'
+require_text "$SURFACE_QML" 'if ((auth.busy && !auth.responseRequired) || password.text.length === 0)' \
+    'lock surface cannot submit a later PAM response while authentication remains active'
+require_text "$SURFACE_QML" 'function onResponseRequiredChanged()' \
+    'lock surface does not restore input focus for later PAM response prompts'
 require_text "$SURFACE_QML" 'Keys.onEscapePressed' \
     'lock surface does not handle Escape safely'
 require_text "$SURFACE_QML" 'auth.clearStatus()' \
@@ -73,12 +79,20 @@ require_text "$AUTH_QML" 'PamContext {' \
     'lock authentication does not use PamContext'
 require_text "$AUTH_QML" 'config: "login"' \
     'lock authentication does not use the verified default login PAM stack'
+require_text "$AUTH_QML" 'readonly property bool responseRequired: pam.responseRequired' \
+    'lock authentication does not expose active PAM response demand to the input surface'
+require_text "$AUTH_QML" 'if (pam.active) {' \
+    'lock authentication does not distinguish later responses in an active PAM conversation'
+require_text "$AUTH_QML" 'if (!pam.responseRequired)' \
+    'lock authentication can respond while PAM is active but not requesting input'
 require_text "$AUTH_QML" 'pam.start()' \
     'lock authentication never starts PAM'
 require_text "$AUTH_QML" 'pam.respond(pendingResponse)' \
     'lock authentication does not answer PAM in process memory'
 require_text "$AUTH_QML" 'pendingResponse = ""' \
     'lock authentication does not clear the pending response'
+require_text "$AUTH_QML" 'root.statusText = pam.message' \
+    'later PAM prompts are not surfaced to the lock UI'
 require_text "$AUTH_QML" 'PamResult.Success' \
     'lock authentication does not gate success on PAM success'
 reject_text "$AUTH_QML" 'Process {' \
