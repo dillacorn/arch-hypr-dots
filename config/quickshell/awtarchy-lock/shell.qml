@@ -13,7 +13,7 @@ ShellRoot {
     property bool unlockRequested: false
     readonly property string statePath: (Quickshell.env("XDG_CACHE_HOME")
         || (Quickshell.env("HOME") + "/.cache")) + "/awtarchy/quickshell-state.json"
-    property string lockAnimationPreference: "random"
+    property string lockAnimationPreference: "split"
     property int randomFormationMode: Math.floor(Math.random() * 4)
     readonly property var allowedAnimationPreferences: [
         "random", "swarm", "edges", "center", "split", "off"
@@ -21,22 +21,22 @@ ShellRoot {
 
     function normalizedAnimationPreference(value) {
         const key = String(value || "");
-        return allowedAnimationPreferences.indexOf(key) >= 0 ? key : "random";
+        return allowedAnimationPreferences.indexOf(key) >= 0 ? key : "split";
     }
 
     function loadAnimationPreference() {
         const text = stateFile.text();
         if (!text || text.length === 0) {
-            lockAnimationPreference = "random";
+            lockAnimationPreference = "split";
             return;
         }
 
         try {
             const parsed = JSON.parse(text);
             lockAnimationPreference = normalizedAnimationPreference(
-                parsed && typeof parsed === "object" ? parsed.lockscreen_animation : "random");
+                parsed && typeof parsed === "object" ? parsed.lockscreen_animation : "split");
         } catch (error) {
-            lockAnimationPreference = "random";
+            lockAnimationPreference = "split";
         }
     }
 

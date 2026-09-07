@@ -189,9 +189,9 @@ WlSessionLockSurface {
                                     * (root.formationMode === 3 ? 150 : 240) * root.uiScale
                                 readonly property real curveY: (randomD - 0.5)
                                     * (root.formationMode === 2 ? 100 : 170) * root.uiScale
-                                readonly property int formationDelay: Math.floor(Math.random() * 451)
-                                readonly property int formationDuration: 2300
-                                    + Math.floor(Math.random() * 451)
+                                readonly property int formationDelay: Math.floor(Math.random() * 301)
+                                readonly property int formationDuration: 1700
+                                    + Math.floor(Math.random() * 351)
                                 property real formationProgress:
                                     root.animationPreference === "off" ? 1 : 0
 

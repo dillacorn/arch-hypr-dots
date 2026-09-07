@@ -340,7 +340,7 @@ Singleton {
         return ({
             enabled: true,
             update_notifications_enabled: true,
-            lockscreen_animation: "random",
+            lockscreen_animation: "split",
             monitors: {},
             launcher_sizes: {},
             clipboard_views: {},
@@ -596,12 +596,12 @@ Singleton {
     }
 
     function lockscreenAnimationPreference() {
-        const value = String(data().lockscreen_animation || "random");
+        const value = String(data().lockscreen_animation || "split");
         for (const preset of lockscreenAnimationPresets) {
             if (preset.key === value)
                 return value;
         }
-        return "random";
+        return "split";
     }
 
     function updateNotificationsEnabled() {
