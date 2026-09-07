@@ -6,6 +6,8 @@ export LC_ALL=C.UTF-8
 
 CONFIG_NAME="awtarchy-lock"
 QS_BIN="${QS_BIN:-qs}"
+SYSTEMCTL_BIN="${SYSTEMCTL_BIN:-systemctl}"
+LOGINCTL_BIN="${LOGINCTL_BIN:-loginctl}"
 POLL_INTERVAL="${AWTARCHY_LOCK_POLL_INTERVAL:-0.05}"
 CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 LOG_DIR="${CACHE_HOME}/awtarchy"
@@ -19,6 +21,8 @@ Commands:
   lock                 Start the dedicated Awtarchy session locker.
   status               Print unlocked, starting, or secure.
   wait-secure [secs]   Wait until the compositor confirms the lock is secure.
+  hibernate            Lock securely, then hibernate.
+  suspend              Lock securely, then suspend.
   stop-test            Stop only a non-secure development lock instance.
 EOF
 }
@@ -119,6 +123,25 @@ wait_secure() {
     return 1
 }
 
+secure_then_power() {
+    local action="$1"
+
+    start_lock || return $?
+    wait_secure 5 || return $?
+
+    case "$action" in
+        hibernate)
+            "$SYSTEMCTL_BIN" hibernate || "$LOGINCTL_BIN" hibernate
+            ;;
+        suspend)
+            "$SYSTEMCTL_BIN" suspend -i
+            ;;
+        *)
+            return 2
+            ;;
+    esac
+}
+
 stop_test() {
     local state response
 
@@ -156,6 +179,14 @@ case "$command_name" in
     wait-secure)
         [[ $# -le 2 ]] || { usage >&2; exit 2; }
         wait_secure "${2:-5}"
+        ;;
+    hibernate)
+        [[ $# -eq 1 ]] || { usage >&2; exit 2; }
+        secure_then_power hibernate
+        ;;
+    suspend)
+        [[ $# -eq 1 ]] || { usage >&2; exit 2; }
+        secure_then_power suspend
         ;;
     stop-test)
         [[ $# -eq 1 ]] || { usage >&2; exit 2; }

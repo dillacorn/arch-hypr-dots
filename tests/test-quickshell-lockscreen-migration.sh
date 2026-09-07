@@ -42,17 +42,18 @@ PY
 [[ -f "$RUNTIME" ]] || fail "missing runtime"
 [[ -f "$RECONCILER" ]] || fail "missing package reconciler"
 
-# This branch still uses Hyprlock in production. The migration plumbing must be
-# dormant until the later production switch actually removes these requirements.
-[[ -f "$HYPRLOCK_CONF" ]] || fail "foundation branch unexpectedly retired hyprlock.conf"
-require_text "$RUNTIME" 'hyprpaper hyprlock hypridle' \
-    'foundation branch unexpectedly removed hyprlock from the installer catalog'
-require_text "$HYPRIDLE" 'lock_cmd = pidof hyprlock || hyprlock' \
-    'foundation branch unexpectedly switched Hypridle'
-require_text "$HYPRLAND" 'hl.bind("SUPER + L", hl.dsp.exec_cmd("hyprlock"), {})' \
-    'foundation branch unexpectedly switched SUPER + L'
-require_text "$POWER_MENU" 'command: "hyprlock"' \
-    'foundation branch unexpectedly switched Power Menu Lock'
+# This target performs the real Hyprlock -> native Quickshell cutover.
+[[ ! -e "$HYPRLOCK_CONF" && ! -L "$HYPRLOCK_CONF" ]] \
+    || fail "cutover target still ships hyprlock.conf"
+if grep -Fq 'hyprpaper hyprlock hypridle' "$RUNTIME"; then
+    fail 'cutover target still catalogs hyprlock'
+fi
+require_text "$HYPRIDLE" 'lock_cmd = ~/.config/hypr/scripts/awtarchy_lock.sh lock' \
+    'cutover target did not switch Hypridle'
+require_text "$HYPRLAND" 'hl.bind("SUPER + L", hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarchy_lock.sh lock"), {})' \
+    'cutover target did not switch SUPER + L'
+require_text "$POWER_MENU" 'command: "~/.config/hypr/scripts/awtarchy_lock.sh lock"' \
+    'cutover target did not switch Power Menu Lock'
 
 # Target-driven retirement is allowed only after the target itself proves that
 # Hyprlock is no longer part of the production configuration.
@@ -66,8 +67,11 @@ require_text "$RUNTIME" 'config/hypr/hyprlock.conf' \
     'retirement gate does not inspect the retired Hyprlock config'
 require_text "$RUNTIME" 'migrate_retired_hyprlock_stage()' \
     'runtime has no Hyprlock retirement stage'
-require_text "$RUNTIME" 'Git testing keeps Hyprlock installed as an emergency lock fallback.' \
-    'Git-testing fallback contract is missing'
+if grep -Fq 'Git testing keeps Hyprlock installed as an emergency lock fallback.' "$RUNTIME"; then
+    fail 'Git testing still suppresses Hyprlock retirement'
+fi
+require_text "$RUNTIME" 'migrate_live_hyprlock_hyprland "$repo_dir"' \
+    'retirement does not migrate a preserved personalized hyprland.lua before package removal'
 require_text "$RUNTIME" 'AWTARCHY_LOCKSCREEN_RETIRE_CONFIRMED=1' \
     'runtime does not explicitly authorize the package retirement helper'
 require_text "$RUNTIME" 'hyprlock.conf.backup.' \

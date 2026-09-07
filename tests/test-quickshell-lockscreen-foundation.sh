@@ -126,14 +126,6 @@ reject_text "$MANAGER" 'pkill' \
 reject_text "$MANAGER" 'CONFIG_NAME="awtarchy"' \
     'lock manager must not target the normal Awtarchy shell'
 
-# Foundation safety boundary: no production entrypoint switches away from Hyprlock
-# until real Hyprland lock/unlock testing has succeeded.
-require_text "$HYPRIDLE" 'lock_cmd = pidof hyprlock || hyprlock' \
-    'foundation slice unexpectedly changed Hypridle lock_cmd'
-require_text "$HYPRLAND" 'hl.bind("SUPER + L", hl.dsp.exec_cmd("hyprlock"), {})' \
-    'foundation slice unexpectedly changed SUPER + L'
-require_text "$POWER_MENU" '{ label: "", text: "Lock (L)", key: "l", command: "hyprlock" }' \
-    'foundation slice unexpectedly changed Power Menu Lock'
 
 # Behavior-test the manager without a compositor or real Quickshell. The fake qs
 # implements only the dedicated awtarchy-lock IPC/start surface used by the

@@ -29,7 +29,7 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # Package defaults
 # ──────────────────────────────────────────────────────────────────────────────
 declare -a PKG_GROUPS=(
-  "Window Management:hyprland hyprpaper hyprlock hypridle hyprpicker hyprsunset quickshell grim satty slurp wl-clipboard cliphist zbar wf-recorder zenity qt5ct qt5-wayland kvantum-qt5 qt6ct qt6-wayland xdg-desktop-portal-hyprland xdg-desktop-portal-gtk libnotify nwg-look"
+  "Window Management:hyprland hyprpaper hypridle hyprpicker hyprsunset quickshell grim satty slurp wl-clipboard cliphist zbar wf-recorder zenity qt5ct qt5-wayland kvantum-qt5 qt6ct qt6-wayland xdg-desktop-portal-hyprland xdg-desktop-portal-gtk libnotify nwg-look"
   "Fonts:woff2-font-awesome otf-font-awesome ttf-dejavu ttf-liberation ttf-noto-nerd noto-fonts-emoji"
   "Themes:papirus-icon-theme materia-gtk-theme xcursor-comix kvantum-theme-materia"
   "Terminal Apps:nano micro fastfetch btop htop curl passt devtools wget git dos2unix brightnessctl ipcalc cmatrix asciiquarium figlet espeak-ng cava man-db man-pages unzip xarchiver ncdu ddcutil scx-scheds scx-tools"
@@ -320,6 +320,45 @@ retired_hyprlock_backup_path() {
   printf '%s\n' "$candidate"
 }
 
+migrate_live_hyprlock_hyprland() {
+  local repo_dir="$1"
+  local helper="${repo_dir}/local/share/awtarchy/awtarchy-lockscreen-hyprland-migrate.py"
+  local live="${HOME_DIR}/.config/hypr/hyprland.lua"
+  local dir="" tmp="" backup="" stamp="" suffix=0
+
+  [[ -e "$live" || -L "$live" ]] || return 0
+  [[ -f "$live" && ! -L "$live" ]] \
+    || die "Live Hyprland config is unavailable or unsafe during Hyprlock retirement: ${live}"
+  grep -Fqi -- hyprlock "$live" || return 0
+  [[ -f "$helper" && ! -L "$helper" ]] \
+    || die "Live Hyprland lockscreen migration helper is unavailable or unsafe: ${helper}"
+
+  dir="$(dirname -- "$live")"
+  tmp="$(run_as_target mktemp --tmpdir="$dir" '.awtarchy-hyprland-lock.tmp.XXXXXX')" \
+    || die "Could not stage the personalized Hyprland lockscreen migration."
+
+  if ! run_as_target python3 "$helper" "$live" "$tmp"; then
+    run_as_target rm -f -- "$tmp" >/dev/null 2>&1 || true
+    die "Personalized hyprland.lua contains an unknown Hyprlock reference; Hyprlock was not retired."
+  fi
+
+  stamp="$(date '+%Y%m%d-%H%M%S')"
+  backup="${live}.backup.${stamp}"
+  while [[ -e "$backup" || -L "$backup" ]]; do
+    ((suffix += 1))
+    backup="${live}.backup.${stamp}.${suffix}"
+  done
+
+  retry_command run_as_target cp -a -- "$live" "$backup" \
+    || die "Could not back up personalized Hyprland config before lockscreen migration."
+  retry_command run_as_target chmod --reference="$live" "$tmp" \
+    || die "Could not preserve personalized Hyprland config permissions during lockscreen migration."
+  retry_command run_as_target mv -f -- "$tmp" "$live" \
+    || die "Could not install the personalized Hyprland lockscreen migration."
+
+  log "Migrated known Hyprlock references in personalized hyprland.lua; backup: ${backup}"
+}
+
 migrate_retired_hyprlock_stage() {
   local repo_dir="$1"
   local reconciler="${repo_dir}/local/share/awtarchy/awtarchy-package-reconcile.sh"
@@ -328,11 +367,7 @@ migrate_retired_hyprlock_stage() {
   local live="${HOME_DIR}/.config/hypr/hyprlock.conf" backup=""
 
   lockscreen_target_retires_hyprlock "$repo_dir" || return 0
-
-  if [[ -n "${TESTING_BRANCH:-}" ]]; then
-    log "Git testing keeps Hyprlock installed as an emergency lock fallback."
-    return 0
-  fi
+  migrate_live_hyprlock_hyprland "$repo_dir"
 
   [[ -f "$reconciler" && ! -L "$reconciler" ]] \
     || die "Lockscreen package migration helper is unavailable or unsafe: ${reconciler}"

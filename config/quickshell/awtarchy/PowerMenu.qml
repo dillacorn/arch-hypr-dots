@@ -12,12 +12,12 @@ Singleton {
 
     // Preserve the existing wlogout layout order and keybinds.
     readonly property var actions: [
-        { label: "", text: "Lock (L)", key: "l", command: "hyprlock" },
-        { label: "", text: "Hibernate (H)", key: "h", command: "hyprlock & sleep 1; systemctl hibernate || loginctl hibernate" },
+        { label: "", text: "Lock (L)", key: "l", command: "~/.config/hypr/scripts/awtarchy_lock.sh lock" },
+        { label: "", text: "Hibernate (H)", key: "h", command: "~/.config/hypr/scripts/awtarchy_lock.sh hibernate" },
         { label: "", text: "Reboot (R)", key: "r", command: "systemctl reboot" },
         { label: "", text: "Shutdown (S)", key: "s", command: "systemctl poweroff" },
         { label: "", text: "Logout (O)", key: "o", command: "loginctl kill-session \"$XDG_SESSION_ID\"" },
-        { label: "", text: "Suspend (Z)", key: "z", command: "hyprlock & sleep 1; systemctl suspend -i" }
+        { label: "", text: "Suspend (Z)", key: "z", command: "~/.config/hypr/scripts/awtarchy_lock.sh suspend" }
     ]
 
     function focusedScreen() {

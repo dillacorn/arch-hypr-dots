@@ -83,7 +83,6 @@ hl.config({
 hl.permission("/usr/bin/grim", "screencopy", "allow")
 hl.permission("/usr/bin/wf-recorder", "screencopy", "allow")
 hl.permission("/usr/bin/hyprpicker", "screencopy", "allow")
-hl.permission("/usr/bin/hyprlock", "screencopy", "allow")
 hl.permission("/usr/(lib|libexec|lib64)/xdg-desktop-portal-hyprland", "screencopy", "allow")
 
 -- plugin (hyprpm)
@@ -711,7 +710,7 @@ hl.bind("SUPER + ALT + CTRL + N", hl.dsp.exec_cmd(hyprsunset_ctl .. " toggle"), 
 -- File managers / system
 hl.bind("SUPER + E", hl.dsp.exec_cmd("pcmanfm-qt"), {})
 hl.bind("SUPER + SHIFT + E", hl.dsp.exec_cmd(yazi), {})
-hl.bind("SUPER + L", hl.dsp.exec_cmd("hyprlock"), {})
+hl.bind("SUPER + L", hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarchy_lock.sh lock"), {})
 hl.bind("SUPER + I", hl.dsp.exec_cmd(hyprpicker), {})
 hl.bind("SUPER + P", hl.dsp.exec_cmd(power_menu), {})
 
@@ -959,7 +958,7 @@ hl.define_submap("noalt", function()
     -- File managers / system in "noalt"
     hl.bind("SUPER + E", hl.dsp.exec_cmd("pcmanfm-qt"), {})
     hl.bind("SUPER + SHIFT + E", hl.dsp.exec_cmd(yazi), {})
-    hl.bind("SUPER + L", hl.dsp.exec_cmd("hyprlock"), {})
+    hl.bind("SUPER + L", hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarchy_lock.sh lock"), {})
     hl.bind("SUPER + I", hl.dsp.exec_cmd(hyprpicker), {})
     hl.bind("SUPER + P", hl.dsp.exec_cmd(power_menu), {})
 

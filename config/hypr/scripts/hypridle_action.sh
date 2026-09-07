@@ -9,6 +9,7 @@ CACHE="${XDG_CACHE_HOME:-$HOME/.cache}"
 
 INHIBITOR_SH="${INHIBITOR_SH:-${CONF}/hypr/scripts/idle_inhibitor_global.sh}"
 SCRIPTS_DIR="${CONF}/hypr/scripts"
+LOCK_MANAGER="${LOCK_MANAGER:-${SCRIPTS_DIR}/awtarchy_lock.sh}"
 QUICKSHELL_RESUME_SCRIPT="${QUICKSHELL_RESUME_SCRIPT:-${SCRIPTS_DIR}/quickshell_resume_recover.sh}"
 LOG_FILE="${HYPRIDLE_ACTION_LOG:-${CACHE}/hypridle/actions.log}"
 
@@ -1336,7 +1337,8 @@ case "$action" in
     prepare-sleep)
         "$INHIBITOR_SH" off >/dev/null 2>&1 || true
         log "sleep transition: inhibitor reset before sleep"
-        exec loginctl lock-session
+        "$LOCK_MANAGER" lock
+        exec "$LOCK_MANAGER" wait-secure 5
         ;;
 
     resume-sleep)
@@ -1453,7 +1455,7 @@ case "$action" in
         ;;
 
     lock)
-        exec loginctl lock-session
+        exec "$LOCK_MANAGER" lock
         ;;
 
     dpms-off)
