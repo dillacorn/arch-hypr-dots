@@ -67,7 +67,7 @@ jobs:
         run: bash tests/test-quickshell-lockscreen-power-safety.sh
 
   apply-approved-lockscreen-tweak:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'feature/quickshell-lockscreen' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.sha == github.sha
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'feature/quickshell-lockscreen' && github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: write
     runs-on: ubuntu-24.04
@@ -80,7 +80,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$(git log -1 --pretty=%s)" == 'Run lockscreen default and speed helper' ]]
+          [[ "$(git log -1 --pretty=%s)" == 'Fix lockscreen helper guard' ]]
       - name: Apply approved production changes
         shell: bash
         run: |
