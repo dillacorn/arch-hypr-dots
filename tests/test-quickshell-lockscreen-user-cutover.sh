@@ -68,7 +68,10 @@ case "$action" in
         fi
         pkg="$1"
         grep -Fxq -- "$pkg" "$state" || exit 1
-        [[ $action == -Qq ]] && printf '%s\n' "$pkg"
+        if [[ $action == -Qq ]]; then
+            printf '%s\n' "$pkg"
+        fi
+        exit 0
         ;;
     -R)
         [[ ${1:-} == --noconfirm ]] && shift
