@@ -1,0 +1,55 @@
+name: Fix solid Awtarchy wordmark spacing
+
+on:
+  push:
+    branches:
+      - feature/quickshell-lockscreen
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.head_commit.message == 'Fix solid wordmark spacing'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: feature/quickshell-lockscreen
+          fetch-depth: 0
+
+      - name: Apply exact Hyprland header spacing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("config/hypr/hyprland.lua")
+          text = path.read_text()
+          marker = "-- github.com/dillacorn/awtarchy/tree/main/config/hypr\n"
+          if marker not in text:
+              raise SystemExit("Hyprland header marker missing")
+
+          _, rest = text.split(marker, 1)
+          header = """--  ▄▄▄      ██     █ ▄▄▄█████ ▄▄▄      ██▀███  ▄████▄  ██  ██ ██   ██
+--  ████▄     █  █  █ █  ██  █ ████▄    ██   ██ ██▀ ▀█  ██  ██  ██  ██
+--  ██  ▀█▄  ██  █  ██   ██    ██  ▀█▄  ██  ▄█  ██    ▄ ██▀▀██   ██ ██
+--  ██▄▄▄▄██ ██  █  ██   ██    ██▄▄▄▄██ ██▀▀█▄  ██▄ ▄██ ██  ██    ▐██
+-- ███    ██  ███████    ██    ██    ██ ██   ██  ████▀  ██  ██    ██
+--              ███                                              ██
+--                                                               ██
+
+"""
+          path.write_text(header + marker + rest)
+          PY
+
+          rm -f .github/workflows/fix-solid-awtarchy-wordmark-spacing.yml
+          git diff --check
+
+      - name: Commit exact spacing
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add config/hypr/hyprland.lua \
+                  .github/workflows/fix-solid-awtarchy-wordmark-spacing.yml
+          git commit -m "Match solid wordmark spacing"
+          git push origin HEAD:feature/quickshell-lockscreen
