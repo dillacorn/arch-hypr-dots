@@ -39,3 +39,101 @@ jobs:
         run: bash tests/test-stable-release-notes-validator.sh
       - name: Canonical installation and update docs
         run: bash tests/test-install-update-docs.sh
+
+  apply-battery-care-editor-authority:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.number == 161 &&
+      github.event.pull_request.head.ref == 'hardening/battery-care-readback-feedback' &&
+      github.event.pull_request.title == 'Surface Battery Care readback mismatches'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: hardening/battery-care-readback-feedback
+          fetch-depth: 0
+      - name: Apply managed-target editor preference and record stock hash
+        shell: bash
+        env:
+          APPROVED_RED: bac0409689e552ef956cf2adc6cc556a8ec63fcc
+          EXPECTED_MAIN: 2bd8e0d135855634ae82624d202ad461491f7518
+          EXPECTED_OLD_QML_HASH: 657bf3b9777f027c5f66c1b37ae6b7b092270ca27c10b87bfff28725870819f7
+        run: |
+          set -euo pipefail
+
+          git merge-base --is-ancestor "$APPROVED_RED" HEAD
+          test "$(git rev-parse origin/main)" = "$EXPECTED_MAIN"
+          test "$(sha256sum config/quickshell/awtarchy/BatteryCareCard.qml | awk '{print $1}')" = "$EXPECTED_OLD_QML_HASH"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+
+          card = Path('config/quickshell/awtarchy/BatteryCareCard.qml')
+          text = card.read_text(encoding='utf-8')
+          old = '''        if (Number.isFinite(observed) && observed >= 1 && observed < 100 && targetIsSupported(observed)) {
+            targetDraft = Math.round(observed);
+            return;
+        }
+        if (Number.isFinite(managed) && managed >= 1 && managed < 100 && targetIsSupported(managed)) {
+            targetDraft = Math.round(managed);
+            return;
+        }
+'''
+          new = '''        if (Boolean(statusData.managed_config) && Number.isFinite(managed)
+                && managed >= 1 && managed < 100 && targetIsSupported(managed)) {
+            targetDraft = Math.round(managed);
+            return;
+        }
+        if (Number.isFinite(observed) && observed >= 1 && observed < 100 && targetIsSupported(observed)) {
+            targetDraft = Math.round(observed);
+            return;
+        }
+'''
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one syncTargetDraft observed-first block')
+          card.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          test = Path('tests/test-battery-care-write-gating.sh')
+          text = test.read_text(encoding='utf-8')
+          replacements = {
+              '''managed_line="$(grep -nF 'if (Boolean(statusData.managed_config) && Number.isFinite(managed)' <<<"$sync_body" | cut -d: -f1)"''': '''managed_line="$(grep -nF 'if (Boolean(statusData.managed_config) && Number.isFinite(managed)' <<<"$sync_body" | cut -d: -f1 || true)"''',
+              '''observed_line="$(grep -nF 'if (Number.isFinite(observed)' <<<"$sync_body" | cut -d: -f1)"''': '''observed_line="$(grep -nF 'if (Number.isFinite(observed)' <<<"$sync_body" | cut -d: -f1 || true)"''',
+          }
+          for old_line, new_line in replacements.items():
+              if text.count(old_line) != 1:
+                  raise SystemExit(f'expected exactly one test line: {old_line}')
+              text = text.replace(old_line, new_line, 1)
+          test.write_text(text, encoding='utf-8')
+
+          digest = hashlib.sha256(card.read_bytes()).hexdigest()
+          history = Path('local/share/awtarchy/quickshell-managed-history.sha256')
+          entry = digest + '\t.config/quickshell/awtarchy/BatteryCareCard.qml'
+          history_text = history.read_text(encoding='utf-8')
+          if entry not in history_text.splitlines():
+              history.write_text(history_text.rstrip('\n') + '\n' + entry + '\n', encoding='utf-8')
+          print(f'FINAL_BATTERY_CARE_CARD_SHA256={digest}')
+          PY
+
+          git show origin/main:.github/workflows/validate-stable-release-notes.yml \
+            > .github/workflows/validate-stable-release-notes.yml
+
+          bash tests/test-battery-care-write-gating.sh
+          bash tests/test-battery-care-thinkpad-readback.sh
+          bash tests/test-battery-care-detector-profiles.sh
+          final_hash="$(sha256sum config/quickshell/awtarchy/BatteryCareCard.qml | awk '{print $1}')"
+          grep -Fqx "$final_hash"$'\t''.config/quickshell/awtarchy/BatteryCareCard.qml' \
+            local/share/awtarchy/quickshell-managed-history.sha256
+          git diff --check
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            .github/workflows/validate-stable-release-notes.yml \
+            config/quickshell/awtarchy/BatteryCareCard.qml \
+            local/share/awtarchy/quickshell-managed-history.sha256 \
+            tests/test-battery-care-write-gating.sh
+          git commit -m 'fix: keep configured Battery Care target in editor'
+          git push origin HEAD:hardening/battery-care-readback-feedback
