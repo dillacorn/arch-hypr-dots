@@ -11,7 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Validate lockscreen foundation
         run: |
+          bash -n config/hypr/scripts/awtarchy_lock.sh
           bash -n tests/test-quickshell-lockscreen-foundation.sh
+          shellcheck config/hypr/scripts/awtarchy_lock.sh
+          shellcheck tests/test-quickshell-lockscreen-foundation.sh
           bash tests/test-quickshell-lockscreen-foundation.sh
