@@ -891,3 +891,6 @@ cb366d4c05fb2e7284c59e36452a396b1636b6ed30421fa6c811b2c163f04bb5	.config/quicksh
 b8dfe1f2a98e90ea32acea3a9cf5ab371c50f1230ca11e1ad7e42f6f717d132f	.config/quickshell/awtarchy/BarState.qml
 f7a1a210a1f1fff43aad7e6f429accd16ab551139db3267d91c6c773a05080ed	.config/quickshell/awtarchy-lock/shell.qml
 054b17fd5938dcdc7d6aec5e8f34964bcaa69764b1a099d177980502f19b82a4	.config/quickshell/awtarchy-lock/LockSurface.qml
+
+# 2026-09-07 multi-monitor power menu shade.
+c6056cd69256ec44eea3bda7c54e798be7894239b2558d44218104ca87988171	.config/quickshell/awtarchy/PowerMenu.qml
