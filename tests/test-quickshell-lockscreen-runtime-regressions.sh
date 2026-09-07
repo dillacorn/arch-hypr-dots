@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 SHELL_QML="${ROOT}/config/quickshell/awtarchy-lock/shell.qml"
 SURFACE_QML="${ROOT}/config/quickshell/awtarchy-lock/LockSurface.qml"
+HYPRLAND_LUA="${ROOT}/config/hypr/hyprland.lua"
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
@@ -33,26 +34,30 @@ reject_text "$SHELL_QML" 'auth: auth' \
     'lock surface still self-binds auth and loses the authentication object'
 
 # Approved minimal lockscreen: large Awtarchy ASCII wordmark, no conventional
-# lockscreen metadata, and uniform password blocks. The seven wordmark rows are
-# pinned because the user-approved glyph shapes and descenders are deliberate.
+# lockscreen metadata, and uniform password blocks. The seven solid-block rows
+# are shared with the Hyprland header so both representations stay identical.
 reject_text "$SURFACE_QML" '/fastfetch/ascii/awtarchy.txt' \
     'lockscreen still loads the Fastfetch ASCII mark'
 reject_text "$SURFACE_QML" 'id: logoFile' \
     'lockscreen still owns the removed Fastfetch FileView'
-require_text "$SURFACE_QML" '▄▄▄      ██     █ ▄▄▄█████ ▄▄▄      ██▀███  ▄████▄  ██  ██ ██   ██' \
-    'lockscreen does not use the approved first wordmark row'
-require_text "$SURFACE_QML" '████▄     █  █  █ ▓  ██  ▓ ████▄    ██   ██ ██▀ ▀█  ██  ██  ██  ██' \
-    'lockscreen does not use the approved second wordmark row'
-require_text "$SURFACE_QML" '██  ▀█▄  ██  █  ██   ██    ██  ▀█▄  ██  ▄█  ▓█    ▄ ██▀▀██   ██ ██' \
-    'lockscreen does not use the approved third wordmark row'
-require_text "$SURFACE_QML" '██▄▄▄▄██ ██  █  ██   ██    ██▄▄▄▄██ ██▀▀█▄  ▓▓▄ ▄██ ▓█  ██    ▐██' \
-    'lockscreen does not use the approved fourth wordmark row'
-require_text "$SURFACE_QML" '▓▓█    ██  ███▓███    ██    ▓█    ██ ██   ██  ▓███▀  ▓█  ██    ██' \
-    'lockscreen does not use the approved fifth wordmark row'
-require_text "$SURFACE_QML" '             ▓▓▓                                              ██' \
-    'lockscreen does not use the approved W/Y descender row'
-require_text "$SURFACE_QML" '                                                              ██' \
-    'lockscreen does not use the approved final Y descender row'
+
+WORDMARK_ROWS=(
+    '▄▄▄      ██     █ ▄▄▄█████ ▄▄▄      ██▀███  ▄████▄  ██  ██ ██   ██'
+    '████▄     █  █  █ █  ██  █ ████▄    ██   ██ ██▀ ▀█  ██  ██  ██  ██'
+    '██  ▀█▄  ██  █  ██   ██    ██  ▀█▄  ██  ▄█  ██    ▄ ██▀▀██   ██ ██'
+    '██▄▄▄▄██ ██  █  ██   ██    ██▄▄▄▄██ ██▀▀█▄  ██▄ ▄██ ██  ██    ▐██'
+    '███    ██  ███████    ██    ██    ██ ██   ██  ████▀  ██  ██    ██'
+    '             ███                                              ██'
+    '                                                              ██'
+)
+
+for row in "${WORDMARK_ROWS[@]}"; do
+    require_text "$SURFACE_QML" "$row" \
+        'lockscreen does not use the approved solid-block Awtarchy wordmark'
+    require_text "$HYPRLAND_LUA" "$row" \
+        'Hyprland header does not match the approved solid-block Awtarchy wordmark'
+done
+
 reject_text "$SURFACE_QML" 'text: "── AWTARCHY ──"' \
     'lockscreen still uses the old tiny Awtarchy heading'
 reject_text "$SURFACE_QML" 'property string timeText' \
