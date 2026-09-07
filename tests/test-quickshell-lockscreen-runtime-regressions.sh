@@ -36,7 +36,7 @@ reject_text "$SHELL_QML" 'auth: auth' \
 # Approved minimal lockscreen: large Awtarchy ASCII wordmark, no conventional
 # lockscreen metadata, and uniform password blocks. The exact seven solid-block
 # rows, including their intentional leading spaces, are shared with the Hyprland
-# header so both representations stay visually identical.
+# header so both representations remain visually identical.
 reject_text "$SURFACE_QML" '/fastfetch/ascii/awtarchy.txt' \
     'lockscreen still loads the Fastfetch ASCII mark'
 reject_text "$SURFACE_QML" 'id: logoFile' \
