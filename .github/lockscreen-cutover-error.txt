@@ -1,1 +1,10 @@
-config/hypr/hyprland.lua: expected exactly one match, found 2: 'hl.bind("SUPER + L", hl.dsp.exec_cmd("hyprlock"), {})'
+PASS: native Quickshell lockscreen foundation contracts
+PASS: lock manager is executable
+PASS: lockscreen install and Git-testing deployment contracts
+PASS: lockscreen automatic source reloads are disabled
+PASS: Quickshell lockscreen install/update migration contracts
+PASS: lockscreen migration target validation fails closed.
+PASS: native Quickshell lockscreen production cutover contracts
+PASS: personalized live Hyprland Hyprlock migration
+Flyout toggle debounce, fade, and blur lifecycle regression test passed.
+FAIL: managed history is missing current stock hash for config/quickshell/awtarchy/Bar.qml: b599b944b0ec9042dbbb7d12f11e3ae8afed29ee3b1862916cda40be5c976318	.config/quickshell/awtarchy/Bar.qml
