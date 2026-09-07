@@ -34,18 +34,19 @@ reject_text "$SHELL_QML" 'auth: auth' \
     'lock surface still self-binds auth and loses the authentication object'
 
 # Approved minimal lockscreen: large Awtarchy ASCII wordmark, no conventional
-# lockscreen metadata, and uniform password blocks. The seven solid-block rows
-# are shared with the Hyprland header so both representations stay identical.
+# lockscreen metadata, and uniform password blocks. The exact seven solid-block
+# rows, including their intentional leading spaces, are shared with the Hyprland
+# header so both representations stay visually identical.
 reject_text "$SURFACE_QML" '/fastfetch/ascii/awtarchy.txt' \
     'lockscreen still loads the Fastfetch ASCII mark'
 reject_text "$SURFACE_QML" 'id: logoFile' \
     'lockscreen still owns the removed Fastfetch FileView'
 
 WORDMARK_ROWS=(
-    '▄▄▄      ██     █ ▄▄▄█████ ▄▄▄      ██▀███  ▄████▄  ██  ██ ██   ██'
-    '████▄     █  █  █ █  ██  █ ████▄    ██   ██ ██▀ ▀█  ██  ██  ██  ██'
-    '██  ▀█▄  ██  █  ██   ██    ██  ▀█▄  ██  ▄█  ██    ▄ ██▀▀██   ██ ██'
-    '██▄▄▄▄██ ██  █  ██   ██    ██▄▄▄▄██ ██▀▀█▄  ██▄ ▄██ ██  ██    ▐██'
+    ' ▄▄▄      ██     █ ▄▄▄█████ ▄▄▄      ██▀███  ▄████▄  ██  ██ ██   ██'
+    ' ████▄     █  █  █ █  ██  █ ████▄    ██   ██ ██▀ ▀█  ██  ██  ██  ██'
+    ' ██  ▀█▄  ██  █  ██   ██    ██  ▀█▄  ██  ▄█  ██    ▄ ██▀▀██   ██ ██'
+    ' ██▄▄▄▄██ ██  █  ██   ██    ██▄▄▄▄██ ██▀▀█▄  ██▄ ▄██ ██  ██    ▐██'
     '███    ██  ███████    ██    ██    ██ ██   ██  ████▀  ██  ██    ██'
     '             ███                                              ██'
     '                                                              ██'
@@ -54,8 +55,14 @@ WORDMARK_ROWS=(
 for row in "${WORDMARK_ROWS[@]}"; do
     require_text "$SURFACE_QML" "$row" \
         'lockscreen does not use the approved solid-block Awtarchy wordmark'
-    require_text "$HYPRLAND_LUA" "$row" \
-        'Hyprland header does not match the approved solid-block Awtarchy wordmark'
+done
+
+mapfile -t hypr_header < <(head -n 7 "$HYPRLAND_LUA")
+[[ ${#hypr_header[@]} -eq ${#WORDMARK_ROWS[@]} ]] \
+    || fail 'Hyprland header does not contain all seven Awtarchy wordmark rows'
+for i in "${!WORDMARK_ROWS[@]}"; do
+    [[ ${hypr_header[$i]} == "-- ${WORDMARK_ROWS[$i]}" ]] \
+        || fail 'Hyprland header does not exactly match the approved solid-block Awtarchy wordmark'
 done
 
 reject_text "$SURFACE_QML" 'text: "── AWTARCHY ──"' \
