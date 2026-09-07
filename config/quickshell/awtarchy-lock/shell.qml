@@ -11,6 +11,8 @@ ShellRoot {
 
     property bool unlockRequested: false
 
+    Component.onCompleted: Quickshell.watchFiles = false
+
     LockTheme {
         id: lockTheme
     }
