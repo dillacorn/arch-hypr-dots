@@ -1,0 +1,71 @@
+name: Apply solid Awtarchy wordmark
+
+on:
+  push:
+    branches:
+      - feature/quickshell-lockscreen
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.head_commit.message == 'Apply solid wordmark bridge'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: feature/quickshell-lockscreen
+          fetch-depth: 0
+
+      - name: Apply exact solid-block wordmark
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          rows = [
+              "▄▄▄      ██     █ ▄▄▄█████ ▄▄▄      ██▀███  ▄████▄  ██  ██ ██   ██",
+              "████▄     █  █  █ █  ██  █ ████▄    ██   ██ ██▀ ▀█  ██  ██  ██  ██",
+              "██  ▀█▄  ██  █  ██   ██    ██  ▀█▄  ██  ▄█  ██    ▄ ██▀▀██   ██ ██",
+              "██▄▄▄▄██ ██  █  ██   ██    ██▄▄▄▄██ ██▀▀█▄  ██▄ ▄██ ██  ██    ▐██",
+              "███    ██  ███████    ██    ██    ██ ██   ██  ████▀  ██  ██    ██",
+              "             ███                                              ██",
+              "                                                              ██",
+          ]
+
+          surface = Path("config/quickshell/awtarchy-lock/LockSurface.qml")
+          text = surface.read_text()
+          if "▓" not in text:
+              raise SystemExit("expected shaded-block lockscreen wordmark was not found")
+          text = text.replace("▓", "█")
+          for row in rows:
+              if row not in text:
+                  raise SystemExit(f"solid lockscreen row missing: {row!r}")
+          surface.write_text(text)
+
+          hypr = Path("config/hypr/hyprland.lua")
+          text = hypr.read_text()
+          marker = "-- github.com/dillacorn/awtarchy/tree/main/config/hypr\n"
+          if marker not in text:
+              raise SystemExit("Hyprland header marker missing")
+          _, rest = text.split(marker, 1)
+          header = "\n".join("-- " + row for row in rows) + "\n\n"
+          hypr.write_text(header + marker + rest)
+
+          for row in rows:
+              if row not in hypr.read_text():
+                  raise SystemExit(f"solid Hyprland row missing: {row!r}")
+          PY
+
+          rm -f .github/workflows/apply-solid-awtarchy-wordmark.yml
+          git diff --check
+
+      - name: Commit exact wordmark
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add config/quickshell/awtarchy-lock/LockSurface.qml \
+                  config/hypr/hyprland.lua \
+                  .github/workflows/apply-solid-awtarchy-wordmark.yml
+          git commit -m "Use solid Awtarchy wordmark"
+          git push origin HEAD:feature/quickshell-lockscreen
