@@ -226,7 +226,28 @@ Rectangle {
         return String(statusData.detail || "");
     }
 
+    function targetReadbackDiffers() {
+        if (!Boolean(statusData.managed_config) || mixedStopThresholds)
+            return false;
+        const configured = Number(statusData.managed_target);
+        const reported = Number(statusData.target);
+        return Number.isFinite(configured) && Number.isFinite(reported)
+            && Math.round(configured) !== Math.round(reported);
+    }
+
+    function targetReadbackDetail() {
+        return targetReadbackDiffers()
+            ? "TLP accepted the configured target, but the reported hardware value differs."
+            : "";
+    }
+
     function currentThresholdText() {
+        if (targetReadbackDiffers()) {
+            const configured = Math.round(Number(statusData.managed_target));
+            const reported = Math.round(Number(statusData.target));
+            return "Configured: " + configured + "% · reported: " + reported + "%";
+        }
+
         if (!mixedStopThresholds && statusData.target !== null && statusData.target !== undefined) {
             const target = Number(statusData.target);
             if (Number.isFinite(target))
@@ -531,6 +552,16 @@ Rectangle {
             color: Theme.foreground
             font.family: Theme.fontFamily
             font.pixelSize: root.scaledText(9)
+            wrapMode: Text.Wrap
+        }
+
+        Text {
+            Layout.fillWidth: true
+            visible: root.targetReadbackDetail().length > 0
+            text: root.targetReadbackDetail()
+            color: Theme.muted
+            font.family: Theme.fontFamily
+            font.pixelSize: root.scaledText(8)
             wrapMode: Text.Wrap
         }
 
