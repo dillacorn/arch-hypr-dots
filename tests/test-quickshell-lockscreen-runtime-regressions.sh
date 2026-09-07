@@ -32,25 +32,27 @@ require_text "$SHELL_QML" 'auth: lockAuth' \
 reject_text "$SHELL_QML" 'auth: auth' \
     'lock surface still self-binds auth and loses the authentication object'
 
-# Approved minimal lockscreen: large Option-B ASCII wordmark, no conventional
-# lockscreen metadata, and uniform password blocks. The wordmark rows are pinned
-# because the R/C/H/Y glyph spacing and Y tail are deliberate visual details.
+# Approved minimal lockscreen: large Awtarchy ASCII wordmark, no conventional
+# lockscreen metadata, and uniform password blocks. The seven wordmark rows are
+# pinned because the user-approved glyph shapes and descenders are deliberate.
 reject_text "$SURFACE_QML" '/fastfetch/ascii/awtarchy.txt' \
     'lockscreen still loads the Fastfetch ASCII mark'
 reject_text "$SURFACE_QML" 'id: logoFile' \
     'lockscreen still owns the removed Fastfetch FileView'
-require_text "$SURFACE_QML" '▄▄▄· ▄▄▌ ▐ ▄▌▄▄▄▄▄ ▄▄▄· ▄▄▄  ▄███ █▄ ▄█  ▄· ▄▌' \
+require_text "$SURFACE_QML" '▄▄▄      ██     █ ▄▄▄█████ ▄▄▄      ██▀███  ▄████▄  ██  ██ ██   ██' \
     'lockscreen does not use the approved first wordmark row'
-require_text "$SURFACE_QML" '▐█ ▀█ ██· █▌▐█•██  ▐█ ▀█ ▀▄ █·▐█    ██ ██ ▐█▪██▌' \
+require_text "$SURFACE_QML" '████▄     █  █  █ ▓  ██  ▓ ████▄    ██   ██ ██▀ ▀█  ██  ██  ██  ██' \
     'lockscreen does not use the approved second wordmark row'
-require_text "$SURFACE_QML" '▄█▀▀█ ██▪▐█▐▐▌ ▐█.▪▄█▀▀█ ▐▀▀▄ ██    █████  ▀██▀' \
+require_text "$SURFACE_QML" '██  ▀█▄  ██  █  ██   ██    ██  ▀█▄  ██  ▄█  ▓█    ▄ ██▀▀██   ██ ██' \
     'lockscreen does not use the approved third wordmark row'
-require_text "$SURFACE_QML" '▐█ ▪▐▌▐█▌██▐█▌ ▐█▌·▐█ ▪▐▌▐█•█▌▐█    ██ ██   ▐█' \
+require_text "$SURFACE_QML" '██▄▄▄▄██ ██  █  ██   ██    ██▄▄▄▄██ ██▀▀█▄  ▓▓▄ ▄██ ▓█  ██    ▐██' \
     'lockscreen does not use the approved fourth wordmark row'
-require_text "$SURFACE_QML" '▀  ▀  ▀▀▀▀ ▀▪ ▀▀▀  ▀  ▀ .▀  ▀ ▀███ ▀   ▀   █' \
+require_text "$SURFACE_QML" '▓▓█    ██  ███▓███    ██    ▓█    ██ ██   ██  ▓███▀  ▓█  ██    ██' \
     'lockscreen does not use the approved fifth wordmark row'
-require_text "$SURFACE_QML" '                                               ▀' \
-    'lockscreen does not use the approved clean Y tail'
+require_text "$SURFACE_QML" '             ▓▓▓                                              ██' \
+    'lockscreen does not use the approved W/Y descender row'
+require_text "$SURFACE_QML" '                                                              ██' \
+    'lockscreen does not use the approved final Y descender row'
 reject_text "$SURFACE_QML" 'text: "── AWTARCHY ──"' \
     'lockscreen still uses the old tiny Awtarchy heading'
 reject_text "$SURFACE_QML" 'property string timeText' \
