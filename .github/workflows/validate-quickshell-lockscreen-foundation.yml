@@ -80,7 +80,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$(git log -1 --pretty=%s)" == 'Fix lockscreen helper guard' ]]
+          [[ "$(git log -1 --pretty=%s)" == 'Match lockscreen production bytes' ]]
       - name: Apply approved production changes
         shell: bash
         run: |
@@ -103,56 +103,59 @@ jobs:
           def digest(path):
               return hashlib.sha256(path.read_bytes()).hexdigest()
 
+          def replace_once(text, old, new, label):
+              if text.count(old) != 1:
+                  raise SystemExit(f'unexpected match count for {label}: {text.count(old)}')
+              return text.replace(old, new, 1)
+
           before = [(digest(path), rel) for path, rel in managed.items()]
 
           text = bar.read_text(encoding='utf-8')
-          old = '''    function lockscreenAnimationPreference() {
-              const value = String(data().lockscreen_animation || "random");
-              for (const preset of lockscreenAnimationPresets) {
-                  if (preset.key === value)
-                      return value;
-              }
-              return "random";
-          }'''
-          new = '''    function lockscreenAnimationPreference() {
-              const value = String(data().lockscreen_animation || "split");
-              for (const preset of lockscreenAnimationPresets) {
-                  if (preset.key === value)
-                      return value;
-              }
-              return "split";
-          }'''
-          if text.count('            lockscreen_animation: "random",') != 1:
-              raise SystemExit('unexpected BarState stock default count')
-          if text.count(old) != 1:
-              raise SystemExit('expected BarState preference block not found exactly once')
-          text = text.replace('            lockscreen_animation: "random",', '            lockscreen_animation: "split",', 1)
-          text = text.replace(old, new, 1)
+          text = replace_once(text,
+              'lockscreen_animation: "random",',
+              'lockscreen_animation: "split",',
+              'BarState stock default')
+          text = replace_once(text,
+              'const value = String(data().lockscreen_animation || "random");',
+              'const value = String(data().lockscreen_animation || "split");',
+              'BarState missing-state fallback')
+          text = replace_once(text,
+              'return "random";',
+              'return "split";',
+              'BarState invalid-state fallback')
           bar.write_text(text, encoding='utf-8')
 
           text = shell.read_text(encoding='utf-8')
-          replacements = [
-              ('property string lockAnimationPreference: "random"', 'property string lockAnimationPreference: "split"', 1),
-              ('return allowedAnimationPreferences.indexOf(key) >= 0 ? key : "random";', 'return allowedAnimationPreferences.indexOf(key) >= 0 ? key : "split";', 1),
-              ('lockAnimationPreference = "random";', 'lockAnimationPreference = "split";', 2),
-              ('parsed && typeof parsed === "object" ? parsed.lockscreen_animation : "random"', 'parsed && typeof parsed === "object" ? parsed.lockscreen_animation : "split"', 1),
-          ]
-          for old_text, new_text, expected in replacements:
-              if text.count(old_text) != expected:
-                  raise SystemExit(f'unexpected shell match count for: {old_text}')
-              text = text.replace(old_text, new_text)
+          text = replace_once(text,
+              'property string lockAnimationPreference: "random"',
+              'property string lockAnimationPreference: "split"',
+              'lock shell default')
+          text = replace_once(text,
+              'return allowedAnimationPreferences.indexOf(key) >= 0 ? key : "random";',
+              'return allowedAnimationPreferences.indexOf(key) >= 0 ? key : "split";',
+              'lock shell invalid-state fallback')
+          if text.count('lockAnimationPreference = "random";') != 2:
+              raise SystemExit('unexpected missing/malformed fallback count')
+          text = text.replace('lockAnimationPreference = "random";', 'lockAnimationPreference = "split";')
+          text = replace_once(text,
+              'parsed && typeof parsed === "object" ? parsed.lockscreen_animation : "random"',
+              'parsed && typeof parsed === "object" ? parsed.lockscreen_animation : "split"',
+              'lock shell non-object fallback')
           shell.write_text(text, encoding='utf-8')
 
           text = surface.read_text(encoding='utf-8')
-          surface_replacements = [
-              ('readonly property int formationDelay: Math.floor(Math.random() * 451)', 'readonly property int formationDelay: Math.floor(Math.random() * 301)'),
-              ('readonly property int formationDuration: 2300', 'readonly property int formationDuration: 1700'),
-              ('+ Math.floor(Math.random() * 451)', '+ Math.floor(Math.random() * 351)'),
-          ]
-          for old_text, new_text in surface_replacements:
-              if text.count(old_text) != 1:
-                  raise SystemExit(f'unexpected LockSurface match count for: {old_text}')
-              text = text.replace(old_text, new_text, 1)
+          text = replace_once(text,
+              'readonly property int formationDelay: Math.floor(Math.random() * 451)',
+              'readonly property int formationDelay: Math.floor(Math.random() * 301)',
+              'formation delay')
+          text = replace_once(text,
+              'readonly property int formationDuration: 2300',
+              'readonly property int formationDuration: 1700',
+              'formation duration')
+          text = replace_once(text,
+              '+ Math.floor(Math.random() * 451)',
+              '+ Math.floor(Math.random() * 351)',
+              'formation duration variance')
           surface.write_text(text, encoding='utf-8')
 
           after = [(digest(path), rel) for path, rel in managed.items()]
