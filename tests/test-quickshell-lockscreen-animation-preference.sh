@@ -68,12 +68,16 @@ require_text "$QUICK_SETTINGS" '"set-lockscreen-animation", String(modelData.key
     'Lockscreen Animation control does not persist the selected choice'
 
 # The dedicated lock process reads the shared state itself at startup. It must
-# fail closed to the visual default Random when the file/value is unavailable or
-# invalid, and choose one random family once per lock so all monitors agree.
+# fall back to stock Random when the file/value is unavailable, malformed, or
+# unknown, and choose one random family once per lock so all monitors agree.
 require_text "$SHELL_QML" 'blockLoading: true' \
     'lock shell does not synchronously read animation preference before surfaces start'
 require_text "$SHELL_QML" 'property string lockAnimationPreference: "random"' \
     'lock shell default animation preference is not Random'
+require_text "$SHELL_QML" 'return allowedAnimationPreferences.indexOf(key) >= 0 ? key : "random";' \
+    'lock shell does not normalize unknown animation preferences back to Random'
+require_text "$SHELL_QML" 'catch (error) {' \
+    'lock shell does not guard malformed animation preference state'
 require_text "$SHELL_QML" 'property int randomFormationMode: Math.floor(Math.random() * 4)' \
     'lock shell does not choose one random family per lock'
 require_text "$SHELL_QML" 'animationPreference: root.lockAnimationPreference' \
