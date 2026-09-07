@@ -875,3 +875,4 @@ f9a373581ddb471d5bdafe26abdd9cf07ad7a2d1cc8a2177cb8d69d0ed31be72	.config/hypr/sc
 
 # 2026-09-06 generic TLP stop-only logical readback.
 1b76cc179a1f3aa13a98fad6abc566bf88dbde3b26e905fbc86196d0d8a1b93a	.config/hypr/scripts/quickshell_battery_care.sh
+657bf3b9777f027c5f66c1b37ae6b7b092270ca27c10b87bfff28725870819f7	.config/quickshell/awtarchy/BatteryCareCard.qml
