@@ -1,0 +1,1 @@
+config/hypr/hyprland.lua: expected exactly one match, found 2: 'hl.bind("SUPER + L", hl.dsp.exec_cmd("hyprlock"), {})'
