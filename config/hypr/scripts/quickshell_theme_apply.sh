@@ -56,6 +56,10 @@ critical="$(theme_value QS_CRITICAL '#ff5555')"
 foreground="$(theme_value QS_FOREGROUND '#d0d0d0')"
 dark="$(theme_value QS_DARK '#1a1a1a')"
 muted="$(theme_value QS_MUTED "$hover")"
+lock_accent="$foreground"
+if [[ $active_border =~ ^[[:xdigit:]]{8}$ ]]; then
+    lock_accent="#${active_border:0:6}"
+fi
 
 micro_scheme="$(theme_value MICRO_COLORSCHEME 'geany')"
 alacritty_theme="$(theme_value ALACRITTY_THEME 'wombat.toml')"
@@ -146,7 +150,8 @@ fi
 mkdir -p "$(dirname "$QS_THEME")" "$STATE_DIR"
 python3 - "$QS_THEME" \
     "$background" "$hover" "$focus" "$active" "$urgent" \
-    "$charging" "$critical" "$foreground" "$dark" "$muted" <<'PY'
+    "$charging" "$critical" "$foreground" "$dark" "$muted" \
+    "$lock_accent" <<'PY'
 import json
 import os
 import sys
@@ -156,6 +161,7 @@ path = sys.argv[1]
 keys = (
     "background", "hover", "focus", "active", "urgent",
     "charging", "critical", "foreground", "dark", "muted",
+    "lockAccent",
 )
 data = dict(zip(keys, sys.argv[2:]))
 fd, tmp = tempfile.mkstemp(prefix="theme.", suffix=".json", dir=os.path.dirname(path))
