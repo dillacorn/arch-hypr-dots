@@ -1,0 +1,44 @@
+name: Apply Lockscreen Fail-Closed Patch
+
+on:
+  push:
+    branches: [feature/quickshell-lockscreen]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Apply exact fail-closed patch
+        run: |
+          python3 -m py_compile .github/scripts/apply-lockscreen-failclosed-patch.py
+          python3 .github/scripts/apply-lockscreen-failclosed-patch.py
+      - name: Validate before commit
+        run: |
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n local/share/awtarchy/awtarchy-package-reconcile.sh
+          bash -n tests/test-quickshell-lockscreen-migration.sh
+          bash -n tests/test-quickshell-lockscreen-migration-failclosed.sh
+          bash tests/test-quickshell-lockscreen-migration.sh
+          bash tests/test-quickshell-lockscreen-migration-failclosed.sh
+          bash tests/test-package-reconciler.sh
+          bash tests/test-cheese-snapshot-migration.sh
+          bash tests/test-current-package-catalog.sh
+          git diff --check
+      - name: Commit validated fix and remove temporary machinery
+        run: |
+          rm -f -- .github/scripts/apply-lockscreen-failclosed-patch.py
+          rm -f -- .github/workflows/apply-lockscreen-failclosed-patch.yml
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && exit 1
+          git commit -m 'Fail closed during Hyprlock retirement checks'
+          git push origin HEAD:feature/quickshell-lockscreen
