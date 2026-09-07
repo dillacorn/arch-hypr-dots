@@ -76,14 +76,18 @@ require_text "$RUNTIME" 'hyprlock.conf.backup.' \
 # Installer retirement happens only after the normal config/package setup. Stable
 # updater retirement happens after rollback-capable legacy cleanup and before the
 # new baseline is committed. Current target gating keeps both calls as no-ops.
+# The expansion syntax below is intentionally matched as literal shell source.
+# shellcheck disable=SC2016
 require_order "$RUNTIME" \
     '  remove_legacy_shell_packages_stage' \
     '  migrate_retired_hyprlock_stage "$REPO_DIR"' \
     'installer Hyprlock retirement is not ordered after normal shell cleanup'
+# shellcheck disable=SC2016
 require_order "$RUNTIME" \
     '  remove_quickshell_update_legacy_packages' \
     '  migrate_retired_hyprlock_stage "$repo_dir"' \
     'stable updater Hyprlock retirement is not ordered after rollback-capable cleanup'
+# shellcheck disable=SC2016
 require_order "$RUNTIME" \
     '  migrate_retired_hyprlock_stage "$repo_dir"' \
     '  commit_baseline "$target_home" "$source_label" "$active_theme"' \
