@@ -8,5 +8,6 @@
   "critical": "#ff5555",
   "foreground": "#d0d0d0",
   "dark": "#1a1a1a",
-  "muted": "#4a4a4a"
+  "muted": "#4a4a4a",
+  "lockAccent": "#a0a0a0"
 }
