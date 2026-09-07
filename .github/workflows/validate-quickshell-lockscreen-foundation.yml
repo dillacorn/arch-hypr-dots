@@ -17,6 +17,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Validate lockscreen foundation
         run: |
+          python3 -m py_compile local/share/awtarchy/awtarchy-lockscreen-hyprland-migrate.py
           bash -n config/hypr/scripts/awtarchy_lock.sh
           bash -n local/share/awtarchy/awtarchy-runtime.sh
           bash -n local/share/awtarchy/awtarchy-package-reconcile.sh
@@ -27,6 +28,7 @@ jobs:
           bash -n tests/test-quickshell-lockscreen-migration.sh
           bash -n tests/test-quickshell-lockscreen-migration-failclosed.sh
           bash -n tests/test-quickshell-lockscreen-cutover.sh
+          bash -n tests/test-quickshell-lockscreen-live-hyprland-migration.sh
           shellcheck config/hypr/scripts/awtarchy_lock.sh
           shellcheck tests/test-quickshell-lockscreen-foundation.sh
           shellcheck tests/test-quickshell-lockscreen-manager-mode.sh
@@ -35,6 +37,7 @@ jobs:
           shellcheck tests/test-quickshell-lockscreen-migration.sh
           shellcheck tests/test-quickshell-lockscreen-migration-failclosed.sh
           shellcheck tests/test-quickshell-lockscreen-cutover.sh
+          shellcheck tests/test-quickshell-lockscreen-live-hyprland-migration.sh
           bash tests/test-quickshell-lockscreen-foundation.sh
           bash tests/test-quickshell-lockscreen-manager-mode.sh
           bash tests/test-quickshell-lockscreen-git-deployment.sh
@@ -42,3 +45,4 @@ jobs:
           bash tests/test-quickshell-lockscreen-migration.sh
           bash tests/test-quickshell-lockscreen-migration-failclosed.sh
           bash tests/test-quickshell-lockscreen-cutover.sh
+          bash tests/test-quickshell-lockscreen-live-hyprland-migration.sh
