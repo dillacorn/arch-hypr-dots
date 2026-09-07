@@ -1,0 +1,55 @@
+name: Apply Quickshell Lockscreen Cutover
+
+on:
+  push:
+    branches: [feature/quickshell-lockscreen]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Apply exact production cutover
+        run: |
+          python3 -m py_compile .github/scripts/apply-quickshell-lockscreen-cutover.py
+          python3 .github/scripts/apply-quickshell-lockscreen-cutover.py
+      - name: Validate cutover before commit
+        run: |
+          bash -n config/hypr/scripts/awtarchy_lock.sh
+          bash -n config/hypr/scripts/hypridle_action.sh
+          bash -n config/hypr/scripts/toggle_animations.sh
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n local/share/awtarchy/awtarchy-package-reconcile.sh
+          shellcheck config/hypr/scripts/awtarchy_lock.sh
+          shellcheck config/hypr/scripts/hypridle_action.sh
+          shellcheck config/hypr/scripts/toggle_animations.sh
+          bash tests/test-quickshell-lockscreen-foundation.sh
+          bash tests/test-quickshell-lockscreen-manager-mode.sh
+          bash tests/test-quickshell-lockscreen-git-deployment.sh
+          bash tests/test-quickshell-lockscreen-no-reload.sh
+          bash tests/test-quickshell-lockscreen-migration.sh
+          bash tests/test-quickshell-lockscreen-migration-failclosed.sh
+          bash tests/test-quickshell-lockscreen-cutover.sh
+          bash tests/test-flyout-toggle-debounce.sh
+          bash tests/test-hyprmoncfg-idle-safety.sh
+          bash tests/test-protected-idle-auto-game.sh
+          git diff --check
+      - name: Commit validated cutover and remove temporary machinery
+        run: |
+          rm -f -- .github/scripts/apply-quickshell-lockscreen-cutover.py
+          rm -f -- .github/workflows/apply-quickshell-lockscreen-cutover.yml
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && exit 1
+          git commit -m 'Switch production locking to Quickshell'
+          git push origin HEAD:feature/quickshell-lockscreen
