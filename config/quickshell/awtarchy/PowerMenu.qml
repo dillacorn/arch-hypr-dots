@@ -122,7 +122,7 @@ Singleton {
                     Layout.minimumHeight: Layout.preferredHeight
                     Layout.maximumHeight: Layout.preferredHeight
 
-                    radius: 20
+                    radius: 0
                     color: hover.containsMouse ? Theme.popupButtonHover : Theme.popupButton
                     border.width: 0
 
