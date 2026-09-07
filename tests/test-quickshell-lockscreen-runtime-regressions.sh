@@ -145,10 +145,12 @@ require_text "$SURFACE_QML" 'root.animationPreference !== "off"' \
     'lockscreen particle animation still runs when disabled'
 require_text "$SURFACE_QML" 'Math.random()' \
     'lockscreen wordmark formation is not randomized per lock'
-require_text "$SURFACE_QML" 'readonly property int formationDelay: Math.floor(Math.random() * 451)' \
-    'lockscreen wordmark does not use the approved shorter particle stagger'
-require_text "$SURFACE_QML" 'readonly property int formationDuration: 2300' \
-    'lockscreen wordmark does not use the approved quicker formation duration'
+require_text "$SURFACE_QML" 'readonly property int formationDelay: Math.floor(Math.random() * 301)' \
+    'lockscreen wordmark does not use the approved faster particle stagger'
+require_text "$SURFACE_QML" 'readonly property int formationDuration: 1700' \
+    'lockscreen wordmark does not use the approved faster formation duration'
+require_text "$SURFACE_QML" '+ Math.floor(Math.random() * 351)' \
+    'lockscreen wordmark does not use the approved faster duration variance'
 require_text "$SURFACE_QML" 'SequentialAnimation on formationProgress' \
     'lockscreen wordmark has no per-particle formation animation'
 require_text "$SURFACE_QML" 'PauseAnimation {' \
@@ -157,6 +159,8 @@ require_text "$SURFACE_QML" 'wordmarkCell.formationProgress <= 0 ? 0' \
     'lockscreen exposes stationary particles before formation starts'
 require_text "$SURFACE_QML" 'enabled: !auth.busy || auth.responseRequired' \
     'password input was coupled to the logo formation instead of PAM state'
+reject_text "$SURFACE_QML" 'readonly property int formationDuration: 2300' \
+    'lockscreen still uses the slower previous formation duration'
 reject_text "$SURFACE_QML" 'readonly property int formationDuration: 3000' \
     'lockscreen still uses the slower original formation duration'
 
