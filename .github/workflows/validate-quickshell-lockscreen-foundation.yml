@@ -30,6 +30,7 @@ jobs:
           bash -n tests/test-quickshell-lockscreen-cutover.sh
           bash -n tests/test-quickshell-lockscreen-live-hyprland-migration.sh
           bash -n tests/test-quickshell-lockscreen-power-safety.sh
+          bash -n tests/test-quickshell-lockscreen-user-cutover.sh
       - name: ShellCheck
         run: |
           shellcheck config/hypr/scripts/awtarchy_lock.sh
@@ -42,6 +43,7 @@ jobs:
           shellcheck tests/test-quickshell-lockscreen-cutover.sh
           shellcheck tests/test-quickshell-lockscreen-live-hyprland-migration.sh
           shellcheck tests/test-quickshell-lockscreen-power-safety.sh
+          shellcheck tests/test-quickshell-lockscreen-user-cutover.sh
       - name: Foundation contracts
         run: |
           bash tests/test-quickshell-lockscreen-foundation.sh
@@ -54,5 +56,6 @@ jobs:
           bash tests/test-quickshell-lockscreen-migration-failclosed.sh
           bash tests/test-quickshell-lockscreen-cutover.sh
           bash tests/test-quickshell-lockscreen-live-hyprland-migration.sh
+          bash tests/test-quickshell-lockscreen-user-cutover.sh
       - name: Secure power-transition contract
         run: bash tests/test-quickshell-lockscreen-power-safety.sh
