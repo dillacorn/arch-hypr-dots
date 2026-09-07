@@ -1,0 +1,41 @@
+name: Validate Stable Release Notes
+
+on:
+  pull_request:
+    paths:
+      - AGENTS.md
+      - README.md
+      - INSTALL.md
+      - UPDATING.md
+      - .github/scripts/validate-stable-release-notes.py
+      - .github/workflows/validate-stable-release-notes.yml
+      - tests/test-stable-release-notes-validator.sh
+      - tests/test-install-update-docs.sh
+  push:
+    branches: [main]
+    paths:
+      - AGENTS.md
+      - README.md
+      - INSTALL.md
+      - UPDATING.md
+      - .github/scripts/validate-stable-release-notes.py
+      - .github/workflows/validate-stable-release-notes.yml
+      - tests/test-stable-release-notes-validator.sh
+      - tests/test-install-update-docs.sh
+
+permissions:
+  contents: read
+
+jobs:
+  release-notes-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Bash syntax
+        run: |
+          bash -n tests/test-stable-release-notes-validator.sh
+          bash -n tests/test-install-update-docs.sh
+      - name: Stable release notes contract
+        run: bash tests/test-stable-release-notes-validator.sh
+      - name: Canonical installation and update docs
+        run: bash tests/test-install-update-docs.sh
