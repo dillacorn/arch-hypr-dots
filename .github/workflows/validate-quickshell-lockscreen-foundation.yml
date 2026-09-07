@@ -65,3 +65,116 @@ jobs:
           bash tests/test-quickshell-lockscreen-user-cutover.sh
       - name: Secure power-transition contract
         run: bash tests/test-quickshell-lockscreen-power-safety.sh
+
+  apply-approved-lockscreen-tweak:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'feature/quickshell-lockscreen' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.sha == github.sha
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: feature/quickshell-lockscreen
+          fetch-depth: 0
+      - name: Require exact staging commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git log -1 --pretty=%s)" == 'Run lockscreen default and speed helper' ]]
+      - name: Apply approved production changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+
+          bar = Path('config/quickshell/awtarchy/BarState.qml')
+          shell = Path('config/quickshell/awtarchy-lock/shell.qml')
+          surface = Path('config/quickshell/awtarchy-lock/LockSurface.qml')
+          history = Path('local/share/awtarchy/quickshell-managed-history.sha256')
+
+          managed = {
+              bar: '.config/quickshell/awtarchy/BarState.qml',
+              shell: '.config/quickshell/awtarchy-lock/shell.qml',
+              surface: '.config/quickshell/awtarchy-lock/LockSurface.qml',
+          }
+
+          def digest(path):
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          before = [(digest(path), rel) for path, rel in managed.items()]
+
+          text = bar.read_text(encoding='utf-8')
+          old = '''    function lockscreenAnimationPreference() {
+              const value = String(data().lockscreen_animation || "random");
+              for (const preset of lockscreenAnimationPresets) {
+                  if (preset.key === value)
+                      return value;
+              }
+              return "random";
+          }'''
+          new = '''    function lockscreenAnimationPreference() {
+              const value = String(data().lockscreen_animation || "split");
+              for (const preset of lockscreenAnimationPresets) {
+                  if (preset.key === value)
+                      return value;
+              }
+              return "split";
+          }'''
+          if text.count('            lockscreen_animation: "random",') != 1:
+              raise SystemExit('unexpected BarState stock default count')
+          if text.count(old) != 1:
+              raise SystemExit('expected BarState preference block not found exactly once')
+          text = text.replace('            lockscreen_animation: "random",', '            lockscreen_animation: "split",', 1)
+          text = text.replace(old, new, 1)
+          bar.write_text(text, encoding='utf-8')
+
+          text = shell.read_text(encoding='utf-8')
+          replacements = [
+              ('property string lockAnimationPreference: "random"', 'property string lockAnimationPreference: "split"', 1),
+              ('return allowedAnimationPreferences.indexOf(key) >= 0 ? key : "random";', 'return allowedAnimationPreferences.indexOf(key) >= 0 ? key : "split";', 1),
+              ('lockAnimationPreference = "random";', 'lockAnimationPreference = "split";', 2),
+              ('parsed && typeof parsed === "object" ? parsed.lockscreen_animation : "random"', 'parsed && typeof parsed === "object" ? parsed.lockscreen_animation : "split"', 1),
+          ]
+          for old_text, new_text, expected in replacements:
+              if text.count(old_text) != expected:
+                  raise SystemExit(f'unexpected shell match count for: {old_text}')
+              text = text.replace(old_text, new_text)
+          shell.write_text(text, encoding='utf-8')
+
+          text = surface.read_text(encoding='utf-8')
+          surface_replacements = [
+              ('readonly property int formationDelay: Math.floor(Math.random() * 451)', 'readonly property int formationDelay: Math.floor(Math.random() * 301)'),
+              ('readonly property int formationDuration: 2300', 'readonly property int formationDuration: 1700'),
+              ('+ Math.floor(Math.random() * 451)', '+ Math.floor(Math.random() * 351)'),
+          ]
+          for old_text, new_text in surface_replacements:
+              if text.count(old_text) != 1:
+                  raise SystemExit(f'unexpected LockSurface match count for: {old_text}')
+              text = text.replace(old_text, new_text, 1)
+          surface.write_text(text, encoding='utf-8')
+
+          after = [(digest(path), rel) for path, rel in managed.items()]
+          history_text = history.read_text(encoding='utf-8')
+          additions = []
+          for value, rel in before + after:
+              line = f'{value}\t{rel}'
+              if line not in history_text and line not in additions:
+                  additions.append(line)
+          if additions:
+              with history.open('a', encoding='utf-8') as handle:
+                  handle.write('\n# 2026-09-07 native lockscreen Split default and faster formation.\n')
+                  for line in additions:
+                      handle.write(line + '\n')
+          PY
+          git diff --check
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add config/quickshell/awtarchy/BarState.qml \
+                  config/quickshell/awtarchy-lock/shell.qml \
+                  config/quickshell/awtarchy-lock/LockSurface.qml \
+                  local/share/awtarchy/quickshell-managed-history.sha256
+          git diff --cached --quiet && { echo 'No production changes staged'; exit 1; }
+          git commit -m 'Use Split as faster lockscreen default'
+          git push origin HEAD:feature/quickshell-lockscreen
