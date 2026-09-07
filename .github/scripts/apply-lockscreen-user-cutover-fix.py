@@ -16,59 +16,71 @@ def replace_exact(path: str, old: str, new: str, expected: int = 1) -> None:
 bind = 'hl.bind("SUPER + L", hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarchy_lock.sh lock"), {})\n'
 replace_exact("config/hypr/hyprland.lua", bind, "", expected=2)
 
-# Personalized configs from either the old Hyprlock state or the first partial
-# cutover are normalized by removing the dedicated SUPER+L lock bind while
-# preserving unrelated user configuration.
+# Preserve the original fail-closed migration behavior while also recognizing
+# the temporary native SUPER+L bind installed by the first cutover test.
 migrator = Path("local/share/awtarchy/awtarchy-lockscreen-hyprland-migrate.py")
-migrator_lines = [
-    "#!/usr/bin/env python3",
-    "from pathlib import Path",
-    "import sys",
-    "",
-    "OLD_PERMISSION = 'hl.permission({ match = { path = \"/usr/bin/hyprlock\" }, screencopy = true })'",
-    "OLD_BIND = 'hl.bind(\"SUPER + L\", hl.dsp.exec_cmd(\"hyprlock\"), {})'",
-    "INTERMEDIATE_BIND = 'hl.bind(\"SUPER + L\", hl.dsp.exec_cmd(\"~/.config/hypr/scripts/awtarchy_lock.sh lock\"), {})'",
-    "",
-    "",
-    "def fail() -> None:",
-    "    raise SystemExit(3)",
-    "",
-    "",
-    "if len(sys.argv) != 3:",
-    "    raise SystemExit(2)",
-    "",
-    "source = Path(sys.argv[1])",
-    "destination = Path(sys.argv[2])",
-    "text = source.read_text(encoding=\"utf-8\")",
-    "",
-    "if \"hyprlock\" not in text.lower() and INTERMEDIATE_BIND not in text:",
-    "    destination.write_text(text, encoding=\"utf-8\")",
-    "    raise SystemExit(0)",
-    "",
-    "old_bind_count = text.count(OLD_BIND)",
-    "intermediate_bind_count = text.count(INTERMEDIATE_BIND)",
-    "old_permission_count = text.count(OLD_PERMISSION)",
-    "lower_count = text.lower().count(\"hyprlock\")",
-    "known_bind_count = old_bind_count + intermediate_bind_count",
-    "",
-    "if (",
-    "    known_bind_count not in {1, 2}",
-    "    or old_permission_count not in {0, 1}",
-    "    or lower_count != old_bind_count + old_permission_count",
-    "):",
-    "    fail()",
-    "",
-    "text = text.replace(OLD_BIND + \"\\n\", \"\")",
-    "text = text.replace(INTERMEDIATE_BIND + \"\\n\", \"\")",
-    "if old_permission_count:",
-    "    text = text.replace(OLD_PERMISSION + \"\\n\", \"\", 1)",
-    "",
-    "if \"hyprlock\" in text.lower() or INTERMEDIATE_BIND in text:",
-    "    fail()",
-    "",
-    "destination.write_text(text, encoding=\"utf-8\")",
-]
-migrator.write_text("\n".join(migrator_lines) + "\n", encoding="utf-8")
+migrator.write_text(
+    '''#!/usr/bin/env python3
+"""Safely migrate known Awtarchy lock lines in a personalized hyprland.lua."""
+
+from pathlib import Path
+import sys
+
+OLD_BIND = 'hl.bind("SUPER + L", hl.dsp.exec_cmd("hyprlock"), {})'
+INTERMEDIATE_BIND = (
+    'hl.bind("SUPER + L", '
+    'hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarchy_lock.sh lock"), {})'
+)
+OLD_PERMISSION = 'hl.permission("/usr/bin/hyprlock", "screencopy", "allow")'
+
+
+def fail(message: str) -> "NoReturn":
+    print(f"awtarchy-lockscreen-hyprland-migrate: {message}", file=sys.stderr)
+    raise SystemExit(3)
+
+
+def main() -> int:
+    if len(sys.argv) != 3:
+        print(
+            "usage: awtarchy-lockscreen-hyprland-migrate.py INPUT OUTPUT",
+            file=sys.stderr,
+        )
+        return 2
+
+    source = Path(sys.argv[1])
+    destination = Path(sys.argv[2])
+
+    try:
+        text = source.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        fail(f"could not read {source}: {exc}")
+
+    migrated = text.replace(OLD_BIND + "\\n", "")
+    migrated = migrated.replace(OLD_BIND, "")
+    migrated = migrated.replace(INTERMEDIATE_BIND + "\\n", "")
+    migrated = migrated.replace(INTERMEDIATE_BIND, "")
+    migrated = migrated.replace(OLD_PERMISSION + "\\n", "")
+    migrated = migrated.replace(OLD_PERMISSION, "")
+
+    if "hyprlock" in migrated.lower() or INTERMEDIATE_BIND in migrated:
+        fail(
+            "unknown Hyprlock reference remains in personalized hyprland.lua; "
+            "automatic retirement refused"
+        )
+
+    try:
+        destination.write_text(migrated, encoding="utf-8")
+    except OSError as exc:
+        fail(f"could not write {destination}: {exc}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+''',
+    encoding="utf-8",
+)
 
 # The runtime must invoke the helper for a machine which already ran the first
 # partial migration and contains the temporary Awtarchy SUPER+L lock bind but
@@ -111,7 +123,7 @@ new_pkg = '''  package_installed hyprlock || return 0
     log "Removing retired Awtarchy-owned Hyprlock package..."
   elif [[ "${AWTARCHY_LOCKSCREEN_RETIRE_UNOWNED_CONFIRMED:-0}" == 1 ]]; then
     log "Removing retired Hyprlock package after explicit confirmation..."
-  elif [[ -r /dev/tty && -w /dev/tty ]] \\
+  elif [[ -t 0 && -t 1 && -r /dev/tty && -w /dev/tty ]] \\
     && confirm_yes_no 'Hyprlock is no longer used by Awtarchy but was not recorded as Awtarchy-owned. Remove it now?' 0; then
     log "Removing retired Hyprlock package after explicit confirmation..."
   else
