@@ -22,9 +22,9 @@ reject_text() {
     fi
 }
 
-# Runtime regression: a LockSurface property named `auth` must not be bound as
-# `auth: auth` from the Component body. In QML that self-shadows the outer id,
-# leaving every surface with an undefined authentication object.
+# Runtime regression: the real Quickshell session reported root.auth undefined.
+# A LockSurface property named `auth` must not be bound as `auth: auth` from the
+# Component body. In QML that self-shadows the outer id and loses LockAuth.
 require_text "$SHELL_QML" 'id: lockAuth' \
     'lock shell does not use a non-shadowing authentication id'
 require_text "$SHELL_QML" 'auth: lockAuth' \
