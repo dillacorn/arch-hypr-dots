@@ -1,6 +1,8 @@
 name: Validate Quickshell Lockscreen Foundation
 
 on:
+  push:
+    branches: [main]
   pull_request:
 
 permissions:
