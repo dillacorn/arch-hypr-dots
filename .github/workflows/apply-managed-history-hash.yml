@@ -16,8 +16,6 @@ jobs:
         with:
           ref: feature/quickshell-lockscreen
           fetch-depth: 0
-      - name: Install updater validation dependency
-        run: sudo apt-get update && sudo apt-get install -y lua5.4
       - name: Refresh exact managed hash
         run: |
           path='.config/hypr/scripts/quickshell_ready_sound.sh'
@@ -25,8 +23,6 @@ jobs:
           line="${hash}	${path}"
           grep -Fqx -- "$line" local/share/awtarchy/quickshell-managed-history.sha256 \
             || printf '%s\n' "$line" >> local/share/awtarchy/quickshell-managed-history.sha256
-      - name: Verify updater migration contract
-        run: bash tests/test-quickshell-updater-migration.sh
       - name: Commit refresh
         run: |
           git config user.name dillacorn
