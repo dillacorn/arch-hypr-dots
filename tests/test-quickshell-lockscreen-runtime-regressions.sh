@@ -119,18 +119,30 @@ if data.get("lockAccent") != "#EACDD2":
     raise SystemExit(1)
 PY
 
-# Every lock chooses one of four formation families, then randomizes paths inside
-# that family. The particles start fully invisible so the first frame is black,
-# then reveal only after they begin moving. Formation is intentionally a little
-# quicker than the original roughly four-second swarm without gating PAM input.
-require_text "$SURFACE_QML" 'readonly property int formationMode: Math.floor(Math.random() * 4)' \
-    'lockscreen does not choose a randomized formation family per lock'
+# Random mode is chosen once by the lock shell so every monitor receives the
+# same family for that lock. LockSurface maps an explicit preference to one of
+# four families, then randomizes paths inside that family. Off skips only the
+# particle formation and displays the finished logo immediately.
+require_text "$SHELL_QML" 'property int randomFormationMode: Math.floor(Math.random() * 4)' \
+    'lock shell does not choose one randomized formation family per lock'
+require_text "$SHELL_QML" 'randomFormationMode: root.randomFormationMode' \
+    'lock surfaces do not share the shell-owned random formation family'
+require_text "$SURFACE_QML" 'required property string animationPreference' \
+    'lock surface does not receive the selected animation preference'
+require_text "$SURFACE_QML" 'required property int randomFormationMode' \
+    'lock surface does not receive the shared random formation family'
+for preference in swarm edges center split; do
+    require_text "$SURFACE_QML" "animationPreference === \"${preference}\"" \
+        "lockscreen is missing the ${preference} formation preference"
+done
 for mode in 0 1 2 3; do
     require_text "$SURFACE_QML" "root.formationMode === ${mode}" \
         "lockscreen is missing formation family ${mode}"
 done
-require_text "$SURFACE_QML" 'property real formationProgress: 0' \
-    'lockscreen wordmark cells have no formation progress state'
+require_text "$SURFACE_QML" 'root.animationPreference === "off" ? 1 : 0' \
+    'lockscreen off preference does not skip particle formation'
+require_text "$SURFACE_QML" 'root.animationPreference !== "off"' \
+    'lockscreen particle animation still runs when disabled'
 require_text "$SURFACE_QML" 'Math.random()' \
     'lockscreen wordmark formation is not randomized per lock'
 require_text "$SURFACE_QML" 'readonly property int formationDelay: Math.floor(Math.random() * 451)' \
