@@ -20,8 +20,12 @@ jobs:
       - name: Apply exact production cutover
         run: |
           python3 -m py_compile .github/scripts/apply-quickshell-lockscreen-cutover.py
+          python3 -m py_compile .github/scripts/refresh-lockscreen-managed-history.py
           set +e
-          output="$(python3 .github/scripts/apply-quickshell-lockscreen-cutover.py 2>&1)"
+          output="$(bash -euo pipefail -c '
+            python3 .github/scripts/apply-quickshell-lockscreen-cutover.py
+            python3 .github/scripts/refresh-lockscreen-managed-history.py
+          ' 2>&1)"
           rc=$?
           set -e
           printf '%s\n' "$output"
@@ -77,6 +81,7 @@ jobs:
       - name: Commit validated cutover and remove temporary machinery
         run: |
           rm -f -- .github/scripts/apply-quickshell-lockscreen-cutover.py
+          rm -f -- .github/scripts/refresh-lockscreen-managed-history.py
           rm -f -- .github/workflows/apply-quickshell-lockscreen-cutover.yml
           rm -f -- .github/lockscreen-cutover-error.txt
           git diff --check
