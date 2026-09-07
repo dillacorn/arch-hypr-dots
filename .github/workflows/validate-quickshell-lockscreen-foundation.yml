@@ -21,10 +21,13 @@ jobs:
           bash -n tests/test-quickshell-lockscreen-foundation.sh
           bash -n tests/test-quickshell-lockscreen-manager-mode.sh
           bash -n tests/test-quickshell-lockscreen-git-deployment.sh
+          bash -n tests/test-quickshell-lockscreen-no-reload.sh
           shellcheck config/hypr/scripts/awtarchy_lock.sh
           shellcheck tests/test-quickshell-lockscreen-foundation.sh
           shellcheck tests/test-quickshell-lockscreen-manager-mode.sh
           shellcheck tests/test-quickshell-lockscreen-git-deployment.sh
+          shellcheck tests/test-quickshell-lockscreen-no-reload.sh
           bash tests/test-quickshell-lockscreen-foundation.sh
           bash tests/test-quickshell-lockscreen-manager-mode.sh
           bash tests/test-quickshell-lockscreen-git-deployment.sh
+          bash tests/test-quickshell-lockscreen-no-reload.sh
