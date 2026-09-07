@@ -49,6 +49,12 @@ require_source "${QML_DIR}/Notifications.qml" \
 require_source "${QML_DIR}/PowerMenu.qml" \
   'FlyoutManager.acceptToggle("power")' \
   'power menu bypasses the toggle gate'
+require_source "${QML_DIR}/PowerMenu.qml" \
+  'radius: 0' \
+  'power menu action tiles are still rounded'
+if grep -Fq -- 'radius: 20' "${QML_DIR}/PowerMenu.qml"; then
+  fail 'power menu still contains the old rounded action-tile radius'
+fi
 require_source "${QML_DIR}/Bar.qml" \
   'onClicked: PowerMenu.toggleForScreen(bar.screen)' \
   'bar power button does not use the damped toggle path'
