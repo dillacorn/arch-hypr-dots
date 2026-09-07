@@ -20,7 +20,21 @@ jobs:
       - name: Apply exact production cutover
         run: |
           python3 -m py_compile .github/scripts/apply-quickshell-lockscreen-cutover.py
-          python3 .github/scripts/apply-quickshell-lockscreen-cutover.py
+          set +e
+          output="$(python3 .github/scripts/apply-quickshell-lockscreen-cutover.py 2>&1)"
+          rc=$?
+          set -e
+          printf '%s\n' "$output"
+          if (( rc != 0 )); then
+            git reset --hard HEAD
+            printf '%s\n' "$output" >.github/lockscreen-cutover-error.txt
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add .github/lockscreen-cutover-error.txt
+            git commit -m 'Record lockscreen cutover patch failure'
+            git push origin HEAD:feature/quickshell-lockscreen
+            exit "$rc"
+          fi
       - name: Validate cutover before commit
         run: |
           bash -n config/hypr/scripts/awtarchy_lock.sh
@@ -46,6 +60,7 @@ jobs:
         run: |
           rm -f -- .github/scripts/apply-quickshell-lockscreen-cutover.py
           rm -f -- .github/workflows/apply-quickshell-lockscreen-cutover.yml
+          rm -f -- .github/lockscreen-cutover-error.txt
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
