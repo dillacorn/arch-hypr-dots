@@ -37,25 +37,43 @@ jobs:
           fi
       - name: Validate cutover before commit
         run: |
-          bash -n config/hypr/scripts/awtarchy_lock.sh
-          bash -n config/hypr/scripts/hypridle_action.sh
-          bash -n config/hypr/scripts/toggle_animations.sh
-          bash -n local/share/awtarchy/awtarchy-runtime.sh
-          bash -n local/share/awtarchy/awtarchy-package-reconcile.sh
-          shellcheck config/hypr/scripts/awtarchy_lock.sh
-          shellcheck config/hypr/scripts/hypridle_action.sh
-          shellcheck config/hypr/scripts/toggle_animations.sh
-          bash tests/test-quickshell-lockscreen-foundation.sh
-          bash tests/test-quickshell-lockscreen-manager-mode.sh
-          bash tests/test-quickshell-lockscreen-git-deployment.sh
-          bash tests/test-quickshell-lockscreen-no-reload.sh
-          bash tests/test-quickshell-lockscreen-migration.sh
-          bash tests/test-quickshell-lockscreen-migration-failclosed.sh
-          bash tests/test-quickshell-lockscreen-cutover.sh
-          bash tests/test-flyout-toggle-debounce.sh
-          bash tests/test-hyprmoncfg-idle-safety.sh
-          bash tests/test-protected-idle-auto-game.sh
-          git diff --check
+          set +e
+          output="$(bash -euo pipefail -c '
+            python3 -m py_compile local/share/awtarchy/awtarchy-lockscreen-hyprland-migrate.py
+            bash -n config/hypr/scripts/awtarchy_lock.sh
+            bash -n config/hypr/scripts/hypridle_action.sh
+            bash -n config/hypr/scripts/toggle_animations.sh
+            bash -n local/share/awtarchy/awtarchy-runtime.sh
+            bash -n local/share/awtarchy/awtarchy-package-reconcile.sh
+            shellcheck config/hypr/scripts/awtarchy_lock.sh
+            shellcheck config/hypr/scripts/hypridle_action.sh
+            shellcheck config/hypr/scripts/toggle_animations.sh
+            bash tests/test-quickshell-lockscreen-foundation.sh
+            bash tests/test-quickshell-lockscreen-manager-mode.sh
+            bash tests/test-quickshell-lockscreen-git-deployment.sh
+            bash tests/test-quickshell-lockscreen-no-reload.sh
+            bash tests/test-quickshell-lockscreen-migration.sh
+            bash tests/test-quickshell-lockscreen-migration-failclosed.sh
+            bash tests/test-quickshell-lockscreen-cutover.sh
+            bash tests/test-quickshell-lockscreen-live-hyprland-migration.sh
+            bash tests/test-flyout-toggle-debounce.sh
+            bash tests/test-hyprmoncfg-idle-safety.sh
+            bash tests/test-protected-idle-auto-game.sh
+            git diff --check
+          ' 2>&1)"
+          rc=$?
+          set -e
+          printf '%s\n' "$output"
+          if (( rc != 0 )); then
+            git reset --hard HEAD
+            printf '%s\n' "$output" >.github/lockscreen-cutover-error.txt
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add .github/lockscreen-cutover-error.txt
+            git commit -m 'Record lockscreen cutover validation failure'
+            git push origin HEAD:feature/quickshell-lockscreen
+            exit "$rc"
+          fi
       - name: Commit validated cutover and remove temporary machinery
         run: |
           rm -f -- .github/scripts/apply-quickshell-lockscreen-cutover.py
