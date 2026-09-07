@@ -101,33 +101,76 @@ WlSessionLockSurface {
 
                             delegate: Item {
                                 id: wordmarkCell
+
                                 readonly property int columnIndex: index
                                 property string glyph: wordmarkRow.rowText.charAt(columnIndex)
+                                readonly property bool isFilledGlyph: glyph === "█"
+                                    || glyph === "▄" || glyph === "▀" || glyph === "▐"
                                 readonly property int halfWidth: Math.floor(root.wordmarkCellWidth / 2)
                                 readonly property int halfHeight: Math.floor(root.wordmarkCellHeight / 2)
+                                readonly property real finalGlyphX: glyph === "▐" ? halfWidth : 0
+                                readonly property real finalGlyphY: glyph === "▄" ? halfHeight : 0
+                                readonly property real finalGlyphWidth: glyph === "▐"
+                                    ? root.wordmarkCellWidth - halfWidth : root.wordmarkCellWidth
+                                readonly property real finalGlyphHeight: glyph === "▄"
+                                    ? root.wordmarkCellHeight - halfHeight
+                                    : glyph === "▀" ? halfHeight : root.wordmarkCellHeight
+                                readonly property real particleSize: Math.max(3,
+                                    Math.floor(7 * root.uiScale))
+
+                                // These values intentionally have no reactive dependencies: each
+                                // surface creation gets a new randomized assembly path per cell.
+                                readonly property real startAngle: Math.random() * Math.PI * 2
+                                readonly property real startDistance: (140 + Math.random() * 360)
+                                    * root.uiScale
+                                readonly property real startX: Math.cos(startAngle) * startDistance
+                                readonly property real startY: Math.sin(startAngle) * startDistance
+                                readonly property real curveX: (Math.random() - 0.5) * 260 * root.uiScale
+                                readonly property real curveY: (Math.random() - 0.5) * 180 * root.uiScale
+                                readonly property int formationDelay: Math.floor(Math.random() * 651)
+                                readonly property int formationDuration: 3000
+                                    + Math.floor(Math.random() * 551)
+                                property real formationProgress: 0
 
                                 x: columnIndex * root.wordmarkCellWidth
-                                y: 0
+                                    + (1 - formationProgress) * startX
+                                    + Math.sin(Math.PI * wordmarkCell.formationProgress) * curveX
+                                y: (1 - formationProgress) * startY
+                                    + Math.sin(Math.PI * wordmarkCell.formationProgress) * curveY
                                 width: root.wordmarkCellWidth
                                 height: root.wordmarkCellHeight
+                                visible: isFilledGlyph
 
                                 Rectangle {
-                                    x: wordmarkCell.glyph === "▐" ? wordmarkCell.halfWidth : 0
-                                    y: wordmarkCell.glyph === "▄" ? wordmarkCell.halfHeight : 0
-                                    width: wordmarkCell.glyph === "▐"
-                                        ? root.wordmarkCellWidth - wordmarkCell.halfWidth
-                                        : root.wordmarkCellWidth
-                                    height: wordmarkCell.glyph === "▄"
-                                        ? root.wordmarkCellHeight - wordmarkCell.halfHeight
-                                        : wordmarkCell.glyph === "▀"
-                                            ? wordmarkCell.halfHeight
-                                            : root.wordmarkCellHeight
-                                    visible: wordmarkCell.glyph === "█"
-                                        || wordmarkCell.glyph === "▄"
-                                        || wordmarkCell.glyph === "▀"
-                                        || wordmarkCell.glyph === "▐"
-                                    color: root.theme.foreground
+                                    x: (1 - wordmarkCell.formationProgress)
+                                            * ((root.wordmarkCellWidth - wordmarkCell.particleSize) / 2)
+                                        + wordmarkCell.formationProgress * wordmarkCell.finalGlyphX
+                                    y: (1 - wordmarkCell.formationProgress)
+                                            * ((root.wordmarkCellHeight - wordmarkCell.particleSize) / 2)
+                                        + wordmarkCell.formationProgress * wordmarkCell.finalGlyphY
+                                    width: (1 - wordmarkCell.formationProgress) * wordmarkCell.particleSize
+                                        + wordmarkCell.formationProgress * wordmarkCell.finalGlyphWidth
+                                    height: (1 - wordmarkCell.formationProgress) * wordmarkCell.particleSize
+                                        + wordmarkCell.formationProgress * wordmarkCell.finalGlyphHeight
+                                    color: root.theme.lockAccent
+                                    opacity: 0.35 + 0.65 * wordmarkCell.formationProgress
                                     antialiasing: false
+                                }
+
+                                SequentialAnimation on formationProgress {
+                                    running: wordmarkCell.isFilledGlyph
+                                        && root.entered && !root.unlocking
+
+                                    PauseAnimation {
+                                        duration: wordmarkCell.formationDelay
+                                    }
+
+                                    NumberAnimation {
+                                        from: 0
+                                        to: 1
+                                        duration: wordmarkCell.formationDuration
+                                        easing.type: Easing.OutCubic
+                                    }
                                 }
                             }
                         }
@@ -144,7 +187,7 @@ WlSessionLockSurface {
                     anchors.centerIn: parent
                     width: root.maskSpread
                     height: Math.round(14 * root.uiScale)
-                    color: root.theme.accent
+                    color: root.theme.lockAccent
                     opacity: password.text.length > 0 ? 0.09 : 0
                 }
 
@@ -158,20 +201,10 @@ WlSessionLockSurface {
                         Rectangle {
                             width: Math.round(7 * root.uiScale)
                             height: Math.round(10 * root.uiScale)
-                            color: root.theme.foreground
+                            color: root.theme.lockAccent
                             opacity: 0.82
                         }
                     }
-                }
-
-                Rectangle {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.bottom: parent.bottom
-                    width: Math.round(250 * root.uiScale)
-                    height: root.auth.statusIsError ? 2 : 1
-                    color: root.auth.statusIsError ? root.theme.error
-                        : password.activeFocus ? root.theme.accent : root.theme.muted
-                    opacity: root.auth.statusIsError || password.activeFocus ? 0.85 : 0.45
                 }
 
                 TextInput {
