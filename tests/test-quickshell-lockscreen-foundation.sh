@@ -8,9 +8,6 @@ SURFACE_QML="${LOCK_DIR}/LockSurface.qml"
 AUTH_QML="${LOCK_DIR}/LockAuth.qml"
 THEME_QML="${LOCK_DIR}/LockTheme.qml"
 MANAGER="${ROOT}/config/hypr/scripts/awtarchy_lock.sh"
-HYPRIDLE="${ROOT}/config/hypr/hypridle.conf"
-HYPRLAND="${ROOT}/config/hypr/hyprland.lua"
-POWER_MENU="${ROOT}/config/quickshell/awtarchy/PowerMenu.qml"
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 
