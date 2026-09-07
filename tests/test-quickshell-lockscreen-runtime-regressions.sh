@@ -119,25 +119,34 @@ if data.get("lockAccent") != "#EACDD2":
     raise SystemExit(1)
 PY
 
-# Each filled wordmark cell must assemble from a randomized square-particle
-# start into its exact final geometric glyph. Authentication remains independent
-# so a fast unlock never waits for the roughly four-second logo formation.
+# Every lock chooses one of four formation families, then randomizes paths inside
+# that family. The particles start fully invisible so the first frame is black,
+# then reveal only after they begin moving. Formation is intentionally a little
+# quicker than the original roughly four-second swarm without gating PAM input.
+require_text "$SURFACE_QML" 'readonly property int formationMode: Math.floor(Math.random() * 4)' \
+    'lockscreen does not choose a randomized formation family per lock'
+for mode in 0 1 2 3; do
+    require_text "$SURFACE_QML" "root.formationMode === ${mode}" \
+        "lockscreen is missing formation family ${mode}"
+done
 require_text "$SURFACE_QML" 'property real formationProgress: 0' \
     'lockscreen wordmark cells have no formation progress state'
 require_text "$SURFACE_QML" 'Math.random()' \
     'lockscreen wordmark formation is not randomized per lock'
-require_text "$SURFACE_QML" 'readonly property int formationDelay:' \
-    'lockscreen wordmark has no randomized particle stagger'
-require_text "$SURFACE_QML" 'readonly property int formationDuration:' \
-    'lockscreen wordmark has no randomized formation duration'
+require_text "$SURFACE_QML" 'readonly property int formationDelay: Math.floor(Math.random() * 451)' \
+    'lockscreen wordmark does not use the approved shorter particle stagger'
+require_text "$SURFACE_QML" 'readonly property int formationDuration: 2300' \
+    'lockscreen wordmark does not use the approved quicker formation duration'
 require_text "$SURFACE_QML" 'SequentialAnimation on formationProgress' \
     'lockscreen wordmark has no per-particle formation animation'
 require_text "$SURFACE_QML" 'PauseAnimation {' \
     'lockscreen wordmark particles do not use randomized start delays'
-require_text "$SURFACE_QML" 'Math.sin(Math.PI * wordmarkCell.formationProgress)' \
-    'lockscreen wordmark particles do not follow varied converging paths'
+require_text "$SURFACE_QML" 'wordmarkCell.formationProgress <= 0 ? 0' \
+    'lockscreen exposes stationary particles before formation starts'
 require_text "$SURFACE_QML" 'enabled: !auth.busy || auth.responseRequired' \
     'password input was coupled to the logo formation instead of PAM state'
+reject_text "$SURFACE_QML" 'readonly property int formationDuration: 3000' \
+    'lockscreen still uses the slower original formation duration'
 
 # The password row is intentionally minimal. Keep only the blocks/haze and do
 # not restore the old focus/error underline.
