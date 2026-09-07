@@ -329,7 +329,10 @@ migrate_live_hyprlock_hyprland() {
   [[ -e "$live" || -L "$live" ]] || return 0
   [[ -f "$live" && ! -L "$live" ]] \
     || die "Live Hyprland config is unavailable or unsafe during Hyprlock retirement: ${live}"
-  grep -Fqi -- hyprlock "$live" || return 0
+  if ! grep -Fqi -- hyprlock "$live" \
+    && ! grep -Fq -- 'hl.bind("SUPER + L", hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarchy_lock.sh lock"), {})' "$live"; then
+    return 0
+  fi
   [[ -f "$helper" && ! -L "$helper" ]] \
     || die "Live Hyprland lockscreen migration helper is unavailable or unsafe: ${helper}"
 

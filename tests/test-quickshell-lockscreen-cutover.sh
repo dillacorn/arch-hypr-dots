@@ -46,8 +46,10 @@ require_text "$HYPRIDLE" 'lock_cmd = ~/.config/hypr/scripts/awtarchy_lock.sh loc
 reject_text "$HYPRIDLE" 'hyprlock' \
     'Hypridle still references Hyprlock'
 
-require_text "$HYPRLAND" 'hl.bind("SUPER + L", hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarchy_lock.sh lock"), {})' \
-    'SUPER + L does not use the native Awtarchy locker'
+reject_text "$HYPRLAND" 'hl.bind("SUPER + L", hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarchy_lock.sh lock"), {})' \
+    'native locker steals SUPER + L from normal movement bindings'
+require_text "$HYPRLAND" 'hl.bind("SUPER + P", hl.dsp.exec_cmd(power_menu), {})' \
+    'SUPER + P no longer opens the power menu'
 reject_text "$HYPRLAND" '/usr/bin/hyprlock' \
     'Hyprland still grants a Hyprlock permission'
 reject_text "$HYPRLAND" 'exec_cmd("hyprlock")' \

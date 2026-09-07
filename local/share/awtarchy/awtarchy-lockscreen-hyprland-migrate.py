@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Safely migrate known Awtarchy Hyprlock lines in a personalized hyprland.lua."""
+"""Safely migrate known Awtarchy lock lines in a personalized hyprland.lua."""
 
 from pathlib import Path
 import sys
 
 OLD_BIND = 'hl.bind("SUPER + L", hl.dsp.exec_cmd("hyprlock"), {})'
-NEW_BIND = (
+INTERMEDIATE_BIND = (
     'hl.bind("SUPER + L", '
     'hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarchy_lock.sh lock"), {})'
 )
@@ -33,11 +33,14 @@ def main() -> int:
     except (OSError, UnicodeError) as exc:
         fail(f"could not read {source}: {exc}")
 
-    migrated = text.replace(OLD_BIND, NEW_BIND)
+    migrated = text.replace(OLD_BIND + "\n", "")
+    migrated = migrated.replace(OLD_BIND, "")
+    migrated = migrated.replace(INTERMEDIATE_BIND + "\n", "")
+    migrated = migrated.replace(INTERMEDIATE_BIND, "")
     migrated = migrated.replace(OLD_PERMISSION + "\n", "")
     migrated = migrated.replace(OLD_PERMISSION, "")
 
-    if "hyprlock" in migrated.lower():
+    if "hyprlock" in migrated.lower() or INTERMEDIATE_BIND in migrated:
         fail(
             "unknown Hyprlock reference remains in personalized hyprland.lua; "
             "automatic retirement refused"

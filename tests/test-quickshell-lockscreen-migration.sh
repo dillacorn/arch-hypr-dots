@@ -50,8 +50,11 @@ if grep -Fq 'hyprpaper hyprlock hypridle' "$RUNTIME"; then
 fi
 require_text "$HYPRIDLE" 'lock_cmd = ~/.config/hypr/scripts/awtarchy_lock.sh lock' \
     'cutover target did not switch Hypridle'
-require_text "$HYPRLAND" 'hl.bind("SUPER + L", hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarchy_lock.sh lock"), {})' \
-    'cutover target did not switch SUPER + L'
+if grep -Fq 'hl.bind("SUPER + L", hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarchy_lock.sh lock"), {})' "$HYPRLAND"; then
+    fail 'cutover target still steals SUPER + L instead of using the power menu'
+fi
+require_text "$HYPRLAND" 'hl.bind("SUPER + P", hl.dsp.exec_cmd(power_menu), {})' \
+    'cutover target lost the SUPER + P power-menu bind'
 require_text "$POWER_MENU" 'command: "~/.config/hypr/scripts/awtarchy_lock.sh lock"' \
     'cutover target did not switch Power Menu Lock'
 

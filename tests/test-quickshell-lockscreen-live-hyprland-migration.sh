@@ -38,14 +38,33 @@ python3 "$HELPER" "$live" "$out" \
 [[ -s "$out" ]] || fail 'migration helper produced no output'
 ! grep -Fqi -- 'hyprlock' "$out" \
     || fail 'known Hyprlock references remained after live migration'
-[[ "$(grep -Fc 'hl.bind("SUPER + L", hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarchy_lock.sh lock"), {})' "$out")" == 2 ]] \
-    || fail 'both default/noalt lock bindings were not migrated'
+if grep -Fq 'hl.bind("SUPER + L", hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarchy_lock.sh lock"), {})' "$out"; then
+    fail 'direct SUPER + L lock binding remained after migration'
+fi
 grep -Fq 'hl.window_rule({ match = { class = "^(vesktop)$" }, no_screen_share = true })' "$out" \
     || fail 'personal screenshare customization was lost'
 grep -Fq 'hl.monitor({ output = "DP-3", mode = "1920x1080@400", position = "0x0", scale = 1 })' "$out" \
     || fail 'personal monitor customization was lost'
 grep -Fq 'hl.bind("SUPER + F11", hl.dsp.exec_cmd("notify-send custom"), {})' "$out" \
     || fail 'unrelated personal bind was lost'
+
+# A machine that already ran the first cutover may contain the temporary native
+# SUPER+L lock bindings but no literal Hyprlock reference. Those known Awtarchy
+# lines are also removed without touching unrelated personal configuration.
+intermediate="${TMP}/hyprland-intermediate.lua"
+intermediate_out="${TMP}/hyprland-intermediate.new.lua"
+cat >"$intermediate" <<'EOF'
+hl.bind("SUPER + L", hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarchy_lock.sh lock"), {})
+hl.bind("SUPER + F11", hl.dsp.exec_cmd("notify-send custom"), {})
+hl.bind("SUPER + L", hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarchy_lock.sh lock"), {})
+EOF
+python3 "$HELPER" "$intermediate" "$intermediate_out" \
+    || fail 'intermediate Awtarchy SUPER+L lock bindings could not be retired'
+if grep -Fq 'awtarchy_lock.sh lock' "$intermediate_out"; then
+    fail 'intermediate direct SUPER+L lock binding remained after migration'
+fi
+grep -Fq 'notify-send custom' "$intermediate_out" \
+    || fail 'intermediate migration lost unrelated personal configuration'
 
 # Unknown/custom Hyprlock usage must block automatic package retirement instead
 # of being silently deleted or leaving a broken preserved config behind.
