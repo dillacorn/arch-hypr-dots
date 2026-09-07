@@ -32,7 +32,7 @@ require_text "$SHELL_QML" 'auth: lockAuth' \
 reject_text "$SHELL_QML" 'auth: auth' \
     'lock surface still self-binds auth and loses the authentication object'
 
-# Minimal Awtarchy presentation: large Option-B ASCII wordmark, no conventional
+# Approved minimal lockscreen: large Option-B ASCII wordmark, no conventional
 # lockscreen metadata, and uniform password blocks.
 reject_text "$SURFACE_QML" '/fastfetch/ascii/awtarchy.txt' \
     'lockscreen still loads the Fastfetch ASCII mark'
