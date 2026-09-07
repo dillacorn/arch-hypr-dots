@@ -65,6 +65,22 @@ for i in "${!WORDMARK_ROWS[@]}"; do
         || fail 'Hyprland header does not exactly match the approved solid-block Awtarchy wordmark'
 done
 
+# The lockscreen must rasterize the ASCII cells geometrically rather than via
+# font glyphs. Adjacent block glyphs rendered as text showed visible hairline
+# seams on the real display; integer cell rectangles remove those font gaps.
+require_text "$SURFACE_QML" 'readonly property int wordmarkCellWidth:' \
+    'lockscreen wordmark does not use fixed geometric cell widths'
+require_text "$SURFACE_QML" 'readonly property int wordmarkCellHeight:' \
+    'lockscreen wordmark does not use fixed geometric cell heights'
+require_text "$SURFACE_QML" 'readonly property var wordmarkRows:' \
+    'lockscreen wordmark rows are not owned by the geometric renderer'
+require_text "$SURFACE_QML" 'property string glyph:' \
+    'lockscreen wordmark does not map ASCII glyphs to geometric cells'
+require_text "$SURFACE_QML" 'antialiasing: false' \
+    'lockscreen geometric wordmark does not disable rectangle antialiasing'
+reject_text "$SURFACE_QML" 'fontSizeMode: Text.HorizontalFit' \
+    'lockscreen still renders the ASCII wordmark through font glyph fitting'
+
 reject_text "$SURFACE_QML" 'text: "── AWTARCHY ──"' \
     'lockscreen still uses the old tiny Awtarchy heading'
 reject_text "$SURFACE_QML" 'property string timeText' \
