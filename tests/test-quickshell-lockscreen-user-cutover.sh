@@ -71,6 +71,7 @@ case "$action" in
         if [[ $action == -Qq ]]; then
             printf '%s\n' "$pkg"
         fi
+        # A successful pacman -Q lookup must not inherit the false -Qq test.
         exit 0
         ;;
     -R)
