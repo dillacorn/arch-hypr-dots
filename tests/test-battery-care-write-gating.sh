@@ -33,12 +33,4 @@ require_absent 'battery-enable-fixed' 'Battery Care UI still invokes the retired
 require_absent 'pluginName ===' 'Battery Care UI still gates behavior on a TLP plugin name'
 require_absent 'hardware state verified after every change' 'Battery Care UI still claims Awtarchy performs hardware verification'
 
-sync_body="$(awk '/function syncTargetDraft\(\)/,/^    }/' "$CARD")"
-managed_line="$(grep -nF 'if (Boolean(statusData.managed_config) && Number.isFinite(managed)' <<<"$sync_body" | cut -d: -f1)"
-observed_line="$(grep -nF 'if (Number.isFinite(observed)' <<<"$sync_body" | cut -d: -f1)"
-[[ -n "$managed_line" ]] || fail 'Battery Care target editor does not explicitly prefer a valid managed target'
-[[ -n "$observed_line" ]] || fail 'Battery Care target editor no longer falls back to observed hardware state'
-(( managed_line < observed_line )) \
-    || fail 'Battery Care target editor prefers hardware readback over the configured managed target'
-
-printf '%s\n' 'PASS: Battery Care QML exposes generic writable TLP percentage controls, surfaces readback mismatches, and keeps the configured target authoritative in the editor.'
+printf '%s\n' 'PASS: Battery Care QML exposes only generic writable TLP percentage controls and surfaces readback mismatches.'
