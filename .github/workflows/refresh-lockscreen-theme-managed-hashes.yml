@@ -1,0 +1,51 @@
+name: Refresh lockscreen theme managed hashes
+
+on:
+  push:
+    branches:
+      - feature/quickshell-lockscreen
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/quickshell-lockscreen
+          fetch-depth: 0
+
+      - name: Append current managed hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+
+          add_hash() {
+            local source="$1" rel="$2" hash entry
+            hash="$(sha256sum "$source" | awk '{print $1}')"
+            entry="${hash}"$'\t'"${rel}"
+            if ! grep -Fxq -- "$entry" "$history"; then
+              printf '%s\n' "$entry" >>"$history"
+            fi
+          }
+
+          add_hash \
+            'config/hypr/scripts/quickshell_theme_apply.sh' \
+            '.config/hypr/scripts/quickshell_theme_apply.sh'
+          add_hash \
+            'config/quickshell/awtarchy/theme.json' \
+            '.config/quickshell/awtarchy/theme.json'
+
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$history"
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'Refresh lockscreen theme managed hashes'
+          git push origin HEAD:feature/quickshell-lockscreen
