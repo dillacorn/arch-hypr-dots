@@ -95,6 +95,8 @@ require_text "$THEME_QML" '"#000000"' \
 
 require_text "$MANAGER" 'CONFIG_NAME="awtarchy-lock"' \
     'lock manager does not target only awtarchy-lock'
+# The expansion syntax below is intentionally matched as literal shell source.
+# shellcheck disable=SC2016
 require_text "$MANAGER" 'QS_BIN="${QS_BIN:-qs}"' \
     'lock manager does not provide a testable exact qs command boundary'
 require_text "$MANAGER" 'wait-secure)' \
