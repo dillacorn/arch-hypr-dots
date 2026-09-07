@@ -70,6 +70,8 @@ require_text "$RUNTIME" 'migrate_retired_hyprlock_stage()' \
 if grep -Fq 'Git testing keeps Hyprlock installed as an emergency lock fallback.' "$RUNTIME"; then
     fail 'Git testing still suppresses Hyprlock retirement'
 fi
+# The expansion syntax below is intentionally matched as literal shell source.
+# shellcheck disable=SC2016
 require_text "$RUNTIME" 'migrate_live_hyprlock_hyprland "$repo_dir"' \
     'retirement does not migrate a preserved personalized hyprland.lua before package removal'
 require_text "$RUNTIME" 'AWTARCHY_LOCKSCREEN_RETIRE_CONFIRMED=1' \
