@@ -21,7 +21,7 @@ Item {
         onFileChanged: reload()
     }
 
-    function data() {
+    function themeData() {
         const text = themeFile.text();
         if (!text || text.length === 0)
             return ({});
@@ -34,7 +34,7 @@ Item {
     }
 
     function value(name, fallback) {
-        const theme = data();
+        const theme = themeData();
         return theme[name] || fallback;
     }
 
