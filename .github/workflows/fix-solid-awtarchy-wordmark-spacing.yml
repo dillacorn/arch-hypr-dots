@@ -23,6 +23,16 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
+          rows = [
+              " ▄▄▄      ██     █ ▄▄▄█████ ▄▄▄      ██▀███  ▄████▄  ██  ██ ██   ██",
+              " ████▄     █  █  █ █  ██  █ ████▄    ██   ██ ██▀ ▀█  ██  ██  ██  ██",
+              " ██  ▀█▄  ██  █  ██   ██    ██  ▀█▄  ██  ▄█  ██    ▄ ██▀▀██   ██ ██",
+              " ██▄▄▄▄██ ██  █  ██   ██    ██▄▄▄▄██ ██▀▀█▄  ██▄ ▄██ ██  ██    ▐██",
+              "███    ██  ███████    ██    ██    ██ ██   ██  ████▀  ██  ██    ██",
+              "             ███                                              ██",
+              "                                                              ██",
+          ]
+
           path = Path("config/hypr/hyprland.lua")
           text = path.read_text()
           marker = "-- github.com/dillacorn/awtarchy/tree/main/config/hypr\n"
@@ -30,15 +40,7 @@ jobs:
               raise SystemExit("Hyprland header marker missing")
 
           _, rest = text.split(marker, 1)
-          header = """--  ▄▄▄      ██     █ ▄▄▄█████ ▄▄▄      ██▀███  ▄████▄  ██  ██ ██   ██
---  ████▄     █  █  █ █  ██  █ ████▄    ██   ██ ██▀ ▀█  ██  ██  ██  ██
---  ██  ▀█▄  ██  █  ██   ██    ██  ▀█▄  ██  ▄█  ██    ▄ ██▀▀██   ██ ██
---  ██▄▄▄▄██ ██  █  ██   ██    ██▄▄▄▄██ ██▀▀█▄  ██▄ ▄██ ██  ██    ▐██
--- ███    ██  ███████    ██    ██    ██ ██   ██  ████▀  ██  ██    ██
---              ███                                              ██
---                                                               ██
-
-"""
+          header = "\n".join(f"-- {row}" for row in rows) + "\n\n"
           path.write_text(header + marker + rest)
           PY
 
