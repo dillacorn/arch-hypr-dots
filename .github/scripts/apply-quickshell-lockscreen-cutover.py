@@ -32,11 +32,14 @@ replace_exact(
     'hl.permission("/usr/bin/hyprlock", "screencopy", "allow")\n',
     "",
 )
-replace_exact(
-    "config/hypr/hyprland.lua",
-    'hl.bind("SUPER + L", hl.dsp.exec_cmd("hyprlock"), {})',
-    'hl.bind("SUPER + L", hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarchy_lock.sh lock"), {})',
-)
+hyprland = read("config/hypr/hyprland.lua")
+old_lock_bind = 'hl.bind("SUPER + L", hl.dsp.exec_cmd("hyprlock"), {})'
+new_lock_bind = 'hl.bind("SUPER + L", hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarchy_lock.sh lock"), {})'
+if hyprland.count(old_lock_bind) != 2:
+    raise SystemExit(
+        "config/hypr/hyprland.lua: expected both default/noalt Hyprlock binds before cutover"
+    )
+write("config/hypr/hyprland.lua", hyprland.replace(old_lock_bind, new_lock_bind))
 
 # Hypridle uses the same lock authority for idle locks and sleep preparation.
 replace_exact(
