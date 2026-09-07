@@ -42,6 +42,7 @@ Item {
     readonly property color foreground: value("foreground", "#d0d0d0")
     readonly property color muted: value("muted", "#666666")
     readonly property color accent: value("focus", "#4a4a4a")
+    readonly property color lockAccent: value("lockAccent", "#a0a0a0")
     readonly property color error: value("critical", "#ff5555")
     readonly property string fontFamily: "NotoSansM Nerd Font Mono"
 }
