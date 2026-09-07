@@ -18,6 +18,7 @@ jobs:
       - name: Validate lockscreen foundation
         run: |
           bash -n config/hypr/scripts/awtarchy_lock.sh
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
           bash -n local/share/awtarchy/awtarchy-package-reconcile.sh
           bash -n tests/test-quickshell-lockscreen-foundation.sh
           bash -n tests/test-quickshell-lockscreen-manager-mode.sh
