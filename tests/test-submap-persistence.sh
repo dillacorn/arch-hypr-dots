@@ -13,7 +13,7 @@ fail() {
 }
 
 [[ -f "$HELPER" ]] || fail 'submap persistence helper is missing'
-grep -Fq 'submap_state.sh" init' "$READY_SOUND" \
+grep -Fq 'bash "$SUBMAP_STATE_HELPER" init' "$READY_SOUND" \
     || fail 'login startup does not initialize persistent submap state'
 
 fakebin="${TMP}/bin"
