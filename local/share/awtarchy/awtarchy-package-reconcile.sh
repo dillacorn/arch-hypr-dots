@@ -12,6 +12,7 @@ HARDWARE_FILE="${AWTARCHY_HARDWARE_FILE:-${STATE_DIR}/hardware-state}"
 MANAGED_PACKAGES_FILE="${AWTARCHY_MANAGED_PACKAGES_FILE:-/var/lib/awtarchy/managed-packages}"
 REVIEW_ONLY=0
 MIGRATE_REPLACEMENTS_ONLY=0
+MIGRATE_LOCKSCREEN_RETIREMENT_ONLY=0
 NEEDS_ACTION_ONLY=0
 
 # Packages required by currently exposed Awtarchy shell/runtime features.
@@ -102,6 +103,9 @@ while (( $# )); do
       ;;
     --migrate-replacements)
       MIGRATE_REPLACEMENTS_ONLY=1
+      ;;
+    --migrate-lockscreen-retirement)
+      MIGRATE_LOCKSCREEN_RETIREMENT_ONLY=1
       ;;
     --needs-action)
       NEEDS_ACTION_ONLY=1
@@ -757,6 +761,36 @@ apply_cheese_snapshot_replacement() {
   log "Replaced Cheese with Snapshot."
 }
 
+migrate_lockscreen_retirement() {
+  [[ "${AWTARCHY_LOCKSCREEN_RETIRE_CONFIRMED:-0}" == 1 ]] \
+    || die "Lockscreen retirement requires an explicitly confirmed target."
+
+  if array_contains hyprlock "${ARCH_CATALOG[@]}"; then
+    die "Target runtime still requires Hyprlock; refusing package retirement."
+  fi
+
+  package_installed hyprlock || return 0
+  if ! managed_package hyprlock; then
+    log "Hyprlock is installed but is not recorded as Awtarchy-owned; leaving it installed."
+    return 0
+  fi
+
+  log "Removing retired Awtarchy-owned Hyprlock package..."
+  if ! as_root pacman -Rns --noconfirm hyprlock; then
+    warn "Could not remove retired Awtarchy-owned Hyprlock; leaving package ownership recorded for a later retry."
+    return 0
+  fi
+  if package_installed hyprlock; then
+    warn "Hyprlock is still detected after package removal; leaving package ownership recorded for a later retry."
+    return 0
+  fi
+  if ! forget_managed_packages hyprlock; then
+    warn "Hyprlock was removed, but Awtarchy could not update its managed-package ledger."
+    return 0
+  fi
+  log "Removed retired Awtarchy-owned Hyprlock package."
+}
+
 flatpak_scope() {
   local fs=""
   if have findmnt; then
@@ -804,6 +838,11 @@ fi
 
 if (( MIGRATE_REPLACEMENTS_ONLY == 1 )); then
   apply_cheese_snapshot_replacement
+  exit 0
+fi
+
+if (( MIGRATE_LOCKSCREEN_RETIREMENT_ONLY == 1 )); then
+  migrate_lockscreen_retirement
   exit 0
 fi
 

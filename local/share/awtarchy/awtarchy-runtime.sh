@@ -244,6 +244,94 @@ migrate_cheese_to_snapshot_stage() {
     bash "$reconciler" --migrate-replacements
 }
 
+runtime_catalog_has_exact_package() {
+  local runtime_source="$1" package="$2"
+  awk -v package="$package" '
+    /^declare -a PKG_GROUPS=\(/ {
+      in_groups=1
+      next
+    }
+    in_groups && /^[[:space:]]*\)[[:space:]]*$/ { exit }
+    in_groups {
+      line=$0
+      sub(/^[[:space:]]*"/, "", line)
+      sub(/"[[:space:]]*$/, "", line)
+      sub(/^[^:]*:/, "", line)
+      count=split(line, fields, /[[:space:]]+/)
+      for (i=1; i<=count; i++) {
+        if (fields[i] == package)
+          found=1
+      }
+    }
+    END { exit(found ? 0 : 1) }
+  ' "$runtime_source"
+}
+
+lockscreen_target_retires_hyprlock() {
+  local repo_dir="$1"
+  local runtime_source="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
+  local config_root="${repo_dir}/config"
+
+  [[ -f "${repo_dir}/config/quickshell/awtarchy-lock/shell.qml" \
+    && ! -L "${repo_dir}/config/quickshell/awtarchy-lock/shell.qml" ]] || return 1
+  [[ -f "${repo_dir}/config/hypr/scripts/awtarchy_lock.sh" \
+    && ! -L "${repo_dir}/config/hypr/scripts/awtarchy_lock.sh" ]] || return 1
+  [[ ! -e "${repo_dir}/config/hypr/hyprlock.conf" \
+    && ! -L "${repo_dir}/config/hypr/hyprlock.conf" ]] || return 1
+  [[ -r "$runtime_source" && ! -L "$runtime_source" ]] || return 1
+  [[ -d "$config_root" && ! -L "$config_root" ]] || return 1
+
+  runtime_catalog_has_exact_package "$runtime_source" hyprlock && return 1
+  if grep -R -I -w -q -- hyprlock "$config_root"; then
+    return 1
+  fi
+  return 0
+}
+
+retired_hyprlock_backup_path() {
+  local stamp candidate suffix=0
+  stamp="$(date '+%Y%m%d-%H%M%S')"
+  candidate="${HOME_DIR}/.config/hypr/hyprlock.conf.backup.${stamp}"
+  while [[ -e "$candidate" || -L "$candidate" ]]; do
+    ((suffix += 1))
+    candidate="${HOME_DIR}/.config/hypr/hyprlock.conf.backup.${stamp}.${suffix}"
+  done
+  printf '%s\n' "$candidate"
+}
+
+migrate_retired_hyprlock_stage() {
+  local repo_dir="$1"
+  local reconciler="${repo_dir}/local/share/awtarchy/awtarchy-package-reconcile.sh"
+  local runtime_source="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
+  local managed_file="${AWTARCHY_MANAGED_PACKAGES_FILE:-/var/lib/awtarchy/managed-packages}"
+  local live="${HOME_DIR}/.config/hypr/hyprlock.conf" backup=""
+
+  lockscreen_target_retires_hyprlock "$repo_dir" || return 0
+
+  if [[ -n "${TESTING_BRANCH:-}" ]]; then
+    log "Git testing keeps Hyprlock installed as an emergency lock fallback."
+    return 0
+  fi
+
+  [[ -f "$reconciler" && ! -L "$reconciler" ]] \
+    || die "Lockscreen package migration helper is unavailable or unsafe: ${reconciler}"
+  [[ -r "$runtime_source" && ! -L "$runtime_source" ]] \
+    || die "Lockscreen package migration runtime is unavailable or unsafe: ${runtime_source}"
+
+  if [[ -e "$live" || -L "$live" ]]; then
+    backup="$(retired_hyprlock_backup_path)"
+    retry_command run_as_target mv -- "$live" "$backup" \
+      || die "Could not preserve retired Hyprlock config: ${live}"
+    log "Preserved retired Hyprlock config: ${backup}"
+  fi
+
+  AWTARCHY_RUNTIME="$runtime_source" \
+    AWTARCHY_MANAGED_PACKAGES_FILE="$managed_file" \
+    AWTARCHY_LOCKSCREEN_RETIRE_CONFIRMED=1 \
+    bash "$reconciler" --migrate-lockscreen-retirement \
+      || die "Could not complete the ownership-safe Hyprlock package migration."
+}
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Built-in raw-key terminal UI
 # ──────────────────────────────────────────────────────────────────────────────
@@ -3796,6 +3884,7 @@ run_install() {
   remove_legacy_shell_files_stage
   install_awtarchy_command_stage
   remove_legacy_shell_packages_stage
+  migrate_retired_hyprlock_stage "$REPO_DIR"
 
   ok "Setup complete. Rebooting now."
   if (( NO_REBOOT == 1 )) || [[ "${AWTARCHY_NO_REBOOT:-0}" == "1" ]]; then
@@ -8911,6 +9000,7 @@ main() {
 
   persist_quickshell_hyprland_user_patch
   remove_quickshell_update_legacy_packages
+  migrate_retired_hyprlock_stage "$repo_dir"
 
   if (( polkit_remove_legacy_ready == 1 )); then
     remove_legacy_polkit_gnome_package
