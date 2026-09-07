@@ -105,6 +105,10 @@ require_text "$THEME_QML" '/quickshell/awtarchy/theme.json' \
     'lock theme does not consume the existing local Awtarchy theme state'
 require_text "$THEME_QML" '"#000000"' \
     'lock theme has no safe black fallback'
+reject_text "$THEME_QML" 'function data() {' \
+    'LockTheme shadows the inherited read-only Item.data property'
+require_text "$THEME_QML" 'function themeData() {' \
+    'LockTheme does not use a non-conflicting JSON reader name'
 
 require_text "$MANAGER" 'CONFIG_NAME="awtarchy-lock"' \
     'lock manager does not target only awtarchy-lock'
