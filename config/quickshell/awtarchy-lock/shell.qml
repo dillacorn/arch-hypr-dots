@@ -11,8 +11,47 @@ ShellRoot {
     id: root
 
     property bool unlockRequested: false
+    readonly property string statePath: (Quickshell.env("XDG_CACHE_HOME")
+        || (Quickshell.env("HOME") + "/.cache")) + "/awtarchy/quickshell-state.json"
+    property string lockAnimationPreference: "random"
+    property int randomFormationMode: Math.floor(Math.random() * 4)
+    readonly property var allowedAnimationPreferences: [
+        "random", "swarm", "edges", "center", "split", "off"
+    ]
 
-    Component.onCompleted: Quickshell.watchFiles = false
+    function normalizedAnimationPreference(value) {
+        const key = String(value || "");
+        return allowedAnimationPreferences.indexOf(key) >= 0 ? key : "random";
+    }
+
+    function loadAnimationPreference() {
+        const text = stateFile.text();
+        if (!text || text.length === 0) {
+            lockAnimationPreference = "random";
+            return;
+        }
+
+        try {
+            const parsed = JSON.parse(text);
+            lockAnimationPreference = normalizedAnimationPreference(
+                parsed && typeof parsed === "object" ? parsed.lockscreen_animation : "random");
+        } catch (error) {
+            lockAnimationPreference = "random";
+        }
+    }
+
+    Component.onCompleted: {
+        Quickshell.watchFiles = false;
+        root.loadAnimationPreference();
+    }
+
+    FileView {
+        id: stateFile
+        path: root.statePath
+        blockLoading: true
+        printErrors: false
+        onLoaded: root.loadAnimationPreference()
+    }
 
     LockTheme {
         id: lockTheme
@@ -39,6 +78,8 @@ ShellRoot {
                 auth: lockAuth
                 theme: lockTheme
                 unlocking: root.unlockRequested
+                animationPreference: root.lockAnimationPreference
+                randomFormationMode: root.randomFormationMode
             }
         }
 

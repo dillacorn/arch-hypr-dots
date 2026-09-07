@@ -8,6 +8,8 @@ WlSessionLockSurface {
     required property var auth
     required property var theme
     required property bool unlocking
+    required property string animationPreference
+    required property int randomFormationMode
 
     color: "#000000"
 
@@ -28,7 +30,11 @@ WlSessionLockSurface {
     readonly property int wordmarkColumns: 67
     readonly property int wordmarkCellWidth: Math.max(8, Math.floor(18 * uiScale))
     readonly property int wordmarkCellHeight: Math.max(12, Math.floor(24 * uiScale))
-    readonly property int formationMode: Math.floor(Math.random() * 4)
+    readonly property int formationMode: animationPreference === "swarm" ? 0
+        : animationPreference === "edges" ? 1
+        : animationPreference === "center" ? 2
+        : animationPreference === "split" ? 3
+        : randomFormationMode
 
     property bool entered: false
 
@@ -186,7 +192,8 @@ WlSessionLockSurface {
                                 readonly property int formationDelay: Math.floor(Math.random() * 451)
                                 readonly property int formationDuration: 2300
                                     + Math.floor(Math.random() * 451)
-                                property real formationProgress: 0
+                                property real formationProgress:
+                                    root.animationPreference === "off" ? 1 : 0
 
                                 x: finalCellX
                                     + (1 - formationProgress) * startX
@@ -217,6 +224,7 @@ WlSessionLockSurface {
                                 SequentialAnimation on formationProgress {
                                     running: wordmarkCell.isFilledGlyph
                                         && root.entered && !root.unlocking
+                                        && root.animationPreference !== "off"
 
                                     PauseAnimation {
                                         duration: wordmarkCell.formationDelay
