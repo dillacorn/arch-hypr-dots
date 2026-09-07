@@ -57,14 +57,15 @@ jobs:
       - name: Record exact stock hash and remove diagnostic bridge
         shell: bash
         env:
-          EXPECTED_HEAD: b07304f8eea903b109340bd0a3ace5ea5cea1eeb
+          APPROVED_IMPL: 614efdd1ee746220059974cf480f48f96e1b62c8
           EXPECTED_MAIN: 2bd8e0d135855634ae82624d202ad461491f7518
           STOCK_HASH: 657bf3b9777f027c5f66c1b37ae6b7b092270ca27c10b87bfff28725870819f7
         run: |
           set -euo pipefail
 
-          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          git merge-base --is-ancestor "$APPROVED_IMPL" HEAD
           test "$(git rev-parse origin/main)" = "$EXPECTED_MAIN"
+          test "$(sha256sum config/quickshell/awtarchy/BatteryCareCard.qml | awk '{print $1}')" = "$STOCK_HASH"
 
           python3 - <<'PY'
           from pathlib import Path
