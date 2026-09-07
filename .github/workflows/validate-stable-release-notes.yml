@@ -39,3 +39,106 @@ jobs:
         run: bash tests/test-stable-release-notes-validator.sh
       - name: Canonical installation and update docs
         run: bash tests/test-install-update-docs.sh
+
+  cleanup-v3-5-6-release-notes:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.ref == 'release/v3.5.6-notes-cleanup' &&
+      github.event.pull_request.title == 'Release notes bridge: align v3.5.6 with canonical guides'
+    needs: release-notes-contract
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+
+      - name: Validate, update, and verify v3.5.6 release notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_MAIN_SHA: 2bd8e0d135855634ae82624d202ad461491f7518
+          EXPECTED_RELEASE_SHA: 1295e13b9323463b735f1793e5251ca4a2529eef
+        run: |
+          set -euo pipefail
+
+          current_main="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          test "$current_main" = "$EXPECTED_MAIN_SHA"
+
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v3.5.6" > /tmp/v3.5.6-before.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path('/tmp/v3.5.6-before.json').read_text(encoding='utf-8'))
+          Path('/tmp/v3.5.6-before.md').write_text(data['body'], encoding='utf-8')
+          assert data['name'] == 'Awtarchy v3.5.6 Quickshell'
+          assert data['tag_name'] == 'v3.5.6'
+          assert data['target_commitish'] == '1295e13b9323463b735f1793e5251ca4a2529eef'
+          assert data['draft'] is False
+          assert data['prerelease'] is False
+          PY
+
+          grep -Fq '## Getting started' /tmp/v3.5.6-before.md
+          grep -Fq '## Existing Awtarchy users' /tmp/v3.5.6-before.md
+          if grep -Fq '## Install and update' /tmp/v3.5.6-before.md; then
+            echo 'v3.5.6 release notes already use the canonical guide format; refusing to overwrite.' >&2
+            exit 1
+          fi
+
+          tag_type="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.5.6" --jq '.object.type')"
+          tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.5.6" --jq '.object.sha')"
+          if [[ "$tag_type" == 'tag' ]]; then
+            tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq '.object.sha')"
+          fi
+          test "$tag_sha" = "$EXPECTED_RELEASE_SHA"
+
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v3.5.5" > /tmp/v3.5.5.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path('/tmp/v3.5.5.json').read_text(encoding='utf-8'))
+          Path('/tmp/v3.5.5.md').write_text(data['body'], encoding='utf-8')
+          PY
+
+          python3 .github/scripts/validate-stable-release-notes.py \
+            --version v3.5.6 \
+            --notes .github/release-v3.5.6-cleanup.md \
+            --previous /tmp/v3.5.5.md
+
+          gh release edit v3.5.6 \
+            --repo "$GITHUB_REPOSITORY" \
+            --notes-file .github/release-v3.5.6-cleanup.md
+
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v3.5.6" > /tmp/v3.5.6-after.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path('/tmp/v3.5.6-after.json').read_text(encoding='utf-8'))
+          Path('/tmp/v3.5.6-published.md').write_text(data['body'], encoding='utf-8')
+          assert data['name'] == 'Awtarchy v3.5.6 Quickshell'
+          assert data['tag_name'] == 'v3.5.6'
+          assert data['target_commitish'] == '1295e13b9323463b735f1793e5251ca4a2529eef'
+          assert data['draft'] is False
+          assert data['prerelease'] is False
+          PY
+
+          cmp -s .github/release-v3.5.6-cleanup.md /tmp/v3.5.6-published.md
+
+          python3 .github/scripts/validate-stable-release-notes.py \
+            --version v3.5.6 \
+            --notes /tmp/v3.5.6-published.md \
+            --previous /tmp/v3.5.5.md
+
+          tag_type="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.5.6" --jq '.object.type')"
+          tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.5.6" --jq '.object.sha')"
+          if [[ "$tag_type" == 'tag' ]]; then
+            tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq '.object.sha')"
+          fi
+          test "$tag_sha" = "$EXPECTED_RELEASE_SHA"
+
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$EXPECTED_MAIN_SHA"
+
+          gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/release/v3.5.6-notes-cleanup"
