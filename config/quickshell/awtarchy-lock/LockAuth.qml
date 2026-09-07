@@ -12,7 +12,6 @@ Item {
     property bool statusIsError: false
 
     readonly property bool busy: pam.active
-    readonly property bool responseVisible: pam.responseVisible
     readonly property bool responseRequired: pam.responseRequired
 
     signal authenticated()
@@ -25,59 +24,26 @@ Item {
         statusIsError = false;
     }
 
-    function answerPendingResponse() {
-        if (!pam.responseRequired || pendingResponse.length === 0)
-            return false;
-
-        pam.respond(pendingResponse);
-        pendingResponse = "";
-        return true;
-    }
-
     function submit(response) {
-        if (response.length === 0)
+        if (response.length === 0 || pam.active)
             return false;
-
-        if (pam.active) {
-            if (!pam.responseRequired)
-                return false;
-
-            pendingResponse = response;
-            statusText = "Authenticating…";
-            statusIsError = false;
-            return answerPendingResponse();
-        }
 
         pendingResponse = response;
         statusText = "Authenticating…";
         statusIsError = false;
-
-        if (!pam.start()) {
-            pendingResponse = "";
-            statusText = "Authentication could not start";
-            statusIsError = true;
-            authenticationFailed();
-            return false;
-        }
-
+        pam.start();
         return true;
     }
 
     PamContext {
         id: pam
-        config: "login"
-
-        onResponseRequiredChanged: {
-            if (!responseRequired || root.pendingResponse.length === 0)
-                return;
-
-            root.answerPendingResponse();
-        }
+        configDirectory: "pam"
+        config: "password.conf"
 
         onPamMessage: {
-            if (responseRequired) {
-                root.statusText = pam.message;
-                root.statusIsError = pam.messageIsError;
+            if (responseRequired && root.pendingResponse.length > 0) {
+                pam.respond(root.pendingResponse);
+                root.pendingResponse = "";
                 return;
             }
 
@@ -91,6 +57,7 @@ Item {
             root.pendingResponse = "";
             root.statusText = "Authentication error";
             root.statusIsError = true;
+            root.authenticationFailed();
         }
 
         onCompleted: result => {
@@ -103,7 +70,7 @@ Item {
                 return;
             }
 
-            root.statusText = "Authentication failed";
+            root.statusText = "Incorrect password";
             root.statusIsError = true;
             root.authenticationFailed();
         }
