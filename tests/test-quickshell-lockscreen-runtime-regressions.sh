@@ -4,7 +4,12 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 SHELL_QML="${ROOT}/config/quickshell/awtarchy-lock/shell.qml"
 SURFACE_QML="${ROOT}/config/quickshell/awtarchy-lock/LockSurface.qml"
+LOCK_THEME_QML="${ROOT}/config/quickshell/awtarchy-lock/LockTheme.qml"
+THEME_APPLY="${ROOT}/config/hypr/scripts/quickshell_theme_apply.sh"
+PINK_THEME="${ROOT}/config/hypr/themes/pink"
 HYPRLAND_LUA="${ROOT}/config/hypr/hyprland.lua"
+TMP="$(mktemp -d)"
+trap 'rm -rf -- "$TMP"' EXIT
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
@@ -81,6 +86,63 @@ require_text "$SURFACE_QML" 'antialiasing: false' \
 reject_text "$SURFACE_QML" 'fontSizeMode: Text.HorizontalFit' \
     'lockscreen still renders the ASCII wordmark through font glyph fitting'
 
+# The lockscreen needs a theme color that remains meaningful on its fixed black
+# background. It is generated from each theme's active-border identity instead
+# of reusing foreground, which is intentionally dark for the pink theme.
+require_text "$LOCK_THEME_QML" 'readonly property color lockAccent:' \
+    'lock theme does not expose a dedicated lockscreen accent'
+lock_accent_uses="$(grep -Fc 'color: root.theme.lockAccent' "$SURFACE_QML" || true)"
+[[ "$lock_accent_uses" -ge 3 ]] \
+    || fail 'lockscreen logo and password particles do not use the dedicated lock accent'
+
+mkdir -p "$TMP/config/hypr/themes" "$TMP/state" "$TMP/home" "$TMP/bin"
+cp -- "$PINK_THEME" "$TMP/config/hypr/themes/pink"
+cat >"$TMP/bin/systemctl" <<'STUB'
+#!/usr/bin/env bash
+exit 1
+STUB
+chmod 0755 "$TMP/bin/systemctl"
+PATH="$TMP/bin:$PATH" \
+HOME="$TMP/home" \
+XDG_CONFIG_HOME="$TMP/config" \
+XDG_STATE_HOME="$TMP/state" \
+    bash "$THEME_APPLY" pink
+python3 - "$TMP/config/quickshell/awtarchy/theme.json" <<'PY' \
+    || fail 'pink theme did not generate the expected lockscreen accent'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    data = json.load(handle)
+
+if data.get("lockAccent") != "#EACDD2":
+    raise SystemExit(1)
+PY
+
+# Each filled wordmark cell must assemble from a randomized square-particle
+# start into its exact final geometric glyph. Authentication remains independent
+# so a fast unlock never waits for the roughly four-second logo formation.
+require_text "$SURFACE_QML" 'property real formationProgress: 0' \
+    'lockscreen wordmark cells have no formation progress state'
+require_text "$SURFACE_QML" 'Math.random()' \
+    'lockscreen wordmark formation is not randomized per lock'
+require_text "$SURFACE_QML" 'readonly property int formationDelay:' \
+    'lockscreen wordmark has no randomized particle stagger'
+require_text "$SURFACE_QML" 'readonly property int formationDuration:' \
+    'lockscreen wordmark has no randomized formation duration'
+require_text "$SURFACE_QML" 'SequentialAnimation on formationProgress' \
+    'lockscreen wordmark has no per-particle formation animation'
+require_text "$SURFACE_QML" 'PauseAnimation {' \
+    'lockscreen wordmark particles do not use randomized start delays'
+require_text "$SURFACE_QML" 'Math.sin(Math.PI * wordmarkCell.formationProgress)' \
+    'lockscreen wordmark particles do not follow varied converging paths'
+require_text "$SURFACE_QML" 'enabled: !auth.busy || auth.responseRequired' \
+    'password input was coupled to the logo formation instead of PAM state'
+
+# The password row is intentionally minimal. Keep only the blocks/haze and do
+# not restore the old focus/error underline.
+reject_text "$SURFACE_QML" 'width: Math.round(250 * root.uiScale)' \
+    'lockscreen still renders the password underline'
 reject_text "$SURFACE_QML" 'text: "── AWTARCHY ──"' \
     'lockscreen still uses the old tiny Awtarchy heading'
 reject_text "$SURFACE_QML" 'property string timeText' \
