@@ -7,6 +7,7 @@ SHELL_QML="${LOCK_DIR}/shell.qml"
 SURFACE_QML="${LOCK_DIR}/LockSurface.qml"
 AUTH_QML="${LOCK_DIR}/LockAuth.qml"
 THEME_QML="${LOCK_DIR}/LockTheme.qml"
+PAM_CONFIG="${LOCK_DIR}/pam/password.conf"
 MANAGER="${ROOT}/config/hypr/scripts/awtarchy_lock.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
@@ -36,6 +37,7 @@ require_file "$SHELL_QML"
 require_file "$SURFACE_QML"
 require_file "$AUTH_QML"
 require_file "$THEME_QML"
+require_file "$PAM_CONFIG"
 require_file "$MANAGER"
 
 require_text "$SHELL_QML" 'import Quickshell.Wayland' \
@@ -59,8 +61,10 @@ require_text "$SURFACE_QML" 'color: "#000000"' \
     'lock surface does not use an opaque black stock background'
 require_text "$SURFACE_QML" '/fastfetch/ascii/awtarchy.txt' \
     'lock surface does not use the local Awtarchy Fastfetch ASCII mark'
-require_text "$SURFACE_QML" 'echoMode: auth.responseVisible ? TextInput.Normal : TextInput.Password' \
-    'password response visibility does not follow the PAM prompt safely'
+require_text "$SURFACE_QML" 'echoMode: TextInput.Password' \
+    'password field is not always masked for the password-only PAM service'
+require_text "$SURFACE_QML" 'inputMethodHints: Qt.ImhSensitiveData' \
+    'password field is not marked as sensitive input'
 require_text "$SURFACE_QML" 'enabled: !auth.busy || auth.responseRequired' \
     'lock input is disabled when an active PAM conversation asks for another response'
 require_text "$SURFACE_QML" 'if ((auth.busy && !auth.responseRequired) || password.text.length === 0)' \
@@ -76,8 +80,12 @@ require_text "$AUTH_QML" 'import Quickshell.Services.Pam' \
     'lock authentication does not import Quickshell.Services.Pam'
 require_text "$AUTH_QML" 'PamContext {' \
     'lock authentication does not use PamContext'
-require_text "$AUTH_QML" 'config: "login"' \
-    'lock authentication does not use the verified default login PAM stack'
+require_text "$AUTH_QML" 'configDirectory: "pam"' \
+    'lock authentication does not use the dedicated password-only PAM directory'
+require_text "$AUTH_QML" 'config: "password.conf"' \
+    'lock authentication does not use the dedicated password-only PAM service'
+reject_text "$AUTH_QML" 'config: "login"' \
+    'lock authentication still uses the general login PAM stack'
 require_text "$AUTH_QML" 'readonly property bool responseRequired: pam.responseRequired' \
     'lock authentication does not expose active PAM response demand to the input surface'
 require_text "$AUTH_QML" 'if (pam.active) {' \
@@ -100,6 +108,9 @@ reject_text "$AUTH_QML" 'Quickshell.execDetached' \
     'authentication must not send secrets through detached commands'
 reject_text "$AUTH_QML" 'console.log' \
     'authentication must not log PAM conversation data'
+
+[[ "$(tr -d '\r' <"$PAM_CONFIG")" == 'auth required pam_unix.so' ]] \
+    || fail 'dedicated lock PAM service is not password-only pam_unix authentication'
 
 require_text "$THEME_QML" '/quickshell/awtarchy/theme.json' \
     'lock theme does not consume the existing local Awtarchy theme state'
@@ -126,7 +137,6 @@ reject_text "$MANAGER" 'pkill' \
     'lock manager must not use generic pkill'
 reject_text "$MANAGER" 'CONFIG_NAME="awtarchy"' \
     'lock manager must not target the normal Awtarchy shell'
-
 
 # Behavior-test the manager without a compositor or real Quickshell. The fake qs
 # implements only the dedicated awtarchy-lock IPC/start surface used by the
