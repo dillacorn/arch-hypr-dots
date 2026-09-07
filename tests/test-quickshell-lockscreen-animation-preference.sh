@@ -21,7 +21,7 @@ require_text() {
 }
 
 # The existing Quickshell state owner persists one global lockscreen animation
-# preference. Missing state remains stock Random; only these six values are
+# preference. Missing state uses stock Split; only these six values are
 # accepted so malformed state cannot turn into arbitrary QML behavior.
 require_text "$APP_STATE" 'set-lockscreen-animation)' \
     'application state helper does not expose set-lockscreen-animation'
@@ -60,6 +60,12 @@ for preference in random swarm edges center split off; do
     require_text "$BAR_STATE" "key: \"${preference}\"" \
         "BarState is missing the ${preference} lockscreen animation choice"
 done
+require_text "$BAR_STATE" 'lockscreen_animation: "split"' \
+    'BarState stock lockscreen animation is not Split'
+require_text "$BAR_STATE" 'const value = String(data().lockscreen_animation || "split");' \
+    'BarState missing lockscreen animation does not normalize to Split'
+require_text "$BAR_STATE" 'return "split";' \
+    'BarState invalid lockscreen animation does not normalize to Split'
 require_text "$QUICK_SETTINGS" 'text: "Lockscreen Animation"' \
     'Awtarchy Quick Settings card has no Lockscreen Animation control'
 require_text "$QUICK_SETTINGS" 'model: BarState.lockscreenAnimationPresets' \
@@ -68,14 +74,16 @@ require_text "$QUICK_SETTINGS" '"set-lockscreen-animation", String(modelData.key
     'Lockscreen Animation control does not persist the selected choice'
 
 # The dedicated lock process reads the shared state itself at startup. It must
-# fall back to stock Random when the file/value is unavailable, malformed, or
-# unknown, and choose one random family once per lock so all monitors agree.
+# fall back to stock Split when the file/value is unavailable, malformed, or
+# unknown, and choose one random family once per lock only when Random is used.
 require_text "$SHELL_QML" 'blockLoading: true' \
     'lock shell does not synchronously read animation preference before surfaces start'
-require_text "$SHELL_QML" 'property string lockAnimationPreference: "random"' \
-    'lock shell default animation preference is not Random'
-require_text "$SHELL_QML" 'return allowedAnimationPreferences.indexOf(key) >= 0 ? key : "random";' \
-    'lock shell does not normalize unknown animation preferences back to Random'
+require_text "$SHELL_QML" 'property string lockAnimationPreference: "split"' \
+    'lock shell default animation preference is not Split'
+require_text "$SHELL_QML" 'return allowedAnimationPreferences.indexOf(key) >= 0 ? key : "split";' \
+    'lock shell does not normalize unknown animation preferences back to Split'
+require_text "$SHELL_QML" 'lockAnimationPreference = "split";' \
+    'lock shell does not fall back to Split when state is missing or malformed'
 require_text "$SHELL_QML" 'catch (error) {' \
     'lock shell does not guard malformed animation preference state'
 require_text "$SHELL_QML" 'property int randomFormationMode: Math.floor(Math.random() * 4)' \
@@ -101,5 +109,11 @@ require_text "$SURFACE_QML" 'root.animationPreference === "off" ? 1 : 0' \
     'Off does not immediately render the completed wordmark'
 require_text "$SURFACE_QML" 'root.animationPreference !== "off"' \
     'Off does not suppress particle formation animation'
+require_text "$SURFACE_QML" 'readonly property int formationDelay: Math.floor(Math.random() * 301)' \
+    'lockscreen formation delay is not capped at the faster 300ms range'
+require_text "$SURFACE_QML" 'readonly property int formationDuration: 1700' \
+    'lockscreen formation base duration is not the faster 1700ms value'
+require_text "$SURFACE_QML" '+ Math.floor(Math.random() * 351)' \
+    'lockscreen formation duration variance is not capped at 350ms'
 
 printf 'PASS: lockscreen animation preference contracts\n'
