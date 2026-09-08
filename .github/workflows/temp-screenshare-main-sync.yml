@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   sync:
-    if: github.event.head_commit.message == 'Stage Screen Share Guard main sync'
+    if: startsWith(github.event.head_commit.message, 'Stage Screen Share Guard main sync')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
@@ -22,6 +22,12 @@ jobs:
         run: |
           set -euo pipefail
           history='local/share/awtarchy/quickshell-managed-history.sha256'
+          managed=(
+            '.config/quickshell/awtarchy/QuickSettings.qml'
+            '.config/quickshell/awtarchy/ScreenShareGuardCard.qml'
+            '.config/hypr/scripts/screenshare_guard.sh'
+            '.config/hypr/screenshare_guard.lua'
+          )
 
           git config user.name dillacorn
           git config user.email 28743863+dillacorn@users.noreply.github.com
@@ -39,16 +45,30 @@ jobs:
                   git merge --abort
                   exit 1
               fi
-
-              git checkout --ours -- "$history"
-              while IFS= read -r line; do
-                  [[ -z "$line" ]] && continue
-                  if ! grep -Fqx -- "$line" "$history"; then
-                      printf '%s\n' "$line" >> "$history"
-                  fi
-              done < <(git show "origin/main:$history")
+              git checkout --theirs -- "$history"
               git add "$history"
           fi
+
+          old_lines=(
+            $'78b59de0c5b2a0b7e90df4385e941f45fe2a1405ea1e7578dbc639c329c2117b\t.config/quickshell/awtarchy/QuickSettings.qml'
+            $'c7bb0a04c679254e62adadfcbfb0a2c136e397a784ca9dc4bbca2ec1fc64ce80\t.config/quickshell/awtarchy/ScreenShareGuardCard.qml'
+            $'1d2a16aeb66dc9d295ac44c649e733ff10bc5545ad330008ed83366e3fffcef1\t.config/hypr/scripts/screenshare_guard.sh'
+            $'7371b93c386afdf61df0e3fafda04b4951b04533aeed03807dbc973679d628f9\t.config/hypr/screenshare_guard.lua'
+          )
+
+          printf '\n# 2026-09-08 Screen Share Guard controls.\n' >> "$history"
+          for line in "${old_lines[@]}"; do
+              grep -Fqx -- "$line" "$history" || printf '%s\n' "$line" >> "$history"
+          done
+
+          printf '\n# 2026-09-08 Screen Share Guard current-main integration.\n' >> "$history"
+          for managed_path in "${managed[@]}"; do
+              repo_path="${managed_path#.}"
+              repo_path="${repo_path#/}"
+              line="$(sha256sum "$repo_path" | awk '{print $1}')"$'\t'"$managed_path"
+              grep -Fqx -- "$line" "$history" || printf '%s\n' "$line" >> "$history"
+          done
+          git add "$history"
 
           [[ -z "$(git diff --name-only --diff-filter=U)" ]]
 
