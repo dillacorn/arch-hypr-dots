@@ -72,7 +72,7 @@ jobs:
       - name: Secure power-transition contract
         run: bash tests/test-quickshell-lockscreen-power-safety.sh
 
-  apply-lockscreen-theme-cursor-fixes:
+  fix-lockscreen-history-tab:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'feature/quickshell-lockscreen' && github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: write
@@ -86,49 +86,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$(git log -1 --pretty=%s)" == 'Stage lockscreen theme and cursor fixes' ]]
-      - name: Apply production fixes
+          [[ "$(git log -1 --pretty=%s)" == 'Stage lockscreen history tab fix' ]]
+      - name: Correct managed history separator
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
 
-          runtime = Path('local/share/awtarchy/awtarchy-runtime.sh')
-          text = runtime.read_text(encoding='utf-8')
-          old = '    "muted": color("QS_MUTED", "W_MUTED", default="#404040"),\n}'
-          new = '    "muted": color("QS_MUTED", "W_MUTED", default="#404040"),\n    "lockAccent": f"#{active_border[:6]}",\n}'
+          path = Path('local/share/awtarchy/quickshell-managed-history.sha256')
+          text = path.read_text(encoding='utf-8')
+          old = 'd70c5f2ef8f0efcdff92f42ea8ddc060fac6113aaca4b8cf5523209e2a2680c8\\t.config/quickshell/awtarchy-lock/LockSurface.qml'
+          new = 'd70c5f2ef8f0efcdff92f42ea8ddc060fac6113aaca4b8cf5523209e2a2680c8\t.config/quickshell/awtarchy-lock/LockSurface.qml'
           if text.count(old) != 1:
-              raise SystemExit('expected exactly one updater palette insertion point')
-          runtime.write_text(text.replace(old, new, 1), encoding='utf-8')
-
-          surface = Path('config/quickshell/awtarchy-lock/LockSurface.qml')
-          text = surface.read_text(encoding='utf-8')
-          old = '        acceptedButtons: Qt.AllButtons\n        hoverEnabled: true\n        onClicked: password.forceActiveFocus()'
-          new = '        acceptedButtons: Qt.AllButtons\n        hoverEnabled: true\n        cursorShape: Qt.BlankCursor\n        onClicked: password.forceActiveFocus()'
-          if text.count(old) != 1:
-              raise SystemExit('expected exactly one lockscreen pointer insertion point')
-          surface.write_text(text.replace(old, new, 1), encoding='utf-8')
+              raise SystemExit('expected exactly one malformed lockscreen managed-history line')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
           PY
-
-          bash -n local/share/awtarchy/awtarchy-runtime.sh
-          bash tests/test-quickshell-lockscreen-theme-update.sh
-          bash tests/test-quickshell-lockscreen-cursor.sh
-          bash tests/test-quickshell-lockscreen-runtime-regressions.sh
-
-          history='local/share/awtarchy/quickshell-managed-history.sha256'
-          surface='config/quickshell/awtarchy-lock/LockSurface.qml'
-          hash="$(sha256sum "$surface" | awk '{print $1}')"
-          line="${hash}\t.config/quickshell/awtarchy-lock/LockSurface.qml"
-          if ! grep -Fqx -- "$line" "$history"; then
-            printf '\n# 2026-09-07 native lockscreen cursor hiding.\n%s\n' "$line" >>"$history"
-          fi
-
+          grep -Fqx $'d70c5f2ef8f0efcdff92f42ea8ddc060fac6113aaca4b8cf5523209e2a2680c8\t.config/quickshell/awtarchy-lock/LockSurface.qml' \
+            local/share/awtarchy/quickshell-managed-history.sha256
           git diff --check
           git config user.name dillacorn
           git config user.email 28743863+dillacorn@users.noreply.github.com
-          git add local/share/awtarchy/awtarchy-runtime.sh \
-            config/quickshell/awtarchy-lock/LockSurface.qml \
-            local/share/awtarchy/quickshell-managed-history.sha256
-          git commit -m 'Preserve lockscreen theme and hide cursor'
+          git add local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'Fix lockscreen managed history separator'
           git push origin HEAD:feature/quickshell-lockscreen
