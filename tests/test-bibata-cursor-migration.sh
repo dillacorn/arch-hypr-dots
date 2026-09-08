@@ -9,6 +9,7 @@ STATE_SCRIPT="${ROOT}/config/hypr/scripts/quickshell_application_state.sh"
 CURSOR_SCRIPT="${ROOT}/config/hypr/scripts/quickshell_cursor_theme.sh"
 CURSOR_QML="${ROOT}/config/quickshell/awtarchy/CursorThemeSettings.qml"
 FLYOUT="${ROOT}/config/quickshell/awtarchy/FlyoutSettings.qml"
+QUICK_SETTINGS="${ROOT}/config/quickshell/awtarchy/QuickSettings.qml"
 HYPR="${ROOT}/config/hypr/hyprland.lua"
 GTK3="${ROOT}/config/gtk-3.0/settings.ini"
 NWG="${ROOT}/local/share/nwg-look/gsettings"
@@ -54,7 +55,11 @@ not_contains "$RUNTIME" 'xcursor-comix' \
 
 # Stock configuration defaults must all agree on Bibata Modern Ice.
 contains "$HYPR" 'hl.env("XCURSOR_THEME", "Bibata-Modern-Ice")' \
-  'Hyprland does not default to Bibata Modern Ice'
+  'Hyprland does not default to Bibata Modern Ice for XCursor'
+contains "$HYPR" 'hl.env("HYPRCURSOR_THEME", "Bibata-Modern-Ice")' \
+  'Hyprland does not default to Bibata Modern Ice for hyprcursor'
+contains "$HYPR" 'hl.env("HYPRCURSOR_SIZE", "24")' \
+  'Hyprland does not persist the hyprcursor size'
 contains "$GTK3" 'gtk-cursor-theme-name=Bibata-Modern-Ice' \
   'GTK3 does not default to Bibata Modern Ice'
 contains "$NWG" 'cursor-theme=Bibata-Modern-Ice' \
@@ -67,6 +72,17 @@ contains "$FLYOUT" 'CursorThemeSettings {' \
   'Quick Settings settings panel does not host the cursor selector'
 contains "$FLYOUT" 'cursorThemeSection.implicitHeight' \
   'Quick Settings cursor selector height is not included in panel sizing'
+python3 - "$QUICK_SETTINGS" <<'PY_QS'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text()
+start = text.index('Layout.row: root.quickSettingsSectionRow("awtarchy")')
+end = text.index('Layout.row: root.quickSettingsSectionRow("smtty")', start)
+section = text[start:end]
+if 'id: awtarchyCursorThemeSection' not in section or 'CursorThemeSettings {' not in section:
+    raise SystemExit('FAIL: cursor selector is not embedded in the Awtarchy Quick Settings card')
+PY_QS
 contains "$CURSOR_QML" 'Ice / White' \
   'cursor selector does not expose the white Ice option'
 contains "$CURSOR_QML" 'Classic / Black' \
@@ -75,6 +91,14 @@ contains "$CURSOR_SCRIPT" 'Bibata-Modern-Ice' \
   'cursor helper does not map the Ice theme directory'
 contains "$CURSOR_SCRIPT" 'Bibata-Modern-Classic' \
   'cursor helper does not map the Classic theme directory'
+contains "$CURSOR_SCRIPT" 'hyprcursor-util --extract' \
+  'cursor helper does not convert the installed XCursor theme for live Hyprland switching'
+contains "$CURSOR_SCRIPT" 'hyprcursor-util --create' \
+  'cursor helper does not compile the converted Bibata hyprcursor theme'
+contains "$CURSOR_SCRIPT" 'hyprctl setcursor "$theme" "$CURSOR_SIZE"' \
+  'cursor helper does not use Hyprland current-session cursor switching'
+contains "$RUNTIME" 'reapply_cursor_theme_after_update' \
+  'updater does not reapply the cursor to the current session'
 contains "$STATE_SCRIPT" 'set-cursor-theme' \
   'cursor preference is not persisted through the existing Quickshell state writer'
 
@@ -83,6 +107,7 @@ assert_history_current "$STATE_SCRIPT" '.config/hypr/scripts/quickshell_applicat
 assert_history_current "$CURSOR_SCRIPT" '.config/hypr/scripts/quickshell_cursor_theme.sh'
 assert_history_current "$CURSOR_QML" '.config/quickshell/awtarchy/CursorThemeSettings.qml'
 assert_history_current "$FLYOUT" '.config/quickshell/awtarchy/FlyoutSettings.qml'
+assert_history_current "$QUICK_SETTINGS" '.config/quickshell/awtarchy/QuickSettings.qml'
 
 # Package migration: install Bibata through aur-scan before removing an
 # Awtarchy-owned xcursor-comix package.
@@ -241,11 +266,21 @@ mkdir -p \
   "$cache_home/awtarchy" \
   "$data_home/nwg-look" \
   "$icon_root/Bibata-Modern-Ice/cursors" \
+  "$icon_root/Bibata-Modern-Ice/hyprcursors" \
   "$icon_root/Bibata-Modern-Classic/cursors" \
+  "$icon_root/Bibata-Modern-Classic/hyprcursors" \
   "$cursor_fakebin"
 printf '%s\n' ice >"$icon_root/Bibata-Modern-Ice/cursors/marker"
 printf '%s\n' classic >"$icon_root/Bibata-Modern-Classic/cursors/marker"
-printf '%s\n' 'hl.env("XCURSOR_SIZE", "24")' 'hl.env("XCURSOR_THEME", "Bibata-Modern-Ice")' \
+printf '%s\n' 'name = Bibata-Modern-Ice' 'cursors_directory = hyprcursors' \
+  >"$icon_root/Bibata-Modern-Ice/manifest.hl"
+printf '%s\n' 'name = Bibata-Modern-Classic' 'cursors_directory = hyprcursors' \
+  >"$icon_root/Bibata-Modern-Classic/manifest.hl"
+printf '%s\n' \
+  'hl.env("XCURSOR_SIZE", "24")' \
+  'hl.env("HYPRCURSOR_SIZE", "24")' \
+  'hl.env("XCURSOR_THEME", "Bibata-Modern-Ice")' \
+  'hl.env("HYPRCURSOR_THEME", "Bibata-Modern-Ice")' \
   >"$config_home/hypr/hyprland.lua"
 printf '%s\n' '[Settings]' 'gtk-cursor-theme-name=Bibata-Modern-Ice' \
   >"$config_home/gtk-3.0/settings.ini"
@@ -275,6 +310,7 @@ cursor_env=(
   AWTARCHY_APPLICATION_STATE_SCRIPT="$STATE_SCRIPT"
   AWTARCHY_CURSOR_ICON_ROOT="$icon_root"
   AWTARCHY_TEST_COMMAND_LOG="$command_log"
+  HYPRLAND_INSTANCE_SIGNATURE="test-instance"
 )
 
 status="$(env "${cursor_env[@]}" "$CURSOR_SCRIPT" status)"
@@ -284,7 +320,11 @@ env "${cursor_env[@]}" "$CURSOR_SCRIPT" set classic
 [[ $(jq -r '.cursor_variant // empty' "$cache_home/awtarchy/quickshell-state.json") == classic ]] \
   || fail 'Classic cursor preference was not persisted in quickshell-state.json'
 contains "$config_home/hypr/hyprland.lua" 'hl.env("XCURSOR_THEME", "Bibata-Modern-Classic")' \
-  'Classic cursor was not persisted into Hyprland config'
+  'Classic XCursor was not persisted into Hyprland config'
+contains "$config_home/hypr/hyprland.lua" 'hl.env("HYPRCURSOR_THEME", "Bibata-Modern-Classic")' \
+  'Classic hyprcursor was not persisted into Hyprland config'
+contains "$config_home/hypr/hyprland.lua" 'hl.env("HYPRCURSOR_SIZE", "24")' \
+  'hyprcursor size was not persisted into Hyprland config'
 contains "$config_home/gtk-3.0/settings.ini" 'gtk-cursor-theme-name=Bibata-Modern-Classic' \
   'Classic cursor was not applied to GTK3 settings'
 contains "$data_home/nwg-look/gsettings" 'cursor-theme=Bibata-Modern-Classic' \
@@ -303,24 +343,34 @@ contains "$command_log" 'flatpak override --user --env=GTK_CURSOR_THEME=Bibata-M
   'Classic cursor was not applied to the existing Flatpak cursor override'
 contains "$command_log" 'hyprctl reload' \
   'Hyprland was not reloaded after changing the persisted XCursor environment'
+contains "$command_log" 'hyprctl setcursor Bibata-Modern-Classic 24' \
+  'Classic cursor was not switched in the current Hyprland session'
 
 status="$(env "${cursor_env[@]}" "$CURSOR_SCRIPT" status)"
 [[ $status == classic ]] || fail 'cursor preference did not survive a Quickshell-style status reload'
 
 # Simulate an updater restoring the stock Ice config. Reapply must restore the
 # persisted Classic choice without changing state.
-printf '%s\n' 'hl.env("XCURSOR_SIZE", "24")' 'hl.env("XCURSOR_THEME", "Bibata-Modern-Ice")' \
+printf '%s\n' \
+  'hl.env("XCURSOR_SIZE", "24")' \
+  'hl.env("HYPRCURSOR_SIZE", "24")' \
+  'hl.env("XCURSOR_THEME", "Bibata-Modern-Ice")' \
+  'hl.env("HYPRCURSOR_THEME", "Bibata-Modern-Ice")' \
   >"$config_home/hypr/hyprland.lua"
 env "${cursor_env[@]}" "$CURSOR_SCRIPT" reapply
 contains "$config_home/hypr/hyprland.lua" 'hl.env("XCURSOR_THEME", "Bibata-Modern-Classic")' \
-  'persisted Classic cursor was not reapplied after a stock config reset'
+  'persisted Classic XCursor was not reapplied after a stock config reset'
+contains "$config_home/hypr/hyprland.lua" 'hl.env("HYPRCURSOR_THEME", "Bibata-Modern-Classic")' \
+  'persisted Classic hyprcursor was not reapplied after a stock config reset'
 
 # Switching back to the release default must persist and apply Ice.
 env "${cursor_env[@]}" "$CURSOR_SCRIPT" set ice
 [[ $(jq -r '.cursor_variant // empty' "$cache_home/awtarchy/quickshell-state.json") == ice ]] \
   || fail 'Ice cursor preference was not persisted'
 contains "$config_home/hypr/hyprland.lua" 'hl.env("XCURSOR_THEME", "Bibata-Modern-Ice")' \
-  'Ice cursor was not reapplied to Hyprland config'
+  'Ice XCursor was not reapplied to Hyprland config'
+contains "$config_home/hypr/hyprland.lua" 'hl.env("HYPRCURSOR_THEME", "Bibata-Modern-Ice")' \
+  'Ice hyprcursor was not reapplied to Hyprland config'
 contains "$data_home/icons/default/index.theme" 'Inherits=Bibata-Modern-Ice' \
   'Ice cursor was not reapplied to the user XCursor fallback alias'
 

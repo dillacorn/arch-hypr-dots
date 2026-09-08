@@ -37,8 +37,10 @@ hl.env("MOZ_ENABLE_WAYLAND", "1")
 hl.env("GDK_SCALE", "1")
 hl.env("QT_SCALE_FACTOR", "1")
 hl.env("XCURSOR_SIZE", "24")
+hl.env("HYPRCURSOR_SIZE", "24")
 hl.env("GTK_THEME", "Materia-dark")
 hl.env("XCURSOR_THEME", "Bibata-Modern-Ice")
+hl.env("HYPRCURSOR_THEME", "Bibata-Modern-Ice")
 hl.env("GAMESCOPE_WSI", "vk_wayland")
 
 -- Optional/problem-specific environment toggles.

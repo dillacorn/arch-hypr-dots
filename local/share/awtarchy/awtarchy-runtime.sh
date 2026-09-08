@@ -5278,6 +5278,22 @@ run_target() {
   fi
 }
 
+reapply_cursor_theme_after_update() {
+  local helper="${HOME_DIR}/.config/hypr/scripts/quickshell_cursor_theme.sh"
+  [[ -f "$helper" && ! -L "$helper" ]] || return 0
+
+  log "Applying saved Bibata cursor theme to the current session..."
+  if ! run_target env \
+    "HOME=${HOME_DIR}" \
+    "USER=${TARGET_USER}" \
+    "XDG_CONFIG_HOME=${HOME_DIR}/.config" \
+    "XDG_CACHE_HOME=${HOME_DIR}/.cache" \
+    "XDG_DATA_HOME=${HOME_DIR}/.local/share" \
+    bash "$helper" reapply; then
+    warn "Bibata cursor settings were saved, but the current Hyprland session could not be switched live."
+  fi
+}
+
 restart_hypridle_after_update() {
   local helper="${HOME_DIR}/.config/hypr/scripts/hypridle_restart.sh"
   local target_uid=""
@@ -9102,6 +9118,7 @@ main() {
   fi
 
   command -v hyprctl >/dev/null 2>&1 && run_target hyprctl reload >/dev/null 2>&1 || true
+  reapply_cursor_theme_after_update
   restart_hypridle_after_update
   if (( ${#BACKUPS[@]} )); then
     warn "Backups created:"

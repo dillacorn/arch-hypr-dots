@@ -2101,6 +2101,14 @@ Singleton {
                                     wrapMode: Text.Wrap
                                 }
 
+                                CursorThemeSettings {
+                                    id: awtarchyCursorThemeSection
+                                    Layout.fillWidth: true
+                                    active: quickSettingsWindow.visible
+                                        && !root.settingsOpen
+                                        && root.quickSettingsSectionVisible("awtarchy")
+                                }
+
                                 Text {
                                     Layout.fillWidth: true
                                     text: "Lockscreen Animation"

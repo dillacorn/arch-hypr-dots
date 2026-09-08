@@ -931,3 +931,8 @@ def6c774c330cdfd2b72c68a14cb6fe70b6c604092a2e0bf4af896d53cd912dd	.config/hypr/sc
 55292a272aec13777e409bb75de4a5e7d882977de7038282ebba0f36ec325431	.config/hypr/scripts/quickshell.sh
 a23f9098fbad3e29b48c37a58758cc30c3bbfc49aff10dd5b97755c49a44449b	.config/quickshell/awtarchy/CursorThemeSettings.qml
 76cbbf59abcbb4aadc061d526827bbb556bfc959f40304a467ec50da30fe4dc3	.config/quickshell/awtarchy/FlyoutSettings.qml
+# 2026-09-08 Bibata current-session switching and Awtarchy-card selector follow-up.
+6847542e2768ca9bc0acf26a87819485f22cd233b2da485b7ccc56c7cf7d4433	.config/hypr/scripts/quickshell_cursor_theme.sh
+05611ed1c5677d55dc32bd2be78f820104a8ae84e5c7dcd14aaa24f0f6d26d53	.config/quickshell/awtarchy/QuickSettings.qml
+# 2026-09-08 Bibata hyprcursor login persistence follow-up.
+6e6fc2fe5c2e864fa3e49c186efc24770d3f990296eff12374aa9da2665749aa	.config/hypr/scripts/quickshell_cursor_theme.sh
