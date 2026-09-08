@@ -1,0 +1,41 @@
+name: Apply Brightness Wheel Response Fix
+
+on:
+  push:
+    branches: [fix/brightness-wheel-response]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.repository == 'dillacorn/awtarchy' && github.event.head_commit.message == 'Stage brightness wheel response fix'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: fix/brightness-wheel-response
+          fetch-depth: 0
+      - name: Remove brightness wheel dwell
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('config/quickshell/awtarchy/Bar.qml')
+          text = path.read_text()
+          needle = '                wheelActivationDelay: 400\n'
+          count = text.count(needle)
+          if count != 2:
+              raise SystemExit(f'expected exactly 2 brightness wheel delays, found {count}')
+          path.write_text(text.replace(needle, ''))
+          PY
+          bash tests/test-bar-wheel-input.sh
+      - name: Commit exact fix and remove helper
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/apply-brightness-wheel-response.yml
+          git add config/quickshell/awtarchy/Bar.qml
+          git diff --cached --check
+          git commit -m 'Remove brightness wheel activation delay'
+          git push origin HEAD:fix/brightness-wheel-response
