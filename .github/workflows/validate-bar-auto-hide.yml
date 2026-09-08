@@ -6,6 +6,7 @@ on:
       - '.github/workflows/validate-bar-auto-hide.yml'
       - 'config/hypr/scripts/quickshell.sh'
       - 'config/hypr/scripts/quickshell_bar_toggle.sh'
+      - 'config/hypr/scripts/hypr_quicksettings.sh'
       - 'config/hypr/hyprland.lua'
       - 'config/quickshell/awtarchy/BarState.qml'
       - 'config/quickshell/awtarchy/Bar.qml'
@@ -29,6 +30,8 @@ jobs:
         run: |
           bash -n config/hypr/scripts/quickshell.sh
           bash -n config/hypr/scripts/quickshell_bar_toggle.sh
+          bash -n config/hypr/scripts/hypr_quicksettings.sh
           bash -n tests/test-bar-auto-hide.sh
+          shellcheck config/hypr/scripts/hypr_quicksettings.sh
           shellcheck tests/test-bar-auto-hide.sh
           bash tests/test-bar-auto-hide.sh
