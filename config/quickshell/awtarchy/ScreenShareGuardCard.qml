@@ -221,6 +221,7 @@ Rectangle {
             model: root.targetModel(root.protectedTargetIds)
 
             RowLayout {
+                id: protectedRow
                 required property var modelData
                 Layout.fillWidth: true
                 spacing: 6
@@ -231,7 +232,7 @@ Rectangle {
 
                     Text {
                         Layout.fillWidth: true
-                        text: String(parent.parent.modelData.label || parent.parent.modelData.id)
+                        text: String(protectedRow.modelData.label || protectedRow.modelData.id)
                         color: Theme.foreground
                         font.family: Theme.fontFamily
                         font.pixelSize: root.scaledText(9)
@@ -240,7 +241,7 @@ Rectangle {
 
                     Text {
                         Layout.fillWidth: true
-                        text: root.stateLabel(parent.parent.modelData)
+                        text: root.stateLabel(protectedRow.modelData)
                         color: Theme.muted
                         font.family: Theme.fontFamily
                         font.pixelSize: root.scaledText(7)
@@ -249,21 +250,21 @@ Rectangle {
                 }
 
                 SettingsButton {
-                    label: Boolean(parent.modelData.desired_protected) ? "Allow capture" : "Protect"
-                    active: Boolean(parent.modelData.desired_protected)
+                    label: Boolean(protectedRow.modelData.desired_protected) ? "Allow capture" : "Protect"
+                    active: Boolean(protectedRow.modelData.desired_protected)
                     available: !root.busy
                     textSize: root.scaledText(8)
                     horizontalPadding: 10
-                    onClicked: root.toggleTarget(String(parent.modelData.id))
+                    onClicked: root.toggleTarget(String(protectedRow.modelData.id))
                 }
 
                 SettingsButton {
-                    label: Boolean(parent.modelData.locked) ? "" : ""
-                    active: Boolean(parent.modelData.locked)
+                    label: Boolean(protectedRow.modelData.locked) ? "" : ""
+                    active: Boolean(protectedRow.modelData.locked)
                     available: !root.busy
                     textSize: root.scaledIcon(10)
                     horizontalPadding: 8
-                    onClicked: root.toggleLock(String(parent.modelData.id))
+                    onClicked: root.toggleLock(String(protectedRow.modelData.id))
                 }
             }
         }
@@ -299,6 +300,7 @@ Rectangle {
             model: root.optionalExpanded ? root.targetModel(root.optionalTargetIds) : []
 
             RowLayout {
+                id: optionalRow
                 required property var modelData
                 Layout.fillWidth: true
                 spacing: 6
@@ -309,7 +311,7 @@ Rectangle {
 
                     Text {
                         Layout.fillWidth: true
-                        text: String(parent.parent.modelData.label || parent.parent.modelData.id)
+                        text: String(optionalRow.modelData.label || optionalRow.modelData.id)
                         color: Theme.foreground
                         font.family: Theme.fontFamily
                         font.pixelSize: root.scaledText(9)
@@ -318,7 +320,7 @@ Rectangle {
 
                     Text {
                         Layout.fillWidth: true
-                        text: root.stateLabel(parent.parent.modelData)
+                        text: root.stateLabel(optionalRow.modelData)
                         color: Theme.muted
                         font.family: Theme.fontFamily
                         font.pixelSize: root.scaledText(7)
@@ -327,21 +329,21 @@ Rectangle {
                 }
 
                 SettingsButton {
-                    label: Boolean(parent.modelData.desired_protected) ? "Allow capture" : "Protect"
-                    active: Boolean(parent.modelData.desired_protected)
+                    label: Boolean(optionalRow.modelData.desired_protected) ? "Allow capture" : "Protect"
+                    active: Boolean(optionalRow.modelData.desired_protected)
                     available: !root.busy
                     textSize: root.scaledText(8)
                     horizontalPadding: 10
-                    onClicked: root.toggleTarget(String(parent.modelData.id))
+                    onClicked: root.toggleTarget(String(optionalRow.modelData.id))
                 }
 
                 SettingsButton {
-                    label: Boolean(parent.modelData.locked) ? "" : ""
-                    active: Boolean(parent.modelData.locked)
+                    label: Boolean(optionalRow.modelData.locked) ? "" : ""
+                    active: Boolean(optionalRow.modelData.locked)
                     available: !root.busy
                     textSize: root.scaledIcon(10)
                     horizontalPadding: 8
-                    onClicked: root.toggleLock(String(parent.modelData.id))
+                    onClicked: root.toggleLock(String(optionalRow.modelData.id))
                 }
             }
         }
