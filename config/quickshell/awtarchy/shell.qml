@@ -478,7 +478,7 @@ ShellRoot {
 
             Timer {
                 id: edgeRevealDelay
-                interval: 150
+                interval: 100
                 repeat: false
                 onTriggered: {
                     if (edgeHover.hovered && edgeReveal.targetBar)
