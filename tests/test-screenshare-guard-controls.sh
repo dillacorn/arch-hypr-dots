@@ -24,8 +24,9 @@ require_source() {
 [[ -r "$SCREENSHARE_LUA" ]] || fail 'Screen Share Guard Lua module is missing'
 [[ -r "$SCREENSHARE_CARD" ]] || fail 'Screen Share Guard QML card is missing'
 
-# Stock policy must preserve the existing active protections while leaving the
-# previously-commented optional targets opt-in.
+# Stock policy keeps the privacy-focused application groups and current Awtarchy
+# integrations. Retired shell surfaces and Quickshell notification privacy are
+# not duplicated here.
 active_targets=(
     security
     mullvad-browser
@@ -35,7 +36,6 @@ active_targets=(
     discord
     teams
     messages
-    notifications
 )
 optional_targets=(
     obs
@@ -46,9 +46,6 @@ optional_targets=(
     virt-manager
     alacritty
     mpv
-    ags
-    logout-dialog
-    waybar
 )
 
 TMP="$(mktemp -d)"
@@ -92,6 +89,24 @@ for target in "${optional_targets[@]}"; do
     jq -e --arg target "$target" '.targets[$target].default_protected == false and .targets[$target].desired_protected == false' \
         <<<"$policy_json" >/dev/null || fail "optional target does not default capture-allowed: $target"
 done
+jq -e '(.targets | keys | length) == 16' <<<"$policy_json" >/dev/null \
+    || fail 'Screen Share Guard exposes stale or unexpected target groups'
+for retired in notifications ags logout-dialog waybar; do
+    if jq -e --arg target "$retired" '.targets[$target]? != null' <<<"$policy_json" >/dev/null; then
+        fail "retired/duplicate Screen Share Guard target is still exposed: $retired"
+    fi
+done
+
+# Current Awtarchy Firefox web-app classes must be covered by the relevant groups.
+require_source "$SCREENSHARE_LUA" '|telegram|Telegram)$' \
+    'Telegram protection does not include the current Awtarchy Firefox web-app class'
+require_source "$SCREENSHARE_LUA" '^(messages|Messages)$' \
+    'Messages protection does not include the current Awtarchy Firefox web-app class'
+require_source "$SCREENSHARE_LUA" 'steam-chat|SteamChat' \
+    'optional Steam protection does not include the current Awtarchy Steam Chat web app'
+if grep -Eq 'swaync|namespace = "\^\(ags\)\$"|logout_dialog|namespace = "\^\(waybar\)\$"' "$SCREENSHARE_LUA"; then
+    fail 'Screen Share Guard Lua still contains retired shell/notification layer rules'
+fi
 
 # Unlocked toggles are session-only.
 $HELPER set discord allowed >/dev/null
@@ -158,15 +173,22 @@ if grep -Eq 'sed|hyprland\.lua|comment' "$AWTARCHY_TEST_HYPRCTL_LOG"; then
     fail 'runtime Screen Share Guard attempted source/config rewriting'
 fi
 
-# The Hyprland config loads the dedicated module and exposes runtime wrappers.
+# The Hyprland config loads the dedicated module and exposes only the two runtime
+# entry points the helper actually calls.
 require_source "$HYPR" 'screenshare_guard.lua' \
     'Hyprland config does not load the Screen Share Guard module'
-require_source "$HYPR" 'awtarchy_screenshare_guard_rules_v1' \
-    'Hyprland config does not expose named Screen Share Guard rule handles'
+require_source "$HYPR" 'local awtarchy_screenshare_guard_v1' \
+    'Hyprland config does not keep the Screen Share Guard module local'
 require_source "$HYPR" 'awtarchy_screenshare_guard_set_group_v1' \
     'Hyprland config does not expose runtime Screen Share Guard toggling'
-require_source "$HYPR" 'awtarchy_screenshare_guard_group_enabled_v1' \
-    'Hyprland config does not expose effective Screen Share Guard state'
+require_source "$HYPR" 'awtarchy_screenshare_guard_status_v1' \
+    'Hyprland config does not expose Screen Share Guard runtime status'
+if grep -Fq 'awtarchy_screenshare_guard_rules_v1' "$HYPR"; then
+    fail 'Hyprland config still exposes Screen Share Guard rule internals'
+fi
+if grep -Fq 'awtarchy_screenshare_guard_group_enabled_v1' "$HYPR"; then
+    fail 'Hyprland config still exposes the unused per-group status wrapper'
+fi
 require_source "$SCREENSHARE_LUA" ':is_enabled()' \
     'Screen Share Guard effective-state query does not inspect rule handles'
 require_source "$SCREENSHARE_LUA" 'hl.on("hyprland.start"' \
@@ -176,13 +198,18 @@ require_source "$SCREENSHARE_LUA" 'hl.on("config.reloaded"' \
 require_source "$SCREENSHARE_LUA" 'screenshare_guard.sh' \
     'Screen Share Guard module does not reapply saved state'
 
-# The guard is an independent always-available Quick Settings cell. It is not
-# coupled to per-monitor hide/reorder state, which could make privacy controls
-# disappear because of an older saved layout.
+# The guard is an independent always-available Quick Settings cell. It stays
+# compact by default and expands only when the user opens it.
 require_source "$QUICK_SETTINGS" 'Layout.row: root.visibleQuickSettingsSectionOrder().length' \
     'Quick Settings does not reserve the first free row for Screen Share Guard'
 require_source "$QUICK_SETTINGS" 'ScreenShareGuardCard' \
     'Quick Settings does not use the Screen Share Guard card'
+require_source "$SCREENSHARE_CARD" 'property bool expanded: false' \
+    'Screen Share Guard does not default to a collapsed compact card'
+require_source "$SCREENSHARE_CARD" 'model: root.expanded ? root.targetModel(root.protectedTargetIds) : []' \
+    'protected Screen Share Guard rows are rendered while the card is collapsed'
+require_source "$SCREENSHARE_CARD" 'onClicked: root.expanded = !root.expanded' \
+    'Screen Share Guard header does not toggle expanded state'
 
 # All managed Screen Share Guard stock files must be recognizable by the updater
 # on the next revision, including this first version of newly-added files.
