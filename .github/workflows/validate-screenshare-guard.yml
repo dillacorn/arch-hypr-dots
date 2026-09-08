@@ -15,6 +15,7 @@ on:
       - 'config/quickshell/awtarchy/QuickSettingsLayoutEditor.qml'
       - 'config/quickshell/awtarchy/FlyoutSettings.qml'
       - 'tests/test-screenshare-guard-controls.sh'
+      - 'tests/test-screenshare-guard-runtime-apply.sh'
       - '.github/workflows/validate-screenshare-guard.yml'
   workflow_dispatch:
 
@@ -31,14 +32,18 @@ jobs:
       - name: Syntax
         run: |
           bash -n tests/test-screenshare-guard-controls.sh
+          bash -n tests/test-screenshare-guard-runtime-apply.sh
           if [[ -e config/hypr/scripts/screenshare_guard.sh ]]; then
             bash -n config/hypr/scripts/screenshare_guard.sh
           fi
       - name: ShellCheck
         run: |
           shellcheck tests/test-screenshare-guard-controls.sh
+          shellcheck tests/test-screenshare-guard-runtime-apply.sh
           if [[ -e config/hypr/scripts/screenshare_guard.sh ]]; then
             shellcheck config/hypr/scripts/screenshare_guard.sh
           fi
       - name: Screen Share Guard regression
-        run: bash tests/test-screenshare-guard-controls.sh
+        run: |
+          bash tests/test-screenshare-guard-controls.sh
+          bash tests/test-screenshare-guard-runtime-apply.sh
