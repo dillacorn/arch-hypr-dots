@@ -152,7 +152,7 @@ EOF
 cat >"${fakebin}/sudo" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ ${1:-} == -v ]]; then
+if [[ ${1:-} == -v || ${1:-} == -k ]]; then
   exit 0
 fi
 
@@ -719,12 +719,12 @@ managed_packages="${TMP}/managed-packages"
 assert_file "$installed_launcher"
 assert_file "$installed_runtime"
 assert_file "$MANAGED_HISTORY"
-grep -Fqx "${DESKTOP_STALE_SYSTEM_STATE_SHA}"$'	''.config/quickshell/awtarchy/SystemState.qml' \
+grep -Fqx "${DESKTOP_STALE_SYSTEM_STATE_SHA}"$'\t''.config/quickshell/awtarchy/SystemState.qml' \
   "$MANAGED_HISTORY" \
   || fail "managed history does not recognize the stale desktop SystemState.qml"
 while IFS= read -r repo_path; do
   repo_rel="${repo_path#"$ROOT/"}"
-  current_entry="$(sha256sum "$repo_path" | awk '{print $1}')"$'	'".${repo_rel}"
+  current_entry="$(sha256sum "$repo_path" | awk '{print $1}')"$'\t'".${repo_rel}"
   grep -Fqx "$current_entry" "$MANAGED_HISTORY" \
     || fail "managed history is missing the current stock hash for ${repo_path}"
 done < <(

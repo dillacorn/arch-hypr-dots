@@ -31,7 +31,7 @@ have() { command -v "$1" >/dev/null 2>&1; }
 declare -a PKG_GROUPS=(
   "Window Management:hyprland hyprpaper hypridle hyprpicker hyprsunset quickshell grim satty slurp wl-clipboard cliphist zbar wf-recorder zenity qt5ct qt5-wayland kvantum-qt5 qt6ct qt6-wayland xdg-desktop-portal-hyprland xdg-desktop-portal-gtk libnotify nwg-look"
   "Fonts:woff2-font-awesome otf-font-awesome ttf-dejavu ttf-liberation ttf-noto-nerd noto-fonts-emoji"
-  "Themes:papirus-icon-theme materia-gtk-theme xcursor-comix kvantum-theme-materia"
+  "Themes:papirus-icon-theme materia-gtk-theme kvantum-theme-materia"
   "Terminal Apps:nano micro fastfetch btop htop curl passt devtools wget git dos2unix brightnessctl ipcalc cmatrix asciiquarium figlet espeak-ng cava man-db man-pages unzip xarchiver ncdu ddcutil scx-scheds scx-tools"
   "Utilities:upower polkit python-gobject gnome-keyring networkmanager bluez bluez-utils wiremix pcmanfm-qt gvfs gvfs-smb gvfs-mtp gvfs-afc speedcrunch imagemagick pipewire pipewire-pulse pipewire-alsa ufw jq earlyoom libsixel xdg-utils python usbutils awww"
   "Multimedia:ffmpeg avahi nss-mdns mpv snapshot exiv2 zathura zathura-pdf-mupdf"
@@ -69,6 +69,7 @@ declare -a PACKAGES_AUR=(
   smtty
   awtwall
   hyprmoncfg-bin
+  bibata-cursor-theme-bin
   mpvpaper
   qimgv
   alacritty-graphics
@@ -2449,7 +2450,7 @@ prepare_base_install() {
     retry_command pacman -Syu --noconfirm || exit 1
   fi
 
-  retry_command pacman -S --needed --noconfirm git ipcalc dos2unix reflector xcursor-comix || exit 1
+  retry_command pacman -S --needed --noconfirm git ipcalc dos2unix reflector || exit 1
   pacman_install_one playerctl || die "Failed to install required media-control dependency: playerctl"
   pacman_install_one hyprland-qt-support || die "Failed to install required Hyprland Qt style provider: hyprland-qt-support"
 
@@ -3740,22 +3741,25 @@ copy_awtarchy_configs_stage() {
     run_as_target find "${HOME_DIR}/.local/share/applications" -type f -exec chmod 0644 {} +
   fi
 
-  create_directory "${HOME_DIR}/.local/share/icons/ComixCursors-White"
-  if [[ -d /usr/share/icons/ComixCursors-White ]]; then
-    retry_command run_as_target cp -r /usr/share/icons/ComixCursors-White/. "${HOME_DIR}/.local/share/icons/ComixCursors-White/"
-    run_as_target find "${HOME_DIR}/.local/share/icons/ComixCursors-White" -type d -exec chmod 0755 {} +
-    run_as_target find "${HOME_DIR}/.local/share/icons/ComixCursors-White" -type f -exec chmod 0644 {} +
-  fi
+  local cursor_theme
+  for cursor_theme in Bibata-Modern-Ice Bibata-Modern-Classic; do
+    create_directory "${HOME_DIR}/.local/share/icons/${cursor_theme}"
+    if [[ -d "/usr/share/icons/${cursor_theme}" ]]; then
+      retry_command run_as_target cp -r "/usr/share/icons/${cursor_theme}/." "${HOME_DIR}/.local/share/icons/${cursor_theme}/"
+      run_as_target find "${HOME_DIR}/.local/share/icons/${cursor_theme}" -type d -exec chmod 0755 {} +
+      run_as_target find "${HOME_DIR}/.local/share/icons/${cursor_theme}" -type f -exec chmod 0644 {} +
+    fi
+  done
 
   install -d -m 755 /usr/share/icons/default
   cat > /usr/share/icons/default/index.theme <<'EOF'
 [Icon Theme]
-Inherits=ComixCursors-White
+Inherits=Bibata-Modern-Ice
 EOF
   chmod 644 /usr/share/icons/default/index.theme
 
   if have flatpak; then
-    run_as_target flatpak override --user --env=GTK_CURSOR_THEME=ComixCursors-White || true
+    run_as_target flatpak override --user --env=GTK_CURSOR_THEME=Bibata-Modern-Ice || true
   fi
 
   create_directory "${HOME_DIR}/Pictures/wallpapers"
@@ -7537,22 +7541,22 @@ commit_baseline() {
 refresh_cursor_assets() {
   [[ "${AWTARCHY_TEST_SKIP_CURSOR_REFRESH:-0}" == "1" ]] && return 0
 
-  mkdir -p -- "${HOME_DIR}/.local/share/icons/ComixCursors-White"
-  if [[ -d /usr/share/icons/ComixCursors-White ]]; then
-    cp -a --no-preserve=ownership /usr/share/icons/ComixCursors-White/. \
-      "${HOME_DIR}/.local/share/icons/ComixCursors-White/" 2>/dev/null || true
+  mkdir -p -- "${HOME_DIR}/.local/share/icons/Bibata-Modern-Ice"
+  if [[ -d /usr/share/icons/Bibata-Modern-Ice ]]; then
+    cp -a --no-preserve=ownership /usr/share/icons/Bibata-Modern-Ice/. \
+      "${HOME_DIR}/.local/share/icons/Bibata-Modern-Ice/" 2>/dev/null || true
     [[ "${EUID}" -eq 0 ]] && chown -R "${TARGET_USER}:${TARGET_USER}" \
-      "${HOME_DIR}/.local/share/icons/ComixCursors-White" 2>/dev/null || true
+      "${HOME_DIR}/.local/share/icons/Bibata-Modern-Ice" 2>/dev/null || true
   fi
 
   if [[ "${EUID}" -eq 0 ]]; then
     install -d -m 0755 /usr/share/icons/default
-    printf '%s\n' '[Icon Theme]' 'Inherits=ComixCursors-White' >/usr/share/icons/default/index.theme
+    printf '%s\n' '[Icon Theme]' 'Inherits=Bibata-Modern-Ice' >/usr/share/icons/default/index.theme
     chmod 0644 /usr/share/icons/default/index.theme
   fi
 
   if command -v flatpak >/dev/null 2>&1; then
-    run_target flatpak override --user --env=GTK_CURSOR_THEME=ComixCursors-White >/dev/null 2>&1 || true
+    run_target flatpak override --user --env=GTK_CURSOR_THEME=Bibata-Modern-Ice >/dev/null 2>&1 || true
   fi
 }
 

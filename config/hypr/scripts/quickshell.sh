@@ -15,6 +15,7 @@ START_LOCK_FILE="${STATE_DIR}/quickshell-start.lock"
 LEGACY_STATE_FILE="${CACHE_HOME}/waybar/state.json"
 LOG_FILE="${STATE_DIR}/quickshell.log"
 REPORT_SCRIPT="${AWTARCHY_REPORT_SCRIPT:-${CONFIG_HOME}/hypr/scripts/awtarchy_report_failure.sh}"
+CURSOR_THEME_SCRIPT="${AWTARCHY_CURSOR_THEME_SCRIPT:-${CONFIG_HOME}/hypr/scripts/quickshell_cursor_theme.sh}"
 PROC_ROOT="/proc"
 if [[ ${AWTARCHY_TEST_MODE:-0} == 1 && -n ${AWTARCHY_TEST_PROC_ROOT:-} ]]; then
     PROC_ROOT="${AWTARCHY_TEST_PROC_ROOT}"
@@ -268,6 +269,11 @@ start_shell() {
     flock -x 8
     ensure_state
     flock -u 8
+
+    if [[ -f "$CURSOR_THEME_SCRIPT" && ! -L "$CURSOR_THEME_SCRIPT" ]]; then
+        bash "$CURSOR_THEME_SCRIPT" reapply >/dev/null 2>&1             || printf 'quickshell.sh: could not reapply the saved Bibata cursor theme.
+' >&2
+    fi
 
     if is_running; then
         flock -u 7
