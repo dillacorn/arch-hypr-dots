@@ -71,3 +71,64 @@ jobs:
           bash tests/test-quickshell-lockscreen-user-cutover.sh
       - name: Secure power-transition contract
         run: bash tests/test-quickshell-lockscreen-power-safety.sh
+
+  apply-lockscreen-theme-cursor-fixes:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'feature/quickshell-lockscreen' && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+      - name: Require exact staging commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git log -1 --pretty=%s)" == 'Stage lockscreen theme and cursor fixes' ]]
+      - name: Apply production fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          runtime = Path('local/share/awtarchy/awtarchy-runtime.sh')
+          text = runtime.read_text(encoding='utf-8')
+          old = '    "muted": color("QS_MUTED", "W_MUTED", default="#404040"),\n}'
+          new = '    "muted": color("QS_MUTED", "W_MUTED", default="#404040"),\n    "lockAccent": f"#{active_border[:6]}",\n}'
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one updater palette insertion point')
+          runtime.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          surface = Path('config/quickshell/awtarchy-lock/LockSurface.qml')
+          text = surface.read_text(encoding='utf-8')
+          old = '        acceptedButtons: Qt.AllButtons\n        hoverEnabled: true\n        onClicked: password.forceActiveFocus()'
+          new = '        acceptedButtons: Qt.AllButtons\n        hoverEnabled: true\n        cursorShape: Qt.BlankCursor\n        onClicked: password.forceActiveFocus()'
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one lockscreen pointer insertion point')
+          surface.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash tests/test-quickshell-lockscreen-theme-update.sh
+          bash tests/test-quickshell-lockscreen-cursor.sh
+          bash tests/test-quickshell-lockscreen-runtime-regressions.sh
+
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          surface='config/quickshell/awtarchy-lock/LockSurface.qml'
+          hash="$(sha256sum "$surface" | awk '{print $1}')"
+          line="${hash}\t.config/quickshell/awtarchy-lock/LockSurface.qml"
+          if ! grep -Fqx -- "$line" "$history"; then
+            printf '\n# 2026-09-07 native lockscreen cursor hiding.\n%s\n' "$line" >>"$history"
+          fi
+
+          git diff --check
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add local/share/awtarchy/awtarchy-runtime.sh \
+            config/quickshell/awtarchy-lock/LockSurface.qml \
+            local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'Preserve lockscreen theme and hide cursor'
+          git push origin HEAD:feature/quickshell-lockscreen
