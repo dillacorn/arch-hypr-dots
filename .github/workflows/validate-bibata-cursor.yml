@@ -19,3 +19,160 @@ jobs:
           bash -n tests/test-bibata-cursor-options.sh
           bash tests/test-bibata-cursor-migration.sh
           bash tests/test-bibata-cursor-options.sh
+
+  release-bridge:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.title == 'Temporary v3.6.0 release bridge' &&
+      github.event.pull_request.head.ref == 'tmp/v3.6.0-release-bridge' &&
+      github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Validate, retarget, and verify v3.6.0
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ad72e5c7af49267e80f0a6c6c772b5ad27d16bff
+          OLD_SHA: 271595d1e78d1cd48f68795e6c1f3fcc060c4471
+          RELEASE_ID: '384811950'
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.github.com/repos/dillacorn/awtarchy'
+          headers=(
+            -H "Authorization: Bearer ${GH_TOKEN}"
+            -H 'Accept: application/vnd.github+json'
+            -H 'X-GitHub-Api-Version: 2022-11-28'
+          )
+
+          cat >proposed-release.md <<'EOF'
+          # Awtarchy v3.6.0 Quickshell
+
+          Awtarchy v3.6.0 moves locking fully into Quickshell, migrates Awtarchy's cursor stack to Bibata, and adds new privacy and bar controls that were runtime-tested together before release. It also tightens workspace behavior and fixes several desktop input, cursor, and indicator regressions.
+
+          ## Install and update
+
+          Fresh installation: [INSTALL.md](https://github.com/dillacorn/awtarchy/blob/main/INSTALL.md)
+
+          Existing Awtarchy installations and stable updates: [UPDATING.md](https://github.com/dillacorn/awtarchy/blob/main/UPDATING.md)
+
+          Quick update:
+
+          ```bash
+          awtarchy update
+          ```
+
+          ## Native Quickshell lockscreen
+
+          - Replaces Hyprlock with Awtarchy's native Quickshell `WlSessionLock` + PAM lockscreen.
+          - `SUPER+P`, then `L`, locks the screen; Hypridle and the Power Menu use the same Awtarchy lock path.
+          - Multi-monitor locking, theme/cursor behavior, and lockscreen power actions are integrated into the Quickshell implementation.
+          - Existing Awtarchy installations migrate through the normal managed update path, and the retired `hyprlock` package is removed automatically only after the updater validates the native Quickshell lockscreen target.
+
+          ## Bibata cursor migration
+
+          - Replaces Awtarchy's Comix cursor default with `bibata-cursor-theme-bin`, installed through the authoritative `aur-scan install` path.
+          - Fresh installs and existing-user migrations default to the white, rounded, normal-handed `Bibata-Modern-Ice` variant.
+          - Quick Settings exposes all 12 installed Bibata combinations: Ice, Classic, or Amber; Rounded or Sharp; Normal or Right Hand.
+          - Cursor changes apply to the current Hyprland session and persist across Quickshell restarts, Hyprland reloads, and future logins while keeping Awtarchy-managed GTK, XCursor, Hyprland/hyprcursor, and Flatpak cursor settings aligned.
+          - After Bibata is confirmed installed, the retired `xcursor-comix` package is removed automatically so existing systems do not keep the obsolete Awtarchy cursor dependency.
+
+          ## Privacy and Quick Settings
+
+          - Screen Share Guard can now be controlled from Quick Settings per app/group without editing `hyprland.lua`.
+          - Capture allowances can be session-only or persisted by locking the current choice, and **Restore Awtarchy Defaults** returns the guard policy to stock behavior.
+          - Adds an Awtarchy Tips `?` shortcut to Quick Settings.
+          - Adds optional per-workspace bar hiding for workspaces 1-10 while preserving existing global, per-monitor, fullscreen, and idle visibility behavior.
+
+          ## Desktop polish
+
+          - Regular workspace-switch animations are disabled by default while special-workspace and unrelated animations remain enabled.
+          - Brightness wheel input now responds on the first valid scroll step instead of waiting through the previous brightness-only delay.
+          - Empty workspace placeholders disappear after focus moves away instead of leaving phantom workspace indicators.
+          - Opening an already-running Quickshell surface such as the `SUPER+P` power menu no longer reapplies cursor state or forces an unnecessary Hyprland reload.
+
+          ## Release and documentation maintenance
+
+          - `INSTALL.md` and `UPDATING.md` are the canonical installation and update guides linked by stable releases.
+          - Stable release notes pass the permanent structure validator before and after publication.
+
+          ## Known issue
+
+          - Bluetooth suspend/resume issue #146 remains evidence-gated and unresolved. v3.6.0 does not claim to fix that intermittent behavior; the diagnostic capture remains available for the next real reproduction.
+
+          ## Validation
+
+          - Exact release target: `ad72e5c7af49267e80f0a6c6c772b5ad27d16bff`.
+          - The native Quickshell lockscreen, Screen Share Guard controls, Bibata migration and Quick Settings cursor selection, per-workspace bar visibility, brightness-wheel fix, and workspace-indicator behavior were runtime-tested before release.
+          - Automatic retirement of `hyprlock` and `xcursor-comix` is covered by package-reconciler and lockscreen migration regressions; the Quickshell running fast path is covered by a lifecycle regression that prevents the `SUPER+P` cursor reapply/Hyprland reload behavior.
+          - All 12 merged-main push workflows for the exact release target completed successfully, including the full `Validate Awtarchy` integration suite plus focused Bibata cursor, Quickshell lockscreen, Quick Settings, Package Reconciler, Screen Share Guard, and Runtime Stress validations.
+
+          ## Post-release updates
+
+          _Placeholder for possible tested post-release patches to v3.6.0._
+          EOF
+          sed -i 's/^          //' proposed-release.md
+
+          curl -fsSL "${headers[@]}" "${api}/releases/tags/v3.5.6" \
+            | jq -er '.body' >previous-release.md
+          python3 .github/scripts/validate-stable-release-notes.py \
+            --version v3.6.0 \
+            --notes proposed-release.md \
+            --previous previous-release.md
+
+          release_before="$(curl -fsSL "${headers[@]}" "${api}/releases/${RELEASE_ID}")"
+          jq -e \
+            --arg tag 'v3.6.0' \
+            --arg old "${OLD_SHA}" \
+            --arg target "${TARGET_SHA}" \
+            --argjson release_id "${RELEASE_ID}" \
+            '.id == $release_id and .tag_name == $tag and .draft == false and .prerelease == false and .immutable == false and (.target_commitish == $old or .target_commitish == $target)' \
+            <<<"${release_before}" >/dev/null
+
+          ref_before="$(curl -fsSL "${headers[@]}" "${api}/git/ref/tags/v3.6.0")"
+          jq -e --arg old "${OLD_SHA}" --arg target "${TARGET_SHA}" \
+            '.object.type == "commit" and (.object.sha == $old or .object.sha == $target)' \
+            <<<"${ref_before}" >/dev/null
+
+          ref_payload="$(jq -cn --arg sha "${TARGET_SHA}" '{sha:$sha,force:true}')"
+          curl -fsSL -X PATCH "${headers[@]}" \
+            -H 'Content-Type: application/json' \
+            -d "${ref_payload}" \
+            "${api}/git/refs/tags/v3.6.0" >/dev/null
+
+          release_payload="$(jq -cn \
+            --arg tag 'v3.6.0' \
+            --arg target "${TARGET_SHA}" \
+            --arg name 'Awtarchy v3.6.0 Quickshell' \
+            --rawfile body proposed-release.md \
+            '{tag_name:$tag,target_commitish:$target,name:$name,body:$body,draft:false,prerelease:false}')"
+          curl -fsSL -X PATCH "${headers[@]}" \
+            -H 'Content-Type: application/json' \
+            -d "${release_payload}" \
+            "${api}/releases/${RELEASE_ID}" >/dev/null
+
+          ref_after="$(curl -fsSL "${headers[@]}" "${api}/git/ref/tags/v3.6.0")"
+          jq -e --arg target "${TARGET_SHA}" \
+            '.object.type == "commit" and .object.sha == $target' \
+            <<<"${ref_after}" >/dev/null
+
+          release_after="$(curl -fsSL "${headers[@]}" "${api}/releases/${RELEASE_ID}")"
+          jq -e \
+            --arg tag 'v3.6.0' \
+            --arg target "${TARGET_SHA}" \
+            --argjson release_id "${RELEASE_ID}" \
+            '.id == $release_id and .tag_name == $tag and .target_commitish == $target and .draft == false and .prerelease == false' \
+            <<<"${release_after}" >/dev/null
+          jq -r '.body' <<<"${release_after}" >published-release.md
+          cmp -s proposed-release.md published-release.md
+          ! grep -Fq 'SUPER+L' published-release.md
+          grep -Fq '`SUPER+P`, then `L`' published-release.md
+          python3 .github/scripts/validate-stable-release-notes.py \
+            --version v3.6.0 \
+            --notes published-release.md \
+            --previous previous-release.md
+
+          curl -fsSL -X DELETE "${headers[@]}" \
+            "${api}/git/refs/heads/tmp/v3.6.0-release-bridge" >/dev/null
