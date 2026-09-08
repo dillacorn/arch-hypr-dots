@@ -3,7 +3,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-HYPR="$ROOT/config/hypr/hyprland.lua"
+SCREENSHARE_LUA="$ROOT/config/hypr/screenshare_guard.lua"
 CARD="$ROOT/config/quickshell/awtarchy/ScreenShareGuardCard.qml"
 
 fail() {
@@ -16,10 +16,10 @@ require_source() {
     grep -Fq -- "$needle" "$file" || fail "$message"
 }
 
-require_source "$HYPR" 'function awtarchy_screenshare_guard_register_v1' \
-    'hyprland.lua does not expose custom Screen Share Guard registration'
-require_source "$HYPR" 'function awtarchy_screenshare_guard_registry_v1' \
-    'hyprland.lua does not expose Screen Share Guard registry metadata'
+require_source "$SCREENSHARE_LUA" '_G.awtarchy_screenshare_guard_register_v1' \
+    'Screen Share Guard module does not publish custom registration to hyprland.lua'
+require_source "$SCREENSHARE_LUA" '_G.awtarchy_screenshare_guard_registry_v1' \
+    'Screen Share Guard module does not publish runtime registry metadata'
 
 require_source "$CARD" 'function targetModel(section)' \
     'Screen Share Guard card does not build rows from runtime section metadata'
