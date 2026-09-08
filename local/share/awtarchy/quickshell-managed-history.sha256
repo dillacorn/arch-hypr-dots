@@ -905,5 +905,19 @@ a9528b1d5a66be284f16ae2e9c027284be5a87eb78b6daaa4dcab7be5a5724a1	.config/quicksh
 # 2026-09-07 occupancy-aware workspace visibility.
 e9efd590d249da3737b8966c1017ed292c308a4d6898346f46c35e5d6278ea4e	.config/quickshell/awtarchy/Bar.qml
 
+# 2026-09-08 Screen Share Guard controls.
+78b59de0c5b2a0b7e90df4385e941f45fe2a1405ea1e7578dbc639c329c2117b	.config/quickshell/awtarchy/QuickSettings.qml
+c7bb0a04c679254e62adadfcbfb0a2c136e397a784ca9dc4bbca2ec1fc64ce80	.config/quickshell/awtarchy/ScreenShareGuardCard.qml
+1d2a16aeb66dc9d295ac44c649e733ff10bc5545ad330008ed83366e3fffcef1	.config/hypr/scripts/screenshare_guard.sh
+7371b93c386afdf61df0e3fafda04b4951b04533aeed03807dbc973679d628f9	.config/hypr/screenshare_guard.lua
+
+# 2026-09-08 Screen Share Guard current-main integration.
+2986491dad479e68a96319f84e7e910d904345c6cd8956b90158e3bec99d0975	.config/quickshell/awtarchy/QuickSettings.qml
+
 # 2026-09-08 integrated lockscreen/workspace Bar stock hash.
 18d5de1c6eac889f5de87285e8eb46350b0d7cc65ab52bf367124a57a6cc19c3	.config/quickshell/awtarchy/Bar.qml
+
+# 2026-09-08 compact Screen Share Guard cleanup.
+998bbd66e0cb18886487c7d7ed8e6cdbfc09585772517d55bbe9c274e6c97da6	.config/quickshell/awtarchy/ScreenShareGuardCard.qml
+b3a96bcd685fdd400457b8b7da886489d0d9182c7aa91c7559d5378ce0eaedb8	.config/hypr/scripts/screenshare_guard.sh
+167e759d9971e5571a2890f903c3d97a2c5cfa5c522ba5a39adfff0fd62ccdbd	.config/hypr/screenshare_guard.lua

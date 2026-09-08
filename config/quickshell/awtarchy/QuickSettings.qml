@@ -2465,6 +2465,14 @@ Singleton {
                       iconScale: root.effectiveIconScale
                   }
               }
+
+              ScreenShareGuardCard {
+                  Layout.row: root.visibleQuickSettingsSectionOrder().length
+                  Layout.fillWidth: true
+                  active: quickSettingsWindow.visible
+                  textScale: root.effectiveTextScale
+                  iconScale: root.effectiveIconScale
+              }
           }
 
           ListScrollBar {
