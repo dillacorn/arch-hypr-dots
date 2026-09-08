@@ -92,7 +92,7 @@ Singleton {
         {
             key: "workflow",
             label: "Workflow",
-            symbols: ["", "", "", "", "", "", "", "", "", ""],
+            symbols: ["", "", "", "", "", "", "", "", "", ""],
             glyphSize: 20,
             glyphYOffset: -1
         },
@@ -670,6 +670,11 @@ Singleton {
         if (workspaceHiddenForMonitor(name))
             return false;
         return true;
+    }
+
+    function autoHideFor(name) {
+        const dependency = revision;
+        return monitorState(name).auto_hide === true;
     }
 
     function positionFor(name) {
