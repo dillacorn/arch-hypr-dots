@@ -1,0 +1,35 @@
+name: Record Screen Share Guard managed hashes
+
+on:
+  push:
+    branches: [fix/screenshare-guard-runtime-apply]
+
+permissions:
+  contents: write
+
+jobs:
+  record:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: fix/screenshare-guard-runtime-apply
+      - name: Record hashes and remove one-use workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          marker='# 2026-09-08 Screen Share Guard live-window synchronization and dynamic registry.'
+          if ! grep -Fqx 'fbba77fecb0f78d64336fc191b4b9ecbec026a30d1b9a87a79ae0f63be0ba379	.config/quickshell/awtarchy/ScreenShareGuardCard.qml' "$history"; then
+            printf '\n%s\n' "$marker" >>"$history"
+            printf '%s\t%s\n' 'fbba77fecb0f78d64336fc191b4b9ecbec026a30d1b9a87a79ae0f63be0ba379' '.config/quickshell/awtarchy/ScreenShareGuardCard.qml' >>"$history"
+            printf '%s\t%s\n' '8b922d2c1a2d7daa51a4d653d37ba0afbd3d4ffd9294f6336e236249976ecdbf' '.config/hypr/scripts/screenshare_guard.sh' >>"$history"
+            printf '%s\t%s\n' '76b29736fdaedbe1a237591e6a8b663fbcf2ccc04034caa59bd28509d5b8f4a6' '.config/hypr/screenshare_guard.lua' >>"$history"
+          fi
+          git rm -- '.github/workflows/record-screenshare-guard-managed-hashes.yml'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "$history"
+          git commit -m 'chore: record Screen Share Guard managed hashes'
+          git push origin HEAD:fix/screenshare-guard-runtime-apply
