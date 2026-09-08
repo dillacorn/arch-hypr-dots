@@ -17,32 +17,3 @@ jobs:
           bash -n config/hypr/scripts/quickshell_cursor_theme.sh
           bash -n tests/test-bibata-cursor-migration.sh
           bash tests/test-bibata-cursor-migration.sh
-
-  apply-followup:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/fix/bibata-live-cursor-ui'
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-        with:
-          ref: fix/bibata-live-cursor-ui
-          fetch-depth: 0
-      - name: Apply and validate follow-up
-        run: |
-          python3 .github/scripts/apply-bibata-live-cursor-followup.py
-          bash -n config/hypr/scripts/quickshell_cursor_theme.sh
-          bash -n local/share/awtarchy/awtarchy-runtime.sh
-          bash -n tests/test-bibata-cursor-migration.sh
-          bash tests/test-bibata-cursor-migration.sh
-          git diff --check
-      - name: Commit production follow-up
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          git checkout origin/main -- .github/workflows/validate-bibata-cursor.yml
-          rm -f .github/scripts/apply-bibata-live-cursor-followup.py
-          git add -A
-          git commit -m "Fix Bibata live cursor and Quick Settings placement"
-          git push origin HEAD:fix/bibata-live-cursor-ui

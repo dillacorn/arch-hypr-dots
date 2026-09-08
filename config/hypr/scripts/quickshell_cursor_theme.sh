@@ -61,6 +61,73 @@ sync_bibata_themes() {
     done
 }
 
+ensure_hyprcursor_theme() {
+    local theme="$1"
+    local theme_dir="${DATA_HOME}/icons/${theme}"
+    local work_root extract_parent create_parent extracted="" compiled="" candidate
+
+    if [[ -f "${theme_dir}/manifest.hl" && -d "${theme_dir}/hyprcursors" ]]; then
+        return 0
+    fi
+
+    command -v hyprcursor-util >/dev/null 2>&1 || {
+        printf 'quickshell_cursor_theme.sh: hyprcursor-util is unavailable; current-session compositor cursor cannot be switched.\n' >&2
+        return 1
+    }
+    command -v xcur2png >/dev/null 2>&1 || {
+        printf 'quickshell_cursor_theme.sh: xcur2png is unavailable; current-session compositor cursor cannot be switched.\n' >&2
+        return 1
+    }
+    [[ -d "$theme_dir" ]] || return 1
+
+    mkdir -p -- "${CACHE_HOME}/awtarchy"
+    work_root="$(mktemp -d "${CACHE_HOME}/awtarchy/hyprcursor.XXXXXX")" || return 1
+    extract_parent="${work_root}/extract"
+    create_parent="${work_root}/create"
+    mkdir -p -- "$extract_parent" "$create_parent"
+
+    if ! hyprcursor-util --extract "$theme_dir" --output "$extract_parent" >/dev/null 2>&1; then
+        rm -rf -- "$work_root"
+        printf 'quickshell_cursor_theme.sh: failed to extract %s for hyprcursor conversion.\n' "$theme" >&2
+        return 1
+    fi
+
+    for candidate in "$extract_parent"/*; do
+        if [[ -d "$candidate" && -f "$candidate/manifest.hl" ]]; then
+            extracted="$candidate"
+            break
+        fi
+    done
+    if [[ -z "$extracted" ]]; then
+        rm -rf -- "$work_root"
+        printf 'quickshell_cursor_theme.sh: hyprcursor extraction output is missing for %s.\n' "$theme" >&2
+        return 1
+    fi
+
+    if ! hyprcursor-util --create "$extracted" --output "$create_parent" >/dev/null 2>&1; then
+        rm -rf -- "$work_root"
+        printf 'quickshell_cursor_theme.sh: failed to compile %s as hyprcursor.\n' "$theme" >&2
+        return 1
+    fi
+
+    for candidate in "$create_parent"/*; do
+        if [[ -d "$candidate" && -f "$candidate/manifest.hl" && -d "$candidate/hyprcursors" ]]; then
+            compiled="$candidate"
+            break
+        fi
+    done
+    if [[ -z "$compiled" ]]; then
+        rm -rf -- "$work_root"
+        printf 'quickshell_cursor_theme.sh: compiled hyprcursor output is missing for %s.\n' "$theme" >&2
+        return 1
+    fi
+
+    cp -a -- "${compiled}/manifest.hl" "${theme_dir}/manifest.hl"
+    rm -rf -- "${theme_dir}/hyprcursors"
+    cp -a -- "${compiled}/hyprcursors" "${theme_dir}/hyprcursors"
+    rm -rf -- "$work_root"
+}
+
 write_managed_files() {
     local theme="$1"
     python3 - "$HYPR_CONFIG" "$GTK3_SETTINGS" "$NWG_SETTINGS" "$XRESOURCES" "$theme" <<'PY'
@@ -111,7 +178,11 @@ PY
 }
 
 apply_live_settings() {
-    local theme="$1"
+    local theme="$1" hyprcursor_ready=0
+
+    if ensure_hyprcursor_theme "$theme"; then
+        hyprcursor_ready=1
+    fi
 
     if command -v gsettings >/dev/null 2>&1; then
         gsettings set org.gnome.desktop.interface cursor-theme "$theme" >/dev/null 2>&1 || true
@@ -131,8 +202,15 @@ apply_live_settings() {
             dbus-update-activation-environment --systemd XCURSOR_THEME XCURSOR_SIZE >/dev/null 2>&1 || true
     fi
 
-    if command -v hyprctl >/dev/null 2>&1; then
+    if command -v hyprctl >/dev/null 2>&1 && [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
         hyprctl reload >/dev/null 2>&1 || true
+        if (( hyprcursor_ready == 0 )); then
+            return 1
+        fi
+        if ! hyprctl setcursor "$theme" "$CURSOR_SIZE" >/dev/null 2>&1; then
+            printf 'quickshell_cursor_theme.sh: Hyprland could not switch the compositor cursor to %s.\n' "$theme" >&2
+            return 1
+        fi
     fi
 }
 
