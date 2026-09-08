@@ -218,11 +218,13 @@ write_session_locked() {
 set_locked() {
     local target="$1" value="$2"
     if is_locked_locked "$target"; then
+        # shellcheck disable=SC2016 # jq variables are intentionally not shell-expanded.
         write_state_locked '
             .screenshare_guard = (if (.screenshare_guard | type) == "object" then .screenshare_guard else {} end)
             | .screenshare_guard[$target] = $value
         ' "$target" "$value"
     else
+        # shellcheck disable=SC2016 # jq variables are intentionally not shell-expanded.
         write_session_locked '.[$target] = $value' "$target" "$value"
     fi
 }
@@ -230,21 +232,25 @@ set_locked() {
 lock_locked() {
     local target="$1" value
     value="$(desired_value_locked "$target")"
+    # shellcheck disable=SC2016 # jq variables are intentionally not shell-expanded.
     write_state_locked '
         .screenshare_guard = (if (.screenshare_guard | type) == "object" then .screenshare_guard else {} end)
         | .screenshare_guard[$target] = $value
     ' "$target" "$value"
+    # shellcheck disable=SC2016 # jq variables are intentionally not shell-expanded.
     write_session_locked 'del(.[$target])' "$target"
 }
 
 unlock_locked() {
     local target="$1" value
     value="$(desired_value_locked "$target")"
+    # shellcheck disable=SC2016 # jq variables are intentionally not shell-expanded.
     write_state_locked '
         .screenshare_guard = (if (.screenshare_guard | type) == "object" then .screenshare_guard else {} end)
         | del(.screenshare_guard[$target])
         | if (.screenshare_guard | length) == 0 then del(.screenshare_guard) else . end
     ' "$target"
+    # shellcheck disable=SC2016 # jq variables are intentionally not shell-expanded.
     write_session_locked '.[$target] = $value' "$target" "$value"
 }
 
@@ -315,7 +321,7 @@ runtime_status() {
 }
 
 status_json() {
-    local desired actual='{}' raw line target value merged
+    local desired actual='{}' raw target value merged
     desired="$(desired_json)"
     if raw="$(runtime_status 2>/dev/null)"; then
         while IFS='=' read -r target value; do
