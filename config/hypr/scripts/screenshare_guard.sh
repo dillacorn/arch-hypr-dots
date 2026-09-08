@@ -297,14 +297,51 @@ build_apply_lua_locked() {
         desired="$(desired_value_locked "$target")"
         lua+="awtarchy_screenshare_guard_set_group_v1(\"${target}\", ${desired});"
     done
-    lua+='hl.exec_scheduled_prop_refresh_immediately()'
     printf '%s\n' "$lua"
+}
+
+apply_lua() {
+    local lua="$1"
+    "$HYPRCTL" -r eval "$lua" >/dev/null
+}
+
+apply_guard_locked() {
+    local lua
+    lua="$(build_apply_lua_locked)"
+    apply_lua "$lua"
 }
 
 apply_guard() {
     local lua
     lua="$(with_locks build_apply_lua_locked)"
-    "$HYPRCTL" eval "$lua" >/dev/null
+    apply_lua "$lua"
+}
+
+restore_file_locked() {
+    local file="$1" content="$2" tmp
+    tmp="$(mktemp "${file}.rollback.XXXXXX")"
+    printf '%s\n' "$content" >"$tmp"
+    mv -f -- "$tmp" "$file"
+}
+
+mutate_and_apply_locked() {
+    local mutation="$1"
+    shift
+    local state_before session_before rc=0
+
+    state_before="$(<"$STATE_FILE")"
+    session_before="$(<"$SESSION_FILE")"
+
+    "$mutation" "$@" || rc=$?
+    if (( rc == 0 )); then
+        apply_guard_locked || rc=$?
+    fi
+    (( rc == 0 )) && return 0
+
+    restore_file_locked "$STATE_FILE" "$state_before" || true
+    restore_file_locked "$SESSION_FILE" "$session_before" || true
+    apply_guard_locked >/dev/null 2>&1 || true
+    return "$rc"
 }
 
 runtime_status() {
@@ -346,25 +383,21 @@ set_target() {
     local target="$1" value="$2"
     require_target "$target"
     value="$(protected_value "$value")"
-    with_locks set_locked "$target" "$value"
-    apply_guard
+    with_locks mutate_and_apply_locked set_locked "$target" "$value"
 }
 
 lock_target() {
     require_target "$1"
-    with_locks lock_locked "$1"
-    apply_guard
+    with_locks mutate_and_apply_locked lock_locked "$1"
 }
 
 unlock_target() {
     require_target "$1"
-    with_locks unlock_locked "$1"
-    apply_guard
+    with_locks mutate_and_apply_locked unlock_locked "$1"
 }
 
 reset_guard() {
-    with_locks reset_locked
-    apply_guard
+    with_locks mutate_and_apply_locked reset_locked
 }
 
 case "${1:-}" in
