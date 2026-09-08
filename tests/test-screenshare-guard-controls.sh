@@ -7,10 +7,6 @@ HELPER="$ROOT/config/hypr/scripts/screenshare_guard.sh"
 HYPR="$ROOT/config/hypr/hyprland.lua"
 SCREENSHARE_LUA="$ROOT/config/hypr/screenshare_guard.lua"
 QUICK_SETTINGS="$ROOT/config/quickshell/awtarchy/QuickSettings.qml"
-BAR_STATE="$ROOT/config/quickshell/awtarchy/BarState.qml"
-LAYOUT_EDITOR="$ROOT/config/quickshell/awtarchy/QuickSettingsLayoutEditor.qml"
-FLYOUT_SETTINGS="$ROOT/config/quickshell/awtarchy/FlyoutSettings.qml"
-APP_STATE="$ROOT/config/hypr/scripts/quickshell_application_state.sh"
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
@@ -177,19 +173,12 @@ require_source "$SCREENSHARE_LUA" 'hl.on("config.reloaded"' \
 require_source "$SCREENSHARE_LUA" 'screenshare_guard.sh' \
     'Screen Share Guard module does not reapply saved state'
 
-# Screen Share Guard is a first-class Quick Settings cell and participates in
-# the existing layout visibility/order system.
-require_source "$BAR_STATE" '"screen-share-guard"' \
-    'BarState stock Quick Settings order is missing Screen Share Guard'
-require_source "$APP_STATE" '"screen-share-guard"' \
-    'Quick Settings persisted-layout normalization is missing Screen Share Guard'
-require_source "$QUICK_SETTINGS" 'quickSettingsSectionRow("screen-share-guard")' \
-    'Quick Settings does not place Screen Share Guard as its own cell'
+# The guard is an independent always-available Quick Settings cell. It is not
+# coupled to per-monitor hide/reorder state, which could make privacy controls
+# disappear because of an older saved layout.
+require_source "$QUICK_SETTINGS" 'quickSettingsScreenShareGuardRow()' \
+    'Quick Settings does not reserve an independent Screen Share Guard row'
 require_source "$QUICK_SETTINGS" 'ScreenShareGuardCard' \
     'Quick Settings does not use the Screen Share Guard card'
-require_source "$LAYOUT_EDITOR" '"screen-share-guard": "Screen Share Guard"' \
-    'Quick Settings layout editor is missing the Screen Share Guard label'
-require_source "$FLYOUT_SETTINGS" '"screen-share-guard": "Screen Share Guard"' \
-    'Quick Settings visibility controls are missing the Screen Share Guard label'
 
 printf 'Screen Share Guard controls tests passed.\n'
