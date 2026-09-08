@@ -1,0 +1,69 @@
+name: Temporary Register Lockscreen Interactive History
+
+on:
+  push:
+    branches:
+      - feature/lockscreen-interactive-effects
+
+permissions:
+  contents: write
+
+jobs:
+  register:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.head_commit.message == 'Append lockscreen interactive managed hashes'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+      - name: Append exact final managed hashes
+        run: |
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          printf '%s\n' \
+            '' \
+            '# 2026-09-08 lockscreen interactive effects and local-info stock hashes.' \
+            $'cff285a39ef4e49154d2fa4d25955883f2d2a77a84b288d18b46e440955e9bdb\t.config/hypr/scripts/quickshell_application_state.sh' \
+            $'dc353b518bda6dc51462bc81fae65d939ad2d9eddf0e4e9cfb1cdd13c0650a3e\t.config/hypr/scripts/quickshell_lockscreen_audio.sh' \
+            $'924c6c2fd687755296d24d3fc3939fbcfbca432a384dfd07b373c870a7232ae9\t.config/quickshell/awtarchy/BarState.qml' \
+            $'b504ea4e749129c427aa44d8a4b01b926104f5cd1d926b7d16f6dc65e3563bea\t.config/quickshell/awtarchy/QuickSettings.qml' \
+            $'97c9b91eed6187f5be2d5f40f4e540110cb59e1e13a8a4d32f4534bd568711bc\t.config/quickshell/awtarchy-lock/shell.qml' \
+            $'3a68312e05ada2e5a416d419b10c1d9d72b1a4027c4fcb41d71542e5beaff135\t.config/quickshell/awtarchy-lock/LockSurface.qml' \
+            $'57dd065de0e89976e75b1143285e2d3fddc4957c1e704943b8d73b23e164c96d\t.config/quickshell/awtarchy-lock/LockAudioAnalyzer.qml' \
+            $'798d0988a30f05397b39667877cba0117314d7a8c4f4cbac37eba96c2ea6c16e\t.config/quickshell/awtarchy-lock/cava.conf' \
+            >> "$history"
+      - name: Syntax and ShellCheck
+        run: |
+          bash -n config/hypr/scripts/quickshell_application_state.sh
+          bash -n config/hypr/scripts/quickshell_lockscreen_audio.sh
+          bash -n tests/test-quickshell-lockscreen-interactive-effects.sh
+          bash -n tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+          bash -n tests/test-quickshell-lockscreen-interactive-managed-history.sh
+          shellcheck config/hypr/scripts/quickshell_application_state.sh
+          shellcheck config/hypr/scripts/quickshell_lockscreen_audio.sh
+          shellcheck tests/test-quickshell-lockscreen-interactive-effects.sh
+          shellcheck tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+          shellcheck tests/test-quickshell-lockscreen-interactive-managed-history.sh
+      - name: Focused validation
+        run: |
+          test -x config/hypr/scripts/quickshell_lockscreen_audio.sh
+          bash tests/test-quickshell-lockscreen-interactive-managed-history.sh
+          bash tests/test-quick-settings-layout.sh
+          bash tests/test-quick-settings-startup-rows.sh
+          bash tests/test-quickshell-lockscreen-interactive-effects.sh
+          bash tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+          bash tests/test-quickshell-lockscreen-runtime-regressions.sh
+          bash tests/test-quickshell-lockscreen-animation-preference.sh
+          bash tests/test-quickshell-lockscreen-foundation.sh
+      - name: Diff hygiene
+        run: git diff --check
+      - name: Commit managed history
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add local/share/awtarchy/quickshell-managed-history.sha256
+          git commit -m 'Register lockscreen interactive managed hashes'
+          git push origin HEAD:feature/lockscreen-interactive-effects
