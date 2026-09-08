@@ -5,6 +5,7 @@ IFS=$'\n\t'
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 HELPER="$ROOT/config/hypr/scripts/screenshare_guard.sh"
 HYPR="$ROOT/config/hypr/hyprland.lua"
+SCREENSHARE_LUA="$ROOT/config/hypr/screenshare_guard.lua"
 QUICK_SETTINGS="$ROOT/config/quickshell/awtarchy/QuickSettings.qml"
 BAR_STATE="$ROOT/config/quickshell/awtarchy/BarState.qml"
 LAYOUT_EDITOR="$ROOT/config/quickshell/awtarchy/QuickSettingsLayoutEditor.qml"
@@ -23,6 +24,7 @@ require_source() {
 }
 
 [[ -x "$HELPER" ]] || fail 'Screen Share Guard helper is missing or not executable'
+[[ -r "$SCREENSHARE_LUA" ]] || fail 'Screen Share Guard Lua module is missing'
 
 # Stock policy must preserve the existing active protections while leaving the
 # previously-commented optional targets opt-in.
@@ -109,10 +111,15 @@ if [[ -s "$SESSION_FILE" ]] && jq -e '.discord? != null' "$SESSION_FILE" >/dev/n
     fail 'locking Discord left a duplicate session override'
 fi
 
-# A toggle on a locked row updates the remembered choice.
+# A toggle on a locked row updates the remembered choice and stays free of
+# duplicate session state.
+printf '{"discord":false}\n' >"$SESSION_FILE"
 $HELPER set discord protected >/dev/null
 jq -e '.screenshare_guard.discord == true' "$STATE_FILE" >/dev/null \
     || fail 'locked Discord toggle did not update persistent state'
+if jq -e '.discord? != null' "$SESSION_FILE" >/dev/null; then
+    fail 'locked Discord toggle left a stale session override'
+fi
 
 # Unlocking must not visibly flip the row: preserve its current choice for the
 # remainder of the session while removing durable persistence.
@@ -153,18 +160,23 @@ if grep -Eq 'sed|hyprland\.lua|comment' "$AWTARCHY_TEST_HYPRCTL_LOG"; then
     fail 'runtime Screen Share Guard attempted source/config rewriting'
 fi
 
-# The Hyprland config owns fail-closed named rule handles and exposes runtime
-# query/toggle helpers so UI state can be verified against the compositor.
+# The Hyprland config loads the dedicated module and exposes runtime wrappers.
+require_source "$HYPR" 'screenshare_guard.lua' \
+    'Hyprland config does not load the Screen Share Guard module'
 require_source "$HYPR" 'awtarchy_screenshare_guard_rules_v1' \
     'Hyprland config does not expose named Screen Share Guard rule handles'
 require_source "$HYPR" 'awtarchy_screenshare_guard_set_group_v1' \
     'Hyprland config does not expose runtime Screen Share Guard toggling'
 require_source "$HYPR" 'awtarchy_screenshare_guard_group_enabled_v1' \
     'Hyprland config does not expose effective Screen Share Guard state'
-require_source "$HYPR" ':is_enabled()' \
-    'Hyprland Screen Share Guard effective-state query does not inspect rule handles'
-require_source "$HYPR" 'screenshare_guard.sh apply' \
-    'Hyprland does not reapply Screen Share Guard state after startup/reload'
+require_source "$SCREENSHARE_LUA" ':is_enabled()' \
+    'Screen Share Guard effective-state query does not inspect rule handles'
+require_source "$SCREENSHARE_LUA" 'hl.on("hyprland.start"' \
+    'Screen Share Guard does not restore saved state at Hyprland startup'
+require_source "$SCREENSHARE_LUA" 'hl.on("config.reloaded"' \
+    'Screen Share Guard does not restore saved state after config reload'
+require_source "$SCREENSHARE_LUA" 'screenshare_guard.sh apply' \
+    'Screen Share Guard module does not reapply saved state'
 
 # Existing runtime-rule startup paths must also reapply the guard state.
 require_source "$RUNTIME_RULES" 'screenshare_guard.sh' \
