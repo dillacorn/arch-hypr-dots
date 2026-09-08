@@ -45,7 +45,7 @@ contains "$SHELL" 'property real autoHideOffset:' 'bar instance has no animated 
 contains "$SHELL" 'duration: 170' 'bar auto-hide slide animation is missing or unexpectedly slow'
 contains "$SHELL" 'interval: 2000' 'initial auto-hide delay is missing'
 contains "$SHELL" 'interval: 700' 'pointer-leave auto-hide delay is missing'
-contains "$SHELL" 'interval: 150' 'edge reveal hover delay is missing'
+contains "$SHELL" 'interval: 100' 'edge reveal hover delay is not responsive enough'
 contains "$SHELL" 'implicitWidth: edgeVertical ? 2 : 0' 'edge activation region is not 2 px on vertical edges'
 contains "$SHELL" 'implicitHeight: edgeVertical ? 0 : 2' 'edge activation region is not 2 px on horizontal edges'
 contains "$SHELL" 'color: "transparent"' 'edge activation region is visibly painted'
