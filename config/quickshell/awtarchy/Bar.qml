@@ -143,7 +143,7 @@ PanelWindow {
             return false;
         const ipc = toplevel.lastIpcObject || {};
         const cls = String(ipc.class || ipc.initialClass || "").toLowerCase();
-        const ignored = ["tofi", "rofi", "hyprlock", "swaylock", "swww", "mpvpaper", "pulsemixer", "org.waytrogen.waytrogen", "org.pulseaudio.pavucontrol", "wiremix", "quickshell", "awtarchy-polkit-agent"];
+        const ignored = ["tofi", "rofi", "swaylock", "swww", "mpvpaper", "pulsemixer", "org.waytrogen.waytrogen", "org.pulseaudio.pavucontrol", "wiremix", "quickshell", "awtarchy-polkit-agent"];
         return ignored.indexOf(cls) < 0;
     }
 
@@ -813,7 +813,6 @@ PanelWindow {
             BarControl {
                 label: bar.brightnessText
                 tooltip: bar.brightnessTooltip
-                wheelActivationDelay: 400
                 onClicked: QuickSettings.toggleForScreen(bar.screen)
                 onRightClicked: QuickSettings.toggleForScreen(bar.screen)
                 onWheelUp: bar.ddcAction("up")
@@ -1058,7 +1057,6 @@ PanelWindow {
                 label: bar.brightnessValue >= 0
                     ? "\n" + bar.brightnessValue + "%" : ""
                 tooltip: bar.brightnessTooltip
-                wheelActivationDelay: 400
                 onClicked: QuickSettings.toggleForScreen(bar.screen)
                 onRightClicked: QuickSettings.toggleForScreen(bar.screen)
                 onWheelUp: bar.ddcAction("up")

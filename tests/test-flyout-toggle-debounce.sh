@@ -49,6 +49,41 @@ require_source "${QML_DIR}/Notifications.qml" \
 require_source "${QML_DIR}/PowerMenu.qml" \
   'FlyoutManager.acceptToggle("power")' \
   'power menu bypasses the toggle gate'
+require_source "${QML_DIR}/PowerMenu.qml" \
+  'radius: 0' \
+  'power menu action tiles are still rounded'
+if grep -Fq -- 'radius: 20' "${QML_DIR}/PowerMenu.qml"; then
+  fail 'power menu still contains the old rounded action-tile radius'
+fi
+
+# The power menu actions stay on one focused display, while every other screen
+# receives the same dim shade without gaining keyboard focus or duplicate action
+# controls.
+require_source "${QML_DIR}/PowerMenu.qml" \
+  'readonly property color shadeColor:' \
+  'power menu does not own one shared shade color'
+require_source "${QML_DIR}/PowerMenu.qml" \
+  'id: secondaryShadeVariants' \
+  'power menu does not create per-screen secondary shades'
+require_source "${QML_DIR}/PowerMenu.qml" \
+  'model: Quickshell.screens' \
+  'power menu secondary shades do not cover all connected screens'
+require_source "${QML_DIR}/PowerMenu.qml" \
+  'screen: modelData' \
+  'power menu secondary shade is not bound to its screen'
+require_source "${QML_DIR}/PowerMenu.qml" \
+  'modelData.name !== powerWindow.screen.name' \
+  'power menu secondary shade does not exclude the focused action screen'
+require_source "${QML_DIR}/PowerMenu.qml" \
+  'focusable: false' \
+  'power menu secondary shades can steal keyboard focus'
+shade_color_uses="$(grep -Fc -- 'color: root.shadeColor' "${QML_DIR}/PowerMenu.qml" || true)"
+[[ "$shade_color_uses" -eq 2 ]] \
+  || fail 'power menu focused and secondary surfaces do not share the same shade color'
+action_models="$(grep -Fc -- 'model: root.actions' "${QML_DIR}/PowerMenu.qml" || true)"
+[[ "$action_models" -eq 1 ]] \
+  || fail 'power menu duplicates action controls across monitors'
+
 require_source "${QML_DIR}/Bar.qml" \
   'onClicked: PowerMenu.toggleForScreen(bar.screen)' \
   'bar power button does not use the damped toggle path'

@@ -121,6 +121,14 @@ Singleton {
         { label: "Diamond", value: "◆" },
         { label: "Circle", value: "●" }
     ]
+    readonly property var lockscreenAnimationPresets: [
+        { key: "random", label: "Random" },
+        { key: "swarm", label: "Swarm" },
+        { key: "edges", label: "Edges" },
+        { key: "center", label: "Center" },
+        { key: "split", label: "Split" },
+        { key: "off", label: "Off" }
+    ]
     readonly property var workspaceLegacyStyleAliases: ({
         "filled-dot": "workflow",
         "filled-diamond": "workflow",
@@ -332,6 +340,7 @@ Singleton {
         return ({
             enabled: true,
             update_notifications_enabled: true,
+            lockscreen_animation: "split",
             monitors: {},
             launcher_sizes: {},
             clipboard_views: {},
@@ -584,6 +593,15 @@ Singleton {
         if (identityLabelValid(value))
             return value;
         return "";
+    }
+
+    function lockscreenAnimationPreference() {
+        const value = String(data().lockscreen_animation || "split");
+        for (const preset of lockscreenAnimationPresets) {
+            if (preset.key === value)
+                return value;
+        }
+        return "split";
     }
 
     function updateNotificationsEnabled() {

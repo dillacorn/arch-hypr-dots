@@ -29,7 +29,7 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # Package defaults
 # ──────────────────────────────────────────────────────────────────────────────
 declare -a PKG_GROUPS=(
-  "Window Management:hyprland hyprpaper hyprlock hypridle hyprpicker hyprsunset quickshell grim satty slurp wl-clipboard cliphist zbar wf-recorder zenity qt5ct qt5-wayland kvantum-qt5 qt6ct qt6-wayland xdg-desktop-portal-hyprland xdg-desktop-portal-gtk libnotify nwg-look"
+  "Window Management:hyprland hyprpaper hypridle hyprpicker hyprsunset quickshell grim satty slurp wl-clipboard cliphist zbar wf-recorder zenity qt5ct qt5-wayland kvantum-qt5 qt6ct qt6-wayland xdg-desktop-portal-hyprland xdg-desktop-portal-gtk libnotify nwg-look"
   "Fonts:woff2-font-awesome otf-font-awesome ttf-dejavu ttf-liberation ttf-noto-nerd noto-fonts-emoji"
   "Themes:papirus-icon-theme materia-gtk-theme xcursor-comix kvantum-theme-materia"
   "Terminal Apps:nano micro fastfetch btop htop curl passt devtools wget git dos2unix brightnessctl ipcalc cmatrix asciiquarium figlet espeak-ng cava man-db man-pages unzip xarchiver ncdu ddcutil scx-scheds scx-tools"
@@ -242,6 +242,153 @@ migrate_cheese_to_snapshot_stage() {
   AWTARCHY_RUNTIME="$runtime_source" \
     AWTARCHY_MANAGED_PACKAGES_FILE="$managed_file" \
     bash "$reconciler" --migrate-replacements
+}
+
+runtime_catalog_has_exact_package() {
+  local runtime_source="$1" package="$2"
+  awk -v package="$package" '
+    /^declare -a PKG_GROUPS=\(/ {
+      if (seen)
+        invalid=1
+      seen=1
+      in_groups=1
+      next
+    }
+    in_groups && /^[[:space:]]*\)[[:space:]]*$/ {
+      closed=1
+      in_groups=0
+      next
+    }
+    in_groups {
+      line=$0
+      sub(/^[[:space:]]*"/, "", line)
+      sub(/"[[:space:]]*$/, "", line)
+      sub(/^[^:]*:/, "", line)
+      count=split(line, fields, /[[:space:]]+/)
+      for (i=1; i<=count; i++) {
+        if (fields[i] == package)
+          found=1
+      }
+    }
+    END {
+      if (!seen || !closed || in_groups || invalid)
+        exit 2
+      exit(found ? 0 : 1)
+    }
+  ' "$runtime_source"
+}
+
+lockscreen_target_retires_hyprlock() {
+  local repo_dir="$1"
+  local runtime_source="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
+  local config_root="${repo_dir}/config"
+  local catalog_rc scan_rc
+
+  [[ -f "${repo_dir}/config/quickshell/awtarchy-lock/shell.qml" \
+    && ! -L "${repo_dir}/config/quickshell/awtarchy-lock/shell.qml" ]] || return 1
+  [[ -f "${repo_dir}/config/hypr/scripts/awtarchy_lock.sh" \
+    && ! -L "${repo_dir}/config/hypr/scripts/awtarchy_lock.sh" ]] || return 1
+  [[ ! -e "${repo_dir}/config/hypr/hyprlock.conf" \
+    && ! -L "${repo_dir}/config/hypr/hyprlock.conf" ]] || return 1
+  [[ -r "$runtime_source" && ! -L "$runtime_source" ]] || return 1
+  [[ -d "$config_root" && ! -L "$config_root" ]] || return 1
+
+  if runtime_catalog_has_exact_package "$runtime_source" hyprlock; then
+    return 1
+  else
+    catalog_rc=$?
+    [[ $catalog_rc -eq 1 ]] || return 1
+  fi
+
+  if grep -R -I -w -q -- hyprlock "$config_root"; then
+    return 1
+  else
+    scan_rc=$?
+    [[ $scan_rc -eq 1 ]] || return 1
+  fi
+  return 0
+}
+
+retired_hyprlock_backup_path() {
+  local stamp candidate suffix=0
+  stamp="$(date '+%Y%m%d-%H%M%S')"
+  candidate="${HOME_DIR}/.config/hypr/hyprlock.conf.backup.${stamp}"
+  while [[ -e "$candidate" || -L "$candidate" ]]; do
+    ((suffix += 1))
+    candidate="${HOME_DIR}/.config/hypr/hyprlock.conf.backup.${stamp}.${suffix}"
+  done
+  printf '%s\n' "$candidate"
+}
+
+migrate_live_hyprlock_hyprland() {
+  local repo_dir="$1"
+  local helper="${repo_dir}/local/share/awtarchy/awtarchy-lockscreen-hyprland-migrate.py"
+  local live="${HOME_DIR}/.config/hypr/hyprland.lua"
+  local dir="" tmp="" backup="" stamp="" suffix=0
+
+  [[ -e "$live" || -L "$live" ]] || return 0
+  [[ -f "$live" && ! -L "$live" ]] \
+    || die "Live Hyprland config is unavailable or unsafe during Hyprlock retirement: ${live}"
+  if ! grep -Fqi -- hyprlock "$live" \
+    && ! grep -Fq -- 'hl.bind("SUPER + L", hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarchy_lock.sh lock"), {})' "$live"; then
+    return 0
+  fi
+  [[ -f "$helper" && ! -L "$helper" ]] \
+    || die "Live Hyprland lockscreen migration helper is unavailable or unsafe: ${helper}"
+
+  dir="$(dirname -- "$live")"
+  tmp="$(run_as_target mktemp --tmpdir="$dir" '.awtarchy-hyprland-lock.tmp.XXXXXX')" \
+    || die "Could not stage the personalized Hyprland lockscreen migration."
+
+  if ! run_as_target python3 "$helper" "$live" "$tmp"; then
+    run_as_target rm -f -- "$tmp" >/dev/null 2>&1 || true
+    die "Personalized hyprland.lua contains an unknown Hyprlock reference; Hyprlock was not retired."
+  fi
+
+  stamp="$(date '+%Y%m%d-%H%M%S')"
+  backup="${live}.backup.${stamp}"
+  while [[ -e "$backup" || -L "$backup" ]]; do
+    ((suffix += 1))
+    backup="${live}.backup.${stamp}.${suffix}"
+  done
+
+  retry_command run_as_target cp -a -- "$live" "$backup" \
+    || die "Could not back up personalized Hyprland config before lockscreen migration."
+  retry_command run_as_target chmod --reference="$live" "$tmp" \
+    || die "Could not preserve personalized Hyprland config permissions during lockscreen migration."
+  retry_command run_as_target mv -f -- "$tmp" "$live" \
+    || die "Could not install the personalized Hyprland lockscreen migration."
+
+  log "Migrated known Hyprlock references in personalized hyprland.lua; backup: ${backup}"
+}
+
+migrate_retired_hyprlock_stage() {
+  local repo_dir="$1"
+  local reconciler="${repo_dir}/local/share/awtarchy/awtarchy-package-reconcile.sh"
+  local runtime_source="${repo_dir}/local/share/awtarchy/awtarchy-runtime.sh"
+  local managed_file="${AWTARCHY_MANAGED_PACKAGES_FILE:-/var/lib/awtarchy/managed-packages}"
+  local live="${HOME_DIR}/.config/hypr/hyprlock.conf" backup=""
+
+  lockscreen_target_retires_hyprlock "$repo_dir" || return 0
+  migrate_live_hyprlock_hyprland "$repo_dir"
+
+  [[ -f "$reconciler" && ! -L "$reconciler" ]] \
+    || die "Lockscreen package migration helper is unavailable or unsafe: ${reconciler}"
+  [[ -r "$runtime_source" && ! -L "$runtime_source" ]] \
+    || die "Lockscreen package migration runtime is unavailable or unsafe: ${runtime_source}"
+
+  if [[ -e "$live" || -L "$live" ]]; then
+    backup="$(retired_hyprlock_backup_path)"
+    retry_command run_as_target mv -- "$live" "$backup" \
+      || die "Could not preserve retired Hyprlock config: ${live}"
+    log "Preserved retired Hyprlock config: ${backup}"
+  fi
+
+  AWTARCHY_RUNTIME="$runtime_source" \
+    AWTARCHY_MANAGED_PACKAGES_FILE="$managed_file" \
+    AWTARCHY_LOCKSCREEN_RETIRE_CONFIRMED=1 \
+    bash "$reconciler" --migrate-lockscreen-retirement \
+      || die "Could not complete the ownership-safe Hyprlock package migration."
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -3796,6 +3943,7 @@ run_install() {
   remove_legacy_shell_files_stage
   install_awtarchy_command_stage
   remove_legacy_shell_packages_stage
+  migrate_retired_hyprlock_stage "$REPO_DIR"
 
   ok "Setup complete. Rebooting now."
   if (( NO_REBOOT == 1 )) || [[ "${AWTARCHY_NO_REBOOT:-0}" == "1" ]]; then
@@ -5701,6 +5849,7 @@ palette = {
     "foreground": color("QS_FOREGROUND", "W_COLOR", default="#d0d0d0"),
     "dark": color("QS_DARK", "W_ACTIVE_COLOR", default="#1a1a1a"),
     "muted": color("QS_MUTED", "W_MUTED", default="#404040"),
+    "lockAccent": f"#{active_border[:6]}",
 }
 
 micro = values.get("MICRO_COLORSCHEME", "").strip()
@@ -8911,6 +9060,7 @@ main() {
 
   persist_quickshell_hyprland_user_patch
   remove_quickshell_update_legacy_packages
+  migrate_retired_hyprlock_stage "$repo_dir"
 
   if (( polkit_remove_legacy_ready == 1 )); then
     remove_legacy_polkit_gnome_package
