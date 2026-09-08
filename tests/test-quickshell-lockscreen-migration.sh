@@ -103,16 +103,17 @@ require_order "$RUNTIME" \
     'stable updater commits the new baseline before Hyprlock retirement'
 
 # Package removal itself belongs to the existing reconciler. It must require an
-# explicit confirmed target, refuse a runtime that still catalogs Hyprlock, and
-# remove only an Awtarchy-owned installation.
+# explicitly confirmed retired target, refuse a runtime that still catalogs
+# Hyprlock, and retire any installed Hyprlock package. Ownership remains relevant
+# only for cleaning Awtarchy's managed-package ledger after successful removal.
 require_text "$RECONCILER" '--migrate-lockscreen-retirement' \
     'package reconciler has no lockscreen retirement mode'
 require_text "$RECONCILER" 'AWTARCHY_LOCKSCREEN_RETIRE_CONFIRMED' \
-    'package reconciler does not require explicit retirement confirmation'
+    'package reconciler does not require explicit target retirement confirmation'
 require_text "$RECONCILER" 'managed_package hyprlock' \
-    'package reconciler does not ownership-gate Hyprlock removal'
+    'package reconciler does not preserve Hyprlock ownership metadata for ledger cleanup'
 require_text "$RECONCILER" 'pacman -R --noconfirm hyprlock' \
-    'package reconciler does not use conservative exact Hyprlock package removal'
+    'package reconciler does not use exact Hyprlock package removal'
 require_text "$RECONCILER" 'forget_managed_packages hyprlock' \
     'package reconciler does not clear retired Hyprlock ownership state'
 
@@ -196,9 +197,11 @@ run_retirement "$retired_runtime" "$state" "$managed" >/dev/null \
 printf '%s\n' hyprlock quickshell >"$state"
 printf '%s\n' quickshell >"$managed"
 run_retirement "$retired_runtime" "$state" "$managed" >/dev/null \
-    || fail 'unowned Hyprlock retirement check failed'
-grep -Fxq hyprlock "$state" \
-    || fail 'unowned Hyprlock was removed automatically'
+    || fail 'unowned legacy Hyprlock retirement failed'
+! grep -Fxq hyprlock "$state" \
+    || fail 'unowned legacy Hyprlock remained installed after confirmed retirement'
+grep -Fxq quickshell "$managed" \
+    || fail 'unowned Hyprlock retirement disturbed unrelated managed-package state'
 
 printf '%s\n' hyprlock quickshell >"$state"
 printf '%s\n' hyprlock quickshell >"$managed"
