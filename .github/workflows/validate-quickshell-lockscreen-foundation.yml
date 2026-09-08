@@ -27,6 +27,7 @@ jobs:
           bash -n tests/test-quickshell-lockscreen-theme-update.sh
           bash -n tests/test-quickshell-lockscreen-cursor.sh
           bash -n tests/test-quickshell-power-menu-action-handoff.sh
+          bash -n tests/test-workspace-animation-disabled.sh
           bash -n tests/test-quickshell-lockscreen-manager-mode.sh
           bash -n tests/test-quickshell-lockscreen-git-deployment.sh
           bash -n tests/test-quickshell-lockscreen-no-reload.sh
@@ -45,6 +46,7 @@ jobs:
           shellcheck tests/test-quickshell-lockscreen-theme-update.sh
           shellcheck tests/test-quickshell-lockscreen-cursor.sh
           shellcheck tests/test-quickshell-power-menu-action-handoff.sh
+          shellcheck tests/test-workspace-animation-disabled.sh
           shellcheck tests/test-quickshell-lockscreen-manager-mode.sh
           shellcheck tests/test-quickshell-lockscreen-git-deployment.sh
           shellcheck tests/test-quickshell-lockscreen-no-reload.sh
@@ -62,6 +64,7 @@ jobs:
           bash tests/test-quickshell-lockscreen-cursor.sh
           bash tests/test-quickshell-lockscreen-theme-update.sh
           bash tests/test-quickshell-power-menu-action-handoff.sh
+          bash tests/test-workspace-animation-disabled.sh
           bash tests/test-quickshell-lockscreen-manager-mode.sh
           bash tests/test-quickshell-lockscreen-git-deployment.sh
           bash tests/test-quickshell-lockscreen-no-reload.sh
