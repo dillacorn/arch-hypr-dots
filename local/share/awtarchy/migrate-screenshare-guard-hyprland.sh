@@ -56,8 +56,12 @@ def read(path: Path, label: str) -> str:
 live_text = read(live, 'live hyprland.lua')
 managed_text = read(managed, 'managed hyprland.lua')
 
-if SET_FN in live_text and STATUS_FN in live_text:
+has_set = SET_FN in live_text
+has_status = STATUS_FN in live_text
+if has_set and has_status:
     raise SystemExit(0)
+if has_set or has_status:
+    fail('partial Screen Share Guard integration found; automatic migration refused')
 
 start = managed_text.find(INTEGRATION_START)
 if start < 0:
@@ -88,7 +92,11 @@ elif legacy_start_count == 1 and legacy_end_count == 1:
     legacy = live_text[old_start:old_end]
     missing = [needle for needle in EXPECTED_LEGACY if needle not in legacy]
     if missing:
-        fail('retired Screen Share Guard block was customized; automatic replacement refused')
+        fail(
+            'retired Screen Share Guard block was customized; automatic replacement refused; '
+            + 'missing known marker(s): '
+            + ', '.join(missing)
+        )
     migrated = live_text[:old_start] + integration + live_text[old_end:]
 else:
     fail('ambiguous retired Screen Share Guard block; automatic replacement refused')
