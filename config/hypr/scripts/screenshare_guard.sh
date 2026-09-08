@@ -21,7 +21,6 @@ TARGETS=(
     discord
     teams
     messages
-    notifications
     obs
     steam
     rustdesk
@@ -30,9 +29,6 @@ TARGETS=(
     virt-manager
     alacritty
     mpv
-    ags
-    logout-dialog
-    waybar
 )
 
 ACTIVE_DEFAULTS=(
@@ -44,7 +40,6 @@ ACTIVE_DEFAULTS=(
     discord
     teams
     messages
-    notifications
 )
 
 OPTIONAL_DEFAULTS=(
@@ -56,9 +51,6 @@ OPTIONAL_DEFAULTS=(
     virt-manager
     alacritty
     mpv
-    ags
-    logout-dialog
-    waybar
 )
 
 declare -A LABELS=(
@@ -70,7 +62,6 @@ declare -A LABELS=(
     [discord]="Discord / Vesktop / Fluxer"
     [teams]="Teams"
     [messages]="Messages"
-    [notifications]="Notifications"
     [obs]="OBS"
     [steam]="Steam"
     [rustdesk]="RustDesk"
@@ -79,9 +70,6 @@ declare -A LABELS=(
     [virt-manager]="Virtual Machine Manager"
     [alacritty]="Alacritty"
     [mpv]="mpv"
-    [ags]="AGS"
-    [logout-dialog]="Logout Dialog"
-    [waybar]="Waybar"
 )
 
 declare -A DEFAULT_PROTECTED=()

@@ -9,6 +9,7 @@ Rectangle {
     property bool active: false
     property int textScale: 100
     property int iconScale: 100
+    property bool expanded: false
     property bool optionalExpanded: false
     property bool busy: false
     property string actionMessage: ""
@@ -26,8 +27,7 @@ Rectangle {
         "matrix",
         "discord",
         "teams",
-        "messages",
-        "notifications"
+        "messages"
     ]
     readonly property var optionalTargetIds: [
         "obs",
@@ -37,10 +37,7 @@ Rectangle {
         "wallpicker",
         "virt-manager",
         "alacritty",
-        "mpv",
-        "ags",
-        "logout-dialog",
-        "waybar"
+        "mpv"
     ]
 
     Layout.fillWidth: true
@@ -131,6 +128,11 @@ Rectangle {
             Qt.callLater(() => refresh());
     }
 
+    onExpandedChanged: {
+        if (!expanded)
+            optionalExpanded = false;
+    }
+
     Process {
         id: statusReader
         stdout: StdioCollector {
@@ -201,16 +203,24 @@ Rectangle {
             }
 
             Text {
-                text: root.busy ? "Applying…" : "Privacy"
+                text: root.busy ? "Applying…" : (root.actionError.length > 0 ? "Error" : "Privacy")
                 color: Theme.muted
                 font.family: Theme.fontFamily
                 font.pixelSize: root.scaledText(8)
+            }
+
+            SettingsButton {
+                label: root.expanded ? "Hide" : "Show"
+                active: root.expanded
+                textSize: root.scaledText(8)
+                onClicked: root.expanded = !root.expanded
             }
         }
 
         Text {
             Layout.fillWidth: true
             text: "Block sensitive windows from screenshots and screen sharing. Unlocked changes last for this session; lock a row to remember it."
+            visible: root.expanded
             color: Theme.muted
             font.family: Theme.fontFamily
             font.pixelSize: root.scaledText(8)
@@ -218,7 +228,7 @@ Rectangle {
         }
 
         Repeater {
-            model: root.targetModel(root.protectedTargetIds)
+            model: root.expanded ? root.targetModel(root.protectedTargetIds) : []
 
             RowLayout {
                 id: protectedRow
@@ -272,11 +282,13 @@ Rectangle {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 1
+            visible: root.expanded
             color: Theme.active
         }
 
         RowLayout {
             Layout.fillWidth: true
+            visible: root.expanded
             spacing: 6
 
             Text {
@@ -289,7 +301,7 @@ Rectangle {
             }
 
             SettingsButton {
-                label: root.optionalExpanded ? "Hide" : "Show 11"
+                label: root.optionalExpanded ? "Hide" : "Show 8"
                 active: root.optionalExpanded
                 textSize: root.scaledText(8)
                 onClicked: root.optionalExpanded = !root.optionalExpanded
@@ -297,7 +309,7 @@ Rectangle {
         }
 
         Repeater {
-            model: root.optionalExpanded ? root.targetModel(root.optionalTargetIds) : []
+            model: root.expanded && root.optionalExpanded ? root.targetModel(root.optionalTargetIds) : []
 
             RowLayout {
                 id: optionalRow
@@ -350,6 +362,7 @@ Rectangle {
 
         RowLayout {
             Layout.fillWidth: true
+            visible: root.expanded
             spacing: 6
 
             Text {

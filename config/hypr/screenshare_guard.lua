@@ -21,7 +21,7 @@ guard.rules = {
         window_rule("awtarchy-screenshare-localsend-v1", { class = "^(localsend|LocalSend|org\\.localsend\\.localsend|io\\.github\\.localsend\\.localsend)$" }),
     },
     telegram = {
-        window_rule("awtarchy-screenshare-telegram-desktop-v1", { class = "^(org\\.telegram\\.desktop|TelegramDesktop|telegram-desktop|Telegram)$" }),
+        window_rule("awtarchy-screenshare-telegram-desktop-v1", { class = "^(org\\.telegram\\.desktop|TelegramDesktop|telegram-desktop|telegram|Telegram)$" }),
         window_rule("awtarchy-screenshare-telegram-browser-v1", { class = "^(brave-browser|chromium|google-chrome|chrome|vivaldi-stable|microsoft-edge)$", title = "^.*Telegram.*$" }),
     },
     matrix = {
@@ -34,16 +34,13 @@ guard.rules = {
         window_rule("awtarchy-screenshare-teams-v1", { class = "^(com\\.github\\.IsmaelMartinez\\.teams_for_linux)$" }),
     },
     messages = {
-        window_rule("awtarchy-screenshare-messages-v1", { class = "^(Messages)$" }),
-    },
-    notifications = {
-        layer_rule("awtarchy-screenshare-notifications-v1", { namespace = "^(notifications|swaync.*)$" }),
+        window_rule("awtarchy-screenshare-messages-v1", { class = "^(messages|Messages)$" }),
     },
     obs = {
         window_rule("awtarchy-screenshare-obs-v1", { class = "^(obs|com\\.obsproject\\.Studio|obs-studio|com\\.obsproject\\.Studio\\.obs)$" }),
     },
     steam = {
-        window_rule("awtarchy-screenshare-steam-v1", { class = "^(steam|com\\.valvesoftware\\.Steam)$" }),
+        window_rule("awtarchy-screenshare-steam-v1", { class = "^(steam|com\\.valvesoftware\\.Steam|steam-chat|SteamChat)$" }),
     },
     rustdesk = {
         window_rule("awtarchy-screenshare-rustdesk-v1", { class = "^(rustdesk|com\\.rustdesk\\.RustDesk)$" }),
@@ -63,15 +60,6 @@ guard.rules = {
     mpv = {
         window_rule("awtarchy-screenshare-mpv-v1", { class = "^(mpv)$" }),
     },
-    ags = {
-        layer_rule("awtarchy-screenshare-ags-v1", { namespace = "^(ags)$" }),
-    },
-    ["logout-dialog"] = {
-        layer_rule("awtarchy-screenshare-logout-dialog-v1", { namespace = "^(logout_dialog)$" }),
-    },
-    waybar = {
-        layer_rule("awtarchy-screenshare-waybar-v1", { namespace = "^(waybar)$" }),
-    },
 }
 
 guard.stock = {
@@ -83,7 +71,6 @@ guard.stock = {
     discord = true,
     teams = true,
     messages = true,
-    notifications = true,
     obs = false,
     steam = false,
     rustdesk = false,
@@ -92,16 +79,12 @@ guard.stock = {
     ["virt-manager"] = false,
     alacritty = false,
     mpv = false,
-    ags = false,
-    ["logout-dialog"] = false,
-    waybar = false,
 }
 
 guard.order = {
     "security", "mullvad-browser", "localsend", "telegram", "matrix",
-    "discord", "teams", "messages", "notifications", "obs", "steam",
-    "rustdesk", "files", "wallpicker", "virt-manager", "alacritty", "mpv",
-    "ags", "logout-dialog", "waybar",
+    "discord", "teams", "messages", "obs", "steam", "rustdesk", "files",
+    "wallpicker", "virt-manager", "alacritty", "mpv",
 }
 
 for target, rules in pairs(guard.rules) do

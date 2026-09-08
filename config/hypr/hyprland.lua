@@ -1295,15 +1295,10 @@ if not awtarchy_config_home or awtarchy_config_home == "" then
     awtarchy_config_home = assert(os.getenv("HOME")) .. "/.config"
 end
 
-awtarchy_screenshare_guard_v1 = dofile(awtarchy_config_home .. "/hypr/screenshare_guard.lua")
-awtarchy_screenshare_guard_rules_v1 = awtarchy_screenshare_guard_v1.rules
+local awtarchy_screenshare_guard_v1 = dofile(awtarchy_config_home .. "/hypr/screenshare_guard.lua")
 
 function awtarchy_screenshare_guard_set_group_v1(target, enabled)
     return awtarchy_screenshare_guard_v1.set_group(target, enabled)
-end
-
-function awtarchy_screenshare_guard_group_enabled_v1(target)
-    return awtarchy_screenshare_guard_v1.group_enabled(target)
 end
 
 function awtarchy_screenshare_guard_status_v1()

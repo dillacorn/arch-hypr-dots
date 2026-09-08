@@ -916,3 +916,8 @@ c7bb0a04c679254e62adadfcbfb0a2c136e397a784ca9dc4bbca2ec1fc64ce80	.config/quicksh
 
 # 2026-09-08 integrated lockscreen/workspace Bar stock hash.
 18d5de1c6eac889f5de87285e8eb46350b0d7cc65ab52bf367124a57a6cc19c3	.config/quickshell/awtarchy/Bar.qml
+
+# 2026-09-08 compact Screen Share Guard cleanup.
+998bbd66e0cb18886487c7d7ed8e6cdbfc09585772517d55bbe9c274e6c97da6	.config/quickshell/awtarchy/ScreenShareGuardCard.qml
+b3a96bcd685fdd400457b8b7da886489d0d9182c7aa91c7559d5378ce0eaedb8	.config/hypr/scripts/screenshare_guard.sh
+167e759d9971e5571a2890f903c3d97a2c5cfa5c522ba5a39adfff0fd62ccdbd	.config/hypr/screenshare_guard.lua
