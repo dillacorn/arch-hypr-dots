@@ -51,7 +51,11 @@ jobs:
               raise SystemExit("hyprland.lua Screen Share Guard markers not found")
           replacement = start_marker + '''
 
-          awtarchy_screenshare_guard_v1 = require("./screenshare_guard")
+          local awtarchy_config_home = os.getenv("XDG_CONFIG_HOME")
+          if not awtarchy_config_home or awtarchy_config_home == "" then
+              awtarchy_config_home = assert(os.getenv("HOME")) .. "/.config"
+          end
+          awtarchy_screenshare_guard_v1 = dofile(awtarchy_config_home .. "/hypr/screenshare_guard.lua")
           awtarchy_screenshare_guard_rules_v1 = awtarchy_screenshare_guard_v1.rules
 
           function awtarchy_screenshare_guard_set_group_v1(target, enabled)
@@ -71,36 +75,48 @@ jobs:
 
           runtime = root / "config/hypr/scripts/quickshell_runtime_rules.sh"
           remember(runtime, ".config/hypr/scripts/quickshell_runtime_rules.sh")
-          replace_once(runtime,
+          replace_once(
+              runtime,
               'STATE_FILE="${CACHE_HOME}/awtarchy/quickshell-state.json"\n',
-              'STATE_FILE="${CACHE_HOME}/awtarchy/quickshell-state.json"\nSCREENSHARE_GUARD="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/screenshare_guard.sh"\n')
-          replace_once(runtime,
+              'STATE_FILE="${CACHE_HOME}/awtarchy/quickshell-state.json"\nSCREENSHARE_GUARD="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/screenshare_guard.sh"\n',
+          )
+          replace_once(
+              runtime,
               'mkdir -p -- "$RUNTIME_DIR"\n',
-              'mkdir -p -- "$RUNTIME_DIR"\n\nif [[ -x "$SCREENSHARE_GUARD" ]]; then\n    "$SCREENSHARE_GUARD" apply >/dev/null 2>&1 || true\nfi\n')
+              'mkdir -p -- "$RUNTIME_DIR"\n\nif [[ -x "$SCREENSHARE_GUARD" ]]; then\n    "$SCREENSHARE_GUARD" apply >/dev/null 2>&1 || true\nfi\n',
+          )
 
           app_state = root / "config/hypr/scripts/quickshell_application_state.sh"
           remember(app_state, ".config/hypr/scripts/quickshell_application_state.sh")
-          replace_once(app_state,
+          replace_once(
+              app_state,
               '"bar","display-effects","submap"',
-              '"bar","display-effects","screen-share-guard","submap"')
+              '"bar","display-effects","screen-share-guard","submap"',
+          )
 
           bar_state = root / "config/quickshell/awtarchy/BarState.qml"
           remember(bar_state, ".config/quickshell/awtarchy/BarState.qml")
-          replace_once(bar_state,
+          replace_once(
+              bar_state,
               '        "display-effects",\n        "submap",',
-              '        "display-effects",\n        "screen-share-guard",\n        "submap",')
+              '        "display-effects",\n        "screen-share-guard",\n        "submap",',
+          )
 
           layout_editor = root / "config/quickshell/awtarchy/QuickSettingsLayoutEditor.qml"
           remember(layout_editor, ".config/quickshell/awtarchy/QuickSettingsLayoutEditor.qml")
-          replace_once(layout_editor,
+          replace_once(
+              layout_editor,
               '            "display-effects": "Night Light + Vibrance",\n            "submap": "Hyprland Submap",',
-              '            "display-effects": "Night Light + Vibrance",\n            "screen-share-guard": "Screen Share Guard",\n            "submap": "Hyprland Submap",')
+              '            "display-effects": "Night Light + Vibrance",\n            "screen-share-guard": "Screen Share Guard",\n            "submap": "Hyprland Submap",',
+          )
 
           flyout = root / "config/quickshell/awtarchy/FlyoutSettings.qml"
           remember(flyout, ".config/quickshell/awtarchy/FlyoutSettings.qml")
-          replace_once(flyout,
+          replace_once(
+              flyout,
               '            "display-effects": "Night + Vibrance",\n            "submap": "Submap",',
-              '            "display-effects": "Night + Vibrance",\n            "screen-share-guard": "Screen Share Guard",\n            "submap": "Submap",')
+              '            "display-effects": "Night + Vibrance",\n            "screen-share-guard": "Screen Share Guard",\n            "submap": "Submap",',
+          )
 
           quick = root / "config/quickshell/awtarchy/QuickSettings.qml"
           remember(quick, ".config/quickshell/awtarchy/QuickSettings.qml")
@@ -118,10 +134,14 @@ jobs:
 
           card_path = root / "config/quickshell/awtarchy/ScreenShareGuardCard.qml"
           card_text = card_path.read_text()
-          replace_once(card_path,
-              '            RowLayout {\n                required property var modelData\n',
-              '            RowLayout {\n                id: protectedRow\n                required property var modelData\n')
-          card_text = card_path.read_text()
+          first_anchor = '            RowLayout {\n                required property var modelData\n'
+          if card_text.count(first_anchor) != 2:
+              raise SystemExit("Screen Share Guard card row anchors changed unexpectedly")
+          card_text = card_text.replace(
+              first_anchor,
+              '            RowLayout {\n                id: protectedRow\n                required property var modelData\n',
+              1,
+          )
           first_pairs = [
               ('parent.parent.modelData.label', 'protectedRow.modelData.label'),
               ('parent.parent.modelData.id', 'protectedRow.modelData.id'),
@@ -134,11 +154,13 @@ jobs:
               if old not in card_text:
                   raise SystemExit(f"protected row replacement missing: {old}")
               card_text = card_text.replace(old, new, 1)
-          second_anchor = '            RowLayout {\n                required property var modelData\n'
-          if second_anchor not in card_text:
+          if first_anchor not in card_text:
               raise SystemExit("optional Screen Share Guard row anchor missing")
-          card_text = card_text.replace(second_anchor,
-              '            RowLayout {\n                id: optionalRow\n                required property var modelData\n', 1)
+          card_text = card_text.replace(
+              first_anchor,
+              '            RowLayout {\n                id: optionalRow\n                required property var modelData\n',
+              1,
+          )
           second_pairs = [
               ('parent.parent.modelData.label', 'optionalRow.modelData.label'),
               ('parent.parent.modelData.id', 'optionalRow.modelData.id'),
@@ -154,35 +176,54 @@ jobs:
           card_path.write_text(card_text)
 
           test = root / "tests/test-screenshare-guard-controls.sh"
-          replace_once(test,
+          replace_once(
+              test,
               'HYPR="$ROOT/config/hypr/hyprland.lua"\n',
-              'HYPR="$ROOT/config/hypr/hyprland.lua"\nSCREENSHARE_LUA="$ROOT/config/hypr/screenshare_guard.lua"\n')
-          replace_once(test,
-              'require_source "$HYPR" ':is_enabled()' \\\n    'Hyprland Screen Share Guard effective-state query does not inspect rule handles'\n',
-              'require_source "$SCREENSHARE_LUA" ':is_enabled()' \\\n    'Hyprland Screen Share Guard effective-state query does not inspect rule handles'\n')
-          replace_once(test,
-              'require_source "$HYPR" 'screenshare_guard.sh apply' \\\n    'Hyprland does not reapply Screen Share Guard state after startup/reload'\n',
-              'require_source "$SCREENSHARE_LUA" 'screenshare_guard.sh apply' \\\n    'Hyprland does not reapply Screen Share Guard state after startup/reload'\n')
+              'HYPR="$ROOT/config/hypr/hyprland.lua"\nSCREENSHARE_LUA="$ROOT/config/hypr/screenshare_guard.lua"\n',
+          )
+          test_text = test.read_text()
+          old = "require_source \"$HYPR\" ':is_enabled()'"
+          new = "require_source \"$SCREENSHARE_LUA\" ':is_enabled()'"
+          if test_text.count(old) != 1:
+              raise SystemExit("Screen Share Guard is_enabled test anchor changed unexpectedly")
+          test_text = test_text.replace(old, new, 1)
+          old = "require_source \"$HYPR\" 'screenshare_guard.sh apply'"
+          new = "require_source \"$SCREENSHARE_LUA\" 'screenshare_guard.sh apply'"
+          if test_text.count(old) != 1:
+              raise SystemExit("Screen Share Guard startup test anchor changed unexpectedly")
+          test.write_text(test_text.replace(old, new, 1))
 
           validate = root / ".github/workflows/validate-awtarchy.yml"
-          replace_once(validate,
+          replace_once(
+              validate,
               '          bash -n config/hypr/scripts/quickshell_runtime_rules.sh\n',
-              '          bash -n config/hypr/scripts/quickshell_runtime_rules.sh\n          bash -n config/hypr/scripts/screenshare_guard.sh\n')
-          replace_once(validate,
+              '          bash -n config/hypr/scripts/quickshell_runtime_rules.sh\n          bash -n config/hypr/scripts/screenshare_guard.sh\n',
+          )
+          replace_once(
+              validate,
               '          bash -n tests/test-quickshell-capture-privacy.sh\n',
-              '          bash -n tests/test-quickshell-capture-privacy.sh\n          bash -n tests/test-screenshare-guard-controls.sh\n')
-          replace_once(validate,
+              '          bash -n tests/test-quickshell-capture-privacy.sh\n          bash -n tests/test-screenshare-guard-controls.sh\n',
+          )
+          replace_once(
+              validate,
               '            config/hypr/scripts/quickshell_runtime_rules.sh \\\n',
-              '            config/hypr/scripts/quickshell_runtime_rules.sh \\\n            config/hypr/scripts/screenshare_guard.sh \\\n')
-          replace_once(validate,
+              '            config/hypr/scripts/quickshell_runtime_rules.sh \\\n            config/hypr/scripts/screenshare_guard.sh \\\n',
+          )
+          replace_once(
+              validate,
               '            tests/test-quickshell-updater-migration.sh \\\n',
-              '            tests/test-quickshell-updater-migration.sh \\\n            tests/test-screenshare-guard-controls.sh \\\n')
-          replace_once(validate,
+              '            tests/test-quickshell-updater-migration.sh \\\n            tests/test-screenshare-guard-controls.sh \\\n',
+          )
+          replace_once(
+              validate,
               '          bash tests/test-quickshell-capture-privacy.sh\n',
-              '          bash tests/test-quickshell-capture-privacy.sh\n          bash tests/test-screenshare-guard-controls.sh\n')
-          replace_once(validate,
+              '          bash tests/test-quickshell-capture-privacy.sh\n          bash tests/test-screenshare-guard-controls.sh\n',
+          )
+          replace_once(
+              validate,
               '          test -x config/hypr/scripts/quickshell_sensitive_capture.sh\n',
-              '          test -x config/hypr/scripts/quickshell_sensitive_capture.sh\n          test -x config/hypr/scripts/screenshare_guard.sh\n')
+              '          test -x config/hypr/scripts/quickshell_sensitive_capture.sh\n          test -x config/hypr/scripts/screenshare_guard.sh\n',
+          )
           PY
       - name: Validate candidate
         run: |
