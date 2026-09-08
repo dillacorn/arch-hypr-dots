@@ -12,7 +12,7 @@ SESSION_LOCK_FILE="${SESSION_FILE}.lock"
 HYPRCTL="${AWTARCHY_SCREENSHARE_HYPRCTL:-hyprctl}"
 TMP_FILE=""
 
-TARGETS=(
+FALLBACK_TARGETS=(
     security
     mullvad-browser
     localsend
@@ -31,29 +31,7 @@ TARGETS=(
     mpv
 )
 
-ACTIVE_DEFAULTS=(
-    security
-    mullvad-browser
-    localsend
-    telegram
-    matrix
-    discord
-    teams
-    messages
-)
-
-OPTIONAL_DEFAULTS=(
-    obs
-    steam
-    rustdesk
-    files
-    wallpicker
-    virt-manager
-    alacritty
-    mpv
-)
-
-declare -A LABELS=(
+declare -A FALLBACK_LABELS=(
     [security]="Passwords & Security"
     [mullvad-browser]="Mullvad Browser"
     [localsend]="LocalSend"
@@ -72,13 +50,115 @@ declare -A LABELS=(
     [mpv]="mpv"
 )
 
+declare -A FALLBACK_SECTIONS=(
+    [security]=protected
+    [mullvad-browser]=protected
+    [localsend]=protected
+    [telegram]=protected
+    [matrix]=protected
+    [discord]=protected
+    [teams]=protected
+    [messages]=protected
+    [obs]=optional
+    [steam]=optional
+    [rustdesk]=optional
+    [files]=optional
+    [wallpicker]=optional
+    [virt-manager]=optional
+    [alacritty]=optional
+    [mpv]=optional
+)
+
+declare -A FALLBACK_DEFAULTS=(
+    [security]=true
+    [mullvad-browser]=true
+    [localsend]=true
+    [telegram]=true
+    [matrix]=true
+    [discord]=true
+    [teams]=true
+    [messages]=true
+    [obs]=false
+    [steam]=false
+    [rustdesk]=false
+    [files]=false
+    [wallpicker]=false
+    [virt-manager]=false
+    [alacritty]=false
+    [mpv]=false
+)
+
+TARGETS=()
+RULE_ROWS=()
+declare -A LABELS=()
+declare -A SECTIONS=()
 declare -A DEFAULT_PROTECTED=()
-for target in "${ACTIVE_DEFAULTS[@]}"; do
-    DEFAULT_PROTECTED["$target"]=true
-done
-for target in "${OPTIONAL_DEFAULTS[@]}"; do
-    DEFAULT_PROTECTED["$target"]=false
-done
+
+load_fallback_registry() {
+    local target
+    TARGETS=("${FALLBACK_TARGETS[@]}")
+    RULE_ROWS=()
+    LABELS=()
+    SECTIONS=()
+    DEFAULT_PROTECTED=()
+    for target in "${TARGETS[@]}"; do
+        LABELS["$target"]="${FALLBACK_LABELS[$target]}"
+        SECTIONS["$target"]="${FALLBACK_SECTIONS[$target]}"
+        DEFAULT_PROTECTED["$target"]="${FALLBACK_DEFAULTS[$target]}"
+    done
+}
+
+load_runtime_registry() {
+    local raw line id label section default class_regex title_regex target
+    local -a parsed_targets=() parsed_rows=()
+    local -A seen=() parsed_labels=() parsed_sections=() parsed_defaults=()
+
+    if ! raw="$("$HYPRCTL" repl 'awtarchy_screenshare_guard_registry_v1()' 2>/dev/null)"; then
+        return 1
+    fi
+    [[ -n "$raw" ]] || return 1
+
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        IFS=$'\t' read -r id label section default class_regex title_regex <<<"$line"
+        [[ "$id" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || return 1
+        [[ -n "$label" && "$label" != *$'\t'* ]] || return 1
+        [[ "$section" == protected || "$section" == optional ]] || return 1
+        [[ "$default" == true || "$default" == false ]] || return 1
+        [[ -n "$class_regex" ]] || return 1
+
+        if [[ -z ${seen[$id]+x} ]]; then
+            seen["$id"]=1
+            parsed_targets+=("$id")
+            parsed_labels["$id"]="$label"
+            parsed_sections["$id"]="$section"
+            parsed_defaults["$id"]="$default"
+        elif [[ "${parsed_labels[$id]}" != "$label" \
+            || "${parsed_sections[$id]}" != "$section" \
+            || "${parsed_defaults[$id]}" != "$default" ]]; then
+            return 1
+        fi
+
+        parsed_rows+=("${id}"$'\t'"${label}"$'\t'"${section}"$'\t'"${default}"$'\t'"${class_regex}"$'\t'"${title_regex}")
+    done <<<"$raw"
+
+    (( ${#parsed_targets[@]} > 0 )) || return 1
+
+    TARGETS=("${parsed_targets[@]}")
+    RULE_ROWS=("${parsed_rows[@]}")
+    LABELS=()
+    SECTIONS=()
+    DEFAULT_PROTECTED=()
+    for target in "${TARGETS[@]}"; do
+        LABELS["$target"]="${parsed_labels[$target]}"
+        SECTIONS["$target"]="${parsed_sections[$target]}"
+        DEFAULT_PROTECTED["$target"]="${parsed_defaults[$target]}"
+    done
+}
+
+load_registry() {
+    load_runtime_registry || load_fallback_registry
+}
 
 cleanup() {
     [[ -z "$TMP_FILE" ]] || rm -f -- "$TMP_FILE"
@@ -94,6 +174,7 @@ need() {
 
 need jq
 need flock
+load_registry
 
 valid_target() {
     local target="$1" candidate
@@ -253,7 +334,7 @@ reset_locked() {
 }
 
 desired_json_locked() {
-    local targets_json='{}' target desired persistent session locked default label section
+    local targets_json='{}' target desired persistent session locked default label section order=0
     for target in "${TARGETS[@]}"; do
         desired="$(desired_value_locked "$target")"
         persistent="$(persistent_value_locked "$target")"
@@ -261,14 +342,14 @@ desired_json_locked() {
         if [[ "$persistent" == null ]]; then locked=false; else locked=true; fi
         default="${DEFAULT_PROTECTED[$target]}"
         label="${LABELS[$target]}"
-        section=optional
-        [[ "$default" == true ]] && section=protected
+        section="${SECTIONS[$target]}"
         # jq variables are jq bindings, not Bash interpolation.
         # shellcheck disable=SC2016
         targets_json="$(jq -c \
             --arg id "$target" \
             --arg label "$label" \
             --arg section "$section" \
+            --argjson order "$order" \
             --argjson default "$default" \
             --argjson desired "$desired" \
             --argjson locked "$locked" \
@@ -277,12 +358,14 @@ desired_json_locked() {
                     id: $id,
                     label: $label,
                     section: $section,
+                    order: $order,
                     default_protected: $default,
                     desired_protected: $desired,
                     locked: $locked,
                     session_override: $session
                 }}
             ' <<<"$targets_json")"
+        order=$((order + 1))
     done
     jq -cn --argjson targets "$targets_json" '{targets:$targets}'
 }
@@ -305,16 +388,48 @@ apply_lua() {
     "$HYPRCTL" -r eval "$lua" >/dev/null
 }
 
+sync_open_windows_locked() {
+    local clients row target _label _section _default class_regex title_regex desired addresses address
+    (( ${#RULE_ROWS[@]} > 0 )) || return 0
+
+    clients="$("$HYPRCTL" -j clients)" || return 1
+    jq -e 'type == "array"' <<<"$clients" >/dev/null || return 1
+
+    for row in "${RULE_ROWS[@]}"; do
+        IFS=$'\t' read -r target _label _section _default class_regex title_regex <<<"$row"
+        desired="$(desired_value_locked "$target")"
+        addresses="$(jq -r \
+            --arg class "$class_regex" \
+            --arg title "$title_regex" '
+                def matches($value; $regex): try (($value // "") | test($regex)) catch false;
+                .[]
+                | select(
+                    (matches(.class; $class) or matches(.initialClass; $class))
+                    and
+                    ($title == "" or matches(.title; $title) or matches(.initialTitle; $title))
+                )
+                | (.address // empty)
+            ' <<<"$clients")" || return 1
+
+        while IFS= read -r address; do
+            [[ -n "$address" ]] || continue
+            [[ "$address" =~ ^0x[0-9A-Fa-f]+$ ]] || return 1
+            "$HYPRCTL" dispatch \
+                "hl.dsp.window.set_prop({ prop = \"no_screen_share\", value = \"${desired}\", window = \"address:${address}\" })" \
+                >/dev/null || return 1
+        done <<<"$addresses"
+    done
+}
+
 apply_guard_locked() {
     local lua
     lua="$(build_apply_lua_locked)"
     apply_lua "$lua"
+    sync_open_windows_locked
 }
 
 apply_guard() {
-    local lua
-    lua="$(with_locks build_apply_lua_locked)"
-    apply_lua "$lua"
+    with_locks apply_guard_locked
 }
 
 restore_file_locked() {
@@ -346,7 +461,7 @@ mutate_and_apply_locked() {
 
 runtime_status() {
     local raw
-    if ! raw="$($HYPRCTL repl 'awtarchy_screenshare_guard_status_v1()' 2>/dev/null)"; then
+    if ! raw="$("$HYPRCTL" repl 'awtarchy_screenshare_guard_status_v1()' 2>/dev/null)"; then
         return 1
     fi
     printf '%s\n' "$raw"
@@ -371,7 +486,7 @@ status_json() {
     # shellcheck disable=SC2016
     merged="$(jq -c --argjson actual "$actual" '
         .targets |= with_entries(
-            .value.effective_protected = ($actual[.key] // null)
+            .value.effective_protected = (if ($actual | has(.key)) then $actual[.key] else null end)
             | .value.in_sync = (if ($actual[.key] | type) == "boolean"
                 then ($actual[.key] == .value.desired_protected) else false end)
         )
