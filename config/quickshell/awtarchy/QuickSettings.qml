@@ -39,6 +39,7 @@ Singleton {
     property bool layoutEditorOpen: false
     property bool barIconsOpen: false
     property bool barAppearanceOpen: false
+    property bool barVisibilityOpen: false
     property var layoutOrderDraft: []
     property var layoutHiddenDraft: []
     property var savedLayout: ({ order: [], hidden: [] })
@@ -738,6 +739,7 @@ Singleton {
         if (settingsOpen) {
             barIconsOpen = false;
             barAppearanceOpen = false;
+            barVisibilityOpen = false;
             barAppearanceSettings.resetTransientState();
         }
         settingsPanel.resetTransientState();
@@ -758,6 +760,7 @@ Singleton {
         layoutEditorOpen = false;
         barIconsOpen = false;
         barAppearanceOpen = false;
+        barVisibilityOpen = false;
         settingsPanel.resetTransientState();
         barAppearanceSettings.resetTransientState();
         settingsMessage = "";
@@ -784,6 +787,7 @@ Singleton {
         layoutEditorOpen = false;
         barIconsOpen = false;
         barAppearanceOpen = false;
+        barVisibilityOpen = false;
         settingsPanel.resetTransientState();
         barAppearanceSettings.resetTransientState();
         settingsMessage = "";
@@ -1079,6 +1083,12 @@ Singleton {
                             label: root.statusLoading ? "…" : "↻"
                             textSize: root.scaledText(11)
                             onClicked: root.refreshStatus()
+                        }
+
+                        SettingsButton {
+                            label: "?"
+                            textSize: root.scaledText(11)
+                            onClicked: root.openAwtarchyTips()
                         }
 
                         SettingsButton {
@@ -1529,6 +1539,7 @@ Singleton {
                                         onClicked: {
                                             root.barIconsOpen = !root.barIconsOpen;
                                             root.barAppearanceOpen = false;
+                                            root.barVisibilityOpen = false;
                                             barAppearanceSettings.resetTransientState();
                                             if (root.bottomEdgeLayout)
                                                 Qt.callLater(() => root.alignContentToBar());
@@ -1542,6 +1553,7 @@ Singleton {
                                         onClicked: {
                                             root.barAppearanceOpen = !root.barAppearanceOpen;
                                             root.barIconsOpen = false;
+                                            root.barVisibilityOpen = false;
                                             if (!root.barAppearanceOpen)
                                                 barAppearanceSettings.resetTransientState();
                                             if (root.bottomEdgeLayout)
@@ -1551,13 +1563,50 @@ Singleton {
 
                                     SettingsButton {
                                         label: root.barStatus.enabled ? "Visible" : "Hidden"
-                                        active: Boolean(root.barStatus.enabled)
+                                        active: root.barVisibilityOpen
                                         textSize: root.scaledText(9)
-                                        onClicked: root.queueAction([
-                                            "bar-enabled", root.activeMonitorName,
-                                            root.barStatus.enabled ? "false" : "true"
-                                        ], "Updating bar visibility…")
+                                        onClicked: {
+                                            root.barVisibilityOpen = !root.barVisibilityOpen;
+                                            root.barIconsOpen = false;
+                                            root.barAppearanceOpen = false;
+                                            barAppearanceSettings.resetTransientState();
+                                            if (root.bottomEdgeLayout)
+                                                Qt.callLater(() => root.alignContentToBar());
+                                        }
                                     }
+                                }
+
+                                RowLayout {
+                                    visible: root.barVisibilityOpen
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: visible ? 28 : 0
+                                    spacing: 5
+
+                                    Text {
+                                        text: "Visible on workspaces"
+                                        color: Theme.foreground
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: root.scaledText(9)
+                                    }
+
+                                    Repeater {
+                                        model: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+                                        SettingsButton {
+                                            required property var modelData
+                                            label: String(modelData)
+                                            active: BarState.workspaceVisible(Number(modelData))
+                                            textSize: root.scaledText(9)
+                                            horizontalPadding: 9
+                                            onClicked: root.queueStateCommand([
+                                                "set-bar-workspace-visible", String(modelData),
+                                                BarState.workspaceVisible(Number(modelData))
+                                                    ? "false" : "true"
+                                            ])
+                                        }
+                                    }
+
+                                    Item { Layout.fillWidth: true }
                                 }
 
                                 RowLayout {

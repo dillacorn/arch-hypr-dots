@@ -613,18 +613,63 @@ Singleton {
         return d.monitors[name] || ({});
     }
 
+    function hiddenWorkspaceIds() {
+        const appearance = data().bar_appearance || ({});
+        const values = Array.isArray(appearance.hidden_workspaces)
+            ? appearance.hidden_workspaces : [];
+        const result = [];
+        for (const raw of values) {
+            const value = workspaceId(raw);
+            if (value > 0 && result.indexOf(value) < 0)
+                result.push(value);
+        }
+        return result;
+    }
+
+    function workspaceVisible(id) {
+        const value = workspaceId(id);
+        return value > 0 && hiddenWorkspaceIds().indexOf(value) < 0;
+    }
+
+    function activeWorkspaceIdForMonitor(name) {
+        const workspaces = Hyprland.workspaces.values;
+        for (const workspace of workspaces) {
+            if (workspace && workspace.monitor && workspace.monitor.name === name
+                    && workspace.active)
+                return workspaceId(workspace.id);
+        }
+        return 0;
+    }
+
+    function workspaceHiddenForMonitor(name) {
+        const workspace = activeWorkspaceIdForMonitor(name);
+        return workspace > 0 && !workspaceVisible(workspace);
+    }
+
     function enabledFor(name) {
         const dependency = revision;
         const idleDependency = idleRevision;
         if (idleHidden())
             return false;
-        if (liveEnabled[name] !== undefined)
-            return !!liveEnabled[name];
+
+        if (liveEnabled[name] !== undefined) {
+            if (!liveEnabled[name])
+                return false;
+            if (workspaceHiddenForMonitor(name))
+                return false;
+            return true;
+        }
+
         const d = data();
         if (!d.enabled)
             return false;
         const mon = d.monitors[name];
-        return !mon || mon.enabled === undefined ? true : !!mon.enabled;
+        const enabled = !mon || mon.enabled === undefined ? true : !!mon.enabled;
+        if (!enabled)
+            return false;
+        if (workspaceHiddenForMonitor(name))
+            return false;
+        return true;
     }
 
     function positionFor(name) {

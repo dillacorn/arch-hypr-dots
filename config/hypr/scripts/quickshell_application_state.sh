@@ -237,6 +237,33 @@ clear_workspace_overrides() {
     commit_tmp
 }
 
+set_bar_workspace_visible() {
+    local workspace="$1" value="$2" visible
+    validate_int_range "$workspace" 1 10 'workspace'
+    visible="$(parse_bool "$value" 'workspace bar visibility')"
+    new_tmp
+    jq \
+        --argjson workspace "$workspace" \
+        --argjson visible "$visible" '
+        .bar_appearance = (if (.bar_appearance | type) == "object" then .bar_appearance else {} end)
+        | ((if (.bar_appearance.hidden_workspaces | type) == "array"
+            then .bar_appearance.hidden_workspaces else [] end)
+            | map(tonumber? // empty)
+            | map(select(. >= 1 and . <= 10))
+            | unique | sort) as $current
+        | (if $visible
+            then ($current | map(select(. != $workspace)))
+            else (($current + [$workspace]) | unique | sort)
+          end) as $next
+        | if ($next | length) == 0
+            then del(.bar_appearance.hidden_workspaces)
+            else .bar_appearance.hidden_workspaces = $next
+          end
+        | if (.bar_appearance | length) == 0 then del(.bar_appearance) else . end
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
 set_launcher_icon() {
     local value="$1"
     validate_identity_label "$value" 'launcher icon'
@@ -276,7 +303,18 @@ reset_workspace_icons() {
 
 reset_bar_icons() {
     new_tmp
-    jq 'del(.bar_appearance)' "$STATE_FILE" >"$TMP_FILE"
+    jq '
+        .bar_appearance = (if (.bar_appearance | type) == "object" then .bar_appearance else {} end)
+        | del(
+            .bar_appearance.workspace_style,
+            .bar_appearance.workspace_numbers_enabled,
+            .bar_appearance.workspace_icon_style,
+            .bar_appearance.workspace_custom_label,
+            .bar_appearance.workspace_overrides,
+            .bar_appearance.launcher_icon
+        )
+        | if (.bar_appearance | length) == 0 then del(.bar_appearance) else . end
+    ' "$STATE_FILE" >"$TMP_FILE"
     commit_tmp
 }
 
@@ -907,6 +945,10 @@ case "$cmd" in
     clear-workspace-custom-label)
         clear_workspace_custom_label
         ;;
+    set-bar-workspace-visible)
+        [[ -n ${2:-} && -n ${3:-} ]] || exit 2
+        set_bar_workspace_visible "$2" "$3"
+        ;;
     set-workspace-override)
         [[ -n ${2:-} && -n ${3:-} ]] || exit 2
         set_workspace_override "$2" "$3"
@@ -1025,7 +1067,7 @@ case "$cmd" in
         reset_defaults
         ;;
     *)
-        printf 'usage: %s {set-lockscreen-animation <random|swarm|edges|center|split|off>|set-workspace-numbers <true|false>|set-workspace-icon-style <style>|set-workspace-style <legacy-style>|set-workspace-custom-label <label>|clear-workspace-custom-label|set-workspace-override <1-10> <label>|clear-workspace-override <1-10>|clear-workspace-overrides|set-launcher-icon <label>|reset-launcher-icon|reset-workspace-icons|reset-bar-icons|save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-update-notifications <true|false>|set-clock-date <MON> <true|false>|set-notification-popup-limit <1-20>|set-notification-popup-position <MON> <automatic|top-left|top-center|top-right|bottom-left|bottom-center|bottom-right>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|save-quick-settings-layout <MON> <order_json> <hidden_json>|copy-quick-settings-layout <order_json> <hidden_json> <MON>...|reset-quick-settings-layout <MON>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
+        printf 'usage: %s {set-lockscreen-animation <random|swarm|edges|center|split|off>|set-workspace-numbers <true|false>|set-bar-workspace-visible <1-10> <true|false>|set-workspace-icon-style <style>|set-workspace-style <legacy-style>|set-workspace-custom-label <label>|clear-workspace-custom-label|set-workspace-override <1-10> <label>|clear-workspace-override <1-10>|clear-workspace-overrides|set-launcher-icon <label>|reset-launcher-icon|reset-workspace-icons|reset-bar-icons|save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-update-notifications <true|false>|set-clock-date <MON> <true|false>|set-notification-popup-limit <1-20>|set-notification-popup-position <MON> <automatic|top-left|top-center|top-right|bottom-left|bottom-center|bottom-right>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|save-quick-settings-layout <MON> <order_json> <hidden_json>|copy-quick-settings-layout <order_json> <hidden_json> <MON>...|reset-quick-settings-layout <MON>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
         exit 2
         ;;
 esac
