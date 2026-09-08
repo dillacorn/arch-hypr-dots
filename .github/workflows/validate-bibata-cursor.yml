@@ -30,6 +30,7 @@ jobs:
           fetch-depth: 0
       - name: Apply and validate hyprcursor persistence follow-up
         run: |
+          python3 .github/scripts/fix-bibata-hyprcursor-env-patch.py
           python3 .github/scripts/apply-bibata-hyprcursor-env-followup.py
           bash -n config/hypr/scripts/quickshell_cursor_theme.sh
           bash -n local/share/awtarchy/awtarchy-runtime.sh
@@ -43,6 +44,7 @@ jobs:
           git fetch origin main
           git checkout origin/main -- .github/workflows/validate-bibata-cursor.yml
           rm -f .github/scripts/apply-bibata-hyprcursor-env-followup.py
+          rm -f .github/scripts/fix-bibata-hyprcursor-env-patch.py
           git add -A
           git commit -m "Persist Bibata hyprcursor selection"
           git push origin HEAD:fix/bibata-live-cursor-ui
