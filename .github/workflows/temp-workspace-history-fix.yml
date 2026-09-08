@@ -1,0 +1,45 @@
+name: TEMP Fix Workspace Managed History
+
+on:
+  push:
+    branches: [fix/workspace-empty-indicator]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.head_commit.message == 'Stage workspace history fix'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: fix/workspace-empty-indicator
+          fetch-depth: 0
+
+      - name: Restore managed history and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git fetch origin main
+          git checkout origin/main -- "$history"
+
+          cat >> "$history" <<'EOF'
+
+# 2026-09-07 occupancy-aware workspace visibility.
+e9efd590d249da3737b8966c1017ed292c308a4d6898346f46c35e5d6278ea4e	.config/quickshell/awtarchy/Bar.qml
+EOF
+
+          rm -f .github/workflows/temp-workspace-history-fix.yml
+          git add -A
+          git diff --cached --check
+          bash tests/test-workspace-focus-highlight.sh
+          bash tests/test-bar-wheel-input.sh
+          bash tests/test-quickshell-lockscreen-foundation.sh
+
+          git commit -m 'Preserve managed history for workspace fix'
+          git push origin HEAD:fix/workspace-empty-indicator
