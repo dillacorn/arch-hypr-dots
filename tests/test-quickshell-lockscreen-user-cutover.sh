@@ -35,8 +35,8 @@ require_text "$HYPRLAND" \
     'hl.bind("SUPER + P", hl.dsp.exec_cmd(power_menu), {})' \
     'power menu bind is missing after lockscreen cutover'
 require_text "$POWER_MENU" \
-    '{ label: "", text: "Lock (L)", key: "l", command: "~/.config/hypr/scripts/awtarchy_lock.sh lock" }' \
-    'power menu L action does not invoke the native locker'
+    '{ label: "", text: "Lock (L)", key: "l", command: "~/.config/hypr/scripts/awtarchy_lock.sh lock && ~/.config/hypr/scripts/awtarchy_lock.sh wait-secure 5", closeAfterSuccess: true }' \
+    'power menu L action does not keep coverage until the native locker is secure'
 reject_text "$MIGRATOR" \
     'NEW_BIND = '\''hl.bind("SUPER + L", hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarchy_lock.sh lock"), {})'\''' \
     'personalized Hyprland migration still creates a direct SUPER+L lock bind'
