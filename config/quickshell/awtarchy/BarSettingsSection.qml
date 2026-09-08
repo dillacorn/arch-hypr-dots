@@ -171,6 +171,10 @@ Item {
         return Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : 0;
     }
 
+    function rawAutoHide(name) {
+        return BarState.autoHideFor(name);
+    }
+
     function rawModuleVisible(name, module) {
         const state = BarState.monitorState(name) || ({});
         if (module === "cpu")
@@ -266,6 +270,10 @@ Item {
         return commonValue(name => rawIconOption(name, option)) === true;
     }
 
+    function autoHideActive() {
+        return commonValue(name => rawAutoHide(name)) === true;
+    }
+
     function baseThickness() {
         const common = commonValue(rawBarSize);
         if (common !== null && common !== 0)
@@ -340,12 +348,27 @@ Item {
         runNextCommand();
     }
 
+    function toggleAutoHide() {
+        const targets = resolvedTargets();
+        if (targets.length === 0)
+            return;
+        const current = commonValue(name => rawAutoHide(name));
+        const nextValue = current === true ? false : true;
+        const next = commandQueue.slice();
+        for (const target of targets)
+            next.push([managerScript, "setautohide", target, nextValue ? "true" : "false"]);
+        commandQueue = next;
+        message = nextValue ? "Bar auto-hide enabled" : "Bar auto-hide disabled";
+        runNextCommand();
+    }
+
     function resetAppearance() {
         const targets = resolvedTargets();
         if (targets.length === 0)
             return;
         const next = commandQueue.slice();
         for (const target of targets) {
+            next.push([managerScript, "setautohide", target, "false"]);
             next.push([managerScript, "setsize", target, "0"]);
             next.push([managerScript, "setscale", target, "100"]);
             next.push([managerScript, "settextscale", target, "100"]);
@@ -521,6 +544,38 @@ Item {
                     }
                 }
             }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 26
+                spacing: 5
+
+                Text {
+                    Layout.preferredWidth: 78
+                    text: "Auto-hide"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                }
+
+                SettingsButton {
+                    label: root.autoHideActive() ? "On" : "Off"
+                    textSize: 9
+                    horizontalPadding: 12
+                    active: root.autoHideActive()
+                    onClicked: root.toggleAutoHide()
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Reveal from the configured screen edge"
+                    color: Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 9
+                    elide: Text.ElideRight
+                }
+            }
+
             RowLayout {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 26
@@ -782,7 +837,6 @@ Item {
 
                 Item { Layout.fillWidth: true }
             }
-
 
             RowLayout {
                 visible: !root.copyOpen
