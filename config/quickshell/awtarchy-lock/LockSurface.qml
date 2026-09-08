@@ -136,8 +136,11 @@ WlSessionLockSurface {
         const distance = Math.sqrt(dx * dx + dy * dy);
         const elapsed = hasPrevious ? Math.max(1, now - lastPointerSampleTime) : 1;
         const speed = hasPrevious ? distance * 1000 / elapsed : 0;
+        const ghostDx = x - ghostHeadX;
+        const ghostDy = y - ghostHeadY;
+        const ghostDistance = Math.sqrt(ghostDx * ghostDx + ghostDy * ghostDy);
 
-        if (!hasPrevious || distance >= pointerMovementThreshold)
+        if (!hasPrevious || ghostOpacity <= 0 || ghostDistance >= pointerMovementThreshold)
             pushGhostSample(x, y);
 
         if (!hasPrevious || now - lastPhysicsUpdateTime >= pointerUpdateIntervalMs) {
@@ -271,6 +274,14 @@ WlSessionLockSurface {
                                         Math.min(root.audioDisplacementCap,
                                             Math.cos(root.audioPhase * (0.82 + randomD * 0.50) + audioAngle)
                                                 * audioEnvelope * root.audioDisplacementCap * 0.82))
+                                readonly property real combinedOffsetX: Math.max(
+                                    -root.pointerDisplacementCap,
+                                    Math.min(root.pointerDisplacementCap,
+                                        pointerOffsetX + audioOffsetX))
+                                readonly property real combinedOffsetY: Math.max(
+                                    -root.pointerDisplacementCap,
+                                    Math.min(root.pointerDisplacementCap,
+                                        pointerOffsetY + audioOffsetY))
 
                                 // These values intentionally have no reactive dependencies: each
                                 // surface creation gets a new animation family and fresh paths.
@@ -383,10 +394,10 @@ WlSessionLockSurface {
                                 x: finalCellX
                                     + (1 - formationProgress) * startX
                                     + Math.sin(Math.PI * wordmarkCell.formationProgress) * curveX
-                                    + pointerOffsetX + audioOffsetX
+                                    + combinedOffsetX
                                 y: (1 - formationProgress) * startY
                                     + Math.sin(Math.PI * wordmarkCell.formationProgress) * curveY
-                                    + pointerOffsetY + audioOffsetY
+                                    + combinedOffsetY
                                 width: root.wordmarkCellWidth
                                 height: root.wordmarkCellHeight
                                 visible: isFilledGlyph

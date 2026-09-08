@@ -165,7 +165,8 @@ set_lockscreen_option() {
     esac
     enabled="$(parse_bool "$value" "$label")"
     new_tmp
-    jq --arg field "$field" --argjson enabled "$enabled" '.[$field] = $enabled'         "$STATE_FILE" >"$TMP_FILE"
+    jq --arg field "$field" --argjson enabled "$enabled" '.[$field] = $enabled' \
+        "$STATE_FILE" >"$TMP_FILE"
     commit_tmp
 }
 
