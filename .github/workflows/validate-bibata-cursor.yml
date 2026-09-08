@@ -166,7 +166,14 @@ jobs:
             '.id == $release_id and .tag_name == $tag and .target_commitish == $target and .draft == false and .prerelease == false' \
             <<<"${release_after}" >/dev/null
           jq -r '.body' <<<"${release_after}" >published-release.md
-          cmp -s proposed-release.md published-release.md
+          python3 - proposed-release.md published-release.md <<'PY'
+          from pathlib import Path
+          import sys
+          left = Path(sys.argv[1]).read_text(encoding='utf-8').rstrip('\n')
+          right = Path(sys.argv[2]).read_text(encoding='utf-8').rstrip('\n')
+          if left != right:
+              raise SystemExit('published release body differs from proposed notes beyond trailing newlines')
+          PY
           ! grep -Fq 'SUPER+L' published-release.md
           grep -Fq '`SUPER+P`, then `L`' published-release.md
           python3 .github/scripts/validate-stable-release-notes.py \
