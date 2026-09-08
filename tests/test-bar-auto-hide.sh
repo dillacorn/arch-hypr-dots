@@ -56,21 +56,24 @@ contains "$SHELL" 'anchors.right: edgePosition === "right" || !edgeVertical' 'ri
 contains "$SHELL" 'FlyoutManager.activeMonitorName === monitorName' 'active flyouts do not hold the auto-hidden bar open'
 contains "$SHELL" 'targetBar.visible && targetBar.autoHide && !targetBar.autoHideRevealed' 'edge reveal is not gated by actual hard-visible bar state'
 
-contains "$SETTINGS" 'text: "Auto-hide"' 'Quick Settings bar controls do not expose auto-hide'
-contains "$SETTINGS" 'active: root.autoHideActive()' 'Quick Settings auto-hide control does not reflect persistent state'
-contains "$SETTINGS" 'onClicked: root.toggleAutoHide()' 'Quick Settings auto-hide control does not toggle the configured target'
+contains "$SETTINGS" 'text: "Auto-hide"' 'Appearance settings no longer expose auto-hide'
+contains "$SETTINGS" 'active: root.autoHideActive()' 'Appearance auto-hide control does not reflect persistent state'
+contains "$SETTINGS" 'onClicked: root.toggleAutoHide()' 'Appearance auto-hide control does not toggle the configured target'
 contains "$QUICK" 'active: BarState.workspaceVisible(Number(modelData))' 'workspace hard-hide controls were removed from Quick Settings'
 contains "$QUICK" '"set-bar-workspace-visible", String(modelData)' 'workspace hard-hide persistence was removed from Quick Settings'
 
-# Auto-hide must also be directly visible in the main Bar card. The direct
-# control targets the display that owns the open Quick Settings panel instead
-# of requiring the Appearance expander or keyboard shortcut.
+# Auto-hide must also be directly visible next to the Visible/Hidden control in
+# the main Bar card. It targets the display that owns the open Quick Settings
+# panel while the Appearance copy remains available for bulk-target workflows.
+# shellcheck disable=SC2016
 contains "$BACKEND" 'BAR_AUTO_HIDE="$(run_capture "$QUICKSHELL_SCRIPT" getautohide "$panel_monitor" || true)"' 'Quick Settings status does not read auto-hide for the panel display'
+# shellcheck disable=SC2016
 contains "$BACKEND" 'auto_hide:($bar_auto_hide == "true")' 'Quick Settings status JSON does not expose auto-hide'
 contains "$BACKEND" 'bar-auto-hide)' 'Quick Settings backend has no direct bar auto-hide action'
+# shellcheck disable=SC2016
 contains "$BACKEND" '"$QUICKSHELL_SCRIPT" setautohide "$monitor" "$value"' 'Quick Settings backend does not persist direct auto-hide changes'
 contains "$QUICK" 'label: root.barStatus.auto_hide ? "Auto-hide: On" : "Auto-hide: Off"' 'main Bar card has no always-visible auto-hide toggle'
-contains "$QUICK" 'active: Boolean(root.barStatus.auto_hide)' 'main Bar card auto-hide toggle does not reflect the panel display state'
+contains "$QUICK" 'active: Boolean(root.barStatus.auto_hide)' 'main Bar card auto-hide toggle does not clearly reflect active state'
 contains "$QUICK" '"bar-auto-hide", root.activeMonitorName,' 'main Bar card auto-hide toggle does not target the panel display'
 
 TMP="$(mktemp -d)"
