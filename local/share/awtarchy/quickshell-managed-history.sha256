@@ -951,3 +951,7 @@ c2c89a4173e5cf0411f2eefcb3c731087e029355f5f9c12eba8ac68839c38cd8	.config/quicksh
 b890271fd944f1cf4339fcd0f30189a6a891f4c5b3999b41e58d42efa5e6584b	.config/quickshell/awtarchy/shell.qml
 62c3ce3dd5c42cd57b3ec76d9dc46b4ff6bb350256a06465d0975d9e0ca684b0	.config/quickshell/awtarchy/QuickSettings.qml
 820ccda11480be2ce9cf4f4c1d6388f6d74f8220675c43a802810eba94d09064	.local/share/applications/quickshell_bar_toggle.desktop
+
+# 2026-09-08 bar auto-hide responsiveness and primary toggle follow-up.
+a33ecd2549fe639bc3fa929924a7f8a6daf6f32cc0aba2da01a99536a9f460c0	.config/quickshell/awtarchy/shell.qml
+a9b016fa13c97e638d74fc9e5def917ec38cacb714d8179fc55c5ab12f22c048	.config/quickshell/awtarchy/QuickSettings.qml
