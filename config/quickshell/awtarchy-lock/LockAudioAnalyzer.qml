@@ -47,6 +47,11 @@ Item {
         return used > 0 ? total / used : 0;
     }
 
+    function ensureSmoothing() {
+        if (!smoothingTimer.running)
+            smoothingTimer.start();
+    }
+
     function parseFrame(data) {
         const fields = String(data || "").trim().split(";");
         if (fields.length < 8)
@@ -60,12 +65,13 @@ Item {
         targetMid = threshold(average(values, 3, 3));
         targetHigh = threshold(average(values, 6, 2));
         targetOverall = threshold(average(values, 0, 8));
+        ensureSmoothing();
     }
 
     function smoothed(current, target) {
         const factor = target > current ? 0.42 : 0.16;
         const next = current + (target - current) * factor;
-        return Math.abs(next) < 0.001 && target === 0 ? 0 : next;
+        return Math.abs(next - target) < 0.001 ? target : next;
     }
 
     function clearTargets() {
@@ -80,15 +86,21 @@ Item {
             audioProcess.running = true;
     }
 
+    function settled() {
+        return root.low === root.targetLow
+            && root.mid === root.targetMid
+            && root.high === root.targetHigh
+            && root.overall === root.targetOverall;
+    }
+
     onEnabledChanged: {
         if (enabled) {
             startAnalyzer();
-            smoothingTimer.start();
         } else {
             if (audioProcess.running)
                 audioProcess.running = false;
             clearTargets();
-            smoothingTimer.start();
+            ensureSmoothing();
         }
     }
 
@@ -102,7 +114,7 @@ Item {
         }
         onExited: {
             root.clearTargets();
-            smoothingTimer.start();
+            root.ensureSmoothing();
         }
     }
 
@@ -117,8 +129,7 @@ Item {
             root.high = root.smoothed(root.high, root.targetHigh);
             root.overall = root.smoothed(root.overall, root.targetOverall);
 
-            if (!root.enabled && root.low === 0 && root.mid === 0
-                    && root.high === 0 && root.overall === 0)
+            if (root.settled())
                 stop();
         }
     }
