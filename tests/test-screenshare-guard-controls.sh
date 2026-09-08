@@ -7,6 +7,8 @@ HELPER="$ROOT/config/hypr/scripts/screenshare_guard.sh"
 HYPR="$ROOT/config/hypr/hyprland.lua"
 SCREENSHARE_LUA="$ROOT/config/hypr/screenshare_guard.lua"
 QUICK_SETTINGS="$ROOT/config/quickshell/awtarchy/QuickSettings.qml"
+SCREENSHARE_CARD="$ROOT/config/quickshell/awtarchy/ScreenShareGuardCard.qml"
+MANAGED_HISTORY="$ROOT/local/share/awtarchy/quickshell-managed-history.sha256"
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
@@ -20,6 +22,7 @@ require_source() {
 
 [[ -x "$HELPER" ]] || fail 'Screen Share Guard helper is missing or not executable'
 [[ -r "$SCREENSHARE_LUA" ]] || fail 'Screen Share Guard Lua module is missing'
+[[ -r "$SCREENSHARE_CARD" ]] || fail 'Screen Share Guard QML card is missing'
 
 # Stock policy must preserve the existing active protections while leaving the
 # previously-commented optional targets opt-in.
@@ -180,5 +183,25 @@ require_source "$QUICK_SETTINGS" 'Layout.row: root.visibleQuickSettingsSectionOr
     'Quick Settings does not reserve the first free row for Screen Share Guard'
 require_source "$QUICK_SETTINGS" 'ScreenShareGuardCard' \
     'Quick Settings does not use the Screen Share Guard card'
+
+# All managed Screen Share Guard stock files must be recognizable by the updater
+# on the next revision, including this first version of newly-added files.
+managed_history_missing=0
+for entry in \
+    "$QUICK_SETTINGS|.config/quickshell/awtarchy/QuickSettings.qml" \
+    "$SCREENSHARE_CARD|.config/quickshell/awtarchy/ScreenShareGuardCard.qml" \
+    "$HELPER|.config/hypr/scripts/screenshare_guard.sh" \
+    "$SCREENSHARE_LUA|.config/hypr/screenshare_guard.lua"
+do
+    source_file="${entry%%|*}"
+    rel="${entry#*|}"
+    digest="$(sha256sum "$source_file" | awk '{print $1}')"
+    if ! grep -Fqx -- "$digest"$'\t'"$rel" "$MANAGED_HISTORY"; then
+        printf 'MISSING_MANAGED_HASH %s\t%s\n' "$digest" "$rel" >&2
+        managed_history_missing=1
+    fi
+done
+(( managed_history_missing == 0 )) \
+    || fail 'managed history is missing current Screen Share Guard stock hashes'
 
 printf 'Screen Share Guard controls tests passed.\n'
