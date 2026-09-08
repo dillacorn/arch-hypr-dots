@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+BAR="${ROOT}/config/quickshell/awtarchy/Bar.qml"
 BAR_BUTTON="${ROOT}/config/quickshell/awtarchy/BarButton.qml"
 LIST_SCROLLBAR="${ROOT}/config/quickshell/awtarchy/ListScrollBar.qml"
 NETWORK_VPN="${ROOT}/config/quickshell/awtarchy/NetworkVpnSection.qml"
@@ -45,6 +46,13 @@ fi
 
 if grep -Fq 'wheel.inverted' "$BAR_BUTTON"; then
   fail 'trackpad direction still depends on the unreliable WheelEvent.inverted flag'
+fi
+
+brightness_control_count="$(grep -Fc 'onWheelUp: bar.ddcAction("up")' "$BAR")"
+[[ "$brightness_control_count" -eq 2 ]] \
+  || fail "expected two brightness wheel controls, found ${brightness_control_count}"
+if grep -B 8 -F 'onWheelUp: bar.ddcAction("up")' "$BAR" | grep -Fq 'wheelActivationDelay:'; then
+  fail 'brightness wheel controls still delay the initial wheel action'
 fi
 
 require_file_source "$LIST_SCROLLBAR" 'WheelHandler {' \

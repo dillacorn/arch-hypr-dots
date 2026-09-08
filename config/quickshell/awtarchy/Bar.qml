@@ -807,7 +807,6 @@ PanelWindow {
             BarControl {
                 label: bar.brightnessText
                 tooltip: bar.brightnessTooltip
-                wheelActivationDelay: 400
                 onClicked: QuickSettings.toggleForScreen(bar.screen)
                 onRightClicked: QuickSettings.toggleForScreen(bar.screen)
                 onWheelUp: bar.ddcAction("up")
@@ -1052,7 +1051,6 @@ PanelWindow {
                 label: bar.brightnessValue >= 0
                     ? "\n" + bar.brightnessValue + "%" : ""
                 tooltip: bar.brightnessTooltip
-                wheelActivationDelay: 400
                 onClicked: QuickSettings.toggleForScreen(bar.screen)
                 onRightClicked: QuickSettings.toggleForScreen(bar.screen)
                 onWheelUp: bar.ddcAction("up")
