@@ -672,6 +672,11 @@ Singleton {
         return true;
     }
 
+    function autoHideFor(name) {
+        const dependency = revision;
+        return monitorState(name).auto_hide === true;
+    }
+
     function positionFor(name) {
         const dependency = revision;
         if (livePositions[name] !== undefined)

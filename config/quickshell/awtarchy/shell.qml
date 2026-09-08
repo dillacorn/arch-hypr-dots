@@ -31,6 +31,16 @@ ShellRoot {
         return ["top", "bottom", "left", "right"].indexOf(edge) >= 0;
     }
 
+    function barWindowFor(name) {
+        const monitor = String(name || "");
+        for (let i = 0; i < barVariants.instances.length; ++i) {
+            const window = barVariants.instances[i];
+            if (window && String(window.monitorName || "") === monitor)
+                return window;
+        }
+        return null;
+    }
+
     function beginBarDrag(monitor) {
         if (!monitor || monitor.length === 0)
             return;
@@ -290,19 +300,115 @@ ShellRoot {
             id: barInstance
             readonly property bool dragVisualActive: root.barDragMonitor === monitorName
                 && (root.barDragActive || root.barDropPending)
+            readonly property bool autoHide: BarState.autoHideFor(monitorName)
+            readonly property bool autoHideFlyoutHeld: autoHide
+                && FlyoutManager.activeMonitorName === monitorName
+                && String(FlyoutManager.activeSurface || "").length > 0
+            readonly property bool autoHideHeld: autoHide
+                && (autoHideHover.hovered || autoHideFlyoutHeld || dragVisualActive)
+            property bool autoHideRevealed: true
+            property real autoHideOffset: autoHide && !autoHideRevealed
+                ? -BarState.barSizeFor(monitorName, vertical) : 0
             property real dragFloatGap: dragVisualActive ? 5 : 0
 
             implicitWidth: vertical ? BarState.barSizeFor(monitorName, true) : 0
             implicitHeight: vertical ? 0 : BarState.barSizeFor(monitorName, false)
-            exclusiveZone: BarState.barSizeFor(monitorName, vertical)
+            exclusiveZone: autoHide ? 0 : BarState.barSizeFor(monitorName, vertical)
 
-            // PanelWindow margins apply only to anchored edges. Setting all four
-            // detaches a horizontal bar from top/left/right or a vertical bar
-            // from top/bottom/left/right by the same subtle amount.
-            margins.top: Math.round(dragFloatGap)
-            margins.bottom: Math.round(dragFloatGap)
-            margins.left: Math.round(dragFloatGap)
-            margins.right: Math.round(dragFloatGap)
+            // PanelWindow margins apply only to anchored edges. In auto-hide
+            // mode only the configured screen edge receives the negative slide
+            // offset, while dragFloatGap keeps the existing drag affordance.
+            margins.top: Math.round(dragFloatGap + (position === "top" ? autoHideOffset : 0))
+            margins.bottom: Math.round(dragFloatGap + (position === "bottom" ? autoHideOffset : 0))
+            margins.left: Math.round(dragFloatGap + (position === "left" ? autoHideOffset : 0))
+            margins.right: Math.round(dragFloatGap + (position === "right" ? autoHideOffset : 0))
+
+            function revealAutoHide() {
+                if (!autoHide || !visible)
+                    return;
+                autoHideInitialTimer.stop();
+                autoHideRevealed = true;
+                if (autoHideHeld)
+                    autoHideLeaveTimer.stop();
+                else
+                    autoHideLeaveTimer.restart();
+            }
+
+            function hideAutoHide() {
+                if (!autoHide || !visible || autoHideHeld)
+                    return;
+                autoHideInitialTimer.stop();
+                autoHideLeaveTimer.stop();
+                autoHideRevealed = false;
+            }
+
+            function scheduleAutoHide() {
+                if (!autoHide || !visible || autoHideHeld) {
+                    autoHideLeaveTimer.stop();
+                    return;
+                }
+                autoHideLeaveTimer.restart();
+            }
+
+            onAutoHideChanged: {
+                autoHideInitialTimer.stop();
+                autoHideLeaveTimer.stop();
+                autoHideRevealed = true;
+                if (autoHide && visible)
+                    autoHideInitialTimer.restart();
+            }
+
+            onAutoHideHeldChanged: {
+                if (autoHideHeld)
+                    revealAutoHide();
+                else
+                    scheduleAutoHide();
+            }
+
+            onVisibleChanged: {
+                autoHideInitialTimer.stop();
+                autoHideLeaveTimer.stop();
+                if (!visible) {
+                    if (autoHide)
+                        autoHideRevealed = false;
+                    return;
+                }
+                autoHideRevealed = true;
+                if (autoHide)
+                    autoHideInitialTimer.restart();
+            }
+
+            Component.onCompleted: {
+                if (autoHide && visible)
+                    autoHideInitialTimer.restart();
+            }
+
+            HoverHandler {
+                id: autoHideHover
+                enabled: barInstance.autoHide
+            }
+
+            Timer {
+                id: autoHideInitialTimer
+                interval: 2000
+                repeat: false
+                onTriggered: barInstance.hideAutoHide()
+            }
+
+            Timer {
+                id: autoHideLeaveTimer
+                interval: 700
+                repeat: false
+                onTriggered: barInstance.hideAutoHide()
+            }
+
+            Behavior on autoHideOffset {
+                enabled: FlyoutManager.animationsEnabled
+                NumberAnimation {
+                    duration: 170
+                    easing.type: Easing.OutCubic
+                }
+            }
 
             Behavior on dragFloatGap {
                 NumberAnimation {
@@ -324,6 +430,61 @@ ShellRoot {
             for (let i = 0; i < barVariants.instances.length; ++i)
                 windows.push(barVariants.instances[i]);
             return windows;
+        }
+    }
+
+    // Auto-hidden bars remain mapped so their runtime state and flyout ownership
+    // stay intact. A separate 2px transparent layer-shell strip is the only
+    // pointer-active surface left on the configured edge while the bar is away.
+    Variants {
+        model: Quickshell.screens
+
+        PanelWindow {
+            id: edgeReveal
+            required property var modelData
+
+            screen: modelData
+            readonly property string monitorName: modelData ? modelData.name : ""
+            readonly property var targetBar: root.barWindowFor(monitorName)
+            readonly property string edgePosition: BarState.positionFor(monitorName)
+            readonly property bool edgeVertical: edgePosition === "left" || edgePosition === "right"
+
+            visible: targetBar !== null
+                && targetBar.visible && targetBar.autoHide && !targetBar.autoHideRevealed
+            color: "transparent"
+            surfaceFormat.opaque: false
+            focusable: false
+            aboveWindows: true
+            exclusionMode: ExclusionMode.Ignore
+            exclusiveZone: 0
+
+            implicitWidth: edgeVertical ? 2 : 0
+            implicitHeight: edgeVertical ? 0 : 2
+
+            anchors.top: edgePosition === "top" || edgeVertical
+            anchors.bottom: edgePosition === "bottom" || edgeVertical
+            anchors.left: edgePosition === "left" || !edgeVertical
+            anchors.right: edgePosition === "right" || !edgeVertical
+
+            HoverHandler {
+                id: edgeHover
+                onHoveredChanged: {
+                    if (hovered)
+                        edgeRevealDelay.restart();
+                    else
+                        edgeRevealDelay.stop();
+                }
+            }
+
+            Timer {
+                id: edgeRevealDelay
+                interval: 100
+                repeat: false
+                onTriggered: {
+                    if (edgeHover.hovered && edgeReveal.targetBar)
+                        edgeReveal.targetBar.revealAutoHide();
+                }
+            }
         }
     }
 

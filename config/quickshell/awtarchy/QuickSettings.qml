@@ -135,7 +135,7 @@ Singleton {
         return ({
             monitors: [],
             brightness: { target: "", connector: "", current: null, max: null },
-            bar: { monitor: "", position: "top", enabled: true },
+            bar: { monitor: "", position: "top", enabled: true, auto_hide: false },
             night_light: {
                 temperature: null,
                 identity: "unknown",
@@ -997,7 +997,6 @@ Singleton {
         minimumSize: Qt.size(root.minimumPanelWidth,
             root.settingsOpen ? root.minimumSettingsPanelHeight : root.minimumPanelHeight)
         maximumSize: Qt.size(root.maximumPanelWidth, root.maximumPanelHeight)
-
         onClosed: root.close()
         onVisibleChanged: {
             if (visible) {
@@ -1574,6 +1573,17 @@ Singleton {
                                                 Qt.callLater(() => root.alignContentToBar());
                                         }
                                     }
+
+                                    SettingsButton {
+                                        label: root.barStatus.auto_hide ? "Auto-hide: On" : "Auto-hide: Off"
+                                        active: Boolean(root.barStatus.auto_hide)
+                                        textSize: root.scaledText(9)
+                                        onClicked: root.queueAction([
+                                            "bar-auto-hide", root.activeMonitorName,
+                                            root.barStatus.auto_hide ? "false" : "true"
+                                        ], root.barStatus.auto_hide
+                                            ? "Disabling bar auto-hide…" : "Enabling bar auto-hide…")
+                                    }
                                 }
 
                                 RowLayout {
@@ -1655,7 +1665,7 @@ Singleton {
 
                                         Text {
                                             Layout.fillWidth: true
-                                            text: "Visibility: CTRL+SUPER+ALT+B toggle"
+                                            text: "Auto-hide: CTRL+SUPER+ALT+B toggle"
                                             color: Theme.muted
                                             font.family: Theme.fontFamily
                                             font.pixelSize: root.scaledText(8)

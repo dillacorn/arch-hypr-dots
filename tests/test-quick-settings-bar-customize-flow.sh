@@ -39,8 +39,8 @@ contains "$QUICK" 'label: "Themes"' \
     'Themes is not promoted to the Bar card header'
 contains "$QUICK" 'Position: SUPER+Mouse1 / ALT+Mouse1 drag · CTRL+SUPER+B / SUPER+ALT+B change edge' \
     'Bar position hint does not document mouse drag and keyboard edge changes'
-contains "$QUICK" 'Visibility: CTRL+SUPER+ALT+B toggle' \
-    'Bar visibility hint does not document the keyboard toggle'
+contains "$QUICK" 'Auto-hide: CTRL+SUPER+ALT+B toggle' \
+    'Bar auto-hide hint does not document the keyboard toggle'
 contains "$QUICK" 'visible: root.barIconsOpen' \
     'Bar icon customization does not collapse behind the Icons action'
 contains "$QUICK" 'visible: root.barAppearanceOpen' \
