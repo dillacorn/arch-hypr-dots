@@ -55,8 +55,8 @@ if grep -Fq 'hl.bind("SUPER + L", hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarc
 fi
 require_text "$HYPRLAND" 'hl.bind("SUPER + P", hl.dsp.exec_cmd(power_menu), {})' \
     'cutover target lost the SUPER + P power-menu bind'
-require_text "$POWER_MENU" 'command: "~/.config/hypr/scripts/awtarchy_lock.sh lock"' \
-    'cutover target did not switch Power Menu Lock'
+require_text "$POWER_MENU" 'command: "~/.config/hypr/scripts/awtarchy_lock.sh lock && ~/.config/hypr/scripts/awtarchy_lock.sh wait-secure 5"' \
+    'cutover target Power Menu Lock does not keep coverage until secure confirmation'
 
 # Target-driven retirement is allowed only after the target itself proves that
 # Hyprlock is no longer part of the production configuration.
