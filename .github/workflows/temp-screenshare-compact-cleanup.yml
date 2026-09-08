@@ -1,0 +1,322 @@
+name: TEMP Screen Share Guard compact cleanup
+
+on:
+  push:
+    branches:
+      - feature/screenshare-guard-controls
+    paths:
+      - .github/workflows/temp-screenshare-compact-cleanup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: feature/screenshare-guard-controls
+          fetch-depth: 0
+
+      - name: Apply cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          helper = Path('config/hypr/scripts/screenshare_guard.sh')
+          text = helper.read_text()
+          retired = {'notifications', 'ags', 'logout-dialog', 'waybar'}
+          lines = []
+          for line in text.splitlines(keepends=True):
+              if line.strip() in retired:
+                  continue
+              if any(line.lstrip().startswith(f'[{name}]=') for name in retired):
+                  continue
+              lines.append(line)
+          helper.write_text(''.join(lines))
+
+          lua = Path('config/hypr/screenshare_guard.lua')
+          text = lua.read_text()
+          for pattern in [
+              r'    notifications = \{\n.*?\n    \},\n',
+              r'    ags = \{\n.*?\n    \},\n',
+              r'    \["logout-dialog"\] = \{\n.*?\n    \},\n',
+              r'    waybar = \{\n.*?\n    \},\n',
+          ]:
+              text, count = re.subn(pattern, '', text, count=1, flags=re.S)
+              if count != 1:
+                  raise SystemExit(f'expected one Lua rule block for {pattern!r}, got {count}')
+
+          replacements = {
+              'class = "^(org\\\\.telegram\\\\.desktop|TelegramDesktop|telegram-desktop|Telegram)$"':
+                  'class = "^(org\\\\.telegram\\\\.desktop|TelegramDesktop|telegram-desktop|telegram|Telegram)$"',
+              'class = "^(Messages)$"': 'class = "^(messages|Messages)$"',
+              'class = "^(steam|com\\\\.valvesoftware\\\\.Steam)$"':
+                  'class = "^(steam|com\\\\.valvesoftware\\\\.Steam|steam-chat|SteamChat)$"',
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f'missing expected Lua matcher: {old}')
+              text = text.replace(old, new, 1)
+
+          for target in ['notifications', 'ags', '["logout-dialog"]', 'waybar']:
+              pattern = rf'^    {re.escape(target)} = (?:true|false),\n'
+              text, count = re.subn(pattern, '', text, count=1, flags=re.M)
+              if count != 1:
+                  raise SystemExit(f'expected one stock entry for {target}, got {count}')
+
+          old_order = '''guard.order = {
+    "security", "mullvad-browser", "localsend", "telegram", "matrix",
+    "discord", "teams", "messages", "notifications", "obs", "steam",
+    "rustdesk", "files", "wallpicker", "virt-manager", "alacritty", "mpv",
+    "ags", "logout-dialog", "waybar",
+}
+'''
+          new_order = '''guard.order = {
+    "security", "mullvad-browser", "localsend", "telegram", "matrix",
+    "discord", "teams", "messages", "obs", "steam", "rustdesk", "files",
+    "wallpicker", "virt-manager", "alacritty", "mpv",
+}
+'''
+          if old_order not in text:
+              raise SystemExit('missing expected Screen Share Guard order block')
+          text = text.replace(old_order, new_order, 1)
+          lua.write_text(text)
+
+          hypr = Path('config/hypr/hyprland.lua')
+          text = hypr.read_text()
+          old = '''awtarchy_screenshare_guard_v1 = dofile(awtarchy_config_home .. "/hypr/screenshare_guard.lua")
+awtarchy_screenshare_guard_rules_v1 = awtarchy_screenshare_guard_v1.rules
+
+function awtarchy_screenshare_guard_set_group_v1(target, enabled)
+    return awtarchy_screenshare_guard_v1.set_group(target, enabled)
+end
+
+function awtarchy_screenshare_guard_group_enabled_v1(target)
+    return awtarchy_screenshare_guard_v1.group_enabled(target)
+end
+
+function awtarchy_screenshare_guard_status_v1()
+    return awtarchy_screenshare_guard_v1.status()
+end
+'''
+          new = '''local awtarchy_screenshare_guard_v1 = dofile(awtarchy_config_home .. "/hypr/screenshare_guard.lua")
+
+function awtarchy_screenshare_guard_set_group_v1(target, enabled)
+    return awtarchy_screenshare_guard_v1.set_group(target, enabled)
+end
+
+function awtarchy_screenshare_guard_status_v1()
+    return awtarchy_screenshare_guard_v1.status()
+end
+'''
+          if old not in text:
+              raise SystemExit('missing expected Screen Share Guard Hyprland wrapper block')
+          hypr.write_text(text.replace(old, new, 1))
+
+          card = Path('config/quickshell/awtarchy/ScreenShareGuardCard.qml')
+          text = card.read_text()
+          text = text.replace(
+              '    property int iconScale: 100\n    property bool optionalExpanded: false\n',
+              '    property int iconScale: 100\n    property bool expanded: false\n    property bool optionalExpanded: false\n',
+              1,
+          )
+          for line in [
+              '        "notifications"\n',
+              '        "ags",\n',
+              '        "logout-dialog",\n',
+              '        "waybar"\n',
+          ]:
+              if line not in text:
+                  raise SystemExit(f'missing expected card target line: {line!r}')
+              text = text.replace(line, '', 1)
+          text = text.replace('        "messages",\n    ]', '        "messages"\n    ]', 1)
+          text = text.replace('        "mpv",\n    ]', '        "mpv"\n    ]', 1)
+
+          marker = '''    onActiveChanged: {
+        if (active)
+            Qt.callLater(() => refresh());
+    }
+'''
+          replacement = marker + '''
+    onExpandedChanged: {
+        if (!expanded)
+            optionalExpanded = false;
+    }
+'''
+          if marker not in text:
+              raise SystemExit('missing card active-state block')
+          text = text.replace(marker, replacement, 1)
+
+          old_header_tail = '''            Text {
+                text: root.busy ? "Applying…" : "Privacy"
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: root.scaledText(8)
+            }
+        }
+'''
+          new_header_tail = '''            Text {
+                text: root.busy ? "Applying…" : (root.actionError.length > 0 ? "Error" : "Privacy")
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: root.scaledText(8)
+            }
+
+            SettingsButton {
+                label: root.expanded ? "Hide" : "Show"
+                active: root.expanded
+                textSize: root.scaledText(8)
+                onClicked: root.expanded = !root.expanded
+            }
+        }
+'''
+          if old_header_tail not in text:
+              raise SystemExit('missing Screen Share Guard header tail')
+          text = text.replace(old_header_tail, new_header_tail, 1)
+
+          description = '''        Text {
+            Layout.fillWidth: true
+            text: "Block sensitive windows from screenshots and screen sharing. Unlocked changes last for this session; lock a row to remember it."
+'''
+          if description not in text:
+              raise SystemExit('missing Screen Share Guard description')
+          text = text.replace(
+              description,
+              description + '            visible: root.expanded\n',
+              1,
+          )
+
+          old_model = '            model: root.targetModel(root.protectedTargetIds)\n'
+          new_model = '            model: root.expanded ? root.targetModel(root.protectedTargetIds) : []\n'
+          if old_model not in text:
+              raise SystemExit('missing protected target model')
+          text = text.replace(old_model, new_model, 1)
+
+          separator = '''        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 1
+            color: Theme.active
+        }
+'''
+          if separator not in text:
+              raise SystemExit('missing Screen Share Guard separator')
+          text = text.replace(
+              separator,
+              '''        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 1
+            visible: root.expanded
+            color: Theme.active
+        }
+''',
+              1,
+          )
+
+          optional_row = '''        RowLayout {
+            Layout.fillWidth: true
+            spacing: 6
+
+            Text {
+                Layout.fillWidth: true
+                text: "Optional protections"
+'''
+          if optional_row not in text:
+              raise SystemExit('missing Optional protections row')
+          text = text.replace(
+              optional_row,
+              '''        RowLayout {
+            Layout.fillWidth: true
+            visible: root.expanded
+            spacing: 6
+
+            Text {
+                Layout.fillWidth: true
+                text: "Optional protections"
+''',
+              1,
+          )
+          text = text.replace(
+              '                label: root.optionalExpanded ? "Hide" : "Show 11"\n',
+              '                label: root.optionalExpanded ? "Hide" : "Show 8"\n',
+              1,
+          )
+          text = text.replace(
+              '            model: root.optionalExpanded ? root.targetModel(root.optionalTargetIds) : []\n',
+              '            model: root.expanded && root.optionalExpanded ? root.targetModel(root.optionalTargetIds) : []\n',
+              1,
+          )
+
+          final_row = '''        RowLayout {
+            Layout.fillWidth: true
+            spacing: 6
+
+            Text {
+                Layout.fillWidth: true
+                text: root.actionError.length > 0 ? root.actionError : root.actionMessage
+'''
+          if final_row not in text:
+              raise SystemExit('missing Screen Share Guard footer row')
+          text = text.replace(
+              final_row,
+              '''        RowLayout {
+            Layout.fillWidth: true
+            visible: root.expanded
+            spacing: 6
+
+            Text {
+                Layout.fillWidth: true
+                text: root.actionError.length > 0 ? root.actionError : root.actionMessage
+''',
+              1,
+          )
+          card.write_text(text)
+          PY
+
+          python3 <<'PY'
+          from pathlib import Path
+          import hashlib
+
+          history = Path('local/share/awtarchy/quickshell-managed-history.sha256')
+          entries = [
+              ('config/quickshell/awtarchy/ScreenShareGuardCard.qml', '.config/quickshell/awtarchy/ScreenShareGuardCard.qml'),
+              ('config/hypr/scripts/screenshare_guard.sh', '.config/hypr/scripts/screenshare_guard.sh'),
+              ('config/hypr/screenshare_guard.lua', '.config/hypr/screenshare_guard.lua'),
+          ]
+          lines = ['\n# 2026-09-08 compact Screen Share Guard cleanup.\n']
+          current = history.read_text()
+          for source, target in entries:
+              digest = hashlib.sha256(Path(source).read_bytes()).hexdigest()
+              entry = f'{digest}\t{target}\n'
+              if entry not in current:
+                  lines.append(entry)
+          history.write_text(current + ''.join(lines))
+          PY
+
+      - name: Validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update >/dev/null
+          sudo apt-get install -y jq shellcheck lua5.4 >/dev/null
+          bash -n config/hypr/scripts/screenshare_guard.sh
+          shellcheck config/hypr/scripts/screenshare_guard.sh
+          bash tests/test-screenshare-guard-controls.sh
+          bash tests/test-hyprland-lua-structure.sh
+          git diff --check
+
+      - name: Commit final cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          rm -f .github/workflows/temp-screenshare-compact-cleanup.yml
+          git add -A
+          git diff --cached --check
+          git commit -m "Compact Screen Share Guard controls"
+          git push origin HEAD:feature/screenshare-guard-controls
