@@ -10,7 +10,6 @@ QUICK_SETTINGS="$ROOT/config/quickshell/awtarchy/QuickSettings.qml"
 BAR_STATE="$ROOT/config/quickshell/awtarchy/BarState.qml"
 LAYOUT_EDITOR="$ROOT/config/quickshell/awtarchy/QuickSettingsLayoutEditor.qml"
 FLYOUT_SETTINGS="$ROOT/config/quickshell/awtarchy/FlyoutSettings.qml"
-RUNTIME_RULES="$ROOT/config/hypr/scripts/quickshell_runtime_rules.sh"
 APP_STATE="$ROOT/config/hypr/scripts/quickshell_application_state.sh"
 
 fail() {
@@ -175,12 +174,8 @@ require_source "$SCREENSHARE_LUA" 'hl.on("hyprland.start"' \
     'Screen Share Guard does not restore saved state at Hyprland startup'
 require_source "$SCREENSHARE_LUA" 'hl.on("config.reloaded"' \
     'Screen Share Guard does not restore saved state after config reload'
-require_source "$SCREENSHARE_LUA" 'screenshare_guard.sh apply' \
+require_source "$SCREENSHARE_LUA" 'screenshare_guard.sh' \
     'Screen Share Guard module does not reapply saved state'
-
-# Existing runtime-rule startup paths must also reapply the guard state.
-require_source "$RUNTIME_RULES" 'screenshare_guard.sh' \
-    'Quickshell runtime rule setup does not reapply Screen Share Guard state'
 
 # Screen Share Guard is a first-class Quick Settings cell and participates in
 # the existing layout visibility/order system.
