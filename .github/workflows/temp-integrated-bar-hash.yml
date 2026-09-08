@@ -9,13 +9,16 @@ permissions:
 
 jobs:
   fix:
-    if: github.event.head_commit.message == 'Stage integrated Bar hash fix'
+    if: startsWith(github.event.head_commit.message, 'Stage integrated Bar hash fix')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           ref: fix/integrated-bar-managed-hash
           fetch-depth: 0
+
+      - name: Install Lua
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lua5.4
 
       - name: Add current Bar hash and validate
         shell: bash
