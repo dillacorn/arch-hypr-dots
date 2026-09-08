@@ -176,8 +176,8 @@ require_source "$SCREENSHARE_LUA" 'screenshare_guard.sh' \
 # The guard is an independent always-available Quick Settings cell. It is not
 # coupled to per-monitor hide/reorder state, which could make privacy controls
 # disappear because of an older saved layout.
-require_source "$QUICK_SETTINGS" 'quickSettingsScreenShareGuardRow()' \
-    'Quick Settings does not reserve an independent Screen Share Guard row'
+require_source "$QUICK_SETTINGS" 'Layout.row: root.visibleQuickSettingsSectionOrder().length' \
+    'Quick Settings does not reserve the first free row for Screen Share Guard'
 require_source "$QUICK_SETTINGS" 'ScreenShareGuardCard' \
     'Quick Settings does not use the Screen Share Guard card'
 
