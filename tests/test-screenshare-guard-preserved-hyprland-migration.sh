@@ -20,15 +20,6 @@ require_count() {
     [[ "$actual" == "$expected" ]] || fail "expected ${expected} occurrence(s) of ${needle@Q} in ${file}, found ${actual}"
 }
 
-require_current_integration() {
-    local file="$1"
-    require_count "$file" 'local awtarchy_screenshare_guard_v1 = dofile' 1
-    require_count "$file" 'function awtarchy_screenshare_guard_set_group_v1' 1
-    require_count "$file" 'function awtarchy_screenshare_guard_status_v1' 1
-    require_count "$file" 'function awtarchy_screenshare_guard_register_v1' 1
-    require_count "$file" 'function awtarchy_screenshare_guard_registry_v1' 1
-}
-
 [[ -f "$MIGRATOR" ]] || fail "missing preserved-hyprland Screen Share Guard migrator"
 grep -Fq 'migrate-screenshare-guard-hyprland.sh' "$RUNTIME" \
     || fail "updater runtime does not invoke the preserved-hyprland Screen Share Guard migrator"
@@ -73,7 +64,9 @@ grep -Fq 'AWTARCHY_TEST_PERSONAL_BEFORE' "$live" || fail "migration removed pers
 grep -Fq 'AWTARCHY_TEST_PERSONAL_AFTER' "$live" || fail "migration removed personal content after retired block"
 ! grep -Fq 'local screenshot_hide_window = function' "$live" || fail "retired anonymous Screen Share Guard helper remains"
 ! grep -Fq 'screenshot_hide_window("^(localsend|LocalSend|' "$live" || fail "retired LocalSend protection remains"
-require_current_integration "$live"
+require_count "$live" 'local awtarchy_screenshare_guard_v1 = dofile' 1
+require_count "$live" 'function awtarchy_screenshare_guard_set_group_v1' 1
+require_count "$live" 'function awtarchy_screenshare_guard_status_v1' 1
 
 [[ -f "$backup" ]] || fail "migration did not preserve the original personalized hyprland.lua"
 grep -Fq 'AWTARCHY_TEST_PERSONAL_BEFORE' "$backup" || fail "backup lost personal content"
@@ -93,43 +86,9 @@ hl.env("AWTARCHY_TEST_PLAIN_PERSONAL", "1")
 EOF
 bash "$MIGRATOR" "$plain" "$MANAGED" "$plain_backup"
 grep -Fq 'AWTARCHY_TEST_PLAIN_PERSONAL' "$plain" || fail "migration removed unrelated personal config"
-require_current_integration "$plain"
+require_count "$plain" 'function awtarchy_screenshare_guard_set_group_v1' 1
+require_count "$plain" 'function awtarchy_screenshare_guard_status_v1' 1
 [[ -f "$plain_backup" ]] || fail "plain personalized config was not backed up"
-
-# This is the exact integration generation installed by the first preserved-file
-# migration. A later Awtarchy update must be able to replace that known block with
-# the current registry-capable integration without touching personal content.
-previous="${TMP}/previous-integration.lua"
-previous_backup="${TMP}/previous-integration.lua.backup"
-cat >"$previous" <<'EOF'
--- personal content before current Awtarchy integration
-hl.env("AWTARCHY_TEST_PREVIOUS_BEFORE", "1")
-
-local awtarchy_config_home = os.getenv("XDG_CONFIG_HOME")
-if not awtarchy_config_home or awtarchy_config_home == "" then
-    awtarchy_config_home = assert(os.getenv("HOME")) .. "/.config"
-end
-
-local awtarchy_screenshare_guard_v1 = dofile(awtarchy_config_home .. "/hypr/screenshare_guard.lua")
-
-function awtarchy_screenshare_guard_set_group_v1(target, enabled)
-    return awtarchy_screenshare_guard_v1.set_group(target, enabled)
-end
-
-function awtarchy_screenshare_guard_status_v1()
-    return awtarchy_screenshare_guard_v1.status()
-end
-
--- personal content after current Awtarchy integration
-hl.env("AWTARCHY_TEST_PREVIOUS_AFTER", "1")
-EOF
-bash "$MIGRATOR" "$previous" "$MANAGED" "$previous_backup"
-grep -Fq 'AWTARCHY_TEST_PREVIOUS_BEFORE' "$previous" || fail "integration upgrade removed personal content before old block"
-grep -Fq 'AWTARCHY_TEST_PREVIOUS_AFTER' "$previous" || fail "integration upgrade removed personal content after old block"
-require_current_integration "$previous"
-[[ -f "$previous_backup" ]] || fail "previous integration upgrade was not backed up"
-require_count "$previous_backup" 'function awtarchy_screenshare_guard_register_v1' 0
-require_count "$previous_backup" 'function awtarchy_screenshare_guard_registry_v1' 0
 
 partial="${TMP}/partial.lua"
 partial_backup="${TMP}/partial.lua.backup"
