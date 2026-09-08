@@ -27,5 +27,7 @@ jobs:
           if [[ -f config/hypr/scripts/quickshell_lockscreen_audio.sh ]]; then
             shellcheck config/hypr/scripts/quickshell_lockscreen_audio.sh
           fi
+      - name: Runtime helper mode
+        run: test -x config/hypr/scripts/quickshell_lockscreen_audio.sh
       - name: Interactive effects contracts
         run: bash tests/test-quickshell-lockscreen-interactive-effects.sh
