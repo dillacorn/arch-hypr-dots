@@ -14,6 +14,10 @@ ShellRoot {
     readonly property string statePath: (Quickshell.env("XDG_CACHE_HOME")
         || (Quickshell.env("HOME") + "/.cache")) + "/awtarchy/quickshell-state.json"
     property string lockAnimationPreference: "split"
+    property bool lockAudioReactive: true
+    property bool lockShowTime: false
+    property bool lockShowDate: false
+    property bool lockShowUsername: false
     property int randomFormationMode: Math.floor(Math.random() * 4)
     readonly property var allowedAnimationPreferences: [
         "random", "swarm", "edges", "center", "split", "off"
@@ -24,25 +28,45 @@ ShellRoot {
         return allowedAnimationPreferences.indexOf(key) >= 0 ? key : "split";
     }
 
-    function loadAnimationPreference() {
+    function normalizedBoolean(value, fallback) {
+        return typeof value === "boolean" ? value : fallback;
+    }
+
+    function resetPreferences() {
+        lockAnimationPreference = "split";
+        lockAudioReactive = true;
+        lockShowTime = false;
+        lockShowDate = false;
+        lockShowUsername = false;
+    }
+
+    function loadPreferences() {
         const text = stateFile.text();
         if (!text || text.length === 0) {
-            lockAnimationPreference = "split";
+            resetPreferences();
             return;
         }
 
         try {
             const parsed = JSON.parse(text);
-            lockAnimationPreference = normalizedAnimationPreference(
-                parsed && typeof parsed === "object" ? parsed.lockscreen_animation : "split");
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+                resetPreferences();
+                return;
+            }
+
+            lockAnimationPreference = normalizedAnimationPreference(parsed.lockscreen_animation);
+            lockAudioReactive = normalizedBoolean(parsed.lockscreen_audio_reactive, true);
+            lockShowTime = normalizedBoolean(parsed.lockscreen_show_time, false);
+            lockShowDate = normalizedBoolean(parsed.lockscreen_show_date, false);
+            lockShowUsername = normalizedBoolean(parsed.lockscreen_show_username, false);
         } catch (error) {
-            lockAnimationPreference = "split";
+            resetPreferences();
         }
     }
 
     Component.onCompleted: {
         Quickshell.watchFiles = false;
-        root.loadAnimationPreference();
+        root.loadPreferences();
     }
 
     FileView {
@@ -50,7 +74,7 @@ ShellRoot {
         path: root.statePath
         blockLoading: true
         printErrors: false
-        onLoaded: root.loadAnimationPreference()
+        onLoaded: root.loadPreferences()
     }
 
     LockTheme {
@@ -69,6 +93,11 @@ ShellRoot {
         }
     }
 
+    LockAudioAnalyzer {
+        id: lockAudioAnalyzer
+        enabled: root.lockAudioReactive && root.lockAnimationPreference !== "off"
+    }
+
     WlSessionLock {
         id: sessionLock
         locked: true
@@ -80,6 +109,13 @@ ShellRoot {
                 unlocking: root.unlockRequested
                 animationPreference: root.lockAnimationPreference
                 randomFormationMode: root.randomFormationMode
+                audioLow: lockAudioAnalyzer.low
+                audioMid: lockAudioAnalyzer.mid
+                audioHigh: lockAudioAnalyzer.high
+                audioOverall: lockAudioAnalyzer.overall
+                showTime: root.lockShowTime
+                showDate: root.lockShowDate
+                showUsername: root.lockShowUsername
             }
         }
 
