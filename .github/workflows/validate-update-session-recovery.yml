@@ -79,33 +79,8 @@ jobs:
           bash tests/test-package-reconciler-aur-equivalents.sh
           git diff --check
 
-          python3 - <<'PY'
-          from pathlib import Path
-
-          Path('.github/workflows/validate-update-session-recovery.yml').write_text('''name: Validate Update Session Recovery
-
-on:
-  push:
-  pull_request:
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-        with:
-          fetch-depth: 0
-      - name: Validate updater session recovery
-        run: |
-          bash -n tests/test-awtarchy-update-session.sh
-          bash tests/test-awtarchy-update-session.sh
-''')
-          PY
-
+          git show origin/main:.github/workflows/validate-update-session-recovery.yml \
+            >.github/workflows/validate-update-session-recovery.yml
           rm -f -- \
             .github/workflows/bibata-cursor-apply.yml \
             .github/workflows/bibata-cursor-tdd.yml \
