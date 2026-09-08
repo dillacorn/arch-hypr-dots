@@ -18,6 +18,7 @@ MIN_ICON_SCALE=50
 MAX_ICON_SCALE=200
 SAVE_VERSION=2
 QUICK_SETTINGS_LAYOUT_SAVE_VERSION=1
+LOCKSCREEN_ANIMATIONS_JSON='["random","swarm","edges","center","split","off"]'
 QUICK_SETTINGS_SECTIONS_JSON='["brightness","output-volume","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","title-bars"]'
 WORKSPACE_STYLES_JSON='["awtarchy","numbers","icons","workflow","phases","custom-symbol"]'
 WORKSPACE_ICON_STYLES_JSON='["off","awtarchy","workflow","phases","custom-symbol"]'
@@ -76,6 +77,17 @@ validate_int_range() {
     }
 }
 
+validate_lockscreen_animation() {
+    local value="$1"
+    if ! jq -e -n \
+        --arg value "$value" \
+        --argjson allowed "$LOCKSCREEN_ANIMATIONS_JSON" \
+        '$allowed | index($value) != null' >/dev/null 2>&1; then
+        printf 'invalid lockscreen animation: %s\n' "$value" >&2
+        exit 2
+    fi
+}
+
 validate_workspace_style() {
     local style="$1"
     if ! jq -e -n \
@@ -112,6 +124,14 @@ validate_workspace_icon_style() {
         printf 'invalid workspace icon style: %s\n' "$style" >&2
         exit 2
     fi
+}
+
+set_lockscreen_animation() {
+    local value="$1"
+    validate_lockscreen_animation "$value"
+    new_tmp
+    jq --arg value "$value" '.lockscreen_animation = $value' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
 }
 
 set_workspace_numbers() {
@@ -864,6 +884,10 @@ ensure_state_locked
 
 cmd="${1:-}"
 case "$cmd" in
+    set-lockscreen-animation)
+        [[ -n ${2:-} ]] || exit 2
+        set_lockscreen_animation "$2"
+        ;;
     set-workspace-numbers)
         [[ -n ${2:-} ]] || exit 2
         set_workspace_numbers "$2"
@@ -1001,7 +1025,7 @@ case "$cmd" in
         reset_defaults
         ;;
     *)
-        printf 'usage: %s {set-workspace-numbers <true|false>|set-workspace-icon-style <style>|set-workspace-style <legacy-style>|set-workspace-custom-label <label>|clear-workspace-custom-label|set-workspace-override <1-10> <label>|clear-workspace-override <1-10>|clear-workspace-overrides|set-launcher-icon <label>|reset-launcher-icon|reset-workspace-icons|reset-bar-icons|save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-update-notifications <true|false>|set-clock-date <MON> <true|false>|set-notification-popup-limit <1-20>|set-notification-popup-position <MON> <automatic|top-left|top-center|top-right|bottom-left|bottom-center|bottom-right>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|save-quick-settings-layout <MON> <order_json> <hidden_json>|copy-quick-settings-layout <order_json> <hidden_json> <MON>...|reset-quick-settings-layout <MON>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
+        printf 'usage: %s {set-lockscreen-animation <random|swarm|edges|center|split|off>|set-workspace-numbers <true|false>|set-workspace-icon-style <style>|set-workspace-style <legacy-style>|set-workspace-custom-label <label>|clear-workspace-custom-label|set-workspace-override <1-10> <label>|clear-workspace-override <1-10>|clear-workspace-overrides|set-launcher-icon <label>|reset-launcher-icon|reset-workspace-icons|reset-bar-icons|save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-update-notifications <true|false>|set-clock-date <MON> <true|false>|set-notification-popup-limit <1-20>|set-notification-popup-position <MON> <automatic|top-left|top-center|top-right|bottom-left|bottom-center|bottom-right>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|save-quick-settings-layout <MON> <order_json> <hidden_json>|copy-quick-settings-layout <order_json> <hidden_json> <MON>...|reset-quick-settings-layout <MON>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
         exit 2
         ;;
 esac

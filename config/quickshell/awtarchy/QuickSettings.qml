@@ -2051,6 +2051,36 @@ Singleton {
                                     font.pixelSize: root.scaledText(8)
                                     wrapMode: Text.Wrap
                                 }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "Lockscreen Animation"
+                                    color: Theme.foreground
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: root.scaledText(9)
+                                    font.bold: true
+                                }
+
+                                Flow {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: childrenRect.height
+                                    spacing: 5
+
+                                    Repeater {
+                                        model: BarState.lockscreenAnimationPresets
+
+                                        SettingsButton {
+                                            required property var modelData
+                                            label: String(modelData.label)
+                                            active: BarState.lockscreenAnimationPreference()
+                                                === String(modelData.key)
+                                            textSize: root.scaledText(9)
+                                            onClicked: root.queueStateCommand([
+                                                "set-lockscreen-animation", String(modelData.key)
+                                            ])
+                                        }
+                                    }
+                                }
                             }
                         }
 

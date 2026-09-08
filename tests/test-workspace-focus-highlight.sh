@@ -17,6 +17,9 @@ fail() {
 
 focused_expr='normalBackground: modelData.urgent ? Theme.urgent : (modelData.focused ? Theme.subtleActive : "transparent")'
 active_expr='normalBackground: modelData.urgent ? Theme.urgent : (modelData.active ? Theme.subtleActive : "transparent")'
+workspace_visibility_helper='function workspaceVisibleHere(workspace) {'
+workspace_occupied_expr='workspace.toplevels.values.length > 0'
+workspace_model_expr='values: Hyprland.workspaces.values.filter(workspace => bar.workspaceVisibleHere(workspace))'
 move_guard='if (event.name === "moveworkspace" || event.name === "moveworkspacev2") {'
 refresh_call='Hyprland.refreshMonitors();'
 
@@ -25,6 +28,18 @@ refresh_call='Hyprland.refreshMonitors();'
 
 if grep -Fq -- "$active_expr" "$BAR"; then
   fail 'workspace entries still use per-monitor active state for the focus highlight'
+fi
+
+grep -Fq -- "$workspace_visibility_helper" "$BAR" \
+  || fail 'bar has no shared workspace visibility helper'
+grep -Fq -- "$workspace_occupied_expr" "$BAR" \
+  || fail 'workspace visibility does not use Quickshell toplevel occupancy'
+grep -Fq -- 'workspace.focused || workspace.toplevels.values.length > 0' "$BAR" \
+  || fail 'focused empty workspaces are not preserved while unfocused empty workspaces are hidden'
+[[ $(grep -Fc -- "$workspace_model_expr" "$BAR") -eq 2 ]] \
+  || fail 'horizontal and vertical workspace models do not share occupancy-aware visibility filtering'
+if grep -Fq -- 'workspace.id === 1' "$BAR"; then
+  fail 'workspace 1 receives special-case visibility treatment'
 fi
 
 grep -Fq -- "$move_guard" "$SHELL_QML" \

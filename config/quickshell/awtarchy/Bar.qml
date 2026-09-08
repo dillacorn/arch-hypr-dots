@@ -71,6 +71,14 @@ PanelWindow {
                 && workspace.active && workspace.hasFullscreen);
     }
 
+    function workspaceVisibleHere(workspace) {
+        if (!workspace || workspace.id < 1 || workspace.id > 10)
+            return false;
+        if (!workspace.monitor || workspace.monitor.name !== bar.monitorName)
+            return false;
+        return workspace.focused || workspace.toplevels.values.length > 0;
+    }
+
     function focusWorkspace(selector) {
         Quickshell.execDetached([
             "hyprctl",
@@ -135,7 +143,7 @@ PanelWindow {
             return false;
         const ipc = toplevel.lastIpcObject || {};
         const cls = String(ipc.class || ipc.initialClass || "").toLowerCase();
-        const ignored = ["tofi", "rofi", "hyprlock", "swaylock", "swww", "mpvpaper", "pulsemixer", "org.waytrogen.waytrogen", "org.pulseaudio.pavucontrol", "wiremix", "quickshell", "awtarchy-polkit-agent"];
+        const ignored = ["tofi", "rofi", "swaylock", "swww", "mpvpaper", "pulsemixer", "org.waytrogen.waytrogen", "org.pulseaudio.pavucontrol", "wiremix", "quickshell", "awtarchy-polkit-agent"];
         return ignored.indexOf(cls) < 0;
     }
 
@@ -355,8 +363,7 @@ PanelWindow {
 
         Repeater {
             model: ScriptModel {
-                values: Hyprland.workspaces.values.filter(workspace =>
-                    workspace.id >= 1 && workspace.id <= 10 && workspace.monitor && workspace.monitor.name === bar.monitorName)
+                values: Hyprland.workspaces.values.filter(workspace => bar.workspaceVisibleHere(workspace))
             }
 
             delegate: BarControl {
@@ -381,8 +388,7 @@ PanelWindow {
 
         Repeater {
             model: ScriptModel {
-                values: Hyprland.workspaces.values.filter(workspace =>
-                    workspace.id >= 1 && workspace.id <= 10 && workspace.monitor && workspace.monitor.name === bar.monitorName)
+                values: Hyprland.workspaces.values.filter(workspace => bar.workspaceVisibleHere(workspace))
             }
 
             delegate: BarControl {
