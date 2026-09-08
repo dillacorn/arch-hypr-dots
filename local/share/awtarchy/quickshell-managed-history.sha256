@@ -897,3 +897,6 @@ c6056cd69256ec44eea3bda7c54e798be7894239b2558d44218104ca87988171	.config/quicksh
 
 # 2026-09-07 native lockscreen cursor hiding.
 d70c5f2ef8f0efcdff92f42ea8ddc060fac6113aaca4b8cf5523209e2a2680c8	.config/quickshell/awtarchy-lock/LockSurface.qml
+
+# 2026-09-07 power menu action handoff coverage.
+8242ea24ae760e86276466a5ebc78d32aa6dbd59270b3a18690b701246234db4	.config/quickshell/awtarchy/PowerMenu.qml
