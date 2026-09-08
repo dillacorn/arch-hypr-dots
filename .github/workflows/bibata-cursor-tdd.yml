@@ -1,0 +1,17 @@
+name: Bibata Cursor TDD
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  bibata-cursor:
+    if: github.head_ref == 'feature/bibata-cursor-migration'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Run Bibata cursor behavior test
+        run: bash tests/test-bibata-cursor-migration.sh
