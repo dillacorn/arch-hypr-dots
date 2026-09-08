@@ -65,7 +65,6 @@ jobs:
 
           reconciler = Path('local/share/awtarchy/awtarchy-package-reconcile.sh')
           text = reconciler.read_text()
-          text = text.replace('  termdown\n)', '  termdown\n  xcursor-comix\n)', 1)
           marker = '\nmigrate_lockscreen_retirement() {\n'
           function = r'''
 apply_bibata_cursor_replacement() {
@@ -184,8 +183,13 @@ set_cursor_theme() {
 
           flyout = Path('config/quickshell/awtarchy/FlyoutSettings.qml')
           text = flyout.read_text()
+          text = text.replace(
+              '? 139 + displayScaleSection.implicitHeight\n            + quickSettingsSectionControls.implicitHeight + 3',
+              '? 139 + displayScaleSection.implicitHeight\n            + cursorThemeSection.implicitHeight\n            + quickSettingsSectionControls.implicitHeight + 3',
+              1,
+          )
           display_block = '''        DisplayScaleSettings {\n            id: displayScaleSection\n            Layout.fillWidth: true\n            visible: root.surfaceLabel === "Quick Settings"\n            active: visible\n            monitorName: root.monitorName\n        }\n'''
-          cursor_block = '''\n        CursorThemeSettings {\n            Layout.fillWidth: true\n            visible: root.surfaceLabel === "Quick Settings"\n            active: visible\n        }\n'''
+          cursor_block = '''\n        CursorThemeSettings {\n            id: cursorThemeSection\n            Layout.fillWidth: true\n            visible: root.surfaceLabel === "Quick Settings"\n            active: visible\n        }\n'''
           if text.count(display_block) != 1:
               raise SystemExit('FlyoutSettings DisplayScale block was not unique')
           text = text.replace(display_block, display_block + cursor_block, 1)
@@ -215,7 +219,45 @@ set_cursor_theme() {
           )
           if count != 1:
               raise SystemExit('cursor helper cleanup block was not found')
+          text = text.replace(
+              '    require_bibata_themes || return 1\n    sync_bibata_themes\n    write_managed_files "$theme"\n',
+              '    require_bibata_themes || return 1\n    sync_bibata_themes\n    mkdir -p -- "${DATA_HOME}/icons/default"\n    printf "[Icon Theme]\\nInherits=%s\\n" "$theme" >"${DATA_HOME}/icons/default/index.theme"\n    write_managed_files "$theme"\n',
+              1,
+          )
           helper.write_text(text)
+
+          catalog_test = Path('tests/test-current-package-catalog.sh')
+          text = catalog_test.read_text()
+          text = text.replace(
+              'for stale in bridge-utils cheese termdown; do',
+              'for stale in bridge-utils cheese termdown xcursor-comix; do',
+              1,
+          )
+          text = text.replace(
+              'for pkg in smtty hyprmoncfg-bin obs-pipewire-audio-capture-bin; do',
+              'for pkg in smtty hyprmoncfg-bin bibata-cursor-theme-bin obs-pipewire-audio-capture-bin; do',
+              1,
+          )
+          catalog_test.write_text(text)
+
+          cursor_test = Path('tests/test-bibata-cursor-migration.sh')
+          text = cursor_test.read_text()
+          text = text.replace(
+              "contains \"$FLYOUT\" 'CursorThemeSettings {' \\\n  'Quick Settings settings panel does not host the cursor selector'\n",
+              "contains \"$FLYOUT\" 'CursorThemeSettings {' \\\n  'Quick Settings settings panel does not host the cursor selector'\ncontains \"$FLYOUT\" 'cursorThemeSection.implicitHeight' \\\n  'Quick Settings cursor selector height is not included in panel sizing'\n",
+              1,
+          )
+          text = text.replace(
+              "[[ -f \"$data_home/icons/Bibata-Modern-Classic/cursors/marker\" ]] \\\n  || fail 'Bibata Classic was not exposed in the user icon directory'\n",
+              "[[ -f \"$data_home/icons/Bibata-Modern-Classic/cursors/marker\" ]] \\\n  || fail 'Bibata Classic was not exposed in the user icon directory'\ncontains \"$data_home/icons/default/index.theme\" 'Inherits=Bibata-Modern-Classic' \\\n  'Classic cursor was not applied to the user XCursor fallback alias'\n",
+              1,
+          )
+          text = text.replace(
+              "contains \"$config_home/hypr/hyprland.lua\" 'hl.env(\"XCURSOR_THEME\", \"Bibata-Modern-Ice\")' \\\n  'Ice cursor was not reapplied to Hyprland config'\n",
+              "contains \"$config_home/hypr/hyprland.lua\" 'hl.env(\"XCURSOR_THEME\", \"Bibata-Modern-Ice\")' \\\n  'Ice cursor was not reapplied to Hyprland config'\ncontains \"$data_home/icons/default/index.theme\" 'Inherits=Bibata-Modern-Ice' \\\n  'Ice cursor was not reapplied to the user XCursor fallback alias'\n",
+              1,
+          )
+          cursor_test.write_text(text)
           PY
 
           chmod +x config/hypr/scripts/quickshell_cursor_theme.sh tests/test-bibata-cursor-migration.sh
@@ -226,17 +268,13 @@ set_cursor_theme() {
           bash -n config/hypr/scripts/quickshell_cursor_theme.sh
           bash -n config/hypr/scripts/quickshell.sh
 
-          # Append current managed hashes after all implementation edits.
           for rel in \
             .config/hypr/scripts/quickshell_application_state.sh \
             .config/hypr/scripts/quickshell_cursor_theme.sh \
             .config/hypr/scripts/quickshell.sh \
             .config/quickshell/awtarchy/CursorThemeSettings.qml \
             .config/quickshell/awtarchy/FlyoutSettings.qml; do
-            src="${rel#.config/}"
-            case "$rel" in
-              .config/*) src="config/${rel#.config/}" ;;
-            esac
+            src="config/${rel#.config/}"
             hash="$(sha256sum "$src" | awk '{print $1}')"
             line="${hash}	${rel}"
             grep -Fqx -- "$line" local/share/awtarchy/quickshell-managed-history.sha256 \
@@ -244,6 +282,7 @@ set_cursor_theme() {
           done
 
           bash tests/test-bibata-cursor-migration.sh
+          bash tests/test-current-package-catalog.sh
           git diff --check
 
           git config user.name 'github-actions[bot]'
@@ -261,7 +300,8 @@ set_cursor_theme() {
             config/quickshell/awtarchy/CursorThemeSettings.qml \
             config/quickshell/awtarchy/FlyoutSettings.qml \
             local/share/awtarchy/quickshell-managed-history.sha256 \
-            tests/test-bibata-cursor-migration.sh
+            tests/test-bibata-cursor-migration.sh \
+            tests/test-current-package-catalog.sh
           if ! git diff --cached --quiet; then
             git commit -m 'feat: migrate cursor theme to Bibata'
             git push origin HEAD:feature/bibata-cursor-migration
