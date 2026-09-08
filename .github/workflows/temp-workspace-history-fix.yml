@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   fix:
-    if: github.event.head_commit.message == 'Stage workspace history fix'
+    if: startsWith(github.event.head_commit.message, 'Stage workspace history fix')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
@@ -28,11 +28,9 @@ jobs:
           git fetch origin main
           git checkout origin/main -- "$history"
 
-          cat >> "$history" <<'EOF'
-
-# 2026-09-07 occupancy-aware workspace visibility.
-e9efd590d249da3737b8966c1017ed292c308a4d6898346f46c35e5d6278ea4e	.config/quickshell/awtarchy/Bar.qml
-EOF
+          printf '\n# 2026-09-07 occupancy-aware workspace visibility.\n%s\t%s\n' \
+            'e9efd590d249da3737b8966c1017ed292c308a4d6898346f46c35e5d6278ea4e' \
+            '.config/quickshell/awtarchy/Bar.qml' >> "$history"
 
           rm -f .github/workflows/temp-workspace-history-fix.yml
           git add -A
