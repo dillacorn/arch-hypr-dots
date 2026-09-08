@@ -956,3 +956,6 @@ b890271fd944f1cf4339fcd0f30189a6a891f4c5b3999b41e58d42efa5e6584b	.config/quicksh
 a33ecd2549fe639bc3fa929924a7f8a6daf6f32cc0aba2da01a99536a9f460c0	.config/quickshell/awtarchy/shell.qml
 a9b016fa13c97e638d74fc9e5def917ec38cacb714d8179fc55c5ab12f22c048	.config/quickshell/awtarchy/QuickSettings.qml
 61876c751d4925ea1bc781f6629bff7f943f457f60ec52df70d9a34a51b65ab3	.config/hypr/scripts/hypr_quicksettings.sh
+
+# 2026-09-08 Screen Share Guard runtime apply compatibility fix.
+ac499f3d06b33228ac77613be00e93978b0c3aabc5aa8d6a6e2c0ee97d9f94da	.config/hypr/scripts/screenshare_guard.sh
