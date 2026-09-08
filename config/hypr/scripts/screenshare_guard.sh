@@ -218,15 +218,16 @@ write_session_locked() {
 set_locked() {
     local target="$1" value="$2"
     if is_locked_locked "$target"; then
-        # shellcheck disable=SC2016 -- jq variables are expanded by jq, not Bash.
+        # jq variables are jq bindings, not Bash interpolation.
+        # shellcheck disable=SC2016
         write_state_locked '
             .screenshare_guard = (if (.screenshare_guard | type) == "object" then .screenshare_guard else {} end)
             | .screenshare_guard[$target] = $value
         ' "$target" "$value"
-        # shellcheck disable=SC2016 -- jq variables are expanded by jq, not Bash.
+        # shellcheck disable=SC2016
         write_session_locked 'del(.[$target])' "$target"
     else
-        # shellcheck disable=SC2016 -- jq variables are expanded by jq, not Bash.
+        # shellcheck disable=SC2016
         write_session_locked '.[$target] = $value' "$target" "$value"
     fi
 }
@@ -234,25 +235,27 @@ set_locked() {
 lock_locked() {
     local target="$1" value
     value="$(desired_value_locked "$target")"
-    # shellcheck disable=SC2016 -- jq variables are expanded by jq, not Bash.
+    # jq variables are jq bindings, not Bash interpolation.
+    # shellcheck disable=SC2016
     write_state_locked '
         .screenshare_guard = (if (.screenshare_guard | type) == "object" then .screenshare_guard else {} end)
         | .screenshare_guard[$target] = $value
     ' "$target" "$value"
-    # shellcheck disable=SC2016 -- jq variables are expanded by jq, not Bash.
+    # shellcheck disable=SC2016
     write_session_locked 'del(.[$target])' "$target"
 }
 
 unlock_locked() {
     local target="$1" value
     value="$(desired_value_locked "$target")"
-    # shellcheck disable=SC2016 -- jq variables are expanded by jq, not Bash.
+    # jq variables are jq bindings, not Bash interpolation.
+    # shellcheck disable=SC2016
     write_state_locked '
         .screenshare_guard = (if (.screenshare_guard | type) == "object" then .screenshare_guard else {} end)
         | del(.screenshare_guard[$target])
         | if (.screenshare_guard | length) == 0 then del(.screenshare_guard) else . end
     ' "$target"
-    # shellcheck disable=SC2016 -- jq variables are expanded by jq, not Bash.
+    # shellcheck disable=SC2016
     write_session_locked '.[$target] = $value' "$target" "$value"
 }
 
@@ -272,7 +275,8 @@ desired_json_locked() {
         label="${LABELS[$target]}"
         section=optional
         [[ "$default" == true ]] && section=protected
-        # shellcheck disable=SC2016 -- jq variables are expanded by jq, not Bash.
+        # jq variables are jq bindings, not Bash interpolation.
+        # shellcheck disable=SC2016
         targets_json="$(jq -c \
             --arg id "$target" \
             --arg label "$label" \
@@ -331,13 +335,15 @@ status_json() {
             valid_target "$target" || continue
             case "$value" in
                 true|false)
-                    # shellcheck disable=SC2016 -- jq variables are expanded by jq, not Bash.
+                    # jq variables are jq bindings, not Bash interpolation.
+                    # shellcheck disable=SC2016
                     actual="$(jq -c --arg target "$target" --argjson value "$value" '. + {($target):$value}' <<<"$actual")"
                     ;;
             esac
         done <<<"$raw"
     fi
-    # shellcheck disable=SC2016 -- jq variables are expanded by jq, not Bash.
+    # jq variables are jq bindings, not Bash interpolation.
+    # shellcheck disable=SC2016
     merged="$(jq -c --argjson actual "$actual" '
         .targets |= with_entries(
             .value.effective_protected = ($actual[.key] // null)
