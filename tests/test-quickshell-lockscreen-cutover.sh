@@ -55,8 +55,8 @@ reject_text "$HYPRLAND" '/usr/bin/hyprlock' \
 reject_text "$HYPRLAND" 'exec_cmd("hyprlock")' \
     'Hyprland still launches Hyprlock'
 
-require_text "$POWER_MENU" 'command: "~/.config/hypr/scripts/awtarchy_lock.sh lock"' \
-    'Power Menu Lock does not use the native Awtarchy locker'
+require_text "$POWER_MENU" 'command: "~/.config/hypr/scripts/awtarchy_lock.sh lock && ~/.config/hypr/scripts/awtarchy_lock.sh wait-secure 5"' \
+    'Power Menu Lock does not keep the overlay until native lock secure confirmation'
 require_text "$POWER_MENU" 'command: "~/.config/hypr/scripts/awtarchy_lock.sh hibernate"' \
     'Power Menu Hibernate does not use secure lock-then-hibernate'
 require_text "$POWER_MENU" 'command: "~/.config/hypr/scripts/awtarchy_lock.sh suspend"' \
