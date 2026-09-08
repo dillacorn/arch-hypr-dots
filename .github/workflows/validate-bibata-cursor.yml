@@ -1,0 +1,19 @@
+name: Validate Bibata Cursor
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Validate Bibata cursor migration
+        run: |
+          bash -n config/hypr/scripts/quickshell_cursor_theme.sh
+          bash -n tests/test-bibata-cursor-migration.sh
+          bash tests/test-bibata-cursor-migration.sh
