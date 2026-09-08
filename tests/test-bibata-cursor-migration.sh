@@ -109,8 +109,8 @@ assert_history_current "$CURSOR_QML" '.config/quickshell/awtarchy/CursorThemeSet
 assert_history_current "$FLYOUT" '.config/quickshell/awtarchy/FlyoutSettings.qml'
 assert_history_current "$QUICK_SETTINGS" '.config/quickshell/awtarchy/QuickSettings.qml'
 
-# Package migration: install Bibata through aur-scan before removing an
-# Awtarchy-owned xcursor-comix package.
+# Package migration: install Bibata through aur-scan before removing the
+# retired xcursor-comix package.
 package_case="${TMP}/package"
 home="${package_case}/home"
 fakebin="${package_case}/fakebin"
@@ -230,15 +230,17 @@ if grep -Fxq xcursor-comix "$managed"; then
   fail 'cursor migration did not remove xcursor-comix from the managed-package ledger'
 fi
 
-# Unowned old cursor packages are preserved when removal is not confirmed.
+# Legacy xcursor-comix installations that predate ownership data are also
+# retired automatically once Bibata has installed successfully.
 printf '%s\n' xcursor-comix >"$state"
 : >"$managed"
 : >"$aur_log"
 run_replacement
 grep -Fxq bibata-cursor-theme-bin "$state" \
   || fail 'unowned migration case did not install Bibata'
-grep -Fxq xcursor-comix "$state" \
-  || fail 'unowned xcursor-comix was removed without confirmation'
+if grep -Fxq xcursor-comix "$state"; then
+  fail 'legacy xcursor-comix was not removed automatically after Bibata installation'
+fi
 
 # A failed Bibata install must never remove the working old managed cursor.
 printf '%s\n' xcursor-comix >"$state"
@@ -378,4 +380,4 @@ if env "${cursor_env[@]}" "$CURSOR_SCRIPT" set unsupported >/dev/null 2>&1; then
   fail 'cursor helper accepted an unsupported Bibata variant'
 fi
 
-printf 'PASS: Bibata cursor migration, persistence, Quick Settings selection, and conservative replacement behavior are covered.\n'
+printf 'PASS: Bibata cursor migration, persistence, Quick Settings selection, and automatic replacement behavior are covered.\n'
