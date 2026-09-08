@@ -24,7 +24,6 @@ Item {
             "power-mode": "Power Mode",
             "bar": "Bar",
             "display-effects": "Night Light + Vibrance",
-            "screen-share-guard": "Screen Share Guard",
             "submap": "Hyprland Submap",
             "wallpaper": "Wallpaper Picker",
             "awtarchy": "Awtarchy",
