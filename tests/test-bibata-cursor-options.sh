@@ -140,12 +140,14 @@ env "${cursor_env[@]}" "$CURSOR_SCRIPT" set ice
 contains "$config_home/hypr/hyprland.lua" 'hl.env("XCURSOR_THEME", "Bibata-Modern-Ice")' \
   'default Ice no longer maps to Bibata Modern Ice'
 
-# Once Bibata is installed, updater migration must offer removal of the old
-# xcursor-comix package even when an old installation predates ownership data.
-contains "$RECONCILER" "confirm_yes_no 'Bibata replaces xcursor-comix for Awtarchy. Uninstall xcursor-comix now?' 1" \
-  'Bibata migration does not offer the default-yes xcursor-comix uninstall prompt'
-contains "$RECONCILER" 'AWTARCHY_BIBATA_REMOVE_XCURSOR_COMIX_CONFIRMED' \
-  'Bibata migration has no explicit-confirmation path for automated validation'
+# Once Bibata is installed, xcursor-comix is obsolete for Awtarchy and must be
+# removed automatically even when the old installation predates ownership data.
+if grep -Fq -- "confirm_yes_no 'Bibata replaces xcursor-comix for Awtarchy. Uninstall xcursor-comix now?'" "$RECONCILER"; then
+  fail 'Bibata migration still prompts before removing xcursor-comix'
+fi
+if grep -Fq -- 'AWTARCHY_BIBATA_REMOVE_XCURSOR_COMIX_CONFIRMED' "$RECONCILER"; then
+  fail 'Bibata migration still depends on a one-time xcursor-comix confirmation override'
+fi
 
 package_case="${TMP}/package"
 package_home="${package_case}/home"
@@ -211,15 +213,14 @@ USER=tester \
 AWTARCHY_RUNTIME="$runtime_stub" \
 AWTARCHY_MANAGED_PACKAGES_FILE="$managed" \
 AWTARCHY_TEST_PACKAGE_STATE="$package_state" \
-AWTARCHY_BIBATA_REMOVE_XCURSOR_COMIX_CONFIRMED=1 \
 AWTARCHY_TEST_MODE=1 \
 "$RECONCILER" --migrate-replacements
 
 if grep -Fxq xcursor-comix "$package_state"; then
-  fail 'explicitly approved unowned xcursor-comix package was not removed'
+  fail 'legacy xcursor-comix package was not removed automatically'
 fi
 
 grep -Fxq bibata-cursor-theme-bin "$package_state" \
   || fail 'Bibata was removed while retiring xcursor-comix'
 
-printf 'PASS: all 12 Bibata variants and explicit old-package removal are covered.\n'
+printf 'PASS: all 12 Bibata variants and automatic old-package removal are covered.\n'
