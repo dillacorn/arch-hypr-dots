@@ -904,3 +904,6 @@ a9528b1d5a66be284f16ae2e9c027284be5a87eb78b6daaa4dcab7be5a5724a1	.config/quicksh
 
 # 2026-09-07 occupancy-aware workspace visibility.
 e9efd590d249da3737b8966c1017ed292c308a4d6898346f46c35e5d6278ea4e	.config/quickshell/awtarchy/Bar.qml
+
+# 2026-09-08 integrated lockscreen/workspace Bar stock hash.
+18d5de1c6eac889f5de87285e8eb46350b0d7cc65ab52bf367124a57a6cc19c3	.config/quickshell/awtarchy/Bar.qml
