@@ -19,20 +19,46 @@ contains() {
   grep -Fq -- "$needle" "$file" || fail "$message"
 }
 
-# Bibata exposes Modern (rounded) and Original (sharp) variants. Keep the
-# existing rounded Ice/Classic state keys compatible and add sharp equivalents.
-contains "$STATE_SCRIPT" '"ice-sharp"' \
-  'cursor state does not allow the sharp Ice variant'
-contains "$STATE_SCRIPT" '"classic-sharp"' \
-  'cursor state does not allow the sharp Classic variant'
-contains "$CURSOR_SCRIPT" "ice-sharp) printf '%s\\n' 'Bibata-Original-Ice'" \
-  'cursor helper does not map sharp Ice to Bibata Original Ice'
-contains "$CURSOR_SCRIPT" "classic-sharp) printf '%s\\n' 'Bibata-Original-Classic'" \
-  'cursor helper does not map sharp Classic to Bibata Original Classic'
+# Upstream Bibata ships 12 Linux variants:
+# Amber/Classic/Ice x Modern(round)/Original(sharp) x Normal/Right Hand.
+# Preserve the existing rounded normal Ice/Classic state keys for compatibility.
+declare -A THEMES=(
+  [amber]='Bibata-Modern-Amber'
+  [classic]='Bibata-Modern-Classic'
+  [ice]='Bibata-Modern-Ice'
+  [amber-sharp]='Bibata-Original-Amber'
+  [classic-sharp]='Bibata-Original-Classic'
+  [ice-sharp]='Bibata-Original-Ice'
+  [amber-right]='Bibata-Modern-Amber-Right'
+  [classic-right]='Bibata-Modern-Classic-Right'
+  [ice-right]='Bibata-Modern-Ice-Right'
+  [amber-sharp-right]='Bibata-Original-Amber-Right'
+  [classic-sharp-right]='Bibata-Original-Classic-Right'
+  [ice-sharp-right]='Bibata-Original-Ice-Right'
+)
+
+for variant in "${!THEMES[@]}"; do
+  theme="${THEMES[$variant]}"
+  contains "$STATE_SCRIPT" "\"${variant}\"" \
+    "cursor state does not allow ${variant}"
+  contains "$CURSOR_SCRIPT" "${variant}) printf '%s\\n' '${theme}'" \
+    "cursor helper does not map ${variant} to ${theme}"
+done
+
+contains "$CURSOR_QML" 'label: "Ice / White"' \
+  'Quick Settings does not expose Ice/white'
+contains "$CURSOR_QML" 'label: "Classic / Black"' \
+  'Quick Settings does not expose Classic/black'
+contains "$CURSOR_QML" 'label: "Amber"' \
+  'Quick Settings does not expose Amber'
 contains "$CURSOR_QML" 'label: "Rounded"' \
   'Quick Settings does not expose the rounded cursor style'
 contains "$CURSOR_QML" 'label: "Sharp"' \
   'Quick Settings does not expose the sharp cursor style'
+contains "$CURSOR_QML" 'label: "Normal"' \
+  'Quick Settings does not expose normal handedness'
+contains "$CURSOR_QML" 'label: "Right Hand"' \
+  'Quick Settings does not expose right-hand variants'
 
 cursor_home="${TMP}/cursor-home"
 config_home="${TMP}/cursor-config"
@@ -49,11 +75,7 @@ mkdir -p \
   "$data_home/nwg-look" \
   "$fakebin"
 
-for theme in \
-  Bibata-Modern-Ice \
-  Bibata-Modern-Classic \
-  Bibata-Original-Ice \
-  Bibata-Original-Classic; do
+for theme in "${THEMES[@]}"; do
   mkdir -p "$icon_root/$theme/cursors" "$icon_root/$theme/hyprcursors"
   printf '%s\n' "$theme" >"$icon_root/$theme/cursors/marker"
   printf '%s\n' "name = $theme" 'cursors_directory = hyprcursors' \
@@ -95,31 +117,33 @@ cursor_env=(
   HYPRLAND_INSTANCE_SIGNATURE="test-instance"
 )
 
-env "${cursor_env[@]}" "$CURSOR_SCRIPT" set ice-sharp
-[[ $(jq -r '.cursor_variant' "$cache_home/awtarchy/quickshell-state.json") == ice-sharp ]] \
-  || fail 'sharp Ice preference was not persisted'
-contains "$config_home/hypr/hyprland.lua" 'hl.env("XCURSOR_THEME", "Bibata-Original-Ice")' \
-  'sharp Ice did not select Bibata Original Ice'
-contains "$command_log" 'hyprctl setcursor Bibata-Original-Ice 24' \
-  'sharp Ice did not switch the live Hyprland cursor'
+for variant in \
+  ice classic amber \
+  ice-sharp classic-sharp amber-sharp \
+  ice-right classic-right amber-right \
+  ice-sharp-right classic-sharp-right amber-sharp-right; do
+  theme="${THEMES[$variant]}"
+  : >"$command_log"
+  env "${cursor_env[@]}" "$CURSOR_SCRIPT" set "$variant"
+  [[ $(jq -r '.cursor_variant' "$cache_home/awtarchy/quickshell-state.json") == "$variant" ]] \
+    || fail "${variant} preference was not persisted"
+  contains "$config_home/hypr/hyprland.lua" "hl.env(\"XCURSOR_THEME\", \"${theme}\")" \
+    "${variant} did not persist ${theme} as XCursor"
+  contains "$config_home/hypr/hyprland.lua" "hl.env(\"HYPRCURSOR_THEME\", \"${theme}\")" \
+    "${variant} did not persist ${theme} as hyprcursor"
+  contains "$command_log" "hyprctl setcursor ${theme} 24" \
+    "${variant} did not switch the live Hyprland cursor"
+done
 
-env "${cursor_env[@]}" "$CURSOR_SCRIPT" set classic-sharp
-[[ $(jq -r '.cursor_variant' "$cache_home/awtarchy/quickshell-state.json") == classic-sharp ]] \
-  || fail 'sharp Classic preference was not persisted'
-contains "$config_home/hypr/hyprland.lua" 'hl.env("HYPRCURSOR_THEME", "Bibata-Original-Classic")' \
-  'sharp Classic did not select Bibata Original Classic'
-contains "$command_log" 'hyprctl setcursor Bibata-Original-Classic 24' \
-  'sharp Classic did not switch the live Hyprland cursor'
-
-# Rounded Ice remains the release/default state and legacy key.
+# Rounded normal Ice remains the release/default state and legacy key.
 env "${cursor_env[@]}" "$CURSOR_SCRIPT" set ice
 contains "$config_home/hypr/hyprland.lua" 'hl.env("XCURSOR_THEME", "Bibata-Modern-Ice")' \
-  'rounded Ice no longer maps to Bibata Modern Ice'
+  'default Ice no longer maps to Bibata Modern Ice'
 
 # Once Bibata is installed, updater migration must offer removal of the old
 # xcursor-comix package even when an old installation predates ownership data.
-contains "$RECONCILER" "confirm_yes_no 'Bibata replaces xcursor-comix for Awtarchy. Uninstall xcursor-comix now?' 0" \
-  'Bibata migration does not offer an explicit xcursor-comix uninstall prompt'
+contains "$RECONCILER" "confirm_yes_no 'Bibata replaces xcursor-comix for Awtarchy. Uninstall xcursor-comix now?' 1" \
+  'Bibata migration does not offer the default-yes xcursor-comix uninstall prompt'
 contains "$RECONCILER" 'AWTARCHY_BIBATA_REMOVE_XCURSOR_COMIX_CONFIRMED' \
   'Bibata migration has no explicit-confirmation path for automated validation'
 
@@ -198,4 +222,4 @@ fi
 grep -Fxq bibata-cursor-theme-bin "$package_state" \
   || fail 'Bibata was removed while retiring xcursor-comix'
 
-printf 'PASS: Bibata sharp/rounded selection and explicit old-package removal are covered.\n'
+printf 'PASS: all 12 Bibata variants and explicit old-package removal are covered.\n'
