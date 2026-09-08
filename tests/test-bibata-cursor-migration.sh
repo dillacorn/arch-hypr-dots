@@ -65,6 +65,8 @@ contains "$XRESOURCES" 'Xcursor.theme: Bibata-Modern-Ice' \
 # Quick Settings must expose both evidence-backed Bibata variants.
 contains "$FLYOUT" 'CursorThemeSettings {' \
   'Quick Settings settings panel does not host the cursor selector'
+contains "$FLYOUT" 'cursorThemeSection.implicitHeight' \
+  'Quick Settings cursor selector height is not included in panel sizing'
 contains "$CURSOR_QML" 'Ice / White' \
   'cursor selector does not expose the white Ice option'
 contains "$CURSOR_QML" 'Classic / Black' \
@@ -293,6 +295,8 @@ contains "$cursor_home/.Xresources" 'Xcursor.theme: Bibata-Modern-Classic' \
   || fail 'Bibata Ice was not exposed in the user icon directory'
 [[ -f "$data_home/icons/Bibata-Modern-Classic/cursors/marker" ]] \
   || fail 'Bibata Classic was not exposed in the user icon directory'
+contains "$data_home/icons/default/index.theme" 'Inherits=Bibata-Modern-Classic' \
+  'Classic cursor was not applied to the user XCursor fallback alias'
 contains "$command_log" 'gsettings set org.gnome.desktop.interface cursor-theme Bibata-Modern-Classic' \
   'Classic cursor was not applied through GTK gsettings'
 contains "$command_log" 'flatpak override --user --env=GTK_CURSOR_THEME=Bibata-Modern-Classic' \
@@ -317,6 +321,8 @@ env "${cursor_env[@]}" "$CURSOR_SCRIPT" set ice
   || fail 'Ice cursor preference was not persisted'
 contains "$config_home/hypr/hyprland.lua" 'hl.env("XCURSOR_THEME", "Bibata-Modern-Ice")' \
   'Ice cursor was not reapplied to Hyprland config'
+contains "$data_home/icons/default/index.theme" 'Inherits=Bibata-Modern-Ice' \
+  'Ice cursor was not reapplied to the user XCursor fallback alias'
 
 if env "${cursor_env[@]}" "$CURSOR_SCRIPT" set amber >/dev/null 2>&1; then
   fail 'cursor helper accepted an unsupported Bibata variant'

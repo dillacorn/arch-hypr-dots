@@ -31,7 +31,7 @@ required_aur="$(array_body PACKAGES_AUR)"
 optional_aur="$(array_body OPTIONAL_AUR_PACKAGES)"
 flatpak_catalog="$(array_body FLATPAK_CATALOG)"
 
-for stale in bridge-utils cheese termdown; do
+for stale in bridge-utils cheese termdown xcursor-comix; do
     if contains_token "$stale" "$arch_catalog"; then
         fail "stale Arch catalog package is still present: ${stale}"
     fi
@@ -63,7 +63,7 @@ contains_token vesktop-bin "$optional_aur" \
 if contains_token vesktop-bin "$required_aur"; then
     fail "vesktop-bin is in the default-selected AUR catalog instead of the optional catalog"
 fi
-for pkg in smtty hyprmoncfg-bin obs-pipewire-audio-capture-bin; do
+for pkg in smtty hyprmoncfg-bin bibata-cursor-theme-bin obs-pipewire-audio-capture-bin; do
     contains_token "$pkg" "$required_aur" \
         || fail "expected default-selected AUR package is missing: ${pkg}"
 done

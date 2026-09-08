@@ -61,17 +61,6 @@ sync_bibata_themes() {
     done
 }
 
-update_managed_files() {
-    local theme="$1"
-    python3 - "$HYPR_CONFIG" "$GTK3_SETTINGS" "$NWG_SETTINGS" "$XRESOURCES" "$theme" <<'PY'
-from pathlib import Path
-import re
-import sys
-
-hypr, gtk3, nwg, xresources, theme = map(Path, sys.argv[1:5]) + [sys.argv[5]] if False else (None, None, None, None, None)
-PY
-}
-
 write_managed_files() {
     local theme="$1"
     python3 - "$HYPR_CONFIG" "$GTK3_SETTINGS" "$NWG_SETTINGS" "$XRESOURCES" "$theme" <<'PY'
@@ -156,6 +145,8 @@ apply_variant() {
 
     require_bibata_themes || return 1
     sync_bibata_themes
+    mkdir -p -- "${DATA_HOME}/icons/default"
+    printf "[Icon Theme]\nInherits=%s\n" "$theme" >"${DATA_HOME}/icons/default/index.theme"
     write_managed_files "$theme"
     apply_live_settings "$theme"
 }

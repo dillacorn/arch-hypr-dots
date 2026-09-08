@@ -761,6 +761,42 @@ apply_cheese_snapshot_replacement() {
   log "Replaced Cheese with Snapshot."
 }
 
+
+apply_bibata_cursor_replacement() {
+  array_contains bibata-cursor-theme-bin "${AUR_CATALOG[@]}" || return 0
+
+  if ! aur_package_satisfied bibata-cursor-theme-bin; then
+    if [[ ! -x "$AUR_SCAN_BIN" ]] || ! "$AUR_SCAN_BIN" --version >/dev/null 2>&1; then
+      warn "Bibata cursor migration requires a usable aur-scan; leaving the existing cursor package untouched."
+      return 0
+    fi
+    log "Installing Bibata cursor theme through upstream aur-scanner..."
+    install_selected_aur_packages bibata-cursor-theme-bin
+  fi
+
+  if ! aur_package_satisfied bibata-cursor-theme-bin; then
+    warn "Bibata cursor theme is not installed; leaving the existing cursor package untouched."
+    return 0
+  fi
+
+  package_installed xcursor-comix || return 0
+  if ! managed_package xcursor-comix; then
+    log "xcursor-comix is installed but is not recorded as Awtarchy-owned; leaving it installed."
+    return 0
+  fi
+
+  log "Removing retired Awtarchy-owned xcursor-comix package..."
+  if ! as_root pacman -R --noconfirm xcursor-comix; then
+    warn "Could not remove retired xcursor-comix; leaving it installed for a later retry."
+    return 0
+  fi
+  if package_installed xcursor-comix; then
+    warn "xcursor-comix is still detected after package removal."
+    return 0
+  fi
+  forget_managed_packages xcursor-comix
+  log "Replaced Awtarchy-owned xcursor-comix with Bibata."
+}
 migrate_lockscreen_retirement() {
   [[ "${AWTARCHY_LOCKSCREEN_RETIRE_CONFIRMED:-0}" == 1 ]] \
     || die "Lockscreen retirement requires an explicitly confirmed target."
@@ -850,6 +886,7 @@ fi
 
 if (( MIGRATE_REPLACEMENTS_ONLY == 1 )); then
   apply_cheese_snapshot_replacement
+  apply_bibata_cursor_replacement
   exit 0
 fi
 
