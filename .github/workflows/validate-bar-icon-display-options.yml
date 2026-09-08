@@ -26,3 +26,50 @@ jobs:
           bash -n tests/test-bar-icon-display-options.sh
           shellcheck tests/test-bar-icon-display-options.sh
           bash tests/test-bar-icon-display-options.sh
+
+  apply-workspace-animation-default:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feature/quickshell-lockscreen'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Disable standard workspace switching animation
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git log -1 --pretty=%s)" == 'Stage workspace animation writer' ]]
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('config/hypr/hyprland.lua')
+          text = path.read_text(encoding='utf-8')
+          replacements = {
+              '{ leaf = "workspaces", enabled = 1, speed = 1.8, bezier = "easeInOutSlight", style = "fade" },':
+                  '{ leaf = "workspaces", enabled = 0, speed = 1.8, bezier = "easeInOutSlight", style = "fade" },',
+              '{ leaf = "workspacesIn", enabled = 1, speed = 1.3, bezier = "softFade", style = "fade" },':
+                  '{ leaf = "workspacesIn", enabled = 0, speed = 1.3, bezier = "softFade", style = "fade" },',
+              '{ leaf = "workspacesOut", enabled = 1, speed = 1.4, bezier = "softFade", style = "fade" },':
+                  '{ leaf = "workspacesOut", enabled = 0, speed = 1.4, bezier = "softFade", style = "fade" },',
+          }
+          for old, new in replacements.items():
+              if text.count(old) != 1:
+                  raise SystemExit(f'expected exactly one animation line: {old}')
+              text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          bash tests/test-workspace-animation-disabled.sh
+          git diff --check
+
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add config/hypr/hyprland.lua
+          git commit -m 'Disable workspace switching animation'
+          git push origin HEAD:feature/quickshell-lockscreen
