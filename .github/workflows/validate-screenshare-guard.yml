@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - 'config/hypr/hyprland.lua'
+      - 'config/hypr/screenshare_guard.lua'
       - 'config/hypr/scripts/screenshare_guard.sh'
       - 'config/hypr/scripts/quickshell_runtime_rules.sh'
       - 'config/hypr/scripts/quickshell_application_state.sh'
@@ -19,6 +20,8 @@ on:
       - 'tests/test-screenshare-guard-controls.sh'
       - 'tests/test-screenshare-guard-runtime-apply.sh'
       - 'tests/test-screenshare-guard-preserved-hyprland-migration.sh'
+      - 'tests/test-screenshare-guard-registry.lua'
+      - 'tests/test-screenshare-guard-quickshell-dynamic.sh'
       - '.github/workflows/validate-screenshare-guard.yml'
   workflow_dispatch:
 
@@ -37,6 +40,7 @@ jobs:
           bash -n tests/test-screenshare-guard-controls.sh
           bash -n tests/test-screenshare-guard-runtime-apply.sh
           bash -n tests/test-screenshare-guard-preserved-hyprland-migration.sh
+          bash -n tests/test-screenshare-guard-quickshell-dynamic.sh
           if [[ -e config/hypr/scripts/screenshare_guard.sh ]]; then
             bash -n config/hypr/scripts/screenshare_guard.sh
           fi
@@ -48,6 +52,7 @@ jobs:
           shellcheck tests/test-screenshare-guard-controls.sh
           shellcheck tests/test-screenshare-guard-runtime-apply.sh
           shellcheck tests/test-screenshare-guard-preserved-hyprland-migration.sh
+          shellcheck tests/test-screenshare-guard-quickshell-dynamic.sh
           if [[ -e config/hypr/scripts/screenshare_guard.sh ]]; then
             shellcheck config/hypr/scripts/screenshare_guard.sh
           fi
@@ -59,3 +64,5 @@ jobs:
           bash tests/test-screenshare-guard-controls.sh
           bash tests/test-screenshare-guard-runtime-apply.sh
           bash tests/test-screenshare-guard-preserved-hyprland-migration.sh
+          lua tests/test-screenshare-guard-registry.lua config/hypr/screenshare_guard.lua
+          bash tests/test-screenshare-guard-quickshell-dynamic.sh
