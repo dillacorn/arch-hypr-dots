@@ -913,3 +913,6 @@ c7bb0a04c679254e62adadfcbfb0a2c136e397a784ca9dc4bbca2ec1fc64ce80	.config/quicksh
 
 # 2026-09-08 Screen Share Guard current-main integration.
 2986491dad479e68a96319f84e7e910d904345c6cd8956b90158e3bec99d0975	.config/quickshell/awtarchy/QuickSettings.qml
+
+# 2026-09-08 integrated lockscreen/workspace Bar stock hash.
+18d5de1c6eac889f5de87285e8eb46350b0d7cc65ab52bf367124a57a6cc19c3	.config/quickshell/awtarchy/Bar.qml
