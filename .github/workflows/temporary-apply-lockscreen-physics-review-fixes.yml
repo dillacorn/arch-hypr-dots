@@ -1,0 +1,51 @@
+name: Temporary Apply Lockscreen Physics Review Fixes
+
+on:
+  push:
+    branches:
+      - feature/lockscreen-interactive-effects
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.head_commit.message == 'Run lockscreen physics review fixes'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+      - name: Apply exact review fixes
+        run: python3 .github/scripts/apply-lockscreen-physics-review-fixes.py
+      - name: Syntax and ShellCheck
+        run: |
+          bash -n config/hypr/scripts/quickshell_application_state.sh
+          bash -n tests/test-quickshell-lockscreen-interactive-effects.sh
+          bash -n tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+          shellcheck config/hypr/scripts/quickshell_application_state.sh
+          shellcheck tests/test-quickshell-lockscreen-interactive-effects.sh
+          shellcheck tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+      - name: Focused lockscreen validation
+        run: |
+          test -x config/hypr/scripts/quickshell_lockscreen_audio.sh
+          bash tests/test-quickshell-lockscreen-interactive-effects.sh
+          bash tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+          bash tests/test-quickshell-lockscreen-runtime-regressions.sh
+          bash tests/test-quickshell-lockscreen-animation-preference.sh
+          bash tests/test-quickshell-lockscreen-foundation.sh
+      - name: Diff hygiene
+        run: git diff --check
+      - name: Commit reviewed fixes
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            config/hypr/scripts/quickshell_application_state.sh \
+            config/quickshell/awtarchy-lock/LockSurface.qml
+          git commit -m 'Fix lockscreen interactive physics bounds'
+          git push origin HEAD:feature/lockscreen-interactive-effects
