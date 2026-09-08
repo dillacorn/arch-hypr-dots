@@ -137,8 +137,14 @@ function guard.status()
     return table.concat(status, "\n")
 end
 
+local config_home = os.getenv("XDG_CONFIG_HOME")
+if not config_home or config_home == "" then
+    config_home = assert(os.getenv("HOME")) .. "/.config"
+end
+local helper = config_home .. "/hypr/scripts/screenshare_guard.sh"
+
 local function apply_saved_state()
-    hl.exec_cmd("~/.config/hypr/scripts/screenshare_guard.sh apply >/dev/null 2>&1 &")
+    hl.exec_cmd(string.format("%q", helper) .. " apply >/dev/null 2>&1")
 end
 
 hl.on("hyprland.start", apply_saved_state)
