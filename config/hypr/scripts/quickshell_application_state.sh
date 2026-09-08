@@ -154,6 +154,21 @@ set_lockscreen_animation() {
     commit_tmp
 }
 
+set_lockscreen_option() {
+    local field="$1" value="$2" label="$3" enabled
+    case "$field" in
+        lockscreen_audio_reactive|lockscreen_show_time|lockscreen_show_date|lockscreen_show_username) ;;
+        *)
+            printf 'unsupported lockscreen option: %s\n' "$field" >&2
+            exit 2
+            ;;
+    esac
+    enabled="$(parse_bool "$value" "$label")"
+    new_tmp
+    jq --arg field "$field" --argjson enabled "$enabled" '.[$field] = $enabled'         "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
 set_workspace_numbers() {
     local value="$1" enabled
     case "$value" in
@@ -950,6 +965,22 @@ case "$cmd" in
         [[ -n ${2:-} ]] || exit 2
         set_lockscreen_animation "$2"
         ;;
+    set-lockscreen-audio-reactive)
+        [[ -n ${2:-} ]] || exit 2
+        set_lockscreen_option lockscreen_audio_reactive "$2" 'lockscreen audio reactive'
+        ;;
+    set-lockscreen-show-time)
+        [[ -n ${2:-} ]] || exit 2
+        set_lockscreen_option lockscreen_show_time "$2" 'lockscreen show time'
+        ;;
+    set-lockscreen-show-date)
+        [[ -n ${2:-} ]] || exit 2
+        set_lockscreen_option lockscreen_show_date "$2" 'lockscreen show date'
+        ;;
+    set-lockscreen-show-username)
+        [[ -n ${2:-} ]] || exit 2
+        set_lockscreen_option lockscreen_show_username "$2" 'lockscreen show username'
+        ;;
     set-workspace-numbers)
         [[ -n ${2:-} ]] || exit 2
         set_workspace_numbers "$2"
@@ -1091,7 +1122,7 @@ case "$cmd" in
         reset_defaults
         ;;
     *)
-        printf 'usage: %s {set-cursor-theme <ice|classic>|set-lockscreen-animation <random|swarm|edges|center|split|off>|set-workspace-numbers <true|false>|set-bar-workspace-visible <1-10> <true|false>|set-workspace-icon-style <style>|set-workspace-style <legacy-style>|set-workspace-custom-label <label>|clear-workspace-custom-label|set-workspace-override <1-10> <label>|clear-workspace-override <1-10>|clear-workspace-overrides|set-launcher-icon <label>|reset-launcher-icon|reset-workspace-icons|reset-bar-icons|save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-update-notifications <true|false>|set-clock-date <MON> <true|false>|set-notification-popup-limit <1-20>|set-notification-popup-position <MON> <automatic|top-left|top-center|top-right|bottom-left|bottom-center|bottom-right>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|save-quick-settings-layout <MON> <order_json> <hidden_json>|copy-quick-settings-layout <order_json> <hidden_json> <MON>...|reset-quick-settings-layout <MON>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
+        printf 'usage: %s {set-cursor-theme <ice|classic>|set-lockscreen-animation <random|swarm|edges|center|split|off>|set-lockscreen-audio-reactive <true|false>|set-lockscreen-show-time <true|false>|set-lockscreen-show-date <true|false>|set-lockscreen-show-username <true|false>|set-workspace-numbers <true|false>|set-bar-workspace-visible <1-10> <true|false>|set-workspace-icon-style <style>|set-workspace-style <legacy-style>|set-workspace-custom-label <label>|clear-workspace-custom-label|set-workspace-override <1-10> <label>|clear-workspace-override <1-10>|clear-workspace-overrides|set-launcher-icon <label>|reset-launcher-icon|reset-workspace-icons|reset-bar-icons|save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-update-notifications <true|false>|set-clock-date <MON> <true|false>|set-notification-popup-limit <1-20>|set-notification-popup-position <MON> <automatic|top-left|top-center|top-right|bottom-left|bottom-center|bottom-right>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|save-quick-settings-layout <MON> <order_json> <hidden_json>|copy-quick-settings-layout <order_json> <hidden_json> <MON>...|reset-quick-settings-layout <MON>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
         exit 2
         ;;
 esac

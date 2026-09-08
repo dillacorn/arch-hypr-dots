@@ -109,6 +109,10 @@ require_text "$SURFACE_QML" 'root.animationPreference === "off" ? 1 : 0' \
     'Off does not immediately render the completed wordmark'
 require_text "$SURFACE_QML" 'root.animationPreference !== "off"' \
     'Off does not suppress particle formation animation'
+require_text "$SURFACE_QML" 'readonly property bool interactiveEffectsEnabled: root.animationPreference !== "off"' \
+    'Off does not suppress ghost cursor and pointer physics'
+require_text "$SHELL_QML" 'enabled: root.lockAudioReactive && root.lockAnimationPreference !== "off"' \
+    'Off does not suppress the lockscreen audio analyzer'
 require_text "$SURFACE_QML" 'readonly property int formationDelay: Math.floor(Math.random() * 301)' \
     'lockscreen formation delay is not capped at the faster 300ms range'
 require_text "$SURFACE_QML" 'readonly property int formationDuration: 1700' \

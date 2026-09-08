@@ -170,12 +170,20 @@ reject_text "$SURFACE_QML" 'width: Math.round(250 * root.uiScale)' \
     'lockscreen still renders the password underline'
 reject_text "$SURFACE_QML" 'text: "── AWTARCHY ──"' \
     'lockscreen still uses the old tiny Awtarchy heading'
-reject_text "$SURFACE_QML" 'property string timeText' \
-    'lockscreen still owns clock state'
-reject_text "$SURFACE_QML" 'property string dateText' \
-    'lockscreen still owns date state'
-reject_text "$SURFACE_QML" 'Quickshell.env("USER")' \
-    'lockscreen still displays the username'
+require_text "$SURFACE_QML" 'required property bool showTime' \
+    'lockscreen does not gate optional time display'
+require_text "$SURFACE_QML" 'required property bool showDate' \
+    'lockscreen does not gate optional date display'
+require_text "$SURFACE_QML" 'required property bool showUsername' \
+    'lockscreen does not gate optional username display'
+require_text "$SURFACE_QML" 'readonly property bool metadataVisible: root.showTime || root.showDate || root.showUsername' \
+    'lockscreen metadata does not collapse when every local-info option is disabled'
+require_text "$SURFACE_QML" 'visible: root.showTime' \
+    'time metadata is not optional'
+require_text "$SURFACE_QML" 'visible: root.showDate' \
+    'date metadata is not optional'
+require_text "$SURFACE_QML" 'visible: root.showUsername' \
+    'username metadata is not optional'
 reject_text "$SURFACE_QML" 'text: "PASSWORD"' \
     'lockscreen still displays a PASSWORD label'
 require_text "$SURFACE_QML" 'readonly property int maskedCount: Math.min(password.text.length, 10)' \

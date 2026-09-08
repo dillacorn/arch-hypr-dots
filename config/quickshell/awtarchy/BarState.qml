@@ -341,6 +341,10 @@ Singleton {
             enabled: true,
             update_notifications_enabled: true,
             lockscreen_animation: "split",
+            lockscreen_audio_reactive: true,
+            lockscreen_show_time: false,
+            lockscreen_show_date: false,
+            lockscreen_show_username: false,
             monitors: {},
             launcher_sizes: {},
             clipboard_views: {},
@@ -602,6 +606,27 @@ Singleton {
                 return value;
         }
         return "split";
+    }
+
+    function lockscreenBooleanPreference(field, fallback) {
+        const value = data()[field];
+        return typeof value === "boolean" ? value : fallback;
+    }
+
+    function lockscreenAudioReactiveEnabled() {
+        return lockscreenBooleanPreference("lockscreen_audio_reactive", true);
+    }
+
+    function lockscreenShowTime() {
+        return lockscreenBooleanPreference("lockscreen_show_time", false);
+    }
+
+    function lockscreenShowDate() {
+        return lockscreenBooleanPreference("lockscreen_show_date", false);
+    }
+
+    function lockscreenShowUsername() {
+        return lockscreenBooleanPreference("lockscreen_show_username", false);
     }
 
     function updateNotificationsEnabled() {

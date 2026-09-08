@@ -2148,6 +2148,93 @@ Singleton {
                                         }
                                     }
                                 }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "Lockscreen Options"
+                                    color: Theme.foreground
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: root.scaledText(9)
+                                    font.bold: true
+                                }
+
+                                GridLayout {
+                                    Layout.fillWidth: true
+                                    columns: 2
+                                    columnSpacing: 8
+                                    rowSpacing: 4
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "Audio Reactive"
+                                        color: BarState.lockscreenAnimationPreference() !== "off"
+                                            ? Theme.foreground : Theme.muted
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: root.scaledText(9)
+                                    }
+                                    SettingsButton {
+                                        label: BarState.lockscreenAudioReactiveEnabled() ? "On" : "Off"
+                                        active: BarState.lockscreenAudioReactiveEnabled()
+                                            && BarState.lockscreenAnimationPreference() !== "off"
+                                        available: BarState.lockscreenAnimationPreference() !== "off"
+                                        textSize: root.scaledText(9)
+                                        onClicked: root.queueStateCommand([
+                                            "set-lockscreen-audio-reactive",
+                                            BarState.lockscreenAudioReactiveEnabled() ? "false" : "true"
+                                        ])
+                                    }
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "Time"
+                                        color: Theme.foreground
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: root.scaledText(9)
+                                    }
+                                    SettingsButton {
+                                        label: BarState.lockscreenShowTime() ? "On" : "Off"
+                                        active: BarState.lockscreenShowTime()
+                                        textSize: root.scaledText(9)
+                                        onClicked: root.queueStateCommand([
+                                            "set-lockscreen-show-time",
+                                            BarState.lockscreenShowTime() ? "false" : "true"
+                                        ])
+                                    }
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "Date"
+                                        color: Theme.foreground
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: root.scaledText(9)
+                                    }
+                                    SettingsButton {
+                                        label: BarState.lockscreenShowDate() ? "On" : "Off"
+                                        active: BarState.lockscreenShowDate()
+                                        textSize: root.scaledText(9)
+                                        onClicked: root.queueStateCommand([
+                                            "set-lockscreen-show-date",
+                                            BarState.lockscreenShowDate() ? "false" : "true"
+                                        ])
+                                    }
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "Username"
+                                        color: Theme.foreground
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: root.scaledText(9)
+                                    }
+                                    SettingsButton {
+                                        label: BarState.lockscreenShowUsername() ? "On" : "Off"
+                                        active: BarState.lockscreenShowUsername()
+                                        textSize: root.scaledText(9)
+                                        onClicked: root.queueStateCommand([
+                                            "set-lockscreen-show-username",
+                                            BarState.lockscreenShowUsername() ? "false" : "true"
+                                        ])
+                                    }
+                                }
                             }
                         }
 

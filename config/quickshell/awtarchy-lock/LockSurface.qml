@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import Quickshell
 import Quickshell.Wayland
 
 WlSessionLockSurface {
@@ -10,6 +11,13 @@ WlSessionLockSurface {
     required property bool unlocking
     required property string animationPreference
     required property int randomFormationMode
+    required property real audioLow
+    required property real audioMid
+    required property real audioHigh
+    required property real audioOverall
+    required property bool showTime
+    required property bool showDate
+    required property bool showUsername
 
     color: "#000000"
 
@@ -35,8 +43,112 @@ WlSessionLockSurface {
         : animationPreference === "center" ? 2
         : animationPreference === "split" ? 3
         : randomFormationMode
+    readonly property bool interactiveEffectsEnabled: root.animationPreference !== "off"
+    readonly property int ghostTrailLength: 6
+    readonly property int pointerUpdateIntervalMs: 16
+    readonly property int cursorFadeDelayMs: 180
+    readonly property int cursorFadeDurationMs: 320
+    readonly property real pointerInfluenceRadius: 72 * root.uiScale
+    readonly property real pointerDisplacementCap: 24 * root.uiScale
+    readonly property real audioDisplacementCap: 6 * root.uiScale
+    readonly property real pointerMovementThreshold: 3 * root.uiScale
+    readonly property bool metadataVisible: root.showTime || root.showDate || root.showUsername
+    readonly property string usernameText: root.showUsername ? Quickshell.env("USER") : ""
 
     property bool entered: false
+    property var wordmarkCells: ({})
+    property real ghostHeadX: -100
+    property real ghostHeadY: -100
+    property var ghostTrail: [
+        ({ x: -100, y: -100 }), ({ x: -100, y: -100 }),
+        ({ x: -100, y: -100 }), ({ x: -100, y: -100 }),
+        ({ x: -100, y: -100 }), ({ x: -100, y: -100 })
+    ]
+    property real ghostOpacity: 0
+    property double lastPointerSampleTime: 0
+    property double lastPhysicsUpdateTime: 0
+    property real lastPointerX: -1
+    property real lastPointerY: -1
+    property real audioPhase: 0
+    property string timeText: ""
+    property string dateText: ""
+
+    function registerWordmarkCell(row, column, cell) {
+        wordmarkCells[String(row) + ":" + String(column)] = cell;
+    }
+
+    function updateClockText() {
+        const now = new Date();
+        timeText = Qt.formatTime(now, Locale.ShortFormat);
+        dateText = Qt.formatDate(now, Locale.LongFormat);
+    }
+
+    function pushGhostSample(x, y) {
+        const next = [({ x: x, y: y })];
+        for (let i = 0; i < ghostTrailLength - 1; ++i)
+            next.push(ghostTrail[i] || ({ x: x, y: y }));
+        ghostTrail = next;
+        ghostHeadX = x;
+        ghostHeadY = y;
+        ghostFade.stop();
+        ghostOpacity = 1;
+        cursorFadeDelay.restart();
+    }
+
+    function applyPointerImpulse(x, y, speed) {
+        if (!interactiveEffectsEnabled)
+            return;
+
+        const local = wordmarkItem.mapFromItem(pointerArea, x, y);
+        const radius = pointerInfluenceRadius;
+        if (local.x < -radius || local.y < -radius
+                || local.x > wordmarkItem.width + radius
+                || local.y > wordmarkItem.height + radius)
+            return;
+
+        const minColumn = Math.max(0,
+            Math.floor((local.x - radius) / wordmarkCellWidth));
+        const maxColumn = Math.min(wordmarkColumns - 1,
+            Math.floor((local.x + radius) / wordmarkCellWidth));
+        const minRow = Math.max(0,
+            Math.floor((local.y - radius) / wordmarkCellHeight));
+        const maxRow = Math.min(wordmarkRows.length - 1,
+            Math.floor((local.y + radius) / wordmarkCellHeight));
+
+        for (let row = minRow; row <= maxRow; ++row) {
+            for (let column = minColumn; column <= maxColumn; ++column) {
+                const cell = wordmarkCells[String(row) + ":" + String(column)];
+                if (cell)
+                    cell.applyPointerImpulse(local.x, local.y, speed);
+            }
+        }
+    }
+
+    function handlePointerMotion(x, y) {
+        if (!interactiveEffectsEnabled)
+            return;
+
+        const now = Date.now();
+        const hasPrevious = lastPointerX >= 0 && lastPointerY >= 0
+            && lastPointerSampleTime > 0;
+        const dx = hasPrevious ? x - lastPointerX : 0;
+        const dy = hasPrevious ? y - lastPointerY : 0;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const elapsed = hasPrevious ? Math.max(1, now - lastPointerSampleTime) : 1;
+        const speed = hasPrevious ? distance * 1000 / elapsed : 0;
+
+        if (!hasPrevious || distance >= pointerMovementThreshold)
+            pushGhostSample(x, y);
+
+        if (!hasPrevious || now - lastPhysicsUpdateTime >= pointerUpdateIntervalMs) {
+            applyPointerImpulse(x, y, speed);
+            lastPhysicsUpdateTime = now;
+        }
+
+        lastPointerX = x;
+        lastPointerY = y;
+        lastPointerSampleTime = now;
+    }
 
     function submitPassword() {
         if ((auth.busy && !auth.responseRequired) || password.text.length === 0)
@@ -56,10 +168,12 @@ WlSessionLockSurface {
     }
 
     MouseArea {
+        id: pointerArea
         anchors.fill: parent
         acceptedButtons: Qt.AllButtons
         hoverEnabled: true
         cursorShape: Qt.BlankCursor
+        onPositionChanged: mouse => root.handlePointerMotion(mouse.x, mouse.y)
         onClicked: password.forceActiveFocus()
         onWheel: wheel => { wheel.accepted = true; }
     }
@@ -87,6 +201,7 @@ WlSessionLockSurface {
             spacing: Math.round(34 * root.uiScale)
 
             Item {
+                id: wordmarkItem
                 Layout.alignment: Qt.AlignHCenter
                 Layout.preferredWidth: root.wordmarkColumns * root.wordmarkCellWidth
                 Layout.preferredHeight: root.wordmarkRows.length * root.wordmarkCellHeight
@@ -132,6 +247,30 @@ WlSessionLockSurface {
                                 readonly property real finalCellX: columnIndex * root.wordmarkCellWidth
                                 readonly property real finalCellY: wordmarkRow.rowIndex
                                     * root.wordmarkCellHeight
+                                property real pointerOffsetX: 0
+                                property real pointerOffsetY: 0
+                                readonly property real normalizedCenterX: wordmarkWidth > 0
+                                    ? (finalCellX + root.wordmarkCellWidth / 2) / wordmarkWidth - 0.5 : 0
+                                readonly property real normalizedCenterY: wordmarkHeight > 0
+                                    ? (finalCellY + root.wordmarkCellHeight / 2) / wordmarkHeight - 0.5 : 0
+                                readonly property real edgeWeight: Math.min(1,
+                                    Math.sqrt(normalizedCenterX * normalizedCenterX
+                                        + normalizedCenterY * normalizedCenterY) * 2)
+                                readonly property real audioEnergy: randomA < 0.40
+                                    ? root.audioLow : randomA < 0.78 ? root.audioMid : root.audioHigh
+                                readonly property real audioAngle: randomB * Math.PI * 2
+                                readonly property real audioEnvelope: root.interactiveEffectsEnabled
+                                    ? Math.max(0, Math.min(1, audioEnergy)) * Math.pow(edgeWeight, 1.35) : 0
+                                readonly property real audioOffsetX: audioEnvelope <= 0 ? 0
+                                    : Math.max(-root.audioDisplacementCap,
+                                        Math.min(root.audioDisplacementCap,
+                                            Math.sin(root.audioPhase * (0.75 + randomC * 0.55) + audioAngle)
+                                                * audioEnvelope * root.audioDisplacementCap))
+                                readonly property real audioOffsetY: audioEnvelope <= 0 ? 0
+                                    : Math.max(-root.audioDisplacementCap,
+                                        Math.min(root.audioDisplacementCap,
+                                            Math.cos(root.audioPhase * (0.82 + randomD * 0.50) + audioAngle)
+                                                * audioEnvelope * root.audioDisplacementCap * 0.82))
 
                                 // These values intentionally have no reactive dependencies: each
                                 // surface creation gets a new animation family and fresh paths.
@@ -196,11 +335,58 @@ WlSessionLockSurface {
                                 property real formationProgress:
                                     root.animationPreference === "off" ? 1 : 0
 
+                                function applyPointerImpulse(localX, localY, speed) {
+                                    if (!wordmarkCell.isFilledGlyph
+                                            || wordmarkCell.formationProgress < 0.96
+                                            || !root.interactiveEffectsEnabled)
+                                        return;
+
+                                    const centerX = wordmarkCell.finalCellX
+                                        + root.wordmarkCellWidth / 2;
+                                    const centerY = wordmarkCell.finalCellY
+                                        + root.wordmarkCellHeight / 2;
+                                    let dx = centerX - localX;
+                                    let dy = centerY - localY;
+                                    let distance = Math.sqrt(dx * dx + dy * dy);
+                                    if (distance >= root.pointerInfluenceRadius)
+                                        return;
+                                    if (distance < 0.001) {
+                                        dx = Math.cos(wordmarkCell.audioAngle);
+                                        dy = Math.sin(wordmarkCell.audioAngle);
+                                        distance = 1;
+                                    }
+
+                                    const proximity = 1 - distance / root.pointerInfluenceRadius;
+                                    const speedFactor = 0.28 + 0.72 * Math.min(1, speed / 1200);
+                                    const impulse = root.pointerDisplacementCap * proximity * speedFactor;
+                                    const targetX = Math.max(-root.pointerDisplacementCap,
+                                        Math.min(root.pointerDisplacementCap,
+                                            wordmarkCell.pointerOffsetX + dx / distance * impulse));
+                                    const targetY = Math.max(-root.pointerDisplacementCap,
+                                        Math.min(root.pointerDisplacementCap,
+                                            wordmarkCell.pointerOffsetY + dy / distance * impulse));
+
+                                    pointerReturnX.stop();
+                                    pointerReturnY.stop();
+                                    wordmarkCell.pointerOffsetX = targetX;
+                                    wordmarkCell.pointerOffsetY = targetY;
+                                    pointerReturnX.restart();
+                                    pointerReturnY.restart();
+                                }
+
+                                Component.onCompleted: {
+                                    if (wordmarkCell.isFilledGlyph)
+                                        root.registerWordmarkCell(wordmarkRow.rowIndex,
+                                            wordmarkCell.columnIndex, wordmarkCell);
+                                }
+
                                 x: finalCellX
                                     + (1 - formationProgress) * startX
                                     + Math.sin(Math.PI * wordmarkCell.formationProgress) * curveX
+                                    + pointerOffsetX + audioOffsetX
                                 y: (1 - formationProgress) * startY
                                     + Math.sin(Math.PI * wordmarkCell.formationProgress) * curveY
+                                    + pointerOffsetY + audioOffsetY
                                 width: root.wordmarkCellWidth
                                 height: root.wordmarkCellHeight
                                 visible: isFilledGlyph
@@ -238,9 +424,64 @@ WlSessionLockSurface {
                                         easing.type: Easing.OutCubic
                                     }
                                 }
+
+                                NumberAnimation on pointerOffsetX {
+                                    id: pointerReturnX
+                                    running: false
+                                    to: 0
+                                    duration: 450
+                                    easing.type: Easing.OutBack
+                                    easing.overshoot: 0.55
+                                }
+
+                                NumberAnimation on pointerOffsetY {
+                                    id: pointerReturnY
+                                    running: false
+                                    to: 0
+                                    duration: 450
+                                    easing.type: Easing.OutBack
+                                    easing.overshoot: 0.55
+                                }
                             }
                         }
                     }
+                }
+            }
+
+            ColumnLayout {
+                Layout.alignment: Qt.AlignHCenter
+                Layout.preferredHeight: root.metadataVisible ? implicitHeight : 0
+                visible: root.metadataVisible
+                spacing: Math.round(3 * root.uiScale)
+
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    visible: root.showTime
+                    text: root.timeText
+                    color: root.theme.lockAccent
+                    font.family: root.theme.fontFamily
+                    font.pixelSize: Math.round(25 * root.uiScale)
+                    font.weight: Font.Medium
+                }
+
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    visible: root.showDate
+                    text: root.dateText
+                    color: root.theme.lockAccent
+                    opacity: 0.72
+                    font.family: root.theme.fontFamily
+                    font.pixelSize: Math.round(11 * root.uiScale)
+                }
+
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    visible: root.showUsername
+                    text: root.usernameText
+                    color: root.theme.lockAccent
+                    opacity: 0.58
+                    font.family: root.theme.fontFamily
+                    font.pixelSize: Math.round(10 * root.uiScale)
                 }
             }
 
@@ -313,6 +554,80 @@ WlSessionLockSurface {
                 }
             }
         }
+
+        Item {
+            anchors.fill: parent
+            z: 100
+            visible: root.interactiveEffectsEnabled && root.ghostOpacity > 0
+
+            Repeater {
+                model: root.ghostTrailLength
+
+                Rectangle {
+                    required property int index
+                    readonly property var sample: root.ghostTrail[index]
+                    readonly property real scaleFactor: 1 - index / root.ghostTrailLength
+                    width: Math.max(3, Math.round((7 * scaleFactor) * root.uiScale))
+                    height: width
+                    radius: width / 2
+                    x: Number(sample.x) - width / 2
+                    y: Number(sample.y) - height / 2
+                    color: root.theme.lockAccent
+                    opacity: root.ghostOpacity * 0.34 * scaleFactor
+                }
+            }
+
+            Rectangle {
+                width: Math.round(18 * root.uiScale)
+                height: width
+                radius: width / 2
+                x: root.ghostHeadX - width / 2
+                y: root.ghostHeadY - height / 2
+                color: root.theme.lockAccent
+                opacity: root.ghostOpacity * 0.12
+            }
+
+            Rectangle {
+                width: Math.round(8 * root.uiScale)
+                height: width
+                radius: width / 2
+                x: root.ghostHeadX - width / 2
+                y: root.ghostHeadY - height / 2
+                color: root.theme.lockAccent
+                opacity: root.ghostOpacity * 0.78
+            }
+        }
+    }
+
+    Timer {
+        id: cursorFadeDelay
+        interval: root.cursorFadeDelayMs
+        repeat: false
+        onTriggered: ghostFade.restart()
+    }
+
+    NumberAnimation {
+        id: ghostFade
+        target: root
+        property: "ghostOpacity"
+        to: 0
+        duration: root.cursorFadeDurationMs
+        easing.type: Easing.OutCubic
+    }
+
+    Timer {
+        interval: 33
+        repeat: true
+        running: root.interactiveEffectsEnabled && root.audioOverall > 0.01
+        onTriggered: root.audioPhase += 0.22
+    }
+
+    Timer {
+        interval: 15000
+        repeat: true
+        triggeredOnStart: true
+        running: root.metadataVisible && (root.showTime || root.showDate)
+        onTriggered: root.updateClockText()
     }
 
     Connections {
@@ -335,6 +650,7 @@ WlSessionLockSurface {
     }
 
     Component.onCompleted: {
+        root.updateClockText();
         root.entered = true;
         Qt.callLater(() => password.forceActiveFocus());
     }
