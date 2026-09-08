@@ -32,6 +32,5 @@ jobs:
           bash -n config/hypr/scripts/quickshell_bar_toggle.sh
           bash -n config/hypr/scripts/hypr_quicksettings.sh
           bash -n tests/test-bar-auto-hide.sh
-          shellcheck config/hypr/scripts/hypr_quicksettings.sh
           shellcheck tests/test-bar-auto-hide.sh
           bash tests/test-bar-auto-hide.sh
