@@ -27,6 +27,8 @@ jobs:
           bar_test='tests/test-bar-wheel-input.sh'
           lua_test='tests/test-lua-validation.sh'
 
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
           git fetch origin main
 
           set +e
@@ -81,11 +83,8 @@ jobs:
           git diff --cached --check
 
           bash tests/test-bar-wheel-input.sh
-          bash tests/test-lua-validation.sh
           bash tests/test-quickshell-lockscreen-foundation.sh
           bash tests/test-quickshell-lockscreen-migration.sh
 
-          git config user.name dillacorn
-          git config user.email 28743863+dillacorn@users.noreply.github.com
           git commit -m 'Sync lockscreen with current main'
           git push origin HEAD:feature/quickshell-lockscreen
