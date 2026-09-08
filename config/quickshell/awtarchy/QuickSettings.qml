@@ -997,7 +997,6 @@ Singleton {
         minimumSize: Qt.size(root.minimumPanelWidth,
             root.settingsOpen ? root.minimumSettingsPanelHeight : root.minimumPanelHeight)
         maximumSize: Qt.size(root.maximumPanelWidth, root.maximumPanelHeight)
-
         onClosed: root.close()
         onVisibleChanged: {
             if (visible) {
@@ -1655,7 +1654,7 @@ Singleton {
 
                                         Text {
                                             Layout.fillWidth: true
-                                            text: "Visibility: CTRL+SUPER+ALT+B toggle"
+                                            text: "Auto-hide: CTRL+SUPER+ALT+B toggle"
                                             color: Theme.muted
                                             font.family: Theme.fontFamily
                                             font.pixelSize: root.scaledText(8)
