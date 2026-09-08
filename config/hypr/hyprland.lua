@@ -1011,7 +1011,7 @@ hl.define_submap("noalt", function()
 
     -- Window move in "noalt" (SUPER+SHIFT arrows + hjkl)
     for _, bind in ipairs(movement_keys) do
-        hl.bind("SUPER + SHIFT + " .. bind[1], hl.dsp.window.move({ direction = bind[2] }), {})
+        hl.bind("SUPER + SHIFT + " .. bind[1], hl.dsp.window.move({ direction = bind[2], follow = false }), {})
     end
 
     -- Send current workspace to monitor in "noalt" (SUPER+CTRL+SHIFT arrows + brackets)
@@ -1296,31 +1296,25 @@ hl.window_rule({ match = { class = "^(steam|com\\.valvesoftware\\.Steam)$", titl
 -- SCREENSHARE GUARD
 -- ───────────────────────────────────────────────────────────────────────────────
 
-hl.window_rule({ match = { class = "^(Bitwarden|com\\.bitwarden\\.desktop|KeePassXC|org\\.keepassxc\\.KeePassXC|1Password|com\\.1password\\.1password|Enpass|org\\.gnome\\.Secrets|org\\.gnome\\.seahorse\\.Application|OTPClient|otpclient|org\\.rasalminen\\.OTPClient|Mullvad Browser|mullvad-browser|com\\.mullvad\\.Browser|localsend|LocalSend|org\\.localsend\\.localsend|io\\.github\\.localsend\\.localsend)$" }, no_screen_share = true })
-hl.window_rule({ match = { class = "^(firefox)$", title = "^(Extension: \\(Bitwarden Password Manager\\).*)$" }, no_screen_share = true })
-hl.window_rule({ match = { class = "^(brave-browser|chromium|google-chrome|chrome|vivaldi-stable|microsoft-edge)$", title = "^(Bitwarden Password Manager.*)$" }, no_screen_share = true })
-hl.window_rule({ match = { class = "^(org\\.telegram\\.desktop|TelegramDesktop|telegram-desktop|Telegram)$" }, no_screen_share = true })
-hl.window_rule({ match = { class = "^(brave-browser|chromium|google-chrome|chrome|vivaldi-stable|microsoft-edge)$", title = "^.*Telegram.*$" }, no_screen_share = true })
-hl.window_rule({ match = { class = "^(Element|io\\.element\\.Element|im\\.riot\\.Riot|chat\\.element\\.desktop|SchildiChat|im\\.fluffychat\\.Fluffychat|Fractal|org\\.gnome\\.Fractal|nheko)$" }, no_screen_share = true })
-hl.window_rule({ match = { class = "^(discord|com\\.discordapp\\.Discord|vesktop|dev\\.vencord\\.Vesktop|Fluxer|fluxer)$" }, no_screen_share = true })
-hl.window_rule({ match = { class = "^(com\\.github\\.IsmaelMartinez\\.teams_for_linux)$" }, no_screen_share = true })
-hl.window_rule({ match = { class = "^(Messages)$" }, no_screen_share = true })
+local awtarchy_config_home = os.getenv("XDG_CONFIG_HOME")
+if not awtarchy_config_home or awtarchy_config_home == "" then
+    awtarchy_config_home = assert(os.getenv("HOME")) .. "/.config"
+end
 
--- Layers (notifications/swaync are layer surfaces, not windows)
-hl.layer_rule({ match = { namespace = "^(notifications|swaync.*)$" }, no_screen_share = true })
+awtarchy_screenshare_guard_v1 = dofile(awtarchy_config_home .. "/hypr/screenshare_guard.lua")
+awtarchy_screenshare_guard_rules_v1 = awtarchy_screenshare_guard_v1.rules
 
--- optional
--- hl.window_rule({ match = { class = "^(obs|com\\.obsproject\\.Studio|obs-studio|com\\.obsproject\\.Studio\\.obs)$" }, no_screen_share = true })
--- hl.window_rule({ match = { class = "^(steam|com\\.valvesoftware\\.Steam)$" }, no_screen_share = true })
--- hl.window_rule({ match = { class = "^(rustdesk|com\\.rustdesk\\.RustDesk)$" }, no_screen_share = true })
--- hl.window_rule({ match = { class = "^(pcmanfm-qt|Pcmanfm-qt|pcmanfm)$" }, no_screen_share = true })
--- hl.window_rule({ match = { class = "^(wallpicker)$" }, no_screen_share = true })
--- hl.window_rule({ match = { class = "^(virt-manager)$" }, no_screen_share = true })
--- hl.window_rule({ match = { class = "^(Alacritty)$" }, no_screen_share = true })
--- hl.window_rule({ match = { class = "^(mpv)$" }, no_screen_share = true })
--- hl.layer_rule({ match = { namespace = "^(ags)$" }, no_screen_share = true })
--- hl.layer_rule({ match = { namespace = "^(logout_dialog)$" }, no_screen_share = true })
--- hl.layer_rule({ match = { namespace = "^(waybar)$" }, no_screen_share = true })
+function awtarchy_screenshare_guard_set_group_v1(target, enabled)
+    return awtarchy_screenshare_guard_v1.set_group(target, enabled)
+end
+
+function awtarchy_screenshare_guard_group_enabled_v1(target)
+    return awtarchy_screenshare_guard_v1.group_enabled(target)
+end
+
+function awtarchy_screenshare_guard_status_v1()
+    return awtarchy_screenshare_guard_v1.status()
+end
 
 -- ───────────────────────────────────────────────────────────────────────────────
 -- MANUAL SETUP
