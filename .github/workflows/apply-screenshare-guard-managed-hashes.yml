@@ -1,0 +1,47 @@
+name: Apply Screen Share Guard managed hashes
+
+on:
+  push:
+    branches:
+      - feature/screenshare-guard-controls
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.head_commit.message == 'Apply Screen Share Guard managed hashes'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: feature/screenshare-guard-controls
+          fetch-depth: 0
+
+      - name: Register exact managed hashes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          manifest='local/share/awtarchy/quickshell-managed-history.sha256'
+          entries=(
+            $'78b59de0c5b2a0b7e90df4385e941f45fe2a1405ea1e7578dbc639c329c2117b\t.config/quickshell/awtarchy/QuickSettings.qml'
+            $'c7bb0a04c679254e62adadfcbfb0a2c136e397a784ca9dc4bbca2ec1fc64ce80\t.config/quickshell/awtarchy/ScreenShareGuardCard.qml'
+            $'1d2a16aeb66dc9d295ac44c649e733ff10bc5545ad330008ed83366e3fffcef1\t.config/hypr/scripts/screenshare_guard.sh'
+            $'7371b93c386afdf61df0e3fafda04b4951b04533aeed03807dbc973679d628f9\t.config/hypr/screenshare_guard.lua'
+          )
+
+          printf '\n# 2026-09-08 Screen Share Guard controls.\n' >> "$manifest"
+          for entry in "${entries[@]}"; do
+            grep -Fqx -- "$entry" "$manifest" || printf '%s\n' "$entry" >> "$manifest"
+          done
+
+          bash tests/test-screenshare-guard-controls.sh
+          bash tests/test-quick-settings-layout.sh
+
+          rm -f .github/workflows/apply-screenshare-guard-managed-hashes.yml
+
+          git config user.name 'dillacorn'
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add "$manifest" .github/workflows/apply-screenshare-guard-managed-hashes.yml
+          git commit -m 'Register Screen Share Guard managed hashes'
+          git push origin HEAD:feature/screenshare-guard-controls
