@@ -23,7 +23,7 @@ jobs:
           bash -n config/hypr/scripts/screenshare_guard.sh
           shellcheck config/hypr/scripts/screenshare_guard.sh
           bash tests/test-screenshare-guard-controls.sh
-          bash tests/test-hyprland-lua-structure.sh
+          lua -e 'assert(loadfile("config/hypr/hyprland.lua"))'
           git diff --check
       - name: Commit
         run: |
