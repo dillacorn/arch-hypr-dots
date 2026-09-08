@@ -150,12 +150,38 @@ def replace_required(path: Path, pattern: str, replacement: str, label: str) -> 
     path.write_text(updated)
 
 
+def upsert_hypr_env(key: str, value: str, after_key: str) -> None:
+    text = hypr.read_text()
+    pattern = rf'^hl\.env\("{re.escape(key)}",\s*"[^"]+"\)$'
+    replacement = f'hl.env("{key}", "{value}")'
+    updated, count = re.subn(pattern, replacement, text, count=1, flags=re.MULTILINE)
+    if count == 1:
+        hypr.write_text(updated)
+        return
+    if count != 0:
+        raise SystemExit(f"Hyprland: multiple {key} cursor settings in {hypr}")
+
+    anchor = rf'^(hl\.env\("{re.escape(after_key)}",\s*"[^"]+"\))$'
+    updated, anchor_count = re.subn(
+        anchor,
+        rf'\1\n{replacement}',
+        text,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if anchor_count != 1:
+        raise SystemExit(f"Hyprland: expected one {after_key} anchor in {hypr}")
+    hypr.write_text(updated)
+
+
 replace_required(
     hypr,
     r'^hl\.env\("XCURSOR_THEME",\s*"[^"]+"\)$',
     f'hl.env("XCURSOR_THEME", "{theme}")',
-    "Hyprland",
+    "Hyprland XCursor",
 )
+upsert_hypr_env("HYPRCURSOR_THEME", theme, "XCURSOR_THEME")
+upsert_hypr_env("HYPRCURSOR_SIZE", "24", "XCURSOR_SIZE")
 replace_required(
     gtk3,
     r'^gtk-cursor-theme-name=.*$',
@@ -194,12 +220,13 @@ apply_live_settings() {
     fi
 
     if command -v systemctl >/dev/null 2>&1; then
-        systemctl --user set-environment "XCURSOR_THEME=${theme}" "XCURSOR_SIZE=${CURSOR_SIZE}" >/dev/null 2>&1 || true
+        systemctl --user set-environment "XCURSOR_THEME=${theme}" "XCURSOR_SIZE=${CURSOR_SIZE}" "HYPRCURSOR_THEME=${theme}" "HYPRCURSOR_SIZE=${CURSOR_SIZE}" >/dev/null 2>&1 || true
     fi
 
     if command -v dbus-update-activation-environment >/dev/null 2>&1; then
         XCURSOR_THEME="$theme" XCURSOR_SIZE="$CURSOR_SIZE" \
-            dbus-update-activation-environment --systemd XCURSOR_THEME XCURSOR_SIZE >/dev/null 2>&1 || true
+            HYPRCURSOR_THEME="$theme" HYPRCURSOR_SIZE="$CURSOR_SIZE" \
+            dbus-update-activation-environment --systemd XCURSOR_THEME XCURSOR_SIZE HYPRCURSOR_THEME HYPRCURSOR_SIZE >/dev/null 2>&1 || true
     fi
 
     if command -v hyprctl >/dev/null 2>&1 && [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
