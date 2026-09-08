@@ -14,12 +14,45 @@ Item {
     property string message: ""
     property string runnerError: ""
 
+    readonly property var supportedVariants: [
+        "ice", "classic", "amber",
+        "ice-sharp", "classic-sharp", "amber-sharp",
+        "ice-right", "classic-right", "amber-right",
+        "ice-sharp-right", "classic-sharp-right", "amber-sharp-right"
+    ]
+    readonly property string cursorColor: cursorVariant.startsWith("classic")
+        ? "classic"
+        : (cursorVariant.startsWith("amber") ? "amber" : "ice")
+    readonly property bool cursorSharp: cursorVariant.indexOf("-sharp") >= 0
+    readonly property bool cursorRightHand: cursorVariant.endsWith("-right")
+
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
         || (Quickshell.env("HOME") + "/.config")
     readonly property string cursorScript: configHome
         + "/hypr/scripts/quickshell_cursor_theme.sh"
 
     implicitHeight: active ? controls.implicitHeight + 12 : 0
+
+    function composeVariant(color, sharp, rightHand) {
+        let variant = color;
+        if (sharp)
+            variant += "-sharp";
+        if (rightHand)
+            variant += "-right";
+        return variant;
+    }
+
+    function setColor(color) {
+        setVariant(composeVariant(color, cursorSharp, cursorRightHand));
+    }
+
+    function setShape(sharp) {
+        setVariant(composeVariant(cursorColor, sharp, cursorRightHand));
+    }
+
+    function setHandedness(rightHand) {
+        setVariant(composeVariant(cursorColor, cursorSharp, rightHand));
+    }
 
     function refresh() {
         if (!active || statusRunner.running || writer.running)
@@ -28,7 +61,8 @@ Item {
     }
 
     function setVariant(variant) {
-        if (writer.running || variant === cursorVariant)
+        if (writer.running || variant === cursorVariant
+                || supportedVariants.indexOf(variant) < 0)
             return;
         pendingVariant = variant;
         runnerError = "";
@@ -45,7 +79,7 @@ Item {
         stdout: StdioCollector {
             onStreamFinished: {
                 const value = text.trim();
-                if (value === "ice" || value === "classic")
+                if (root.supportedVariants.indexOf(value) >= 0)
                     root.cursorVariant = value;
             }
         }
@@ -59,9 +93,7 @@ Item {
         onExited: (exitCode, exitStatus) => {
             if (exitCode === 0) {
                 root.cursorVariant = root.pendingVariant;
-                root.message = root.cursorVariant === "ice"
-                    ? "Bibata Ice cursor applied"
-                    : "Bibata Classic cursor applied";
+                root.message = "Bibata cursor applied";
             } else {
                 root.message = root.runnerError.length > 0
                     ? root.runnerError.split("\n")[0]
@@ -90,7 +122,7 @@ Item {
 
                 Text {
                     Layout.preferredWidth: 78
-                    text: "Cursor"
+                    text: "Cursor Color"
                     color: Theme.foreground
                     font.family: Theme.fontFamily
                     font.pixelSize: 10
@@ -99,19 +131,96 @@ Item {
                 SettingsButton {
                     label: "Ice / White"
                     textSize: 9
-                    horizontalPadding: 10
-                    active: root.cursorVariant === "ice"
+                    horizontalPadding: 8
+                    active: root.cursorColor === "ice"
                     available: !writer.running
-                    onClicked: root.setVariant("ice")
+                    onClicked: root.setColor("ice")
                 }
 
                 SettingsButton {
                     label: "Classic / Black"
                     textSize: 9
-                    horizontalPadding: 10
-                    active: root.cursorVariant === "classic"
+                    horizontalPadding: 8
+                    active: root.cursorColor === "classic"
                     available: !writer.running
-                    onClicked: root.setVariant("classic")
+                    onClicked: root.setColor("classic")
+                }
+
+                SettingsButton {
+                    label: "Amber"
+                    textSize: 9
+                    horizontalPadding: 8
+                    active: root.cursorColor === "amber"
+                    available: !writer.running
+                    onClicked: root.setColor("amber")
+                }
+
+                Item { Layout.fillWidth: true }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 26
+                spacing: 5
+
+                Text {
+                    Layout.preferredWidth: 78
+                    text: "Cursor Shape"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                }
+
+                SettingsButton {
+                    label: "Rounded"
+                    textSize: 9
+                    horizontalPadding: 10
+                    active: !root.cursorSharp
+                    available: !writer.running
+                    onClicked: root.setShape(false)
+                }
+
+                SettingsButton {
+                    label: "Sharp"
+                    textSize: 9
+                    horizontalPadding: 10
+                    active: root.cursorSharp
+                    available: !writer.running
+                    onClicked: root.setShape(true)
+                }
+
+                Item { Layout.fillWidth: true }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 26
+                spacing: 5
+
+                Text {
+                    Layout.preferredWidth: 78
+                    text: "Cursor Hand"
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                }
+
+                SettingsButton {
+                    label: "Normal"
+                    textSize: 9
+                    horizontalPadding: 10
+                    active: !root.cursorRightHand
+                    available: !writer.running
+                    onClicked: root.setHandedness(false)
+                }
+
+                SettingsButton {
+                    label: "Right Hand"
+                    textSize: 9
+                    horizontalPadding: 10
+                    active: root.cursorRightHand
+                    available: !writer.running
+                    onClicked: root.setHandedness(true)
                 }
 
                 Item { Layout.fillWidth: true }

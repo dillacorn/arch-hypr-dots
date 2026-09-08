@@ -936,3 +936,9 @@ a23f9098fbad3e29b48c37a58758cc30c3bbfc49aff10dd5b97755c49a44449b	.config/quicksh
 05611ed1c5677d55dc32bd2be78f820104a8ae84e5c7dcd14aaa24f0f6d26d53	.config/quickshell/awtarchy/QuickSettings.qml
 # 2026-09-08 Bibata hyprcursor login persistence follow-up.
 6e6fc2fe5c2e864fa3e49c186efc24770d3f990296eff12374aa9da2665749aa	.config/hypr/scripts/quickshell_cursor_theme.sh
+
+# 2026-09-08 Bibata full variant matrix and Quickshell start fast-path stock hashes.
+d1267f484782fece64b7cfbd4202dd8bda682c40dabf3aa332d62e8a6617e79c	.config/hypr/scripts/quickshell_application_state.sh
+5d2565c6f43b2a05fd0a12f5ca4a5ce53b3ebc9021b3c65e53d380de71f7963e	.config/hypr/scripts/quickshell_cursor_theme.sh
+26a4b5ae4ed38eb31656ce636939a712a59def26c53b5e307e918c5d59dae24b	.config/quickshell/awtarchy/CursorThemeSettings.qml
+4ca0f2a2ec0100c2856c1daaeaa20a8670dc46257efec0cb0ec9a93fb60e6f5e	.config/hypr/scripts/quickshell.sh

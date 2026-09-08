@@ -18,8 +18,18 @@ CURSOR_SIZE=24
 
 variant_theme() {
     case "$1" in
-        ice) printf '%s\n' 'Bibata-Modern-Ice' ;;
+        amber) printf '%s\n' 'Bibata-Modern-Amber' ;;
         classic) printf '%s\n' 'Bibata-Modern-Classic' ;;
+        ice) printf '%s\n' 'Bibata-Modern-Ice' ;;
+        amber-sharp) printf '%s\n' 'Bibata-Original-Amber' ;;
+        classic-sharp) printf '%s\n' 'Bibata-Original-Classic' ;;
+        ice-sharp) printf '%s\n' 'Bibata-Original-Ice' ;;
+        amber-right) printf '%s\n' 'Bibata-Modern-Amber-Right' ;;
+        classic-right) printf '%s\n' 'Bibata-Modern-Classic-Right' ;;
+        ice-right) printf '%s\n' 'Bibata-Modern-Ice-Right' ;;
+        amber-sharp-right) printf '%s\n' 'Bibata-Original-Amber-Right' ;;
+        classic-sharp-right) printf '%s\n' 'Bibata-Original-Classic-Right' ;;
+        ice-sharp-right) printf '%s\n' 'Bibata-Original-Ice-Right' ;;
         *) return 2 ;;
     esac
 }
@@ -29,10 +39,11 @@ saved_variant() {
     if [[ -s "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
         value="$(jq -r '.cursor_variant // "ice"' "$STATE_FILE" 2>/dev/null || printf '%s' ice)"
     fi
-    case "$value" in
-        ice|classic) printf '%s\n' "$value" ;;
-        *) printf '%s\n' ice ;;
-    esac
+    if variant_theme "$value" >/dev/null 2>&1; then
+        printf '%s\n' "$value"
+    else
+        printf '%s\n' ice
+    fi
 }
 
 sync_theme_to_user_icons() {
@@ -42,23 +53,19 @@ sync_theme_to_user_icons() {
     cp -a -- "$source/." "$destination/"
 }
 
-require_bibata_themes() {
-    local theme
-    for theme in Bibata-Modern-Ice Bibata-Modern-Classic; do
-        if [[ ! -d "${ICON_ROOT}/${theme}" && ! -d "${DATA_HOME}/icons/${theme}" ]]; then
-            printf 'quickshell_cursor_theme.sh: Bibata theme is unavailable: %s\n' "$theme" >&2
-            return 1
-        fi
-    done
+require_bibata_theme() {
+    local theme="$1"
+    if [[ ! -d "${ICON_ROOT}/${theme}" && ! -d "${DATA_HOME}/icons/${theme}" ]]; then
+        printf 'quickshell_cursor_theme.sh: Bibata theme is unavailable: %s\n' "$theme" >&2
+        return 1
+    fi
 }
 
-sync_bibata_themes() {
-    local theme
-    for theme in Bibata-Modern-Ice Bibata-Modern-Classic; do
-        if [[ -d "${ICON_ROOT}/${theme}" ]]; then
-            sync_theme_to_user_icons "$theme"
-        fi
-    done
+sync_bibata_theme() {
+    local theme="$1"
+    if [[ -d "${ICON_ROOT}/${theme}" ]]; then
+        sync_theme_to_user_icons "$theme"
+    fi
 }
 
 ensure_hyprcursor_theme() {
@@ -248,8 +255,8 @@ apply_variant() {
         return 2
     }
 
-    require_bibata_themes || return 1
-    sync_bibata_themes
+    require_bibata_theme "$theme" || return 1
+    sync_bibata_theme "$theme"
     mkdir -p -- "${DATA_HOME}/icons/default"
     printf "[Icon Theme]\nInherits=%s\n" "$theme" >"${DATA_HOME}/icons/default/index.theme"
     write_managed_files "$theme"
@@ -276,7 +283,7 @@ case "${1:-status}" in
         ;;
     set)
         [[ -n ${2:-} ]] || {
-            printf 'usage: %s set <ice|classic>\n' "${0##*/}" >&2
+            printf 'usage: %s set <variant>\n' "${0##*/}" >&2
             exit 2
         }
         set_variant "$2"
@@ -285,7 +292,7 @@ case "${1:-status}" in
         apply_variant "$(saved_variant)"
         ;;
     *)
-        printf 'usage: %s {status|set <ice|classic>|reapply}\n' "${0##*/}" >&2
+        printf 'usage: %s {status|set <variant>|reapply}\n' "${0##*/}" >&2
         exit 2
         ;;
 esac

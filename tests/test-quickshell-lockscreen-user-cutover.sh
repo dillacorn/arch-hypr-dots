@@ -41,9 +41,15 @@ reject_text "$MIGRATOR" \
     'NEW_BIND = '\''hl.bind("SUPER + L", hl.dsp.exec_cmd("~/.config/hypr/scripts/awtarchy_lock.sh lock"), {})'\''' \
     'personalized Hyprland migration still creates a direct SUPER+L lock bind'
 
-# The package reconciler remains conservative by default. A previously
-# unrecorded Hyprlock may be retired only after the updater explicitly records
-# the user's one-time confirmation.
+# Once the updater has confirmed that the target no longer uses Hyprlock,
+# any installed Hyprlock package is obsolete and must be retired automatically.
+reject_text "$RECONCILER" \
+    "confirm_yes_no 'Hyprlock is no longer used by Awtarchy but was not recorded as Awtarchy-owned. Remove it now?'" \
+    'Hyprlock retirement still prompts the user'
+reject_text "$RECONCILER" \
+    'AWTARCHY_LOCKSCREEN_RETIRE_UNOWNED_CONFIRMED' \
+    'Hyprlock retirement still depends on a one-time confirmation override'
+
 fakebin="${TMP}/fakebin"
 mkdir -p -- "$fakebin"
 
@@ -100,25 +106,16 @@ managed="${TMP}/managed-packages"
 printf '%s\n' hyprlock quickshell >"$state"
 printf '%s\n' quickshell >"$managed"
 
-run_retirement() {
-    PATH="${fakebin}:$PATH" \
-    AWTARCHY_RUNTIME="$runtime" \
-    AWTARCHY_MANAGED_PACKAGES_FILE="$managed" \
-    AWTARCHY_TEST_PACKAGE_STATE="$state" \
-    AWTARCHY_LOCKSCREEN_RETIRE_CONFIRMED=1 \
-    AWTARCHY_LOCKSCREEN_RETIRE_UNOWNED_CONFIRMED="${1:-0}" \
-        bash "$RECONCILER" --migrate-lockscreen-retirement
-}
+PATH="${fakebin}:$PATH" \
+AWTARCHY_RUNTIME="$runtime" \
+AWTARCHY_MANAGED_PACKAGES_FILE="$managed" \
+AWTARCHY_TEST_PACKAGE_STATE="$state" \
+AWTARCHY_LOCKSCREEN_RETIRE_CONFIRMED=1 \
+    bash "$RECONCILER" --migrate-lockscreen-retirement >/dev/null \
+    || fail 'automatic legacy Hyprlock retirement failed'
 
-run_retirement 0 >/dev/null \
-    || fail 'unowned Hyprlock safety check failed'
-grep -Fxq hyprlock "$state" \
-    || fail 'unowned Hyprlock was removed without explicit confirmation'
-
-run_retirement 1 >/dev/null \
-    || fail 'explicitly confirmed legacy Hyprlock retirement failed'
 if grep -Fxq hyprlock "$state"; then
-    fail 'explicitly confirmed legacy Hyprlock was not removed'
+    fail 'legacy Hyprlock was not removed automatically'
 fi
 
 printf 'PASS: lockscreen user cutover contracts\n'

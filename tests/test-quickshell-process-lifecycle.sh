@@ -214,4 +214,21 @@ run_stop_fixture pre-signal-mismatch /usr/bin/quickshell S pre-signal-mismatch f
 [[ ! -s ${TMPD}/pre-signal-mismatch/signals.log ]] \
   || fail 'Manager signaled a process whose executable changed after initial validation'
 
+# Every UI wrapper calls `quickshell.sh start` before IPC. If the shell is
+# already healthy, that fast path must return before cursor reapply mutates the
+# Hyprland config and triggers a compositor reload.
+python3 - "$SHELL_MANAGER" <<'PY_START_ORDER'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text()
+start = text.index("start_shell() {")
+end = text.index("\nstop_shell() {", start)
+body = text[start:end]
+running_check = body.index("if is_running; then")
+cursor_reapply = body.index('if [[ -f "$CURSOR_THEME_SCRIPT" && ! -L "$CURSOR_THEME_SCRIPT" ]]; then')
+if running_check > cursor_reapply:
+    raise SystemExit("FAIL: healthy Quickshell start reapplies cursor state before the running fast path")
+PY_START_ORDER
+
 printf 'PASS: Quickshell process lifecycle regressions\n'

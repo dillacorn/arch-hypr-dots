@@ -270,15 +270,15 @@ start_shell() {
     ensure_state
     flock -u 8
 
-    if [[ -f "$CURSOR_THEME_SCRIPT" && ! -L "$CURSOR_THEME_SCRIPT" ]]; then
-        bash "$CURSOR_THEME_SCRIPT" reapply >/dev/null 2>&1             || printf 'quickshell.sh: could not reapply the saved Bibata cursor theme.
-' >&2
-    fi
-
     if is_running; then
         flock -u 7
         notify_pending_reports
         return 0
+    fi
+
+    if [[ -f "$CURSOR_THEME_SCRIPT" && ! -L "$CURSOR_THEME_SCRIPT" ]]; then
+        bash "$CURSOR_THEME_SCRIPT" reapply >/dev/null 2>&1 \
+            || printf 'quickshell.sh: could not reapply the saved Bibata cursor theme.\n' >&2
     fi
 
     nohup qs -c "$CONFIG_NAME" 7>&- 8>&- >>"$LOG_FILE" 2>&1 &

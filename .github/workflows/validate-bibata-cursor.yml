@@ -16,4 +16,6 @@ jobs:
         run: |
           bash -n config/hypr/scripts/quickshell_cursor_theme.sh
           bash -n tests/test-bibata-cursor-migration.sh
+          bash -n tests/test-bibata-cursor-options.sh
           bash tests/test-bibata-cursor-migration.sh
+          bash tests/test-bibata-cursor-options.sh

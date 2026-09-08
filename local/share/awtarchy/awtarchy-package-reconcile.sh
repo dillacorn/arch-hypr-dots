@@ -780,12 +780,10 @@ apply_bibata_cursor_replacement() {
   fi
 
   package_installed xcursor-comix || return 0
-  if ! managed_package xcursor-comix; then
-    log "xcursor-comix is installed but is not recorded as Awtarchy-owned; leaving it installed."
-    return 0
-  fi
+  local ownership_recorded=0
+  managed_package xcursor-comix && ownership_recorded=1
+  log "Removing retired xcursor-comix package after Bibata replacement..."
 
-  log "Removing retired Awtarchy-owned xcursor-comix package..."
   if ! as_root pacman -R --noconfirm xcursor-comix; then
     warn "Could not remove retired xcursor-comix; leaving it installed for a later retry."
     return 0
@@ -794,9 +792,15 @@ apply_bibata_cursor_replacement() {
     warn "xcursor-comix is still detected after package removal."
     return 0
   fi
-  forget_managed_packages xcursor-comix
-  log "Replaced Awtarchy-owned xcursor-comix with Bibata."
+  if (( ownership_recorded == 1 )); then
+    if ! forget_managed_packages xcursor-comix; then
+      warn "xcursor-comix was removed, but Awtarchy could not update its managed-package ledger."
+      return 0
+    fi
+  fi
+  log "Replaced retired xcursor-comix with Bibata."
 }
+
 migrate_lockscreen_retirement() {
   [[ "${AWTARCHY_LOCKSCREEN_RETIRE_CONFIRMED:-0}" == 1 ]] \
     || die "Lockscreen retirement requires an explicitly confirmed target."
@@ -807,25 +811,15 @@ migrate_lockscreen_retirement() {
 
   package_installed hyprlock || return 0
   local ownership_recorded=0
-  if managed_package hyprlock; then
-    ownership_recorded=1
-    log "Removing retired Awtarchy-owned Hyprlock package..."
-  elif [[ "${AWTARCHY_LOCKSCREEN_RETIRE_UNOWNED_CONFIRMED:-0}" == 1 ]]; then
-    log "Removing retired Hyprlock package after explicit confirmation..."
-  elif [[ -t 0 && -t 1 && -r /dev/tty && -w /dev/tty ]] \
-    && confirm_yes_no 'Hyprlock is no longer used by Awtarchy but was not recorded as Awtarchy-owned. Remove it now?' 0; then
-    log "Removing retired Hyprlock package after explicit confirmation..."
-  else
-    log "Hyprlock is installed but is not recorded as Awtarchy-owned; leaving it installed."
-    return 0
-  fi
+  managed_package hyprlock && ownership_recorded=1
+  log "Removing retired Hyprlock package after Quickshell lockscreen cutover..."
 
   if ! as_root pacman -R --noconfirm hyprlock; then
     warn "Could not remove retired Hyprlock; leaving it installed for a later retry."
     return 0
   fi
   if package_installed hyprlock; then
-    warn "Hyprlock is still detected after package removal."
+    warn "hyprlock is still detected after package removal."
     return 0
   fi
   if (( ownership_recorded == 1 )); then
@@ -833,10 +827,8 @@ migrate_lockscreen_retirement() {
       warn "Hyprlock was removed, but Awtarchy could not update its managed-package ledger."
       return 0
     fi
-    log "Removed retired Awtarchy-owned Hyprlock package."
-  else
-    log "Removed retired Hyprlock package after explicit confirmation."
   fi
+  log "Removed retired Hyprlock package."
 }
 
 flatpak_scope() {
