@@ -894,3 +894,6 @@ f7a1a210a1f1fff43aad7e6f429accd16ab551139db3267d91c6c773a05080ed	.config/quicksh
 
 # 2026-09-07 multi-monitor power menu shade.
 c6056cd69256ec44eea3bda7c54e798be7894239b2558d44218104ca87988171	.config/quickshell/awtarchy/PowerMenu.qml
+
+# 2026-09-07 native lockscreen cursor hiding.
+d70c5f2ef8f0efcdff92f42ea8ddc060fac6113aaca4b8cf5523209e2a2680c8\t.config/quickshell/awtarchy-lock/LockSurface.qml

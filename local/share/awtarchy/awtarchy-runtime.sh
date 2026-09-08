@@ -5849,6 +5849,7 @@ palette = {
     "foreground": color("QS_FOREGROUND", "W_COLOR", default="#d0d0d0"),
     "dark": color("QS_DARK", "W_ACTIVE_COLOR", default="#1a1a1a"),
     "muted": color("QS_MUTED", "W_MUTED", default="#404040"),
+    "lockAccent": f"#{active_border[:6]}",
 }
 
 micro = values.get("MICRO_COLORSCHEME", "").strip()

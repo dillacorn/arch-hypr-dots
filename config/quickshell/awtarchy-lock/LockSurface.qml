@@ -59,6 +59,7 @@ WlSessionLockSurface {
         anchors.fill: parent
         acceptedButtons: Qt.AllButtons
         hoverEnabled: true
+        cursorShape: Qt.BlankCursor
         onClicked: password.forceActiveFocus()
         onWheel: wheel => { wheel.accepted = true; }
     }
