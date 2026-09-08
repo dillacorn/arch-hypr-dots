@@ -40,7 +40,7 @@ contains "$BAR" '!workspaceFullscreenForMonitor(monitorName)' 'fullscreen hard-h
 contains "$SHELL" 'readonly property bool autoHide: BarState.autoHideFor(monitorName)' 'bar instance does not consume BarState auto-hide state'
 contains "$SHELL" 'exclusiveZone: autoHide ? 0 : BarState.barSizeFor(monitorName, vertical)' 'auto-hide mode still reserves the bar exclusive zone'
 contains "$SHELL" 'property bool autoHideRevealed: true' 'bar instance has no transient reveal state'
-contains "$SHELL" 'readonly property real autoHideOffset:' 'bar instance has no slide offset'
+contains "$SHELL" 'property real autoHideOffset:' 'bar instance has no animated slide offset'
 contains "$SHELL" 'duration: 170' 'bar auto-hide slide animation is missing or unexpectedly slow'
 contains "$SHELL" 'interval: 2000' 'initial auto-hide delay is missing'
 contains "$SHELL" 'interval: 700' 'pointer-leave auto-hide delay is missing'
