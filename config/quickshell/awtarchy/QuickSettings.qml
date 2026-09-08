@@ -135,7 +135,7 @@ Singleton {
         return ({
             monitors: [],
             brightness: { target: "", connector: "", current: null, max: null },
-            bar: { monitor: "", position: "top", enabled: true },
+            bar: { monitor: "", position: "top", enabled: true, auto_hide: false },
             night_light: {
                 temperature: null,
                 identity: "unknown",
@@ -1572,6 +1572,17 @@ Singleton {
                                             if (root.bottomEdgeLayout)
                                                 Qt.callLater(() => root.alignContentToBar());
                                         }
+                                    }
+
+                                    SettingsButton {
+                                        label: root.barStatus.auto_hide ? "Auto-hide: On" : "Auto-hide: Off"
+                                        active: Boolean(root.barStatus.auto_hide)
+                                        textSize: root.scaledText(9)
+                                        onClicked: root.queueAction([
+                                            "bar-auto-hide", root.activeMonitorName,
+                                            root.barStatus.auto_hide ? "false" : "true"
+                                        ], root.barStatus.auto_hide
+                                            ? "Disabling bar auto-hide…" : "Enabling bar auto-hide…")
                                     }
                                 }
 
