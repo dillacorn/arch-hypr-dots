@@ -37,7 +37,7 @@ assert_history_current() {
   local source="$1" rel="$2" hash
   hash="$(sha256sum "$source" | awk '{print $1}')"
   grep -Fq -- "${hash}"$'\t'"${rel}" "$HISTORY" \
-    || fail "managed history is missing the current hash for ${rel}"
+    || fail "managed history is missing ${hash}${IFS}${rel}"
 }
 
 bash -n "$RUNTIME"
@@ -67,7 +67,7 @@ contains "$NWG" 'cursor-theme=Bibata-Modern-Ice' \
 contains "$XRESOURCES" 'Xcursor.theme: Bibata-Modern-Ice' \
   'Xresources does not default to Bibata Modern Ice'
 
-# Quick Settings must expose both evidence-backed Bibata variants.
+# Quick Settings must expose the Bibata selector in both supported settings surfaces.
 contains "$FLYOUT" 'CursorThemeSettings {' \
   'Quick Settings settings panel does not host the cursor selector'
 contains "$FLYOUT" 'cursorThemeSection.implicitHeight' \
@@ -230,7 +230,7 @@ if grep -Fxq xcursor-comix "$managed"; then
   fail 'cursor migration did not remove xcursor-comix from the managed-package ledger'
 fi
 
-# Unowned old cursor packages are preserved even after Bibata becomes current.
+# Unowned old cursor packages are preserved when removal is not confirmed.
 printf '%s\n' xcursor-comix >"$state"
 : >"$managed"
 : >"$aur_log"
@@ -238,7 +238,7 @@ run_replacement
 grep -Fxq bibata-cursor-theme-bin "$state" \
   || fail 'unowned migration case did not install Bibata'
 grep -Fxq xcursor-comix "$state" \
-  || fail 'unowned xcursor-comix was removed without ownership evidence'
+  || fail 'unowned xcursor-comix was removed without confirmation'
 
 # A failed Bibata install must never remove the working old managed cursor.
 printf '%s\n' xcursor-comix >"$state"
@@ -331,10 +331,8 @@ contains "$data_home/nwg-look/gsettings" 'cursor-theme=Bibata-Modern-Classic' \
   'Classic cursor was not applied to nwg-look settings'
 contains "$cursor_home/.Xresources" 'Xcursor.theme: Bibata-Modern-Classic' \
   'Classic cursor was not applied to Xresources'
-[[ -f "$data_home/icons/Bibata-Modern-Ice/cursors/marker" ]] \
-  || fail 'Bibata Ice was not exposed in the user icon directory'
 [[ -f "$data_home/icons/Bibata-Modern-Classic/cursors/marker" ]] \
-  || fail 'Bibata Classic was not exposed in the user icon directory'
+  || fail 'selected Bibata Classic was not exposed in the user icon directory'
 contains "$data_home/icons/default/index.theme" 'Inherits=Bibata-Modern-Classic' \
   'Classic cursor was not applied to the user XCursor fallback alias'
 contains "$command_log" 'gsettings set org.gnome.desktop.interface cursor-theme Bibata-Modern-Classic' \
@@ -373,8 +371,10 @@ contains "$config_home/hypr/hyprland.lua" 'hl.env("HYPRCURSOR_THEME", "Bibata-Mo
   'Ice hyprcursor was not reapplied to Hyprland config'
 contains "$data_home/icons/default/index.theme" 'Inherits=Bibata-Modern-Ice' \
   'Ice cursor was not reapplied to the user XCursor fallback alias'
+[[ -f "$data_home/icons/Bibata-Modern-Ice/cursors/marker" ]] \
+  || fail 'selected Bibata Ice was not exposed in the user icon directory'
 
-if env "${cursor_env[@]}" "$CURSOR_SCRIPT" set amber >/dev/null 2>&1; then
+if env "${cursor_env[@]}" "$CURSOR_SCRIPT" set unsupported >/dev/null 2>&1; then
   fail 'cursor helper accepted an unsupported Bibata variant'
 fi
 
