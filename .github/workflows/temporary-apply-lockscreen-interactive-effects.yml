@@ -1,0 +1,57 @@
+name: Temporary Apply Lockscreen Interactive Effects
+
+on:
+  push:
+    branches:
+      - feature/lockscreen-interactive-effects
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.head_commit.message == 'Run lockscreen interactive effects patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+      - name: Apply exact patch
+        run: python3 .github/scripts/apply-lockscreen-interactive-effects.py
+      - name: Syntax validation
+        run: |
+          bash -n config/hypr/scripts/quickshell_application_state.sh
+          bash -n config/hypr/scripts/quickshell_lockscreen_audio.sh
+          bash -n tests/test-quickshell-lockscreen-interactive-effects.sh
+          bash -n tests/test-quickshell-lockscreen-runtime-regressions.sh
+          bash -n tests/test-quickshell-lockscreen-animation-preference.sh
+      - name: ShellCheck
+        run: |
+          shellcheck config/hypr/scripts/quickshell_application_state.sh
+          shellcheck config/hypr/scripts/quickshell_lockscreen_audio.sh
+          shellcheck tests/test-quickshell-lockscreen-interactive-effects.sh
+      - name: Focused lockscreen validation
+        run: |
+          bash tests/test-quickshell-lockscreen-interactive-effects.sh
+          bash tests/test-quickshell-lockscreen-runtime-regressions.sh
+          bash tests/test-quickshell-lockscreen-animation-preference.sh
+          bash tests/test-quickshell-lockscreen-foundation.sh
+      - name: Diff hygiene
+        run: git diff --check
+      - name: Commit tested implementation
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            config/hypr/scripts/quickshell_application_state.sh \
+            config/quickshell/awtarchy/BarState.qml \
+            config/quickshell/awtarchy/QuickSettings.qml \
+            config/quickshell/awtarchy-lock/LockSurface.qml \
+            tests/test-quickshell-lockscreen-runtime-regressions.sh \
+            tests/test-quickshell-lockscreen-animation-preference.sh
+          git commit -m 'Implement lockscreen interactive effects'
+          git push origin HEAD:feature/lockscreen-interactive-effects
