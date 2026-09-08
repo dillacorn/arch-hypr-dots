@@ -26,3 +26,40 @@ jobs:
           bash -n tests/test-bar-icon-display-options.sh
           shellcheck tests/test-bar-icon-display-options.sh
           bash tests/test-bar-icon-display-options.sh
+
+  apply-workspace-animation-default:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feature/default-no-workspace-animation'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Apply tested default
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('config/hypr/hyprland.lua')
+          text = path.read_text()
+          leaves = ('workspaces', 'workspacesIn', 'workspacesOut')
+          for leaf in leaves:
+              old = f'{{ leaf = "{leaf}", enabled = 1,'
+              new = f'{{ leaf = "{leaf}", enabled = 0,'
+              if text.count(old) != 1:
+                  raise SystemExit(f'expected exactly one enabled {leaf} animation')
+              text = text.replace(old, new)
+          path.write_text(text)
+          PY
+          sudo apt-get update >/dev/null
+          sudo apt-get install -y lua5.4 >/dev/null
+          bash tests/test-lua-validation.sh
+          git diff --check
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add config/hypr/hyprland.lua
+          git commit -m 'Disable regular workspace animations by default'
+          git push origin HEAD:feature/default-no-workspace-animation
