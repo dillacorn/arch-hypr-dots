@@ -78,4 +78,31 @@ bash "$MIGRATOR" "$live" "$MANAGED" "$backup"
 [[ "$(sha256sum "$live" | awk '{print $1}')" == "$before_hash" ]] || fail "migration is not idempotent"
 [[ "$(sha256sum "$backup" | awk '{print $1}')" == "$backup_hash" ]] || fail "idempotent migration rewrote the original backup"
 
+plain="${TMP}/plain-personal.lua"
+plain_backup="${TMP}/plain-personal.lua.backup"
+cat >"$plain" <<'EOF'
+-- personalized config from before Screen Share Guard existed
+hl.env("AWTARCHY_TEST_PLAIN_PERSONAL", "1")
+EOF
+bash "$MIGRATOR" "$plain" "$MANAGED" "$plain_backup"
+grep -Fq 'AWTARCHY_TEST_PLAIN_PERSONAL' "$plain" || fail "migration removed unrelated personal config"
+require_count "$plain" 'function awtarchy_screenshare_guard_set_group_v1' 1
+require_count "$plain" 'function awtarchy_screenshare_guard_status_v1' 1
+[[ -f "$plain_backup" ]] || fail "plain personalized config was not backed up"
+
+partial="${TMP}/partial.lua"
+partial_backup="${TMP}/partial.lua.backup"
+cat >"$partial" <<'EOF'
+-- malformed/partially hand-merged integration must not be guessed through
+function awtarchy_screenshare_guard_set_group_v1(target, enabled)
+    return false
+end
+EOF
+if bash "$MIGRATOR" "$partial" "$MANAGED" "$partial_backup" >/dev/null 2>&1; then
+    fail "partial Screen Share Guard integration was accepted for automatic migration"
+fi
+[[ ! -e "$partial_backup" ]] || fail "failed partial migration created a backup despite making no safe change"
+require_count "$partial" 'function awtarchy_screenshare_guard_set_group_v1' 1
+require_count "$partial" 'function awtarchy_screenshare_guard_status_v1' 0
+
 printf 'Screen Share Guard preserved hyprland.lua migration regression passed.\n'
