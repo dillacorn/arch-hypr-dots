@@ -85,6 +85,15 @@ if validate_candidate "$invalid_lua" '.config/hypr/invalid config.lua' </dev/nul
   fail "invalid Lua passed validation"
 fi
 
+grep -Fq '{ leaf = "workspaces", enabled = 0,' "$HYPRLAND_CONFIG" \
+  || fail "regular workspace transition animation is enabled by default"
+grep -Fq '{ leaf = "workspacesIn", enabled = 0,' "$HYPRLAND_CONFIG" \
+  || fail "workspace-in transition animation is enabled by default"
+grep -Fq '{ leaf = "workspacesOut", enabled = 0,' "$HYPRLAND_CONFIG" \
+  || fail "workspace-out transition animation is enabled by default"
+grep -Fq '{ leaf = "specialWorkspace", enabled = 1,' "$HYPRLAND_CONFIG" \
+  || fail "special workspace animation default changed unexpectedly"
+
 bash "$ROOT/tests/test-color-adjustment-keybinds.sh"
 
 printf 'Lua validation tests passed.\n'
