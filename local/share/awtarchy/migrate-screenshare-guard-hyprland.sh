@@ -32,8 +32,8 @@ EXPECTED_LEGACY = (
     'Mullvad Browser',
     'localsend|LocalSend',
     'telegram-desktop',
-    'Element|io\\.element',
-    'discord|com\\.discordapp',
+    'Element|',
+    'discord|',
     'teams_for_linux',
     'messages|Messages',
 )
