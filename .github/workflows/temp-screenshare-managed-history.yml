@@ -1,0 +1,37 @@
+name: One-use Screen Share Guard managed history bridge
+
+on:
+  push:
+    branches:
+      - fix/screenshare-guard-runtime-apply
+    paths:
+      - .github/workflows/temp-screenshare-managed-history.yml
+
+permissions:
+  contents: write
+
+jobs:
+  append-managed-hash:
+    if: github.repository == 'dillacorn/awtarchy' && github.ref == 'refs/heads/fix/screenshare-guard-runtime-apply'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: fix/screenshare-guard-runtime-apply
+      - name: Append exact Screen Share Guard stock hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          entry=$'ac499f3d06b33228ac77613be00e93978b0c3aabc5aa8d6a6e2c0ee97d9f94da\t.config/hypr/scripts/screenshare_guard.sh'
+          if ! grep -Fqx -- "$entry" "$history"; then
+            printf '\n%s\n%s\n' \
+              '# 2026-09-08 Screen Share Guard runtime apply compatibility fix.' \
+              "$entry" >>"$history"
+            git diff --check
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -- "$history"
+            git commit -m 'Record Screen Share Guard managed hash'
+            git push origin HEAD:refs/heads/fix/screenshare-guard-runtime-apply
+          fi
