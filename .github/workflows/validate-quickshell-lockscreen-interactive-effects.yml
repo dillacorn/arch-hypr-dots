@@ -19,6 +19,7 @@ jobs:
         run: |
           bash -n tests/test-quickshell-lockscreen-interactive-effects.sh
           bash -n tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+          bash -n tests/test-quickshell-lockscreen-interactive-managed-history.sh
           if [[ -f config/hypr/scripts/quickshell_lockscreen_audio.sh ]]; then
             bash -n config/hypr/scripts/quickshell_lockscreen_audio.sh
           fi
@@ -26,6 +27,7 @@ jobs:
         run: |
           shellcheck tests/test-quickshell-lockscreen-interactive-effects.sh
           shellcheck tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+          shellcheck tests/test-quickshell-lockscreen-interactive-managed-history.sh
           if [[ -f config/hypr/scripts/quickshell_lockscreen_audio.sh ]]; then
             shellcheck config/hypr/scripts/quickshell_lockscreen_audio.sh
           fi
@@ -35,3 +37,5 @@ jobs:
         run: |
           bash tests/test-quickshell-lockscreen-interactive-effects.sh
           bash tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+      - name: Managed history contracts
+        run: bash tests/test-quickshell-lockscreen-interactive-managed-history.sh
