@@ -24,6 +24,7 @@ jobs:
           bash -n tests/test-quickshell-lockscreen-foundation.sh
           bash -n tests/test-quickshell-lockscreen-runtime-regressions.sh
           bash -n tests/test-quickshell-lockscreen-animation-preference.sh
+          bash -n tests/test-quickshell-lockscreen-theme-update.sh
           bash -n tests/test-quickshell-lockscreen-manager-mode.sh
           bash -n tests/test-quickshell-lockscreen-git-deployment.sh
           bash -n tests/test-quickshell-lockscreen-no-reload.sh
@@ -39,6 +40,7 @@ jobs:
           shellcheck tests/test-quickshell-lockscreen-foundation.sh
           shellcheck tests/test-quickshell-lockscreen-runtime-regressions.sh
           shellcheck tests/test-quickshell-lockscreen-animation-preference.sh
+          shellcheck tests/test-quickshell-lockscreen-theme-update.sh
           shellcheck tests/test-quickshell-lockscreen-manager-mode.sh
           shellcheck tests/test-quickshell-lockscreen-git-deployment.sh
           shellcheck tests/test-quickshell-lockscreen-no-reload.sh
@@ -53,6 +55,7 @@ jobs:
           bash tests/test-quickshell-lockscreen-foundation.sh
           bash tests/test-quickshell-lockscreen-runtime-regressions.sh
           bash tests/test-quickshell-lockscreen-animation-preference.sh
+          bash tests/test-quickshell-lockscreen-theme-update.sh
           bash tests/test-quickshell-lockscreen-manager-mode.sh
           bash tests/test-quickshell-lockscreen-git-deployment.sh
           bash tests/test-quickshell-lockscreen-no-reload.sh
