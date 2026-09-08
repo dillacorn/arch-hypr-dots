@@ -292,9 +292,9 @@ for _, animation in ipairs({
     { leaf = "layersOut", enabled = 1, speed = 1.5, bezier = "fastOut", style = "fade" },
     { leaf = "fadeLayersIn", enabled = 1, speed = 1.4, bezier = "softFade" },
     { leaf = "fadeLayersOut", enabled = 1, speed = 1.3, bezier = "softFade" },
-    { leaf = "workspaces", enabled = 1, speed = 1.8, bezier = "easeInOutSlight", style = "fade" },
-    { leaf = "workspacesIn", enabled = 1, speed = 1.3, bezier = "softFade", style = "fade" },
-    { leaf = "workspacesOut", enabled = 1, speed = 1.4, bezier = "softFade", style = "fade" },
+    { leaf = "workspaces", enabled = 0, speed = 1.8, bezier = "easeInOutSlight", style = "fade" },
+    { leaf = "workspacesIn", enabled = 0, speed = 1.3, bezier = "softFade", style = "fade" },
+    { leaf = "workspacesOut", enabled = 0, speed = 1.4, bezier = "softFade", style = "fade" },
     { leaf = "specialWorkspace", enabled = 1, speed = 1.9, bezier = "easeInOutSlight", style = "fade" },
 }) do
     hl.animation(animation)
