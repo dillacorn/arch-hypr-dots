@@ -12,15 +12,17 @@ Singleton {
 
     // Preserve the existing wlogout layout order and keybinds.
     readonly property var actions: [
-        { label: "", text: "Lock (L)", key: "l", command: "~/.config/hypr/scripts/awtarchy_lock.sh lock" },
-        { label: "", text: "Hibernate (H)", key: "h", command: "~/.config/hypr/scripts/awtarchy_lock.sh hibernate" },
-        { label: "", text: "Reboot (R)", key: "r", command: "systemctl reboot" },
-        { label: "", text: "Shutdown (S)", key: "s", command: "systemctl poweroff" },
-        { label: "", text: "Logout (O)", key: "o", command: "loginctl kill-session \"$XDG_SESSION_ID\"" },
-        { label: "", text: "Suspend (Z)", key: "z", command: "~/.config/hypr/scripts/awtarchy_lock.sh suspend" }
+        { label: "", text: "Lock (L)", key: "l", command: "~/.config/hypr/scripts/awtarchy_lock.sh lock && ~/.config/hypr/scripts/awtarchy_lock.sh wait-secure 5", closeAfterSuccess: true },
+        { label: "", text: "Hibernate (H)", key: "h", command: "~/.config/hypr/scripts/awtarchy_lock.sh hibernate", closeAfterSuccess: true },
+        { label: "", text: "Reboot (R)", key: "r", command: "systemctl reboot", closeAfterSuccess: false },
+        { label: "", text: "Shutdown (S)", key: "s", command: "systemctl poweroff", closeAfterSuccess: false },
+        { label: "", text: "Logout (O)", key: "o", command: "loginctl kill-session \"$XDG_SESSION_ID\"", closeAfterSuccess: false },
+        { label: "", text: "Suspend (Z)", key: "z", command: "~/.config/hypr/scripts/awtarchy_lock.sh suspend", closeAfterSuccess: true }
     ]
     readonly property color shadeColor: Qt.rgba(
         Theme.background.r, Theme.background.g, Theme.background.b, 0.85)
+    property bool actionPending: false
+    property bool closeAfterActionSuccess: false
 
     function focusedScreen() {
         const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
@@ -36,7 +38,16 @@ Singleton {
     }
 
     function openFocused() { openForScreen(focusedScreen()); }
-    function close() { powerWindow.visible = false; }
+    function close() {
+        if (actionPending)
+            return;
+        powerWindow.visible = false;
+    }
+    function finishHandoffClose() {
+        actionPending = false;
+        closeAfterActionSuccess = false;
+        powerWindow.visible = false;
+    }
     function toggleForScreen(targetScreen) {
         if (!FlyoutManager.acceptToggle("power"))
             return;
@@ -45,8 +56,28 @@ Singleton {
     function toggleFocused() { toggleForScreen(focusedScreen()); }
 
     function runAction(action) {
-        close();
-        Quickshell.execDetached(["sh", "-lc", action.command]);
+        if (actionPending)
+            return;
+
+        actionPending = true;
+        closeAfterActionSuccess = action.closeAfterSuccess === true;
+        actionProcess.command = ["sh", "-lc", action.command];
+        actionProcess.running = true;
+    }
+
+    Process {
+        id: actionProcess
+
+        onExited: exitCode => {
+            if (exitCode !== 0) {
+                root.actionPending = false;
+                root.closeAfterActionSuccess = false;
+                return;
+            }
+
+            if (root.closeAfterActionSuccess)
+                root.finishHandoffClose();
+        }
     }
 
     IpcHandler {
