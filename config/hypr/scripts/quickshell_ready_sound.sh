@@ -14,6 +14,7 @@ AUDIO_POLL_SECS="${AUDIO_POLL_SECS:-0.10}"
 QUIET_POLLS="${QUIET_POLLS:-2}"
 SOUND_FILE="${SOUND_FILE:-$HOME/.config/hypr/sounds/awtarchy-login.mp3}"
 QUICKSHELL_MANAGER="${QUICKSHELL_MANAGER:-$HOME/.config/hypr/scripts/quickshell.sh}"
+SUBMAP_STATE_HELPER="${SUBMAP_STATE_HELPER:-$HOME/.config/hypr/scripts/submap_state.sh}"
 USB_REFRESH_LOCK_FILE="${USB_REFRESH_LOCK_FILE:-/run/awtarchy/usb-refresh/$(id -u).active}"
 SCRIPT_LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/quickshell_ready_sound.lock"
 
@@ -117,6 +118,13 @@ play_with_retry() {
 if have flock; then
     exec 9>"$SCRIPT_LOCK_FILE"
     flock -n 9 || exit 0
+fi
+
+# This script is already part of every normal Awtarchy Hyprland login, including
+# personalized hyprland.lua installs. Initialize the compatibility state link
+# before waiting for Quickshell so the preferred submap survives login/reboot.
+if [[ -r "$SUBMAP_STATE_HELPER" ]]; then
+    bash "$SUBMAP_STATE_HELPER" init >/dev/null 2>&1 || true
 fi
 
 network_backend_may_need_restart=0

@@ -1,0 +1,79 @@
+name: Validate Quickshell Lockscreen Foundation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Syntax validation
+        run: |
+          python3 -m py_compile local/share/awtarchy/awtarchy-lockscreen-hyprland-migrate.py
+          bash -n config/hypr/scripts/awtarchy_lock.sh
+          bash -n local/share/awtarchy/awtarchy-runtime.sh
+          bash -n local/share/awtarchy/awtarchy-package-reconcile.sh
+          bash -n tests/test-quickshell-lockscreen-foundation.sh
+          bash -n tests/test-quickshell-lockscreen-runtime-regressions.sh
+          bash -n tests/test-quickshell-lockscreen-animation-preference.sh
+          bash -n tests/test-quickshell-lockscreen-theme-update.sh
+          bash -n tests/test-quickshell-lockscreen-cursor.sh
+          bash -n tests/test-quickshell-power-menu-action-handoff.sh
+          bash -n tests/test-workspace-animation-disabled.sh
+          bash -n tests/test-quickshell-lockscreen-manager-mode.sh
+          bash -n tests/test-quickshell-lockscreen-git-deployment.sh
+          bash -n tests/test-quickshell-lockscreen-no-reload.sh
+          bash -n tests/test-quickshell-lockscreen-migration.sh
+          bash -n tests/test-quickshell-lockscreen-migration-failclosed.sh
+          bash -n tests/test-quickshell-lockscreen-cutover.sh
+          bash -n tests/test-quickshell-lockscreen-live-hyprland-migration.sh
+          bash -n tests/test-quickshell-lockscreen-power-safety.sh
+          bash -n tests/test-quickshell-lockscreen-user-cutover.sh
+      - name: ShellCheck
+        run: |
+          shellcheck config/hypr/scripts/awtarchy_lock.sh
+          shellcheck tests/test-quickshell-lockscreen-foundation.sh
+          shellcheck tests/test-quickshell-lockscreen-runtime-regressions.sh
+          shellcheck tests/test-quickshell-lockscreen-animation-preference.sh
+          shellcheck tests/test-quickshell-lockscreen-theme-update.sh
+          shellcheck tests/test-quickshell-lockscreen-cursor.sh
+          shellcheck tests/test-quickshell-power-menu-action-handoff.sh
+          shellcheck tests/test-workspace-animation-disabled.sh
+          shellcheck tests/test-quickshell-lockscreen-manager-mode.sh
+          shellcheck tests/test-quickshell-lockscreen-git-deployment.sh
+          shellcheck tests/test-quickshell-lockscreen-no-reload.sh
+          shellcheck tests/test-quickshell-lockscreen-migration.sh
+          shellcheck tests/test-quickshell-lockscreen-migration-failclosed.sh
+          shellcheck tests/test-quickshell-lockscreen-cutover.sh
+          shellcheck tests/test-quickshell-lockscreen-live-hyprland-migration.sh
+          shellcheck tests/test-quickshell-lockscreen-power-safety.sh
+          shellcheck tests/test-quickshell-lockscreen-user-cutover.sh
+      - name: Foundation contracts
+        run: |
+          bash tests/test-quickshell-lockscreen-foundation.sh
+          bash tests/test-quickshell-lockscreen-runtime-regressions.sh
+          bash tests/test-quickshell-lockscreen-animation-preference.sh
+          bash tests/test-quickshell-lockscreen-cursor.sh
+          bash tests/test-quickshell-lockscreen-theme-update.sh
+          bash tests/test-quickshell-power-menu-action-handoff.sh
+          bash tests/test-workspace-animation-disabled.sh
+          bash tests/test-quickshell-lockscreen-manager-mode.sh
+          bash tests/test-quickshell-lockscreen-git-deployment.sh
+          bash tests/test-quickshell-lockscreen-no-reload.sh
+      - name: Migration contracts
+        run: |
+          bash tests/test-quickshell-lockscreen-migration.sh
+          bash tests/test-quickshell-lockscreen-migration-failclosed.sh
+          bash tests/test-quickshell-lockscreen-cutover.sh
+          bash tests/test-quickshell-lockscreen-live-hyprland-migration.sh
+          bash tests/test-quickshell-lockscreen-user-cutover.sh
+      - name: Secure power-transition contract
+        run: bash tests/test-quickshell-lockscreen-power-safety.sh
