@@ -780,12 +780,18 @@ apply_bibata_cursor_replacement() {
   fi
 
   package_installed xcursor-comix || return 0
-  if ! managed_package xcursor-comix; then
-    log "xcursor-comix is installed but is not recorded as Awtarchy-owned; leaving it installed."
+  if managed_package xcursor-comix; then
+    log "Removing retired Awtarchy-owned xcursor-comix package..."
+  elif [[ "${AWTARCHY_BIBATA_REMOVE_XCURSOR_COMIX_CONFIRMED:-0}" == 1 ]]; then
+    log "Removing retired xcursor-comix package after explicit confirmation..."
+  elif [[ -t 0 && -t 1 && -r /dev/tty && -w /dev/tty ]] \
+    && confirm_yes_no 'Bibata replaces xcursor-comix for Awtarchy. Uninstall xcursor-comix now?' 1; then
+    log "Removing retired xcursor-comix package after explicit confirmation..."
+  else
+    log "Keeping xcursor-comix because removal was not confirmed."
     return 0
   fi
 
-  log "Removing retired Awtarchy-owned xcursor-comix package..."
   if ! as_root pacman -R --noconfirm xcursor-comix; then
     warn "Could not remove retired xcursor-comix; leaving it installed for a later retry."
     return 0
@@ -794,8 +800,12 @@ apply_bibata_cursor_replacement() {
     warn "xcursor-comix is still detected after package removal."
     return 0
   fi
-  forget_managed_packages xcursor-comix
-  log "Replaced Awtarchy-owned xcursor-comix with Bibata."
+  if managed_package xcursor-comix; then
+    forget_managed_packages xcursor-comix
+    log "Replaced Awtarchy-owned xcursor-comix with Bibata."
+  else
+    log "Removed retired xcursor-comix after explicit confirmation."
+  fi
 }
 migrate_lockscreen_retirement() {
   [[ "${AWTARCHY_LOCKSCREEN_RETIRE_CONFIRMED:-0}" == 1 ]] \
@@ -825,7 +835,7 @@ migrate_lockscreen_retirement() {
     return 0
   fi
   if package_installed hyprlock; then
-    warn "Hyprlock is still detected after package removal."
+    warn "hyprlock is still detected after package removal."
     return 0
   fi
   if (( ownership_recorded == 1 )); then
