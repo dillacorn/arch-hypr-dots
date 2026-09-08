@@ -149,3 +149,7 @@ jobs:
           test "$(jq -r .targetCommitish <<<"$release_json")" = "$TARGET_SHA"
           tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v3.6.1" --jq .object.sha)"
           test "$tag_sha" = "$TARGET_SHA"
+      - name: Delete one-use release bridge branch
+        if: success()
+        shell: bash
+        run: git push origin --delete release/v3.6.1-bridge
