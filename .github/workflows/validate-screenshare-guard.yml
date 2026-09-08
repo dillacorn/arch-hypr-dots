@@ -17,6 +17,7 @@ on:
       - 'config/quickshell/awtarchy/FlyoutSettings.qml'
       - 'local/share/awtarchy/awtarchy-runtime.sh'
       - 'local/share/awtarchy/migrate-screenshare-guard-hyprland.sh'
+      - 'local/share/awtarchy/quickshell-managed-history.sha256'
       - 'tests/test-screenshare-guard-controls.sh'
       - 'tests/test-screenshare-guard-runtime-apply.sh'
       - 'tests/test-screenshare-guard-preserved-hyprland-migration.sh'
