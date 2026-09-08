@@ -1,4 +1,4 @@
-name: TEMP stacked UI TDD
+name: TEMP stacked UI implementation
 
 on:
   pull_request:
@@ -6,18 +6,42 @@ on:
       - feature/screenshare-guard-controls
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  focused-tests:
+  implement-and-verify:
+    if: github.event.pull_request.head.ref == 'feature/quicksettings-tips-workspace-visibility'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Run focused tests
+        with:
+          ref: feature/quicksettings-tips-workspace-visibility
+          fetch-depth: 0
+      - name: Install test dependencies
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+      - name: Apply approved UI changes
+        run: python3 .github/scripts/temp-apply-tips-workspace-visibility.py
+      - name: Focused validation
         run: |
-          rc=0
-          bash tests/test-quicksettings-tips-header.sh || rc=1
-          bash tests/test-workspace-bar-visibility.sh || rc=1
-          exit "$rc"
+          bash -n config/hypr/scripts/quickshell_application_state.sh
+          shellcheck config/hypr/scripts/quickshell_application_state.sh
+          bash tests/test-quicksettings-tips-header.sh
+          bash tests/test-workspace-bar-visibility.sh
+          bash tests/test-quick-settings-bar-customize-flow.sh
+          bash tests/test-bar-icon-customization.sh
+          bash tests/test-flyout-runtime-centering.sh
+          bash tests/test-bar-control-actions.sh
+          bash tests/test-workspace-focus-highlight.sh
+          bash tests/test-screenshare-guard-controls.sh
+          git diff --check
+      - name: Commit candidate
+        run: |
+          git config user.name dillacorn
+          git config user.email '28743863+dillacorn@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No candidate changes to commit.'
+            exit 0
+          fi
+          git commit -m 'Add workspace bar visibility and Tips shortcut'
+          git push origin HEAD:feature/quicksettings-tips-workspace-visibility
