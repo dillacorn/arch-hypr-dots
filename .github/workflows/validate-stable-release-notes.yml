@@ -39,3 +39,113 @@ jobs:
         run: bash tests/test-stable-release-notes-validator.sh
       - name: Canonical installation and update docs
         run: bash tests/test-install-update-docs.sh
+
+  publish-v3-6-1:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.head_ref == 'release/v3.6.1-bridge' &&
+      github.base_ref == 'main' &&
+      github.event.pull_request.title == 'Publish v3.6.1 release bridge'
+    needs: release-notes-contract
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: 42acef0ecdd44e735467bb319961d6f74326aee0
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+      - name: Build and validate proposed v3.6.1 release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > proposed-release.md <<'EOF_RELEASE'
+          # Awtarchy v3.6.1 Quickshell
+
+          Awtarchy v3.6.1 adds optional per-monitor bar auto-hide with edge reveal while preserving the existing constant-visible bar and independent workspace hard-hide behavior.
+
+          ## Install and update
+
+          Fresh installation: [INSTALL.md](https://github.com/dillacorn/awtarchy/blob/main/INSTALL.md)
+
+          Existing Awtarchy installations and stable updates: [UPDATING.md](https://github.com/dillacorn/awtarchy/blob/main/UPDATING.md)
+
+          Quick update:
+
+          ```bash
+          awtarchy update
+          ```
+
+          ## Bar auto-hide
+
+          - Adds optional per-monitor auto-hide; constant visibility remains the default.
+          - `CTRL+SUPER+ALT+B` toggles auto-hide for the focused display. Quick Settings exposes the same state directly in the Bar controls and in Appearance.
+          - Auto-hidden bars slide fully off-screen and reveal from a transparent 2 px activation edge on the configured top, bottom, left, or right edge.
+          - Interaction and active flyouts keep the bar revealed; leaving the bar hides it after a short delay.
+          - Workspace visibility remains an independent hard hide, so a workspace-hidden bar cannot edge-reveal. Fullscreen, idle, and disabled-bar suppression retain the same precedence.
+          - Auto-hide uses a non-reserving bar mode so tiled windows do not resize whenever the bar appears.
+
+          ## Known issue
+
+          - Bluetooth suspend/resume issue #146 remains evidence-gated and unresolved; v3.6.1 does not claim to change it.
+
+          ## Validation
+
+          - Exact release target: `42acef0ecdd44e735467bb319961d6f74326aee0`.
+          - All 13 merged-main push workflows triggered for the release target completed successfully.
+          - Auto-hide, edge reveal, focused-display toggling, and the final 100 ms edge-reveal responsiveness were runtime-tested on Hyprland before release.
+
+          ## Post-release updates
+
+          _Placeholder for possible tested post-release patches to v3.6.1._
+          EOF_RELEASE
+          gh release view v3.6.0 --repo "$GITHUB_REPOSITORY" --json body --jq .body > previous-release.md
+          python3 .github/scripts/validate-stable-release-notes.py \
+            --version v3.6.1 \
+            --notes proposed-release.md \
+            --previous previous-release.md
+      - name: Verify exact release target is still current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          test "$main_sha" = "$TARGET_SHA"
+          if gh release view v3.6.1 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'v3.6.1 release already exists' >&2
+            exit 1
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v3.6.1" >/dev/null 2>&1; then
+            echo 'v3.6.1 tag already exists' >&2
+            exit 1
+          fi
+      - name: Publish v3.6.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          test "$main_sha" = "$TARGET_SHA"
+          gh release create v3.6.1 \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$TARGET_SHA" \
+            --title 'Awtarchy v3.6.1 Quickshell' \
+            --notes-file proposed-release.md \
+            --latest
+      - name: Revalidate published release and exact tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view v3.6.1 --repo "$GITHUB_REPOSITORY" --json body --jq .body > published-release.md
+          python3 .github/scripts/validate-stable-release-notes.py \
+            --version v3.6.1 \
+            --notes published-release.md \
+            --previous previous-release.md
+          release_json="$(gh release view v3.6.1 --repo "$GITHUB_REPOSITORY" --json tagName,name,isDraft,isPrerelease,targetCommitish)"
+          test "$(jq -r .tagName <<<"$release_json")" = 'v3.6.1'
+          test "$(jq -r .name <<<"$release_json")" = 'Awtarchy v3.6.1 Quickshell'
+          test "$(jq -r .isDraft <<<"$release_json")" = 'false'
+          test "$(jq -r .isPrerelease <<<"$release_json")" = 'false'
+          test "$(jq -r .targetCommitish <<<"$release_json")" = "$TARGET_SHA"
+          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v3.6.1" --jq .object.sha)"
+          test "$tag_sha" = "$TARGET_SHA"
