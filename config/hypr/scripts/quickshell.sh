@@ -85,6 +85,7 @@ ensure_state() {
                 .[$m] = ({
                     position:"top",
                     enabled:true,
+                    auto_hide:false,
                     bar_size:0,
                     icon_scale:100,
                     text_scale:100,
@@ -407,6 +408,11 @@ getenabled() {
     jq -r --arg monitor "$1" '(if .monitors[$monitor].enabled == null then true else .monitors[$monitor].enabled end) | if . then "true" else "false" end' "$STATE_FILE"
 }
 
+getautohide() {
+    ensure_state
+    jq -r --arg monitor "$1" '(.monitors[$monitor].auto_hide // false) | if . then "true" else "false" end' "$STATE_FILE"
+}
+
 getsize() {
     ensure_state
     jq -r --arg monitor "$1" '(.monitors[$monitor].bar_size // 0) | tonumber' "$STATE_FILE"
@@ -466,6 +472,18 @@ set_monitor_enabled() {
     ensure_state
     tmp="${STATE_FILE}.tmp.$$"
     jq --arg monitor "$monitor" --argjson enabled "$enabled" '.monitors[$monitor].enabled = $enabled' "$STATE_FILE" >"$tmp"
+    mv -f "$tmp" "$STATE_FILE"
+}
+
+set_monitor_auto_hide() {
+    local monitor="$1" enabled="$2" tmp
+    case "$enabled" in
+        true|false) ;;
+        *) printf 'quickshell.sh: auto-hide must be true or false\n' >&2; exit 2 ;;
+    esac
+    ensure_state
+    tmp="${STATE_FILE}.tmp.$$"
+    jq --arg monitor "$monitor" --argjson enabled "$enabled" '.monitors[$monitor].auto_hide = $enabled' "$STATE_FILE" >"$tmp"
     mv -f "$tmp" "$STATE_FILE"
 }
 
@@ -589,6 +607,7 @@ copy_bar_settings() {
         .monitors[$source] as $source_state
         | ($source_state | {
             position,
+            auto_hide,
             bar_size,
             icon_scale,
             text_scale,
@@ -619,6 +638,7 @@ reset_mon() {
         .monitors[$monitor] = {
             position:"top",
             enabled:true,
+            auto_hide:false,
             bar_size:0,
             icon_scale:100,
             text_scale:100,
@@ -661,6 +681,15 @@ toggle_mon() {
         set_monitor_enabled "$monitor" false
     else
         set_monitor_enabled "$monitor" true
+    fi
+}
+
+toggle_auto_hide_mon() {
+    local monitor="$1"
+    if [[ "$(getautohide "$monitor")" == "true" ]]; then
+        set_monitor_auto_hide "$monitor" false
+    else
+        set_monitor_auto_hide "$monitor" true
     fi
 }
 
@@ -722,8 +751,10 @@ global:
 focused monitor:
   focused-monitor
   toggle-focused
+  toggle-autohide-focused
   getpos-focused
   getenabled-focused
+  getautohide-focused
   getsize-focused
   getscale-focused
   gettextscale-focused
@@ -735,6 +766,7 @@ focused monitor:
   getshowtemp-focused
   getshowmemory-focused
   setenabled-focused <true|false>
+  setautohide-focused <true|false>
   setpos-focused <top|bottom|left|right>
   setsize-focused <0|20-80>
   setscale-focused <50-200>
@@ -752,8 +784,10 @@ focused monitor:
 
 per monitor:
   toggle-mon <MON>
+  toggle-autohide-mon <MON>
   getpos <MON>
   getenabled <MON>
+  getautohide <MON>
   getsize <MON>
   getscale <MON>
   gettextscale <MON>
@@ -765,6 +799,7 @@ per monitor:
   getshowtemp <MON>
   getshowmemory <MON>
   setenabled <MON> <true|false>
+  setautohide <MON> <true|false>
   setpos <MON> <top|bottom|left|right>
   setsize <MON> <0|20-80>
   setscale <MON> <50-200>
@@ -782,6 +817,7 @@ per monitor:
 bar_size 0 means Awtarchy defaults: 28px horizontal, 36px vertical.
 icon_scale and text_scale are percentages; 100 preserves the tuned defaults.
 bar_transparency is a percentage; 0 is fully opaque and 100 is fully transparent.
+Auto-hide is disabled by default and is configured independently per monitor.
 Running application icons are visible by default; task and tray icons use original colors by default.
 CPU, temperature and memory modules are visible by default.
 USAGE
@@ -816,10 +852,14 @@ case "$cmd" in
     focused-monitor) focused_monitor ;;
     toggle-focused) monitor="$(focused_monitor)"; toggle_mon "$monitor" ;;
     toggle-mon) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; toggle_mon "$2" ;;
+    toggle-autohide-focused) monitor="$(focused_monitor)"; toggle_auto_hide_mon "$monitor" ;;
+    toggle-autohide-mon) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; toggle_auto_hide_mon "$2" ;;
     getpos) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getpos "$2" ;;
     getpos-focused) monitor="$(focused_monitor)"; getpos "$monitor" ;;
     getenabled) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getenabled "$2" ;;
     getenabled-focused) monitor="$(focused_monitor)"; getenabled "$monitor" ;;
+    getautohide) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getautohide "$2" ;;
+    getautohide-focused) monitor="$(focused_monitor)"; getautohide "$monitor" ;;
     getsize) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getsize "$2" ;;
     getsize-focused) monitor="$(focused_monitor)"; getsize "$monitor" ;;
     getscale) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; getscale "$2" ;;
@@ -842,6 +882,8 @@ case "$cmd" in
     getshowmemory-focused) monitor="$(focused_monitor)"; getshowmemory "$monitor" ;;
     setenabled) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_enabled "$2" "$3" ;;
     setenabled-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; set_monitor_enabled "$monitor" "$2" ;;
+    setautohide) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; set_monitor_auto_hide "$2" "$3" ;;
+    setautohide-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; set_monitor_auto_hide "$monitor" "$2" ;;
     setpos) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; setpos "$2" "$3" ;;
     setpos-focused) [[ -n "${2:-}" ]] || { usage >&2; exit 2; }; monitor="$(focused_monitor)"; setpos "$monitor" "$2" ;;
     setsize) [[ -n "${2:-}" && -n "${3:-}" ]] || { usage >&2; exit 2; }; setsize "$2" "$3" ;;
