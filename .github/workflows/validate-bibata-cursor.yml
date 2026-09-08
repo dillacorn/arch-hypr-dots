@@ -19,3 +19,42 @@ jobs:
           bash -n tests/test-bibata-cursor-options.sh
           bash tests/test-bibata-cursor-migration.sh
           bash tests/test-bibata-cursor-options.sh
+
+  register-managed-history:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/fix/v3.6.0-retired-package-cleanup' && github.actor == 'dillacorn'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: fix/v3.6.0-retired-package-cleanup
+      - name: Append current managed stock hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          changed=0
+          while IFS='|' read -r source managed; do
+            hash="$(sha256sum "$source" | awk '{print $1}')"
+            entry="${hash}"$'\t'"${managed}"
+            if ! grep -Fxq -- "$entry" "$history"; then
+              if (( changed == 0 )); then
+                printf '\n# 2026-09-08 Bibata full variant matrix and Quickshell start fast-path stock hashes.\n' >>"$history"
+              fi
+              printf '%s\n' "$entry" >>"$history"
+              changed=1
+            fi
+          done <<'EOF'
+          config/hypr/scripts/quickshell_application_state.sh|.config/hypr/scripts/quickshell_application_state.sh
+          config/hypr/scripts/quickshell_cursor_theme.sh|.config/hypr/scripts/quickshell_cursor_theme.sh
+          config/quickshell/awtarchy/CursorThemeSettings.qml|.config/quickshell/awtarchy/CursorThemeSettings.qml
+          config/hypr/scripts/quickshell.sh|.config/hypr/scripts/quickshell.sh
+          EOF
+          (( changed == 1 )) || exit 0
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "$history"
+          git commit -m 'Register v3.6.0 managed stock hashes'
+          git push origin HEAD:fix/v3.6.0-retired-package-cleanup
