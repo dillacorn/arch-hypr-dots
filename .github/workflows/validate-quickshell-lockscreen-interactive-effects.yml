@@ -1,0 +1,31 @@
+name: Validate Quickshell Lockscreen Interactive Effects
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+      - name: Syntax validation
+        run: |
+          bash -n tests/test-quickshell-lockscreen-interactive-effects.sh
+          if [[ -f config/hypr/scripts/quickshell_lockscreen_audio.sh ]]; then
+            bash -n config/hypr/scripts/quickshell_lockscreen_audio.sh
+          fi
+      - name: ShellCheck
+        run: |
+          shellcheck tests/test-quickshell-lockscreen-interactive-effects.sh
+          if [[ -f config/hypr/scripts/quickshell_lockscreen_audio.sh ]]; then
+            shellcheck config/hypr/scripts/quickshell_lockscreen_audio.sh
+          fi
+      - name: Interactive effects contracts
+        run: bash tests/test-quickshell-lockscreen-interactive-effects.sh
