@@ -17,5 +17,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq
       - name: Run focused tests
         run: |
-          bash tests/test-quicksettings-tips-header.sh
-          bash tests/test-workspace-bar-visibility.sh
+          rc=0
+          bash tests/test-quicksettings-tips-header.sh || rc=1
+          bash tests/test-workspace-bar-visibility.sh || rc=1
+          exit "$rc"
