@@ -39,3 +39,98 @@ jobs:
         run: bash tests/test-stable-release-notes-validator.sh
       - name: Canonical installation and update docs
         run: bash tests/test-install-update-docs.sh
+
+  publish-v3-6-0:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.ref == 'release/v3.6.0-bridge' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.title == 'Release bridge: publish v3.6.0'
+    needs: release-notes-contract
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact release bridge
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: release/v3.6.0-bridge
+          fetch-depth: 0
+
+      - name: Validate and publish v3.6.0
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: 271595d1e78d1cd48f68795e6c1f3fcc060c4471
+        run: |
+          set -euo pipefail
+
+          current_main="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          test "$current_main" = "$EXPECTED_SHA" || {
+            printf 'Refusing release: main moved from %s to %s\n' "$EXPECTED_SHA" "$current_main" >&2
+            false
+          }
+
+          gh release view v3.5.6 --repo "$GITHUB_REPOSITORY" --json body --jq '.body' > /tmp/previous-stable-release.md
+          python3 .github/scripts/validate-stable-release-notes.py \
+            --version v3.6.0 \
+            --notes .github/release-v3.6.0.md \
+            --previous /tmp/previous-stable-release.md
+
+          if gh release view v3.6.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            printf '%s\n' 'Refusing release: v3.6.0 release already exists.' >&2
+            false
+          fi
+
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.6.0" >/dev/null 2>&1; then
+            printf '%s\n' 'Refusing release: v3.6.0 tag already exists.' >&2
+            false
+          fi
+
+          runs_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${EXPECTED_SHA}&event=push&per_page=100")"
+          run_count="$(jq '.total_count' <<<"$runs_json")"
+          bad_runs="$(jq '[.workflow_runs[] | select(.status != "completed" or .conclusion != "success")] | length' <<<"$runs_json")"
+          validate_runs="$(jq '[.workflow_runs[] | select(.name == "Validate Awtarchy" and .status == "completed" and .conclusion == "success")] | length' <<<"$runs_json")"
+          (( run_count > 0 ))
+          (( bad_runs == 0 ))
+          (( validate_runs > 0 ))
+
+          gh release create v3.6.0 \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$EXPECTED_SHA" \
+            --title 'Awtarchy v3.6.0 Quickshell' \
+            --notes-file .github/release-v3.6.0.md
+
+          gh release view v3.6.0 --repo "$GITHUB_REPOSITORY" --json body --jq '.body' > /tmp/published-release.md
+          python3 .github/scripts/validate-stable-release-notes.py \
+            --version v3.6.0 \
+            --notes /tmp/published-release.md \
+            --previous /tmp/previous-stable-release.md
+          cmp -s .github/release-v3.6.0.md /tmp/published-release.md
+
+          release_name="$(gh release view v3.6.0 --repo "$GITHUB_REPOSITORY" --json name --jq '.name')"
+          release_tag="$(gh release view v3.6.0 --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName')"
+          release_draft="$(gh release view v3.6.0 --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')"
+          release_prerelease="$(gh release view v3.6.0 --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq '.isPrerelease')"
+          release_target="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v3.6.0" --jq '.target_commitish')"
+
+          test "$release_name" = 'Awtarchy v3.6.0 Quickshell'
+          test "$release_tag" = 'v3.6.0'
+          test "$release_draft" = 'false'
+          test "$release_prerelease" = 'false'
+          test "$release_target" = "$EXPECTED_SHA"
+
+          tag_type="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.6.0" --jq '.object.type')"
+          tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v3.6.0" --jq '.object.sha')"
+          if [[ "$tag_type" == 'tag' ]]; then
+            tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq '.object.sha')"
+          fi
+          test "$tag_sha" = "$EXPECTED_SHA" || {
+            printf 'Release tag points to %s, expected %s\n' "$tag_sha" "$EXPECTED_SHA" >&2
+            false
+          }
+
+          gh release view v3.6.0 --repo "$GITHUB_REPOSITORY" --json name,tagName,isDraft,isPrerelease,url
+          printf 'Verified v3.6.0 tag target: %s\n' "$tag_sha"
+
+          gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/release/v3.6.0-bridge"
