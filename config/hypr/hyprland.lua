@@ -1011,7 +1011,7 @@ hl.define_submap("noalt", function()
 
     -- Window move in "noalt" (SUPER+SHIFT arrows + hjkl)
     for _, bind in ipairs(movement_keys) do
-        hl.bind("SUPER + SHIFT + " .. bind[1], hl.dsp.window.move({ direction = bind[2], follow = false }), {})
+        hl.bind("SUPER + SHIFT + " .. bind[1], hl.dsp.window.move({ direction = bind[2] }), {})
     end
 
     -- Send current workspace to monitor in "noalt" (SUPER+CTRL+SHIFT arrows + brackets)
