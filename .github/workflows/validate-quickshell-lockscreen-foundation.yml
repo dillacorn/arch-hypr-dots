@@ -57,8 +57,8 @@ jobs:
           bash tests/test-quickshell-lockscreen-foundation.sh
           bash tests/test-quickshell-lockscreen-runtime-regressions.sh
           bash tests/test-quickshell-lockscreen-animation-preference.sh
-          bash tests/test-quickshell-lockscreen-theme-update.sh
           bash tests/test-quickshell-lockscreen-cursor.sh
+          bash tests/test-quickshell-lockscreen-theme-update.sh
           bash tests/test-quickshell-lockscreen-manager-mode.sh
           bash tests/test-quickshell-lockscreen-git-deployment.sh
           bash tests/test-quickshell-lockscreen-no-reload.sh
