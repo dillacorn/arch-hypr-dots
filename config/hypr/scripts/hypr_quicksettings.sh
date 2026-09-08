@@ -184,10 +184,12 @@ machine_status() {
     scheduler_authorized=true
   fi
 
+  BAR_AUTO_HIDE="false"
   if [[ -n "$panel_monitor" && -x "$QUICKSHELL_SCRIPT" ]]; then
     BAR_MONITOR="$panel_monitor"
     BAR_POSITION="$(run_capture "$QUICKSHELL_SCRIPT" getpos "$panel_monitor" || true)"
     BAR_ENABLED="$(run_capture "$QUICKSHELL_SCRIPT" getenabled "$panel_monitor" || true)"
+    BAR_AUTO_HIDE="$(run_capture "$QUICKSHELL_SCRIPT" getautohide "$panel_monitor" || true)"
   fi
 
   monitors_json='[]'
@@ -241,6 +243,7 @@ machine_status() {
     --arg bar_monitor "$BAR_MONITOR" \
     --arg bar_position "$BAR_POSITION" \
     --arg bar_enabled "$BAR_ENABLED" \
+    --arg bar_auto_hide "$BAR_AUTO_HIDE" \
     --arg sun_temperature "$sun_temp" \
     --arg sun_identity "$SUN_IDENTITY" \
     --arg sun_enabled "$SUN_ENABLED" \
@@ -273,7 +276,8 @@ machine_status() {
         bar:{
           monitor:$bar_monitor,
           position:$bar_position,
-          enabled:($bar_enabled == "true")
+          enabled:($bar_enabled == "true"),
+          auto_hide:($bar_auto_hide == "true")
         },
         night_light:{
           temperature:($sun_temperature | number_or_null),
@@ -430,6 +434,11 @@ machine_action() {
       monitor="${1:-}"; value="${2:-}"
       [[ -n "$monitor" && "$value" =~ ^(true|false)$ ]] || return 2
       "$QUICKSHELL_SCRIPT" setenabled "$monitor" "$value"
+      ;;
+    bar-auto-hide)
+      monitor="${1:-}"; value="${2:-}"
+      [[ -n "$monitor" && "$value" =~ ^(true|false)$ ]] || return 2
+      "$QUICKSHELL_SCRIPT" setautohide "$monitor" "$value"
       ;;
     bar-position)
       monitor="${1:-}"; value="${2:-}"
