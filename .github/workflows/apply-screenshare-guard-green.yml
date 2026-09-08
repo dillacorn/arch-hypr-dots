@@ -82,8 +82,8 @@ jobs:
           )
           replace_once(
               runtime,
-              'mkdir -p -- "$RUNTIME_DIR"\n',
-              'mkdir -p -- "$RUNTIME_DIR"\n\nif [[ -x "$SCREENSHARE_GUARD" ]]; then\n    "$SCREENSHARE_GUARD" apply >/dev/null 2>&1 || true\nfi\n',
+              'NETWORK_SENSITIVE_LOCK="${RUNTIME_ROOT}/awtarchy/network-sensitive-capture.lock"\n',
+              'NETWORK_SENSITIVE_LOCK="${RUNTIME_ROOT}/awtarchy/network-sensitive-capture.lock"\n\nif [[ -x "$SCREENSHARE_GUARD" ]]; then\n    "$SCREENSHARE_GUARD" apply >/dev/null 2>&1 || true\nfi\n',
           )
 
           app_state = root / "config/hypr/scripts/quickshell_application_state.sh"
