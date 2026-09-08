@@ -212,7 +212,7 @@ require_source "$QUICK_SETTINGS" 'ScreenShareGuardCard' \
     'Quick Settings does not use the Screen Share Guard card'
 require_source "$SCREENSHARE_CARD" 'property bool expanded: false' \
     'Screen Share Guard does not default to a collapsed compact card'
-require_source "$SCREENSHARE_CARD" 'model: root.expanded ? root.targetModel(root.protectedTargetIds) : []' \
+require_source "$SCREENSHARE_CARD" 'model: root.expanded ? root.targetModel("protected") : []' \
     'protected Screen Share Guard rows are rendered while the card is collapsed'
 require_source "$SCREENSHARE_CARD" 'onClicked: root.expanded = !root.expanded' \
     'Screen Share Guard header does not toggle expanded state'
