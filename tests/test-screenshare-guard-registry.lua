@@ -33,9 +33,13 @@ local guard = dofile(module_path)
 
 assert(type(guard.register) == "function", "Screen Share Guard does not expose custom registration")
 assert(type(guard.registry) == "function", "Screen Share Guard does not expose runtime registry metadata")
+assert(type(_G.awtarchy_screenshare_guard_register_v1) == "function",
+    "Screen Share Guard module does not publish custom registration to hyprland.lua")
+assert(type(_G.awtarchy_screenshare_guard_registry_v1) == "function",
+    "Screen Share Guard module does not publish runtime registry metadata")
 
 local before = #created
-guard.register({
+awtarchy_screenshare_guard_register_v1({
     id = "signal",
     label = "Signal",
     section = "protected",
@@ -47,7 +51,7 @@ assert(created[#created].spec.name == "awtarchy-screenshare-user-signal-v1", "cu
 assert(created[#created].spec.no_screen_share == true, "custom registration did not create a no_screen_share rule")
 assert(created[#created].enabled == true, "custom protected target did not start enabled")
 
-local registry = guard.registry()
+local registry = awtarchy_screenshare_guard_registry_v1()
 assert(registry:find("signal\tSignal\tprotected\ttrue\t^(signal|org\\.signal\\.Signal)$\t", 1, true),
     "runtime registry does not expose custom target metadata")
 
@@ -56,7 +60,7 @@ assert(created[#created].enabled == false, "custom target rule handle remained e
 assert(guard.status():find("signal=false", 1, true), "custom target status did not follow the rule handle")
 
 local duplicate_ok = pcall(function()
-    guard.register({
+    awtarchy_screenshare_guard_register_v1({
         id = "signal",
         label = "Signal duplicate",
         section = "protected",
@@ -67,7 +71,7 @@ end)
 assert(not duplicate_ok, "duplicate custom Screen Share Guard id was accepted")
 
 local invalid_ok = pcall(function()
-    guard.register({
+    awtarchy_screenshare_guard_register_v1({
         id = "bad id",
         label = "Invalid",
         section = "protected",
