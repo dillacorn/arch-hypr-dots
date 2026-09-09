@@ -17,6 +17,8 @@ managed_files=(
     'config/quickshell/awtarchy/BarState.qml:.config/quickshell/awtarchy/BarState.qml'
     'config/quickshell/awtarchy/QuickSettings.qml:.config/quickshell/awtarchy/QuickSettings.qml'
     'config/quickshell/awtarchy/LockscreenEditor.qml:.config/quickshell/awtarchy/LockscreenEditor.qml'
+    'config/quickshell/awtarchy/LockPreviewScene.qml:.config/quickshell/awtarchy/LockPreviewScene.qml'
+    'config/quickshell/awtarchy/LockPreviewWallpaperState.qml:.config/quickshell/awtarchy/LockPreviewWallpaperState.qml'
     'config/quickshell/awtarchy/LockscreenWeather.qml:.config/quickshell/awtarchy/LockscreenWeather.qml'
     'config/quickshell/awtarchy-lock/shell.qml:.config/quickshell/awtarchy-lock/shell.qml'
     'config/quickshell/awtarchy-lock/LockSurface.qml:.config/quickshell/awtarchy-lock/LockSurface.qml'
