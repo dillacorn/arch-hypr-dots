@@ -74,9 +74,11 @@ migrate_screenshare_guard_hyprland_stage "$ROOT" "$target_home"
 
 legacy_security='hl.window_rule({ match = { class = "^(Bitwarden|com\\.bitwarden\\.desktop|KeePassXC|org\\.keepassxc\\.KeePassXC|1Password|com\\.1password\\.1password|Enpass|org\\.gnome\\.Secrets|org\\.gnome\\.seahorse\\.Application|OTPClient|otpclient|org\\.rasalminen\\.OTPClient|Mullvad Browser|mullvad-browser|com\\.mullvad\\.Browser|localsend|LocalSend|org\\.localsend\\.localsend|io\\.github\\.localsend\\.localsend)$" }, no_screen_share = true })'
 legacy_localsend='localsend|LocalSend|org\\.localsend\\.localsend|io\\.github\\.localsend\\.localsend'
+legacy_telegram='hl.window_rule({ match = { class = "^(org\\.telegram\\.desktop|TelegramDesktop|telegram-desktop|Telegram)$" }, no_screen_share = true })'
 
 ! grep -Fq -- "$legacy_security" "$live" || fail 'retired combined security/LocalSend direct rule remains after updater migration'
 ! grep -Fq -- "$legacy_localsend" "$live" || fail 'retired direct LocalSend Screen Share Guard match remains after updater migration'
+! grep -Fq -- "$legacy_telegram" "$live" || fail 'retired Telegram direct Screen Share Guard rule remains after updater migration'
 
 grep -Fq -- 'opacity = "0.95 0.95"' "$live" || fail 'migration removed unrelated personal window rule'
 grep -Fq -- 'hl.layer_rule({ match = { namespace = "^(notifications|swaync.*)$" }, no_screen_share = true })' "$live" \
