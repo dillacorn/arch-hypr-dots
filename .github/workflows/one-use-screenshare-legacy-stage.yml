@@ -24,19 +24,23 @@ jobs:
 
           path = Path('local/share/awtarchy/awtarchy-runtime.sh')
           text = path.read_text()
-          old = '''  [[ -f "$live" && ! -L "$live" ]] || return 0
-          if grep -Fq -- 'function awtarchy_screenshare_guard_set_group_v1' "$live" \\
-            && grep -Fq -- 'function awtarchy_screenshare_guard_status_v1' "$live"; then
-            return 0
-          fi
-
-          '''
-          new = '''  [[ -f "$live" && ! -L "$live" ]] || return 0
-
-          '''
-          if text.count(old) != 1:
-              raise SystemExit(f'expected exactly one Screen Share Guard early-return block, found {text.count(old)}')
-          path.write_text(text.replace(old, new, 1))
+          start_marker = "  if grep -Fq -- 'function awtarchy_screenshare_guard_set_group_v1' \"$live\" \\\\\n"
+          start = text.find(start_marker)
+          if start < 0:
+              raise SystemExit('Screen Share Guard integrated-config early return start was not found')
+          end = text.find('  fi\n', start)
+          if end < 0:
+              raise SystemExit('Screen Share Guard integrated-config early return end was not found')
+          end += len('  fi\n')
+          block = text[start:end]
+          required = (
+              'awtarchy_screenshare_guard_set_group_v1',
+              'awtarchy_screenshare_guard_status_v1',
+              'return 0',
+          )
+          if not all(needle in block for needle in required):
+              raise SystemExit('Screen Share Guard early-return block did not match the expected guarded shape')
+          path.write_text(text[:start] + text[end:])
           PY
       - name: Commit updater fix and remove one-use workflow
         run: |
