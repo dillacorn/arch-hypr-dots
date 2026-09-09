@@ -22,6 +22,7 @@ jobs:
           bash -n tests/test-quickshell-lockscreen-interactive-managed-history.sh
           bash -n tests/test-quickshell-lockscreen-editor.sh
           bash -n tests/test-quickshell-lockscreen-weather.sh
+          bash -n tests/test-quickshell-lockscreen-runtime-services.sh
           if [[ -f config/hypr/scripts/quickshell_lockscreen_audio.sh ]]; then
             bash -n config/hypr/scripts/quickshell_lockscreen_audio.sh
           fi
@@ -35,6 +36,7 @@ jobs:
           shellcheck tests/test-quickshell-lockscreen-interactive-managed-history.sh
           shellcheck tests/test-quickshell-lockscreen-editor.sh
           shellcheck tests/test-quickshell-lockscreen-weather.sh
+          shellcheck tests/test-quickshell-lockscreen-runtime-services.sh
           if [[ -f config/hypr/scripts/quickshell_lockscreen_audio.sh ]]; then
             shellcheck config/hypr/scripts/quickshell_lockscreen_audio.sh
           fi
@@ -47,6 +49,8 @@ jobs:
           test -x config/hypr/scripts/quickshell_lockscreen_weather.sh
       - name: Weather refresh contracts
         run: bash tests/test-quickshell-lockscreen-weather.sh
+      - name: Runtime service contracts
+        run: bash tests/test-quickshell-lockscreen-runtime-services.sh
       - name: Interactive effects contracts
         run: |
           bash tests/test-quickshell-lockscreen-interactive-effects.sh
