@@ -23,6 +23,7 @@ WlSessionLockSurface {
     required property string weatherText
     required property string backgroundMode
     required property string wallpaperSource
+    required property color autoAccent
     required property var layout
 
     color: "#000000"
@@ -73,6 +74,7 @@ WlSessionLockSurface {
         weatherText: root.weatherText
         backgroundMode: root.backgroundMode
         wallpaperSource: root.wallpaperSource
+        autoAccent: root.autoAccent
         layout: root.layout
         previewMode: false
     }
@@ -84,7 +86,10 @@ WlSessionLockSurface {
         hoverEnabled: true
         cursorShape: Qt.BlankCursor
         onPositionChanged: mouse => scene.handlePointerMotion(mouse.x, mouse.y)
-        onClicked: password.forceActiveFocus()
+        onClicked: mouse => {
+            scene.handlePointerClick(mouse.x, mouse.y);
+            password.forceActiveFocus();
+        }
         onWheel: wheel => { wheel.accepted = true; }
     }
 
@@ -108,7 +113,7 @@ WlSessionLockSurface {
             anchors.centerIn: parent
             width: root.maskSpread
             height: Math.round(14 * root.uiScale * root.passwordScale)
-            color: root.theme.lockAccent
+            color: scene.elementColor("password")
             opacity: password.text.length > 0 ? 0.09 : 0
         }
 
@@ -122,7 +127,7 @@ WlSessionLockSurface {
                 Rectangle {
                     width: Math.round(7 * root.uiScale * root.passwordScale)
                     height: Math.round(10 * root.uiScale * root.passwordScale)
-                    color: root.theme.lockAccent
+                    color: scene.elementColor("password")
                     opacity: 0.82
                 }
             }

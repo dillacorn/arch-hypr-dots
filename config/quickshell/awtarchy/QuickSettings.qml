@@ -2215,7 +2215,7 @@ Singleton {
                                 }
                                 Text {
                                     Layout.fillWidth: true
-                                    text: "Drag enabled lockscreen elements on the focused display"
+                                    text: "Drag, resize, show/hide, and recolor lockscreen elements on the focused display"
                                     color: Theme.muted
                                     font.family: Theme.fontFamily
                                     font.pixelSize: root.scaledText(8)
@@ -2239,6 +2239,15 @@ Singleton {
                                     textSize: root.scaledText(9)
                                     onClicked: root.queueStateCommand(["set-lockscreen-background", "wallpaper"])
                                 }
+                                SettingsButton {
+                                    label: "Choose with Awtwall"
+                                    textSize: root.scaledText(9)
+                                    onClicked: {
+                                        root.queueStateCommand(["set-lockscreen-background", "wallpaper"]);
+                                        root.queueAction(["wallpaper"], "Opening Awtwall wallpaper picker…");
+                                        root.close();
+                                    }
+                                }
                                 Item { Layout.fillWidth: true }
                             }
 
@@ -2252,17 +2261,9 @@ Singleton {
                                 SettingsButton { label: BarState.lockscreenMouseInteractiveEnabled() ? "On" : "Off"; active: BarState.lockscreenMouseInteractiveEnabled(); textSize: root.scaledText(9); onClicked: root.queueStateCommand(["set-lockscreen-mouse-interactive", BarState.lockscreenMouseInteractiveEnabled() ? "false" : "true"]) }
                                 Text { Layout.fillWidth: true; text: "Audio Reactive"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: root.scaledText(9) }
                                 SettingsButton { label: BarState.lockscreenAudioReactiveEnabled() ? "On" : "Off"; active: BarState.lockscreenAudioReactiveEnabled(); textSize: root.scaledText(9); onClicked: root.queueStateCommand(["set-lockscreen-audio-reactive", BarState.lockscreenAudioReactiveEnabled() ? "false" : "true"]) }
-                                Text { Layout.fillWidth: true; text: "Time"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: root.scaledText(9) }
-                                SettingsButton { label: BarState.lockscreenShowTime() ? "On" : "Off"; active: BarState.lockscreenShowTime(); textSize: root.scaledText(9); onClicked: root.queueStateCommand(["set-lockscreen-show-time", BarState.lockscreenShowTime() ? "false" : "true"]) }
-                                Text { Layout.fillWidth: true; text: "Date"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: root.scaledText(9) }
-                                SettingsButton { label: BarState.lockscreenShowDate() ? "On" : "Off"; active: BarState.lockscreenShowDate(); textSize: root.scaledText(9); onClicked: root.queueStateCommand(["set-lockscreen-show-date", BarState.lockscreenShowDate() ? "false" : "true"]) }
-                                Text { Layout.fillWidth: true; text: "Username"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: root.scaledText(9) }
-                                SettingsButton { label: BarState.lockscreenShowUsername() ? "On" : "Off"; active: BarState.lockscreenShowUsername(); textSize: root.scaledText(9); onClicked: root.queueStateCommand(["set-lockscreen-show-username", BarState.lockscreenShowUsername() ? "false" : "true"]) }
-                                Text { Layout.fillWidth: true; text: "Weather"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: root.scaledText(9) }
-                                SettingsButton { label: BarState.lockscreenShowWeather() ? "On" : "Off"; active: BarState.lockscreenShowWeather(); textSize: root.scaledText(9); onClicked: root.queueStateCommand(["set-lockscreen-show-weather", BarState.lockscreenShowWeather() ? "false" : "true"]) }
                             }
 
-                            Text { Layout.fillWidth: true; text: "Weather Location"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: root.scaledText(9); font.bold: true }
+                            Text { Layout.fillWidth: true; text: "Location override (optional)"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: root.scaledText(9); font.bold: true }
                             RowLayout {
                                 Layout.fillWidth: true
                                 spacing: 5
@@ -2301,7 +2302,7 @@ Singleton {
                             }
                             Text {
                                 Layout.fillWidth: true
-                                text: "When Weather is enabled, this explicit location is sent to Open-Meteo. No IP or device geolocation is used."
+                                text: "Automatic location uses your approximate public-IP location from ipwho.is, then sends coordinates to Open-Meteo. Enter a location above only to override it."
                                 color: Theme.muted
                                 font.family: Theme.fontFamily
                                 font.pixelSize: root.scaledText(8)

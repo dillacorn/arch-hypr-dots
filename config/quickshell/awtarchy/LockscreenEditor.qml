@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Controls
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
@@ -24,12 +25,12 @@ Singleton {
 
     function defaultLayout() {
         return ({
-            logo: ({ x: 0.50, y: 0.34, scale: 1.0 }),
-            time: ({ x: 0.50, y: 0.51, scale: 1.0 }),
-            date: ({ x: 0.50, y: 0.555, scale: 1.0 }),
-            username: ({ x: 0.50, y: 0.595, scale: 1.0 }),
-            weather: ({ x: 0.50, y: 0.635, scale: 1.0 }),
-            password: ({ x: 0.50, y: 0.70, scale: 1.0 })
+            logo: ({ x: 0.50, y: 0.34, scale: 1.0, color: "auto" }),
+            time: ({ x: 0.50, y: 0.51, scale: 1.0, color: "auto" }),
+            date: ({ x: 0.50, y: 0.555, scale: 1.0, color: "auto" }),
+            username: ({ x: 0.50, y: 0.595, scale: 1.0, color: "auto" }),
+            weather: ({ x: 0.50, y: 0.635, scale: 1.0, color: "auto" }),
+            password: ({ x: 0.50, y: 0.70, scale: 1.0, color: "auto" })
         });
     }
 
@@ -63,6 +64,9 @@ Singleton {
             const x = Number(raw.x);
             const y = Number(raw.y);
             const scale = Number(raw.scale === undefined ? 1 : raw.scale);
+            const rawColor = String(raw.color === undefined ? "auto" : raw.color);
+            const color = rawColor === "auto" || /^#[0-9a-fA-F]{6}$/.test(rawColor)
+                ? rawColor.toLowerCase() : "auto";
             result[name] = ({
                 x: Math.max(password ? 0.15 : 0.05,
                     Math.min(password ? 0.85 : 0.95,
@@ -71,7 +75,8 @@ Singleton {
                     Math.min(password ? 0.86 : 0.92,
                         Number.isFinite(y) ? y : defaults[name].y)),
                 scale: Math.max(0.50, Math.min(2.00,
-                    Number.isFinite(scale) ? scale : 1))
+                    Number.isFinite(scale) ? scale : 1)),
+                color: color
             });
         }
         return result;
@@ -100,7 +105,12 @@ Singleton {
             return;
         const next = cloneLayout(draftLayout);
         const point = clampPoint(name, Number(x), Number(y));
-        next[name] = ({ x: point.x, y: point.y, scale: next[name].scale });
+        next[name] = ({
+            x: point.x,
+            y: point.y,
+            scale: next[name].scale,
+            color: next[name].color
+        });
         draftLayout = next;
         selectedElement = name;
     }
@@ -109,6 +119,28 @@ Singleton {
         const point = draftLayout[name] || defaultLayout()[name];
         const value = Number(point.scale === undefined ? 1 : point.scale);
         return Number.isFinite(value) ? Math.max(0.50, Math.min(2.00, value)) : 1;
+    }
+
+    function elementColor(name) {
+        const point = draftLayout[name] || defaultLayout()[name];
+        const value = String(point.color === undefined ? "auto" : point.color);
+        return value === "auto" || /^#[0-9a-fA-F]{6}$/.test(value)
+            ? value.toLowerCase() : "auto";
+    }
+
+    function setDraftColor(name, colorValue) {
+        if (elementNames.indexOf(name) < 0)
+            return;
+        const value = String(colorValue || "").trim().toLowerCase();
+        if (value !== "auto" && !/^#[0-9a-f]{6}$/.test(value)) {
+            statusMessage = "Color must be Auto or #RRGGBB";
+            return;
+        }
+        const next = cloneLayout(draftLayout);
+        next[name].color = value;
+        draftLayout = next;
+        selectedElement = name;
+        statusMessage = "";
     }
 
     function setDraftScale(name, scale) {
@@ -281,11 +313,15 @@ Singleton {
                 showDate: root.draftVisibility.date
                 showUsername: root.draftVisibility.username
                 showWeather: root.draftVisibility.weather
-                weatherText: "Weather preview"
+                weatherText: "72°F · Clear"
                 backgroundMode: BarState.lockscreenBackground()
                 wallpaperSource: wallpaperState.source
+                autoAccent: BarState.lockscreenBackground() === "black"
+                    ? "#ffffff" : LockscreenContrast.accent
                 layout: root.draftLayout
                 previewMode: true
+                editorMode: true
+                editorVisibility: root.draftVisibility
             }
 
             Repeater {
@@ -297,28 +333,17 @@ Singleton {
                     readonly property bool enabledElement: root.elementEnabled(elementName)
                     readonly property var point: root.draftLayout[elementName]
                         || root.defaultLayout()[elementName]
-                    width: Math.max(64, label.implicitWidth + 18)
-                    height: 24
+                    width: Math.max(30, previewScene.elementVisualWidth(elementName) + 14)
+                    height: Math.max(26, previewScene.elementVisualHeight(elementName) + 12)
                     x: Math.max(0, Math.min(parent.width - width,
                         Number(point.x) * parent.width - width / 2))
                     y: Math.max(0, Math.min(parent.height - height,
                         Number(point.y) * parent.height - height / 2))
-                    color: root.selectedElement === elementName
-                        ? Theme.focus : Theme.popupBackground
+                    color: "transparent"
                     border.width: root.selectedElement === elementName ? 2 : 1
-                    border.color: Theme.foreground
-                    opacity: enabledElement ? 0.88 : 0.52
+                    border.color: root.selectedElement === elementName ? Theme.focus : Theme.muted
+                    opacity: 0.92
                     z: 200
-
-                    Text {
-                        id: label
-                        anchors.centerIn: parent
-                        text: root.elementLabel(parent.elementName)
-                            + (parent.enabledElement ? "" : " · Off")
-                        color: Theme.foreground
-                        font.family: Theme.fontFamily
-                        font.pixelSize: 10
-                    }
 
                     MouseArea {
                         id: dragArea
@@ -353,7 +378,7 @@ Singleton {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
-                height: 92
+                height: 138
                 color: Theme.popupBackground
                 border.width: 1
                 border.color: Theme.muted
@@ -424,12 +449,70 @@ Singleton {
                         Text {
                             text: root.statusMessage.length > 0
                                 ? root.statusMessage
-                                : "Drag any handle. Hidden elements keep a handle so they can be restored."
+                                : "Drag the actual lockscreen visuals. Hidden items stay faded so they can be restored."
                             color: Theme.muted
                             font.family: Theme.fontFamily
                             font.pixelSize: 9
                             elide: Text.ElideRight
                             Layout.maximumWidth: 520
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 7
+
+                        Text {
+                            text: "Color"
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 9
+                        }
+
+                        SettingsButton {
+                            label: "Auto"
+                            active: root.elementColor(root.selectedElement) === "auto"
+                            textSize: 9
+                            onClicked: root.setDraftColor(root.selectedElement, "auto")
+                        }
+
+                        SettingsButton {
+                            label: "White"
+                            active: root.elementColor(root.selectedElement) === "#ffffff"
+                            textSize: 9
+                            onClicked: root.setDraftColor(root.selectedElement, "#ffffff")
+                        }
+
+                        SettingsButton {
+                            label: "Black"
+                            active: root.elementColor(root.selectedElement) === "#000000"
+                            textSize: 9
+                            onClicked: root.setDraftColor(root.selectedElement, "#000000")
+                        }
+
+                        TextField {
+                            id: customColorInput
+                            Layout.preferredWidth: 118
+                            placeholderText: "#RRGGBB"
+                            text: root.elementColor(root.selectedElement) === "auto"
+                                ? "" : root.elementColor(root.selectedElement)
+                            color: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 9
+                            selectByMouse: true
+                            onEditingFinished: {
+                                if (text.trim().length > 0)
+                                    root.setDraftColor(root.selectedElement, text);
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Auto chooses black or white from the current wallpaper for contrast."
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 9
+                            elide: Text.ElideRight
                         }
                     }
 

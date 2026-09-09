@@ -22,9 +22,12 @@ Item {
     required property string weatherText
     required property string backgroundMode
     required property string wallpaperSource
+    required property color autoAccent
     required property var layout
 
     property bool previewMode: false
+    property bool editorMode: false
+    property var editorVisibility: ({})
     property bool unlocking: false
     property bool entered: false
 
@@ -59,14 +62,20 @@ Item {
     readonly property int cursorFadeDurationMs: 320
     readonly property real pointerInfluenceRadius: 72 * uiScale
     readonly property real pointerDisplacementCap: 24 * uiScale
+    readonly property real clickInfluenceRadius: 110 * uiScale
+    readonly property real clickDisplacementCap: 38 * uiScale
     readonly property real audioDisplacementCap: 6 * uiScale
+    readonly property real logoBridgeMaxDistance: Math.sqrt(
+        wordmarkCellWidth * wordmarkCellWidth + wordmarkCellHeight * wordmarkCellHeight) * 1.35
+    readonly property real logoBridgeInteractionBoost: 0.30
+    readonly property var logoBridgePairs: buildLogoBridgePairs()
     readonly property real pointerMovementThreshold: 3 * uiScale
     readonly property string usernameText: showUsername ? Quickshell.env("USER") : ""
 
     readonly property real passwordCenterX: normalizedX("password", 0.50) * width
     readonly property real passwordCenterY: normalizedY("password", 0.70) * height
-    readonly property real passwordWidth: Math.round(320 * uiScale * elementScale("password"))
-    readonly property real passwordHeight: Math.round(42 * uiScale * elementScale("password"))
+    readonly property real passwordWidth: Math.round(420 * uiScale * elementScale("password"))
+    readonly property real passwordHeight: Math.round(58 * uiScale * elementScale("password"))
 
     property bool pointerActive: false
     property var wordmarkCells: ({})
@@ -110,8 +119,84 @@ Item {
         return Number.isFinite(value) ? Math.max(0.50, Math.min(2.00, value)) : 1;
     }
 
+    function elementColor(name) {
+        const point = normalizedPoint(name);
+        const value = String(point && point.color !== undefined ? point.color : "auto");
+        return value === "auto" ? root.autoAccent
+            : /^#[0-9a-fA-F]{6}$/.test(value) ? value : root.autoAccent;
+    }
+
+    function presentationVisible(name, configuredVisible) {
+        return configuredVisible || root.editorMode;
+    }
+
+    function presentationOpacity(name) {
+        return root.editorMode && root.editorVisibility[name] === false ? 0.30 : 1.0;
+    }
+
+    function elementVisualWidth(name) {
+        if (name === "logo") return root.wordmarkWidth * root.elementScale("logo");
+        if (name === "time") return timeItem.implicitWidth * root.elementScale("time");
+        if (name === "date") return dateItem.implicitWidth * root.elementScale("date");
+        if (name === "username") return usernameItem.implicitWidth * root.elementScale("username");
+        if (name === "weather") return weatherItem.implicitWidth * root.elementScale("weather");
+        if (name === "password") return root.passwordWidth;
+        return 48 * root.uiScale;
+    }
+
+    function elementVisualHeight(name) {
+        if (name === "logo") return root.wordmarkHeight * root.elementScale("logo");
+        if (name === "time") return timeItem.implicitHeight * root.elementScale("time");
+        if (name === "date") return dateItem.implicitHeight * root.elementScale("date");
+        if (name === "username") return usernameItem.implicitHeight * root.elementScale("username");
+        if (name === "weather") return weatherItem.implicitHeight * root.elementScale("weather");
+        if (name === "password") return root.passwordHeight;
+        return 28 * root.uiScale;
+    }
+
+    function isFilledWordmarkCell(row, column) {
+        if (row < 0 || row >= wordmarkRows.length || column < 0 || column >= wordmarkColumns)
+            return false;
+        const rowText = wordmarkRows[row];
+        if (column >= rowText.length)
+            return false;
+        const glyph = rowText.charAt(column);
+        return glyph === "█" || glyph === "▄" || glyph === "▀" || glyph === "▐";
+    }
+
+    function buildLogoBridgePairs() {
+        const pairs = [];
+        const neighbors = [({ row: 0, column: 1 }), ({ row: 1, column: 0 })];
+        for (let row = 0; row < wordmarkRows.length; ++row) {
+            for (let column = 0; column < wordmarkColumns; ++column) {
+                if (!isFilledWordmarkCell(row, column))
+                    continue;
+                for (let i = 0; i < neighbors.length; ++i) {
+                    const nextRow = row + neighbors[i].row;
+                    const nextColumn = column + neighbors[i].column;
+                    if (isFilledWordmarkCell(nextRow, nextColumn)) {
+                        pairs.push(({
+                            a: String(row) + ":" + String(column),
+                            b: String(nextRow) + ":" + String(nextColumn)
+                        }));
+                    }
+                }
+            }
+        }
+        return pairs;
+    }
+
     function registerWordmarkCell(row, column, cell) {
         wordmarkCells[String(row) + ":" + String(column)] = cell;
+        logoBridgeCanvas.requestPaint();
+    }
+
+    function logoBridgeInteractionEnergy(cellA, cellB) {
+        const offsetA = Math.sqrt(cellA.combinedOffsetX * cellA.combinedOffsetX
+            + cellA.combinedOffsetY * cellA.combinedOffsetY);
+        const offsetB = Math.sqrt(cellB.combinedOffsetX * cellB.combinedOffsetX
+            + cellB.combinedOffsetY * cellB.combinedOffsetY);
+        return Math.max(0, Math.min(1, Math.max(offsetA, offsetB) / clickDisplacementCap));
     }
 
     function minuteTimeFormat() {
@@ -172,6 +257,41 @@ Item {
         }
     }
 
+    function applyClickImpulse(x, y) {
+        if (!mouseInteractive)
+            return;
+
+        const local = wordmarkItem.mapFromItem(root, x, y);
+        const radius = clickInfluenceRadius;
+        if (local.x < -radius || local.y < -radius
+                || local.x > wordmarkItem.width + radius
+                || local.y > wordmarkItem.height + radius)
+            return;
+
+        const minColumn = Math.max(0, Math.floor((local.x - radius) / wordmarkCellWidth));
+        const maxColumn = Math.min(wordmarkColumns - 1, Math.floor((local.x + radius) / wordmarkCellWidth));
+        const minRow = Math.max(0, Math.floor((local.y - radius) / wordmarkCellHeight));
+        const maxRow = Math.min(wordmarkRows.length - 1, Math.floor((local.y + radius) / wordmarkCellHeight));
+        for (let row = minRow; row <= maxRow; ++row) {
+            for (let column = minColumn; column <= maxColumn; ++column) {
+                const cell = wordmarkCells[String(row) + ":" + String(column)];
+                if (cell)
+                    cell.applyClickImpulse(local.x, local.y);
+            }
+        }
+    }
+
+    function handlePointerClick(x, y) {
+        if (!mouseInteractive)
+            return;
+        pointerActive = true;
+        pushGhostSample(x, y);
+        applyClickImpulse(x, y);
+        lastPointerX = x;
+        lastPointerY = y;
+        lastPointerSampleTime = Date.now();
+    }
+
     function handlePointerMotion(x, y) {
         if (!mouseInteractive)
             return;
@@ -230,13 +350,65 @@ Item {
 
         Item {
             id: wordmarkItem
-            visible: root.showLogo
+            visible: root.presentationVisible("logo", root.showLogo)
+            opacity: root.presentationOpacity("logo")
             x: root.normalizedX("logo", 0.50) * parent.width - width / 2
             y: root.normalizedY("logo", 0.34) * parent.height - height / 2
             width: root.wordmarkWidth
             height: root.wordmarkHeight
             scale: root.elementScale("logo")
             transformOrigin: Item.Center
+
+            Canvas {
+                id: logoBridgeCanvas
+                anchors.fill: parent
+                z: -1
+                antialiasing: true
+
+                onPaint: {
+                    const ctx = getContext("2d");
+                    ctx.reset();
+                    ctx.clearRect(0, 0, width, height);
+                    ctx.strokeStyle = root.elementColor("logo");
+                    ctx.lineCap = "round";
+                    ctx.lineJoin = "round";
+
+                    for (let i = 0; i < root.logoBridgePairs.length; ++i) {
+                        const pair = root.logoBridgePairs[i];
+                        const cellA = root.wordmarkCells[pair.a];
+                        const cellB = root.wordmarkCells[pair.b];
+                        if (!cellA || !cellB)
+                            continue;
+
+                        const formation = Math.min(cellA.formationProgress, cellB.formationProgress);
+                        if (formation <= 0.35)
+                            continue;
+
+                        const pointA = cellA.mapToItem(wordmarkItem,
+                            cellA.width / 2, cellA.height / 2);
+                        const pointB = cellB.mapToItem(wordmarkItem,
+                            cellB.width / 2, cellB.height / 2);
+                        const dx = pointB.x - pointA.x;
+                        const dy = pointB.y - pointA.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        if (distance >= root.logoBridgeMaxDistance)
+                            continue;
+
+                        const closeness = 1 - distance / root.logoBridgeMaxDistance;
+                        const interaction = root.logoBridgeInteractionEnergy(cellA, cellB);
+                        const interactionScale = 1 + interaction * root.logoBridgeInteractionBoost;
+                        ctx.globalAlpha = Math.min(0.48,
+                            (0.10 + 0.24 * closeness) * formation * interactionScale);
+                        ctx.lineWidth = Math.max(1.2 * root.uiScale,
+                            (2.0 + 2.2 * closeness) * root.uiScale * interactionScale);
+                        ctx.beginPath();
+                        ctx.moveTo(pointA.x, pointA.y);
+                        ctx.lineTo(pointB.x, pointB.y);
+                        ctx.stroke();
+                    }
+                    ctx.globalAlpha = 1;
+                }
+            }
 
             Repeater {
                 model: root.wordmarkRows.length
@@ -300,12 +472,12 @@ Item {
                                         Math.cos(root.audioPhase * (0.82 + randomD * 0.50) + audioAngle)
                                             * audioEnvelope * root.audioDisplacementCap * 0.82))
                             readonly property real combinedOffsetX: Math.max(
-                                -root.pointerDisplacementCap,
-                                Math.min(root.pointerDisplacementCap,
+                                -root.clickDisplacementCap,
+                                Math.min(root.clickDisplacementCap,
                                     pointerOffsetX + audioOffsetX))
                             readonly property real combinedOffsetY: Math.max(
-                                -root.pointerDisplacementCap,
-                                Math.min(root.pointerDisplacementCap,
+                                -root.clickDisplacementCap,
+                                Math.min(root.clickDisplacementCap,
                                     pointerOffsetY + audioOffsetY))
 
                             readonly property real randomA: Math.random()
@@ -402,7 +574,49 @@ Item {
                                 wordmarkCell.pointerOffsetY = targetY;
                                 pointerReturnX.restart();
                                 pointerReturnY.restart();
+                                logoBridgeCanvas.requestPaint();
                             }
+
+                            function applyClickImpulse(localX, localY) {
+                                if (!wordmarkCell.isFilledGlyph
+                                        || wordmarkCell.formationProgress < 0.96
+                                        || !root.mouseInteractive)
+                                    return;
+
+                                const centerX = wordmarkCell.finalCellX + root.wordmarkCellWidth / 2;
+                                const centerY = wordmarkCell.finalCellY + root.wordmarkCellHeight / 2;
+                                let dx = centerX - localX;
+                                let dy = centerY - localY;
+                                let distance = Math.sqrt(dx * dx + dy * dy);
+                                if (distance >= root.clickInfluenceRadius)
+                                    return;
+                                if (distance < 0.001) {
+                                    dx = Math.cos(wordmarkCell.audioAngle);
+                                    dy = Math.sin(wordmarkCell.audioAngle);
+                                    distance = 1;
+                                }
+
+                                const proximity = 1 - distance / root.clickInfluenceRadius;
+                                const impulse = root.clickDisplacementCap * proximity * (0.82 + 0.18 * wordmarkCell.randomC);
+                                const targetX = Math.max(-root.clickDisplacementCap,
+                                    Math.min(root.clickDisplacementCap,
+                                        wordmarkCell.pointerOffsetX + dx / distance * impulse));
+                                const targetY = Math.max(-root.clickDisplacementCap,
+                                    Math.min(root.clickDisplacementCap,
+                                        wordmarkCell.pointerOffsetY + dy / distance * impulse));
+
+                                pointerReturnX.stop();
+                                pointerReturnY.stop();
+                                wordmarkCell.pointerOffsetX = targetX;
+                                wordmarkCell.pointerOffsetY = targetY;
+                                pointerReturnX.restart();
+                                pointerReturnY.restart();
+                                logoBridgeCanvas.requestPaint();
+                            }
+
+                            onFormationProgressChanged: logoBridgeCanvas.requestPaint()
+                            onCombinedOffsetXChanged: logoBridgeCanvas.requestPaint()
+                            onCombinedOffsetYChanged: logoBridgeCanvas.requestPaint()
 
                             Component.onCompleted: {
                                 if (wordmarkCell.isFilledGlyph)
@@ -432,7 +646,7 @@ Item {
                                     + wordmarkCell.formationProgress * wordmarkCell.finalGlyphWidth
                                 height: (1 - wordmarkCell.formationProgress) * wordmarkCell.particleSize
                                     + wordmarkCell.formationProgress * wordmarkCell.finalGlyphHeight
-                                color: root.theme.lockAccent
+                                color: root.elementColor("logo")
                                 opacity: wordmarkCell.formationProgress <= 0 ? 0
                                     : 0.35 + 0.65 * wordmarkCell.formationProgress
                                 antialiasing: false
@@ -476,55 +690,60 @@ Item {
         }
 
         Text {
-            visible: root.showTime
+            id: timeItem
+            visible: root.presentationVisible("time", root.showTime)
+            opacity: root.presentationOpacity("time")
             scale: root.elementScale("time")
             transformOrigin: Item.Center
             x: root.normalizedX("time", 0.50) * parent.width - width / 2
             y: root.normalizedY("time", 0.51) * parent.height - height / 2
             text: root.timeText
-            color: root.theme.lockAccent
+            color: root.elementColor("time")
             font.family: root.theme.fontFamily
-            font.pixelSize: Math.round(25 * root.uiScale)
+            font.pixelSize: Math.round(64 * root.uiScale)
             font.weight: Font.Medium
         }
 
         Text {
-            visible: root.showDate
+            id: dateItem
+            visible: root.presentationVisible("date", root.showDate)
+            opacity: 0.78 * root.presentationOpacity("date")
             scale: root.elementScale("date")
             transformOrigin: Item.Center
             x: root.normalizedX("date", 0.50) * parent.width - width / 2
             y: root.normalizedY("date", 0.555) * parent.height - height / 2
             text: root.dateText
-            color: root.theme.lockAccent
-            opacity: 0.72
+            color: root.elementColor("date")
             font.family: root.theme.fontFamily
-            font.pixelSize: Math.round(11 * root.uiScale)
+            font.pixelSize: Math.round(22 * root.uiScale)
         }
 
         Text {
-            visible: root.showUsername
+            id: usernameItem
+            visible: root.presentationVisible("username", root.showUsername)
+            opacity: 0.72 * root.presentationOpacity("username")
             scale: root.elementScale("username")
             transformOrigin: Item.Center
             x: root.normalizedX("username", 0.50) * parent.width - width / 2
             y: root.normalizedY("username", 0.595) * parent.height - height / 2
-            text: root.usernameText
-            color: root.theme.lockAccent
-            opacity: 0.58
+            text: root.usernameText.length > 0 ? root.usernameText : Quickshell.env("USER")
+            color: root.elementColor("username")
             font.family: root.theme.fontFamily
-            font.pixelSize: Math.round(10 * root.uiScale)
+            font.pixelSize: Math.round(18 * root.uiScale)
         }
 
         Text {
-            visible: root.showWeather && root.weatherText.length > 0
+            id: weatherItem
+            visible: root.presentationVisible("weather", root.showWeather) && root.weatherText.length > 0
+            opacity: 0.76 * root.presentationOpacity("weather")
             scale: root.elementScale("weather")
             transformOrigin: Item.Center
             x: root.normalizedX("weather", 0.50) * parent.width - width / 2
             y: root.normalizedY("weather", 0.635) * parent.height - height / 2
             text: root.weatherText
-            color: root.theme.lockAccent
-            opacity: 0.68
+            color: root.elementColor("weather")
             font.family: root.theme.fontFamily
-            font.pixelSize: Math.round(10 * root.uiScale)
+            font.pixelSize: Math.round(18 * root.uiScale)
         }
 
         Item {
@@ -538,7 +757,7 @@ Item {
                 anchors.centerIn: parent
                 width: Math.round(80 * root.uiScale * root.elementScale("password"))
                 height: Math.round(14 * root.uiScale * root.elementScale("password"))
-                color: root.theme.lockAccent
+                color: root.elementColor("password")
                 opacity: 0.09
             }
 
@@ -550,7 +769,7 @@ Item {
                     Rectangle {
                         width: Math.round(7 * root.uiScale * root.elementScale("password"))
                         height: Math.round(10 * root.uiScale * root.elementScale("password"))
-                        color: root.theme.lockAccent
+                        color: root.elementColor("password")
                         opacity: 0.82
                     }
                 }
@@ -621,7 +840,10 @@ Item {
         interval: 33
         repeat: true
         running: root.audioEffectsEnabled
-        onTriggered: root.audioPhase += 0.22
+        onTriggered: {
+            root.audioPhase += 0.22;
+            logoBridgeCanvas.requestPaint();
+        }
     }
 
     Timer {

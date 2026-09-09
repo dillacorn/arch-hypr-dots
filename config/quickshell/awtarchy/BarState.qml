@@ -130,12 +130,12 @@ Singleton {
         { key: "off", label: "Off" }
     ]
     readonly property var defaultLockscreenLayout: ({
-        logo: ({ x: 0.50, y: 0.34, scale: 1.0 }),
-        time: ({ x: 0.50, y: 0.51, scale: 1.0 }),
-        date: ({ x: 0.50, y: 0.555, scale: 1.0 }),
-        username: ({ x: 0.50, y: 0.595, scale: 1.0 }),
-        weather: ({ x: 0.50, y: 0.635, scale: 1.0 }),
-        password: ({ x: 0.50, y: 0.70, scale: 1.0 })
+        logo: ({ x: 0.50, y: 0.34, scale: 1.0, color: "auto" }),
+        time: ({ x: 0.50, y: 0.51, scale: 1.0, color: "auto" }),
+        date: ({ x: 0.50, y: 0.555, scale: 1.0, color: "auto" }),
+        username: ({ x: 0.50, y: 0.595, scale: 1.0, color: "auto" }),
+        weather: ({ x: 0.50, y: 0.635, scale: 1.0, color: "auto" }),
+        password: ({ x: 0.50, y: 0.70, scale: 1.0, color: "auto" })
     })
     readonly property var workspaceLegacyStyleAliases: ({
         "filled-dot": "workflow",
@@ -677,11 +677,15 @@ Singleton {
     }
 
     function lockscreenLayoutPoint(value, fallback, password) {
+        const fallbackColor = String(fallback.color || "auto");
         if (!value || typeof value !== "object" || Array.isArray(value))
-            return ({ x: fallback.x, y: fallback.y, scale: fallback.scale });
+            return ({ x: fallback.x, y: fallback.y, scale: fallback.scale, color: fallbackColor });
         const x = Number(value.x);
         const y = Number(value.y);
         const scale = Number(value.scale === undefined ? 1 : value.scale);
+        const rawColor = String(value.color === undefined ? "auto" : value.color);
+        const color = rawColor === "auto" || /^#[0-9a-fA-F]{6}$/.test(rawColor)
+            ? rawColor.toLowerCase() : fallbackColor;
         const minX = password ? 0.15 : 0.05;
         const maxX = password ? 0.85 : 0.95;
         const minY = password ? 0.20 : 0.08;
@@ -689,8 +693,8 @@ Singleton {
         if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(scale)
                 || x < minX || x > maxX || y < minY || y > maxY
                 || scale < 0.50 || scale > 2.00)
-            return ({ x: fallback.x, y: fallback.y, scale: fallback.scale });
-        return ({ x: x, y: y, scale: scale });
+            return ({ x: fallback.x, y: fallback.y, scale: fallback.scale, color: fallbackColor });
+        return ({ x: x, y: y, scale: scale, color: color });
     }
     function lockscreenLayout() {
         const defaults = root.defaultLockscreenLayout;

@@ -100,21 +100,9 @@ require_text "$QUICK_SETTINGS" 'text: "Audio Reactive"' \
     'Quick Settings has no Audio Reactive lockscreen toggle'
 require_text "$QUICK_SETTINGS" 'text: "Mouse Interaction"' \
     'Quick Settings has no Mouse Interaction lockscreen toggle'
-require_text "$QUICK_SETTINGS" 'text: "Time"' \
-    'Quick Settings has no Time lockscreen toggle'
-require_text "$QUICK_SETTINGS" 'text: "Date"' \
-    'Quick Settings has no Date lockscreen toggle'
-require_text "$QUICK_SETTINGS" 'text: "Username"' \
-    'Quick Settings has no Username lockscreen toggle'
-require_text "$QUICK_SETTINGS" 'text: "Weather"' \
-    'Quick Settings has no Weather lockscreen toggle'
 for command in \
     set-lockscreen-audio-reactive \
-    set-lockscreen-mouse-interactive \
-    set-lockscreen-show-time \
-    set-lockscreen-show-date \
-    set-lockscreen-show-username \
-    set-lockscreen-show-weather; do
+    set-lockscreen-mouse-interactive; do
     require_text "$QUICK_SETTINGS" "\"${command}\"" \
         "Quick Settings does not persist ${command}"
 done
@@ -225,7 +213,7 @@ require_text "$SURFACE_QML" 'required property bool showWeather' \
     'lock surface has no optional weather property'
 require_text "$SURFACE_QML" 'required property string weatherText' \
     'lock surface has no cached weather text input'
-require_text "$SCENE_QML" 'root.showWeather && root.weatherText.length > 0' \
+require_text "$SCENE_QML" 'root.presentationVisible("weather", root.showWeather) && root.weatherText.length > 0' \
     'weather metadata does not fail closed when the local cache is empty'
 require_text "$SCENE_QML" 'Quickshell.env("USER")' \
     'optional username does not read the current local session user'

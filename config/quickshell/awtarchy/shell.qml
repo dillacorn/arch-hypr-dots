@@ -13,6 +13,7 @@ ShellRoot {
     id: root
 
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
+    readonly property color lockscreenAutoAccent: LockscreenContrast.accent
     readonly property string runtimeRulesScript: configHome + "/hypr/scripts/quickshell_runtime_rules.sh"
     readonly property string barDragRuntimeScript: configHome + "/hypr/scripts/quickshell_bar_drag_runtime.sh"
     readonly property string updateNotificationsScript: configHome + "/hypr/scripts/quickshell_update_notifications.sh"

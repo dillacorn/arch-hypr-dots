@@ -21,7 +21,7 @@ QUICK_SETTINGS_LAYOUT_SAVE_VERSION=1
 LOCKSCREEN_ANIMATIONS_JSON='["random","swarm","edges","center","split","off"]'
 LOCKSCREEN_BACKGROUNDS_JSON='["black","wallpaper"]'
 LOCKSCREEN_LAYOUT_KEYS_JSON='["logo","time","date","username","weather","password"]'
-LOCKSCREEN_LAYOUT_DEFAULT_JSON='{"logo":{"x":0.5,"y":0.34,"scale":1},"time":{"x":0.5,"y":0.51,"scale":1},"date":{"x":0.5,"y":0.555,"scale":1},"username":{"x":0.5,"y":0.595,"scale":1},"weather":{"x":0.5,"y":0.635,"scale":1},"password":{"x":0.5,"y":0.7,"scale":1}}'
+LOCKSCREEN_LAYOUT_DEFAULT_JSON='{"logo":{"x":0.5,"y":0.34,"scale":1,"color":"auto"},"time":{"x":0.5,"y":0.51,"scale":1,"color":"auto"},"date":{"x":0.5,"y":0.555,"scale":1,"color":"auto"},"username":{"x":0.5,"y":0.595,"scale":1,"color":"auto"},"weather":{"x":0.5,"y":0.635,"scale":1,"color":"auto"},"password":{"x":0.5,"y":0.7,"scale":1,"color":"auto"}}'
 CURSOR_VARIANTS_JSON='["ice","classic","amber","ice-sharp","classic-sharp","amber-sharp","ice-right","classic-right","amber-right","ice-sharp-right","classic-sharp-right","amber-sharp-right"]'
 QUICK_SETTINGS_SECTIONS_JSON='["brightness","output-volume","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","title-bars"]'
 WORKSPACE_STYLES_JSON='["awtarchy","numbers","icons","workflow","phases","custom-symbol"]'
@@ -226,11 +226,17 @@ normalize_lockscreen_layout_json() {
                 . as $key
                 | ($candidate[$key] | type) == "object"
                 and ((($candidate[$key] | keys | sort) == ["x", "y"])
-                    or (($candidate[$key] | keys | sort) == ["scale", "x", "y"]))
+                    or (($candidate[$key] | keys | sort) == ["scale", "x", "y"])
+                    or (($candidate[$key] | keys | sort) == ["color", "x", "y"])
+                    or (($candidate[$key] | keys | sort) == ["color", "scale", "x", "y"]))
                 and ($candidate[$key].x | type) == "number"
                 and ($candidate[$key].y | type) == "number"
                 and (($candidate[$key] | has("scale") | not)
                     or ($candidate[$key].scale | type) == "number")
+                and (($candidate[$key] | has("color") | not)
+                    or (($candidate[$key].color | type) == "string"
+                        and ($candidate[$key].color == "auto"
+                            or ($candidate[$key].color | test("^#[0-9A-Fa-f]{6}$")))))
                 and (($candidate[$key].scale // 1) >= 0.50)
                 and (($candidate[$key].scale // 1) <= 2.00)
                 and (if $key == "password" then
@@ -246,7 +252,8 @@ normalize_lockscreen_layout_json() {
                 .[$key] = {
                     x: $candidate[$key].x,
                     y: $candidate[$key].y,
-                    scale: ($candidate[$key].scale // 1)
+                    scale: ($candidate[$key].scale // 1),
+                    color: ($candidate[$key].color // "auto")
                 })
         else
             error("invalid lockscreen layout")

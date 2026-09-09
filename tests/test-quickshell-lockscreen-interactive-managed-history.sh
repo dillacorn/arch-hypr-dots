@@ -13,6 +13,7 @@ managed_files=(
     'config/hypr/scripts/quickshell_application_state.sh:.config/hypr/scripts/quickshell_application_state.sh'
     'config/hypr/scripts/quickshell_lockscreen_audio.sh:.config/hypr/scripts/quickshell_lockscreen_audio.sh'
     'config/hypr/scripts/quickshell_lockscreen_weather.sh:.config/hypr/scripts/quickshell_lockscreen_weather.sh'
+    'config/hypr/scripts/quickshell_lockscreen_contrast.sh:.config/hypr/scripts/quickshell_lockscreen_contrast.sh'
     'config/quickshell/awtarchy/shell.qml:.config/quickshell/awtarchy/shell.qml'
     'config/quickshell/awtarchy/BarState.qml:.config/quickshell/awtarchy/BarState.qml'
     'config/quickshell/awtarchy/QuickSettings.qml:.config/quickshell/awtarchy/QuickSettings.qml'
@@ -20,12 +21,14 @@ managed_files=(
     'config/quickshell/awtarchy/LockPreviewScene.qml:.config/quickshell/awtarchy/LockPreviewScene.qml'
     'config/quickshell/awtarchy/LockPreviewWallpaperState.qml:.config/quickshell/awtarchy/LockPreviewWallpaperState.qml'
     'config/quickshell/awtarchy/LockscreenWeather.qml:.config/quickshell/awtarchy/LockscreenWeather.qml'
+    'config/quickshell/awtarchy/LockscreenContrast.qml:.config/quickshell/awtarchy/LockscreenContrast.qml'
     'config/quickshell/awtarchy-lock/shell.qml:.config/quickshell/awtarchy-lock/shell.qml'
     'config/quickshell/awtarchy-lock/LockSurface.qml:.config/quickshell/awtarchy-lock/LockSurface.qml'
     'config/quickshell/awtarchy-lock/LockScene.qml:.config/quickshell/awtarchy-lock/LockScene.qml'
     'config/quickshell/awtarchy-lock/LockAudioAnalyzer.qml:.config/quickshell/awtarchy-lock/LockAudioAnalyzer.qml'
     'config/quickshell/awtarchy-lock/LockWeatherCache.qml:.config/quickshell/awtarchy-lock/LockWeatherCache.qml'
     'config/quickshell/awtarchy-lock/LockWallpaperState.qml:.config/quickshell/awtarchy-lock/LockWallpaperState.qml'
+    'config/quickshell/awtarchy-lock/LockContrastCache.qml:.config/quickshell/awtarchy-lock/LockContrastCache.qml'
     'config/quickshell/awtarchy-lock/cava.conf:.config/quickshell/awtarchy-lock/cava.conf'
 )
 
