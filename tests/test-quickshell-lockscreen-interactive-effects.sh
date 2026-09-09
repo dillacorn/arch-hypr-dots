@@ -7,6 +7,7 @@ BAR_STATE="${ROOT}/config/quickshell/awtarchy/BarState.qml"
 QUICK_SETTINGS="${ROOT}/config/quickshell/awtarchy/QuickSettings.qml"
 SHELL_QML="${ROOT}/config/quickshell/awtarchy-lock/shell.qml"
 SURFACE_QML="${ROOT}/config/quickshell/awtarchy-lock/LockSurface.qml"
+SCENE_QML="${ROOT}/config/quickshell/awtarchy-lock/LockScene.qml"
 AUDIO_QML="${ROOT}/config/quickshell/awtarchy-lock/LockAudioAnalyzer.qml"
 WEATHER_QML="${ROOT}/config/quickshell/awtarchy-lock/LockWeatherCache.qml"
 CAVA_CONFIG="${ROOT}/config/quickshell/awtarchy-lock/cava.conf"
@@ -161,45 +162,47 @@ require_text "$SHELL_QML" 'showWeather: root.lockShowWeather' \
 require_text "$SHELL_QML" 'weatherText: lockWeatherCache.summary' \
     'lock surfaces do not receive cached weather text'
 
-# Real cursor stays hidden. The replacement visual is bounded and surface-local.
+# Real cursor stays hidden on the secure surface. Replacement visuals and
+# displacement physics are presentation-only and live in the shared scene.
 require_text "$SURFACE_QML" 'cursorShape: Qt.BlankCursor' \
     'lockscreen exposes the real pointer'
-require_text "$SURFACE_QML" 'readonly property int ghostTrailLength: 6' \
+require_text "$SCENE_QML" 'readonly property int ghostTrailLength: 6' \
     'ghost cursor does not use the fixed six-sample trail'
-require_text "$SURFACE_QML" 'readonly property int pointerUpdateIntervalMs: 16' \
+require_text "$SCENE_QML" 'readonly property int pointerUpdateIntervalMs: 16' \
     'pointer interaction is not throttled near one 60 Hz update'
-require_text "$SURFACE_QML" 'readonly property int cursorFadeDelayMs: 180' \
+require_text "$SCENE_QML" 'readonly property int cursorFadeDelayMs: 180' \
     'ghost cursor fade does not begin at the approved idle delay'
-require_text "$SURFACE_QML" 'readonly property int cursorFadeDurationMs: 320' \
+require_text "$SCENE_QML" 'readonly property int cursorFadeDurationMs: 320' \
     'ghost cursor fade does not finish near 500 ms total idle time'
-require_text "$SURFACE_QML" 'readonly property real pointerInfluenceRadius: 72 * root.uiScale' \
+require_text "$SCENE_QML" 'readonly property real pointerInfluenceRadius: 72 * uiScale' \
     'pointer influence radius is not explicitly bounded'
-require_text "$SURFACE_QML" 'readonly property real pointerDisplacementCap: 24 * root.uiScale' \
+require_text "$SCENE_QML" 'readonly property real pointerDisplacementCap: 24 * uiScale' \
     'pointer displacement is not explicitly bounded'
-require_text "$SURFACE_QML" 'readonly property real audioDisplacementCap: 6 * root.uiScale' \
+require_text "$SCENE_QML" 'readonly property real audioDisplacementCap: 6 * uiScale' \
     'audio displacement is not explicitly bounded'
 require_text "$SURFACE_QML" 'required property bool mouseInteractive' \
     'lock surface has no independent mouse-interaction input'
-require_text "$SURFACE_QML" 'readonly property bool pointerEffectsEnabled: root.mouseInteractive && root.pointerActive' \
+require_text "$SCENE_QML" 'readonly property bool pointerEffectsEnabled: mouseInteractive && pointerActive' \
     'pointer effects do not obey the independent Mouse Interaction toggle'
-require_text "$SURFACE_QML" 'readonly property bool audioEffectsEnabled: root.audioReactive && root.audioLevel > root.audioSilenceThreshold' \
+require_text "$SCENE_QML" 'readonly property bool audioEffectsEnabled: audioReactive && audioLevel > audioSilenceThreshold' \
     'audio effects do not obey the independent Audio Reactive toggle'
-reject_text "$SURFACE_QML" 'readonly property bool interactiveEffectsEnabled: root.animationPreference !== "off"' \
+reject_text "$SCENE_QML" 'readonly property bool interactiveEffectsEnabled: root.animationPreference !== "off"' \
     'Lockscreen Animation Off still acts as the pointer/audio master switch'
-require_text "$SURFACE_QML" 'property real pointerOffsetX: 0' \
+require_text "$SCENE_QML" 'property real pointerOffsetX: 0' \
     'wordmark cells have no pointer displacement state'
-require_text "$SURFACE_QML" 'property real pointerOffsetY: 0' \
+require_text "$SCENE_QML" 'property real pointerOffsetY: 0' \
     'wordmark cells have no pointer displacement state'
-require_text "$SURFACE_QML" 'readonly property real audioOffsetX:' \
+require_text "$SCENE_QML" 'readonly property real audioOffsetX:' \
     'wordmark cells have no audio displacement state'
-require_text "$SURFACE_QML" 'readonly property real audioOffsetY:' \
+require_text "$SCENE_QML" 'readonly property real audioOffsetY:' \
     'wordmark cells have no audio displacement state'
-require_text "$SURFACE_QML" 'NumberAnimation on pointerOffsetX' \
+require_text "$SCENE_QML" 'NumberAnimation on pointerOffsetX' \
     'pointer X displacement has no return-to-rest animation'
-require_text "$SURFACE_QML" 'NumberAnimation on pointerOffsetY' \
+require_text "$SCENE_QML" 'NumberAnimation on pointerOffsetY' \
     'pointer Y displacement has no return-to-rest animation'
 
 # Optional metadata remains independent from animation/effect preferences.
+# LockSurface carries the normalized visibility inputs; LockScene renders them.
 require_text "$SURFACE_QML" 'required property bool showTime' \
     'lock surface has no optional time property'
 require_text "$SURFACE_QML" 'required property bool showDate' \
@@ -210,9 +213,9 @@ require_text "$SURFACE_QML" 'required property bool showWeather' \
     'lock surface has no optional weather property'
 require_text "$SURFACE_QML" 'required property string weatherText' \
     'lock surface has no cached weather text input'
-require_text "$SURFACE_QML" 'root.showWeather && root.weatherText.length > 0' \
+require_text "$SCENE_QML" 'root.showWeather && root.weatherText.length > 0' \
     'weather metadata does not fail closed when the local cache is empty'
-require_text "$SURFACE_QML" 'Quickshell.env("USER")' \
+require_text "$SCENE_QML" 'Quickshell.env("USER")' \
     'optional username does not read the current local session user'
 
 # Weather is cache-only inside the lock process. It never performs geolocation or
