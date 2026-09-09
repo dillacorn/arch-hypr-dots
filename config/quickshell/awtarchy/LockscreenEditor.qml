@@ -19,26 +19,73 @@ Singleton {
     readonly property var elementNames: ["logo", "time", "date", "username", "weather", "password"]
 
     property var draftLayout: defaultLayout()
+    property var draftVisibility: defaultVisibility()
+    property string selectedElement: "logo"
     property string statusMessage: ""
 
     function defaultLayout() {
         return ({
-            logo: ({ x: 0.50, y: 0.34 }),
-            time: ({ x: 0.50, y: 0.51 }),
-            date: ({ x: 0.50, y: 0.555 }),
-            username: ({ x: 0.50, y: 0.595 }),
-            weather: ({ x: 0.50, y: 0.635 }),
-            password: ({ x: 0.50, y: 0.70 })
+            logo: ({ x: 0.50, y: 0.34, scale: 1.0 }),
+            time: ({ x: 0.50, y: 0.51, scale: 1.0 }),
+            date: ({ x: 0.50, y: 0.555, scale: 1.0 }),
+            username: ({ x: 0.50, y: 0.595, scale: 1.0 }),
+            weather: ({ x: 0.50, y: 0.635, scale: 1.0 }),
+            password: ({ x: 0.50, y: 0.70, scale: 1.0 })
         });
     }
 
-    function cloneLayout(value) {
+    function defaultVisibility() {
+        return ({
+            logo: true,
+            time: false,
+            date: false,
+            username: false,
+            weather: false,
+            password: true
+        });
+    }
+
+    function cloneObject(value, fallback) {
         try {
             const parsed = JSON.parse(JSON.stringify(value));
-            return parsed && typeof parsed === "object" ? parsed : defaultLayout();
+            return parsed && typeof parsed === "object" ? parsed : fallback();
         } catch (error) {
-            return defaultLayout();
+            return fallback();
         }
+    }
+
+    function cloneLayout(value) {
+        const cloned = cloneObject(value, defaultLayout);
+        const defaults = defaultLayout();
+        const result = ({});
+        for (const name of elementNames) {
+            const raw = cloned[name] || defaults[name];
+            const password = name === "password";
+            const x = Number(raw.x);
+            const y = Number(raw.y);
+            const scale = Number(raw.scale === undefined ? 1 : raw.scale);
+            result[name] = ({
+                x: Math.max(password ? 0.15 : 0.05,
+                    Math.min(password ? 0.85 : 0.95,
+                        Number.isFinite(x) ? x : defaults[name].x)),
+                y: Math.max(password ? 0.20 : 0.08,
+                    Math.min(password ? 0.86 : 0.92,
+                        Number.isFinite(y) ? y : defaults[name].y)),
+                scale: Math.max(0.50, Math.min(2.00,
+                    Number.isFinite(scale) ? scale : 1))
+            });
+        }
+        return result;
+    }
+
+    function cloneVisibility(value) {
+        const defaults = defaultVisibility();
+        const cloned = cloneObject(value, defaultVisibility);
+        const result = ({});
+        for (const name of elementNames)
+            result[name] = name === "password" ? true
+                : (typeof cloned[name] === "boolean" ? cloned[name] : defaults[name]);
+        return result;
     }
 
     function clampPoint(name, x, y) {
@@ -53,17 +100,65 @@ Singleton {
         if (elementNames.indexOf(name) < 0)
             return;
         const next = cloneLayout(draftLayout);
-        next[name] = clampPoint(name, Number(x), Number(y));
+        const point = clampPoint(name, Number(x), Number(y));
+        next[name] = ({ x: point.x, y: point.y, scale: next[name].scale });
         draftLayout = next;
+        selectedElement = name;
+    }
+
+    function elementScale(name) {
+        const point = draftLayout[name] || defaultLayout()[name];
+        const value = Number(point.scale === undefined ? 1 : point.scale);
+        return Number.isFinite(value) ? Math.max(0.50, Math.min(2.00, value)) : 1;
+    }
+
+    function setDraftScale(name, scale) {
+        if (elementNames.indexOf(name) < 0)
+            return;
+        const next = cloneLayout(draftLayout);
+        const value = Number(scale);
+        if (!Number.isFinite(value))
+            return;
+        next[name].scale = Math.round(Math.max(0.50, Math.min(2.00, value)) * 100) / 100;
+        draftLayout = next;
+        selectedElement = name;
+    }
+
+    function elementCanHide(name) {
+        return name !== "password";
+    }
+
+    function setDraftVisible(name, visible) {
+        if (elementNames.indexOf(name) < 0 || !elementCanHide(name))
+            return;
+        const next = cloneVisibility(draftVisibility);
+        next[name] = !!visible;
+        draftVisibility = next;
+        selectedElement = name;
+    }
+
+    function elementEnabled(name) {
+        return draftVisibility[name] !== false;
     }
 
     function resetDraft() {
         draftLayout = defaultLayout();
+        draftVisibility = defaultVisibility();
+        selectedElement = "logo";
         statusMessage = "Defaults loaded. Save to apply.";
     }
 
     function loadPersistedDraft() {
         draftLayout = cloneLayout(BarState.lockscreenLayout());
+        draftVisibility = cloneVisibility(({
+            logo: BarState.lockscreenShowLogo(),
+            time: BarState.lockscreenShowTime(),
+            date: BarState.lockscreenShowDate(),
+            username: BarState.lockscreenShowUsername(),
+            weather: BarState.lockscreenShowWeather(),
+            password: true
+        }));
+        selectedElement = elementNames.indexOf(selectedElement) >= 0 ? selectedElement : "logo";
         statusMessage = "";
     }
 
@@ -103,21 +198,10 @@ Singleton {
         saveProcess.exec([
             "bash",
             stateBackend,
-            "save-lockscreen-layout",
-            JSON.stringify(draftLayout)
+            "save-lockscreen-editor",
+            JSON.stringify(draftLayout),
+            JSON.stringify(draftVisibility)
         ]);
-    }
-
-    function elementEnabled(name) {
-        if (name === "time")
-            return BarState.lockscreenShowTime();
-        if (name === "date")
-            return BarState.lockscreenShowDate();
-        if (name === "username")
-            return BarState.lockscreenShowUsername();
-        if (name === "weather")
-            return BarState.lockscreenShowWeather();
-        return true;
     }
 
     function elementLabel(name) {
@@ -138,7 +222,7 @@ Singleton {
                 root.statusMessage = "Saved";
                 closeAfterSave.restart();
             } else {
-                root.statusMessage = "Could not save lockscreen layout";
+                root.statusMessage = "Could not save lockscreen presentation";
             }
         }
     }
@@ -193,10 +277,11 @@ Singleton {
                 audioHigh: 0
                 audioOverall: 0
                 mouseInteractive: BarState.lockscreenMouseInteractiveEnabled()
-                showTime: BarState.lockscreenShowTime()
-                showDate: BarState.lockscreenShowDate()
-                showUsername: BarState.lockscreenShowUsername()
-                showWeather: BarState.lockscreenShowWeather()
+                showLogo: root.draftVisibility.logo
+                showTime: root.draftVisibility.time
+                showDate: root.draftVisibility.date
+                showUsername: root.draftVisibility.username
+                showWeather: root.draftVisibility.weather
                 weatherText: "Weather preview"
                 backgroundMode: BarState.lockscreenBackground()
                 wallpaperSource: wallpaperState.source
@@ -213,23 +298,24 @@ Singleton {
                     readonly property bool enabledElement: root.elementEnabled(elementName)
                     readonly property var point: root.draftLayout[elementName]
                         || root.defaultLayout()[elementName]
-                    width: Math.max(58, label.implicitWidth + 18)
+                    width: Math.max(64, label.implicitWidth + 18)
                     height: 24
                     x: Math.max(0, Math.min(parent.width - width,
                         Number(point.x) * parent.width - width / 2))
                     y: Math.max(0, Math.min(parent.height - height,
                         Number(point.y) * parent.height - height / 2))
-                    visible: enabledElement
-                    color: dragArea.pressed ? Theme.focus : Theme.popupBackground
-                    border.width: 1
+                    color: root.selectedElement === elementName
+                        ? Theme.focus : Theme.popupBackground
+                    border.width: root.selectedElement === elementName ? 2 : 1
                     border.color: Theme.foreground
-                    opacity: 0.86
+                    opacity: enabledElement ? 0.88 : 0.52
                     z: 200
 
                     Text {
                         id: label
                         anchors.centerIn: parent
                         text: root.elementLabel(parent.elementName)
+                            + (parent.enabledElement ? "" : " · Off")
                         color: Theme.foreground
                         font.family: Theme.fontFamily
                         font.pixelSize: 10
@@ -245,6 +331,7 @@ Singleton {
                         property real pressOffsetY: 0
 
                         onPressed: mouse => {
+                            root.selectedElement = parent.elementName;
                             pressOffsetX = mouse.x;
                             pressOffsetY = mouse.y;
                         }
@@ -267,46 +354,118 @@ Singleton {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
-                height: 62
+                height: 92
                 color: Theme.popupBackground
                 border.width: 1
                 border.color: Theme.muted
                 z: 300
 
-                RowLayout {
+                ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 10
-                    spacing: 8
+                    anchors.margins: 9
+                    spacing: 6
 
-                    Text {
+                    RowLayout {
                         Layout.fillWidth: true
-                        text: root.statusMessage.length > 0
-                            ? root.statusMessage
-                            : "Drag enabled elements. Save applies globally to every lock surface."
-                        color: Theme.muted
-                        font.family: Theme.fontFamily
-                        font.pixelSize: 10
-                        elide: Text.ElideRight
+                        spacing: 7
+
+                        Text {
+                            text: root.elementLabel(root.selectedElement)
+                            color: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 10
+                            font.bold: true
+                        }
+
+                        SettingsButton {
+                            label: root.elementCanHide(root.selectedElement)
+                                ? (root.elementEnabled(root.selectedElement) ? "Visible" : "Hidden")
+                                : "Always visible"
+                            active: root.elementEnabled(root.selectedElement)
+                            available: root.elementCanHide(root.selectedElement)
+                            textSize: 9
+                            onClicked: root.setDraftVisible(root.selectedElement,
+                                !root.elementEnabled(root.selectedElement))
+                        }
+
+                        Text {
+                            text: "Scale"
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 9
+                        }
+
+                        SettingsButton {
+                            label: "−"
+                            available: root.elementScale(root.selectedElement) > 0.50
+                            textSize: 10
+                            onClicked: root.setDraftScale(root.selectedElement,
+                                root.elementScale(root.selectedElement) - 0.10)
+                        }
+
+                        Text {
+                            text: Math.round(root.elementScale(root.selectedElement) * 100) + "%"
+                            color: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 9
+                            Layout.preferredWidth: 42
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+
+                        SettingsButton {
+                            label: "+"
+                            available: root.elementScale(root.selectedElement) < 2.00
+                            textSize: 10
+                            onClicked: root.setDraftScale(root.selectedElement,
+                                root.elementScale(root.selectedElement) + 0.10)
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        Text {
+                            text: root.statusMessage.length > 0
+                                ? root.statusMessage
+                                : "Drag any handle. Hidden elements keep a handle so they can be restored."
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 9
+                            elide: Text.ElideRight
+                            Layout.maximumWidth: 520
+                        }
                     }
 
-                    SettingsButton {
-                        label: "Restore Defaults"
-                        textSize: 10
-                        onClicked: root.resetDraft()
-                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
 
-                    SettingsButton {
-                        label: "Cancel"
-                        textSize: 10
-                        onClicked: root.close()
-                    }
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Changes are live preview only until Save. Password cannot be hidden."
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 9
+                            elide: Text.ElideRight
+                        }
 
-                    SettingsButton {
-                        label: "Save"
-                        active: true
-                        textSize: 10
-                        available: !saveProcess.running
-                        onClicked: root.save()
+                        SettingsButton {
+                            label: "Restore Defaults"
+                            textSize: 10
+                            onClicked: root.resetDraft()
+                        }
+
+                        SettingsButton {
+                            label: "Cancel"
+                            textSize: 10
+                            onClicked: root.close()
+                        }
+
+                        SettingsButton {
+                            label: "Save"
+                            active: true
+                            textSize: 10
+                            available: !saveProcess.running
+                            onClicked: root.save()
+                        }
                     }
                 }
             }

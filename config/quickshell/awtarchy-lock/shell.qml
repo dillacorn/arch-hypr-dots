@@ -16,6 +16,7 @@ ShellRoot {
     property string lockAnimationPreference: "split"
     property bool lockAudioReactive: true
     property bool lockMouseInteractive: true
+    property bool lockShowLogo: true
     property bool lockShowTime: false
     property bool lockShowDate: false
     property bool lockShowUsername: false
@@ -30,12 +31,12 @@ ShellRoot {
 
     function defaultLockLayout() {
         return ({
-            logo: ({ x: 0.50, y: 0.34 }),
-            time: ({ x: 0.50, y: 0.51 }),
-            date: ({ x: 0.50, y: 0.555 }),
-            username: ({ x: 0.50, y: 0.595 }),
-            weather: ({ x: 0.50, y: 0.635 }),
-            password: ({ x: 0.50, y: 0.70 })
+            logo: ({ x: 0.50, y: 0.34, scale: 1.0 }),
+            time: ({ x: 0.50, y: 0.51, scale: 1.0 }),
+            date: ({ x: 0.50, y: 0.555, scale: 1.0 }),
+            username: ({ x: 0.50, y: 0.595, scale: 1.0 }),
+            weather: ({ x: 0.50, y: 0.635, scale: 1.0 }),
+            password: ({ x: 0.50, y: 0.70, scale: 1.0 })
         });
     }
 
@@ -55,19 +56,20 @@ ShellRoot {
 
     function layoutPoint(value, fallback, password) {
         if (!value || typeof value !== "object" || Array.isArray(value))
-            return ({ x: fallback.x, y: fallback.y });
+            return ({ x: fallback.x, y: fallback.y, scale: fallback.scale });
         const x = Number(value.x);
         const y = Number(value.y);
+        const scale = Number(value.scale === undefined ? 1 : value.scale);
         const minX = password ? 0.15 : 0.05;
         const maxX = password ? 0.85 : 0.95;
         const minY = password ? 0.20 : 0.08;
         const maxY = password ? 0.86 : 0.92;
-        if (!Number.isFinite(x) || !Number.isFinite(y)
-                || x < minX || x > maxX || y < minY || y > maxY)
-            return ({ x: fallback.x, y: fallback.y });
-        return ({ x: x, y: y });
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(scale)
+                || x < minX || x > maxX || y < minY || y > maxY
+                || scale < 0.50 || scale > 2.00)
+            return ({ x: fallback.x, y: fallback.y, scale: fallback.scale });
+        return ({ x: x, y: y, scale: scale });
     }
-
     function normalizedLayout(value) {
         const defaults = defaultLockLayout();
         if (!value || typeof value !== "object" || Array.isArray(value))
@@ -95,6 +97,7 @@ ShellRoot {
         lockAnimationPreference = "split";
         lockAudioReactive = true;
         lockMouseInteractive = true;
+        lockShowLogo = true;
         lockShowTime = false;
         lockShowDate = false;
         lockShowUsername = false;
@@ -121,6 +124,7 @@ ShellRoot {
             lockAnimationPreference = normalizedAnimationPreference(parsed.lockscreen_animation);
             lockAudioReactive = normalizedBoolean(parsed.lockscreen_audio_reactive, true);
             lockMouseInteractive = normalizedBoolean(parsed.lockscreen_mouse_interactive, true);
+            lockShowLogo = normalizedBoolean(parsed.lockscreen_show_logo, true);
             lockShowTime = normalizedBoolean(parsed.lockscreen_show_time, false);
             lockShowDate = normalizedBoolean(parsed.lockscreen_show_date, false);
             lockShowUsername = normalizedBoolean(parsed.lockscreen_show_username, false);
@@ -193,6 +197,7 @@ ShellRoot {
                 audioHigh: lockAudioAnalyzer.high
                 audioOverall: lockAudioAnalyzer.overall
                 mouseInteractive: root.lockMouseInteractive
+                showLogo: root.lockShowLogo
                 showTime: root.lockShowTime
                 showDate: root.lockShowDate
                 showUsername: root.lockShowUsername

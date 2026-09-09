@@ -15,6 +15,7 @@ WlSessionLockSurface {
     required property real audioHigh
     required property real audioOverall
     required property bool mouseInteractive
+    required property bool showLogo
     required property bool showTime
     required property bool showDate
     required property bool showUsername
@@ -27,9 +28,10 @@ WlSessionLockSurface {
     color: "#000000"
 
     readonly property real uiScale: scene.uiScale
+    readonly property real passwordScale: scene.elementScale("password")
     readonly property int maskedCount: Math.min(password.text.length, 10)
     readonly property real maskSpread: maskedCount === 0 ? 0
-        : Math.round((24 + maskedCount * 14) * uiScale)
+        : Math.round((24 + maskedCount * 14) * uiScale * passwordScale)
 
     property bool entered: false
 
@@ -63,6 +65,7 @@ WlSessionLockSurface {
         audioHigh: root.audioHigh
         audioOverall: root.audioOverall
         mouseInteractive: root.mouseInteractive
+        showLogo: root.showLogo
         showTime: root.showTime
         showDate: root.showDate
         showUsername: root.showUsername
@@ -104,21 +107,21 @@ WlSessionLockSurface {
         Rectangle {
             anchors.centerIn: parent
             width: root.maskSpread
-            height: Math.round(14 * root.uiScale)
+            height: Math.round(14 * root.uiScale * root.passwordScale)
             color: root.theme.lockAccent
             opacity: password.text.length > 0 ? 0.09 : 0
         }
 
         Row {
             anchors.centerIn: parent
-            spacing: Math.round(7 * root.uiScale)
+            spacing: Math.round(7 * root.uiScale * root.passwordScale)
 
             Repeater {
                 model: root.maskedCount
 
                 Rectangle {
-                    width: Math.round(7 * root.uiScale)
-                    height: Math.round(10 * root.uiScale)
+                    width: Math.round(7 * root.uiScale * root.passwordScale)
+                    height: Math.round(10 * root.uiScale * root.passwordScale)
                     color: root.theme.lockAccent
                     opacity: 0.82
                 }
@@ -134,7 +137,7 @@ WlSessionLockSurface {
             selectedTextColor: "transparent"
             cursorVisible: false
             font.family: root.theme.fontFamily
-            font.pixelSize: Math.round(18 * root.uiScale)
+            font.pixelSize: Math.round(18 * root.uiScale * root.passwordScale)
             horizontalAlignment: TextInput.AlignHCenter
             verticalAlignment: TextInput.AlignVCenter
             echoMode: TextInput.Password

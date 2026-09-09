@@ -21,7 +21,7 @@ QUICK_SETTINGS_LAYOUT_SAVE_VERSION=1
 LOCKSCREEN_ANIMATIONS_JSON='["random","swarm","edges","center","split","off"]'
 LOCKSCREEN_BACKGROUNDS_JSON='["black","wallpaper"]'
 LOCKSCREEN_LAYOUT_KEYS_JSON='["logo","time","date","username","weather","password"]'
-LOCKSCREEN_LAYOUT_DEFAULT_JSON='{"logo":{"x":0.5,"y":0.34},"time":{"x":0.5,"y":0.51},"date":{"x":0.5,"y":0.555},"username":{"x":0.5,"y":0.595},"weather":{"x":0.5,"y":0.635},"password":{"x":0.5,"y":0.7}}'
+LOCKSCREEN_LAYOUT_DEFAULT_JSON='{"logo":{"x":0.5,"y":0.34,"scale":1},"time":{"x":0.5,"y":0.51,"scale":1},"date":{"x":0.5,"y":0.555,"scale":1},"username":{"x":0.5,"y":0.595,"scale":1},"weather":{"x":0.5,"y":0.635,"scale":1},"password":{"x":0.5,"y":0.7,"scale":1}}'
 CURSOR_VARIANTS_JSON='["ice","classic","amber","ice-sharp","classic-sharp","amber-sharp","ice-right","classic-right","amber-right","ice-sharp-right","classic-sharp-right","amber-sharp-right"]'
 QUICK_SETTINGS_SECTIONS_JSON='["brightness","output-volume","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","title-bars"]'
 WORKSPACE_STYLES_JSON='["awtarchy","numbers","icons","workflow","phases","custom-symbol"]'
@@ -160,7 +160,7 @@ set_lockscreen_animation() {
 set_lockscreen_option() {
     local field="$1" value="$2" label="$3" enabled
     case "$field" in
-        lockscreen_audio_reactive|lockscreen_mouse_interactive|lockscreen_show_time|lockscreen_show_date|lockscreen_show_username|lockscreen_show_weather) ;;
+        lockscreen_audio_reactive|lockscreen_mouse_interactive|lockscreen_show_logo|lockscreen_show_time|lockscreen_show_date|lockscreen_show_username|lockscreen_show_weather) ;;
         *)
             printf 'unsupported lockscreen option: %s\n' "$field" >&2
             exit 2
@@ -214,47 +214,107 @@ set_lockscreen_weather_location() {
     commit_tmp
 }
 
-validate_lockscreen_layout() {
+normalize_lockscreen_layout_json() {
     local value="$1"
-    if ! jq -e -n \
+    jq -ce -n \
         --argjson candidate "$value" \
         --argjson keys "$LOCKSCREEN_LAYOUT_KEYS_JSON" '
-        ($candidate | type) == "object"
-        and (($candidate | keys | sort) == ($keys | sort))
-        and all($keys[];
-            . as $key
-            | ($candidate[$key] | type) == "object"
-            and (($candidate[$key] | keys | sort) == ["x", "y"])
-            and ($candidate[$key].x | type) == "number"
-            and ($candidate[$key].y | type) == "number"
-            and (if $key == "password" then
-                $candidate[$key].x >= 0.15 and $candidate[$key].x <= 0.85
-                and $candidate[$key].y >= 0.20 and $candidate[$key].y <= 0.86
-            else
-                $candidate[$key].x >= 0.05 and $candidate[$key].x <= 0.95
-                and $candidate[$key].y >= 0.08 and $candidate[$key].y <= 0.92
-            end)
-        )
-    ' >/dev/null 2>&1; then
+        if (
+            ($candidate | type) == "object"
+            and (($candidate | keys | sort) == ($keys | sort))
+            and all($keys[];
+                . as $key
+                | ($candidate[$key] | type) == "object"
+                and ((($candidate[$key] | keys | sort) == ["x", "y"])
+                    or (($candidate[$key] | keys | sort) == ["scale", "x", "y"]))
+                and ($candidate[$key].x | type) == "number"
+                and ($candidate[$key].y | type) == "number"
+                and (($candidate[$key] | has("scale") | not)
+                    or ($candidate[$key].scale | type) == "number")
+                and (($candidate[$key].scale // 1) >= 0.50)
+                and (($candidate[$key].scale // 1) <= 2.00)
+                and (if $key == "password" then
+                    $candidate[$key].x >= 0.15 and $candidate[$key].x <= 0.85
+                    and $candidate[$key].y >= 0.20 and $candidate[$key].y <= 0.86
+                else
+                    $candidate[$key].x >= 0.05 and $candidate[$key].x <= 0.95
+                    and $candidate[$key].y >= 0.08 and $candidate[$key].y <= 0.92
+                end)
+            )
+        ) then
+            reduce $keys[] as $key ({};
+                .[$key] = {
+                    x: $candidate[$key].x,
+                    y: $candidate[$key].y,
+                    scale: ($candidate[$key].scale // 1)
+                })
+        else
+            error("invalid lockscreen layout")
+        end
+    '
+}
+
+validate_lockscreen_layout() {
+    local normalized
+    if ! normalized="$(normalize_lockscreen_layout_json "$1" 2>/dev/null)"; then
         printf 'invalid lockscreen layout\n' >&2
         exit 2
     fi
 }
 
 save_lockscreen_layout() {
-    local value="$1"
-    validate_lockscreen_layout "$value"
+    local normalized
+    if ! normalized="$(normalize_lockscreen_layout_json "$1" 2>/dev/null)"; then
+        printf 'invalid lockscreen layout\n' >&2
+        exit 2
+    fi
     new_tmp
-    jq --argjson value "$value" '.lockscreen_layout = $value' "$STATE_FILE" >"$TMP_FILE"
+    jq --argjson value "$normalized" '.lockscreen_layout = $value' "$STATE_FILE" >"$TMP_FILE"
     commit_tmp
 }
 
+validate_lockscreen_editor_visibility() {
+    local value="$1"
+    if ! jq -e -n \
+        --argjson candidate "$value" \
+        --argjson keys "$LOCKSCREEN_LAYOUT_KEYS_JSON" '
+        ($candidate | type) == "object"
+        and (($candidate | keys | sort) == ($keys | sort))
+        and all($keys[]; . as $key | ($candidate[$key] | type) == "boolean")
+        and $candidate.password == true
+    ' >/dev/null 2>&1; then
+        printf 'invalid lockscreen editor visibility\n' >&2
+        exit 2
+    fi
+}
+
+save_lockscreen_editor() {
+    local normalized visibility="$2"
+    if ! normalized="$(normalize_lockscreen_layout_json "$1" 2>/dev/null)"; then
+        printf 'invalid lockscreen layout\n' >&2
+        exit 2
+    fi
+    validate_lockscreen_editor_visibility "$visibility"
+    new_tmp
+    jq \
+        --argjson layout "$normalized" \
+        --argjson visibility "$visibility" '
+        .lockscreen_layout = $layout
+        | .lockscreen_show_logo = $visibility.logo
+        | .lockscreen_show_time = $visibility.time
+        | .lockscreen_show_date = $visibility.date
+        | .lockscreen_show_username = $visibility.username
+        | .lockscreen_show_weather = $visibility.weather
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
 reset_lockscreen_presentation() {
     new_tmp
     jq --argjson layout "$LOCKSCREEN_LAYOUT_DEFAULT_JSON" '
         .lockscreen_animation = "split"
         | .lockscreen_audio_reactive = true
         | .lockscreen_mouse_interactive = true
+        | .lockscreen_show_logo = true
         | .lockscreen_show_time = false
         | .lockscreen_show_date = false
         | .lockscreen_show_username = false
@@ -1070,6 +1130,10 @@ case "$cmd" in
         [[ -n ${2:-} ]] || exit 2
         set_lockscreen_option lockscreen_mouse_interactive "$2" 'lockscreen mouse interactive'
         ;;
+    set-lockscreen-show-logo)
+        [[ -n ${2:-} ]] || exit 2
+        set_lockscreen_option lockscreen_show_logo "$2" 'lockscreen show logo'
+        ;;
     set-lockscreen-show-time)
         [[ -n ${2:-} ]] || exit 2
         set_lockscreen_option lockscreen_show_time "$2" 'lockscreen show time'
@@ -1097,6 +1161,10 @@ case "$cmd" in
     save-lockscreen-layout)
         [[ -n ${2:-} ]] || exit 2
         save_lockscreen_layout "$2"
+        ;;
+    save-lockscreen-editor)
+        [[ $# -eq 3 ]] || exit 2
+        save_lockscreen_editor "$2" "$3"
         ;;
     reset-lockscreen-presentation)
         reset_lockscreen_presentation
@@ -1242,7 +1310,7 @@ case "$cmd" in
         reset_defaults
         ;;
     *)
-        printf 'usage: %s {set-cursor-theme <ice|classic>|set-lockscreen-animation <random|swarm|edges|center|split|off>|set-lockscreen-audio-reactive <true|false>|set-lockscreen-mouse-interactive <true|false>|set-lockscreen-show-time <true|false>|set-lockscreen-show-date <true|false>|set-lockscreen-show-username <true|false>|set-lockscreen-show-weather <true|false>|set-lockscreen-background <black|wallpaper>|set-lockscreen-weather-location <location>|save-lockscreen-layout <json>|reset-lockscreen-presentation|set-workspace-numbers <true|false>|set-bar-workspace-visible <1-10> <true|false>|set-workspace-icon-style <style>|set-workspace-style <legacy-style>|set-workspace-custom-label <label>|clear-workspace-custom-label|set-workspace-override <1-10> <label>|clear-workspace-override <1-10>|clear-workspace-overrides|set-launcher-icon <label>|reset-launcher-icon|reset-workspace-icons|reset-bar-icons|save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-update-notifications <true|false>|set-clock-date <MON> <true|false>|set-notification-popup-limit <1-20>|set-notification-popup-position <MON> <automatic|top-left|top-center|top-right|bottom-left|bottom-center|bottom-right>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|save-quick-settings-layout <MON> <order_json> <hidden_json>|copy-quick-settings-layout <order_json> <hidden_json> <MON>...|reset-quick-settings-layout <MON>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
+        printf 'usage: %s {set-cursor-theme <ice|classic>|set-lockscreen-animation <random|swarm|edges|center|split|off>|set-lockscreen-audio-reactive <true|false>|set-lockscreen-mouse-interactive <true|false>|set-lockscreen-show-logo <true|false>|set-lockscreen-show-time <true|false>|set-lockscreen-show-date <true|false>|set-lockscreen-show-username <true|false>|set-lockscreen-show-weather <true|false>|set-lockscreen-background <black|wallpaper>|set-lockscreen-weather-location <location>|save-lockscreen-layout <json>|save-lockscreen-editor <layout_json> <visibility_json>|reset-lockscreen-presentation|set-workspace-numbers <true|false>|set-bar-workspace-visible <1-10> <true|false>|set-workspace-icon-style <style>|set-workspace-style <legacy-style>|set-workspace-custom-label <label>|clear-workspace-custom-label|set-workspace-override <1-10> <label>|clear-workspace-override <1-10>|clear-workspace-overrides|set-launcher-icon <label>|reset-launcher-icon|reset-workspace-icons|reset-bar-icons|save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-update-notifications <true|false>|set-clock-date <MON> <true|false>|set-notification-popup-limit <1-20>|set-notification-popup-position <MON> <automatic|top-left|top-center|top-right|bottom-left|bottom-center|bottom-right>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|save-quick-settings-layout <MON> <order_json> <hidden_json>|copy-quick-settings-layout <order_json> <hidden_json> <MON>...|reset-quick-settings-layout <MON>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
         exit 2
         ;;
 esac

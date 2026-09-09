@@ -14,6 +14,7 @@ Item {
     required property real audioHigh
     required property real audioOverall
     required property bool mouseInteractive
+    required property bool showLogo
     required property bool showTime
     required property bool showDate
     required property bool showUsername
@@ -64,8 +65,8 @@ Item {
 
     readonly property real passwordCenterX: normalizedX("password", 0.50) * width
     readonly property real passwordCenterY: normalizedY("password", 0.70) * height
-    readonly property real passwordWidth: Math.round(320 * uiScale)
-    readonly property real passwordHeight: Math.round(42 * uiScale)
+    readonly property real passwordWidth: Math.round(320 * uiScale * elementScale("password"))
+    readonly property real passwordHeight: Math.round(42 * uiScale * elementScale("password"))
 
     property bool pointerActive: false
     property var wordmarkCells: ({})
@@ -103,13 +104,30 @@ Item {
         return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : fallback;
     }
 
+    function elementScale(name) {
+        const point = normalizedPoint(name);
+        const value = point ? Number(point.scale === undefined ? 1 : point.scale) : 1;
+        return Number.isFinite(value) ? Math.max(0.50, Math.min(2.00, value)) : 1;
+    }
+
     function registerWordmarkCell(row, column, cell) {
         wordmarkCells[String(row) + ":" + String(column)] = cell;
     }
 
+    function minuteTimeFormat() {
+        const localeFormat = String(Qt.locale().timeFormat(Locale.ShortFormat) || "");
+        const withoutSeconds = localeFormat
+            .replace(/([:.\-\s])s{1,2}(?:\.z{1,3})?/g, "")
+            .replace(/s{1,2}([:.\-\s])/g, "")
+            .replace(/z{1,3}/g, "")
+            .replace(/\s{2,}/g, " ")
+            .trim();
+        return withoutSeconds.length > 0 ? withoutSeconds : "HH:mm";
+    }
+
     function updateClockText() {
         const now = new Date();
-        timeText = Qt.formatTime(now, Locale.ShortFormat);
+        timeText = Qt.formatTime(now, minuteTimeFormat());
         dateText = Qt.formatDate(now, Locale.LongFormat);
     }
 
@@ -212,10 +230,13 @@ Item {
 
         Item {
             id: wordmarkItem
+            visible: root.showLogo
             x: root.normalizedX("logo", 0.50) * parent.width - width / 2
             y: root.normalizedY("logo", 0.34) * parent.height - height / 2
             width: root.wordmarkWidth
             height: root.wordmarkHeight
+            scale: root.elementScale("logo")
+            transformOrigin: Item.Center
 
             Repeater {
                 model: root.wordmarkRows.length
@@ -456,6 +477,8 @@ Item {
 
         Text {
             visible: root.showTime
+            scale: root.elementScale("time")
+            transformOrigin: Item.Center
             x: root.normalizedX("time", 0.50) * parent.width - width / 2
             y: root.normalizedY("time", 0.51) * parent.height - height / 2
             text: root.timeText
@@ -467,6 +490,8 @@ Item {
 
         Text {
             visible: root.showDate
+            scale: root.elementScale("date")
+            transformOrigin: Item.Center
             x: root.normalizedX("date", 0.50) * parent.width - width / 2
             y: root.normalizedY("date", 0.555) * parent.height - height / 2
             text: root.dateText
@@ -478,6 +503,8 @@ Item {
 
         Text {
             visible: root.showUsername
+            scale: root.elementScale("username")
+            transformOrigin: Item.Center
             x: root.normalizedX("username", 0.50) * parent.width - width / 2
             y: root.normalizedY("username", 0.595) * parent.height - height / 2
             text: root.usernameText
@@ -489,6 +516,8 @@ Item {
 
         Text {
             visible: root.showWeather && root.weatherText.length > 0
+            scale: root.elementScale("weather")
+            transformOrigin: Item.Center
             x: root.normalizedX("weather", 0.50) * parent.width - width / 2
             y: root.normalizedY("weather", 0.635) * parent.height - height / 2
             text: root.weatherText
@@ -507,20 +536,20 @@ Item {
 
             Rectangle {
                 anchors.centerIn: parent
-                width: Math.round(80 * root.uiScale)
-                height: Math.round(14 * root.uiScale)
+                width: Math.round(80 * root.uiScale * root.elementScale("password"))
+                height: Math.round(14 * root.uiScale * root.elementScale("password"))
                 color: root.theme.lockAccent
                 opacity: 0.09
             }
 
             Row {
                 anchors.centerIn: parent
-                spacing: Math.round(7 * root.uiScale)
+                spacing: Math.round(7 * root.uiScale * root.elementScale("password"))
                 Repeater {
                     model: 4
                     Rectangle {
-                        width: Math.round(7 * root.uiScale)
-                        height: Math.round(10 * root.uiScale)
+                        width: Math.round(7 * root.uiScale * root.elementScale("password"))
+                        height: Math.round(10 * root.uiScale * root.elementScale("password"))
                         color: root.theme.lockAccent
                         opacity: 0.82
                     }

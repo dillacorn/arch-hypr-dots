@@ -130,12 +130,12 @@ Singleton {
         { key: "off", label: "Off" }
     ]
     readonly property var defaultLockscreenLayout: ({
-        logo: ({ x: 0.50, y: 0.34 }),
-        time: ({ x: 0.50, y: 0.51 }),
-        date: ({ x: 0.50, y: 0.555 }),
-        username: ({ x: 0.50, y: 0.595 }),
-        weather: ({ x: 0.50, y: 0.635 }),
-        password: ({ x: 0.50, y: 0.70 })
+        logo: ({ x: 0.50, y: 0.34, scale: 1.0 }),
+        time: ({ x: 0.50, y: 0.51, scale: 1.0 }),
+        date: ({ x: 0.50, y: 0.555, scale: 1.0 }),
+        username: ({ x: 0.50, y: 0.595, scale: 1.0 }),
+        weather: ({ x: 0.50, y: 0.635, scale: 1.0 }),
+        password: ({ x: 0.50, y: 0.70, scale: 1.0 })
     })
     readonly property var workspaceLegacyStyleAliases: ({
         "filled-dot": "workflow",
@@ -351,6 +351,7 @@ Singleton {
             lockscreen_animation: "split",
             lockscreen_audio_reactive: true,
             lockscreen_mouse_interactive: true,
+            lockscreen_show_logo: true,
             lockscreen_show_time: false,
             lockscreen_show_date: false,
             lockscreen_show_username: false,
@@ -634,6 +635,10 @@ Singleton {
         return lockscreenBooleanPreference("lockscreen_mouse_interactive", true);
     }
 
+    function lockscreenShowLogo() {
+        return lockscreenBooleanPreference("lockscreen_show_logo", true);
+    }
+
     function lockscreenShowTime() {
         return lockscreenBooleanPreference("lockscreen_show_time", false);
     }
@@ -673,19 +678,20 @@ Singleton {
 
     function lockscreenLayoutPoint(value, fallback, password) {
         if (!value || typeof value !== "object" || Array.isArray(value))
-            return ({ x: fallback.x, y: fallback.y });
+            return ({ x: fallback.x, y: fallback.y, scale: fallback.scale });
         const x = Number(value.x);
         const y = Number(value.y);
+        const scale = Number(value.scale === undefined ? 1 : value.scale);
         const minX = password ? 0.15 : 0.05;
         const maxX = password ? 0.85 : 0.95;
         const minY = password ? 0.20 : 0.08;
         const maxY = password ? 0.86 : 0.92;
-        if (!Number.isFinite(x) || !Number.isFinite(y)
-                || x < minX || x > maxX || y < minY || y > maxY)
-            return ({ x: fallback.x, y: fallback.y });
-        return ({ x: x, y: y });
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(scale)
+                || x < minX || x > maxX || y < minY || y > maxY
+                || scale < 0.50 || scale > 2.00)
+            return ({ x: fallback.x, y: fallback.y, scale: fallback.scale });
+        return ({ x: x, y: y, scale: scale });
     }
-
     function lockscreenLayout() {
         const defaults = root.defaultLockscreenLayout;
         const value = data().lockscreen_layout;
