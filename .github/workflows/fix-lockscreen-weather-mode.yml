@@ -1,0 +1,29 @@
+name: Fix lockscreen weather helper mode
+
+on:
+  push:
+    branches: [feature/lockscreen-interactive-effects]
+    paths: [.github/workflows/fix-lockscreen-weather-mode.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/lockscreen-interactive-effects
+          fetch-depth: 0
+      - name: Set executable mode and publish source-only commit
+        run: |
+          chmod 0755 config/hypr/scripts/quickshell_lockscreen_weather.sh
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add config/hypr/scripts/quickshell_lockscreen_weather.sh
+          git diff --cached --check
+          git diff --cached --summary
+          git commit -m "Mark lockscreen weather helper executable"
+          git push origin HEAD:feature/lockscreen-interactive-effects
