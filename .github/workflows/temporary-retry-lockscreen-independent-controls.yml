@@ -52,22 +52,39 @@ jobs:
           managed.write_text('\n'.join(line.rstrip() for line in lines) + '\n')
           PY
 
-      - name: Validate exact patch
+      - name: Diff hygiene
+        run: git diff --check
+
+      - name: Bash syntax
         shell: bash
         run: |
           set -euo pipefail
-          git diff --check
           bash -n config/hypr/scripts/quickshell_application_state.sh
           bash -n config/hypr/scripts/quickshell_lockscreen_audio.sh
-          shellcheck config/hypr/scripts/quickshell_application_state.sh
-          shellcheck config/hypr/scripts/quickshell_lockscreen_audio.sh
           bash -n tests/test-quickshell-lockscreen-interactive-effects.sh
           bash -n tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
-          bash tests/test-quickshell-lockscreen-interactive-effects.sh
-          bash tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
-          bash tests/test-quickshell-lockscreen-runtime-regressions.sh
-          bash tests/test-quickshell-lockscreen-animation-preference.sh
-          bash tests/test-quickshell-lockscreen-interactive-managed-history.sh
+
+      - name: ShellCheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          shellcheck config/hypr/scripts/quickshell_application_state.sh
+          shellcheck config/hypr/scripts/quickshell_lockscreen_audio.sh
+
+      - name: Interactive effects contracts
+        run: bash tests/test-quickshell-lockscreen-interactive-effects.sh
+
+      - name: Interactive physics regressions
+        run: bash tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+
+      - name: Lockscreen runtime regressions
+        run: bash tests/test-quickshell-lockscreen-runtime-regressions.sh
+
+      - name: Animation preference regression
+        run: bash tests/test-quickshell-lockscreen-animation-preference.sh
+
+      - name: Managed history regression
+        run: bash tests/test-quickshell-lockscreen-interactive-managed-history.sh
 
       - name: Commit tested implementation
         shell: bash
