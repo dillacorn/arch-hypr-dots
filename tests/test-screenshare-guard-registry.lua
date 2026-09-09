@@ -1,6 +1,15 @@
 local module_path = assert(arg[1], "Screen Share Guard module path is required")
 
 local created = {}
+local events = {}
+local dispatched = {}
+local opened_window = {
+    address = "0xabc",
+    class = "signal",
+    initial_class = "signal",
+    title = "Signal",
+    initial_title = "Signal",
+}
 
 hl = {
     window_rule = function(spec)
@@ -25,8 +34,27 @@ hl = {
         created[#created + 1] = handle
         return handle
     end,
-    on = function() end,
+    on = function(name, callback)
+        events[name] = callback
+        return { remove = function() end }
+    end,
     exec_cmd = function() end,
+    get_windows = function(match)
+        if match.class == "^(signal|org\\.signal\\.Signal)$" then
+            return { opened_window }
+        end
+        return {}
+    end,
+    dispatch = function(action)
+        dispatched[#dispatched + 1] = action
+    end,
+    dsp = {
+        window = {
+            set_prop = function(spec)
+                return spec
+            end,
+        },
+    },
 }
 
 local guard = dofile(module_path)
@@ -58,6 +86,14 @@ assert(registry:find("signal\tSignal\tprotected\ttrue\t^(signal|org\\.signal\\.S
 assert(guard.set_group("signal", false) == true, "custom target could not be toggled")
 assert(created[#created].enabled == false, "custom target rule handle remained enabled")
 assert(guard.status():find("signal=false", 1, true), "custom target status did not follow the rule handle")
+
+assert(type(events["window.open"]) == "function",
+    "Screen Share Guard does not reapply disabled state after window rules run on a new window")
+events["window.open"](opened_window)
+assert(#dispatched == 1, "new matching window did not receive exactly one Screen Share Guard property correction")
+assert(dispatched[1].prop == "no_screen_share", "new-window correction changed the wrong property")
+assert(dispatched[1].value == "false", "new window did not inherit the disabled Screen Share Guard state")
+assert(dispatched[1].window == opened_window, "new-window correction did not target the opened window")
 
 local duplicate_ok = pcall(function()
     awtarchy_screenshare_guard_register_v1({
