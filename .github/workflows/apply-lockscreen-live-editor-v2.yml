@@ -1,0 +1,58 @@
+name: Apply validated live lockscreen editor
+
+on:
+  push:
+    branches: [feature/lockscreen-interactive-effects]
+    paths: [.github/workflows/apply-lockscreen-live-editor-v2.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: feature/lockscreen-interactive-effects
+          fetch-depth: 0
+
+      - name: Apply production patch
+        run: |
+          set -euo pipefail
+          python3 -m py_compile .github/scripts/apply_lockscreen_live_editor.py
+          python3 .github/scripts/apply_lockscreen_live_editor.py
+
+      - name: Validate focused contracts
+        run: |
+          set -euo pipefail
+          sudo apt-get update >/dev/null
+          sudo apt-get install -y jq shellcheck >/dev/null
+          bash -n config/hypr/scripts/quickshell_application_state.sh
+          shellcheck config/hypr/scripts/quickshell_application_state.sh
+          bash tests/test-quickshell-lockscreen-live-editor.sh
+          bash tests/test-quickshell-lockscreen-editor.sh
+          bash tests/test-quickshell-lockscreen-runtime-services.sh
+          bash tests/test-quickshell-lockscreen-weather.sh
+          bash tests/test-quickshell-lockscreen-foundation.sh
+          bash tests/test-quickshell-lockscreen-runtime-regressions.sh
+          bash tests/test-quickshell-lockscreen-animation-preference.sh
+          bash tests/test-quickshell-lockscreen-interactive-effects.sh
+          bash tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+          git diff --check
+
+      - name: Commit production changes
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            config/hypr/scripts/quickshell_application_state.sh \
+            config/quickshell/awtarchy/BarState.qml \
+            config/quickshell/awtarchy/LockscreenEditor.qml \
+            config/quickshell/awtarchy-lock/LockScene.qml \
+            config/quickshell/awtarchy-lock/LockSurface.qml \
+            config/quickshell/awtarchy-lock/shell.qml
+          git diff --cached --quiet && exit 0
+          git commit -m 'Add live lockscreen scale and visibility editing'
+          git push origin HEAD:feature/lockscreen-interactive-effects
