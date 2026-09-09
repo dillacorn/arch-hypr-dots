@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 SHELL_QML="${ROOT}/config/quickshell/awtarchy-lock/shell.qml"
 SURFACE_QML="${ROOT}/config/quickshell/awtarchy-lock/LockSurface.qml"
+SCENE_QML="${ROOT}/config/quickshell/awtarchy-lock/LockScene.qml"
 LOCK_THEME_QML="${ROOT}/config/quickshell/awtarchy-lock/LockTheme.qml"
 THEME_APPLY="${ROOT}/config/hypr/scripts/quickshell_theme_apply.sh"
 PINK_THEME="${ROOT}/config/hypr/themes/pink"
@@ -38,14 +39,14 @@ require_text "$SHELL_QML" 'auth: lockAuth' \
 reject_text "$SHELL_QML" 'auth: auth' \
     'lock surface still self-binds auth and loses the authentication object'
 
-# Approved minimal lockscreen: large Awtarchy ASCII wordmark, no conventional
-# lockscreen metadata, and uniform password blocks. The exact seven solid-block
-# rows, including their intentional leading spaces, are shared with the Hyprland
-# header so both representations remain visually identical.
-reject_text "$SURFACE_QML" '/fastfetch/ascii/awtarchy.txt' \
-    'lockscreen still loads the Fastfetch ASCII mark'
-reject_text "$SURFACE_QML" 'id: logoFile' \
-    'lockscreen still owns the removed Fastfetch FileView'
+# The approved wordmark is presentation-only now and is shared by both the
+# secure surface and unlocked editor through LockScene.
+reject_text "$SCENE_QML" '/fastfetch/ascii/awtarchy.txt' \
+    'shared lock scene still loads the Fastfetch ASCII mark'
+reject_text "$SCENE_QML" 'id: logoFile' \
+    'shared lock scene still owns the removed Fastfetch FileView'
+require_text "$SURFACE_QML" 'LockScene {' \
+    'secure lock surface does not use the shared presentation scene'
 
 WORDMARK_ROWS=(
     ' ▄▄▄      ██     █ ▄▄▄█████ ▄▄▄      ██▀███  ▄████▄  ██  ██ ██   ██'
@@ -58,8 +59,8 @@ WORDMARK_ROWS=(
 )
 
 for row in "${WORDMARK_ROWS[@]}"; do
-    require_text "$SURFACE_QML" "$row" \
-        'lockscreen does not use the approved solid-block Awtarchy wordmark'
+    require_text "$SCENE_QML" "$row" \
+        'shared lock scene does not use the approved solid-block Awtarchy wordmark'
 done
 
 mapfile -t hypr_header < <(head -n 7 "$HYPRLAND_LUA")
@@ -70,28 +71,26 @@ for i in "${!WORDMARK_ROWS[@]}"; do
         || fail 'Hyprland header does not exactly match the approved solid-block Awtarchy wordmark'
 done
 
-# The lockscreen must rasterize the ASCII cells geometrically rather than via
-# font glyphs. Adjacent block glyphs rendered as text showed visible hairline
-# seams on the real display; integer cell rectangles remove those font gaps.
-require_text "$SURFACE_QML" 'readonly property int wordmarkCellWidth:' \
+# The shared scene rasterizes ASCII cells geometrically rather than via font
+# glyphs. Integer cell rectangles avoid the seams seen with adjacent text glyphs.
+require_text "$SCENE_QML" 'readonly property int wordmarkCellWidth:' \
     'lockscreen wordmark does not use fixed geometric cell widths'
-require_text "$SURFACE_QML" 'readonly property int wordmarkCellHeight:' \
+require_text "$SCENE_QML" 'readonly property int wordmarkCellHeight:' \
     'lockscreen wordmark does not use fixed geometric cell heights'
-require_text "$SURFACE_QML" 'readonly property var wordmarkRows:' \
+require_text "$SCENE_QML" 'readonly property var wordmarkRows:' \
     'lockscreen wordmark rows are not owned by the geometric renderer'
-require_text "$SURFACE_QML" 'property string glyph:' \
+require_text "$SCENE_QML" 'property string glyph:' \
     'lockscreen wordmark does not map ASCII glyphs to geometric cells'
-require_text "$SURFACE_QML" 'antialiasing: false' \
+require_text "$SCENE_QML" 'antialiasing: false' \
     'lockscreen geometric wordmark does not disable rectangle antialiasing'
-reject_text "$SURFACE_QML" 'fontSizeMode: Text.HorizontalFit' \
+reject_text "$SCENE_QML" 'fontSizeMode: Text.HorizontalFit' \
     'lockscreen still renders the ASCII wordmark through font glyph fitting'
 
-# The lockscreen needs a theme color that remains meaningful on its fixed black
-# background. It is generated from each theme's active-border identity instead
-# of reusing foreground, which is intentionally dark for the pink theme.
+# Theme accent stays meaningful on the black base and paints both presentation
+# and password particles through the same lock theme identity.
 require_text "$LOCK_THEME_QML" 'readonly property color lockAccent:' \
     'lock theme does not expose a dedicated lockscreen accent'
-lock_accent_uses="$(grep -Fc 'color: root.theme.lockAccent' "$SURFACE_QML" || true)"
+lock_accent_uses="$(( $(grep -Fc 'color: root.theme.lockAccent' "$SCENE_QML" || true) + $(grep -Fc 'color: root.theme.lockAccent' "$SURFACE_QML" || true) ))"
 [[ "$lock_accent_uses" -ge 3 ]] \
     || fail 'lockscreen logo and password particles do not use the dedicated lock accent'
 
@@ -120,9 +119,8 @@ if data.get("lockAccent") != "#EACDD2":
 PY
 
 # Random mode is chosen once by the lock shell so every monitor receives the
-# same family for that lock. LockSurface maps an explicit preference to one of
-# four families, then randomizes paths inside that family. Off skips only the
-# particle formation and displays the finished logo immediately.
+# same family for that lock. LockScene maps explicit preferences and randomizes
+# paths within the selected family. Off skips only entrance formation.
 require_text "$SHELL_QML" 'property int randomFormationMode: Math.floor(Math.random() * 4)' \
     'lock shell does not choose one randomized formation family per lock'
 require_text "$SHELL_QML" 'randomFormationMode: root.randomFormationMode' \
@@ -132,57 +130,55 @@ require_text "$SURFACE_QML" 'required property string animationPreference' \
 require_text "$SURFACE_QML" 'required property int randomFormationMode' \
     'lock surface does not receive the shared random formation family'
 for preference in swarm edges center split; do
-    require_text "$SURFACE_QML" "animationPreference === \"${preference}\"" \
-        "lockscreen is missing the ${preference} formation preference"
+    require_text "$SCENE_QML" "animationPreference === \"${preference}\"" \
+        "shared lock scene is missing the ${preference} formation preference"
 done
 for mode in 0 1 2 3; do
-    require_text "$SURFACE_QML" "root.formationMode === ${mode}" \
-        "lockscreen is missing formation family ${mode}"
+    require_text "$SCENE_QML" "root.formationMode === ${mode}" \
+        "shared lock scene is missing formation family ${mode}"
 done
-require_text "$SURFACE_QML" 'root.animationPreference === "off" ? 1 : 0' \
+require_text "$SCENE_QML" 'root.animationPreference === "off" ? 1 : 0' \
     'lockscreen off preference does not skip particle formation'
-require_text "$SURFACE_QML" 'root.animationPreference !== "off"' \
+require_text "$SCENE_QML" 'root.animationPreference !== "off"' \
     'lockscreen particle animation still runs when disabled'
-require_text "$SURFACE_QML" 'Math.random()' \
+require_text "$SCENE_QML" 'Math.random()' \
     'lockscreen wordmark formation is not randomized per lock'
-require_text "$SURFACE_QML" 'readonly property int formationDelay: Math.floor(Math.random() * 301)' \
+require_text "$SCENE_QML" 'readonly property int formationDelay: Math.floor(Math.random() * 301)' \
     'lockscreen wordmark does not use the approved faster particle stagger'
-require_text "$SURFACE_QML" 'readonly property int formationDuration: 1700' \
+require_text "$SCENE_QML" 'readonly property int formationDuration: 1700' \
     'lockscreen wordmark does not use the approved faster formation duration'
-require_text "$SURFACE_QML" '+ Math.floor(Math.random() * 351)' \
+require_text "$SCENE_QML" '+ Math.floor(Math.random() * 351)' \
     'lockscreen wordmark does not use the approved faster duration variance'
-require_text "$SURFACE_QML" 'SequentialAnimation on formationProgress' \
+require_text "$SCENE_QML" 'SequentialAnimation on formationProgress' \
     'lockscreen wordmark has no per-particle formation animation'
-require_text "$SURFACE_QML" 'PauseAnimation {' \
+require_text "$SCENE_QML" 'PauseAnimation {' \
     'lockscreen wordmark particles do not use randomized start delays'
-require_text "$SURFACE_QML" 'wordmarkCell.formationProgress <= 0 ? 0' \
+require_text "$SCENE_QML" 'wordmarkCell.formationProgress <= 0 ? 0' \
     'lockscreen exposes stationary particles before formation starts'
 require_text "$SURFACE_QML" 'enabled: !auth.busy || auth.responseRequired' \
-    'password input was coupled to the logo formation instead of PAM state'
-reject_text "$SURFACE_QML" 'readonly property int formationDuration: 2300' \
+    'password input was coupled to presentation instead of PAM state'
+reject_text "$SCENE_QML" 'readonly property int formationDuration: 2300' \
     'lockscreen still uses the slower previous formation duration'
-reject_text "$SURFACE_QML" 'readonly property int formationDuration: 3000' \
+reject_text "$SCENE_QML" 'readonly property int formationDuration: 3000' \
     'lockscreen still uses the slower original formation duration'
 
-# The password row is intentionally minimal. Keep only the blocks/haze and do
-# not restore the old focus/error underline.
+# Password is still security-owned by LockSurface. Optional metadata is now
+# independently positioned/rendered by LockScene rather than a forced stack.
 reject_text "$SURFACE_QML" 'width: Math.round(250 * root.uiScale)' \
     'lockscreen still renders the password underline'
-reject_text "$SURFACE_QML" 'text: "── AWTARCHY ──"' \
+reject_text "$SCENE_QML" 'text: "── AWTARCHY ──"' \
     'lockscreen still uses the old tiny Awtarchy heading'
 require_text "$SURFACE_QML" 'required property bool showTime' \
-    'lockscreen does not gate optional time display'
+    'lockscreen does not carry optional time display state'
 require_text "$SURFACE_QML" 'required property bool showDate' \
-    'lockscreen does not gate optional date display'
+    'lockscreen does not carry optional date display state'
 require_text "$SURFACE_QML" 'required property bool showUsername' \
-    'lockscreen does not gate optional username display'
-require_text "$SURFACE_QML" 'readonly property bool metadataVisible: root.showTime || root.showDate || root.showUsername' \
-    'lockscreen metadata does not collapse when every local-info option is disabled'
-require_text "$SURFACE_QML" 'visible: root.showTime' \
+    'lockscreen does not carry optional username display state'
+require_text "$SCENE_QML" 'visible: root.showTime' \
     'time metadata is not optional'
-require_text "$SURFACE_QML" 'visible: root.showDate' \
+require_text "$SCENE_QML" 'visible: root.showDate' \
     'date metadata is not optional'
-require_text "$SURFACE_QML" 'visible: root.showUsername' \
+require_text "$SCENE_QML" 'visible: root.showUsername' \
     'username metadata is not optional'
 reject_text "$SURFACE_QML" 'text: "PASSWORD"' \
     'lockscreen still displays a PASSWORD label'
@@ -197,16 +193,20 @@ reject_text "$SURFACE_QML" 'index % 3' \
 reject_text "$SURFACE_QML" 'index % 4' \
     'password blocks still vary in opacity by index'
 
-# The secure session lock must stay held while the visible lockscreen content
-# fades out. Only after that short fade may the shell release WlSessionLock.
+# The secure session lock remains held while visible content fades. Only after
+# the short fade may the shell release WlSessionLock.
 require_text "$SURFACE_QML" 'required property bool unlocking' \
     'lock surface does not receive the shared unlock-fade state'
 require_text "$SURFACE_QML" 'property bool entered: false' \
     'lock surface has no fade-in entry state'
 require_text "$SURFACE_QML" 'opacity: root.unlocking ? 0 : root.entered ? 1 : 0' \
-    'lockscreen content does not fade for lock and unlock transitions'
+    'secure password content does not fade for lock and unlock transitions'
+require_text "$SCENE_QML" 'opacity: root.unlocking ? 0 : root.entered ? 1 : 0' \
+    'shared presentation content does not fade for lock and unlock transitions'
 require_text "$SURFACE_QML" 'Behavior on opacity' \
-    'lockscreen has no opacity transition animation'
+    'secure password content has no opacity transition animation'
+require_text "$SCENE_QML" 'Behavior on opacity' \
+    'shared presentation has no opacity transition animation'
 require_text "$SHELL_QML" 'unlocking: root.unlockRequested' \
     'lock surfaces do not receive the shared unlock-fade state'
 require_text "$SHELL_QML" 'unlockFadeTimer.restart()' \
