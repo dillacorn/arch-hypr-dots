@@ -1,0 +1,63 @@
+name: Temporary Merge v3.6.2 Lockscreen Interactive
+
+on:
+  push:
+    branches:
+      - feature/lockscreen-interactive-effects
+    paths:
+      - .github/workflows/temporary-merge-v3.6.2-lockscreen-interactive.yml
+
+permissions:
+  contents: write
+
+jobs:
+  merge:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/lockscreen-interactive-effects
+          fetch-depth: 0
+
+      - name: Merge current main conservatively
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main
+
+          set +e
+          git merge --no-commit --no-ff origin/main
+          merge_status=$?
+          set -e
+
+          if (( merge_status != 0 )); then
+            mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+            if (( ${#conflicts[@]} != 1 )) || [[ ${conflicts[0]} != 'local/share/awtarchy/quickshell-managed-history.sha256' ]]; then
+              printf 'Unexpected merge conflicts:\n' >&2
+              printf '  %s\n' "${conflicts[@]}" >&2
+              git merge --abort || true
+              exit 1
+            fi
+
+            history='local/share/awtarchy/quickshell-managed-history.sha256'
+            git checkout --ours -- "$history"
+            while IFS= read -r line || [[ -n $line ]]; do
+              grep -Fqx -- "$line" "$history" || printf '%s\n' "$line" >>"$history"
+            done < <(git show origin/main:"$history")
+            git add "$history"
+          fi
+
+          git diff --check
+          bash -n config/hypr/scripts/quickshell_application_state.sh
+          bash -n config/hypr/scripts/quickshell_lockscreen_audio.sh
+          bash tests/test-quickshell-lockscreen-interactive-effects.sh
+          bash tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+          bash tests/test-quickshell-lockscreen-runtime-regressions.sh
+          bash tests/test-quickshell-lockscreen-animation-preference.sh
+          bash tests/test-quickshell-lockscreen-interactive-managed-history.sh
+
+          git commit -m 'Merge v3.6.2 main into lockscreen interactive effects'
+          git push origin HEAD:feature/lockscreen-interactive-effects
