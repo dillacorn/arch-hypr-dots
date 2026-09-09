@@ -7,6 +7,7 @@ BAR_STATE="${ROOT}/config/quickshell/awtarchy/BarState.qml"
 QUICK_SETTINGS="${ROOT}/config/quickshell/awtarchy/QuickSettings.qml"
 DESKTOP_SHELL="${ROOT}/config/quickshell/awtarchy/shell.qml"
 EDITOR_QML="${ROOT}/config/quickshell/awtarchy/LockscreenEditor.qml"
+DESKTOP_WEATHER="${ROOT}/config/quickshell/awtarchy/LockscreenWeather.qml"
 PREVIEW_SCENE="${ROOT}/config/quickshell/awtarchy/LockPreviewScene.qml"
 PREVIEW_WALLPAPER="${ROOT}/config/quickshell/awtarchy/LockPreviewWallpaperState.qml"
 LOCK_SCENE="${ROOT}/config/quickshell/awtarchy-lock/LockScene.qml"
@@ -53,6 +54,7 @@ require_file "$LOCK_SCENE" 'shared LockScene.qml is missing'
 require_file "$EDITOR_QML" 'unlocked LockscreenEditor.qml is missing'
 require_file "$PREVIEW_SCENE" 'unlocked LockPreviewScene.qml is missing'
 require_file "$PREVIEW_WALLPAPER" 'unlocked LockPreviewWallpaperState.qml is missing'
+require_file "$DESKTOP_WEATHER" 'unlocked LockscreenWeather.qml is missing'
 
 reject_text "$LOCK_SCENE" 'WlSessionLock' \
     'shared LockScene owns or imports session-lock authority'
@@ -145,6 +147,9 @@ done
 run_state set-lockscreen-weather-location 'Pittsburgh, PA'
 jq -e '.lockscreen_weather_location == "Pittsburgh, PA"' "$state_file" >/dev/null \
     || fail 'explicit lockscreen weather location did not persist'
+run_state set-lockscreen-weather-location ''
+jq -e '.lockscreen_weather_location == ""' "$state_file" >/dev/null \
+    || fail 'blank automatic lockscreen weather location did not persist'
 location_before="$(sha256sum "$state_file" | awk '{print $1}')"
 if run_state set-lockscreen-weather-location $'Pittsburgh\nPA' >/dev/null 2>&1; then
     fail 'weather location accepted a newline'
@@ -159,7 +164,7 @@ fi
 require_text "$BAR_STATE" 'lockscreen_background: "black"' \
     'BarState has no stock black lockscreen background'
 require_text "$BAR_STATE" 'lockscreen_weather_location: ""' \
-    'BarState has no empty explicit-location default'
+    'BarState has no blank automatic-location default'
 require_text "$BAR_STATE" 'lockscreen_layout:' \
     'BarState has no stock normalized lockscreen layout'
 require_text "$BAR_STATE" 'function lockscreenBackground()' \
@@ -177,10 +182,20 @@ require_text "$QUICK_SETTINGS" 'label: "Edit Layout"' \
     'Quick Settings has no Edit Layout action'
 require_text "$QUICK_SETTINGS" 'LockscreenEditor.openForScreen' \
     'Quick Settings does not launch the dedicated lockscreen editor'
-require_text "$QUICK_SETTINGS" 'text: "Weather Location"' \
-    'Quick Settings has no explicit Weather Location control'
+require_text "$QUICK_SETTINGS" 'label: "Choose with Awtwall"' \
+    'Quick Settings has no Awtwall-backed lockscreen picture picker'
+require_text "$QUICK_SETTINGS" 'queueAction(["wallpaper"]' \
+    'lockscreen picture picker does not reuse the existing Awtwall action'
+require_text "$QUICK_SETTINGS" 'queueStateCommand(["set-lockscreen-background", "wallpaper"])' \
+    'choosing a lockscreen picture does not switch the lockscreen to wallpaper mode'
+require_text "$QUICK_SETTINGS" 'text: "Location override (optional)"' \
+    'Quick Settings does not make automatic weather the simple default path'
+require_text "$QUICK_SETTINGS" 'Automatic location uses your approximate public-IP location' \
+    'Quick Settings does not explain automatic weather location behavior'
+require_text "$QUICK_SETTINGS" 'ipwho.is' \
+    'Quick Settings does not disclose the automatic IP-geolocation provider'
 require_text "$QUICK_SETTINGS" 'Open-Meteo' \
-    'Quick Settings does not disclose the weather provider/location transfer'
+    'Quick Settings does not disclose the weather provider'
 require_text "$QUICK_SETTINGS" 'set-lockscreen-background' \
     'Quick Settings does not persist the lockscreen background mode'
 require_text "$QUICK_SETTINGS" 'reset-lockscreen-presentation' \
@@ -212,12 +227,16 @@ for forbidden in 'curl' 'http://' 'https://'; do
 done
 reject_text "$LOCK_SHELL" 'open-meteo' \
     'secure lock shell contains weather-provider network behavior'
+reject_text "$LOCK_SHELL" 'ipwho.is' \
+    'secure lock shell contains automatic geolocation network behavior'
 require_text "$WEATHER_CACHE" 'provider !== "open-meteo"' \
     'lock weather cache does not validate the expected cache provider'
 
 require_file "$WEATHER_HELPER" 'unlocked lockscreen weather helper is missing'
+require_text "$WEATHER_HELPER" 'https://ipwho.is/' \
+    'unlocked weather helper does not support automatic public-IP geolocation'
 require_text "$WEATHER_HELPER" 'geocoding-api.open-meteo.com' \
-    'weather helper does not use Open-Meteo geocoding'
+    'weather helper does not preserve explicit-location Open-Meteo geocoding'
 require_text "$WEATHER_HELPER" 'api.open-meteo.com' \
     'weather helper does not use Open-Meteo current weather'
 require_text "$WEATHER_HELPER" '--connect-timeout' \
@@ -226,10 +245,13 @@ require_text "$WEATHER_HELPER" '--max-time' \
     'weather helper has no bounded request timeout'
 require_text "$WEATHER_HELPER" 'expires_at' \
     'weather helper does not write explicit cache expiry metadata'
-reject_text "$WEATHER_HELPER" 'ipinfo' \
-    'weather helper uses IP geolocation'
-reject_text "$WEATHER_HELPER" 'ip-api' \
-    'weather helper uses IP geolocation'
+
+require_text "$DESKTOP_WEATHER" 'BarState.lockscreenShowWeather()' \
+    'unlocked weather refresh service is not gated by the Weather toggle'
+reject_text "$DESKTOP_WEATHER" '&& configuredLocation.length > 0' \
+    'unlocked weather refresh still requires manual location configuration'
+require_text "$DESKTOP_WEATHER" 'refreshProcess.exec([root.weatherHelper, "refresh", location])' \
+    'unlocked weather refresh does not pass blank location through for automatic mode'
 
 for token in LockScene LockscreenEditor lockscreen_layout lockscreen_background \
     lockscreen_weather_location wallpaperSource weatherLocation; do
