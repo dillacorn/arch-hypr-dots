@@ -35,7 +35,6 @@ jobs:
           bash -n tests/test-quickshell-lockscreen-runtime-services.sh
           bash -n config/hypr/scripts/quickshell_lockscreen_audio.sh
           bash -n config/hypr/scripts/quickshell_lockscreen_weather.sh
-          bash -n config/hypr/scripts/quickshell_lockscreen_contrast.sh
       - name: ShellCheck
         run: |
           shellcheck tests/test-quickshell-lockscreen-interactive-effects.sh
@@ -49,12 +48,10 @@ jobs:
           shellcheck tests/test-quickshell-lockscreen-runtime-services.sh
           shellcheck config/hypr/scripts/quickshell_lockscreen_audio.sh
           shellcheck config/hypr/scripts/quickshell_lockscreen_weather.sh
-          shellcheck config/hypr/scripts/quickshell_lockscreen_contrast.sh
       - name: Runtime helper mode
         run: |
           test -x config/hypr/scripts/quickshell_lockscreen_audio.sh
           test -x config/hypr/scripts/quickshell_lockscreen_weather.sh
-          test -x config/hypr/scripts/quickshell_lockscreen_contrast.sh
       - name: Logo cohesion contracts
         run: bash tests/test-quickshell-lockscreen-logo-cohesion.sh
       - name: Weather refresh contracts
