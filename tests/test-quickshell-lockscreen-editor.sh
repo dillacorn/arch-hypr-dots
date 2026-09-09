@@ -79,8 +79,8 @@ require_text "$EDITOR_QML" 'function close()' \
     'LockscreenEditor has no Cancel/close path'
 require_text "$EDITOR_QML" 'function resetDraft()' \
     'LockscreenEditor has no Restore Defaults draft path'
-require_text "$EDITOR_QML" 'save-lockscreen-layout' \
-    'LockscreenEditor bypasses the explicit lockscreen layout state command'
+require_text "$EDITOR_QML" 'save-lockscreen-editor' \
+    'LockscreenEditor does not atomically persist layout and visibility'
 require_text "$EDITOR_QML" 'label: "Save"' \
     'LockscreenEditor has no Save control'
 require_text "$EDITOR_QML" 'label: "Cancel"' \
@@ -94,6 +94,8 @@ done
 
 require_text "$APP_STATE" 'save-lockscreen-layout)' \
     'state helper has no explicit save-lockscreen-layout command'
+require_text "$APP_STATE" 'save-lockscreen-editor)' \
+    'state helper has no atomic lockscreen editor save command'
 require_text "$APP_STATE" 'set-lockscreen-background)' \
     'state helper has no explicit lockscreen background command'
 require_text "$APP_STATE" 'set-lockscreen-weather-location)' \
