@@ -24,6 +24,55 @@ jobs:
           sed -i 's/        if line.startswith("          "):/        elif line.startswith("          "):/' .github/scripts/apply_lockscreen_live_editor.py
           python3 -m py_compile .github/scripts/apply_lockscreen_live_editor.py
           python3 .github/scripts/apply_lockscreen_live_editor.py
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("config/hypr/scripts/quickshell_application_state.sh")
+          text = path.read_text()
+          start = text.index("normalize_lockscreen_layout_json() {")
+          end = text.index("\nvalidate_lockscreen_layout() {", start)
+          fixed = r'''normalize_lockscreen_layout_json() {
+              local value="$1"
+              jq -ce -n \
+                  --argjson candidate "$value" \
+                  --argjson keys "$LOCKSCREEN_LAYOUT_KEYS_JSON" '
+                  if (
+                      ($candidate | type) == "object"
+                      and (($candidate | keys | sort) == ($keys | sort))
+                      and all($keys[];
+                          . as $key
+                          | ($candidate[$key] | type) == "object"
+                          and ((($candidate[$key] | keys | sort) == ["x", "y"])
+                              or (($candidate[$key] | keys | sort) == ["scale", "x", "y"]))
+                          and ($candidate[$key].x | type) == "number"
+                          and ($candidate[$key].y | type) == "number"
+                          and (($candidate[$key] | has("scale") | not)
+                              or ($candidate[$key].scale | type) == "number")
+                          and (($candidate[$key].scale // 1) >= 0.50)
+                          and (($candidate[$key].scale // 1) <= 2.00)
+                          and (if $key == "password" then
+                              $candidate[$key].x >= 0.15 and $candidate[$key].x <= 0.85
+                              and $candidate[$key].y >= 0.20 and $candidate[$key].y <= 0.86
+                          else
+                              $candidate[$key].x >= 0.05 and $candidate[$key].x <= 0.95
+                              and $candidate[$key].y >= 0.08 and $candidate[$key].y <= 0.92
+                          end)
+                      )
+                  ) then
+                      reduce $keys[] as $key ({};
+                          .[$key] = {
+                              x: $candidate[$key].x,
+                              y: $candidate[$key].y,
+                              scale: ($candidate[$key].scale // 1)
+                          })
+                  else
+                      error("invalid lockscreen layout")
+                  end
+              '
+          }
+          '''
+          path.write_text(text[:start] + fixed + text[end:])
+          PY
 
       - name: Validate focused contracts
         run: |
