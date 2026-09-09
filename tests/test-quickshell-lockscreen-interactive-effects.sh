@@ -8,6 +8,7 @@ QUICK_SETTINGS="${ROOT}/config/quickshell/awtarchy/QuickSettings.qml"
 SHELL_QML="${ROOT}/config/quickshell/awtarchy-lock/shell.qml"
 SURFACE_QML="${ROOT}/config/quickshell/awtarchy-lock/LockSurface.qml"
 AUDIO_QML="${ROOT}/config/quickshell/awtarchy-lock/LockAudioAnalyzer.qml"
+WEATHER_QML="${ROOT}/config/quickshell/awtarchy-lock/LockWeatherCache.qml"
 CAVA_CONFIG="${ROOT}/config/quickshell/awtarchy-lock/cava.conf"
 AUDIO_HELPER="${ROOT}/config/hypr/scripts/quickshell_lockscreen_audio.sh"
 TMP="$(mktemp -d)"
@@ -60,71 +61,105 @@ check_bool_setting() {
 }
 
 check_bool_setting set-lockscreen-audio-reactive lockscreen_audio_reactive
+check_bool_setting set-lockscreen-mouse-interactive lockscreen_mouse_interactive
 check_bool_setting set-lockscreen-show-time lockscreen_show_time
 check_bool_setting set-lockscreen-show-date lockscreen_show_date
 check_bool_setting set-lockscreen-show-username lockscreen_show_username
+check_bool_setting set-lockscreen-show-weather lockscreen_show_weather
 
-# Stock state is minimal except for audio response, which is enabled by default.
+# Interactive effects are visible for evaluation by default. Optional information
+# overlays remain stock-off so the lockscreen stays minimal unless requested.
 require_text "$BAR_STATE" 'lockscreen_audio_reactive: true' \
     'BarState stock audio-reactive default is not enabled'
+require_text "$BAR_STATE" 'lockscreen_mouse_interactive: true' \
+    'BarState stock mouse-interactive default is not enabled'
 require_text "$BAR_STATE" 'lockscreen_show_time: false' \
     'BarState stock time default is not disabled'
 require_text "$BAR_STATE" 'lockscreen_show_date: false' \
     'BarState stock date default is not disabled'
 require_text "$BAR_STATE" 'lockscreen_show_username: false' \
     'BarState stock username default is not disabled'
+require_text "$BAR_STATE" 'lockscreen_show_weather: false' \
+    'BarState stock weather default is not disabled'
 require_text "$BAR_STATE" 'function lockscreenAudioReactiveEnabled()' \
     'BarState does not expose normalized audio-reactive state'
+require_text "$BAR_STATE" 'function lockscreenMouseInteractiveEnabled()' \
+    'BarState does not expose normalized mouse-interactive state'
 require_text "$BAR_STATE" 'function lockscreenShowTime()' \
     'BarState does not expose normalized time state'
 require_text "$BAR_STATE" 'function lockscreenShowDate()' \
     'BarState does not expose normalized date state'
 require_text "$BAR_STATE" 'function lockscreenShowUsername()' \
     'BarState does not expose normalized username state'
+require_text "$BAR_STATE" 'function lockscreenShowWeather()' \
+    'BarState does not expose normalized weather state'
 
-# Controls stay in the existing Lockscreen Animation area and persist immediately.
+# Controls stay in the existing Awtarchy card and persist immediately.
 require_text "$QUICK_SETTINGS" 'text: "Audio Reactive"' \
     'Quick Settings has no Audio Reactive lockscreen toggle'
+require_text "$QUICK_SETTINGS" 'text: "Mouse Interaction"' \
+    'Quick Settings has no Mouse Interaction lockscreen toggle'
 require_text "$QUICK_SETTINGS" 'text: "Time"' \
     'Quick Settings has no Time lockscreen toggle'
 require_text "$QUICK_SETTINGS" 'text: "Date"' \
     'Quick Settings has no Date lockscreen toggle'
 require_text "$QUICK_SETTINGS" 'text: "Username"' \
     'Quick Settings has no Username lockscreen toggle'
+require_text "$QUICK_SETTINGS" 'text: "Weather"' \
+    'Quick Settings has no Weather lockscreen toggle'
 for command in \
     set-lockscreen-audio-reactive \
+    set-lockscreen-mouse-interactive \
     set-lockscreen-show-time \
     set-lockscreen-show-date \
-    set-lockscreen-show-username; do
+    set-lockscreen-show-username \
+    set-lockscreen-show-weather; do
     require_text "$QUICK_SETTINGS" "\"${command}\"" \
         "Quick Settings does not persist ${command}"
 done
-require_text "$QUICK_SETTINGS" 'BarState.lockscreenAnimationPreference() !== "off"' \
-    'Audio Reactive control is not visually suppressed by the animation master switch'
+reject_text "$QUICK_SETTINGS" 'BarState.lockscreenAnimationPreference() !== "off"' \
+    'Quick Settings still treats formation Off as an effects master switch'
 
-# The dedicated lock process loads the shared preferences once and owns one analyzer.
+# The dedicated lock process loads shared preferences once and owns one analyzer
+# plus one local weather-cache reader shared by every lock surface.
 require_text "$SHELL_QML" 'property bool lockAudioReactive: true' \
     'lock shell has no stock-enabled audio-reactive preference'
+require_text "$SHELL_QML" 'property bool lockMouseInteractive: true' \
+    'lock shell has no stock-enabled mouse-interactive preference'
 require_text "$SHELL_QML" 'property bool lockShowTime: false' \
     'lock shell has no stock-disabled time preference'
 require_text "$SHELL_QML" 'property bool lockShowDate: false' \
     'lock shell has no stock-disabled date preference'
 require_text "$SHELL_QML" 'property bool lockShowUsername: false' \
     'lock shell has no stock-disabled username preference'
+require_text "$SHELL_QML" 'property bool lockShowWeather: false' \
+    'lock shell has no stock-disabled weather preference'
 require_text "$SHELL_QML" 'LockAudioAnalyzer {' \
     'lock shell does not own the audio analyzer'
 require_text "$SHELL_QML" 'id: lockAudioAnalyzer' \
     'lock shell audio analyzer has no single root owner'
-require_text "$SHELL_QML" 'enabled: root.lockAudioReactive && root.lockAnimationPreference !== "off"' \
-    'audio analyzer does not obey Audio Reactive plus animation master state'
+require_text "$SHELL_QML" 'enabled: root.lockAudioReactive' \
+    'audio analyzer is not controlled independently by Audio Reactive'
+reject_text "$SHELL_QML" 'root.lockAudioReactive && root.lockAnimationPreference !== "off"' \
+    'audio analyzer is still coupled to the formation preference'
+require_text "$SHELL_QML" 'LockWeatherCache {' \
+    'lock shell does not own the weather cache reader'
+require_text "$SHELL_QML" 'enabled: root.lockShowWeather' \
+    'weather cache reader is not gated by the Weather preference'
 require_text "$SHELL_QML" 'audioLow: lockAudioAnalyzer.low' \
     'lock surfaces do not receive low-band audio state'
+require_text "$SHELL_QML" 'mouseInteractive: root.lockMouseInteractive' \
+    'lock surfaces do not receive mouse-interaction state'
 require_text "$SHELL_QML" 'showTime: root.lockShowTime' \
     'lock surfaces do not receive time visibility state'
 require_text "$SHELL_QML" 'showDate: root.lockShowDate' \
     'lock surfaces do not receive date visibility state'
 require_text "$SHELL_QML" 'showUsername: root.lockShowUsername' \
     'lock surfaces do not receive username visibility state'
+require_text "$SHELL_QML" 'showWeather: root.lockShowWeather' \
+    'lock surfaces do not receive weather visibility state'
+require_text "$SHELL_QML" 'weatherText: lockWeatherCache.summary' \
+    'lock surfaces do not receive cached weather text'
 
 # Real cursor stays hidden. The replacement visual is bounded and surface-local.
 require_text "$SURFACE_QML" 'cursorShape: Qt.BlankCursor' \
@@ -143,8 +178,14 @@ require_text "$SURFACE_QML" 'readonly property real pointerDisplacementCap: 24 *
     'pointer displacement is not explicitly bounded'
 require_text "$SURFACE_QML" 'readonly property real audioDisplacementCap: 6 * root.uiScale' \
     'audio displacement is not explicitly bounded'
-require_text "$SURFACE_QML" 'readonly property bool interactiveEffectsEnabled: root.animationPreference !== "off"' \
-    'Lockscreen Animation Off is not the pointer/audio master switch'
+require_text "$SURFACE_QML" 'required property bool mouseInteractive' \
+    'lock surface has no independent mouse-interaction input'
+require_text "$SURFACE_QML" 'readonly property bool pointerEffectsEnabled: root.mouseInteractive && root.pointerActive' \
+    'pointer effects do not obey the independent Mouse Interaction toggle'
+require_text "$SURFACE_QML" 'readonly property bool audioEffectsEnabled: root.audioReactive && root.audioLevel > root.audioSilenceThreshold' \
+    'audio effects do not obey the independent Audio Reactive toggle'
+reject_text "$SURFACE_QML" 'readonly property bool interactiveEffectsEnabled: root.animationPreference !== "off"' \
+    'Lockscreen Animation Off still acts as the pointer/audio master switch'
 require_text "$SURFACE_QML" 'property real pointerOffsetX: 0' \
     'wordmark cells have no pointer displacement state'
 require_text "$SURFACE_QML" 'property real pointerOffsetY: 0' \
@@ -158,19 +199,37 @@ require_text "$SURFACE_QML" 'NumberAnimation on pointerOffsetX' \
 require_text "$SURFACE_QML" 'NumberAnimation on pointerOffsetY' \
     'pointer Y displacement has no return-to-rest animation'
 
-# Optional metadata must exist but remain independent of the animation master.
+# Optional metadata remains independent from animation/effect preferences.
 require_text "$SURFACE_QML" 'required property bool showTime' \
     'lock surface has no optional time property'
 require_text "$SURFACE_QML" 'required property bool showDate' \
     'lock surface has no optional date property'
 require_text "$SURFACE_QML" 'required property bool showUsername' \
     'lock surface has no optional username property'
-require_text "$SURFACE_QML" 'readonly property bool metadataVisible: root.showTime || root.showDate || root.showUsername' \
-    'metadata stack does not collapse when all options are disabled'
+require_text "$SURFACE_QML" 'required property bool showWeather' \
+    'lock surface has no optional weather property'
+require_text "$SURFACE_QML" 'required property string weatherText' \
+    'lock surface has no cached weather text input'
+require_text "$SURFACE_QML" 'root.showWeather && root.weatherText.length > 0' \
+    'weather metadata does not fail closed when the local cache is empty'
 require_text "$SURFACE_QML" 'Quickshell.env("USER")' \
     'optional username does not read the current local session user'
-reject_text "$SURFACE_QML" 'weather' \
-    'interactive-effects slice introduced weather/network behavior'
+
+# Weather is cache-only inside the lock process. It never performs geolocation or
+# a network request while the session is locked.
+require_file "$WEATHER_QML" 'lockscreen weather cache reader QML is missing'
+require_text "$WEATHER_QML" 'lockscreen-weather.json' \
+    'weather cache reader does not use the dedicated local cache'
+require_text "$WEATHER_QML" 'FileView {' \
+    'weather cache reader is not file-backed'
+reject_text "$WEATHER_QML" 'curl' \
+    'lockscreen weather cache reader performs a network request'
+reject_text "$WEATHER_QML" 'http://' \
+    'lockscreen weather cache reader contains a network URL'
+reject_text "$WEATHER_QML" 'https://' \
+    'lockscreen weather cache reader contains a network URL'
+reject_text "$WEATHER_QML" 'geolocation' \
+    'lockscreen weather cache reader contains location inference'
 
 # Audio must come from a real output analyzer and fail closed to static visuals.
 require_file "$AUDIO_QML" 'lockscreen audio analyzer QML is missing'
@@ -207,10 +266,10 @@ require_text "$CAVA_CONFIG" 'data_format = ascii' \
 require_text "$CAVA_CONFIG" 'channels = mono' \
     'CAVA config is not reduced to one averaged channel'
 
-# Lock authentication remains isolated from all analyzer state.
-reject_text "${ROOT}/config/quickshell/awtarchy-lock/LockAuth.qml" 'audioLow' \
-    'authentication owner was coupled to audio state'
-reject_text "${ROOT}/config/quickshell/awtarchy-lock/LockAuth.qml" 'LockAudioAnalyzer' \
-    'authentication owner was coupled to analyzer lifecycle'
+# Lock authentication remains isolated from all optional state.
+for token in audioLow LockAudioAnalyzer LockWeatherCache weatherText mouseInteractive; do
+    reject_text "${ROOT}/config/quickshell/awtarchy-lock/LockAuth.qml" "$token" \
+        "authentication owner was coupled to optional lockscreen state: $token"
+done
 
 printf 'PASS: lockscreen interactive effects contracts\n'
