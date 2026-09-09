@@ -2,7 +2,7 @@ name: Validate Screen Share Guard
 
 on:
   push:
-    branches: [feature/screenshare-guard-controls]
+    branches: [main]
   pull_request:
     paths:
       - 'config/hypr/hyprland.lua'
