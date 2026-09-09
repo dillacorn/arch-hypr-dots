@@ -11,6 +11,7 @@ on:
       - local/share/awtarchy/quickshell-managed-history.sha256
       - tests/test-bluetooth-state-persistence.sh
       - tests/test-bluetooth-resume-diagnostic.sh
+      - tests/test-bluetooth-resume-restore-stability.sh
       - .github/workflows/validate-bluetooth-state.yml
   pull_request:
     paths:
@@ -20,6 +21,7 @@ on:
       - local/share/awtarchy/quickshell-managed-history.sha256
       - tests/test-bluetooth-state-persistence.sh
       - tests/test-bluetooth-resume-diagnostic.sh
+      - tests/test-bluetooth-resume-restore-stability.sh
       - .github/workflows/validate-bluetooth-state.yml
 
 permissions:
@@ -36,12 +38,14 @@ jobs:
           bash -n config/hypr/scripts/quickshell_bluetooth_resume_diagnostic.sh
           bash -n tests/test-bluetooth-state-persistence.sh
           bash -n tests/test-bluetooth-resume-diagnostic.sh
+          bash -n tests/test-bluetooth-resume-restore-stability.sh
       - name: ShellCheck
         run: |
           shellcheck \
             config/hypr/scripts/quickshell_bluetooth_state.sh \
             tests/test-bluetooth-state-persistence.sh \
-            tests/test-bluetooth-resume-diagnostic.sh
+            tests/test-bluetooth-resume-diagnostic.sh \
+            tests/test-bluetooth-resume-restore-stability.sh
           # The diagnostic intentionally appends many report fragments and treats
           # optional command failures as non-fatal evidence gaps. Errors and
           # warnings remain fatal; ShellCheck info/style findings are not.
@@ -50,6 +54,8 @@ jobs:
         run: bash tests/test-bluetooth-state-persistence.sh
       - name: Bluetooth suspend/resume diagnostic
         run: bash tests/test-bluetooth-resume-diagnostic.sh
+      - name: Bluetooth resume restore stability
+        run: bash tests/test-bluetooth-resume-restore-stability.sh
       - name: Managed history
         run: |
           history='local/share/awtarchy/quickshell-managed-history.sha256'
