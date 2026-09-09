@@ -6,6 +6,7 @@ DESKTOP_SHELL="${ROOT}/config/quickshell/awtarchy/shell.qml"
 EDITOR="${ROOT}/config/quickshell/awtarchy/LockscreenEditor.qml"
 WEATHER="${ROOT}/config/quickshell/awtarchy/LockscreenWeather.qml"
 WALLPAPER="${ROOT}/config/quickshell/awtarchy-lock/LockWallpaperState.qml"
+PREVIEW_WALLPAPER="${ROOT}/config/quickshell/awtarchy/LockPreviewWallpaperState.qml"
 LOCK_SHELL="${ROOT}/config/quickshell/awtarchy-lock/shell.qml"
 LOCK_SCENE="${ROOT}/config/quickshell/awtarchy-lock/LockScene.qml"
 
@@ -34,6 +35,7 @@ reject_text() {
 # must exist as explicit components rather than placeholders.
 require_file "$WEATHER" 'unlocked LockscreenWeather singleton is missing'
 require_file "$WALLPAPER" 'local LockWallpaperState reader is missing'
+require_file "$PREVIEW_WALLPAPER" 'desktop lock preview wallpaper reader is missing'
 
 # Unlocked weather refresh is rate-limited and only uses the dedicated helper.
 require_text "$WEATHER" 'pragma Singleton' \
@@ -79,8 +81,10 @@ require_text "$LOCK_SHELL" 'LockWallpaperState {' \
     'secure lock shell does not own a local wallpaper-state reader'
 require_text "$LOCK_SHELL" 'wallpaperSource: lockWallpaperState.source' \
     'secure lock surfaces do not receive the local wallpaper source'
-require_text "$EDITOR" 'LockUi.LockWallpaperState {' \
-    'lockscreen editor does not use the same local wallpaper-state reader'
+cmp -s "$WALLPAPER" "$PREVIEW_WALLPAPER" \
+    || fail 'desktop wallpaper preview reader drifted from secure lock wallpaper reader'
+require_text "$EDITOR" 'LockPreviewWallpaperState {' \
+    'lockscreen editor does not use its config-local wallpaper-state reader'
 require_text "$EDITOR" 'wallpaperSource: wallpaperState.source' \
     'lockscreen editor preview does not receive the local wallpaper source'
 require_text "$LOCK_SCENE" 'color: "#000000"' \
