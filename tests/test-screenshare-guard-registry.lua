@@ -10,6 +10,13 @@ local opened_window = {
     title = "Signal",
     initial_title = "Signal",
 }
+local protected_window = {
+    address = "0xdef",
+    class = "localsend",
+    initial_class = "localsend",
+    title = "LocalSend",
+    initial_title = "LocalSend",
+}
 
 hl = {
     window_rule = function(spec)
@@ -42,6 +49,9 @@ hl = {
     get_windows = function(match)
         if match.class == "^(signal|org\\.signal\\.Signal)$" then
             return { opened_window }
+        end
+        if match.class == "^(localsend|LocalSend|org\\.localsend\\.localsend|io\\.github\\.localsend\\.localsend)$" then
+            return { protected_window }
         end
         return {}
     end,
@@ -94,6 +104,12 @@ assert(#dispatched == 1, "new matching window did not receive exactly one Screen
 assert(dispatched[1].prop == "no_screen_share", "new-window correction changed the wrong property")
 assert(dispatched[1].value == "false", "new window did not inherit the disabled Screen Share Guard state")
 assert(dispatched[1].window == opened_window, "new-window correction did not target the opened window")
+
+events["window.open"](protected_window)
+assert(#dispatched == 2, "protected new window did not receive exactly one Screen Share Guard property correction")
+assert(dispatched[2].prop == "no_screen_share", "protected new-window correction changed the wrong property")
+assert(dispatched[2].value == "true", "new window lost an enabled Screen Share Guard protection")
+assert(dispatched[2].window == protected_window, "protected new-window correction did not target the opened window")
 
 local duplicate_ok = pcall(function()
     awtarchy_screenshare_guard_register_v1({
