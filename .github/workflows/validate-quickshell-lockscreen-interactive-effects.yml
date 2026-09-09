@@ -21,6 +21,7 @@ jobs:
           bash -n tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
           bash -n tests/test-quickshell-lockscreen-interactive-managed-history.sh
           bash -n tests/test-quickshell-lockscreen-editor.sh
+          bash -n tests/test-quickshell-lockscreen-editor-config-boundary.sh
           bash -n tests/test-quickshell-lockscreen-live-editor.sh
           bash -n tests/test-quickshell-lockscreen-weather.sh
           bash -n tests/test-quickshell-lockscreen-runtime-services.sh
@@ -36,6 +37,7 @@ jobs:
           shellcheck tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
           shellcheck tests/test-quickshell-lockscreen-interactive-managed-history.sh
           shellcheck tests/test-quickshell-lockscreen-editor.sh
+          shellcheck tests/test-quickshell-lockscreen-editor-config-boundary.sh
           shellcheck tests/test-quickshell-lockscreen-live-editor.sh
           shellcheck tests/test-quickshell-lockscreen-weather.sh
           shellcheck tests/test-quickshell-lockscreen-runtime-services.sh
@@ -60,6 +62,7 @@ jobs:
       - name: Customization editor contracts
         run: |
           bash tests/test-quickshell-lockscreen-editor.sh
+          bash tests/test-quickshell-lockscreen-editor-config-boundary.sh
           bash tests/test-quickshell-lockscreen-live-editor.sh
       - name: Managed history contracts
         run: bash tests/test-quickshell-lockscreen-interactive-managed-history.sh
