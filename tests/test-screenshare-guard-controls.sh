@@ -56,6 +56,9 @@ cat >"$TMP/bin/hyprctl" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"${AWTARCHY_TEST_HYPRCTL_LOG:?}"
+if [[ ${1:-} == -r ]]; then
+    shift
+fi
 case "${1:-}" in
     eval)
         printf 'ok\n'
@@ -167,8 +170,11 @@ $HELPER set discord allowed >/dev/null
 $HELPER apply >/dev/null
 require_source "$AWTARCHY_TEST_HYPRCTL_LOG" 'awtarchy_screenshare_guard_set_group_v1("discord", false)' \
     'runtime apply did not disable the Discord named rule group'
-require_source "$AWTARCHY_TEST_HYPRCTL_LOG" 'hl.exec_scheduled_prop_refresh_immediately()' \
-    'runtime apply does not force immediate dynamic-property refresh'
+require_source "$AWTARCHY_TEST_HYPRCTL_LOG" '-r eval ' \
+    'runtime apply does not request a Hyprland state refresh after rule changes'
+if grep -Fq 'hl.exec_scheduled_prop_refresh_immediately()' "$AWTARCHY_TEST_HYPRCTL_LOG"; then
+    fail 'runtime apply still requires the Hyprland 0.56-only immediate-refresh Lua API'
+fi
 if grep -Eq 'sed|hyprland\.lua|comment' "$AWTARCHY_TEST_HYPRCTL_LOG"; then
     fail 'runtime Screen Share Guard attempted source/config rewriting'
 fi
@@ -206,7 +212,7 @@ require_source "$QUICK_SETTINGS" 'ScreenShareGuardCard' \
     'Quick Settings does not use the Screen Share Guard card'
 require_source "$SCREENSHARE_CARD" 'property bool expanded: false' \
     'Screen Share Guard does not default to a collapsed compact card'
-require_source "$SCREENSHARE_CARD" 'model: root.expanded ? root.targetModel(root.protectedTargetIds) : []' \
+require_source "$SCREENSHARE_CARD" 'model: root.expanded ? root.targetModel("protected") : []' \
     'protected Screen Share Guard rows are rendered while the card is collapsed'
 require_source "$SCREENSHARE_CARD" 'onClicked: root.expanded = !root.expanded' \
     'Screen Share Guard header does not toggle expanded state'
