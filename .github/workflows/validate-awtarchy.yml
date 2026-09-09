@@ -68,6 +68,7 @@ jobs:
           bash -n config/hypr/scripts/toggle_mouse_submap.sh
           bash -n config/hypr/scripts/toggle_resize_if_ok.sh
           bash -n tests/test-awtarchy-command.sh
+          bash -n tests/test-installer-version-state-permissions.sh
           bash -n tests/test-awtarchy-git-mode.sh
           bash -n tests/test-awtarchy-command-shim.sh
           bash -n tests/test-awtarchy-legacy-cleanup.sh
@@ -184,6 +185,7 @@ jobs:
             config/hypr/scripts/toggle_mouse_submap.sh \
             config/hypr/scripts/toggle_resize_if_ok.sh \
             tests/test-awtarchy-git-mode.sh \
+            tests/test-installer-version-state-permissions.sh \
             tests/test-awtarchy-command-shim.sh \
             tests/test-awtarchy-legacy-cleanup.sh \
             tests/test-awtarchy-update-notifications.sh \
@@ -269,6 +271,7 @@ jobs:
           chmod 0755 "${no_sudo_bin}/sudo"
           PATH="${no_sudo_bin}:$PATH" bash tests/test-awtarchy-command.sh
           rm -rf -- "$no_sudo_bin"
+          sudo bash tests/test-installer-version-state-permissions.sh
           bash tests/test-awtarchy-git-mode.sh
           bash tests/test-awtarchy-command-shim.sh
           bash tests/test-awtarchy-legacy-cleanup.sh
