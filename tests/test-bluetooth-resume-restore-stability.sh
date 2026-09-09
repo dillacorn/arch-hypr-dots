@@ -67,7 +67,9 @@ printf '%s\n' 1 >"$BLUETOOTH_RELAPSES_FILE"
 # Real #146 evidence showed restore reporting success after observing Powered:no,
 # followed by BlueZ/kernel returning the adapter to Powered:yes. Treat the resume
 # retry period as a stability window and reassert the saved state after a relapse.
-AWTARCHY_BLUETOOTH_POWER_RETRY_SECONDS=1 "$HELPER" restore
+# Use two seconds here because Bash SECONDS has one-second resolution; a one-second
+# test window can begin just before a tick and collapse into a few milliseconds.
+AWTARCHY_BLUETOOTH_POWER_RETRY_SECONDS=2 "$HELPER" restore
 
 [[ "$(<"$BLUETOOTH_POWER_STATE_FILE")" == no ]] \
     || fail 'Bluetooth restore returned while the adapter had relapsed to enabled'
