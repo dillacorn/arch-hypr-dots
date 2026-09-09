@@ -3684,15 +3684,15 @@ install_awtarchy_command_stage() {
     revision="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || true)"
   fi
 
-  version_tmp="$(mktemp)"
+  version_tmp="$(run_as_target mktemp --tmpdir="$state_dir" '.version.tmp.XXXXXX')"
   {
     printf 'tag=%s\n' "$tag"
     [[ -n "$revision" ]] && printf 'revision=%s\n' "$revision"
     printf 'installed_at=%s\n' "$(date -Iseconds)"
-  } >"$version_tmp"
+  } | run_as_target tee "$version_tmp" >/dev/null
   retry_command run_as_target install -m 0644 "$version_tmp" "$command_version_file"
   retry_command run_as_target install -m 0644 "$version_tmp" "$config_version_file"
-  rm -f -- "$version_tmp"
+  run_as_target rm -f -- "$version_tmp"
 
   if [[ "${AWTARCHY_SKIP_SELF_UPDATE:-0}" != "1" ]]; then
     log "Verifying the installed Awtarchy command against the current main updater..."
