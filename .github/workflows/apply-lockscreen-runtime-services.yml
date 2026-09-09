@@ -160,63 +160,35 @@ jobs:
           editor = Path("config/quickshell/awtarchy/LockscreenEditor.qml")
           text = editor.read_text()
           old = '    property string statusMessage: ""\n    property string wallpaperSource: ""\n'
-          new = '    property string statusMessage: ""\n'
           if old not in text:
               raise SystemExit("editor wallpaperSource property target not found")
-          text = text.replace(old, new, 1)
-          old = '''    Shortcut {
-              sequence: "Escape"
-          '''
-          new = '''    LockUi.LockWallpaperState {
-              id: wallpaperState
-          }
-
-              Shortcut {
-              sequence: "Escape"
-          '''
+          text = text.replace(old, '    property string statusMessage: ""\n', 1)
+          old = '    Shortcut {\n        sequence: "Escape"\n'
+          new = '    LockUi.LockWallpaperState {\n        id: wallpaperState\n    }\n\n    Shortcut {\n        sequence: "Escape"\n'
           if old not in text:
               raise SystemExit("editor insertion target not found")
           text = text.replace(old, new, 1)
           old = '                wallpaperSource: root.wallpaperSource\n'
-          new = '                wallpaperSource: wallpaperState.source\n'
           if old not in text:
               raise SystemExit("editor wallpaper binding target not found")
-          text = text.replace(old, new, 1)
+          text = text.replace(old, '                wallpaperSource: wallpaperState.source\n', 1)
           editor.write_text(text)
 
           shell = Path("config/quickshell/awtarchy-lock/shell.qml")
           text = shell.read_text()
           old = '    property var lockLayout: defaultLockLayout()\n    property string lockWallpaperSource: ""\n'
-          new = '    property var lockLayout: defaultLockLayout()\n'
           if old not in text:
               raise SystemExit("lock shell wallpaperSource property target not found")
-          text = text.replace(old, new, 1)
-          old = '''    LockWeatherCache {
-              id: lockWeatherCache
-              enabled: root.lockShowWeather
-          }
-
-              WlSessionLock {
-          '''
-          new = '''    LockWeatherCache {
-              id: lockWeatherCache
-              enabled: root.lockShowWeather
-          }
-
-              LockWallpaperState {
-              id: lockWallpaperState
-          }
-
-              WlSessionLock {
-          '''
+          text = text.replace(old, '    property var lockLayout: defaultLockLayout()\n', 1)
+          old = '    LockWeatherCache {\n        id: lockWeatherCache\n        enabled: root.lockShowWeather\n    }\n\n    WlSessionLock {\n'
+          new = '    LockWeatherCache {\n        id: lockWeatherCache\n        enabled: root.lockShowWeather\n    }\n\n    LockWallpaperState {\n        id: lockWallpaperState\n    }\n\n    WlSessionLock {\n'
           if old not in text:
               raise SystemExit("lock shell wallpaper reader insertion target not found")
           text = text.replace(old, new, 1)
           old = '                wallpaperSource: root.lockWallpaperSource\n'
-          new = '                wallpaperSource: lockWallpaperState.source\n'
           if old not in text:
               raise SystemExit("lock shell wallpaper binding target not found")
-          text = text.replace(old, new, 1)
+          text = text.replace(old, '                wallpaperSource: lockWallpaperState.source\n', 1)
           shell.write_text(text)
           PY
 
