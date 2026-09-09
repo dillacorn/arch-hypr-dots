@@ -184,10 +184,14 @@ reject_text "$SURFACE_QML" 'text: "PASSWORD"' \
     'lockscreen still displays a PASSWORD label'
 require_text "$SURFACE_QML" 'readonly property int maskedCount: Math.min(password.text.length, 10)' \
     'lockscreen does not cap visible password length'
-require_text "$SURFACE_QML" 'width: Math.round(7 * root.uiScale)' \
-    'password blocks do not use one fixed width'
-require_text "$SURFACE_QML" 'height: Math.round(10 * root.uiScale)' \
-    'password blocks do not use one fixed height'
+require_text "$SURFACE_QML" 'readonly property real passwordScale: scene.elementScale("password")' \
+    'secure password visuals do not consume the shared bounded password scale'
+require_text "$SURFACE_QML" 'width: Math.round(7 * root.uiScale * root.passwordScale)' \
+    'password block width does not scale from the shared password anchor'
+require_text "$SURFACE_QML" 'height: Math.round(10 * root.uiScale * root.passwordScale)' \
+    'password block height does not scale from the shared password anchor'
+require_text "$SCENE_QML" 'Math.max(0.50, Math.min(2.00, value))' \
+    'shared scene does not bound saved element scale to the editor limits'
 reject_text "$SURFACE_QML" 'index % 3' \
     'password blocks still vary in height by index'
 reject_text "$SURFACE_QML" 'index % 4' \
