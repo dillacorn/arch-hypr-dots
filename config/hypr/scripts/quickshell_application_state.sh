@@ -19,6 +19,9 @@ MAX_ICON_SCALE=200
 SAVE_VERSION=2
 QUICK_SETTINGS_LAYOUT_SAVE_VERSION=1
 LOCKSCREEN_ANIMATIONS_JSON='["random","swarm","edges","center","split","off"]'
+LOCKSCREEN_BACKGROUNDS_JSON='["black","wallpaper"]'
+LOCKSCREEN_LAYOUT_KEYS_JSON='["logo","time","date","username","weather","password"]'
+LOCKSCREEN_LAYOUT_DEFAULT_JSON='{"logo":{"x":0.5,"y":0.34},"time":{"x":0.5,"y":0.51},"date":{"x":0.5,"y":0.555},"username":{"x":0.5,"y":0.595},"weather":{"x":0.5,"y":0.635},"password":{"x":0.5,"y":0.7}}'
 CURSOR_VARIANTS_JSON='["ice","classic","amber","ice-sharp","classic-sharp","amber-sharp","ice-right","classic-right","amber-right","ice-sharp-right","classic-sharp-right","amber-sharp-right"]'
 QUICK_SETTINGS_SECTIONS_JSON='["brightness","output-volume","bar","display-effects","submap","wallpaper","awtarchy","smtty","scheduler","numlock","title-bars"]'
 WORKSPACE_STYLES_JSON='["awtarchy","numbers","icons","workflow","phases","custom-symbol"]'
@@ -167,6 +170,99 @@ set_lockscreen_option() {
     new_tmp
     jq --arg field "$field" --argjson enabled "$enabled" '.[$field] = $enabled' \
         "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
+validate_lockscreen_background() {
+    local value="$1"
+    if ! jq -e -n \
+        --arg value "$value" \
+        --argjson allowed "$LOCKSCREEN_BACKGROUNDS_JSON" \
+        '$allowed | index($value) != null' >/dev/null 2>&1; then
+        printf 'invalid lockscreen background: %s\n' "$value" >&2
+        exit 2
+    fi
+}
+
+set_lockscreen_background() {
+    local value="$1"
+    validate_lockscreen_background "$value"
+    new_tmp
+    jq --arg value "$value" '.lockscreen_background = $value' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
+normalize_lockscreen_weather_location() {
+    local value="$1" normalized
+    normalized="$(jq -nr --arg value "$value" '$value | gsub("^\\s+|\\s+$"; "")')"
+    if ! jq -e -n --arg value "$normalized" '
+        ($value | explode) as $points
+        | ($points | length) <= 96
+        and ($points | all(. >= 32 and (. < 127 or . > 159)))
+    ' >/dev/null 2>&1; then
+        printf 'lockscreen weather location must be at most 96 Unicode code points with no control characters\n' >&2
+        exit 2
+    fi
+    printf '%s' "$normalized"
+}
+
+set_lockscreen_weather_location() {
+    local normalized
+    normalized="$(normalize_lockscreen_weather_location "$1")"
+    new_tmp
+    jq --arg value "$normalized" '.lockscreen_weather_location = $value' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
+validate_lockscreen_layout() {
+    local value="$1"
+    if ! jq -e -n \
+        --argjson candidate "$value" \
+        --argjson keys "$LOCKSCREEN_LAYOUT_KEYS_JSON" '
+        ($candidate | type) == "object"
+        and (($candidate | keys | sort) == ($keys | sort))
+        and all($keys[];
+            . as $key
+            | ($candidate[$key] | type) == "object"
+            and (($candidate[$key] | keys | sort) == ["x", "y"])
+            and ($candidate[$key].x | type) == "number"
+            and ($candidate[$key].y | type) == "number"
+            and (if $key == "password" then
+                $candidate[$key].x >= 0.15 and $candidate[$key].x <= 0.85
+                and $candidate[$key].y >= 0.20 and $candidate[$key].y <= 0.86
+            else
+                $candidate[$key].x >= 0.05 and $candidate[$key].x <= 0.95
+                and $candidate[$key].y >= 0.08 and $candidate[$key].y <= 0.92
+            end)
+        )
+    ' >/dev/null 2>&1; then
+        printf 'invalid lockscreen layout\n' >&2
+        exit 2
+    fi
+}
+
+save_lockscreen_layout() {
+    local value="$1"
+    validate_lockscreen_layout "$value"
+    new_tmp
+    jq --argjson value "$value" '.lockscreen_layout = $value' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
+reset_lockscreen_presentation() {
+    new_tmp
+    jq --argjson layout "$LOCKSCREEN_LAYOUT_DEFAULT_JSON" '
+        .lockscreen_animation = "split"
+        | .lockscreen_audio_reactive = true
+        | .lockscreen_mouse_interactive = true
+        | .lockscreen_show_time = false
+        | .lockscreen_show_date = false
+        | .lockscreen_show_username = false
+        | .lockscreen_show_weather = false
+        | .lockscreen_background = "black"
+        | .lockscreen_weather_location = ""
+        | .lockscreen_layout = $layout
+    ' "$STATE_FILE" >"$TMP_FILE"
     commit_tmp
 }
 
@@ -990,6 +1086,21 @@ case "$cmd" in
         [[ -n ${2:-} ]] || exit 2
         set_lockscreen_option lockscreen_show_weather "$2" 'lockscreen show weather'
         ;;
+    set-lockscreen-background)
+        [[ -n ${2:-} ]] || exit 2
+        set_lockscreen_background "$2"
+        ;;
+    set-lockscreen-weather-location)
+        [[ $# -eq 2 ]] || exit 2
+        set_lockscreen_weather_location "$2"
+        ;;
+    save-lockscreen-layout)
+        [[ -n ${2:-} ]] || exit 2
+        save_lockscreen_layout "$2"
+        ;;
+    reset-lockscreen-presentation)
+        reset_lockscreen_presentation
+        ;;
     set-workspace-numbers)
         [[ -n ${2:-} ]] || exit 2
         set_workspace_numbers "$2"
@@ -1131,7 +1242,7 @@ case "$cmd" in
         reset_defaults
         ;;
     *)
-        printf 'usage: %s {set-cursor-theme <ice|classic>|set-lockscreen-animation <random|swarm|edges|center|split|off>|set-lockscreen-audio-reactive <true|false>|set-lockscreen-mouse-interactive <true|false>|set-lockscreen-show-time <true|false>|set-lockscreen-show-date <true|false>|set-lockscreen-show-username <true|false>|set-lockscreen-show-weather <true|false>|set-workspace-numbers <true|false>|set-bar-workspace-visible <1-10> <true|false>|set-workspace-icon-style <style>|set-workspace-style <legacy-style>|set-workspace-custom-label <label>|clear-workspace-custom-label|set-workspace-override <1-10> <label>|clear-workspace-override <1-10>|clear-workspace-overrides|set-launcher-icon <label>|reset-launcher-icon|reset-workspace-icons|reset-bar-icons|save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-update-notifications <true|false>|set-clock-date <MON> <true|false>|set-notification-popup-limit <1-20>|set-notification-popup-position <MON> <automatic|top-left|top-center|top-right|bottom-left|bottom-center|bottom-right>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|save-quick-settings-layout <MON> <order_json> <hidden_json>|copy-quick-settings-layout <order_json> <hidden_json> <MON>...|reset-quick-settings-layout <MON>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
+        printf 'usage: %s {set-cursor-theme <ice|classic>|set-lockscreen-animation <random|swarm|edges|center|split|off>|set-lockscreen-audio-reactive <true|false>|set-lockscreen-mouse-interactive <true|false>|set-lockscreen-show-time <true|false>|set-lockscreen-show-date <true|false>|set-lockscreen-show-username <true|false>|set-lockscreen-show-weather <true|false>|set-lockscreen-background <black|wallpaper>|set-lockscreen-weather-location <location>|save-lockscreen-layout <json>|reset-lockscreen-presentation|set-workspace-numbers <true|false>|set-bar-workspace-visible <1-10> <true|false>|set-workspace-icon-style <style>|set-workspace-style <legacy-style>|set-workspace-custom-label <label>|clear-workspace-custom-label|set-workspace-override <1-10> <label>|clear-workspace-override <1-10>|clear-workspace-overrides|set-launcher-icon <label>|reset-launcher-icon|reset-workspace-icons|reset-bar-icons|save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-update-notifications <true|false>|set-clock-date <MON> <true|false>|set-notification-popup-limit <1-20>|set-notification-popup-position <MON> <automatic|top-left|top-center|top-right|bottom-left|bottom-center|bottom-right>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|save-quick-settings-layout <MON> <order_json> <hidden_json>|copy-quick-settings-layout <order_json> <hidden_json> <MON>...|reset-quick-settings-layout <MON>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
         exit 2
         ;;
 esac

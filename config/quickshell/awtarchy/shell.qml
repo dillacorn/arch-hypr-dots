@@ -142,6 +142,10 @@ ShellRoot {
     }
 
     function closeTopFloatingSurface() {
+        if (LockscreenEditor.open) {
+            LockscreenEditor.close();
+            return;
+        }
         if (ThemePicker.open) {
             ThemePicker.close();
             return;
@@ -180,6 +184,8 @@ ShellRoot {
     readonly property bool batteryReady: BatteryMenu !== null
     readonly property bool powerReady: PowerMenu !== null
     readonly property bool themesReady: ThemePicker !== null
+    readonly property bool lockscreenEditorReady: LockscreenEditor !== null
+    readonly property bool lockscreenWeatherReady: LockscreenWeather !== null
 
     // Escape always closes the topmost visible shell surface first. A Theme
     // Picker opened from Quick Settings must close without dismissing the
@@ -187,7 +193,8 @@ ShellRoot {
     Shortcut {
         sequence: "Escape"
         context: Qt.ApplicationShortcut
-        enabled: ThemePicker.open
+        enabled: LockscreenEditor.open
+            || ThemePicker.open
             || String(FlyoutManager.activeSurface || "").length > 0
         autoRepeat: false
         onActivated: root.closeTopFloatingSurface()

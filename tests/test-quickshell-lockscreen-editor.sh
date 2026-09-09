@@ -81,11 +81,11 @@ require_text "$EDITOR_QML" 'function resetDraft()' \
     'LockscreenEditor has no Restore Defaults draft path'
 require_text "$EDITOR_QML" 'save-lockscreen-layout' \
     'LockscreenEditor bypasses the explicit lockscreen layout state command'
-require_text "$EDITOR_QML" 'text: "Save"' \
+require_text "$EDITOR_QML" 'label: "Save"' \
     'LockscreenEditor has no Save control'
-require_text "$EDITOR_QML" 'text: "Cancel"' \
+require_text "$EDITOR_QML" 'label: "Cancel"' \
     'LockscreenEditor has no Cancel control'
-require_text "$EDITOR_QML" 'text: "Restore Defaults"' \
+require_text "$EDITOR_QML" 'label: "Restore Defaults"' \
     'LockscreenEditor has no Restore Defaults control'
 for forbidden in WlSessionLock LockAuth auth.submit sessionLock unlockRequested; do
     reject_text "$EDITOR_QML" "$forbidden" \
@@ -163,7 +163,7 @@ require_text "$QUICK_SETTINGS" 'text: "Lockscreen"' \
     'Quick Settings has no expandable Lockscreen section title'
 require_text "$QUICK_SETTINGS" 'lockscreenSectionExpanded' \
     'Quick Settings Lockscreen section has no collapsed/expanded state'
-require_text "$QUICK_SETTINGS" 'text: "Edit Layout"' \
+require_text "$QUICK_SETTINGS" 'label: "Edit Layout"' \
     'Quick Settings has no Edit Layout action'
 require_text "$QUICK_SETTINGS" 'LockscreenEditor.openForScreen' \
     'Quick Settings does not launch the dedicated lockscreen editor'

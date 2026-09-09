@@ -129,6 +129,14 @@ Singleton {
         { key: "split", label: "Split" },
         { key: "off", label: "Off" }
     ]
+    readonly property var defaultLockscreenLayout: ({
+        logo: ({ x: 0.50, y: 0.34 }),
+        time: ({ x: 0.50, y: 0.51 }),
+        date: ({ x: 0.50, y: 0.555 }),
+        username: ({ x: 0.50, y: 0.595 }),
+        weather: ({ x: 0.50, y: 0.635 }),
+        password: ({ x: 0.50, y: 0.70 })
+    })
     readonly property var workspaceLegacyStyleAliases: ({
         "filled-dot": "workflow",
         "filled-diamond": "workflow",
@@ -347,6 +355,9 @@ Singleton {
             lockscreen_show_date: false,
             lockscreen_show_username: false,
             lockscreen_show_weather: false,
+            lockscreen_background: "black",
+            lockscreen_weather_location: "",
+            lockscreen_layout: root.defaultLockscreenLayout,
             monitors: {},
             launcher_sizes: {},
             clipboard_views: {},
@@ -637,6 +648,57 @@ Singleton {
 
     function lockscreenShowWeather() {
         return lockscreenBooleanPreference("lockscreen_show_weather", false);
+    }
+
+    function lockscreenBackground() {
+        return String(data().lockscreen_background || "") === "wallpaper"
+            ? "wallpaper" : "black";
+    }
+
+    function lockscreenWeatherLocation() {
+        const value = data().lockscreen_weather_location;
+        if (typeof value !== "string")
+            return "";
+        const trimmed = value.trim();
+        const points = Array.from(trimmed);
+        if (points.length > 96)
+            return "";
+        for (const point of points) {
+            const code = point.codePointAt(0);
+            if ((code >= 0 && code <= 31) || (code >= 127 && code <= 159))
+                return "";
+        }
+        return trimmed;
+    }
+
+    function lockscreenLayoutPoint(value, fallback, password) {
+        if (!value || typeof value !== "object" || Array.isArray(value))
+            return ({ x: fallback.x, y: fallback.y });
+        const x = Number(value.x);
+        const y = Number(value.y);
+        const minX = password ? 0.15 : 0.05;
+        const maxX = password ? 0.85 : 0.95;
+        const minY = password ? 0.20 : 0.08;
+        const maxY = password ? 0.86 : 0.92;
+        if (!Number.isFinite(x) || !Number.isFinite(y)
+                || x < minX || x > maxX || y < minY || y > maxY)
+            return ({ x: fallback.x, y: fallback.y });
+        return ({ x: x, y: y });
+    }
+
+    function lockscreenLayout() {
+        const defaults = root.defaultLockscreenLayout;
+        const value = data().lockscreen_layout;
+        if (!value || typeof value !== "object" || Array.isArray(value))
+            return defaults;
+        return ({
+            logo: lockscreenLayoutPoint(value.logo, defaults.logo, false),
+            time: lockscreenLayoutPoint(value.time, defaults.time, false),
+            date: lockscreenLayoutPoint(value.date, defaults.date, false),
+            username: lockscreenLayoutPoint(value.username, defaults.username, false),
+            weather: lockscreenLayoutPoint(value.weather, defaults.weather, false),
+            password: lockscreenLayoutPoint(value.password, defaults.password, true)
+        });
     }
 
     function updateNotificationsEnabled() {
