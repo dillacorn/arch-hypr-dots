@@ -1,0 +1,67 @@
+name: Fix live editor apply transformation
+
+on:
+  push:
+    branches: [feature/lockscreen-interactive-effects]
+    paths: [.github/workflows/fix-lockscreen-live-editor-apply.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: feature/lockscreen-interactive-effects
+          fetch-depth: 0
+      - name: Replace brittle wordmark transformation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/apply-lockscreen-live-editor.yml')
+          text = path.read_text()
+          start_marker = '''          replace_once(
+              scene,
+              ''' + "'''        Item {"
+          end_marker = '              "logo live presentation")\n'
+          start = text.find(start_marker)
+          if start < 0:
+              raise SystemExit('wordmark transform start not found')
+          end = text.find(end_marker, start)
+          if end < 0:
+              raise SystemExit('wordmark transform end not found')
+          end += len(end_marker)
+          replacement = '''          text = scene.read_text()
+          wordmark_anchor = '            id: wordmarkItem\\n'
+          if wordmark_anchor not in text:
+              raise SystemExit("wordmark id anchor not found")
+          text = text.replace(
+              wordmark_anchor,
+              wordmark_anchor + '            visible: root.showLogo\\n',
+              1)
+          wordmark_size = '            height: root.wordmarkHeight\\n'
+          wordmark_size_pos = text.find(wordmark_size, text.find(wordmark_anchor))
+          if wordmark_size_pos < 0:
+              raise SystemExit("wordmark size anchor not found")
+          insertion = wordmark_size + '            scale: root.elementScale("logo")\\n            transformOrigin: Item.Center\\n'
+          text = text[:wordmark_size_pos] + text[wordmark_size_pos:].replace(wordmark_size, insertion, 1)
+          scene.write_text(text)
+'''
+          path.write_text(text[:start] + replacement + text[end:])
+          PY
+          rm -f .github/workflows/fix-lockscreen-live-editor-apply.yml
+          git diff --check
+      - name: Commit transformation fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A .github/workflows/apply-lockscreen-live-editor.yml .github/workflows/fix-lockscreen-live-editor-apply.yml
+          git commit -m 'Fix live editor apply transformation'
+          git push origin HEAD:feature/lockscreen-interactive-effects
