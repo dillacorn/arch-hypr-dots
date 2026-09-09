@@ -3,7 +3,9 @@ name: Apply validated live lockscreen editor
 on:
   push:
     branches: [feature/lockscreen-interactive-effects]
-    paths: [.github/workflows/apply-lockscreen-live-editor-v2.yml]
+    paths:
+      - .github/workflows/apply-lockscreen-live-editor-v2.yml
+      - tests/test-quickshell-lockscreen-editor.sh
 
 permissions:
   contents: write
