@@ -129,6 +129,7 @@ require_contains "$wireguard_helper" 'WTFISMYIP_TEXT_URL="https://myip.wtf/text"
 # startup window instead of polling forever. Keep its root Singleton explicitly
 # qualified so a managed update cannot leave the desktop shell resolving an
 # unqualified/stale Singleton type during startup.
+# This guards the 2026-09-09 desktop-shell startup regression.
 require_contains "$shell_qml" 'readonly property bool numlockTweakReady:'
 require_contains "$shell_qml" 'NumlockSessionTweak.enforce()'
 require_contains "$numlock_tweak" 'import Quickshell as Qs'
