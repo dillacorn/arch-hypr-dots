@@ -35,9 +35,22 @@ Item {
                 root.summary = "";
                 return;
             }
+
             const value = typeof parsed.summary === "string"
                 ? parsed.summary.trim() : "";
-            root.summary = value.length <= 96 ? value : value.slice(0, 96);
+            const expiresAt = Number(parsed.expires_at);
+            const provider = typeof parsed.provider === "string"
+                ? parsed.provider : "";
+            const now = Math.floor(Date.now() / 1000);
+
+            if (value.length === 0 || Array.from(value).length > 96
+                    || !Number.isFinite(expiresAt) || expiresAt <= now
+                    || provider !== "open-meteo") {
+                root.summary = "";
+                return;
+            }
+
+            root.summary = value;
         } catch (error) {
             root.summary = "";
         }
