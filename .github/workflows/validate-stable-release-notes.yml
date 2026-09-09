@@ -39,3 +39,146 @@ jobs:
         run: bash tests/test-stable-release-notes-validator.sh
       - name: Canonical installation and update docs
         run: bash tests/test-install-update-docs.sh
+
+  release-v3-6-2:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.title == 'One-use v3.6.2 release bridge' &&
+      github.head_ref == 'release/v3.6.2-bridge' &&
+      github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: 5b531eb51cb2409bea12e26c8e34db2084ff9fd4
+      RELEASE_TAG: v3.6.2
+      RELEASE_NAME: Awtarchy v3.6.2 Quickshell
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+
+      - name: Verify exact release target and merged-main CI
+        run: |
+          set -euo pipefail
+
+          current_main="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$current_main" == "$TARGET_SHA" ]] || {
+            printf 'main moved: expected %s, got %s\n' "$TARGET_SHA" "$current_main" >&2
+            exit 1
+          }
+
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            printf 'release %s already exists\n' "$RELEASE_TAG" >&2
+            exit 1
+          fi
+
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            printf 'tag %s already exists\n' "$RELEASE_TAG" >&2
+            exit 1
+          fi
+
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${TARGET_SHA}&event=push&per_page=100" > merged-main-runs.json
+          run_count="$(jq '.total_count' merged-main-runs.json)"
+          bad_count="$(jq '[.workflow_runs[] | select(.status != "completed" or .conclusion != "success")] | length' merged-main-runs.json)"
+          [[ "$run_count" == 12 ]] || {
+            printf 'expected 12 merged-main workflows, found %s\n' "$run_count" >&2
+            exit 1
+          }
+          [[ "$bad_count" == 0 ]] || {
+            jq -r '.workflow_runs[] | select(.status != "completed" or .conclusion != "success") | [.name, .status, (.conclusion // "null")] | @tsv' merged-main-runs.json >&2
+            exit 1
+          }
+
+      - name: Build and validate release notes
+        run: |
+          set -euo pipefail
+
+          gh release view v3.6.1 --repo "$GITHUB_REPOSITORY" --json body --jq '.body' > previous-stable-release.md
+
+          cat > proposed-release.md <<'EOF'
+          # Awtarchy v3.6.2 Quickshell
+
+          Awtarchy v3.6.2 fixes Screen Share Guard runtime behavior on personalized Hyprland configurations and fixes the Bluetooth suspend/resume race that could re-enable an adapter the user had left disabled.
+
+          ## Install and update
+
+          Fresh installation: [INSTALL.md](https://github.com/dillacorn/awtarchy/blob/main/INSTALL.md)
+
+          Existing Awtarchy installations and stable updates: [UPDATING.md](https://github.com/dillacorn/awtarchy/blob/main/UPDATING.md)
+
+          Quick update:
+
+          ```bash
+          awtarchy update
+          ```
+
+          ## Screen Share Guard
+
+          - Capture toggles now synchronize with both already-open and newly opened matching windows.
+          - Personalized `hyprland.lua` files are migrated safely so retired direct `no_screen_share` rules no longer override the current guard state; unrelated customizations are preserved and backed up.
+          - User-defined targets registered through the Screen Share Guard API now appear automatically in Quick Settings.
+          - Runtime failures roll state back instead of leaving the UI out of sync, and boolean status reporting is corrected.
+
+          ## Bluetooth suspend/resume
+
+          - Fixes issue #146, where Bluetooth could briefly reach the saved disabled state during resume and then be powered back on by later BlueZ/kernel settling.
+          - Resume restoration now verifies the selected state through its retry window and reasserts the saved state if the adapter relapses.
+          - The affected machine was runtime-tested after suspend/resume with the saved preference and actual adapter both remaining disabled, BlueZ reporting `Powered: no`, and rfkill remaining unblocked.
+
+          ## Validation
+
+          - Exact release target: `5b531eb51cb2409bea12e26c8e34db2084ff9fd4`.
+          - All 12 merged-main push workflows triggered for the exact release target completed successfully.
+          - Screen Share Guard was runtime-tested with a preserved personalized config, stale legacy-rule migration, session capture allowance, and fresh LocalSend launches.
+          - Bluetooth resume restoration was runtime-tested on the affected hardware after the regression fix; the focused Bluetooth State and full Awtarchy integration suites passed before merge.
+
+          ## Post-release updates
+
+          _Placeholder for possible tested post-release patches to v3.6.2._
+          EOF
+
+          python3 .github/scripts/validate-stable-release-notes.py \
+            --version "$RELEASE_TAG" \
+            --notes proposed-release.md \
+            --previous previous-stable-release.md
+
+      - name: Create v3.6.2 release
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$TARGET_SHA" \
+            --title "$RELEASE_NAME" \
+            --notes-file proposed-release.md
+
+      - name: Verify published release
+        run: |
+          set -euo pipefail
+
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json body --jq '.body' > published-release.md
+          python3 .github/scripts/validate-stable-release-notes.py \
+            --version "$RELEASE_TAG" \
+            --notes published-release.md \
+            --previous previous-stable-release.md
+
+          published_name="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json name --jq '.name')"
+          published_tag="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName')"
+          published_target="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq '.targetCommitish')"
+          published_draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')"
+          published_prerelease="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq '.isPrerelease')"
+          tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha')"
+
+          [[ "$published_name" == "$RELEASE_NAME" ]]
+          [[ "$published_tag" == "$RELEASE_TAG" ]]
+          [[ "$published_target" == "$TARGET_SHA" ]]
+          [[ "$published_draft" == false ]]
+          [[ "$published_prerelease" == false ]]
+          [[ "$tag_sha" == "$TARGET_SHA" ]]
+          diff -u proposed-release.md published-release.md
+
+      - name: Remove one-use release bridge
+        run: |
+          set -euo pipefail
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/pulls/${{ github.event.pull_request.number }}" -f state=closed >/dev/null
+          gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/release/v3.6.2-bridge"
