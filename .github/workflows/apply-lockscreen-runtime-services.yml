@@ -1,0 +1,252 @@
+name: Apply lockscreen runtime services
+
+on:
+  push:
+    branches: [feature/lockscreen-interactive-effects]
+    paths: [.github/workflows/apply-lockscreen-runtime-services.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: feature/lockscreen-interactive-effects
+          fetch-depth: 0
+
+      - name: Apply runtime services
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > config/quickshell/awtarchy/LockscreenWeather.qml <<'EOF'
+          pragma Singleton
+          pragma ComponentBehavior: Bound
+
+          import QtQuick
+          import Quickshell
+          import Quickshell.Io
+
+          Singleton {
+              id: root
+
+              readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
+                  || (Quickshell.env("HOME") + "/.config")
+              readonly property string weatherHelper:
+                  configHome + "/hypr/scripts/quickshell_lockscreen_weather.sh"
+              readonly property int minimumRefreshIntervalMs: 1200000
+              readonly property string configuredLocation:
+                  String(BarState.lockscreenWeatherLocation() || "").trim()
+              readonly property bool refreshEnabled:
+                  BarState.lockscreenShowWeather() && configuredLocation.length > 0
+
+              property string lastRequestedLocation: ""
+              property double lastRequestMs: 0
+
+              function requestRefresh() {
+                  const location = String(root.configuredLocation || "").trim();
+                  if (!root.refreshEnabled || location.length === 0 || refreshProcess.running)
+                      return;
+
+                  const now = Date.now();
+                  const locationChanged = location !== root.lastRequestedLocation;
+                  if (!locationChanged && root.lastRequestMs > 0
+                          && now - root.lastRequestMs < root.minimumRefreshIntervalMs)
+                      return;
+
+                  root.lastRequestedLocation = location;
+                  root.lastRequestMs = now;
+                  refreshProcess.exec([root.weatherHelper, "refresh", location]);
+              }
+
+              Process {
+                  id: refreshProcess
+              }
+
+              Timer {
+                  interval: 1200000
+                  repeat: true
+                  running: root.refreshEnabled
+                  onTriggered: root.requestRefresh()
+              }
+
+              Timer {
+                  id: stateRefresh
+                  interval: 180
+                  repeat: false
+                  onTriggered: root.requestRefresh()
+              }
+
+              Connections {
+                  target: BarState
+                  function onRevisionChanged() {
+                      if (root.refreshEnabled)
+                          stateRefresh.restart();
+                  }
+              }
+
+              Component.onCompleted: {
+                  if (root.refreshEnabled)
+                      stateRefresh.restart();
+              }
+          }
+          EOF
+
+          cat > config/quickshell/awtarchy-lock/LockWallpaperState.qml <<'EOF'
+          import QtQuick
+          import Quickshell
+          import Quickshell.Io
+
+          Item {
+              id: root
+
+              readonly property string statePath:
+                  Quickshell.env("HOME") + "/.config/awtwall/backend_state.tsv"
+              property string source: ""
+
+              function localFileSource(path) {
+                  const value = String(path || "").trim();
+                  if (!value.startsWith("/") || value.indexOf("://") >= 0)
+                      return "";
+                  return encodeURI("file://" + path);
+              }
+
+              function refresh() {
+                  const text = stateFile.text();
+                  const lines = String(text || "").split(/\r?\n/);
+                  let nextSource = "";
+
+                  for (let i = 0; i < lines.length; ++i) {
+                      const line = lines[i];
+                      if (line.length === 0)
+                          continue;
+                      const fields = line.split("\t");
+                      if (fields.length < 2 || fields[0] === "backend")
+                          continue;
+
+                      const path = fields.length >= 3
+                          ? fields.slice(2).join("\t")
+                          : fields.slice(1).join("\t");
+                      const candidate = localFileSource(path);
+                      if (candidate.length > 0) {
+                          nextSource = candidate;
+                          break;
+                      }
+                  }
+
+                  root.source = nextSource;
+              }
+
+              FileView {
+                  id: stateFile
+                  path: root.statePath
+                  watchChanges: true
+                  blockLoading: false
+                  printErrors: false
+                  onLoaded: root.refresh()
+                  onFileChanged: root.refresh()
+              }
+
+              Component.onCompleted: root.refresh()
+          }
+          EOF
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          editor = Path("config/quickshell/awtarchy/LockscreenEditor.qml")
+          text = editor.read_text()
+          old = '    property string statusMessage: ""\n    property string wallpaperSource: ""\n'
+          new = '    property string statusMessage: ""\n'
+          if old not in text:
+              raise SystemExit("editor wallpaperSource property target not found")
+          text = text.replace(old, new, 1)
+          old = '''    Shortcut {
+              sequence: "Escape"
+          '''
+          new = '''    LockUi.LockWallpaperState {
+              id: wallpaperState
+          }
+
+              Shortcut {
+              sequence: "Escape"
+          '''
+          if old not in text:
+              raise SystemExit("editor insertion target not found")
+          text = text.replace(old, new, 1)
+          old = '                wallpaperSource: root.wallpaperSource\n'
+          new = '                wallpaperSource: wallpaperState.source\n'
+          if old not in text:
+              raise SystemExit("editor wallpaper binding target not found")
+          text = text.replace(old, new, 1)
+          editor.write_text(text)
+
+          shell = Path("config/quickshell/awtarchy-lock/shell.qml")
+          text = shell.read_text()
+          old = '    property var lockLayout: defaultLockLayout()\n    property string lockWallpaperSource: ""\n'
+          new = '    property var lockLayout: defaultLockLayout()\n'
+          if old not in text:
+              raise SystemExit("lock shell wallpaperSource property target not found")
+          text = text.replace(old, new, 1)
+          old = '''    LockWeatherCache {
+              id: lockWeatherCache
+              enabled: root.lockShowWeather
+          }
+
+              WlSessionLock {
+          '''
+          new = '''    LockWeatherCache {
+              id: lockWeatherCache
+              enabled: root.lockShowWeather
+          }
+
+              LockWallpaperState {
+              id: lockWallpaperState
+          }
+
+              WlSessionLock {
+          '''
+          if old not in text:
+              raise SystemExit("lock shell wallpaper reader insertion target not found")
+          text = text.replace(old, new, 1)
+          old = '                wallpaperSource: root.lockWallpaperSource\n'
+          new = '                wallpaperSource: lockWallpaperState.source\n'
+          if old not in text:
+              raise SystemExit("lock shell wallpaper binding target not found")
+          text = text.replace(old, new, 1)
+          shell.write_text(text)
+          PY
+
+      - name: Validate focused contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update >/dev/null
+          sudo apt-get install -y jq shellcheck >/dev/null
+          bash tests/test-quickshell-lockscreen-runtime-services.sh
+          bash tests/test-quickshell-lockscreen-editor.sh
+          bash tests/test-quickshell-lockscreen-foundation.sh
+          bash tests/test-quickshell-lockscreen-runtime-regressions.sh
+          bash tests/test-quickshell-lockscreen-interactive-effects.sh
+          bash tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+          bash -n config/hypr/scripts/quickshell_lockscreen_weather.sh
+          shellcheck config/hypr/scripts/quickshell_lockscreen_weather.sh
+          git diff --check
+
+      - name: Commit source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            config/quickshell/awtarchy/LockscreenWeather.qml \
+            config/quickshell/awtarchy/LockscreenEditor.qml \
+            config/quickshell/awtarchy-lock/LockWallpaperState.qml \
+            config/quickshell/awtarchy-lock/shell.qml
+          git diff --cached --quiet && exit 0
+          git commit -m 'Add lockscreen runtime services'
+          git push origin HEAD:feature/lockscreen-interactive-effects
