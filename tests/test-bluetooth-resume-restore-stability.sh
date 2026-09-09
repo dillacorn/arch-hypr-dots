@@ -65,8 +65,8 @@ printf '%s\n' 1 >"$BLUETOOTH_RELAPSES_FILE"
 : >"$BLUETOOTHCTL_LOG"
 
 # Real #146 evidence showed restore reporting success after observing Powered:no,
-# followed by BlueZ/kernel returning the adapter to Powered:yes. A resume retry
-# window must keep enforcing the saved state after the first successful sample.
+# followed by BlueZ/kernel returning the adapter to Powered:yes. Treat the resume
+# retry period as a stability window and reassert the saved state after a relapse.
 AWTARCHY_BLUETOOTH_POWER_RETRY_SECONDS=1 "$HELPER" restore
 
 [[ "$(<"$BLUETOOTH_POWER_STATE_FILE")" == no ]] \
