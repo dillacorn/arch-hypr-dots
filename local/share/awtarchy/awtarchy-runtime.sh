@@ -371,10 +371,6 @@ migrate_screenshare_guard_hyprland_stage() {
   local stamp backup suffix=0
 
   [[ -f "$live" && ! -L "$live" ]] || return 0
-  if grep -Fq -- 'function awtarchy_screenshare_guard_set_group_v1' "$live" \
-    && grep -Fq -- 'function awtarchy_screenshare_guard_status_v1' "$live"; then
-    return 0
-  fi
 
   [[ -f "$helper" && ! -L "$helper" ]] \
     || die "Screen Share Guard Hyprland migration helper is unavailable or unsafe: ${helper}"
