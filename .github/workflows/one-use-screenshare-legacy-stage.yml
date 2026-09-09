@@ -1,0 +1,49 @@
+name: One-use Screen Share Guard legacy stage fix
+
+on:
+  push:
+    branches: [fix/screenshare-guard-runtime-apply]
+    paths:
+      - '.github/workflows/one-use-screenshare-legacy-stage.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: fix/screenshare-guard-runtime-apply
+          fetch-depth: 0
+      - name: Remove integrated-config early return
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('local/share/awtarchy/awtarchy-runtime.sh')
+          text = path.read_text()
+          old = '''  [[ -f "$live" && ! -L "$live" ]] || return 0
+          if grep -Fq -- 'function awtarchy_screenshare_guard_set_group_v1' "$live" \\
+            && grep -Fq -- 'function awtarchy_screenshare_guard_status_v1' "$live"; then
+            return 0
+          fi
+
+          '''
+          new = '''  [[ -f "$live" && ! -L "$live" ]] || return 0
+
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one Screen Share Guard early-return block, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Commit updater fix and remove one-use workflow
+        run: |
+          rm -f .github/workflows/one-use-screenshare-legacy-stage.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add local/share/awtarchy/awtarchy-runtime.sh .github/workflows/one-use-screenshare-legacy-stage.yml
+          git diff --cached --check
+          git commit -m 'fix: run Screen Share Guard migration on integrated configs'
+          git push origin HEAD:fix/screenshare-guard-runtime-apply
