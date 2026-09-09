@@ -19,7 +19,7 @@ jobs:
           ref: fix/screenshare-guard-runtime-apply
           fetch-depth: 0
 
-      - name: Patch null-key jq merge and record prior managed hash
+      - name: Patch runtime status and transaction handling
         shell: bash
         run: |
           set -euo pipefail
@@ -33,6 +33,7 @@ jobs:
 
           path = Path("config/hypr/scripts/screenshare_guard.sh")
           text = path.read_text()
+
           old_effective = '            .value.effective_protected = (if ($actual | has(.key)) then $actual[.key] else null end)'
           new_effective = '            .key as $target\n            | .value.effective_protected = (if ($actual | has($target)) then $actual[$target] else null end)'
           if text.count(old_effective) != 1:
@@ -41,6 +42,19 @@ jobs:
           if text.count('$actual[.key]') != 2:
               raise SystemExit("expected exactly two remaining Screen Share Guard .key lookups")
           text = text.replace('$actual[.key]', '$actual[$target]')
+
+          old_apply = '''    apply_lua "$lua"
+              sync_open_windows_locked
+          '''
+          new_apply = '''    if ! apply_lua "$lua"; then
+                  return 1
+              fi
+              sync_open_windows_locked
+          '''
+          if text.count(old_apply) != 1:
+              raise SystemExit("expected exactly one Screen Share Guard apply sequence")
+          text = text.replace(old_apply, new_apply)
+
           path.write_text(text)
           PY
 
@@ -50,11 +64,12 @@ jobs:
           fi
 
           bash -n "$script"
+          shellcheck "$script"
           bash tests/test-screenshare-guard-runtime-apply.sh
 
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git rm .github/workflows/one-use-screenshare-status-jq-fix.yml
           git add "$script" "$history"
-          git commit -m 'Fix Screen Share Guard false status reporting'
+          git commit -m 'Fix Screen Share Guard runtime status handling'
           git push origin HEAD:fix/screenshare-guard-runtime-apply
