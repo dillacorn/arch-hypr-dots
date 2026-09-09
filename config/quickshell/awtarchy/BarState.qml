@@ -342,9 +342,11 @@ Singleton {
             update_notifications_enabled: true,
             lockscreen_animation: "split",
             lockscreen_audio_reactive: true,
+            lockscreen_mouse_interactive: true,
             lockscreen_show_time: false,
             lockscreen_show_date: false,
             lockscreen_show_username: false,
+            lockscreen_show_weather: false,
             monitors: {},
             launcher_sizes: {},
             clipboard_views: {},
@@ -617,6 +619,10 @@ Singleton {
         return lockscreenBooleanPreference("lockscreen_audio_reactive", true);
     }
 
+    function lockscreenMouseInteractiveEnabled() {
+        return lockscreenBooleanPreference("lockscreen_mouse_interactive", true);
+    }
+
     function lockscreenShowTime() {
         return lockscreenBooleanPreference("lockscreen_show_time", false);
     }
@@ -627,6 +633,10 @@ Singleton {
 
     function lockscreenShowUsername() {
         return lockscreenBooleanPreference("lockscreen_show_username", false);
+    }
+
+    function lockscreenShowWeather() {
+        return lockscreenBooleanPreference("lockscreen_show_weather", false);
     }
 
     function updateNotificationsEnabled() {

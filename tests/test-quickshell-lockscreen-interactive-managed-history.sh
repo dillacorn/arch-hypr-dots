@@ -17,6 +17,7 @@ managed_files=(
     'config/quickshell/awtarchy-lock/shell.qml:.config/quickshell/awtarchy-lock/shell.qml'
     'config/quickshell/awtarchy-lock/LockSurface.qml:.config/quickshell/awtarchy-lock/LockSurface.qml'
     'config/quickshell/awtarchy-lock/LockAudioAnalyzer.qml:.config/quickshell/awtarchy-lock/LockAudioAnalyzer.qml'
+    'config/quickshell/awtarchy-lock/LockWeatherCache.qml:.config/quickshell/awtarchy-lock/LockWeatherCache.qml'
     'config/quickshell/awtarchy-lock/cava.conf:.config/quickshell/awtarchy-lock/cava.conf'
 )
 

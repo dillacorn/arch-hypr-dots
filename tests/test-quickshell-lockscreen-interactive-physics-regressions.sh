@@ -39,6 +39,16 @@ require_text "$SURFACE_QML" '+ combinedOffsetX' \
 require_text "$SURFACE_QML" '+ combinedOffsetY' \
     'wordmark Y position does not use the clamped combined displacement'
 
+# Formation Off is not a hidden effects master switch. Mouse and audio have
+# independent gates so users can evaluate or disable either effect separately.
+require_text "$SURFACE_QML" 'readonly property bool pointerEffectsEnabled: root.mouseInteractive && root.pointerActive' \
+    'pointer physics is not independently gated'
+require_text "$SURFACE_QML" 'readonly property bool audioEffectsEnabled: root.audioReactive && root.audioLevel > root.audioSilenceThreshold' \
+    'audio physics is not independently gated'
+if grep -Fq -- 'interactiveEffectsEnabled: root.animationPreference !== "off"' "$SURFACE_QML"; then
+    fail 'formation Off still acts as an effects master switch'
+fi
+
 # Audio smoothing must stop once it reaches the current target, including the
 # zero target after CAVA exits or is unavailable.
 require_text "$AUDIO_QML" 'function settled()' \

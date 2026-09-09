@@ -15,9 +15,11 @@ ShellRoot {
         || (Quickshell.env("HOME") + "/.cache")) + "/awtarchy/quickshell-state.json"
     property string lockAnimationPreference: "split"
     property bool lockAudioReactive: true
+    property bool lockMouseInteractive: true
     property bool lockShowTime: false
     property bool lockShowDate: false
     property bool lockShowUsername: false
+    property bool lockShowWeather: false
     property int randomFormationMode: Math.floor(Math.random() * 4)
     readonly property var allowedAnimationPreferences: [
         "random", "swarm", "edges", "center", "split", "off"
@@ -35,9 +37,11 @@ ShellRoot {
     function resetPreferences() {
         lockAnimationPreference = "split";
         lockAudioReactive = true;
+        lockMouseInteractive = true;
         lockShowTime = false;
         lockShowDate = false;
         lockShowUsername = false;
+        lockShowWeather = false;
     }
 
     function loadPreferences() {
@@ -56,9 +60,11 @@ ShellRoot {
 
             lockAnimationPreference = normalizedAnimationPreference(parsed.lockscreen_animation);
             lockAudioReactive = normalizedBoolean(parsed.lockscreen_audio_reactive, true);
+            lockMouseInteractive = normalizedBoolean(parsed.lockscreen_mouse_interactive, true);
             lockShowTime = normalizedBoolean(parsed.lockscreen_show_time, false);
             lockShowDate = normalizedBoolean(parsed.lockscreen_show_date, false);
             lockShowUsername = normalizedBoolean(parsed.lockscreen_show_username, false);
+            lockShowWeather = normalizedBoolean(parsed.lockscreen_show_weather, false);
         } catch (error) {
             resetPreferences();
         }
@@ -95,7 +101,12 @@ ShellRoot {
 
     LockAudioAnalyzer {
         id: lockAudioAnalyzer
-        enabled: root.lockAudioReactive && root.lockAnimationPreference !== "off"
+        enabled: root.lockAudioReactive
+    }
+
+    LockWeatherCache {
+        id: lockWeatherCache
+        enabled: root.lockShowWeather
     }
 
     WlSessionLock {
@@ -109,13 +120,17 @@ ShellRoot {
                 unlocking: root.unlockRequested
                 animationPreference: root.lockAnimationPreference
                 randomFormationMode: root.randomFormationMode
+                audioReactive: root.lockAudioReactive
                 audioLow: lockAudioAnalyzer.low
                 audioMid: lockAudioAnalyzer.mid
                 audioHigh: lockAudioAnalyzer.high
                 audioOverall: lockAudioAnalyzer.overall
+                mouseInteractive: root.lockMouseInteractive
                 showTime: root.lockShowTime
                 showDate: root.lockShowDate
                 showUsername: root.lockShowUsername
+                showWeather: root.lockShowWeather
+                weatherText: lockWeatherCache.summary
             }
         }
 

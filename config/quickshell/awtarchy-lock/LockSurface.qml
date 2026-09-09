@@ -11,13 +11,17 @@ WlSessionLockSurface {
     required property bool unlocking
     required property string animationPreference
     required property int randomFormationMode
+    required property bool audioReactive
     required property real audioLow
     required property real audioMid
     required property real audioHigh
     required property real audioOverall
+    required property bool mouseInteractive
     required property bool showTime
     required property bool showDate
     required property bool showUsername
+    required property bool showWeather
+    required property string weatherText
 
     color: "#000000"
 
@@ -43,7 +47,10 @@ WlSessionLockSurface {
         : animationPreference === "center" ? 2
         : animationPreference === "split" ? 3
         : randomFormationMode
-    readonly property bool interactiveEffectsEnabled: root.animationPreference !== "off"
+    readonly property real audioLevel: root.audioOverall
+    readonly property real audioSilenceThreshold: 0.01
+    readonly property bool pointerEffectsEnabled: root.mouseInteractive && root.pointerActive
+    readonly property bool audioEffectsEnabled: root.audioReactive && root.audioLevel > root.audioSilenceThreshold
     readonly property int ghostTrailLength: 6
     readonly property int pointerUpdateIntervalMs: 16
     readonly property int cursorFadeDelayMs: 180
@@ -53,9 +60,11 @@ WlSessionLockSurface {
     readonly property real audioDisplacementCap: 6 * root.uiScale
     readonly property real pointerMovementThreshold: 3 * root.uiScale
     readonly property bool metadataVisible: root.showTime || root.showDate || root.showUsername
+        || (root.showWeather && root.weatherText.length > 0)
     readonly property string usernameText: root.showUsername ? Quickshell.env("USER") : ""
 
     property bool entered: false
+    property bool pointerActive: false
     property var wordmarkCells: ({})
     property real ghostHeadX: -100
     property real ghostHeadY: -100
@@ -96,7 +105,7 @@ WlSessionLockSurface {
     }
 
     function applyPointerImpulse(x, y, speed) {
-        if (!interactiveEffectsEnabled)
+        if (!pointerEffectsEnabled)
             return;
 
         const local = wordmarkItem.mapFromItem(pointerArea, x, y);
@@ -125,9 +134,10 @@ WlSessionLockSurface {
     }
 
     function handlePointerMotion(x, y) {
-        if (!interactiveEffectsEnabled)
+        if (!root.mouseInteractive)
             return;
 
+        root.pointerActive = true;
         const now = Date.now();
         const hasPrevious = lastPointerX >= 0 && lastPointerY >= 0
             && lastPointerSampleTime > 0;
@@ -262,7 +272,7 @@ WlSessionLockSurface {
                                 readonly property real audioEnergy: randomA < 0.40
                                     ? root.audioLow : randomA < 0.78 ? root.audioMid : root.audioHigh
                                 readonly property real audioAngle: randomB * Math.PI * 2
-                                readonly property real audioEnvelope: root.interactiveEffectsEnabled
+                                readonly property real audioEnvelope: root.audioEffectsEnabled
                                     ? Math.max(0, Math.min(1, audioEnergy)) * Math.pow(edgeWeight, 1.35) : 0
                                 readonly property real audioOffsetX: audioEnvelope <= 0 ? 0
                                     : Math.max(-root.audioDisplacementCap,
@@ -349,7 +359,7 @@ WlSessionLockSurface {
                                 function applyPointerImpulse(localX, localY, speed) {
                                     if (!wordmarkCell.isFilledGlyph
                                             || wordmarkCell.formationProgress < 0.96
-                                            || !root.interactiveEffectsEnabled)
+                                            || !root.pointerEffectsEnabled)
                                         return;
 
                                     const centerX = wordmarkCell.finalCellX
@@ -494,6 +504,16 @@ WlSessionLockSurface {
                     font.family: root.theme.fontFamily
                     font.pixelSize: Math.round(10 * root.uiScale)
                 }
+
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    visible: root.showWeather && root.weatherText.length > 0
+                    text: root.weatherText
+                    color: root.theme.lockAccent
+                    opacity: 0.68
+                    font.family: root.theme.fontFamily
+                    font.pixelSize: Math.round(10 * root.uiScale)
+                }
             }
 
             Item {
@@ -569,7 +589,7 @@ WlSessionLockSurface {
         Item {
             anchors.fill: parent
             z: 100
-            visible: root.interactiveEffectsEnabled && root.ghostOpacity > 0
+            visible: root.pointerEffectsEnabled && root.ghostOpacity > 0
 
             Repeater {
                 model: root.ghostTrailLength
@@ -624,12 +644,13 @@ WlSessionLockSurface {
         to: 0
         duration: root.cursorFadeDurationMs
         easing.type: Easing.OutCubic
+        onFinished: root.pointerActive = false
     }
 
     Timer {
         interval: 33
         repeat: true
-        running: root.interactiveEffectsEnabled && root.audioOverall > 0.01
+        running: root.audioEffectsEnabled
         onTriggered: root.audioPhase += 0.22
     }
 
