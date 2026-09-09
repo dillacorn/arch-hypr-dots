@@ -424,7 +424,9 @@ sync_open_windows_locked() {
 apply_guard_locked() {
     local lua
     lua="$(build_apply_lua_locked)"
-    apply_lua "$lua"
+    if ! apply_lua "$lua"; then
+        return 1
+    fi
     sync_open_windows_locked
 }
 
@@ -486,9 +488,10 @@ status_json() {
     # shellcheck disable=SC2016
     merged="$(jq -c --argjson actual "$actual" '
         .targets |= with_entries(
-            .value.effective_protected = (if ($actual | has(.key)) then $actual[.key] else null end)
-            | .value.in_sync = (if ($actual[.key] | type) == "boolean"
-                then ($actual[.key] == .value.desired_protected) else false end)
+            .key as $target
+            | .value.effective_protected = (if ($actual | has($target)) then $actual[$target] else null end)
+            | .value.in_sync = (if ($actual[$target] | type) == "boolean"
+                then ($actual[$target] == .value.desired_protected) else false end)
         )
     ' <<<"$desired")"
     printf '%s\n' "$merged"
