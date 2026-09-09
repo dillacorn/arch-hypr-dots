@@ -1,0 +1,34 @@
+name: One-use record Screen Share Guard managed hash
+
+on:
+  push:
+    branches:
+      - fix/screenshare-guard-runtime-apply
+    paths:
+      - .github/workflows/one-use-record-screenshare-hash.yml
+
+permissions:
+  contents: write
+
+jobs:
+  record:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: fix/screenshare-guard-runtime-apply
+      - name: Record hash and remove one-use workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          entry=$'2f3de7e028560e1d67e75ea57e0cc532bd85e9806ec08e292a6667bea748780c\t.config/hypr/scripts/screenshare_guard.sh'
+          grep -Fqx -- "$entry" "$history" || printf '%s\n' "$entry" >>"$history"
+          grep -Fqx -- "$entry" "$history"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/one-use-record-screenshare-hash.yml
+          git add "$history"
+          git commit -m 'Record Screen Share Guard managed hash'
+          git push origin HEAD:fix/screenshare-guard-runtime-apply
