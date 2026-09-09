@@ -81,8 +81,8 @@ jobs:
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${TARGET_SHA}&event=push&per_page=100" > merged-main-runs.json
           run_count="$(jq '.total_count' merged-main-runs.json)"
           bad_count="$(jq '[.workflow_runs[] | select(.status != "completed" or .conclusion != "success")] | length' merged-main-runs.json)"
-          [[ "$run_count" == 12 ]] || {
-            printf 'expected 12 merged-main workflows, found %s\n' "$run_count" >&2
+          [[ "$run_count" == 14 ]] || {
+            printf 'expected 14 merged-main workflows, found %s\n' "$run_count" >&2
             exit 1
           }
           [[ "$bad_count" == 0 ]] || {
@@ -129,7 +129,7 @@ jobs:
           ## Validation
 
           - Exact release target: `5b531eb51cb2409bea12e26c8e34db2084ff9fd4`.
-          - All 12 merged-main push workflows triggered for the exact release target completed successfully.
+          - All 14 merged-main push workflows triggered for the exact release target completed successfully.
           - Screen Share Guard was runtime-tested with a preserved personalized config, stale legacy-rule migration, session capture allowance, and fresh LocalSend launches.
           - Bluetooth resume restoration was runtime-tested on the affected hardware after the regression fix; the focused Bluetooth State and full Awtarchy integration suites passed before merge.
 
