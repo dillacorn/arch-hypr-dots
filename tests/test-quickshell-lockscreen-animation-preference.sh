@@ -20,7 +20,14 @@ require_text() {
     grep -Fq -- "$text" "$file" || fail "$message"
 }
 
-# The existing Quickshell state owner persists one global lockscreen animation
+reject_text() {
+    local file="$1" text="$2" message="$3"
+    if grep -Fq -- "$text" "$file"; then
+        fail "$message"
+    fi
+}
+
+# The existing Quickshell state owner persists one global lockscreen formation
 # preference. Missing state uses stock Split; only these six values are
 # accepted so malformed state cannot turn into arbitrary QML behavior.
 require_text "$APP_STATE" 'set-lockscreen-animation)' \
@@ -109,10 +116,21 @@ require_text "$SURFACE_QML" 'root.animationPreference === "off" ? 1 : 0' \
     'Off does not immediately render the completed wordmark'
 require_text "$SURFACE_QML" 'root.animationPreference !== "off"' \
     'Off does not suppress particle formation animation'
-require_text "$SURFACE_QML" 'readonly property bool interactiveEffectsEnabled: root.animationPreference !== "off"' \
-    'Off does not suppress ghost cursor and pointer physics'
-require_text "$SHELL_QML" 'enabled: root.lockAudioReactive && root.lockAnimationPreference !== "off"' \
-    'Off does not suppress the lockscreen audio analyzer'
+
+# Formation Off is deliberately not an effects master switch. Audio and mouse
+# interactions have their own persisted controls and must continue to function
+# independently when the entrance animation is disabled.
+require_text "$SURFACE_QML" 'readonly property bool pointerEffectsEnabled: root.mouseInteractive && root.pointerActive' \
+    'pointer effects are not controlled independently from formation animation'
+require_text "$SURFACE_QML" 'readonly property bool audioEffectsEnabled: root.audioReactive && root.audioLevel > root.audioSilenceThreshold' \
+    'audio effects are not controlled independently from formation animation'
+require_text "$SHELL_QML" 'enabled: root.lockAudioReactive' \
+    'audio analyzer is not controlled solely by the Audio Reactive preference'
+reject_text "$SURFACE_QML" 'readonly property bool interactiveEffectsEnabled: root.animationPreference !== "off"' \
+    'formation Off still suppresses independent pointer/audio effects'
+reject_text "$SHELL_QML" 'enabled: root.lockAudioReactive && root.lockAnimationPreference !== "off"' \
+    'formation Off still suppresses the independent audio analyzer'
+
 require_text "$SURFACE_QML" 'readonly property int formationDelay: Math.floor(Math.random() * 301)' \
     'lockscreen formation delay is not capped at the faster 300ms range'
 require_text "$SURFACE_QML" 'readonly property int formationDuration: 1700' \
