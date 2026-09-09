@@ -19,26 +19,6 @@ Rectangle {
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
         || (Quickshell.env("HOME") + "/.config")
     readonly property string helper: configHome + "/hypr/scripts/screenshare_guard.sh"
-    readonly property var protectedTargetIds: [
-        "security",
-        "mullvad-browser",
-        "localsend",
-        "telegram",
-        "matrix",
-        "discord",
-        "teams",
-        "messages"
-    ]
-    readonly property var optionalTargetIds: [
-        "obs",
-        "steam",
-        "rustdesk",
-        "files",
-        "wallpicker",
-        "virt-manager",
-        "alacritty",
-        "mpv"
-    ]
 
     Layout.fillWidth: true
     Layout.preferredHeight: content.implicitHeight + 16
@@ -59,6 +39,8 @@ Rectangle {
         return targets[targetId] || ({
             id: targetId,
             label: targetId,
+            section: "optional",
+            order: 9999,
             default_protected: false,
             desired_protected: false,
             effective_protected: null,
@@ -68,8 +50,16 @@ Rectangle {
         });
     }
 
-    function targetModel(ids) {
-        return ids.map(targetId => targetById(targetId));
+    function targetModel(section) {
+        const targets = guardData && guardData.targets ? guardData.targets : ({});
+        return Object.keys(targets)
+            .map(targetId => targetById(targetId))
+            .filter(target => String(target.section || "optional") === section)
+            .sort((a, b) => {
+                const aOrder = typeof a.order === "number" ? a.order : 9999;
+                const bOrder = typeof b.order === "number" ? b.order : 9999;
+                return aOrder - bOrder;
+            });
     }
 
     function stateLabel(target) {
@@ -228,7 +218,7 @@ Rectangle {
         }
 
         Repeater {
-            model: root.expanded ? root.targetModel(root.protectedTargetIds) : []
+            model: root.expanded ? root.targetModel("protected") : []
 
             RowLayout {
                 id: protectedRow
@@ -301,7 +291,7 @@ Rectangle {
             }
 
             SettingsButton {
-                label: root.optionalExpanded ? "Hide" : "Show 8"
+                label: root.optionalExpanded ? "Hide" : "Show " + root.targetModel("optional").length
                 active: root.optionalExpanded
                 textSize: root.scaledText(8)
                 onClicked: root.optionalExpanded = !root.optionalExpanded
@@ -309,7 +299,7 @@ Rectangle {
         }
 
         Repeater {
-            model: root.expanded && root.optionalExpanded ? root.targetModel(root.optionalTargetIds) : []
+            model: root.expanded && root.optionalExpanded ? root.targetModel("optional") : []
 
             RowLayout {
                 id: optionalRow
