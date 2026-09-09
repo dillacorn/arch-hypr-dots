@@ -24,12 +24,10 @@ validate_location() {
     local value="$1"
     if ! jq -e -n --arg value "$value" '
         ($value | explode) as $points
-        | ($points | length) >= 1
-        and ($points | length) <= 96
-        and ($value | test("\\S"))
+        | ($points | length) <= 96
         and ($points | all(. >= 32 and (. < 127 or . > 159)))
     ' >/dev/null 2>&1; then
-        printf 'weather location must be 1-96 Unicode code points with no control characters\n' >&2
+        printf 'weather location must be at most 96 Unicode code points with no control characters\n' >&2
         exit 2
     fi
 }
@@ -51,27 +49,56 @@ weather_description() {
     esac
 }
 
+resolve_location() {
+    local requested="$1"
+    local location_json latitude longitude resolved_name admin1
+
+    if [[ -n "$requested" ]]; then
+        location_json="$(curl --fail --silent --show-error \
+            --connect-timeout 4 --max-time 8 \
+            --get 'https://geocoding-api.open-meteo.com/v1/search' \
+            --data-urlencode "name=$requested" \
+            --data 'count=1' \
+            --data 'language=en' \
+            --data 'format=json')"
+
+        latitude="$(jq -er '.results[0].latitude | select(type == "number")' <<<"$location_json")"
+        longitude="$(jq -er '.results[0].longitude | select(type == "number")' <<<"$location_json")"
+        resolved_name="$(jq -er '.results[0].name | select(type == "string" and length > 0)' <<<"$location_json")"
+        admin1="$(jq -r '.results[0].admin1 // "" | select(type == "string")' <<<"$location_json")"
+    else
+        location_json="$(curl --fail --silent --show-error \
+            --connect-timeout 4 --max-time 8 'https://ipwho.is/')"
+
+        jq -e '.success == true' <<<"$location_json" >/dev/null
+        latitude="$(jq -er '.latitude | select(type == "number")' <<<"$location_json")"
+        longitude="$(jq -er '.longitude | select(type == "number")' <<<"$location_json")"
+        resolved_name="$(jq -er '.city | select(type == "string" and length > 0)' <<<"$location_json")"
+        admin1="$(jq -r '.region // "" | select(type == "string")' <<<"$location_json")"
+    fi
+
+    if [[ -n "$admin1" ]]; then
+        printf '%s\t%s\t%s, %s\n' "$latitude" "$longitude" "$resolved_name" "$admin1"
+    else
+        printf '%s\t%s\t%s\n' "$latitude" "$longitude" "$resolved_name"
+    fi
+}
+
 refresh_weather() {
     local location="$1"
-    local geocode_json forecast_json latitude longitude resolved_name admin1
+    local resolved latitude longitude display_location forecast_json
     local temperature unit code description summary fetched_at expires_at
 
-    validate_location "$location"
     need curl
     need jq
+    validate_location "$location"
 
-    geocode_json="$(curl --fail --silent --show-error \
-        --connect-timeout 4 --max-time 8 \
-        --get 'https://geocoding-api.open-meteo.com/v1/search' \
-        --data-urlencode "name=$location" \
-        --data 'count=1' \
-        --data 'language=en' \
-        --data 'format=json')"
-
-    latitude="$(jq -er '.results[0].latitude | select(type == "number")' <<<"$geocode_json")"
-    longitude="$(jq -er '.results[0].longitude | select(type == "number")' <<<"$geocode_json")"
-    resolved_name="$(jq -er '.results[0].name | select(type == "string" and length > 0)' <<<"$geocode_json")"
-    admin1="$(jq -r '.results[0].admin1 // "" | select(type == "string")' <<<"$geocode_json")"
+    resolved="$(resolve_location "$location")"
+    IFS=$'\t' read -r latitude longitude display_location <<<"$resolved"
+    [[ -n "$latitude" && -n "$longitude" && -n "$display_location" ]] || {
+        printf 'weather location could not be resolved\n' >&2
+        exit 1
+    }
 
     forecast_json="$(curl --fail --silent --show-error \
         --connect-timeout 4 --max-time 8 \
@@ -89,12 +116,6 @@ refresh_weather() {
     printf -v temperature '%.0f' "$temperature"
     summary="${temperature}${unit} · ${description}"
 
-    if [[ -n "$admin1" ]]; then
-        location="${resolved_name}, ${admin1}"
-    else
-        location="$resolved_name"
-    fi
-
     fetched_at="$(date +%s)"
     expires_at=$((fetched_at + 1800))
     mkdir -p "$CACHE_DIR"
@@ -102,7 +123,7 @@ refresh_weather() {
 
     jq -n \
         --arg summary "$summary" \
-        --arg location "$location" \
+        --arg location "$display_location" \
         --argjson fetched_at "$fetched_at" \
         --argjson expires_at "$expires_at" \
         '{
@@ -131,13 +152,13 @@ refresh_weather() {
 case "${1:-}" in
     refresh)
         [[ $# -eq 2 ]] || {
-            printf 'usage: %s refresh <location>\n' "${0##*/}" >&2
+            printf 'usage: %s refresh [location]\n' "${0##*/}" >&2
             exit 2
         }
         refresh_weather "$2"
         ;;
     *)
-        printf 'usage: %s refresh <location>\n' "${0##*/}" >&2
+        printf 'usage: %s refresh [location]\n' "${0##*/}" >&2
         exit 2
         ;;
 esac
