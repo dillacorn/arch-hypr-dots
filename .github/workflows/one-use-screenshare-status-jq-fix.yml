@@ -1,0 +1,67 @@
+name: One-use Screen Share Guard status jq fix
+
+on:
+  push:
+    branches:
+      - fix/screenshare-guard-runtime-apply
+    paths:
+      - .github/workflows/one-use-screenshare-status-jq-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          ref: fix/screenshare-guard-runtime-apply
+          fetch-depth: 0
+
+      - name: Patch null-key jq merge and record prior managed hash
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          script='config/hypr/scripts/screenshare_guard.sh'
+          history='local/share/awtarchy/quickshell-managed-history.sha256'
+          prior_hash="$(sha256sum "$script" | awk '{print $1}')"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("config/hypr/scripts/screenshare_guard.sh")
+          text = path.read_text()
+          old = '''        .targets |= with_entries(
+              .value.effective_protected = (if ($actual | has(.key)) then $actual[.key] else null end)
+              | .value.in_sync = (if ($actual[.key] | type) == "boolean"
+                  then ($actual[.key] == .value.desired_protected) else false end)
+          )
+          '''
+          new = '''        .targets |= with_entries(
+              .key as $target
+              | .value.effective_protected = (if ($actual | has($target)) then $actual[$target] else null end)
+              | .value.in_sync = (if ($actual[$target] | type) == "boolean"
+                  then ($actual[$target] == .value.desired_protected) else false end)
+          )
+          '''
+          if text.count(old) != 1:
+              raise SystemExit("expected exactly one Screen Share Guard status jq block")
+          path.write_text(text.replace(old, new))
+          PY
+
+          history_line="${prior_hash}"$'\t''.config/hypr/scripts/screenshare_guard.sh'
+          if ! grep -Fqx -- "$history_line" "$history"; then
+            printf '%s\n' "$history_line" >>"$history"
+          fi
+
+          bash -n "$script"
+          bash tests/test-screenshare-guard-runtime-apply.sh
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/one-use-screenshare-status-jq-fix.yml
+          git add "$script" "$history"
+          git commit -m 'Fix Screen Share Guard false status reporting'
+          git push origin HEAD:fix/screenshare-guard-runtime-apply
