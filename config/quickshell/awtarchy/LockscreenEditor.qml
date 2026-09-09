@@ -20,7 +20,6 @@ Singleton {
 
     property var draftLayout: defaultLayout()
     property string statusMessage: ""
-    property string wallpaperSource: ""
 
     function defaultLayout() {
         return ({
@@ -151,6 +150,10 @@ Singleton {
         onTriggered: root.close()
     }
 
+    LockUi.LockWallpaperState {
+        id: wallpaperState
+    }
+
     Shortcut {
         sequence: "Escape"
         context: Qt.ApplicationShortcut
@@ -196,7 +199,7 @@ Singleton {
                 showWeather: BarState.lockscreenShowWeather()
                 weatherText: "Weather preview"
                 backgroundMode: BarState.lockscreenBackground()
-                wallpaperSource: root.wallpaperSource
+                wallpaperSource: wallpaperState.source
                 layout: root.draftLayout
                 previewMode: true
             }

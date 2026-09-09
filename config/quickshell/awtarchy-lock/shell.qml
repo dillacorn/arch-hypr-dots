@@ -23,7 +23,6 @@ ShellRoot {
     property string lockBackground: "black"
     property string lockWeatherLocation: ""
     property var lockLayout: defaultLockLayout()
-    property string lockWallpaperSource: ""
     property int randomFormationMode: Math.floor(Math.random() * 4)
     readonly property var allowedAnimationPreferences: [
         "random", "swarm", "edges", "center", "split", "off"
@@ -173,6 +172,10 @@ ShellRoot {
         enabled: root.lockShowWeather
     }
 
+    LockWallpaperState {
+        id: lockWallpaperState
+    }
+
     WlSessionLock {
         id: sessionLock
         locked: true
@@ -196,7 +199,7 @@ ShellRoot {
                 showWeather: root.lockShowWeather
                 weatherText: lockWeatherCache.summary
                 backgroundMode: root.lockBackground
-                wallpaperSource: root.lockWallpaperSource
+                wallpaperSource: lockWallpaperState.source
                 layout: root.lockLayout
             }
         }
