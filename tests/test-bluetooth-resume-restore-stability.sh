@@ -71,6 +71,8 @@ AWTARCHY_BLUETOOTH_POWER_RETRY_SECONDS=1 "$HELPER" restore
 
 [[ "$(<"$BLUETOOTH_POWER_STATE_FILE")" == no ]] \
     || fail 'Bluetooth restore returned while the adapter had relapsed to enabled'
+[[ "$(<"$BLUETOOTH_RELAPSES_FILE")" == 0 ]] \
+    || fail 'simulated resume relapse was not observed during stability verification'
 
 off_count="$(grep -Fxc 'power off' "$BLUETOOTHCTL_LOG" || true)"
 (( off_count >= 2 )) \
