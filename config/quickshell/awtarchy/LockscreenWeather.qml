@@ -15,15 +15,14 @@ Singleton {
     readonly property int minimumRefreshIntervalMs: 1200000
     readonly property string configuredLocation:
         String(BarState.lockscreenWeatherLocation() || "").trim()
-    readonly property bool refreshEnabled:
-        BarState.lockscreenShowWeather() && configuredLocation.length > 0
+    readonly property bool refreshEnabled: BarState.lockscreenShowWeather()
 
     property string lastRequestedLocation: ""
     property double lastRequestMs: 0
 
     function requestRefresh() {
         const location = String(root.configuredLocation || "").trim();
-        if (!root.refreshEnabled || location.length === 0 || refreshProcess.running)
+        if (!root.refreshEnabled || refreshProcess.running)
             return;
 
         const now = Date.now();
