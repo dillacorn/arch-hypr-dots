@@ -21,6 +21,7 @@ jobs:
           bash -n tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
           bash -n tests/test-quickshell-lockscreen-interactive-managed-history.sh
           bash -n tests/test-quickshell-lockscreen-editor.sh
+          bash -n tests/test-quickshell-lockscreen-weather.sh
           if [[ -f config/hypr/scripts/quickshell_lockscreen_audio.sh ]]; then
             bash -n config/hypr/scripts/quickshell_lockscreen_audio.sh
           fi
@@ -33,6 +34,7 @@ jobs:
           shellcheck tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
           shellcheck tests/test-quickshell-lockscreen-interactive-managed-history.sh
           shellcheck tests/test-quickshell-lockscreen-editor.sh
+          shellcheck tests/test-quickshell-lockscreen-weather.sh
           if [[ -f config/hypr/scripts/quickshell_lockscreen_audio.sh ]]; then
             shellcheck config/hypr/scripts/quickshell_lockscreen_audio.sh
           fi
@@ -40,15 +42,13 @@ jobs:
             shellcheck config/hypr/scripts/quickshell_lockscreen_weather.sh
           fi
       - name: Runtime helper mode
-        run: |
-          test -x config/hypr/scripts/quickshell_lockscreen_audio.sh
-          if [[ -f config/hypr/scripts/quickshell_lockscreen_weather.sh ]]; then
-            test -x config/hypr/scripts/quickshell_lockscreen_weather.sh
-          fi
+        run: test -x config/hypr/scripts/quickshell_lockscreen_audio.sh
       - name: Interactive effects contracts
         run: |
           bash tests/test-quickshell-lockscreen-interactive-effects.sh
           bash tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+      - name: Weather refresh contracts
+        run: bash tests/test-quickshell-lockscreen-weather.sh
       - name: Customization editor contracts
         run: bash tests/test-quickshell-lockscreen-editor.sh
       - name: Managed history contracts
