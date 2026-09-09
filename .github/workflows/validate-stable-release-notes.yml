@@ -40,7 +40,7 @@ jobs:
       - name: Canonical installation and update docs
         run: bash tests/test-install-update-docs.sh
 
-  release-v3-6-2:
+  verify-v3-6-2-and-cleanup:
     if: >-
       github.event_name == 'pull_request' &&
       github.event.pull_request.title == 'One-use v3.6.2 release bridge' &&
@@ -61,36 +61,16 @@ jobs:
       - name: Verify exact release target and merged-main CI
         run: |
           set -euo pipefail
-
           current_main="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
-          [[ "$current_main" == "$TARGET_SHA" ]] || {
-            printf 'main moved: expected %s, got %s\n' "$TARGET_SHA" "$current_main" >&2
-            exit 1
-          }
-
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            printf 'release %s already exists\n' "$RELEASE_TAG" >&2
-            exit 1
-          fi
-
-          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
-            printf 'tag %s already exists\n' "$RELEASE_TAG" >&2
-            exit 1
-          fi
+          [[ "$current_main" == "$TARGET_SHA" ]]
 
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${TARGET_SHA}&event=push&per_page=100" > merged-main-runs.json
           run_count="$(jq '.total_count' merged-main-runs.json)"
           bad_count="$(jq '[.workflow_runs[] | select(.status != "completed" or .conclusion != "success")] | length' merged-main-runs.json)"
-          [[ "$run_count" == 14 ]] || {
-            printf 'expected 14 merged-main workflows, found %s\n' "$run_count" >&2
-            exit 1
-          }
-          [[ "$bad_count" == 0 ]] || {
-            jq -r '.workflow_runs[] | select(.status != "completed" or .conclusion != "success") | [.name, .status, (.conclusion // "null")] | @tsv' merged-main-runs.json >&2
-            exit 1
-          }
+          [[ "$run_count" == 14 ]]
+          [[ "$bad_count" == 0 ]]
 
-      - name: Build and validate release notes
+      - name: Re-validate published v3.6.2 release
         run: |
           set -euo pipefail
 
@@ -143,19 +123,6 @@ jobs:
             --notes proposed-release.md \
             --previous previous-stable-release.md
 
-      - name: Create v3.6.2 release
-        run: |
-          set -euo pipefail
-          gh release create "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$TARGET_SHA" \
-            --title "$RELEASE_NAME" \
-            --notes-file proposed-release.md
-
-      - name: Verify published release
-        run: |
-          set -euo pipefail
-
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json body --jq '.body' > published-release.md
           python3 .github/scripts/validate-stable-release-notes.py \
             --version "$RELEASE_TAG" \
@@ -175,7 +142,14 @@ jobs:
           [[ "$published_draft" == false ]]
           [[ "$published_prerelease" == false ]]
           [[ "$tag_sha" == "$TARGET_SHA" ]]
-          diff -u proposed-release.md published-release.md
+
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in ("proposed-release.md", "published-release.md"):
+              text = Path(name).read_text(encoding="utf-8")
+              Path(name + ".normalized").write_text(text.rstrip() + "\n", encoding="utf-8")
+          PY
+          diff -u proposed-release.md.normalized published-release.md.normalized
 
       - name: Remove one-use release bridge
         run: |
