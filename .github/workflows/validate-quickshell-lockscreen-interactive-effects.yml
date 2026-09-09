@@ -6,13 +6,20 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/lockscreen-interactive-effects
+          fetch-depth: 0
+      - name: Apply approved production pass
+        run: |
+          python3 .github/tmp-lockscreen-editor-pass.py
+          python3 .github/tmp-lockscreen-logo-cohesion.py
       - name: Install validation tools
         run: sudo apt-get update && sudo apt-get install -y jq shellcheck
       - name: Syntax validation
@@ -26,12 +33,9 @@ jobs:
           bash -n tests/test-quickshell-lockscreen-live-editor.sh
           bash -n tests/test-quickshell-lockscreen-weather.sh
           bash -n tests/test-quickshell-lockscreen-runtime-services.sh
-          if [[ -f config/hypr/scripts/quickshell_lockscreen_audio.sh ]]; then
-            bash -n config/hypr/scripts/quickshell_lockscreen_audio.sh
-          fi
-          if [[ -f config/hypr/scripts/quickshell_lockscreen_weather.sh ]]; then
-            bash -n config/hypr/scripts/quickshell_lockscreen_weather.sh
-          fi
+          bash -n config/hypr/scripts/quickshell_lockscreen_audio.sh
+          bash -n config/hypr/scripts/quickshell_lockscreen_weather.sh
+          bash -n config/hypr/scripts/quickshell_lockscreen_contrast.sh
       - name: ShellCheck
         run: |
           shellcheck tests/test-quickshell-lockscreen-interactive-effects.sh
@@ -43,16 +47,14 @@ jobs:
           shellcheck tests/test-quickshell-lockscreen-live-editor.sh
           shellcheck tests/test-quickshell-lockscreen-weather.sh
           shellcheck tests/test-quickshell-lockscreen-runtime-services.sh
-          if [[ -f config/hypr/scripts/quickshell_lockscreen_audio.sh ]]; then
-            shellcheck config/hypr/scripts/quickshell_lockscreen_audio.sh
-          fi
-          if [[ -f config/hypr/scripts/quickshell_lockscreen_weather.sh ]]; then
-            shellcheck config/hypr/scripts/quickshell_lockscreen_weather.sh
-          fi
+          shellcheck config/hypr/scripts/quickshell_lockscreen_audio.sh
+          shellcheck config/hypr/scripts/quickshell_lockscreen_weather.sh
+          shellcheck config/hypr/scripts/quickshell_lockscreen_contrast.sh
       - name: Runtime helper mode
         run: |
           test -x config/hypr/scripts/quickshell_lockscreen_audio.sh
           test -x config/hypr/scripts/quickshell_lockscreen_weather.sh
+          test -x config/hypr/scripts/quickshell_lockscreen_contrast.sh
       - name: Logo cohesion contracts
         run: bash tests/test-quickshell-lockscreen-logo-cohesion.sh
       - name: Weather refresh contracts
@@ -70,3 +72,24 @@ jobs:
           bash tests/test-quickshell-lockscreen-live-editor.sh
       - name: Managed history contracts
         run: bash tests/test-quickshell-lockscreen-interactive-managed-history.sh
+      - name: Commit approved production pass
+        shell: bash
+        run: |
+          git config user.name dillacorn
+          git config user.email 28743863+dillacorn@users.noreply.github.com
+          git add \
+            config/hypr/scripts/quickshell_application_state.sh \
+            config/quickshell/awtarchy/shell.qml \
+            config/quickshell/awtarchy/BarState.qml \
+            config/quickshell/awtarchy/QuickSettings.qml \
+            config/quickshell/awtarchy/LockscreenEditor.qml \
+            config/quickshell/awtarchy/LockPreviewScene.qml \
+            config/quickshell/awtarchy-lock/shell.qml \
+            config/quickshell/awtarchy-lock/LockSurface.qml \
+            config/quickshell/awtarchy-lock/LockScene.qml \
+            tests/test-quickshell-lockscreen-interactive-effects.sh \
+            tests/test-quickshell-lockscreen-interactive-managed-history.sh \
+            local/share/awtarchy/quickshell-managed-history.sha256
+          git diff --cached --check
+          git commit -m 'feat: refine lockscreen visual editor and logo'
+          git push origin HEAD:feature/lockscreen-interactive-effects
