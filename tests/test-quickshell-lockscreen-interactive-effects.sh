@@ -178,6 +178,10 @@ require_text "$SCENE_QML" 'readonly property real pointerInfluenceRadius: 72 * u
     'pointer influence radius is not explicitly bounded'
 require_text "$SCENE_QML" 'readonly property real pointerDisplacementCap: 24 * uiScale' \
     'pointer displacement is not explicitly bounded'
+require_text "$SCENE_QML" 'readonly property real clickInfluenceRadius: 110 * uiScale' \
+    'click influence radius is not explicitly stronger than pointer motion'
+require_text "$SCENE_QML" 'readonly property real clickDisplacementCap: 38 * uiScale' \
+    'click displacement cap is not explicitly stronger than pointer motion'
 require_text "$SCENE_QML" 'readonly property real audioDisplacementCap: 6 * uiScale' \
     'audio displacement is not explicitly bounded'
 require_text "$SURFACE_QML" 'required property bool mouseInteractive' \
@@ -196,6 +200,14 @@ require_text "$SCENE_QML" 'readonly property real audioOffsetX:' \
     'wordmark cells have no audio displacement state'
 require_text "$SCENE_QML" 'readonly property real audioOffsetY:' \
     'wordmark cells have no audio displacement state'
+require_text "$SCENE_QML" 'function applyClickImpulse(x, y)' \
+    'shared scene has no distinct click impulse path'
+require_text "$SCENE_QML" 'function handlePointerClick(x, y)' \
+    'shared scene does not turn a click into an interaction event'
+require_text "$SURFACE_QML" 'scene.handlePointerClick(mouse.x, mouse.y)' \
+    'secure lock surface still drops pointer clicks before logo physics'
+require_text "$SURFACE_QML" 'password.forceActiveFocus()' \
+    'click interaction no longer preserves password focus'
 require_text "$SCENE_QML" 'NumberAnimation on pointerOffsetX' \
     'pointer X displacement has no return-to-rest animation'
 require_text "$SCENE_QML" 'NumberAnimation on pointerOffsetY' \
