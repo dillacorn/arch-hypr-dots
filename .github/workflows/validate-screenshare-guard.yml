@@ -2,10 +2,11 @@ name: Validate Screen Share Guard
 
 on:
   push:
-    branches: [feature/screenshare-guard-controls]
+    branches: [main]
   pull_request:
     paths:
       - 'config/hypr/hyprland.lua'
+      - 'config/hypr/screenshare_guard.lua'
       - 'config/hypr/scripts/screenshare_guard.sh'
       - 'config/hypr/scripts/quickshell_runtime_rules.sh'
       - 'config/hypr/scripts/quickshell_application_state.sh'
@@ -14,7 +15,15 @@ on:
       - 'config/quickshell/awtarchy/BarState.qml'
       - 'config/quickshell/awtarchy/QuickSettingsLayoutEditor.qml'
       - 'config/quickshell/awtarchy/FlyoutSettings.qml'
+      - 'local/share/awtarchy/awtarchy-runtime.sh'
+      - 'local/share/awtarchy/migrate-screenshare-guard-hyprland.sh'
+      - 'local/share/awtarchy/quickshell-managed-history.sha256'
       - 'tests/test-screenshare-guard-controls.sh'
+      - 'tests/test-screenshare-guard-runtime-apply.sh'
+      - 'tests/test-screenshare-guard-preserved-hyprland-migration.sh'
+      - 'tests/test-screenshare-guard-legacy-direct-migration.sh'
+      - 'tests/test-screenshare-guard-registry.lua'
+      - 'tests/test-screenshare-guard-quickshell-dynamic.sh'
       - '.github/workflows/validate-screenshare-guard.yml'
   workflow_dispatch:
 
@@ -31,14 +40,34 @@ jobs:
       - name: Syntax
         run: |
           bash -n tests/test-screenshare-guard-controls.sh
+          bash -n tests/test-screenshare-guard-runtime-apply.sh
+          bash -n tests/test-screenshare-guard-preserved-hyprland-migration.sh
+          bash -n tests/test-screenshare-guard-legacy-direct-migration.sh
+          bash -n tests/test-screenshare-guard-quickshell-dynamic.sh
           if [[ -e config/hypr/scripts/screenshare_guard.sh ]]; then
             bash -n config/hypr/scripts/screenshare_guard.sh
+          fi
+          if [[ -e local/share/awtarchy/migrate-screenshare-guard-hyprland.sh ]]; then
+            bash -n local/share/awtarchy/migrate-screenshare-guard-hyprland.sh
           fi
       - name: ShellCheck
         run: |
           shellcheck tests/test-screenshare-guard-controls.sh
+          shellcheck tests/test-screenshare-guard-runtime-apply.sh
+          shellcheck tests/test-screenshare-guard-preserved-hyprland-migration.sh
+          shellcheck tests/test-screenshare-guard-legacy-direct-migration.sh
+          shellcheck tests/test-screenshare-guard-quickshell-dynamic.sh
           if [[ -e config/hypr/scripts/screenshare_guard.sh ]]; then
             shellcheck config/hypr/scripts/screenshare_guard.sh
           fi
+          if [[ -e local/share/awtarchy/migrate-screenshare-guard-hyprland.sh ]]; then
+            shellcheck local/share/awtarchy/migrate-screenshare-guard-hyprland.sh
+          fi
       - name: Screen Share Guard regression
-        run: bash tests/test-screenshare-guard-controls.sh
+        run: |
+          bash tests/test-screenshare-guard-controls.sh
+          bash tests/test-screenshare-guard-runtime-apply.sh
+          bash tests/test-screenshare-guard-preserved-hyprland-migration.sh
+          bash tests/test-screenshare-guard-legacy-direct-migration.sh
+          lua tests/test-screenshare-guard-registry.lua config/hypr/screenshare_guard.lua
+          bash tests/test-screenshare-guard-quickshell-dynamic.sh

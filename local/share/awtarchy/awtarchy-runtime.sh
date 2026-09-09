@@ -363,6 +363,31 @@ migrate_live_hyprlock_hyprland() {
   log "Migrated known Hyprlock references in personalized hyprland.lua; backup: ${backup}"
 }
 
+migrate_screenshare_guard_hyprland_stage() {
+  local repo_dir="$1" target_home="$2"
+  local helper="${repo_dir}/local/share/awtarchy/migrate-screenshare-guard-hyprland.sh"
+  local live="${HOME_DIR}/.config/hypr/hyprland.lua"
+  local managed="${target_home}/.config/hypr/hyprland.lua"
+  local stamp backup suffix=0
+
+  [[ -f "$live" && ! -L "$live" ]] || return 0
+
+  [[ -f "$helper" && ! -L "$helper" ]] \
+    || die "Screen Share Guard Hyprland migration helper is unavailable or unsafe: ${helper}"
+  [[ -f "$managed" && ! -L "$managed" ]] \
+    || die "Managed hyprland.lua is unavailable for Screen Share Guard migration: ${managed}"
+
+  stamp="$(date '+%Y%m%d-%H%M%S')"
+  backup="${live}.backup.${stamp}"
+  while [[ -e "$backup" || -L "$backup" ]]; do
+    ((suffix += 1))
+    backup="${live}.backup.${stamp}.${suffix}"
+  done
+
+  retry_command run_as_target bash "$helper" "$live" "$managed" "$backup" \
+    || die "Could not migrate Screen Share Guard controls into personalized hyprland.lua."
+}
+
 migrate_retired_hyprlock_stage() {
   local repo_dir="$1"
   local reconciler="${repo_dir}/local/share/awtarchy/awtarchy-package-reconcile.sh"
@@ -9081,6 +9106,7 @@ main() {
   persist_quickshell_hyprland_user_patch
   remove_quickshell_update_legacy_packages
   migrate_retired_hyprlock_stage "$repo_dir"
+  migrate_screenshare_guard_hyprland_stage "$repo_dir" "$target_home"
 
   if (( polkit_remove_legacy_ready == 1 )); then
     remove_legacy_polkit_gnome_package

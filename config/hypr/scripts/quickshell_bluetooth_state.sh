@@ -95,8 +95,24 @@ set_adapter_power() {
         esac
 
         if adapter_power_matches "$state"; then
-            return 0
+            if (( BLUETOOTH_POWER_RETRY_SECONDS == 0 )); then
+                return 0
+            fi
+
+            # Resume can briefly reach the requested BlueZ state before the
+            # kernel/firmware finishes restoring the adapter and powers it back
+            # on. Treat the retry period as a stability window, not merely a
+            # retry-on-failure timeout. Reassert only if the state relapses.
+            while (( SECONDS < deadline )); do
+                sleep 0.1
+                adapter_power_matches "$state" || break
+            done
+
+            if adapter_power_matches "$state"; then
+                return 0
+            fi
         fi
+
         if (( BLUETOOTH_POWER_RETRY_SECONDS == 0 || SECONDS >= deadline )); then
             return 1
         fi
