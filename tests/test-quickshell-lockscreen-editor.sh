@@ -7,6 +7,8 @@ BAR_STATE="${ROOT}/config/quickshell/awtarchy/BarState.qml"
 QUICK_SETTINGS="${ROOT}/config/quickshell/awtarchy/QuickSettings.qml"
 DESKTOP_SHELL="${ROOT}/config/quickshell/awtarchy/shell.qml"
 EDITOR_QML="${ROOT}/config/quickshell/awtarchy/LockscreenEditor.qml"
+PREVIEW_SCENE="${ROOT}/config/quickshell/awtarchy/LockPreviewScene.qml"
+PREVIEW_WALLPAPER="${ROOT}/config/quickshell/awtarchy/LockPreviewWallpaperState.qml"
 LOCK_SCENE="${ROOT}/config/quickshell/awtarchy-lock/LockScene.qml"
 LOCK_SURFACE="${ROOT}/config/quickshell/awtarchy-lock/LockSurface.qml"
 LOCK_SHELL="${ROOT}/config/quickshell/awtarchy-lock/shell.qml"
@@ -49,6 +51,8 @@ printf '%s\n' '{"enabled":true,"monitors":{},"launcher_sizes":{},"update_notific
 
 require_file "$LOCK_SCENE" 'shared LockScene.qml is missing'
 require_file "$EDITOR_QML" 'unlocked LockscreenEditor.qml is missing'
+require_file "$PREVIEW_SCENE" 'unlocked LockPreviewScene.qml is missing'
+require_file "$PREVIEW_WALLPAPER" 'unlocked LockPreviewWallpaperState.qml is missing'
 
 reject_text "$LOCK_SCENE" 'WlSessionLock' \
     'shared LockScene owns or imports session-lock authority'
@@ -69,10 +73,14 @@ require_text "$LOCK_SURFACE" 'auth.submit(response)' \
 require_text "$LOCK_SURFACE" 'cursorShape: Qt.BlankCursor' \
     'secure LockSurface exposes the real pointer'
 
-require_text "$EDITOR_QML" 'import "../awtarchy-lock" as LockUi' \
-    'LockscreenEditor does not import the production lock scene directory'
-require_text "$EDITOR_QML" 'LockUi.LockScene {' \
-    'LockscreenEditor does not render the exact shared LockScene'
+reject_text "$EDITOR_QML" 'import "../awtarchy-lock"' \
+    'LockscreenEditor crosses the Quickshell configuration boundary into awtarchy-lock'
+require_text "$EDITOR_QML" 'LockPreviewScene {' \
+    'LockscreenEditor does not render its config-local lock preview scene'
+require_text "$EDITOR_QML" 'LockPreviewWallpaperState {' \
+    'LockscreenEditor does not use its config-local wallpaper preview state'
+cmp -s "$LOCK_SCENE" "$PREVIEW_SCENE" \
+    || fail 'LockPreviewScene drifted from the secure lock presentation scene'
 require_text "$EDITOR_QML" 'function save()' \
     'LockscreenEditor has no explicit Save path'
 require_text "$EDITOR_QML" 'function close()' \
