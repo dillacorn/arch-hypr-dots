@@ -43,12 +43,12 @@ jobs:
           fi
       - name: Runtime helper mode
         run: test -x config/hypr/scripts/quickshell_lockscreen_audio.sh
+      - name: Weather refresh contracts
+        run: bash tests/test-quickshell-lockscreen-weather.sh
       - name: Interactive effects contracts
         run: |
           bash tests/test-quickshell-lockscreen-interactive-effects.sh
           bash tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
-      - name: Weather refresh contracts
-        run: bash tests/test-quickshell-lockscreen-weather.sh
       - name: Customization editor contracts
         run: bash tests/test-quickshell-lockscreen-editor.sh
       - name: Managed history contracts
