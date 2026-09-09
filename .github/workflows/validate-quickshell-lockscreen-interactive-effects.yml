@@ -21,6 +21,7 @@ jobs:
           bash -n tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
           bash -n tests/test-quickshell-lockscreen-interactive-managed-history.sh
           bash -n tests/test-quickshell-lockscreen-editor.sh
+          bash -n tests/test-quickshell-lockscreen-live-editor.sh
           bash -n tests/test-quickshell-lockscreen-weather.sh
           bash -n tests/test-quickshell-lockscreen-runtime-services.sh
           if [[ -f config/hypr/scripts/quickshell_lockscreen_audio.sh ]]; then
@@ -35,6 +36,7 @@ jobs:
           shellcheck tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
           shellcheck tests/test-quickshell-lockscreen-interactive-managed-history.sh
           shellcheck tests/test-quickshell-lockscreen-editor.sh
+          shellcheck tests/test-quickshell-lockscreen-live-editor.sh
           shellcheck tests/test-quickshell-lockscreen-weather.sh
           shellcheck tests/test-quickshell-lockscreen-runtime-services.sh
           if [[ -f config/hypr/scripts/quickshell_lockscreen_audio.sh ]]; then
@@ -56,6 +58,8 @@ jobs:
           bash tests/test-quickshell-lockscreen-interactive-effects.sh
           bash tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
       - name: Customization editor contracts
-        run: bash tests/test-quickshell-lockscreen-editor.sh
+        run: |
+          bash tests/test-quickshell-lockscreen-editor.sh
+          bash tests/test-quickshell-lockscreen-live-editor.sh
       - name: Managed history contracts
         run: bash tests/test-quickshell-lockscreen-interactive-managed-history.sh
