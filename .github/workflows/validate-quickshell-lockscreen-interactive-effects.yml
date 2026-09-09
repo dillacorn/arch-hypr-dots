@@ -19,6 +19,7 @@ jobs:
         run: |
           bash -n tests/test-quickshell-lockscreen-interactive-effects.sh
           bash -n tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+          bash -n tests/test-quickshell-lockscreen-logo-cohesion.sh
           bash -n tests/test-quickshell-lockscreen-interactive-managed-history.sh
           bash -n tests/test-quickshell-lockscreen-editor.sh
           bash -n tests/test-quickshell-lockscreen-editor-config-boundary.sh
@@ -35,6 +36,7 @@ jobs:
         run: |
           shellcheck tests/test-quickshell-lockscreen-interactive-effects.sh
           shellcheck tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+          shellcheck tests/test-quickshell-lockscreen-logo-cohesion.sh
           shellcheck tests/test-quickshell-lockscreen-interactive-managed-history.sh
           shellcheck tests/test-quickshell-lockscreen-editor.sh
           shellcheck tests/test-quickshell-lockscreen-editor-config-boundary.sh
@@ -51,6 +53,8 @@ jobs:
         run: |
           test -x config/hypr/scripts/quickshell_lockscreen_audio.sh
           test -x config/hypr/scripts/quickshell_lockscreen_weather.sh
+      - name: Logo cohesion contracts
+        run: bash tests/test-quickshell-lockscreen-logo-cohesion.sh
       - name: Weather refresh contracts
         run: bash tests/test-quickshell-lockscreen-weather.sh
       - name: Runtime service contracts
