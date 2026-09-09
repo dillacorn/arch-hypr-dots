@@ -174,12 +174,12 @@ require_text "$SURFACE_QML" 'required property bool showDate' \
     'lockscreen does not carry optional date display state'
 require_text "$SURFACE_QML" 'required property bool showUsername' \
     'lockscreen does not carry optional username display state'
-require_text "$SCENE_QML" 'visible: root.showTime' \
-    'time metadata is not optional'
-require_text "$SCENE_QML" 'visible: root.showDate' \
-    'date metadata is not optional'
-require_text "$SCENE_QML" 'visible: root.showUsername' \
-    'username metadata is not optional'
+require_text "$SCENE_QML" 'visible: root.presentationVisible("time", root.showTime)' \
+    'time metadata is not optional outside editor mode'
+require_text "$SCENE_QML" 'visible: root.presentationVisible("date", root.showDate)' \
+    'date metadata is not optional outside editor mode'
+require_text "$SCENE_QML" 'visible: root.presentationVisible("username", root.showUsername)' \
+    'username metadata is not optional outside editor mode'
 reject_text "$SURFACE_QML" 'text: "PASSWORD"' \
     'lockscreen still displays a PASSWORD label'
 require_text "$SURFACE_QML" 'readonly property int maskedCount: Math.min(password.text.length, 10)' \
