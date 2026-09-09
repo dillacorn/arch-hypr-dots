@@ -20,6 +20,7 @@ jobs:
       - name: Apply production patch
         run: |
           set -euo pipefail
+          # Keep the temporary extractor tolerant of blank QML lines.
           sed -i '/        if line.startswith("          "):/i\        if line == "":\n            normalized.append("")' .github/scripts/apply_lockscreen_live_editor.py
           sed -i 's/        if line.startswith("          "):/        elif line.startswith("          "):/' .github/scripts/apply_lockscreen_live_editor.py
           python3 -m py_compile .github/scripts/apply_lockscreen_live_editor.py
