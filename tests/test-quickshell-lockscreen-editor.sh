@@ -47,12 +47,9 @@ mkdir -p "$TMP/cache/awtarchy" "$TMP/config" "$TMP/home"
 printf '%s\n' '{"enabled":true,"monitors":{},"launcher_sizes":{},"update_notifications_enabled":true}' \
     >"$state_file"
 
-# RED gate: presentation must be extracted and the unlocked editor must use it.
 require_file "$LOCK_SCENE" 'shared LockScene.qml is missing'
 require_file "$EDITOR_QML" 'unlocked LockscreenEditor.qml is missing'
 
-# The shared scene is presentation-only. Lock authority, PAM, and real password
-# input stay in LockSurface/LockAuth rather than leaking into the editor preview.
 reject_text "$LOCK_SCENE" 'WlSessionLock' \
     'shared LockScene owns or imports session-lock authority'
 reject_text "$LOCK_SCENE" 'LockAuth' \
@@ -72,8 +69,6 @@ require_text "$LOCK_SURFACE" 'auth.submit(response)' \
 require_text "$LOCK_SURFACE" 'cursorShape: Qt.BlankCursor' \
     'secure LockSurface exposes the real pointer'
 
-# The editor must import the exact production scene, remain unlocked-session only,
-# and persist only an explicit complete draft through the state writer.
 require_text "$EDITOR_QML" 'import "../awtarchy-lock" as LockUi' \
     'LockscreenEditor does not import the production lock scene directory'
 require_text "$EDITOR_QML" 'LockUi.LockScene {' \
@@ -97,7 +92,6 @@ for forbidden in WlSessionLock LockAuth auth.submit sessionLock unlockRequested;
         "LockscreenEditor crosses the secure lock boundary: $forbidden"
 done
 
-# State writer owns validated presentation state.
 require_text "$APP_STATE" 'save-lockscreen-layout)' \
     'state helper has no explicit save-lockscreen-layout command'
 require_text "$APP_STATE" 'set-lockscreen-background)' \
@@ -152,7 +146,6 @@ fi
 [[ "$(sha256sum "$state_file" | awk '{print $1}')" == "$location_before" ]] \
     || fail 'invalid weather location changed persistent state'
 
-# BarState provides normalized stock-safe readers for the editor and Quick Settings.
 require_text "$BAR_STATE" 'lockscreen_background: "black"' \
     'BarState has no stock black lockscreen background'
 require_text "$BAR_STATE" 'lockscreen_weather_location: ""' \
@@ -166,8 +159,6 @@ require_text "$BAR_STATE" 'function lockscreenWeatherLocation()' \
 require_text "$BAR_STATE" 'function lockscreenLayout()' \
     'BarState has no normalized lockscreen layout reader'
 
-# Quick Settings exposes one expandable Lockscreen section, not another top-level
-# reorderable card, and launches the dedicated editor.
 require_text "$QUICK_SETTINGS" 'text: "Lockscreen"' \
     'Quick Settings has no expandable Lockscreen section title'
 require_text "$QUICK_SETTINGS" 'lockscreenSectionExpanded' \
@@ -185,13 +176,11 @@ require_text "$QUICK_SETTINGS" 'set-lockscreen-background' \
 require_text "$QUICK_SETTINGS" 'reset-lockscreen-presentation' \
     'Quick Settings has no scoped Restore Awtarchy Defaults path'
 
-# Desktop shell constructs the editor; secure lock shell never does.
 require_text "$DESKTOP_SHELL" 'LockscreenEditor' \
     'desktop Awtarchy shell does not construct/reference LockscreenEditor'
 reject_text "$LOCK_SHELL" 'LockscreenEditor' \
     'secure lock process loads the unlocked editor'
 
-# Shared scene background is black-first and optional wallpaper is local/failable.
 require_text "$LOCK_SCENE" 'required property string backgroundMode' \
     'LockScene has no explicit background mode input'
 require_text "$LOCK_SCENE" 'required property string wallpaperSource' \
@@ -201,18 +190,20 @@ require_text "$LOCK_SCENE" 'color: "#000000"' \
 require_text "$LOCK_SCENE" 'fillMode: Image.PreserveAspectCrop' \
     'LockScene wallpaper is not aspect-filled'
 
-# Lock-time weather remains cache-only and expires. Networking belongs to the
-# unlocked helper/shell and uses explicit Open-Meteo requests only.
 require_text "$WEATHER_CACHE" 'expires_at' \
     'lock weather cache does not validate expiry metadata'
 require_text "$WEATHER_CACHE" 'Date.now()' \
     'lock weather cache does not compare expiry against current time'
-for forbidden in 'open-meteo' 'curl' 'http://' 'https://'; do
+for forbidden in 'curl' 'http://' 'https://'; do
     reject_text "$WEATHER_CACHE" "$forbidden" \
         "lock weather cache performs/contains network behavior: $forbidden"
     reject_text "$LOCK_SHELL" "$forbidden" \
         "secure lock shell performs/contains weather network behavior: $forbidden"
 done
+reject_text "$LOCK_SHELL" 'open-meteo' \
+    'secure lock shell contains weather-provider network behavior'
+require_text "$WEATHER_CACHE" 'provider !== "open-meteo"' \
+    'lock weather cache does not validate the expected cache provider'
 
 require_file "$WEATHER_HELPER" 'unlocked lockscreen weather helper is missing'
 require_text "$WEATHER_HELPER" 'geocoding-api.open-meteo.com' \
@@ -230,7 +221,6 @@ reject_text "$WEATHER_HELPER" 'ipinfo' \
 reject_text "$WEATHER_HELPER" 'ip-api' \
     'weather helper uses IP geolocation'
 
-# Authentication owner stays presentation-free after the architecture split.
 for token in LockScene LockscreenEditor lockscreen_layout lockscreen_background \
     lockscreen_weather_location wallpaperSource weatherLocation; do
     reject_text "$LOCK_AUTH" "$token" \
