@@ -1,0 +1,60 @@
+name: Apply lockscreen source only
+
+on:
+  push:
+    branches: [feature/lockscreen-interactive-effects]
+    paths:
+      - .github/workflows/apply-lockscreen-source-only.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/lockscreen-interactive-effects
+          fetch-depth: 0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck python3-yaml
+      - name: Reuse validated production transformation
+        run: |
+          python3 <<'PY'
+          import pathlib
+          import yaml
+
+          workflow = pathlib.Path('.github/workflows/validate-quickshell-lockscreen-interactive-effects.yml')
+          data = yaml.safe_load(workflow.read_text())
+          steps = data['jobs']['apply-editor-state']['steps']
+          for step in steps:
+              if step.get('name') == 'Apply validated editor state phase':
+                  pathlib.Path('/tmp/apply-lockscreen-editor-state.sh').write_text(step['run'])
+                  break
+          else:
+              raise SystemExit('validated editor-state step not found')
+          PY
+          bash /tmp/apply-lockscreen-editor-state.sh
+      - name: Commit source without workflow mutation
+        run: |
+          git restore -- .github/workflows/validate-quickshell-lockscreen-interactive-effects.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add config/hypr/scripts/quickshell_application_state.sh \
+                  config/quickshell/awtarchy/BarState.qml \
+                  config/quickshell/awtarchy/QuickSettings.qml \
+                  config/quickshell/awtarchy/shell.qml \
+                  tests/test-quickshell-lockscreen-editor.sh
+          git diff --cached --check
+          git diff --cached --quiet && { echo 'expected validated source changes are missing' >&2; return 1; }
+          git commit -m "Add lockscreen customization state and controls"
+          git push origin HEAD:feature/lockscreen-interactive-effects
+      - name: Remove scratch branches
+        run: |
+          for branch in temp/lockscreen-test-rewire temp/lockscreen-test-rewire-2 temp/lockscreen-test-rewire-3; do
+            if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+              git push origin --delete "$branch"
+            fi
+          done
