@@ -1,218 +1,320 @@
-# Lockscreen Interactive Effects Implementation Plan
+# Lockscreen Customization Editor Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add bounded ghost-cursor/logo interaction, real CAVA-driven audio motion, and optional local time/date/username lockscreen information without changing Awtarchy's session-lock or PAM security model.
+**Goal:** Turn the existing interactive Awtarchy Quickshell lockscreen into a reusable configurable scene with an unlocked live editor, normalized persisted layout, local-wallpaper background option, and explicit-location cached weather without changing lock or PAM ownership.
 
-**Architecture:** Extend the existing shared Quickshell state path and dedicated `awtarchy-lock` process. Keep `LockSurface.qml` as the geometric wordmark renderer, add one shell-owned audio analyzer feeding every lock surface, and keep pointer/trail state local to each surface. Reuse the existing `lockscreen_animation=off` preference as the animation master switch.
+**Architecture:** Extract presentation into `awtarchy-lock/LockScene.qml`. `LockSurface.qml` remains the secure `WlSessionLockSurface` and keeps the real password input/authentication path, while `awtarchy/LockscreenEditor.qml` imports the same scene and renders only a harmless password placeholder. Persist all presentation state through the existing `quickshell_application_state.sh` state writer; perform weather network refresh only from the unlocked shell and let the lock process read an expiring local cache.
 
-**Tech Stack:** Bash, jq/flock, QML/Qt Quick, Quickshell Io, CAVA/PipeWire, GitHub Actions.
+**Tech Stack:** Bash, jq/flock, QML/Qt Quick, Quickshell Io/Wayland, CAVA/PipeWire, curl/Open-Meteo, GitHub Actions.
 
 **Spec:** `docs/superpowers/specs/2026-09-08-lockscreen-interactive-effects-design.md`
 
 ## Global Constraints
 
-- Preserve `WlSessionLock` as the only lock authority.
-- Preserve `LockAuth.qml` as the only PAM conversation owner.
-- Never pass authentication data to audio, pointer, shell-helper, file, environment, argv, or IPC paths.
-- `lockscreen_animation=off` disables formation, ghost cursor, pointer displacement, and audio displacement but not optional informational metadata.
-- `lockscreen_audio_reactive` defaults `true`; `lockscreen_show_time`, `lockscreen_show_date`, and `lockscreen_show_username` default `false`.
-- Weather is not implemented in this slice.
-- No release/tag modification.
+- `WlSessionLock` remains the only lock authority.
+- `LockAuth.qml` remains the only PAM conversation owner.
+- `LockSurface.qml` retains the real password `TextInput` and authentication submission.
+- Shared/editor scene code never receives password text or an unlock method.
+- No release/tag modification and no merge of PR #181.
+- `quickshell_application_state.sh` remains the sole persistent write authority.
+- Layout uses normalized coordinates and independently validates safe password bounds.
+- Weather uses explicit user-entered location only; no IP/device geolocation.
+- Weather networking occurs only in the unlocked shell/helper; the lock process is cache-only.
+- Background defaults to black and local-wallpaper failure falls back to black.
+- Runtime/visual behavior is not called verified until the user tests it on Hyprland.
 
 ---
 
-### Task 1: Define focused regression contracts
+### Task 1: Define editor architecture regressions
 
 **Files:**
-- Create: `tests/test-quickshell-lockscreen-interactive-effects.sh`
-- Create: `.github/workflows/validate-quickshell-lockscreen-interactive-effects.yml`
+- Create: `tests/test-quickshell-lockscreen-editor.sh`
+- Modify: `.github/workflows/validate-quickshell-lockscreen-interactive-effects.yml`
 
 **Interfaces:**
-- Consumes: current `BarState.qml`, `QuickSettings.qml`, `quickshell_application_state.sh`, `awtarchy-lock/shell.qml`, `LockSurface.qml`.
-- Produces: a focused red/green contract for state defaults, state mutation, master suppression, ghost cursor bounds, audio analyzer lifecycle, and Quick Settings controls.
+- Consumes current lockscreen state/QML and future `LockScene.qml`/`LockscreenEditor.qml`.
+- Produces the RED contract for shared scene ownership, normalized layout persistence, editor safety, background validation, and weather separation.
 
-- [ ] **Step 1: Write the failing regression**
+- [ ] **Step 1: Write the failing focused test**
 
-Assert the new persisted booleans, explicit state commands, UI controls, lock-shell preference loading, one shell-owned analyzer, fixed-size ghost trail, bounded pointer/audio offsets, real CAVA raw PipeWire configuration, and the unchanged blank real cursor.
+The test must require:
 
-- [ ] **Step 2: Run the test to verify RED**
-
-Run:
-
-```bash
-bash tests/test-quickshell-lockscreen-interactive-effects.sh
+```text
+config/quickshell/awtarchy-lock/LockScene.qml
+config/quickshell/awtarchy/LockscreenEditor.qml
 ```
 
-Expected: FAIL because the first new state command/default or analyzer file does not exist yet.
+It must assert shared-scene use in both real lock and editor, reject lock/PAM APIs in editor/scene, exercise `save-lockscreen-layout`, reject malformed and unsafe password coordinates, exercise `set-lockscreen-background`, validate weather-location input, require the expandable Quick Settings Lockscreen section, and require cache expiry handling.
 
-- [ ] **Step 3: Commit the red regression**
+- [ ] **Step 2: Add the focused test to permanent lockscreen CI**
 
-```bash
-git add tests/test-quickshell-lockscreen-interactive-effects.sh .github/workflows/validate-quickshell-lockscreen-interactive-effects.yml
-git commit -m "Test lockscreen interactive effects"
+Add syntax/ShellCheck invocation and `bash tests/test-quickshell-lockscreen-editor.sh` to the existing interactive-effects workflow.
+
+- [ ] **Step 3: Verify RED through GitHub Actions**
+
+Expected focused failure: missing `LockScene.qml` or `LockscreenEditor.qml`; existing unrelated tests must not be edited to manufacture the failure.
+
+- [ ] **Step 4: Commit only regression/workflow changes before production code**
+
+Commit message:
+
+```text
+Test lockscreen customization editor
 ```
 
-### Task 2: Persist and surface lockscreen options
+### Task 2: Add validated presentation state
 
 **Files:**
 - Modify: `config/hypr/scripts/quickshell_application_state.sh`
 - Modify: `config/quickshell/awtarchy/BarState.qml`
-- Modify: `config/quickshell/awtarchy/QuickSettings.qml`
-- Modify: `config/quickshell/awtarchy-lock/shell.qml`
-- Test: `tests/test-quickshell-lockscreen-interactive-effects.sh`
-- Test: `tests/test-quickshell-lockscreen-animation-preference.sh`
+- Test: `tests/test-quickshell-lockscreen-editor.sh`
 
 **Interfaces:**
-- Produces state keys `lockscreen_audio_reactive`, `lockscreen_show_time`, `lockscreen_show_date`, `lockscreen_show_username` and corresponding normalized QML properties passed into every lock surface.
+- Produces `lockscreen_background`, `lockscreen_weather_location`, and complete `lockscreen_layout` object.
+- Commands:
+  - `set-lockscreen-background <black|wallpaper>`
+  - `set-lockscreen-weather-location <text>`
+  - `save-lockscreen-layout <json>`
+  - `reset-lockscreen-presentation`
 
-- [ ] **Step 1: Add explicit boolean setters to the state helper**
+- [ ] **Step 1: Add stock defaults to state normalization**
 
-Use existing `parse_bool()` and one generic private `set_lockscreen_option(field, value, label)` helper restricted to four hard-coded commands. Do not add arbitrary field mutation.
+Use these exact default centers:
 
-- [ ] **Step 2: Add normalized defaults/readers to `BarState.qml`**
-
-Return stock defaults when keys are missing or malformed.
-
-- [ ] **Step 3: Add compact Quick Settings controls under `Lockscreen Animation`**
-
-Audio Reactive preserves its saved value but is visually inactive when animation is Off. Time, Date, and Username remain independent.
-
-- [ ] **Step 4: Load preferences synchronously in the dedicated lock shell**
-
-Pass read-only booleans into surfaces and use one root-level analyzer enable expression.
-
-- [ ] **Step 5: Run focused preference tests**
-
-```bash
-bash tests/test-quickshell-lockscreen-interactive-effects.sh
-bash tests/test-quickshell-lockscreen-animation-preference.sh
+```json
+{
+  "logo":{"x":0.50,"y":0.34},
+  "time":{"x":0.50,"y":0.51},
+  "date":{"x":0.50,"y":0.555},
+  "username":{"x":0.50,"y":0.595},
+  "weather":{"x":0.50,"y":0.635},
+  "password":{"x":0.50,"y":0.70}
+}
 ```
 
-### Task 3: Add real audio analyzer
+- [ ] **Step 2: Add strict background setter**
+
+Only `black` and `wallpaper` succeed. Invalid values exit nonzero without modifying state.
+
+- [ ] **Step 3: Add strict location setter**
+
+Trim outer whitespace, permit empty string, reject newline/control characters, and reject more than 96 Unicode code points.
+
+- [ ] **Step 4: Add atomic layout validator/writer**
+
+Require exactly the six known elements, object values with numeric `x/y`, general bounds `x 0.05..0.95`, `y 0.08..0.92`, and password bounds `x 0.15..0.85`, `y 0.20..0.86`. Validate the complete candidate before calling the existing atomic commit path.
+
+- [ ] **Step 5: Add normalized `BarState.qml` readers**
+
+Expose stock-safe functions for background, weather location, full layout, and per-element position.
+
+- [ ] **Step 6: Run the focused regression**
+
+Expected at this point: state validation assertions pass; test still fails because shared scene/editor files are missing.
+
+### Task 3: Extract presentation into `LockScene`
 
 **Files:**
-- Create: `config/quickshell/awtarchy-lock/LockAudioAnalyzer.qml`
-- Create: `config/quickshell/awtarchy-lock/cava.conf`
-- Create: `config/hypr/scripts/quickshell_lockscreen_audio.sh`
+- Create: `config/quickshell/awtarchy-lock/LockScene.qml`
+- Modify: `config/quickshell/awtarchy-lock/LockSurface.qml`
 - Modify: `config/quickshell/awtarchy-lock/shell.qml`
-- Modify: `config/quickshell/awtarchy-lock/LockSurface.qml`
+- Test: `tests/test-quickshell-lockscreen-editor.sh`
 - Test: `tests/test-quickshell-lockscreen-interactive-effects.sh`
-
-**Interfaces:**
-- `LockAudioAnalyzer.qml` exposes `low`, `mid`, `high`, `overall` normalized `0..1` properties.
-- The helper writes only CAVA raw frames to stdout and exits successfully when CAVA is unavailable.
-- `shell.qml` owns exactly one analyzer and passes the four values to every surface.
-
-- [ ] **Step 1: Configure CAVA for PipeWire output monitoring**
-
-Use eight bands, about 30 FPS, raw ASCII stdout, bounded integer range, and silence sleep.
-
-- [ ] **Step 2: Add safe analyzer launcher**
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-command -v cava >/dev/null 2>&1 || exit 0
-exec cava -p "$CONFIG"
-```
-
-Resolve `CONFIG` from the managed Quickshell lock config path with `XDG_CONFIG_HOME` fallback; do not select microphone sources.
-
-- [ ] **Step 3: Parse and smooth frames in QML**
-
-Split eight numeric bands, clamp to `0..1`, derive low/mid/high/overall groups, use faster attack than release, and decay to zero when the process stops.
-
-- [ ] **Step 4: Run syntax/static checks**
-
-```bash
-bash -n config/hypr/scripts/quickshell_lockscreen_audio.sh
-shellcheck config/hypr/scripts/quickshell_lockscreen_audio.sh
-bash tests/test-quickshell-lockscreen-interactive-effects.sh
-```
-
-### Task 4: Add ghost cursor and bounded logo physics
-
-**Files:**
-- Modify: `config/quickshell/awtarchy-lock/LockSurface.qml`
-- Test: `tests/test-quickshell-lockscreen-interactive-effects.sh`
+- Test: `tests/test-quickshell-lockscreen-interactive-physics-regressions.sh`
 - Test: `tests/test-quickshell-lockscreen-runtime-regressions.sh`
 
 **Interfaces:**
-- Surface-local pointer state: head plus six fixed trail samples.
-- Per-cell additive offsets: `pointerOffsetX/Y` and computed `audioOffsetX/Y` added after formation geometry.
+- `LockScene` inputs: theme, animation preference/mode, audio levels, effect toggles, detail toggles/text, background source/mode, layout object, `previewMode`.
+- `LockScene` outputs: password anchor center/size geometry and pointer-motion method used by the secure surface/editor.
 
-- [ ] **Step 1: Replace click-only `MouseArea` handling with movement capture while retaining `Qt.BlankCursor`**
+- [ ] **Step 1: Move only presentation into `LockScene.qml`**
 
-Throttle physics updates to about 16 ms and ignore sub-threshold movement.
+Move black/background layer, wordmark geometry/formation, pointer/audio displacement, ghost trail, time/date/username/weather rendering, and normalized positioning. Do not move `WlSessionLockSurface`, `TextInput`, `auth`, submit logic, or unlock transitions.
 
-- [ ] **Step 2: Render one soft head plus six fading trail samples**
+- [ ] **Step 2: Make normalized placement authoritative**
 
-Start fade around 180 ms idle and reach zero around 500 ms; stop decay activity when invisible.
+Each scene element centers at `layout[element].x * width`, `layout[element].y * height`; disabled metadata remains non-visible but retains state.
 
-- [ ] **Step 3: Apply local pointer impulses only to nearby assembled cells**
+- [ ] **Step 3: Expose password anchor geometry**
 
-Use approximately 72 px influence radius, approximately 24 px pointer displacement cap, and approximately 450 ms return-to-rest behavior.
+Use the same current password footprint sizing and return its center/width/height so `LockSurface.qml` can position the real secure password block there.
 
-- [ ] **Step 4: Add subtle audio offsets**
+- [ ] **Step 4: Rewire `LockSurface.qml`**
 
-Use per-cell existing random seeds, edge weighting, a maximum near 6 px, and combined displacement clamping. Silence must resolve to exact rest.
+Keep `WlSessionLockSurface`, `Qt.BlankCursor`, real password `TextInput`, `submitPassword()`, focus handling, fade/unlock behavior, and wheel/pinch consumption. Feed pointer motion into the embedded scene.
 
-- [ ] **Step 5: Run focused and existing runtime-regression tests**
+- [ ] **Step 5: Rewire lock-root preferences**
 
-```bash
-bash tests/test-quickshell-lockscreen-interactive-effects.sh
-bash tests/test-quickshell-lockscreen-runtime-regressions.sh
-```
+Load normalized layout/background along with existing booleans and pass them into every surface. Keep one audio analyzer and one weather cache reader at lock root.
 
-### Task 5: Add optional local metadata and update historical guards
+- [ ] **Step 6: Run focused/existing tests**
+
+Editor-focused test is expected to remain RED only on the not-yet-created editor/Quick Settings parts. Existing interactive effects/physics/security contracts must remain green.
+
+### Task 4: Add unlocked live layout editor
 
 **Files:**
-- Modify: `config/quickshell/awtarchy-lock/LockSurface.qml`
-- Modify: `tests/test-quickshell-lockscreen-runtime-regressions.sh`
-- Modify: `tests/test-quickshell-lockscreen-animation-preference.sh`
+- Create: `config/quickshell/awtarchy/LockscreenEditor.qml`
+- Modify: `config/quickshell/awtarchy/shell.qml`
+- Test: `tests/test-quickshell-lockscreen-editor.sh`
 
 **Interfaces:**
-- Surface properties: `showTime`, `showDate`, `showUsername`.
-- Metadata stack has zero visible height when all three are off.
+- Singleton API: `openForScreen(screen)`, `openFocused()`, `close()`, `save()`, `resetDraft()`.
+- Draft layout is in memory until Save invokes `save-lockscreen-layout`.
 
-- [ ] **Step 1: Add local-only metadata stack**
+- [ ] **Step 1: Build editor surface following existing picker/editor patterns**
 
-Use a low-frequency QML timer for time/date and `Quickshell.env("USER")` only for the optional username display. Do not enumerate users or touch PAM targeting.
+Use an above-windows Quickshell surface on the focused screen with exclusive keyboard focus while open and no session-lock/PAM imports.
 
-- [ ] **Step 2: Replace obsolete regressions that prohibit metadata**
+- [ ] **Step 2: Import and render the shared scene**
 
-Assert instead that all metadata is optional and stock-disabled.
+The editor must import the exact `awtarchy-lock/LockScene.qml` component, pass current presentation preferences, and set preview mode so the password anchor is a harmless placeholder.
 
-- [ ] **Step 3: Verify animation Off remains independent from metadata**
+- [ ] **Step 3: Add draggable handles for enabled elements**
+
+Convert pointer positions to normalized coordinates and clamp general/password coordinates before updating draft state.
+
+- [ ] **Step 4: Add Save / Cancel / Restore Defaults**
+
+Save serializes all six normalized positions and invokes the explicit state helper command. Cancel discards draft. Restore Defaults changes draft only until Save.
+
+- [ ] **Step 5: Construct editor singleton from `awtarchy/shell.qml`**
+
+Force singleton readiness consistently with existing Awtarchy surfaces and ensure Escape can close the editor before lower-priority flyouts.
+
+- [ ] **Step 6: Run focused regression**
+
+Expected remaining RED assertions should be limited to Quick Settings/background/weather pieces not yet implemented.
+
+### Task 5: Reorganize Quick Settings lockscreen controls
+
+**Files:**
+- Modify: `config/quickshell/awtarchy/QuickSettings.qml`
+- Test: `tests/test-quickshell-lockscreen-editor.sh`
+- Test: `tests/test-quickshell-lockscreen-interactive-effects.sh`
+- Test: `tests/test-quickshell-quick-settings-layout.sh`
+
+**Interfaces:**
+- One inline expandable Lockscreen section inside the existing Awtarchy card.
+- `Edit Layout` opens `LockscreenEditor` on the active monitor.
+
+- [ ] **Step 1: Replace flat Effects/Details headings with one expandable Lockscreen section**
+
+Preserve existing animation, mouse, audio, time, date, username, and weather behavior.
+
+- [ ] **Step 2: Add `Edit Layout` and background selector**
+
+Editor launch closes Quick Settings before opening the editor. Background selection persists through `set-lockscreen-background`.
+
+- [ ] **Step 3: Add bounded Weather Location editor**
+
+Persist through `set-lockscreen-weather-location`; show explicit text that the configured location is sent to Open-Meteo when Weather is enabled/refreshed.
+
+- [ ] **Step 4: Add Restore Awtarchy Defaults**
+
+Invoke only the lockscreen presentation reset path; do not reset authentication, unrelated application state, or Quick Settings layout.
+
+- [ ] **Step 5: Run Quick Settings and focused tests**
+
+Keep existing Awtarchy card/reorder structure unchanged.
+
+### Task 6: Add local wallpaper background path
+
+**Files:**
+- Modify only the existing Awtarchy wallpaper state/helper proven by current repository inspection.
+- Modify: `config/quickshell/awtarchy-lock/LockScene.qml`
+- Modify: `config/quickshell/awtarchy/LockscreenEditor.qml`
+- Test: `tests/test-quickshell-lockscreen-editor.sh`
+
+**Interfaces:**
+- Scene receives a local file URL/path or empty string.
+- Empty/unreadable source renders black.
+
+- [ ] **Step 1: Inspect and reuse the current wallpaper source of truth**
+
+Do not create a parallel wallpaper state path and do not guess a package/API.
+
+- [ ] **Step 2: Feed the current local wallpaper source into editor and secure lock startup state**
+
+No remote/network wallpaper source is accepted.
+
+- [ ] **Step 3: Add aspect-fill wallpaper rendering with black fallback**
+
+The base rectangle stays black underneath the image so decode/read failures are safe and immediate.
+
+- [ ] **Step 4: Run focused regression**
+
+Static tests prove source/fallback structure only; appearance remains runtime-gated.
+
+### Task 7: Implement unlocked Open-Meteo refresh and strict cache expiry
+
+**Files:**
+- Create: `config/hypr/scripts/quickshell_lockscreen_weather.sh`
+- Modify: `config/quickshell/awtarchy/QuickSettings.qml`
+- Modify: `config/quickshell/awtarchy/shell.qml`
+- Modify: `config/quickshell/awtarchy-lock/LockWeatherCache.qml`
+- Test: `tests/test-quickshell-lockscreen-editor.sh`
+
+**Interfaces:**
+- Helper mode `refresh <location>` writes `${XDG_CACHE_HOME:-$HOME/.cache}/awtarchy/lockscreen-weather.json` atomically.
+- Cache fields: `summary`, `location`, `fetched_at`, `expires_at`, `provider`.
+
+- [ ] **Step 1: Write helper tests before helper implementation**
+
+Use a fake `curl` earlier in `PATH` to prove the helper calls only Open-Meteo geocoding/current-weather URLs, passes explicit location, uses bounded timeouts, and writes a 30-minute expiry without external network access in tests.
+
+- [ ] **Step 2: Implement narrow weather helper**
+
+Require `curl` and `jq`, use connect/overall timeouts, URL-encode the explicit location, fail without destroying a still-valid prior cache, and atomically replace cache only after validating provider JSON.
+
+- [ ] **Step 3: Add unlocked refresh ownership**
+
+Only `awtarchy/shell.qml`/Quick Settings may run the helper. Normal periodic refresh must be at least 20 minutes apart and only while Weather is enabled with a non-empty location.
+
+- [ ] **Step 4: Enforce expiry in `LockWeatherCache.qml`**
+
+Reject malformed/missing `expires_at`, expired cache, overlong summary, and non-Open-Meteo provider value. Keep all HTTP/network tokens absent from the secure lock process.
+
+- [ ] **Step 5: Run syntax/ShellCheck/focused tests**
+
+The focused test must prove the lock side remains cache-only.
+
+### Task 8: Final managed history and validation
+
+**Files:**
+- Modify after final managed stock content only: `local/share/awtarchy/quickshell-managed-history.sha256`
+- Modify PR #181 description after exact final state is known.
+
+**Interfaces:**
+- Registers final managed hashes without deleting historical valid entries.
+
+- [ ] **Step 1: Refresh managed history only for finalized managed files**
+
+Use the repository's existing history-generation/update pattern and preserve history required for user migrations.
+
+- [ ] **Step 2: Run all focused lockscreen tests**
 
 ```bash
+bash tests/test-quickshell-lockscreen-editor.sh
+bash tests/test-quickshell-lockscreen-interactive-effects.sh
+bash tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
 bash tests/test-quickshell-lockscreen-animation-preference.sh
 bash tests/test-quickshell-lockscreen-runtime-regressions.sh
 ```
 
-### Task 6: Managed history and complete validation
+- [ ] **Step 3: Run affected broader validation**
 
-**Files:**
-- Modify after final stock content only: `local/share/awtarchy/quickshell-managed-history.sha256`
+Run lockscreen foundation/cutover, Quick Settings layout, lifecycle/production, managed-history/updater tests, Bash syntax/ShellCheck, and full Awtarchy integration coverage used by the relevant workflows.
 
-**Interfaces:**
-- Registers the final managed Quickshell stock hashes without replacing historical entries.
+- [ ] **Step 4: Verify exact GitHub branch/CI state**
 
-- [ ] **Step 1: Compute final hashes for every changed managed Quickshell file and append only missing current entries**
+Require all PR-triggered workflows on the exact final head to complete successfully. Keep PR #181 draft/unmerged.
 
-- [ ] **Step 2: Run focused lockscreen validation and updater/migration validation**
+- [ ] **Step 5: Update PR #181 body to match proven scope/status**
 
-Use all tests invoked by the lockscreen workflows plus affected managed-history/updater tests.
+Do not claim wallpaper/editor/effect/weather visual behavior or successful real unlock as runtime-verified until the user's Hyprland test supplies that evidence.
 
-- [ ] **Step 3: Run diff hygiene**
+- [ ] **Step 6: Provide one consolidated Hyprland runtime test**
 
-```bash
-git diff --check
-```
-
-- [ ] **Step 4: Require all PR-triggered GitHub Actions checks to complete successfully before merge consideration**
-
-- [ ] **Step 5: Leave runtime-only visual claims unverified until real Hyprland testing**
-
-The runtime candidate must be tested for cursor fade, pointer/logo response, audio response/silence, toggles, multi-monitor behavior, wrong-password retry, and successful unlock before declaring those visual behaviors complete.
+Cover editor drag/save/cancel/reset, multi-monitor normalized placement, black/wallpaper fallback, weather fresh/expired behavior, pointer/audio effects, wrong-password retry, successful unlock, and unchanged secure handoff.
