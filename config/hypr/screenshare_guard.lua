@@ -199,6 +199,43 @@ function guard.group_enabled(target)
     return true
 end
 
+local function target_matches_window(target, window)
+    local metadata = guard.metadata[target]
+    if metadata == nil or window == nil then return false end
+
+    for _, match in ipairs(metadata.matches) do
+        for _, candidate in ipairs(hl.get_windows(match)) do
+            if candidate.address == window.address then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function sync_opened_window(window)
+    if window == nil then return end
+
+    local matched = false
+    local protected = false
+    for _, target in ipairs(guard.order) do
+        if target_matches_window(target, window) then
+            matched = true
+            if guard.group_enabled(target) == true then
+                protected = true
+                break
+            end
+        end
+    end
+
+    if not matched then return end
+    hl.dispatch(hl.dsp.window.set_prop({
+        prop = "no_screen_share",
+        value = protected and "true" or "false",
+        window = window,
+    }))
+end
+
 function guard.status()
     local status = {}
     for _, target in ipairs(guard.order) do
@@ -253,5 +290,6 @@ end
 
 hl.on("hyprland.start", apply_saved_state)
 hl.on("config.reloaded", apply_saved_state)
+hl.on("window.open", sync_opened_window)
 
 return guard
