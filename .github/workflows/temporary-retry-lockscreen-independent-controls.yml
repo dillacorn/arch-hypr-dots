@@ -1,5 +1,6 @@
 name: Temporary Retry Lockscreen Independent Controls
 
+# One-use GREEN runner. Delete after the tested production commit lands.
 on:
   push:
     branches:
