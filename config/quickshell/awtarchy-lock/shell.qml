@@ -20,10 +20,25 @@ ShellRoot {
     property bool lockShowDate: false
     property bool lockShowUsername: false
     property bool lockShowWeather: false
+    property string lockBackground: "black"
+    property string lockWeatherLocation: ""
+    property var lockLayout: defaultLockLayout()
+    property string lockWallpaperSource: ""
     property int randomFormationMode: Math.floor(Math.random() * 4)
     readonly property var allowedAnimationPreferences: [
         "random", "swarm", "edges", "center", "split", "off"
     ]
+
+    function defaultLockLayout() {
+        return ({
+            logo: ({ x: 0.50, y: 0.34 }),
+            time: ({ x: 0.50, y: 0.51 }),
+            date: ({ x: 0.50, y: 0.555 }),
+            username: ({ x: 0.50, y: 0.595 }),
+            weather: ({ x: 0.50, y: 0.635 }),
+            password: ({ x: 0.50, y: 0.70 })
+        });
+    }
 
     function normalizedAnimationPreference(value) {
         const key = String(value || "");
@@ -34,6 +49,49 @@ ShellRoot {
         return typeof value === "boolean" ? value : fallback;
     }
 
+    function normalizedBackground(value) {
+        const key = String(value || "");
+        return key === "wallpaper" ? "wallpaper" : "black";
+    }
+
+    function layoutPoint(value, fallback, password) {
+        if (!value || typeof value !== "object" || Array.isArray(value))
+            return ({ x: fallback.x, y: fallback.y });
+        const x = Number(value.x);
+        const y = Number(value.y);
+        const minX = password ? 0.15 : 0.05;
+        const maxX = password ? 0.85 : 0.95;
+        const minY = password ? 0.20 : 0.08;
+        const maxY = password ? 0.86 : 0.92;
+        if (!Number.isFinite(x) || !Number.isFinite(y)
+                || x < minX || x > maxX || y < minY || y > maxY)
+            return ({ x: fallback.x, y: fallback.y });
+        return ({ x: x, y: y });
+    }
+
+    function normalizedLayout(value) {
+        const defaults = defaultLockLayout();
+        if (!value || typeof value !== "object" || Array.isArray(value))
+            return defaults;
+        return ({
+            logo: layoutPoint(value.logo, defaults.logo, false),
+            time: layoutPoint(value.time, defaults.time, false),
+            date: layoutPoint(value.date, defaults.date, false),
+            username: layoutPoint(value.username, defaults.username, false),
+            weather: layoutPoint(value.weather, defaults.weather, false),
+            password: layoutPoint(value.password, defaults.password, true)
+        });
+    }
+
+    function normalizedWeatherLocation(value) {
+        if (typeof value !== "string")
+            return "";
+        const trimmed = value.trim();
+        if (Array.from(trimmed).length > 96 || /[\u0000-\u001f\u007f-\u009f]/.test(trimmed))
+            return "";
+        return trimmed;
+    }
+
     function resetPreferences() {
         lockAnimationPreference = "split";
         lockAudioReactive = true;
@@ -42,6 +100,9 @@ ShellRoot {
         lockShowDate = false;
         lockShowUsername = false;
         lockShowWeather = false;
+        lockBackground = "black";
+        lockWeatherLocation = "";
+        lockLayout = defaultLockLayout();
     }
 
     function loadPreferences() {
@@ -65,6 +126,9 @@ ShellRoot {
             lockShowDate = normalizedBoolean(parsed.lockscreen_show_date, false);
             lockShowUsername = normalizedBoolean(parsed.lockscreen_show_username, false);
             lockShowWeather = normalizedBoolean(parsed.lockscreen_show_weather, false);
+            lockBackground = normalizedBackground(parsed.lockscreen_background);
+            lockWeatherLocation = normalizedWeatherLocation(parsed.lockscreen_weather_location);
+            lockLayout = normalizedLayout(parsed.lockscreen_layout);
         } catch (error) {
             resetPreferences();
         }
@@ -131,6 +195,9 @@ ShellRoot {
                 showUsername: root.lockShowUsername
                 showWeather: root.lockShowWeather
                 weatherText: lockWeatherCache.summary
+                backgroundMode: root.lockBackground
+                wallpaperSource: root.lockWallpaperSource
+                layout: root.lockLayout
             }
         }
 
