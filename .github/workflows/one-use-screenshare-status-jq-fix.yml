@@ -33,22 +33,15 @@ jobs:
 
           path = Path("config/hypr/scripts/screenshare_guard.sh")
           text = path.read_text()
-          old = '''        .targets |= with_entries(
-              .value.effective_protected = (if ($actual | has(.key)) then $actual[.key] else null end)
-              | .value.in_sync = (if ($actual[.key] | type) == "boolean"
-                  then ($actual[.key] == .value.desired_protected) else false end)
-          )
-          '''
-          new = '''        .targets |= with_entries(
-              .key as $target
-              | .value.effective_protected = (if ($actual | has($target)) then $actual[$target] else null end)
-              | .value.in_sync = (if ($actual[$target] | type) == "boolean"
-                  then ($actual[$target] == .value.desired_protected) else false end)
-          )
-          '''
-          if text.count(old) != 1:
-              raise SystemExit("expected exactly one Screen Share Guard status jq block")
-          path.write_text(text.replace(old, new))
+          old_effective = '            .value.effective_protected = (if ($actual | has(.key)) then $actual[.key] else null end)'
+          new_effective = '            .key as $target\n            | .value.effective_protected = (if ($actual | has($target)) then $actual[$target] else null end)'
+          if text.count(old_effective) != 1:
+              raise SystemExit("expected exactly one Screen Share Guard effective-state expression")
+          text = text.replace(old_effective, new_effective)
+          if text.count('$actual[.key]') != 2:
+              raise SystemExit("expected exactly two remaining Screen Share Guard .key lookups")
+          text = text.replace('$actual[.key]', '$actual[$target]')
+          path.write_text(text)
           PY
 
           history_line="${prior_hash}"$'\t''.config/hypr/scripts/screenshare_guard.sh'
