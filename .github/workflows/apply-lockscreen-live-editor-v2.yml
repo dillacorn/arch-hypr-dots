@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/apply-lockscreen-live-editor-v2.yml
       - tests/test-quickshell-lockscreen-editor.sh
+      - tests/test-quickshell-lockscreen-runtime-regressions.sh
 
 permissions:
   contents: write
