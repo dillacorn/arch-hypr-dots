@@ -28,6 +28,13 @@ reject_text() {
     fi
 }
 
+require_count_at_least() {
+    local file="$1" text="$2" minimum="$3" message="$4"
+    local count
+    count="$(grep -Fc -- "$text" "$file" || true)"
+    (( count >= minimum )) || fail "$message"
+}
+
 run_state() {
     XDG_CACHE_HOME="$TMP/cache" XDG_CONFIG_HOME="$TMP/config" HOME="$TMP/home" \
         bash "$APP_STATE" "$@"
@@ -71,21 +78,49 @@ fi
 [[ "$(sha256sum "$state_file" | awk '{print $1}')" == "$state_before" ]] \
     || fail 'invalid editor save partially mutated persistent state'
 
-# Shared production scene owns the live scale/visibility result.
+# Shared production scene owns the live scale/visibility result and exposes the
+# exact visual dimensions needed by the unlocked editor selection frames.
 require_text "$SCENE" 'required property bool showLogo' \
     'shared scene has no logo visibility input'
 require_text "$SCENE" 'function elementScale(name)' \
     'shared scene has no normalized element scale reader'
+require_text "$SCENE" 'property bool editorMode: false' \
+    'shared scene has no editor-only presentation mode'
+require_text "$SCENE" 'property var editorVisibility: ({})' \
+    'shared scene has no editor visibility preview state'
+require_text "$SCENE" 'function presentationVisible(name, configuredVisible)' \
+    'shared scene cannot show hidden elements only inside the editor'
+require_text "$SCENE" 'function presentationOpacity(name)' \
+    'shared scene cannot visually distinguish hidden editor elements'
+require_text "$SCENE" 'function elementVisualWidth(name)' \
+    'shared scene does not expose rendered element widths to the editor'
+require_text "$SCENE" 'function elementVisualHeight(name)' \
+    'shared scene does not expose rendered element heights to the editor'
 require_text "$SCENE" 'scale: root.elementScale("logo")' \
     'logo does not consume saved live scale'
-require_text "$SCENE" 'visible: root.showLogo' \
-    'logo does not consume saved visibility'
+require_text "$SCENE" 'root.presentationVisible("logo", root.showLogo)' \
+    'logo visibility is not editor-aware while preserving saved state'
 for name in time date username weather; do
     require_text "$SCENE" "root.elementScale(\"$name\")" \
         "$name does not consume saved live scale"
+    require_text "$SCENE" "root.presentationVisible(\"$name\", root.show" \
+        "$name visibility is not editor-aware"
 done
 require_text "$SCENE" 'root.elementScale("password")' \
     'password visual anchor does not consume saved scale'
+
+# Stock non-logo presentation elements are intentionally much larger than the
+# first proof-of-concept defaults so 100% scale is useful on a 1080p desktop.
+require_text "$SCENE" 'font.pixelSize: Math.round(64 * root.uiScale)' \
+    'stock lockscreen time is still too small'
+require_text "$SCENE" 'font.pixelSize: Math.round(22 * root.uiScale)' \
+    'stock lockscreen date is still too small'
+require_count_at_least "$SCENE" 'font.pixelSize: Math.round(18 * root.uiScale)' 2 \
+    'stock username/weather are still too small'
+require_text "$SCENE" 'Math.round(420 * uiScale * elementScale("password"))' \
+    'stock password interaction width is still too small'
+require_text "$SCENE" 'Math.round(58 * uiScale * elementScale("password"))' \
+    'stock password interaction height is still too small'
 
 # Time must remain minute-only without forcing a 12/24-hour convention.
 require_text "$SCENE" 'function minuteTimeFormat()' \
@@ -95,7 +130,9 @@ require_text "$SCENE" 'timeFormat(Locale.ShortFormat)' \
 reject_text "$SCENE" 'Qt.formatTime(now, Locale.ShortFormat)' \
     'lockscreen still delegates directly to a locale format that may contain seconds'
 
-# Editor draft drives the preview immediately and persists only on Save.
+# Editor draft drives the preview immediately and persists only on Save. The
+# rendered lockscreen elements themselves are the visual examples; selection
+# frames track their actual dimensions instead of generic text-labelled handles.
 require_text "$EDITOR" 'property var draftVisibility' \
     'editor has no draft visibility state'
 require_text "$EDITOR" 'property string selectedElement' \
@@ -108,16 +145,20 @@ require_text "$EDITOR" 'function elementCanHide(name)' \
     'editor does not protect mandatory elements from hiding'
 require_text "$EDITOR" 'return name !== "password"' \
     'password is not explicitly mandatory-visible in the editor'
-require_text "$EDITOR" 'showLogo: root.draftVisibility.logo' \
-    'preview logo visibility is not driven by the live draft'
-require_text "$EDITOR" 'showTime: root.draftVisibility.time' \
-    'preview time visibility is not driven by the live draft'
-require_text "$EDITOR" 'showDate: root.draftVisibility.date' \
-    'preview date visibility is not driven by the live draft'
-require_text "$EDITOR" 'showUsername: root.draftVisibility.username' \
-    'preview username visibility is not driven by the live draft'
-require_text "$EDITOR" 'showWeather: root.draftVisibility.weather' \
-    'preview weather visibility is not driven by the live draft'
+require_text "$EDITOR" 'editorMode: true' \
+    'LockscreenEditor does not activate editor-only presentation behavior'
+require_text "$EDITOR" 'editorVisibility: root.draftVisibility' \
+    'LockscreenEditor does not preview hidden elements as faded visuals'
+require_text "$EDITOR" 'previewScene.elementVisualWidth(elementName)' \
+    'editor selection frames do not follow rendered element widths'
+require_text "$EDITOR" 'previewScene.elementVisualHeight(elementName)' \
+    'editor selection frames do not follow rendered element heights'
+require_text "$EDITOR" 'weatherText: "72°F · Clear"' \
+    'editor does not render a representative weather visual'
+reject_text "$EDITOR" 'text: root.elementLabel(parent.elementName)' \
+    'editor still covers lockscreen elements with generic text-labelled handles'
+reject_text "$EDITOR" ' · Off' \
+    'editor still describes hidden elements with generic handle text'
 require_text "$EDITOR" 'save-lockscreen-editor' \
     'editor does not atomically save layout and visibility'
 reject_text "$EDITOR" 'visible: enabledElement' \
