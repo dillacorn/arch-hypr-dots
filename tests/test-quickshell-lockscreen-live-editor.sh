@@ -4,10 +4,14 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_STATE="${ROOT}/config/hypr/scripts/quickshell_application_state.sh"
 BAR_STATE="${ROOT}/config/quickshell/awtarchy/BarState.qml"
+QUICK_SETTINGS="${ROOT}/config/quickshell/awtarchy/QuickSettings.qml"
 EDITOR="${ROOT}/config/quickshell/awtarchy/LockscreenEditor.qml"
 SCENE="${ROOT}/config/quickshell/awtarchy-lock/LockScene.qml"
 SURFACE="${ROOT}/config/quickshell/awtarchy-lock/LockSurface.qml"
 LOCK_SHELL="${ROOT}/config/quickshell/awtarchy-lock/shell.qml"
+CONTRAST_HELPER="${ROOT}/config/hypr/scripts/quickshell_lockscreen_contrast.sh"
+DESKTOP_CONTRAST="${ROOT}/config/quickshell/awtarchy/LockscreenContrast.qml"
+LOCK_CONTRAST="${ROOT}/config/quickshell/awtarchy-lock/LockContrastCache.qml"
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 
@@ -44,31 +48,36 @@ state_file="$TMP/cache/awtarchy/quickshell-state.json"
 mkdir -p "$TMP/cache/awtarchy" "$TMP/config" "$TMP/home"
 printf '%s\n' '{"enabled":true,"monitors":{},"launcher_sizes":{},"update_notifications_enabled":true}' >"$state_file"
 
-# Layout scale is persisted with each element and validated independently of the UI.
+# Layout scale/color are persisted with each element and validated independently of the UI.
 require_text "$APP_STATE" 'save-lockscreen-editor)' \
     'state helper has no atomic lockscreen editor save command'
 require_text "$APP_STATE" 'scale' \
     'lockscreen layout persistence has no scale field'
+require_text "$APP_STATE" 'color' \
+    'lockscreen layout persistence has no per-element color field'
 
-valid_layout='{"logo":{"x":0.5,"y":0.34,"scale":1.25},"time":{"x":0.5,"y":0.51,"scale":0.8},"date":{"x":0.5,"y":0.555,"scale":1},"username":{"x":0.5,"y":0.595,"scale":1},"weather":{"x":0.5,"y":0.635,"scale":1.1},"password":{"x":0.5,"y":0.7,"scale":1.4}}'
+valid_layout='{"logo":{"x":0.5,"y":0.34,"scale":1.25,"color":"auto"},"time":{"x":0.5,"y":0.51,"scale":0.8,"color":"#ff6600"},"date":{"x":0.5,"y":0.555,"scale":1,"color":"auto"},"username":{"x":0.5,"y":0.595,"scale":1,"color":"auto"},"weather":{"x":0.5,"y":0.635,"scale":1.1,"color":"auto"},"password":{"x":0.5,"y":0.7,"scale":1.4,"color":"auto"}}'
 valid_visibility='{"logo":true,"time":true,"date":false,"username":true,"weather":false,"password":true}'
 run_state save-lockscreen-editor "$valid_layout" "$valid_visibility"
 jq -e '
     .lockscreen_layout.logo.scale == 1.25
+    and .lockscreen_layout.logo.color == "auto"
+    and .lockscreen_layout.time.color == "#ff6600"
     and .lockscreen_layout.password.scale == 1.4
     and .lockscreen_show_logo == true
     and .lockscreen_show_time == true
     and .lockscreen_show_date == false
     and .lockscreen_show_username == true
     and .lockscreen_show_weather == false
-' "$state_file" >/dev/null || fail 'atomic editor state did not persist scale and visibility'
+' "$state_file" >/dev/null || fail 'atomic editor state did not persist scale, color, and visibility'
 
 state_before="$(sha256sum "$state_file" | awk '{print $1}')"
 for invalid_layout in \
-    '{"logo":{"x":0.5,"y":0.34,"scale":0.49},"time":{"x":0.5,"y":0.51,"scale":1},"date":{"x":0.5,"y":0.555,"scale":1},"username":{"x":0.5,"y":0.595,"scale":1},"weather":{"x":0.5,"y":0.635,"scale":1},"password":{"x":0.5,"y":0.7,"scale":1}}' \
-    '{"logo":{"x":0.5,"y":0.34,"scale":1},"time":{"x":0.5,"y":0.51,"scale":1},"date":{"x":0.5,"y":0.555,"scale":1},"username":{"x":0.5,"y":0.595,"scale":1},"weather":{"x":0.5,"y":0.635,"scale":1},"password":{"x":0.5,"y":0.7,"scale":2.01}}'; do
+    '{"logo":{"x":0.5,"y":0.34,"scale":0.49,"color":"auto"},"time":{"x":0.5,"y":0.51,"scale":1,"color":"auto"},"date":{"x":0.5,"y":0.555,"scale":1,"color":"auto"},"username":{"x":0.5,"y":0.595,"scale":1,"color":"auto"},"weather":{"x":0.5,"y":0.635,"scale":1,"color":"auto"},"password":{"x":0.5,"y":0.7,"scale":1,"color":"auto"}}' \
+    '{"logo":{"x":0.5,"y":0.34,"scale":1,"color":"banana"},"time":{"x":0.5,"y":0.51,"scale":1,"color":"auto"},"date":{"x":0.5,"y":0.555,"scale":1,"color":"auto"},"username":{"x":0.5,"y":0.595,"scale":1,"color":"auto"},"weather":{"x":0.5,"y":0.635,"scale":1,"color":"auto"},"password":{"x":0.5,"y":0.7,"scale":1,"color":"auto"}}' \
+    '{"logo":{"x":0.5,"y":0.34,"scale":1,"color":"auto"},"time":{"x":0.5,"y":0.51,"scale":1,"color":"auto"},"date":{"x":0.5,"y":0.555,"scale":1,"color":"auto"},"username":{"x":0.5,"y":0.595,"scale":1,"color":"auto"},"weather":{"x":0.5,"y":0.635,"scale":1,"color":"auto"},"password":{"x":0.5,"y":0.7,"scale":2.01,"color":"auto"}}'; do
     if run_state save-lockscreen-editor "$invalid_layout" "$valid_visibility" >/dev/null 2>&1; then
-        fail "out-of-range element scale was accepted: $invalid_layout"
+        fail "invalid element scale/color was accepted: $invalid_layout"
     fi
 done
 invalid_visibility='{"logo":true,"time":true,"date":false,"username":true,"weather":false,"password":false}'
@@ -78,12 +87,18 @@ fi
 [[ "$(sha256sum "$state_file" | awk '{print $1}')" == "$state_before" ]] \
     || fail 'invalid editor save partially mutated persistent state'
 
-# Shared production scene owns the live scale/visibility result and exposes the
+# Shared production scene owns the live scale/color/visibility result and exposes
 # exact visual dimensions needed by the unlocked editor selection frames.
 require_text "$SCENE" 'required property bool showLogo' \
     'shared scene has no logo visibility input'
+require_text "$SCENE" 'required property color autoAccent' \
+    'shared scene has no automatic black/white contrast input'
 require_text "$SCENE" 'function elementScale(name)' \
     'shared scene has no normalized element scale reader'
+require_text "$SCENE" 'function elementColor(name)' \
+    'shared scene has no per-element color reader'
+require_text "$SCENE" 'return value === "auto" ? root.autoAccent' \
+    'auto element color does not use the wallpaper-derived contrast color'
 require_text "$SCENE" 'property bool editorMode: false' \
     'shared scene has no editor-only presentation mode'
 require_text "$SCENE" 'property var editorVisibility: ({})' \
@@ -136,15 +151,23 @@ reject_text "$SCENE" 'Qt.formatTime(now, Locale.ShortFormat)' \
 require_text "$EDITOR" 'property var draftVisibility' \
     'editor has no draft visibility state'
 require_text "$EDITOR" 'property string selectedElement' \
-    'editor has no selected element for scale/visibility editing'
+    'editor has no selected element for scale/visibility/color editing'
 require_text "$EDITOR" 'function setDraftScale(name, scale)' \
     'editor cannot change element scale live'
 require_text "$EDITOR" 'function setDraftVisible(name, visible)' \
     'editor cannot change element visibility live'
-require_text "$EDITOR" 'function elementCanHide(name)' \
-    'editor does not protect mandatory elements from hiding'
-require_text "$EDITOR" 'return name !== "password"' \
-    'password is not explicitly mandatory-visible in the editor'
+require_text "$EDITOR" 'function setDraftColor(name, colorValue)' \
+    'editor cannot change selected element color live'
+require_text "$EDITOR" 'function elementColor(name)' \
+    'editor cannot read selected element color'
+require_text "$EDITOR" 'label: "Auto"' \
+    'editor has no automatic contrast color option'
+require_text "$EDITOR" 'label: "White"' \
+    'editor has no explicit white color option'
+require_text "$EDITOR" 'label: "Black"' \
+    'editor has no explicit black color option'
+require_text "$EDITOR" 'placeholderText: "#RRGGBB"' \
+    'editor has no custom hex color input'
 require_text "$EDITOR" 'editorMode: true' \
     'LockscreenEditor does not activate editor-only presentation behavior'
 require_text "$EDITOR" 'editorVisibility: root.draftVisibility' \
@@ -164,6 +187,43 @@ require_text "$EDITOR" 'save-lockscreen-editor' \
 reject_text "$EDITOR" 'visible: enabledElement' \
     'disabled element handles disappear and cannot be re-enabled from the live editor'
 
+# Visibility belongs in the visual editor now. Quick Settings keeps global
+# effects/background controls but no longer duplicates per-element On/Off rows.
+for command in set-lockscreen-show-time set-lockscreen-show-date set-lockscreen-show-username set-lockscreen-show-weather; do
+    reject_text "$QUICK_SETTINGS" "\"${command}\"" \
+        "Quick Settings still duplicates editor visibility control: $command"
+done
+require_text "$QUICK_SETTINGS" 'text: "Mouse Interaction"' \
+    'global Mouse Interaction control unexpectedly left Quick Settings'
+require_text "$QUICK_SETTINGS" 'text: "Audio Reactive"' \
+    'global Audio Reactive control unexpectedly left Quick Settings'
+
+# Automatic contrast is computed only while unlocked. The secure lock reads a
+# local cache and never runs ImageMagick or wallpaper inspection itself.
+[[ -x "$CONTRAST_HELPER" ]] || fail 'unlocked lockscreen contrast helper is missing or not executable'
+[[ -f "$DESKTOP_CONTRAST" ]] || fail 'unlocked LockscreenContrast.qml service is missing'
+[[ -f "$LOCK_CONTRAST" ]] || fail 'secure LockContrastCache.qml reader is missing'
+require_text "$CONTRAST_HELPER" 'magick' \
+    'automatic wallpaper contrast does not inspect image luminance'
+require_text "$CONTRAST_HELPER" '#000000' \
+    'automatic wallpaper contrast cannot choose black'
+require_text "$CONTRAST_HELPER" '#ffffff' \
+    'automatic wallpaper contrast cannot choose white'
+require_text "$DESKTOP_CONTRAST" 'quickshell_lockscreen_contrast.sh' \
+    'unlocked contrast service does not use the bounded helper'
+require_text "$DESKTOP_CONTRAST" 'backend_state.tsv' \
+    'unlocked contrast service does not react to Awtwall selections'
+require_text "$LOCK_CONTRAST" 'lockscreen-contrast.txt' \
+    'secure contrast reader does not consume the local cache'
+for forbidden in Process magick backend_state.tsv; do
+    reject_text "$LOCK_CONTRAST" "$forbidden" \
+        "secure contrast cache performs unlocked-only work: $forbidden"
+done
+require_text "$LOCK_SHELL" 'LockContrastCache {' \
+    'secure lock shell does not construct the cache-only contrast reader'
+require_text "$SURFACE" 'required property color autoAccent' \
+    'secure lock surface does not receive automatic contrast color'
+
 require_text "$BAR_STATE" 'function lockscreenShowLogo()' \
     'BarState has no normalized logo visibility reader'
 require_text "$LOCK_SHELL" 'property bool lockShowLogo: true' \
@@ -173,4 +233,4 @@ require_text "$LOCK_SHELL" 'showLogo: root.lockShowLogo' \
 require_text "$SURFACE" 'required property bool showLogo' \
     'secure surface does not pass logo visibility to the shared scene'
 
-printf 'PASS: live lockscreen editor scale, visibility, and minute-only time contracts\n'
+printf 'PASS: live lockscreen editor scale, color, visibility, and minute-only time contracts\n'
