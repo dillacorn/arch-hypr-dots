@@ -7,7 +7,6 @@ import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Wayland
-import "../awtarchy-lock" as LockUi
 
 Singleton {
     id: root
@@ -234,7 +233,7 @@ Singleton {
         onTriggered: root.close()
     }
 
-    LockUi.LockWallpaperState {
+    LockPreviewWallpaperState {
         id: wallpaperState
     }
 
@@ -265,7 +264,7 @@ Singleton {
             color: "#000000"
             focus: true
 
-            LockUi.LockScene {
+            LockPreviewScene {
                 id: previewScene
                 anchors.fill: parent
                 theme: Theme
