@@ -6,7 +6,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
@@ -53,3 +53,514 @@ jobs:
         run: bash tests/test-quickshell-lockscreen-editor.sh
       - name: Managed history contracts
         run: bash tests/test-quickshell-lockscreen-interactive-managed-history.sh
+
+  apply-editor-state:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'feature/lockscreen-interactive-effects' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: feature/lockscreen-interactive-effects
+          fetch-depth: 0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+      - name: Apply validated editor state phase
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one exact target, found {count}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          def insert_before_once(path, marker, addition):
+              replace_once(path, marker, addition + marker)
+
+          app = "config/hypr/scripts/quickshell_application_state.sh"
+          replace_once(
+              app,
+              "LOCKSCREEN_ANIMATIONS_JSON='[\"random\",\"swarm\",\"edges\",\"center\",\"split\",\"off\"]'\n",
+              "LOCKSCREEN_ANIMATIONS_JSON='[\"random\",\"swarm\",\"edges\",\"center\",\"split\",\"off\"]'\n"
+              "LOCKSCREEN_BACKGROUNDS_JSON='[\"black\",\"wallpaper\"]'\n"
+              "LOCKSCREEN_LAYOUT_KEYS_JSON='[\"logo\",\"time\",\"date\",\"username\",\"weather\",\"password\"]'\n"
+              "LOCKSCREEN_LAYOUT_DEFAULT_JSON='{\"logo\":{\"x\":0.5,\"y\":0.34},\"time\":{\"x\":0.5,\"y\":0.51},\"date\":{\"x\":0.5,\"y\":0.555},\"username\":{\"x\":0.5,\"y\":0.595},\"weather\":{\"x\":0.5,\"y\":0.635},\"password\":{\"x\":0.5,\"y\":0.7}}'\n"
+          )
+          insert_before_once(
+              app,
+              "set_workspace_numbers() {\n",
+              r'''validate_lockscreen_background() {
+              local value="$1"
+              if ! jq -e -n \
+                  --arg value "$value" \
+                  --argjson allowed "$LOCKSCREEN_BACKGROUNDS_JSON" \
+                  '$allowed | index($value) != null' >/dev/null 2>&1; then
+                  printf 'invalid lockscreen background: %s\n' "$value" >&2
+                  exit 2
+              fi
+          }
+
+          set_lockscreen_background() {
+              local value="$1"
+              validate_lockscreen_background "$value"
+              new_tmp
+              jq --arg value "$value" '.lockscreen_background = $value' "$STATE_FILE" >"$TMP_FILE"
+              commit_tmp
+          }
+
+          normalize_lockscreen_weather_location() {
+              local value="$1" normalized
+              normalized="$(jq -nr --arg value "$value" '$value | gsub("^\\s+|\\s+$"; "")')"
+              if ! jq -e -n --arg value "$normalized" '
+                  ($value | explode) as $points
+                  | ($points | length) <= 96
+                  and ($points | all(. >= 32 and (. < 127 or . > 159)))
+              ' >/dev/null 2>&1; then
+                  printf 'lockscreen weather location must be at most 96 Unicode code points with no control characters\n' >&2
+                  exit 2
+              fi
+              printf '%s' "$normalized"
+          }
+
+          set_lockscreen_weather_location() {
+              local normalized
+              normalized="$(normalize_lockscreen_weather_location "$1")"
+              new_tmp
+              jq --arg value "$normalized" '.lockscreen_weather_location = $value' "$STATE_FILE" >"$TMP_FILE"
+              commit_tmp
+          }
+
+          validate_lockscreen_layout() {
+              local value="$1"
+              if ! jq -e -n \
+                  --argjson candidate "$value" \
+                  --argjson keys "$LOCKSCREEN_LAYOUT_KEYS_JSON" '
+                  ($candidate | type) == "object"
+                  and (($candidate | keys | sort) == ($keys | sort))
+                  and all($keys[];
+                      . as $key
+                      | ($candidate[$key] | type) == "object"
+                      and (($candidate[$key] | keys | sort) == ["x", "y"])
+                      and ($candidate[$key].x | type) == "number"
+                      and ($candidate[$key].y | type) == "number"
+                      and (if $key == "password" then
+                          $candidate[$key].x >= 0.15 and $candidate[$key].x <= 0.85
+                          and $candidate[$key].y >= 0.20 and $candidate[$key].y <= 0.86
+                      else
+                          $candidate[$key].x >= 0.05 and $candidate[$key].x <= 0.95
+                          and $candidate[$key].y >= 0.08 and $candidate[$key].y <= 0.92
+                      end)
+                  )
+              ' >/dev/null 2>&1; then
+                  printf 'invalid lockscreen layout\n' >&2
+                  exit 2
+              fi
+          }
+
+          save_lockscreen_layout() {
+              local value="$1"
+              validate_lockscreen_layout "$value"
+              new_tmp
+              jq --argjson value "$value" '.lockscreen_layout = $value' "$STATE_FILE" >"$TMP_FILE"
+              commit_tmp
+          }
+
+          reset_lockscreen_presentation() {
+              new_tmp
+              jq --argjson layout "$LOCKSCREEN_LAYOUT_DEFAULT_JSON" '
+                  .lockscreen_animation = "split"
+                  | .lockscreen_audio_reactive = true
+                  | .lockscreen_mouse_interactive = true
+                  | .lockscreen_show_time = false
+                  | .lockscreen_show_date = false
+                  | .lockscreen_show_username = false
+                  | .lockscreen_show_weather = false
+                  | .lockscreen_background = "black"
+                  | .lockscreen_weather_location = ""
+                  | .lockscreen_layout = $layout
+              ' "$STATE_FILE" >"$TMP_FILE"
+              commit_tmp
+          }
+
+          ''')
+          replace_once(
+              app,
+              '''    set-lockscreen-show-weather)\n        [[ -n ${2:-} ]] || exit 2\n        set_lockscreen_option lockscreen_show_weather "$2" 'lockscreen show weather'\n        ;;\n    set-workspace-numbers)\n''',
+              '''    set-lockscreen-show-weather)\n        [[ -n ${2:-} ]] || exit 2\n        set_lockscreen_option lockscreen_show_weather "$2" 'lockscreen show weather'\n        ;;\n    set-lockscreen-background)\n        [[ -n ${2:-} ]] || exit 2\n        set_lockscreen_background "$2"\n        ;;\n    set-lockscreen-weather-location)\n        [[ $# -eq 2 ]] || exit 2\n        set_lockscreen_weather_location "$2"\n        ;;\n    save-lockscreen-layout)\n        [[ -n ${2:-} ]] || exit 2\n        save_lockscreen_layout "$2"\n        ;;\n    reset-lockscreen-presentation)\n        reset_lockscreen_presentation\n        ;;\n    set-workspace-numbers)\n'''
+          )
+          replace_once(
+              app,
+              '|set-lockscreen-show-weather <true|false>|set-workspace-numbers',
+              '|set-lockscreen-show-weather <true|false>|set-lockscreen-background <black|wallpaper>|set-lockscreen-weather-location <location>|save-lockscreen-layout <json>|reset-lockscreen-presentation|set-workspace-numbers'
+          )
+
+          bar = "config/quickshell/awtarchy/BarState.qml"
+          replace_once(
+              bar,
+              '''    readonly property var lockscreenAnimationPresets: [\n        { key: "random", label: "Random" },\n        { key: "swarm", label: "Swarm" },\n        { key: "edges", label: "Edges" },\n        { key: "center", label: "Center" },\n        { key: "split", label: "Split" },\n        { key: "off", label: "Off" }\n    ]\n''',
+              '''    readonly property var lockscreenAnimationPresets: [\n        { key: "random", label: "Random" },\n        { key: "swarm", label: "Swarm" },\n        { key: "edges", label: "Edges" },\n        { key: "center", label: "Center" },\n        { key: "split", label: "Split" },\n        { key: "off", label: "Off" }\n    ]\n    readonly property var defaultLockscreenLayout: ({\n        logo: ({ x: 0.50, y: 0.34 }),\n        time: ({ x: 0.50, y: 0.51 }),\n        date: ({ x: 0.50, y: 0.555 }),\n        username: ({ x: 0.50, y: 0.595 }),\n        weather: ({ x: 0.50, y: 0.635 }),\n        password: ({ x: 0.50, y: 0.70 })\n    })\n'''
+          )
+          replace_once(
+              bar,
+              '''            lockscreen_show_weather: false,\n            monitors: {},\n''',
+              '''            lockscreen_show_weather: false,\n            lockscreen_background: "black",\n            lockscreen_weather_location: "",\n            lockscreen_layout: root.defaultLockscreenLayout,\n            monitors: {},\n'''
+          )
+          insert_before_once(
+              bar,
+              "    function updateNotificationsEnabled() {\n",
+              r'''    function lockscreenBackground() {
+                  return String(data().lockscreen_background || "") === "wallpaper"
+                      ? "wallpaper" : "black";
+              }
+
+              function lockscreenWeatherLocation() {
+                  const value = data().lockscreen_weather_location;
+                  if (typeof value !== "string")
+                      return "";
+                  const trimmed = value.trim();
+                  const points = Array.from(trimmed);
+                  if (points.length > 96)
+                      return "";
+                  for (const point of points) {
+                      const code = point.codePointAt(0);
+                      if ((code >= 0 && code <= 31) || (code >= 127 && code <= 159))
+                          return "";
+                  }
+                  return trimmed;
+              }
+
+              function lockscreenLayoutPoint(value, fallback, password) {
+                  if (!value || typeof value !== "object" || Array.isArray(value))
+                      return ({ x: fallback.x, y: fallback.y });
+                  const x = Number(value.x);
+                  const y = Number(value.y);
+                  const minX = password ? 0.15 : 0.05;
+                  const maxX = password ? 0.85 : 0.95;
+                  const minY = password ? 0.20 : 0.08;
+                  const maxY = password ? 0.86 : 0.92;
+                  if (!Number.isFinite(x) || !Number.isFinite(y)
+                          || x < minX || x > maxX || y < minY || y > maxY)
+                      return ({ x: fallback.x, y: fallback.y });
+                  return ({ x: x, y: y });
+              }
+
+              function lockscreenLayout() {
+                  const defaults = root.defaultLockscreenLayout;
+                  const value = data().lockscreen_layout;
+                  if (!value || typeof value !== "object" || Array.isArray(value))
+                      return defaults;
+                  return ({
+                      logo: lockscreenLayoutPoint(value.logo, defaults.logo, false),
+                      time: lockscreenLayoutPoint(value.time, defaults.time, false),
+                      date: lockscreenLayoutPoint(value.date, defaults.date, false),
+                      username: lockscreenLayoutPoint(value.username, defaults.username, false),
+                      weather: lockscreenLayoutPoint(value.weather, defaults.weather, false),
+                      password: lockscreenLayoutPoint(value.password, defaults.password, true)
+                  });
+              }
+
+          ''')
+
+          qs = "config/quickshell/awtarchy/QuickSettings.qml"
+          replace_once(
+              qs,
+              "    property bool barVisibilityOpen: false\n",
+              "    property bool barVisibilityOpen: false\n"
+              "    property bool lockscreenSectionExpanded: false\n"
+              "    property string lockscreenWeatherLocationDraft: \"\"\n"
+              "    property string lockscreenWeatherLocationError: \"\"\n"
+          )
+          insert_before_once(
+              qs,
+              "    function openSchedulerAuthorization() {\n",
+              r'''    function openLockscreenEditor() {
+                  const target = root.activeScreen;
+                  root.close();
+                  Qt.callLater(() => LockscreenEditor.openForScreen(target));
+              }
+
+              function saveLockscreenWeatherLocation() {
+                  const value = String(lockscreenWeatherLocationDraft || "").trim();
+                  const points = Array.from(value);
+                  if (points.length > 96 || /[\u0000-\u001f\u007f-\u009f]/.test(value)) {
+                      lockscreenWeatherLocationError = "Use at most 96 characters with no control characters";
+                      return;
+                  }
+                  lockscreenWeatherLocationError = "";
+                  lockscreenWeatherLocationDraft = value;
+                  root.queueStateCommand(["set-lockscreen-weather-location", value]);
+              }
+
+              function resetLockscreenPresentation() {
+                  lockscreenWeatherLocationDraft = "";
+                  lockscreenWeatherLocationError = "";
+                  root.queueStateCommand(["reset-lockscreen-presentation"]);
+              }
+
+          ''')
+          replace_once(
+              qs,
+              '''        nightLightScheduleError = "";\n        loadSavedView(targetScreen);\n''',
+              '''        nightLightScheduleError = "";\n        lockscreenWeatherLocationDraft = BarState.lockscreenWeatherLocation();\n        lockscreenWeatherLocationError = "";\n        loadSavedView(targetScreen);\n'''
+          )
+
+          p = Path(qs)
+          text = p.read_text()
+          start_marker = '''                                Text {\n                                    Layout.fillWidth: true\n                                    text: "Lockscreen Effects"\n'''
+          end_marker = '''                            }\n                        }\n\n                        Rectangle {\n                            Layout.row: root.quickSettingsSectionRow("smtty")\n'''
+          start = text.find(start_marker)
+          end = text.find(end_marker, start)
+          if start < 0 or end < 0:
+              raise SystemExit("QuickSettings.qml: lockscreen section replacement markers not found")
+          section = r'''                                RowLayout {
+                                      Layout.fillWidth: true
+                                      spacing: 8
+
+                                      Text {
+                                          Layout.fillWidth: true
+                                          text: "Lockscreen"
+                                          color: Theme.foreground
+                                          font.family: Theme.fontFamily
+                                          font.pixelSize: root.scaledText(9)
+                                          font.bold: true
+                                      }
+
+                                      SettingsButton {
+                                          label: root.lockscreenSectionExpanded ? "Collapse" : "Expand"
+                                          active: root.lockscreenSectionExpanded
+                                          textSize: root.scaledText(9)
+                                          onClicked: root.lockscreenSectionExpanded = !root.lockscreenSectionExpanded
+                                      }
+                                  }
+
+                                  ColumnLayout {
+                                      Layout.fillWidth: true
+                                      visible: root.lockscreenSectionExpanded
+                                      spacing: 5
+
+                                      RowLayout {
+                                          Layout.fillWidth: true
+                                          spacing: 6
+                                          SettingsButton {
+                                              label: "Edit Layout"
+                                              active: true
+                                              textSize: root.scaledText(9)
+                                              onClicked: root.openLockscreenEditor()
+                                          }
+                                          Text {
+                                              Layout.fillWidth: true
+                                              text: "Drag enabled lockscreen elements on the focused display"
+                                              color: Theme.muted
+                                              font.family: Theme.fontFamily
+                                              font.pixelSize: root.scaledText(8)
+                                              wrapMode: Text.Wrap
+                                          }
+                                      }
+
+                                      Text { Layout.fillWidth: true; text: "Background"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: root.scaledText(9) }
+                                      RowLayout {
+                                          Layout.fillWidth: true
+                                          spacing: 5
+                                          SettingsButton {
+                                              label: "Black"
+                                              active: BarState.lockscreenBackground() === "black"
+                                              textSize: root.scaledText(9)
+                                              onClicked: root.queueStateCommand(["set-lockscreen-background", "black"])
+                                          }
+                                          SettingsButton {
+                                              label: "Wallpaper"
+                                              active: BarState.lockscreenBackground() === "wallpaper"
+                                              textSize: root.scaledText(9)
+                                              onClicked: root.queueStateCommand(["set-lockscreen-background", "wallpaper"])
+                                          }
+                                          Item { Layout.fillWidth: true }
+                                      }
+
+                                      GridLayout {
+                                          Layout.fillWidth: true
+                                          columns: 2
+                                          columnSpacing: 8
+                                          rowSpacing: 4
+
+                                          Text { Layout.fillWidth: true; text: "Mouse Interaction"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: root.scaledText(9) }
+                                          SettingsButton { label: BarState.lockscreenMouseInteractiveEnabled() ? "On" : "Off"; active: BarState.lockscreenMouseInteractiveEnabled(); textSize: root.scaledText(9); onClicked: root.queueStateCommand(["set-lockscreen-mouse-interactive", BarState.lockscreenMouseInteractiveEnabled() ? "false" : "true"]) }
+                                          Text { Layout.fillWidth: true; text: "Audio Reactive"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: root.scaledText(9) }
+                                          SettingsButton { label: BarState.lockscreenAudioReactiveEnabled() ? "On" : "Off"; active: BarState.lockscreenAudioReactiveEnabled(); textSize: root.scaledText(9); onClicked: root.queueStateCommand(["set-lockscreen-audio-reactive", BarState.lockscreenAudioReactiveEnabled() ? "false" : "true"]) }
+                                          Text { Layout.fillWidth: true; text: "Time"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: root.scaledText(9) }
+                                          SettingsButton { label: BarState.lockscreenShowTime() ? "On" : "Off"; active: BarState.lockscreenShowTime(); textSize: root.scaledText(9); onClicked: root.queueStateCommand(["set-lockscreen-show-time", BarState.lockscreenShowTime() ? "false" : "true"]) }
+                                          Text { Layout.fillWidth: true; text: "Date"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: root.scaledText(9) }
+                                          SettingsButton { label: BarState.lockscreenShowDate() ? "On" : "Off"; active: BarState.lockscreenShowDate(); textSize: root.scaledText(9); onClicked: root.queueStateCommand(["set-lockscreen-show-date", BarState.lockscreenShowDate() ? "false" : "true"]) }
+                                          Text { Layout.fillWidth: true; text: "Username"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: root.scaledText(9) }
+                                          SettingsButton { label: BarState.lockscreenShowUsername() ? "On" : "Off"; active: BarState.lockscreenShowUsername(); textSize: root.scaledText(9); onClicked: root.queueStateCommand(["set-lockscreen-show-username", BarState.lockscreenShowUsername() ? "false" : "true"]) }
+                                          Text { Layout.fillWidth: true; text: "Weather"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: root.scaledText(9) }
+                                          SettingsButton { label: BarState.lockscreenShowWeather() ? "On" : "Off"; active: BarState.lockscreenShowWeather(); textSize: root.scaledText(9); onClicked: root.queueStateCommand(["set-lockscreen-show-weather", BarState.lockscreenShowWeather() ? "false" : "true"]) }
+                                      }
+
+                                      Text { Layout.fillWidth: true; text: "Weather Location"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: root.scaledText(9); font.bold: true }
+                                      RowLayout {
+                                          Layout.fillWidth: true
+                                          spacing: 5
+                                          Rectangle {
+                                              Layout.fillWidth: true
+                                              Layout.preferredHeight: 28
+                                              color: Theme.popupBackground
+                                              border.width: 1
+                                              border.color: lockscreenWeatherLocationInput.activeFocus ? Theme.focus : Theme.active
+                                              TextInput {
+                                                  id: lockscreenWeatherLocationInput
+                                                  anchors.fill: parent
+                                                  anchors.margins: 6
+                                                  text: root.lockscreenWeatherLocationDraft
+                                                  maximumLength: 96
+                                                  color: Theme.foreground
+                                                  selectionColor: Theme.focus
+                                                  selectedTextColor: Theme.background
+                                                  font.family: Theme.fontFamily
+                                                  font.pixelSize: root.scaledText(9)
+                                                  clip: true
+                                                  onTextChanged: root.lockscreenWeatherLocationDraft = text
+                                                  Keys.onReturnPressed: event => { root.saveLockscreenWeatherLocation(); event.accepted = true; }
+                                              }
+                                          }
+                                          SettingsButton { label: "Save Location"; textSize: root.scaledText(9); onClicked: root.saveLockscreenWeatherLocation() }
+                                      }
+                                      Text {
+                                          Layout.fillWidth: true
+                                          visible: root.lockscreenWeatherLocationError.length > 0
+                                          text: root.lockscreenWeatherLocationError
+                                          color: Theme.error
+                                          font.family: Theme.fontFamily
+                                          font.pixelSize: root.scaledText(8)
+                                          wrapMode: Text.Wrap
+                                      }
+                                      Text {
+                                          Layout.fillWidth: true
+                                          text: "When Weather is enabled, this explicit location is sent to Open-Meteo. No IP or device geolocation is used."
+                                          color: Theme.muted
+                                          font.family: Theme.fontFamily
+                                          font.pixelSize: root.scaledText(8)
+                                          wrapMode: Text.Wrap
+                                      }
+                                      SettingsButton { label: "Restore Awtarchy Defaults"; textSize: root.scaledText(9); onClicked: root.resetLockscreenPresentation() }
+                                  }
+
+          '''
+          p.write_text(text[:start] + section + text[end:])
+
+          shell = "config/quickshell/awtarchy/shell.qml"
+          replace_once(
+              shell,
+              '''    function closeTopFloatingSurface() {\n        if (ThemePicker.open) {\n''',
+              '''    function closeTopFloatingSurface() {\n        if (LockscreenEditor.open) {\n            LockscreenEditor.close();\n            return;\n        }\n        if (ThemePicker.open) {\n'''
+          )
+          replace_once(
+              shell,
+              "    readonly property bool themesReady: ThemePicker !== null\n",
+              "    readonly property bool themesReady: ThemePicker !== null\n    readonly property bool lockscreenEditorReady: LockscreenEditor !== null\n    readonly property bool lockscreenWeatherReady: LockscreenWeather !== null\n"
+          )
+          replace_once(
+              shell,
+              '''        enabled: ThemePicker.open\n            || String(FlyoutManager.activeSurface || "").length > 0\n''',
+              '''        enabled: LockscreenEditor.open\n            || ThemePicker.open\n            || String(FlyoutManager.activeSurface || "").length > 0\n'''
+          )
+
+          editor_test = "tests/test-quickshell-lockscreen-editor.sh"
+          p = Path(editor_test)
+          text = p.read_text()
+          for old, new in [
+              ('text: "Save"', 'label: "Save"'),
+              ('text: "Cancel"', 'label: "Cancel"'),
+              ('text: "Restore Defaults"', 'label: "Restore Defaults"'),
+              ('text: "Edit Layout"', 'label: "Edit Layout"'),
+          ]:
+              if text.count(old) != 1:
+                  raise SystemExit(f"{editor_test}: expected one {old}")
+              text = text.replace(old, new, 1)
+          p.write_text(text)
+          PY
+
+          cat > .github/workflows/validate-quickshell-lockscreen-interactive-effects.yml <<'FINAL_WORKFLOW'
+          name: Validate Quickshell Lockscreen Interactive Effects
+
+          on:
+            push:
+              branches: [main]
+            pull_request:
+
+          permissions:
+            contents: read
+
+          jobs:
+            validate:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+                - name: Install validation tools
+                  run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+                - name: Syntax validation
+                  run: |
+                    bash -n tests/test-quickshell-lockscreen-interactive-effects.sh
+                    bash -n tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+                    bash -n tests/test-quickshell-lockscreen-interactive-managed-history.sh
+                    bash -n tests/test-quickshell-lockscreen-editor.sh
+                    bash -n tests/test-quickshell-lockscreen-weather.sh
+                    if [[ -f config/hypr/scripts/quickshell_lockscreen_audio.sh ]]; then
+                      bash -n config/hypr/scripts/quickshell_lockscreen_audio.sh
+                    fi
+                    if [[ -f config/hypr/scripts/quickshell_lockscreen_weather.sh ]]; then
+                      bash -n config/hypr/scripts/quickshell_lockscreen_weather.sh
+                    fi
+                - name: ShellCheck
+                  run: |
+                    shellcheck tests/test-quickshell-lockscreen-interactive-effects.sh
+                    shellcheck tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+                    shellcheck tests/test-quickshell-lockscreen-interactive-managed-history.sh
+                    shellcheck tests/test-quickshell-lockscreen-editor.sh
+                    shellcheck tests/test-quickshell-lockscreen-weather.sh
+                    if [[ -f config/hypr/scripts/quickshell_lockscreen_audio.sh ]]; then
+                      shellcheck config/hypr/scripts/quickshell_lockscreen_audio.sh
+                    fi
+                    if [[ -f config/hypr/scripts/quickshell_lockscreen_weather.sh ]]; then
+                      shellcheck config/hypr/scripts/quickshell_lockscreen_weather.sh
+                    fi
+                - name: Runtime helper mode
+                  run: test -x config/hypr/scripts/quickshell_lockscreen_audio.sh
+                - name: Weather refresh contracts
+                  run: bash tests/test-quickshell-lockscreen-weather.sh
+                - name: Interactive effects contracts
+                  run: |
+                    bash tests/test-quickshell-lockscreen-interactive-effects.sh
+                    bash tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+                - name: Customization editor contracts
+                  run: bash tests/test-quickshell-lockscreen-editor.sh
+                - name: Managed history contracts
+                  run: bash tests/test-quickshell-lockscreen-interactive-managed-history.sh
+          FINAL_WORKFLOW
+          sed -i 's/^          //' .github/workflows/validate-quickshell-lockscreen-interactive-effects.yml
+
+          bash -n config/hypr/scripts/quickshell_application_state.sh
+          shellcheck config/hypr/scripts/quickshell_application_state.sh
+          shellcheck tests/test-quickshell-lockscreen-editor.sh
+          bash tests/test-quickshell-lockscreen-editor.sh
+          bash tests/test-quickshell-lockscreen-interactive-effects.sh
+          bash tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+          bash tests/test-quickshell-lockscreen-animation-preference.sh
+          bash tests/test-quickshell-lockscreen-runtime-regressions.sh
+          bash tests/test-quickshell-lockscreen-foundation.sh
+          git diff --check
+      - name: Commit validated editor state phase
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add config/hypr/scripts/quickshell_application_state.sh \
+                  config/quickshell/awtarchy/BarState.qml \
+                  config/quickshell/awtarchy/QuickSettings.qml \
+                  config/quickshell/awtarchy/shell.qml \
+                  tests/test-quickshell-lockscreen-editor.sh \
+                  .github/workflows/validate-quickshell-lockscreen-interactive-effects.yml
+          git diff --cached --check
+          git commit -m "Add lockscreen customization state and controls"
+          git push origin HEAD:feature/lockscreen-interactive-effects
