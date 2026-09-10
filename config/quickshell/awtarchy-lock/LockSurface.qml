@@ -23,7 +23,8 @@ WlSessionLockSurface {
     required property string weatherText
     required property string backgroundMode
     required property string wallpaperSource
-    required property color autoAccent
+    required property color backgroundColor
+    required property var autoAccents
     required property var layout
 
     color: "#000000"
@@ -74,7 +75,8 @@ WlSessionLockSurface {
         weatherText: root.weatherText
         backgroundMode: root.backgroundMode
         wallpaperSource: root.wallpaperSource
-        autoAccent: root.autoAccent
+        backgroundColor: root.backgroundColor
+        autoAccents: root.autoAccents
         layout: root.layout
         previewMode: false
     }

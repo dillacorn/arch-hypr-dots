@@ -357,6 +357,8 @@ Singleton {
             lockscreen_show_username: false,
             lockscreen_show_weather: false,
             lockscreen_background: "black",
+            lockscreen_background_color: "#000000",
+            lockscreen_wallpaper_path: "",
             lockscreen_weather_location: "",
             lockscreen_layout: root.defaultLockscreenLayout,
             monitors: {},
@@ -656,8 +658,21 @@ Singleton {
     }
 
     function lockscreenBackground() {
-        return String(data().lockscreen_background || "") === "wallpaper"
-            ? "wallpaper" : "black";
+        const value = String(data().lockscreen_background || "");
+        return ["black", "wallpaper", "color"].indexOf(value) >= 0 ? value : "black";
+    }
+
+    function lockscreenBackgroundColor() {
+        const value = String(data().lockscreen_background_color || "#000000").toLowerCase();
+        return /^#[0-9a-f]{6}$/.test(value) ? value : "#000000";
+    }
+
+    function lockscreenWallpaperPath() {
+        const value = data().lockscreen_wallpaper_path;
+        if (typeof value !== "string" || !value.startsWith("/")
+                || value.indexOf("://") >= 0 || /[\u0000-\u001f\u007f-\u009f]/.test(value))
+            return "";
+        return value;
     }
 
     function lockscreenWeatherLocation() {

@@ -22,7 +22,8 @@ Item {
     required property string weatherText
     required property string backgroundMode
     required property string wallpaperSource
-    required property color autoAccent
+    required property color backgroundColor
+    required property var autoAccents
     required property var layout
 
     property bool previewMode: false
@@ -122,8 +123,11 @@ Item {
     function elementColor(name) {
         const point = normalizedPoint(name);
         const value = String(point && point.color !== undefined ? point.color : "auto");
-        return value === "auto" ? root.autoAccent
-            : /^#[0-9a-fA-F]{6}$/.test(value) ? value : root.autoAccent;
+        const automatic = String(root.autoAccents && root.autoAccents[name] !== undefined
+            ? root.autoAccents[name] : "#ffffff");
+        const safeAuto = /^#[0-9a-fA-F]{6}$/.test(automatic) ? automatic : "#ffffff";
+        return value === "auto" ? safeAuto
+            : /^#[0-9a-fA-F]{6}$/.test(value) ? value : safeAuto;
     }
 
     function presentationVisible(name, configuredVisible) {
@@ -324,7 +328,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: "#000000"
+        color: root.backgroundMode === "color" ? root.backgroundColor : "#000000"
     }
 
     Image {

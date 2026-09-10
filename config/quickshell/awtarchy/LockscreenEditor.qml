@@ -15,13 +15,22 @@ Singleton {
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME")
         || (Quickshell.env("HOME") + "/.config")
     readonly property string stateBackend: configHome + "/hypr/scripts/quickshell_application_state.sh"
+    readonly property string contrastBackend: configHome + "/hypr/scripts/quickshell_lockscreen_contrast.sh"
+    readonly property string wallpaperPickerBackend: configHome + "/hypr/scripts/quickshell_lockscreen_wallpaper_picker.sh"
     readonly property bool open: editorWindow.visible
     readonly property var elementNames: ["logo", "time", "date", "username", "weather", "password"]
 
     property var draftLayout: defaultLayout()
     property var draftVisibility: defaultVisibility()
+    property string draftBackgroundMode: "black"
+    property string draftBackgroundColor: "#000000"
+    property string draftWallpaperPath: ""
+    property var draftAutoAccents: defaultAutoAccents()
     property string selectedElement: "logo"
     property string statusMessage: ""
+    property bool elementPaletteOpen: false
+    property bool backgroundPaletteOpen: false
+    property bool contrastRefreshPending: false
 
     function defaultLayout() {
         return ({
@@ -43,6 +52,126 @@ Singleton {
             weather: false,
             password: true
         });
+    }
+
+    function defaultAutoAccents() {
+        return ({
+            logo: "#ffffff",
+            time: "#ffffff",
+            date: "#ffffff",
+            username: "#ffffff",
+            weather: "#ffffff",
+            password: "#ffffff"
+        });
+    }
+
+    function validHex(value) {
+        return /^#[0-9a-f]{6}$/.test(String(value || "").toLowerCase());
+    }
+
+    function setAllDraftColors(colorValue) {
+        const value = String(colorValue || "").trim().toLowerCase();
+        if (value !== "auto" && !validHex(value))
+            return;
+        const next = cloneLayout(draftLayout);
+        for (const name of elementNames)
+            next[name].color = value;
+        draftLayout = next;
+        statusMessage = value === "auto" ? "All elements use Auto contrast"
+            : "All element colors updated";
+    }
+
+    function resetElementPosition(name) {
+        if (elementNames.indexOf(name) < 0)
+            return;
+        const defaults = defaultLayout();
+        const next = cloneLayout(draftLayout);
+        next[name].x = defaults[name].x;
+        next[name].y = defaults[name].y;
+        draftLayout = next;
+        selectedElement = name;
+        statusMessage = elementLabel(name) + " position reset";
+        scheduleContrastRefresh();
+    }
+
+    function setDraftBackgroundMode(mode) {
+        const value = String(mode || "");
+        if (["black", "wallpaper", "color"].indexOf(value) < 0)
+            return;
+        if (value === "wallpaper" && draftWallpaperPath.length === 0) {
+            statusMessage = "Choose a lockscreen wallpaper first";
+            return;
+        }
+        draftBackgroundMode = value;
+        statusMessage = "";
+        scheduleContrastRefresh();
+    }
+
+    function setDraftBackgroundColor(colorValue) {
+        const value = String(colorValue || "").trim().toLowerCase();
+        if (!validHex(value)) {
+            statusMessage = "Background color must be #RRGGBB";
+            return;
+        }
+        draftBackgroundColor = value;
+        draftBackgroundMode = "color";
+        statusMessage = "";
+        scheduleContrastRefresh();
+    }
+
+    function acceptWallpaperSelection(line) {
+        if (!open)
+            return;
+        const value = String(line || "").trim();
+        if (!value.startsWith("/") || value.indexOf("://") >= 0) {
+            statusMessage = "Awtwall returned an invalid local wallpaper";
+            return;
+        }
+        draftWallpaperPath = value;
+        draftBackgroundMode = "wallpaper";
+        statusMessage = "Wallpaper selected. Save to apply.";
+        scheduleContrastRefresh();
+    }
+
+    function scheduleContrastRefresh() {
+        if (!open)
+            return;
+        contrastRefreshPending = true;
+        contrastRefreshDelay.restart();
+    }
+
+    function refreshPreviewContrast() {
+        if (!open)
+            return;
+        if (previewContrastProcess.running) {
+            contrastRefreshPending = true;
+            return;
+        }
+        contrastRefreshPending = false;
+        previewContrastProcess.exec([
+            "bash", contrastBackend, "--stdout",
+            "--background", draftBackgroundMode,
+            "--background-color", draftBackgroundColor,
+            "--wallpaper", draftWallpaperPath,
+            "--layout-json", JSON.stringify(draftLayout)
+        ]);
+    }
+
+    function applyPreviewContrastLine(line) {
+        try {
+            const payload = JSON.parse(String(line || ""));
+            if (!payload || payload.provider !== "awtarchy-local-contrast"
+                    || !payload.colors || typeof payload.colors !== "object")
+                return;
+            const next = defaultAutoAccents();
+            for (const name of elementNames) {
+                const value = String(payload.colors[name] || "").toLowerCase();
+                next[name] = validHex(value) ? value : "#ffffff";
+            }
+            draftAutoAccents = next;
+        } catch (error) {
+            // Keep the current safe preview colors on malformed helper output.
+        }
     }
 
     function cloneObject(value, fallback) {
@@ -113,6 +242,7 @@ Singleton {
         });
         draftLayout = next;
         selectedElement = name;
+        scheduleContrastRefresh();
     }
 
     function elementScale(name) {
@@ -175,8 +305,15 @@ Singleton {
     function resetDraft() {
         draftLayout = defaultLayout();
         draftVisibility = defaultVisibility();
+        draftBackgroundMode = "black";
+        draftBackgroundColor = "#000000";
+        draftWallpaperPath = "";
+        draftAutoAccents = defaultAutoAccents();
         selectedElement = "logo";
+        elementPaletteOpen = false;
+        backgroundPaletteOpen = false;
         statusMessage = "Defaults loaded. Save to apply.";
+        scheduleContrastRefresh();
     }
 
     function loadPersistedDraft() {
@@ -189,7 +326,13 @@ Singleton {
             weather: BarState.lockscreenShowWeather(),
             password: true
         }));
+        draftBackgroundMode = BarState.lockscreenBackground();
+        draftBackgroundColor = BarState.lockscreenBackgroundColor();
+        draftWallpaperPath = BarState.lockscreenWallpaperPath();
+        draftAutoAccents = defaultAutoAccents();
         selectedElement = elementNames.indexOf(selectedElement) >= 0 ? selectedElement : "logo";
+        elementPaletteOpen = false;
+        backgroundPaletteOpen = false;
         statusMessage = "";
     }
 
@@ -209,6 +352,7 @@ Singleton {
         loadPersistedDraft();
         editorWindow.visible = true;
         FlyoutManager.claimOverlay("lockscreen-editor");
+        scheduleContrastRefresh();
         Qt.callLater(() => editorFocus.forceActiveFocus());
     }
 
@@ -223,7 +367,7 @@ Singleton {
     }
 
     function save() {
-        if (saveProcess.running)
+        if (saveProcess.running || contrastPersistProcess.running)
             return;
         statusMessage = "Saving…";
         saveProcess.exec([
@@ -231,7 +375,10 @@ Singleton {
             stateBackend,
             "save-lockscreen-editor",
             JSON.stringify(draftLayout),
-            JSON.stringify(draftVisibility)
+            JSON.stringify(draftVisibility),
+            draftBackgroundMode,
+            draftBackgroundColor,
+            draftWallpaperPath
         ]);
     }
 
@@ -250,11 +397,20 @@ Singleton {
         onExited: (exitCode, exitStatus) => {
             if (exitCode === 0) {
                 BarState.refresh();
-                root.statusMessage = "Saved";
-                closeAfterSave.restart();
+                root.statusMessage = "Refreshing Auto contrast…";
+                contrastPersistProcess.exec(["bash", root.contrastBackend]);
             } else {
                 root.statusMessage = "Could not save lockscreen presentation";
             }
+        }
+    }
+
+    Process {
+        id: contrastPersistProcess
+        onExited: (exitCode, exitStatus) => {
+            root.statusMessage = exitCode === 0 ? "Saved"
+                : "Saved; Auto contrast cache could not refresh";
+            closeAfterSave.restart();
         }
     }
 
@@ -267,6 +423,36 @@ Singleton {
 
     LockPreviewWallpaperState {
         id: wallpaperState
+        path: root.draftWallpaperPath
+    }
+
+    Timer {
+        id: contrastRefreshDelay
+        interval: 120
+        repeat: false
+        onTriggered: root.refreshPreviewContrast()
+    }
+
+    Process {
+        id: previewContrastProcess
+        stdout: SplitParser {
+            onRead: line => root.applyPreviewContrastLine(line)
+        }
+        onExited: (exitCode, exitStatus) => {
+            if (root.contrastRefreshPending)
+                contrastRefreshDelay.restart();
+        }
+    }
+
+    Process {
+        id: wallpaperPickerProcess
+        stdout: SplitParser {
+            onRead: line => root.acceptWallpaperSelection(line)
+        }
+        onExited: (exitCode, exitStatus) => {
+            if (root.open && exitCode !== 0 && root.statusMessage.length === 0)
+                root.statusMessage = "Lockscreen wallpaper picker closed";
+        }
     }
 
     Shortcut {
@@ -314,10 +500,10 @@ Singleton {
                 showUsername: root.draftVisibility.username
                 showWeather: root.draftVisibility.weather
                 weatherText: "72°F · Clear"
-                backgroundMode: BarState.lockscreenBackground()
+                backgroundMode: root.draftBackgroundMode
                 wallpaperSource: wallpaperState.source
-                autoAccent: BarState.lockscreenBackground() === "black"
-                    ? "#ffffff" : LockscreenContrast.accent
+                backgroundColor: root.draftBackgroundColor
+                autoAccents: root.draftAutoAccents
                 layout: root.draftLayout
                 previewMode: true
                 editorMode: true
@@ -378,7 +564,7 @@ Singleton {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
-                height: 138
+                height: 184 + ((root.elementPaletteOpen || root.backgroundPaletteOpen) ? 150 : 0)
                 color: Theme.popupBackground
                 border.width: 1
                 border.color: Theme.muted
@@ -402,9 +588,11 @@ Singleton {
                         }
 
                         SettingsButton {
-                            label: root.elementCanHide(root.selectedElement)
-                                ? (root.elementEnabled(root.selectedElement) ? "Visible" : "Hidden")
-                                : "Always visible"
+                            label: root.selectedElement === "logo"
+                                ? (root.elementEnabled("logo") ? "Logo visible" : "Logo hidden")
+                                : root.elementCanHide(root.selectedElement)
+                                    ? (root.elementEnabled(root.selectedElement) ? "Visible" : "Hidden")
+                                    : "Always visible"
                             active: root.elementEnabled(root.selectedElement)
                             available: root.elementCanHide(root.selectedElement)
                             textSize: 9
@@ -444,6 +632,12 @@ Singleton {
                                 root.elementScale(root.selectedElement) + 0.10)
                         }
 
+                        SettingsButton {
+                            label: "Reset Position"
+                            textSize: 9
+                            onClicked: root.resetElementPosition(root.selectedElement)
+                        }
+
                         Item { Layout.fillWidth: true }
 
                         Text {
@@ -454,7 +648,7 @@ Singleton {
                             font.family: Theme.fontFamily
                             font.pixelSize: 9
                             elide: Text.ElideRight
-                            Layout.maximumWidth: 520
+                            Layout.maximumWidth: 470
                         }
                     }
 
@@ -463,7 +657,7 @@ Singleton {
                         spacing: 7
 
                         Text {
-                            text: "Color"
+                            text: "Element color"
                             color: Theme.muted
                             font.family: Theme.fontFamily
                             font.pixelSize: 9
@@ -475,45 +669,148 @@ Singleton {
                             textSize: 9
                             onClicked: root.setDraftColor(root.selectedElement, "auto")
                         }
-
                         SettingsButton {
                             label: "White"
                             active: root.elementColor(root.selectedElement) === "#ffffff"
                             textSize: 9
                             onClicked: root.setDraftColor(root.selectedElement, "#ffffff")
                         }
-
                         SettingsButton {
                             label: "Black"
                             active: root.elementColor(root.selectedElement) === "#000000"
                             textSize: 9
                             onClicked: root.setDraftColor(root.selectedElement, "#000000")
                         }
-
-                        TextField {
-                            id: customColorInput
-                            Layout.preferredWidth: 118
-                            placeholderText: "#RRGGBB"
-                            text: root.elementColor(root.selectedElement) === "auto"
-                                ? "" : root.elementColor(root.selectedElement)
-                            color: Theme.foreground
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 9
-                            selectByMouse: true
-                            onEditingFinished: {
-                                if (text.trim().length > 0)
-                                    root.setDraftColor(root.selectedElement, text);
+                        SettingsButton {
+                            label: "Custom"
+                            active: root.elementPaletteOpen
+                            textSize: 9
+                            onClicked: {
+                                root.elementPaletteOpen = !root.elementPaletteOpen;
+                                if (root.elementPaletteOpen)
+                                    root.backgroundPaletteOpen = false;
                             }
                         }
 
                         Text {
-                            Layout.fillWidth: true
-                            text: "Auto chooses black or white from the current wallpaper for contrast."
+                            text: "All:"
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 9
+                        }
+                        SettingsButton { label: "Auto All"; textSize: 9; onClicked: root.setAllDraftColors("auto") }
+                        SettingsButton { label: "White All"; textSize: 9; onClicked: root.setAllDraftColors("#ffffff") }
+                        SettingsButton { label: "Black All"; textSize: 9; onClicked: root.setAllDraftColors("#000000") }
+
+                        Item { Layout.fillWidth: true }
+
+                        Text {
+                            text: "Auto is calculated independently around each element."
                             color: Theme.muted
                             font.family: Theme.fontFamily
                             font.pixelSize: 9
                             elide: Text.ElideRight
                         }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 7
+
+                        Text {
+                            text: "Background"
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 9
+                        }
+                        SettingsButton {
+                            label: "Black"
+                            active: root.draftBackgroundMode === "black"
+                            textSize: 9
+                            onClicked: root.setDraftBackgroundMode("black")
+                        }
+                        SettingsButton {
+                            label: "Wallpaper"
+                            active: root.draftBackgroundMode === "wallpaper"
+                            textSize: 9
+                            onClicked: {
+                                if (root.draftWallpaperPath.length > 0)
+                                    root.setDraftBackgroundMode("wallpaper");
+                                else if (!wallpaperPickerProcess.running) {
+                                    root.statusMessage = "Opening lockscreen wallpaper picker…";
+                                    wallpaperPickerProcess.exec(["bash", root.wallpaperPickerBackend]);
+                                }
+                            }
+                        }
+                        SettingsButton {
+                            label: "Choose Wallpaper"
+                            textSize: 9
+                            available: !wallpaperPickerProcess.running
+                            onClicked: {
+                                root.statusMessage = "Opening lockscreen wallpaper picker…";
+                                wallpaperPickerProcess.exec(["bash", root.wallpaperPickerBackend]);
+                            }
+                        }
+                        SettingsButton {
+                            label: "Color"
+                            active: root.draftBackgroundMode === "color"
+                            textSize: 9
+                            onClicked: {
+                                root.setDraftBackgroundMode("color");
+                                root.backgroundPaletteOpen = true;
+                                root.elementPaletteOpen = false;
+                            }
+                        }
+                        SettingsButton {
+                            label: "Palette"
+                            active: root.backgroundPaletteOpen
+                            textSize: 9
+                            onClicked: {
+                                root.backgroundPaletteOpen = !root.backgroundPaletteOpen;
+                                if (root.backgroundPaletteOpen)
+                                    root.elementPaletteOpen = false;
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: root.draftWallpaperPath.length > 0
+                                ? "Lockscreen wallpaper: " + root.draftWallpaperPath.split("/").pop()
+                                : "Lockscreen wallpaper is independent from the desktop."
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 9
+                            elide: Text.ElideMiddle
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: visible ? 142 : 0
+                        spacing: 12
+                        visible: root.elementPaletteOpen || root.backgroundPaletteOpen
+
+                        InlineColorPicker {
+                            id: elementColorPicker
+                            visible: root.elementPaletteOpen
+                            Layout.preferredWidth: 320
+                            Layout.preferredHeight: visible ? 142 : 0
+                            colorValue: root.elementColor(root.selectedElement) === "auto"
+                                ? String(root.draftAutoAccents[root.selectedElement] || "#ffffff")
+                                : root.elementColor(root.selectedElement)
+                            onColorEdited: hex => root.setDraftColor(root.selectedElement, hex)
+                        }
+
+                        InlineColorPicker {
+                            id: backgroundColorPicker
+                            visible: root.backgroundPaletteOpen
+                            Layout.preferredWidth: 320
+                            Layout.preferredHeight: visible ? 142 : 0
+                            colorValue: root.draftBackgroundColor
+                            onColorEdited: hex => root.setDraftBackgroundColor(hex)
+                        }
+
+                        Item { Layout.fillWidth: true }
                     }
 
                     RowLayout {
@@ -534,18 +831,12 @@ Singleton {
                             textSize: 10
                             onClicked: root.resetDraft()
                         }
-
-                        SettingsButton {
-                            label: "Cancel"
-                            textSize: 10
-                            onClicked: root.close()
-                        }
-
+                        SettingsButton { label: "Cancel"; textSize: 10; onClicked: root.close() }
                         SettingsButton {
                             label: "Save"
                             active: true
                             textSize: 10
-                            available: !saveProcess.running
+                            available: !saveProcess.running && !contrastPersistProcess.running
                             onClicked: root.save()
                         }
                     }

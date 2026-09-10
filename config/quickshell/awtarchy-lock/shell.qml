@@ -22,6 +22,8 @@ ShellRoot {
     property bool lockShowUsername: false
     property bool lockShowWeather: false
     property string lockBackground: "black"
+    property color lockBackgroundColor: "#000000"
+    property string lockWallpaperPath: ""
     property string lockWeatherLocation: ""
     property var lockLayout: defaultLockLayout()
     property int randomFormationMode: Math.floor(Math.random() * 4)
@@ -51,7 +53,20 @@ ShellRoot {
 
     function normalizedBackground(value) {
         const key = String(value || "");
-        return key === "wallpaper" ? "wallpaper" : "black";
+        return ["black", "wallpaper", "color"].indexOf(key) >= 0 ? key : "black";
+    }
+
+    function normalizedBackgroundColor(value) {
+        const key = String(value || "#000000").toLowerCase();
+        return /^#[0-9a-f]{6}$/.test(key) ? key : "#000000";
+    }
+
+    function normalizedWallpaperPath(value) {
+        const path = typeof value === "string" ? value : "";
+        if (!path.startsWith("/") || path.indexOf("://") >= 0
+                || /[\u0000-\u001f\u007f-\u009f]/.test(path))
+            return "";
+        return path;
     }
 
     function layoutPoint(value, fallback, password) {
@@ -107,6 +122,8 @@ ShellRoot {
         lockShowUsername = false;
         lockShowWeather = false;
         lockBackground = "black";
+        lockBackgroundColor = "#000000";
+        lockWallpaperPath = "";
         lockWeatherLocation = "";
         lockLayout = defaultLockLayout();
     }
@@ -134,6 +151,8 @@ ShellRoot {
             lockShowUsername = normalizedBoolean(parsed.lockscreen_show_username, false);
             lockShowWeather = normalizedBoolean(parsed.lockscreen_show_weather, false);
             lockBackground = normalizedBackground(parsed.lockscreen_background);
+            lockBackgroundColor = normalizedBackgroundColor(parsed.lockscreen_background_color);
+            lockWallpaperPath = normalizedWallpaperPath(parsed.lockscreen_wallpaper_path);
             lockWeatherLocation = normalizedWeatherLocation(parsed.lockscreen_weather_location);
             lockLayout = normalizedLayout(parsed.lockscreen_layout);
         } catch (error) {
@@ -182,6 +201,7 @@ ShellRoot {
 
     LockWallpaperState {
         id: lockWallpaperState
+        path: root.lockWallpaperPath
     }
 
     LockContrastCache {
@@ -213,7 +233,8 @@ ShellRoot {
                 weatherText: lockWeatherCache.summary
                 backgroundMode: root.lockBackground
                 wallpaperSource: lockWallpaperState.source
-                autoAccent: root.lockBackground === "black" ? "#ffffff" : lockContrastCache.accent
+                backgroundColor: root.lockBackgroundColor
+                autoAccents: lockContrastCache.colors
                 layout: root.lockLayout
             }
         }

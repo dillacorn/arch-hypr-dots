@@ -182,12 +182,10 @@ require_text "$QUICK_SETTINGS" 'label: "Edit Layout"' \
     'Quick Settings has no Edit Layout action'
 require_text "$QUICK_SETTINGS" 'LockscreenEditor.openForScreen' \
     'Quick Settings does not launch the dedicated lockscreen editor'
-require_text "$QUICK_SETTINGS" 'label: "Choose with Awtwall"' \
-    'Quick Settings has no Awtwall-backed lockscreen picture picker'
-require_text "$QUICK_SETTINGS" 'queueAction(["wallpaper"]' \
-    'lockscreen picture picker does not reuse the existing Awtwall action'
-require_text "$QUICK_SETTINGS" 'queueStateCommand(["set-lockscreen-background", "wallpaper"])' \
-    'choosing a lockscreen picture does not switch the lockscreen to wallpaper mode'
+reject_text "$QUICK_SETTINGS" 'label: "Choose with Awtwall"' \
+    'Quick Settings still duplicates lockscreen wallpaper selection outside the editor'
+require_text "$EDITOR_QML" 'quickshell_lockscreen_wallpaper_picker.sh' \
+    'LockscreenEditor does not own the dedicated selection-only wallpaper flow'
 require_text "$QUICK_SETTINGS" 'text: "Location override (optional)"' \
     'Quick Settings does not make automatic weather the simple default path'
 require_text "$QUICK_SETTINGS" 'Automatic location uses your approximate public-IP location' \
@@ -210,7 +208,7 @@ require_text "$LOCK_SCENE" 'required property string backgroundMode' \
     'LockScene has no explicit background mode input'
 require_text "$LOCK_SCENE" 'required property string wallpaperSource' \
     'LockScene has no local wallpaper source input'
-require_text "$LOCK_SCENE" 'color: "#000000"' \
+require_text "$LOCK_SCENE" 'root.backgroundMode === "color" ? root.backgroundColor : "#000000"' \
     'LockScene does not keep a black fallback under wallpaper rendering'
 require_text "$LOCK_SCENE" 'fillMode: Image.PreserveAspectCrop' \
     'LockScene wallpaper is not aspect-filled'

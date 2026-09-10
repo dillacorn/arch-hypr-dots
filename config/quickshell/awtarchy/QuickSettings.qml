@@ -2239,15 +2239,6 @@ Singleton {
                                     textSize: root.scaledText(9)
                                     onClicked: root.queueStateCommand(["set-lockscreen-background", "wallpaper"])
                                 }
-                                SettingsButton {
-                                    label: "Choose with Awtwall"
-                                    textSize: root.scaledText(9)
-                                    onClicked: {
-                                        root.queueStateCommand(["set-lockscreen-background", "wallpaper"]);
-                                        root.queueAction(["wallpaper"], "Opening Awtwall wallpaper picker…");
-                                        root.close();
-                                    }
-                                }
                                 Item { Layout.fillWidth: true }
                             }
 
