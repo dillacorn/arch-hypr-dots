@@ -27,6 +27,20 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq shellcheck
       - name: Apply appearance wiring patch
         run: python .github/scripts/tmp-lockscreen-state-polish.py
+      - name: Align superseded fallback assertion
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tests/test-quickshell-lockscreen-editor.sh')
+          text = path.read_text()
+          old = '''require_text "$LOCK_SCENE" 'color: "#000000"' \\
+              'LockScene does not keep a black fallback under wallpaper rendering' '''.rstrip()
+          new = '''require_text "$LOCK_SCENE" 'root.backgroundMode === "color" ? root.backgroundColor : "#000000"' \\
+              'LockScene does not keep a black fallback under wallpaper rendering' '''.rstrip()
+          if text.count(old) != 1:
+              raise SystemExit(f'legacy fallback assertion: expected 1 match, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
       - name: Validate appearance wiring
         run: |
           bash -n config/hypr/scripts/quickshell_application_state.sh
