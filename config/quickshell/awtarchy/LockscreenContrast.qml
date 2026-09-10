@@ -14,22 +14,49 @@ Singleton {
         || (Quickshell.env("HOME") + "/.cache")
     readonly property string helper:
         configHome + "/hypr/scripts/quickshell_lockscreen_contrast.sh"
-    readonly property string backendStatePath:
-        configHome + "/awtwall/backend_state.tsv"
     readonly property string cachePath:
-        cacheHome + "/awtarchy/lockscreen-contrast.txt"
+        cacheHome + "/awtarchy/lockscreen-contrast.json"
+    readonly property var elementNames: ["logo", "time", "date", "username", "weather", "password"]
 
-    property color accent: "#ffffff"
+    property var accents: ({
+        logo: "#ffffff",
+        time: "#ffffff",
+        date: "#ffffff",
+        username: "#ffffff",
+        weather: "#ffffff",
+        password: "#ffffff"
+    })
+
+    function colorFor(name) {
+        const value = String(accents && accents[name] !== undefined ? accents[name] : "#ffffff");
+        return /^#[0-9a-fA-F]{6}$/.test(value) ? value : "#ffffff";
+    }
 
     function refreshAccent() {
-        const value = String(contrastFile.text() || "").trim();
-        accent = /^#[0-9a-fA-F]{6}$/.test(value) ? value : "#ffffff";
+        const text = String(contrastFile.text() || "").trim();
+        if (text.length === 0)
+            return;
+        try {
+            const parsed = JSON.parse(text);
+            if (!parsed || parsed.provider !== "awtarchy-local-contrast"
+                    || !parsed.colors || typeof parsed.colors !== "object")
+                return;
+            const next = ({});
+            for (const name of elementNames) {
+                const value = String(parsed.colors[name] || "");
+                next[name] = /^#[0-9a-fA-F]{6}$/.test(value)
+                    ? value.toLowerCase() : "#ffffff";
+            }
+            accents = next;
+        } catch (error) {
+            // Keep existing safe contrast values if the local cache is malformed.
+        }
     }
 
     function requestRefresh() {
         if (refreshProcess.running)
             return;
-        refreshProcess.exec([root.helper, BarState.lockscreenBackground()]);
+        refreshProcess.exec([root.helper]);
     }
 
     Process {
@@ -45,16 +72,6 @@ Singleton {
         printErrors: false
         onLoaded: root.refreshAccent()
         onFileChanged: root.refreshAccent()
-    }
-
-    FileView {
-        id: awtwallState
-        path: root.backendStatePath
-        watchChanges: true
-        blockLoading: false
-        printErrors: false
-        onLoaded: refreshDelay.restart()
-        onFileChanged: refreshDelay.restart()
     }
 
     Timer {
