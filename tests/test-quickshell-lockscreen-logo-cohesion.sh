@@ -25,31 +25,48 @@ reject_text() {
 [[ -f "$SCENE" ]] || fail 'secure lock scene is missing'
 [[ -f "$PREVIEW" ]] || fail 'desktop lock preview scene is missing'
 
-require_text "$SCENE" 'readonly property var logoBridgePairs:' \
-    'logo has no predefined cohesion neighbor map'
-require_text "$SCENE" 'readonly property real logoBridgeMaxDistance:' \
-    'logo bridges have no explicit short-range cutoff'
-require_text "$SCENE" 'readonly property real logoBridgeInteractionBoost:' \
-    'logo bridges do not strengthen subtly during interaction'
-require_text "$SCENE" 'id: logoBridgeCanvas' \
-    'logo has no cohesion bridge canvas behind its blocks'
-require_text "$SCENE" 'ctx.lineCap = "round"' \
-    'logo cohesion bridges are not rounded'
-require_text "$SCENE" 'distance >= root.logoBridgeMaxDistance' \
-    'logo cohesion does not drop bridges once pieces separate too far'
-require_text "$SCENE" 'root.logoBridgeInteractionBoost' \
-    'logo bridge rendering ignores interaction energy'
-require_text "$SCENE" 'logoBridgeCanvas.requestPaint()' \
-    'logo bridge layer is not repainted with interactive physics'
-require_text "$SCENE" 'onPaint: {' \
-    'logo bridge canvas has no deterministic paint path'
+# The connector experiment still exposed every rectangular cell while moving.
+# The corrected model keeps connected glyph regions moving coherently instead.
+for forbidden in logoBridgeCanvas logoBridgePairs logoBridgeMaxDistance \
+    logoBridgeInteractionBoost buildLogoBridgePairs logoBridgeInteractionEnergy; do
+    reject_text "$SCENE" "$forbidden" \
+        "legacy connector-line logo cohesion remains: $forbidden"
+done
 
-reject_text "$SCENE" 'ShaderEffect {' \
-    'logo cohesion uses a shader-heavy effect instead of restrained connectors'
-reject_text "$SCENE" 'FastBlur {' \
-    'logo cohesion uses a heavy blur instead of restrained connectors'
+require_text "$SCENE" 'readonly property var logoCohesionGroups: buildLogoCohesionGroups()' \
+    'logo does not precompute cohesive connected glyph groups'
+require_text "$SCENE" 'function buildLogoCohesionGroups()' \
+    'logo has no connected-component cohesion builder'
+require_text "$SCENE" 'function logoGroupFor(row, column)' \
+    'logo cells cannot resolve their cohesive movement group'
+require_text "$SCENE" 'property real pointerFieldX:' \
+    'logo hover deformation has no continuous pointer field x coordinate'
+require_text "$SCENE" 'property real pointerFieldY:' \
+    'logo hover deformation has no continuous pointer field y coordinate'
+require_text "$SCENE" 'property real pointerFieldStrength:' \
+    'logo hover deformation has no continuous field strength'
+require_text "$SCENE" 'property real clickFieldStrength:' \
+    'logo click deformation has no bounded field strength'
+require_text "$SCENE" 'function logoDeformationOffset(' \
+    'logo does not calculate a shared radial deformation target'
+require_text "$SCENE" 'readonly property int pointerResponseDurationMs: 100' \
+    'logo hover response is not the approved quick 100ms transition'
+require_text "$SCENE" 'readonly property int pointerReturnDurationMs: 180' \
+    'logo return-to-rest is not the approved softer transition'
+require_text "$SCENE" 'Behavior on pointerOffsetX {' \
+    'logo x deformation does not smoothly chase its target'
+require_text "$SCENE" 'Behavior on pointerOffsetY {' \
+    'logo y deformation does not smoothly chase its target'
+require_text "$SCENE" 'easing.type: Easing.OutCubic' \
+    'logo deformation does not use non-overshooting cubic easing'
+
+for forbidden in 'Easing.OutBack' pointerReturnX pointerReturnY \
+    'pointerReturnX.restart()' 'pointerReturnY.restart()'; do
+    reject_text "$SCENE" "$forbidden" \
+        "jumpy restart/overshoot pointer physics remains: $forbidden"
+done
 
 cmp -s "$SCENE" "$PREVIEW" \
     || fail 'secure lock scene and desktop preview scene diverge'
 
-printf 'PASS: lockscreen logo cohesion contracts\n'
+printf 'PASS: lockscreen cohesive smooth logo deformation contracts\n'
