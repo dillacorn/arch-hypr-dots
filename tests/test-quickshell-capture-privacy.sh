@@ -126,9 +126,16 @@ require_contains "$wireguard_helper" 'WTFISMYIP_TEXT_URL="https://myip.wtf/text"
 
 # Num Lock is controlled by the singleton, not duplicate Quick Settings processes.
 # It is reapplied after Hyprland config reloads and only retries for a bounded
-# startup window instead of polling forever.
+# startup window instead of polling forever. Keep its root Singleton explicitly
+# qualified so a managed update cannot leave the desktop shell resolving an
+# unqualified/stale Singleton type during startup.
+# This guards the 2026-09-09 desktop-shell startup regression.
+# CI was retriggered after an external apt index hash mismatch on the hosted runner.
 require_contains "$shell_qml" 'readonly property bool numlockTweakReady:'
 require_contains "$shell_qml" 'NumlockSessionTweak.enforce()'
+require_contains "$numlock_tweak" 'import Quickshell as Qs'
+require_contains "$numlock_tweak" 'Qs.Singleton {'
+require_contains "$numlock_tweak" 'path: Qs.Quickshell.statePath("quick-settings-tweaks.json")'
 require_contains "$numlock_tweak" 'property int startupAttemptsRemaining: 0'
 require_contains "$numlock_tweak" 'function beginEnforcementBurst()'
 require_contains "$numlock_tweak" 'startupAttemptsRemaining = 4;'

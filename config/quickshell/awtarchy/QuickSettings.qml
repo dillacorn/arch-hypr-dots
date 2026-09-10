@@ -40,6 +40,9 @@ Singleton {
     property bool barIconsOpen: false
     property bool barAppearanceOpen: false
     property bool barVisibilityOpen: false
+    property bool lockscreenSectionExpanded: false
+    property string lockscreenWeatherLocationDraft: ""
+    property string lockscreenWeatherLocationError: ""
     property var layoutOrderDraft: []
     property var layoutHiddenDraft: []
     property var savedLayout: ({ order: [], hidden: [] })
@@ -533,6 +536,30 @@ Singleton {
         close();
     }
 
+    function openLockscreenEditor() {
+        const target = root.activeScreen;
+        root.close();
+        Qt.callLater(() => LockscreenEditor.openForScreen(target));
+    }
+
+    function saveLockscreenWeatherLocation() {
+        const value = String(lockscreenWeatherLocationDraft || "").trim();
+        const points = Array.from(value);
+        if (points.length > 96 || /[\u0000-\u001f\u007f-\u009f]/.test(value)) {
+            lockscreenWeatherLocationError = "Use at most 96 characters with no control characters";
+            return;
+        }
+        lockscreenWeatherLocationError = "";
+        lockscreenWeatherLocationDraft = value;
+        root.queueStateCommand(["set-lockscreen-weather-location", value]);
+    }
+
+    function resetLockscreenPresentation() {
+        lockscreenWeatherLocationDraft = "";
+        lockscreenWeatherLocationError = "";
+        root.queueStateCommand(["reset-lockscreen-presentation"]);
+    }
+
     function openSchedulerAuthorization() {
         if (schedulerAuthBusy)
             return;
@@ -768,6 +795,8 @@ Singleton {
         schedulerArgsDirty = false;
         nightLightScheduleEditorOpen = false;
         nightLightScheduleError = "";
+        lockscreenWeatherLocationDraft = BarState.lockscreenWeatherLocation();
+        lockscreenWeatherLocationError = "";
         loadSavedView(targetScreen);
         prepareWindowOpen(targetScreen);
     }
@@ -2148,6 +2177,131 @@ Singleton {
                                         }
                                     }
                                 }
+
+                                RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: "Lockscreen"
+                                color: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pixelSize: root.scaledText(9)
+                                font.bold: true
+                            }
+
+                            SettingsButton {
+                                label: root.lockscreenSectionExpanded ? "Collapse" : "Expand"
+                                active: root.lockscreenSectionExpanded
+                                textSize: root.scaledText(9)
+                                onClicked: root.lockscreenSectionExpanded = !root.lockscreenSectionExpanded
+                            }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            visible: root.lockscreenSectionExpanded
+                            spacing: 5
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+                                SettingsButton {
+                                    label: "Edit Layout"
+                                    active: true
+                                    textSize: root.scaledText(9)
+                                    onClicked: root.openLockscreenEditor()
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "Drag, resize, show/hide, and recolor lockscreen elements on the focused display"
+                                    color: Theme.muted
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: root.scaledText(8)
+                                    wrapMode: Text.Wrap
+                                }
+                            }
+
+                            Text { Layout.fillWidth: true; text: "Background"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: root.scaledText(9) }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 5
+                                SettingsButton {
+                                    label: "Black"
+                                    active: BarState.lockscreenBackground() === "black"
+                                    textSize: root.scaledText(9)
+                                    onClicked: root.queueStateCommand(["set-lockscreen-background", "black"])
+                                }
+                                SettingsButton {
+                                    label: "Wallpaper"
+                                    active: BarState.lockscreenBackground() === "wallpaper"
+                                    textSize: root.scaledText(9)
+                                    onClicked: root.queueStateCommand(["set-lockscreen-background", "wallpaper"])
+                                }
+                                Item { Layout.fillWidth: true }
+                            }
+
+                            GridLayout {
+                                Layout.fillWidth: true
+                                columns: 2
+                                columnSpacing: 8
+                                rowSpacing: 4
+
+                                Text { Layout.fillWidth: true; text: "Mouse Interaction"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: root.scaledText(9) }
+                                SettingsButton { label: BarState.lockscreenMouseInteractiveEnabled() ? "On" : "Off"; active: BarState.lockscreenMouseInteractiveEnabled(); textSize: root.scaledText(9); onClicked: root.queueStateCommand(["set-lockscreen-mouse-interactive", BarState.lockscreenMouseInteractiveEnabled() ? "false" : "true"]) }
+                                Text { Layout.fillWidth: true; text: "Audio Reactive"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: root.scaledText(9) }
+                                SettingsButton { label: BarState.lockscreenAudioReactiveEnabled() ? "On" : "Off"; active: BarState.lockscreenAudioReactiveEnabled(); textSize: root.scaledText(9); onClicked: root.queueStateCommand(["set-lockscreen-audio-reactive", BarState.lockscreenAudioReactiveEnabled() ? "false" : "true"]) }
+                            }
+
+                            Text { Layout.fillWidth: true; text: "Location override (optional)"; color: Theme.foreground; font.family: Theme.fontFamily; font.pixelSize: root.scaledText(9); font.bold: true }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 5
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 28
+                                    color: Theme.popupBackground
+                                    border.width: 1
+                                    border.color: lockscreenWeatherLocationInput.activeFocus ? Theme.focus : Theme.active
+                                    TextInput {
+                                        id: lockscreenWeatherLocationInput
+                                        anchors.fill: parent
+                                        anchors.margins: 6
+                                        text: root.lockscreenWeatherLocationDraft
+                                        maximumLength: 96
+                                        color: Theme.foreground
+                                        selectionColor: Theme.focus
+                                        selectedTextColor: Theme.background
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: root.scaledText(9)
+                                        clip: true
+                                        onTextChanged: root.lockscreenWeatherLocationDraft = text
+                                        Keys.onReturnPressed: event => { root.saveLockscreenWeatherLocation(); event.accepted = true; }
+                                    }
+                                }
+                                SettingsButton { label: "Save Location"; textSize: root.scaledText(9); onClicked: root.saveLockscreenWeatherLocation() }
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                visible: root.lockscreenWeatherLocationError.length > 0
+                                text: root.lockscreenWeatherLocationError
+                                color: Theme.error
+                                font.family: Theme.fontFamily
+                                font.pixelSize: root.scaledText(8)
+                                wrapMode: Text.Wrap
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: "Automatic location uses your approximate public-IP location from ipwho.is, then sends coordinates to Open-Meteo. Enter a location above only to override it."
+                                color: Theme.muted
+                                font.family: Theme.fontFamily
+                                font.pixelSize: root.scaledText(8)
+                                wrapMode: Text.Wrap
+                            }
+                            SettingsButton { label: "Restore Awtarchy Defaults"; textSize: root.scaledText(9); onClicked: root.resetLockscreenPresentation() }
+                        }
+
                             }
                         }
 

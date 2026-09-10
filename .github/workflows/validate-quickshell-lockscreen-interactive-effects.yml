@@ -1,0 +1,92 @@
+name: Validate Quickshell Lockscreen Interactive Effects
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install -y jq shellcheck
+      - name: Syntax validation
+        run: |
+          bash -n tests/test-quickshell-lockscreen-interactive-effects.sh
+          bash -n tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+          bash -n tests/test-quickshell-lockscreen-logo-cohesion.sh
+          bash -n tests/test-quickshell-lockscreen-runtime-polish.sh
+          bash -n tests/test-quickshell-lockscreen-interactive-managed-history.sh
+          bash -n tests/test-quickshell-lockscreen-editor.sh
+          bash -n tests/test-quickshell-lockscreen-editor-config-boundary.sh
+          bash -n tests/test-quickshell-lockscreen-live-editor.sh
+          bash -n tests/test-quickshell-lockscreen-weather.sh
+          bash -n tests/test-quickshell-lockscreen-runtime-services.sh
+          if [[ -f config/hypr/scripts/quickshell_lockscreen_audio.sh ]]; then
+            bash -n config/hypr/scripts/quickshell_lockscreen_audio.sh
+          fi
+          if [[ -f config/hypr/scripts/quickshell_lockscreen_weather.sh ]]; then
+            bash -n config/hypr/scripts/quickshell_lockscreen_weather.sh
+          fi
+          if [[ -f config/hypr/scripts/quickshell_lockscreen_contrast.sh ]]; then
+            bash -n config/hypr/scripts/quickshell_lockscreen_contrast.sh
+          fi
+          if [[ -f config/hypr/scripts/quickshell_lockscreen_wallpaper_picker.sh ]]; then
+            bash -n config/hypr/scripts/quickshell_lockscreen_wallpaper_picker.sh
+          fi
+      - name: ShellCheck
+        run: |
+          shellcheck tests/test-quickshell-lockscreen-interactive-effects.sh
+          shellcheck tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+          shellcheck tests/test-quickshell-lockscreen-logo-cohesion.sh
+          shellcheck tests/test-quickshell-lockscreen-runtime-polish.sh
+          shellcheck tests/test-quickshell-lockscreen-interactive-managed-history.sh
+          shellcheck tests/test-quickshell-lockscreen-editor.sh
+          shellcheck tests/test-quickshell-lockscreen-editor-config-boundary.sh
+          shellcheck tests/test-quickshell-lockscreen-live-editor.sh
+          shellcheck tests/test-quickshell-lockscreen-weather.sh
+          shellcheck tests/test-quickshell-lockscreen-runtime-services.sh
+          if [[ -f config/hypr/scripts/quickshell_lockscreen_audio.sh ]]; then
+            shellcheck config/hypr/scripts/quickshell_lockscreen_audio.sh
+          fi
+          if [[ -f config/hypr/scripts/quickshell_lockscreen_weather.sh ]]; then
+            shellcheck config/hypr/scripts/quickshell_lockscreen_weather.sh
+          fi
+          if [[ -f config/hypr/scripts/quickshell_lockscreen_contrast.sh ]]; then
+            shellcheck config/hypr/scripts/quickshell_lockscreen_contrast.sh
+          fi
+          if [[ -f config/hypr/scripts/quickshell_lockscreen_wallpaper_picker.sh ]]; then
+            shellcheck config/hypr/scripts/quickshell_lockscreen_wallpaper_picker.sh
+          fi
+      - name: Runtime helper mode
+        run: |
+          test -x config/hypr/scripts/quickshell_lockscreen_audio.sh
+          test -x config/hypr/scripts/quickshell_lockscreen_weather.sh
+          test -x config/hypr/scripts/quickshell_lockscreen_contrast.sh
+          if [[ -f config/hypr/scripts/quickshell_lockscreen_wallpaper_picker.sh ]]; then
+            test -x config/hypr/scripts/quickshell_lockscreen_wallpaper_picker.sh
+          fi
+      - name: Logo cohesion contracts
+        run: bash tests/test-quickshell-lockscreen-logo-cohesion.sh
+      - name: Runtime polish contracts
+        run: bash tests/test-quickshell-lockscreen-runtime-polish.sh
+      - name: Weather refresh contracts
+        run: bash tests/test-quickshell-lockscreen-weather.sh
+      - name: Runtime service contracts
+        run: bash tests/test-quickshell-lockscreen-runtime-services.sh
+      - name: Interactive effects contracts
+        run: |
+          bash tests/test-quickshell-lockscreen-interactive-effects.sh
+          bash tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
+      - name: Customization editor contracts
+        run: |
+          bash tests/test-quickshell-lockscreen-editor.sh
+          bash tests/test-quickshell-lockscreen-editor-config-boundary.sh
+          bash tests/test-quickshell-lockscreen-live-editor.sh
+      - name: Managed history contracts
+        run: bash tests/test-quickshell-lockscreen-interactive-managed-history.sh

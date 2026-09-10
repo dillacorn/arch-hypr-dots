@@ -2,10 +2,10 @@ pragma Singleton
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import Quickshell
+import Quickshell as Qs
 import Quickshell.Io
 
-Singleton {
+Qs.Singleton {
     id: root
 
     property bool stateLoaded: false
@@ -33,7 +33,7 @@ Singleton {
 
     FileView {
         id: settingsFile
-        path: Quickshell.statePath("quick-settings-tweaks.json")
+        path: Qs.Quickshell.statePath("quick-settings-tweaks.json")
         watchChanges: true
         printErrors: false
         onFileChanged: reload()

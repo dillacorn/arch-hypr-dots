@@ -7,6 +7,7 @@ QUICK_SETTINGS="${ROOT}/config/quickshell/awtarchy/QuickSettings.qml"
 BAR_STATE="${ROOT}/config/quickshell/awtarchy/BarState.qml"
 SHELL_QML="${ROOT}/config/quickshell/awtarchy-lock/shell.qml"
 SURFACE_QML="${ROOT}/config/quickshell/awtarchy-lock/LockSurface.qml"
+SCENE_QML="${ROOT}/config/quickshell/awtarchy-lock/LockScene.qml"
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 
@@ -20,9 +21,13 @@ require_text() {
     grep -Fq -- "$text" "$file" || fail "$message"
 }
 
-# The existing Quickshell state owner persists one global lockscreen animation
-# preference. Missing state uses stock Split; only these six values are
-# accepted so malformed state cannot turn into arbitrary QML behavior.
+reject_text() {
+    local file="$1" text="$2" message="$3"
+    if grep -Fq -- "$text" "$file"; then
+        fail "$message"
+    fi
+}
+
 require_text "$APP_STATE" 'set-lockscreen-animation)' \
     'application state helper does not expose set-lockscreen-animation'
 require_text "$APP_STATE" 'LOCKSCREEN_ANIMATIONS_JSON=' \
@@ -50,8 +55,6 @@ if XDG_CACHE_HOME="$TMP/cache" \
     fail 'application state accepted an invalid lockscreen animation preference'
 fi
 
-# Quick Settings exposes the preference inside the existing Awtarchy card,
-# beside Awtarchy Tips, rather than adding another reorderable top-level card.
 require_text "$BAR_STATE" 'readonly property var lockscreenAnimationPresets:' \
     'BarState does not expose the lockscreen animation choices'
 require_text "$BAR_STATE" 'function lockscreenAnimationPreference()' \
@@ -73,9 +76,6 @@ require_text "$QUICK_SETTINGS" 'model: BarState.lockscreenAnimationPresets' \
 require_text "$QUICK_SETTINGS" '"set-lockscreen-animation", String(modelData.key)' \
     'Lockscreen Animation control does not persist the selected choice'
 
-# The dedicated lock process reads the shared state itself at startup. It must
-# fall back to stock Split when the file/value is unavailable, malformed, or
-# unknown, and choose one random family once per lock only when Random is used.
 require_text "$SHELL_QML" 'blockLoading: true' \
     'lock shell does not synchronously read animation preference before surfaces start'
 require_text "$SHELL_QML" 'property string lockAnimationPreference: "split"' \
@@ -93,27 +93,45 @@ require_text "$SHELL_QML" 'animationPreference: root.lockAnimationPreference' \
 require_text "$SHELL_QML" 'randomFormationMode: root.randomFormationMode' \
     'lock surfaces do not share the per-lock random family'
 
+# LockSurface keeps the secure pass-through properties; LockScene implements the
+# actual presentation families shared with the unlocked editor.
 require_text "$SURFACE_QML" 'required property string animationPreference' \
     'lock surface does not receive the animation preference'
 require_text "$SURFACE_QML" 'required property int randomFormationMode' \
     'lock surface does not receive the shared random family'
-require_text "$SURFACE_QML" 'animationPreference === "swarm"' \
-    'lock surface does not map the Swarm preference'
-require_text "$SURFACE_QML" 'animationPreference === "edges"' \
-    'lock surface does not map the Edges preference'
-require_text "$SURFACE_QML" 'animationPreference === "center"' \
-    'lock surface does not map the Center preference'
-require_text "$SURFACE_QML" 'animationPreference === "split"' \
-    'lock surface does not map the Split preference'
-require_text "$SURFACE_QML" 'root.animationPreference === "off" ? 1 : 0' \
+require_text "$SURFACE_QML" 'animationPreference: root.animationPreference' \
+    'lock surface does not pass animation preference into the shared scene'
+require_text "$SURFACE_QML" 'randomFormationMode: root.randomFormationMode' \
+    'lock surface does not pass random family into the shared scene'
+require_text "$SCENE_QML" 'animationPreference === "swarm"' \
+    'shared lock scene does not map the Swarm preference'
+require_text "$SCENE_QML" 'animationPreference === "edges"' \
+    'shared lock scene does not map the Edges preference'
+require_text "$SCENE_QML" 'animationPreference === "center"' \
+    'shared lock scene does not map the Center preference'
+require_text "$SCENE_QML" 'animationPreference === "split"' \
+    'shared lock scene does not map the Split preference'
+require_text "$SCENE_QML" 'root.animationPreference === "off" ? 1 : 0' \
     'Off does not immediately render the completed wordmark'
-require_text "$SURFACE_QML" 'root.animationPreference !== "off"' \
+require_text "$SCENE_QML" 'root.animationPreference !== "off"' \
     'Off does not suppress particle formation animation'
-require_text "$SURFACE_QML" 'readonly property int formationDelay: Math.floor(Math.random() * 301)' \
+
+require_text "$SCENE_QML" 'readonly property bool pointerEffectsEnabled: mouseInteractive && pointerActive' \
+    'pointer effects are not controlled independently from formation animation'
+require_text "$SCENE_QML" 'readonly property bool audioEffectsEnabled: audioReactive && audioLevel > audioSilenceThreshold' \
+    'audio effects are not controlled independently from formation animation'
+require_text "$SHELL_QML" 'enabled: root.lockAudioReactive' \
+    'audio analyzer is not controlled solely by the Audio Reactive preference'
+reject_text "$SCENE_QML" 'readonly property bool interactiveEffectsEnabled: root.animationPreference !== "off"' \
+    'formation Off still suppresses independent pointer/audio effects'
+reject_text "$SHELL_QML" 'enabled: root.lockAudioReactive && root.lockAnimationPreference !== "off"' \
+    'formation Off still suppresses the independent audio analyzer'
+
+require_text "$SCENE_QML" 'readonly property int formationDelay: Math.floor(Math.random() * 301)' \
     'lockscreen formation delay is not capped at the faster 300ms range'
-require_text "$SURFACE_QML" 'readonly property int formationDuration: 1700' \
+require_text "$SCENE_QML" 'readonly property int formationDuration: 1700' \
     'lockscreen formation base duration is not the faster 1700ms value'
-require_text "$SURFACE_QML" '+ Math.floor(Math.random() * 351)' \
+require_text "$SCENE_QML" '+ Math.floor(Math.random() * 351)' \
     'lockscreen formation duration variance is not capped at 350ms'
 
 printf 'PASS: lockscreen animation preference contracts\n'

@@ -129,6 +129,14 @@ Singleton {
         { key: "split", label: "Split" },
         { key: "off", label: "Off" }
     ]
+    readonly property var defaultLockscreenLayout: ({
+        logo: ({ x: 0.50, y: 0.34, scale: 1.0, color: "auto" }),
+        time: ({ x: 0.50, y: 0.51, scale: 1.0, color: "auto" }),
+        date: ({ x: 0.50, y: 0.555, scale: 1.0, color: "auto" }),
+        username: ({ x: 0.50, y: 0.595, scale: 1.0, color: "auto" }),
+        weather: ({ x: 0.50, y: 0.635, scale: 1.0, color: "auto" }),
+        password: ({ x: 0.50, y: 0.70, scale: 1.0, color: "auto" })
+    })
     readonly property var workspaceLegacyStyleAliases: ({
         "filled-dot": "workflow",
         "filled-diamond": "workflow",
@@ -341,6 +349,18 @@ Singleton {
             enabled: true,
             update_notifications_enabled: true,
             lockscreen_animation: "split",
+            lockscreen_audio_reactive: true,
+            lockscreen_mouse_interactive: true,
+            lockscreen_show_logo: true,
+            lockscreen_show_time: false,
+            lockscreen_show_date: false,
+            lockscreen_show_username: false,
+            lockscreen_show_weather: false,
+            lockscreen_background: "black",
+            lockscreen_background_color: "#000000",
+            lockscreen_wallpaper_path: "",
+            lockscreen_weather_location: "",
+            lockscreen_layout: root.defaultLockscreenLayout,
             monitors: {},
             launcher_sizes: {},
             clipboard_views: {},
@@ -602,6 +622,108 @@ Singleton {
                 return value;
         }
         return "split";
+    }
+
+    function lockscreenBooleanPreference(field, fallback) {
+        const value = data()[field];
+        return typeof value === "boolean" ? value : fallback;
+    }
+
+    function lockscreenAudioReactiveEnabled() {
+        return lockscreenBooleanPreference("lockscreen_audio_reactive", true);
+    }
+
+    function lockscreenMouseInteractiveEnabled() {
+        return lockscreenBooleanPreference("lockscreen_mouse_interactive", true);
+    }
+
+    function lockscreenShowLogo() {
+        return lockscreenBooleanPreference("lockscreen_show_logo", true);
+    }
+
+    function lockscreenShowTime() {
+        return lockscreenBooleanPreference("lockscreen_show_time", false);
+    }
+
+    function lockscreenShowDate() {
+        return lockscreenBooleanPreference("lockscreen_show_date", false);
+    }
+
+    function lockscreenShowUsername() {
+        return lockscreenBooleanPreference("lockscreen_show_username", false);
+    }
+
+    function lockscreenShowWeather() {
+        return lockscreenBooleanPreference("lockscreen_show_weather", false);
+    }
+
+    function lockscreenBackground() {
+        const value = String(data().lockscreen_background || "");
+        return ["black", "wallpaper", "color"].indexOf(value) >= 0 ? value : "black";
+    }
+
+    function lockscreenBackgroundColor() {
+        const value = String(data().lockscreen_background_color || "#000000").toLowerCase();
+        return /^#[0-9a-f]{6}$/.test(value) ? value : "#000000";
+    }
+
+    function lockscreenWallpaperPath() {
+        const value = data().lockscreen_wallpaper_path;
+        if (typeof value !== "string" || !value.startsWith("/")
+                || value.indexOf("://") >= 0 || /[\u0000-\u001f\u007f-\u009f]/.test(value))
+            return "";
+        return value;
+    }
+
+    function lockscreenWeatherLocation() {
+        const value = data().lockscreen_weather_location;
+        if (typeof value !== "string")
+            return "";
+        const trimmed = value.trim();
+        const points = Array.from(trimmed);
+        if (points.length > 96)
+            return "";
+        for (const point of points) {
+            const code = point.codePointAt(0);
+            if ((code >= 0 && code <= 31) || (code >= 127 && code <= 159))
+                return "";
+        }
+        return trimmed;
+    }
+
+    function lockscreenLayoutPoint(value, fallback, password) {
+        const fallbackColor = String(fallback.color || "auto");
+        if (!value || typeof value !== "object" || Array.isArray(value))
+            return ({ x: fallback.x, y: fallback.y, scale: fallback.scale, color: fallbackColor });
+        const x = Number(value.x);
+        const y = Number(value.y);
+        const scale = Number(value.scale === undefined ? 1 : value.scale);
+        const rawColor = String(value.color === undefined ? "auto" : value.color);
+        const color = rawColor === "auto" || /^#[0-9a-fA-F]{6}$/.test(rawColor)
+            ? rawColor.toLowerCase() : fallbackColor;
+        const minX = password ? 0.15 : 0.05;
+        const maxX = password ? 0.85 : 0.95;
+        const minY = password ? 0.20 : 0.08;
+        const maxY = password ? 0.86 : 0.92;
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(scale)
+                || x < minX || x > maxX || y < minY || y > maxY
+                || scale < 0.50 || scale > 2.00)
+            return ({ x: fallback.x, y: fallback.y, scale: fallback.scale, color: fallbackColor });
+        return ({ x: x, y: y, scale: scale, color: color });
+    }
+    function lockscreenLayout() {
+        const defaults = root.defaultLockscreenLayout;
+        const value = data().lockscreen_layout;
+        if (!value || typeof value !== "object" || Array.isArray(value))
+            return defaults;
+        return ({
+            logo: lockscreenLayoutPoint(value.logo, defaults.logo, false),
+            time: lockscreenLayoutPoint(value.time, defaults.time, false),
+            date: lockscreenLayoutPoint(value.date, defaults.date, false),
+            username: lockscreenLayoutPoint(value.username, defaults.username, false),
+            weather: lockscreenLayoutPoint(value.weather, defaults.weather, false),
+            password: lockscreenLayoutPoint(value.password, defaults.password, true)
+        });
     }
 
     function updateNotificationsEnabled() {
