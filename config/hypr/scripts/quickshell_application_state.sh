@@ -19,7 +19,7 @@ MAX_ICON_SCALE=200
 SAVE_VERSION=2
 QUICK_SETTINGS_LAYOUT_SAVE_VERSION=1
 LOCKSCREEN_ANIMATIONS_JSON='["random","swarm","edges","center","split","off"]'
-LOCKSCREEN_BACKGROUNDS_JSON='["black","wallpaper"]'
+LOCKSCREEN_BACKGROUNDS_JSON='["black","wallpaper","color"]'
 LOCKSCREEN_LAYOUT_KEYS_JSON='["logo","time","date","username","weather","password"]'
 LOCKSCREEN_LAYOUT_DEFAULT_JSON='{"logo":{"x":0.5,"y":0.34,"scale":1,"color":"auto"},"time":{"x":0.5,"y":0.51,"scale":1,"color":"auto"},"date":{"x":0.5,"y":0.555,"scale":1,"color":"auto"},"username":{"x":0.5,"y":0.595,"scale":1,"color":"auto"},"weather":{"x":0.5,"y":0.635,"scale":1,"color":"auto"},"password":{"x":0.5,"y":0.7,"scale":1,"color":"auto"}}'
 CURSOR_VARIANTS_JSON='["ice","classic","amber","ice-sharp","classic-sharp","amber-sharp","ice-right","classic-right","amber-right","ice-sharp-right","classic-sharp-right","amber-sharp-right"]'
@@ -192,6 +192,55 @@ set_lockscreen_background() {
     commit_tmp
 }
 
+validate_lockscreen_hex_color() {
+    local value="$1" label="$2"
+    [[ "$value" =~ ^#[0-9A-Fa-f]{6}$ ]] || {
+        printf '%s must be #RRGGBB\n' "$label" >&2
+        exit 2
+    }
+}
+
+set_lockscreen_background_color() {
+    local value="${1,,}"
+    validate_lockscreen_hex_color "$value" 'lockscreen background color'
+    new_tmp
+    jq --arg value "$value" '.lockscreen_background_color = $value' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
+normalize_lockscreen_wallpaper_path() {
+    local value="$1" resolved
+    [[ -n "$value" ]] || {
+        printf '%s' ''
+        return 0
+    }
+    [[ "$value" == /* && "$value" != *$'\n'* && "$value" != *$'\r'*         && -f "$value" && -r "$value" ]] || {
+        printf 'lockscreen wallpaper must be a readable absolute local file\n' >&2
+        exit 2
+    }
+    resolved="$(readlink -f -- "$value" 2>/dev/null || true)"
+    [[ -n "$resolved" && "$resolved" == /* && -f "$resolved" && -r "$resolved" ]] || {
+        printf 'lockscreen wallpaper could not be resolved\n' >&2
+        exit 2
+    }
+    printf '%s' "$resolved"
+}
+
+set_lockscreen_wallpaper() {
+    local path
+    path="$(normalize_lockscreen_wallpaper_path "$1")"
+    [[ -n "$path" ]] || {
+        printf 'lockscreen wallpaper is required\n' >&2
+        exit 2
+    }
+    new_tmp
+    jq --arg path "$path" '
+        .lockscreen_wallpaper_path = $path
+        | .lockscreen_background = "wallpaper"
+    ' "$STATE_FILE" >"$TMP_FILE"
+    commit_tmp
+}
+
 normalize_lockscreen_weather_location() {
     local value="$1" normalized
     normalized="$(jq -nr --arg value "$value" '$value | gsub("^\\s+|\\s+$"; "")')"
@@ -296,22 +345,35 @@ validate_lockscreen_editor_visibility() {
 }
 
 save_lockscreen_editor() {
-    local normalized visibility="$2"
+    local normalized visibility="$2" background="$3" background_color="${4,,}" wallpaper="$5"
     if ! normalized="$(normalize_lockscreen_layout_json "$1" 2>/dev/null)"; then
         printf 'invalid lockscreen layout\n' >&2
         exit 2
     fi
     validate_lockscreen_editor_visibility "$visibility"
+    validate_lockscreen_background "$background"
+    validate_lockscreen_hex_color "$background_color" 'lockscreen background color'
+    wallpaper="$(normalize_lockscreen_wallpaper_path "$wallpaper")"
+    if [[ "$background" == 'wallpaper' && -z "$wallpaper" ]]; then
+        printf 'wallpaper background requires a selected local image\n' >&2
+        exit 2
+    fi
     new_tmp
     jq \
         --argjson layout "$normalized" \
-        --argjson visibility "$visibility" '
+        --argjson visibility "$visibility" \
+        --arg background "$background" \
+        --arg background_color "$background_color" \
+        --arg wallpaper "$wallpaper" '
         .lockscreen_layout = $layout
         | .lockscreen_show_logo = $visibility.logo
         | .lockscreen_show_time = $visibility.time
         | .lockscreen_show_date = $visibility.date
         | .lockscreen_show_username = $visibility.username
         | .lockscreen_show_weather = $visibility.weather
+        | .lockscreen_background = $background
+        | .lockscreen_background_color = $background_color
+        | .lockscreen_wallpaper_path = $wallpaper
     ' "$STATE_FILE" >"$TMP_FILE"
     commit_tmp
 }
@@ -327,6 +389,8 @@ reset_lockscreen_presentation() {
         | .lockscreen_show_username = false
         | .lockscreen_show_weather = false
         | .lockscreen_background = "black"
+        | .lockscreen_background_color = "#000000"
+        | .lockscreen_wallpaper_path = ""
         | .lockscreen_weather_location = ""
         | .lockscreen_layout = $layout
     ' "$STATE_FILE" >"$TMP_FILE"
@@ -1161,6 +1225,14 @@ case "$cmd" in
         [[ -n ${2:-} ]] || exit 2
         set_lockscreen_background "$2"
         ;;
+    set-lockscreen-background-color)
+        [[ -n ${2:-} ]] || exit 2
+        set_lockscreen_background_color "$2"
+        ;;
+    set-lockscreen-wallpaper)
+        [[ -n ${2:-} ]] || exit 2
+        set_lockscreen_wallpaper "$2"
+        ;;
     set-lockscreen-weather-location)
         [[ $# -eq 2 ]] || exit 2
         set_lockscreen_weather_location "$2"
@@ -1170,8 +1242,8 @@ case "$cmd" in
         save_lockscreen_layout "$2"
         ;;
     save-lockscreen-editor)
-        [[ $# -eq 3 ]] || exit 2
-        save_lockscreen_editor "$2" "$3"
+        [[ $# -eq 6 ]] || exit 2
+        save_lockscreen_editor "$2" "$3" "$4" "$5" "$6"
         ;;
     reset-lockscreen-presentation)
         reset_lockscreen_presentation
@@ -1317,7 +1389,7 @@ case "$cmd" in
         reset_defaults
         ;;
     *)
-        printf 'usage: %s {set-cursor-theme <ice|classic>|set-lockscreen-animation <random|swarm|edges|center|split|off>|set-lockscreen-audio-reactive <true|false>|set-lockscreen-mouse-interactive <true|false>|set-lockscreen-show-logo <true|false>|set-lockscreen-show-time <true|false>|set-lockscreen-show-date <true|false>|set-lockscreen-show-username <true|false>|set-lockscreen-show-weather <true|false>|set-lockscreen-background <black|wallpaper>|set-lockscreen-weather-location <location>|save-lockscreen-layout <json>|save-lockscreen-editor <layout_json> <visibility_json>|reset-lockscreen-presentation|set-workspace-numbers <true|false>|set-bar-workspace-visible <1-10> <true|false>|set-workspace-icon-style <style>|set-workspace-style <legacy-style>|set-workspace-custom-label <label>|clear-workspace-custom-label|set-workspace-override <1-10> <label>|clear-workspace-override <1-10>|clear-workspace-overrides|set-launcher-icon <label>|reset-launcher-icon|reset-workspace-icons|reset-bar-icons|save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-update-notifications <true|false>|set-clock-date <MON> <true|false>|set-notification-popup-limit <1-20>|set-notification-popup-position <MON> <automatic|top-left|top-center|top-right|bottom-left|bottom-center|bottom-right>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|save-quick-settings-layout <MON> <order_json> <hidden_json>|copy-quick-settings-layout <order_json> <hidden_json> <MON>...|reset-quick-settings-layout <MON>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
+        printf 'usage: %s {set-cursor-theme <ice|classic>|set-lockscreen-animation <random|swarm|edges|center|split|off>|set-lockscreen-audio-reactive <true|false>|set-lockscreen-mouse-interactive <true|false>|set-lockscreen-show-logo <true|false>|set-lockscreen-show-time <true|false>|set-lockscreen-show-date <true|false>|set-lockscreen-show-username <true|false>|set-lockscreen-show-weather <true|false>|set-lockscreen-background <black|wallpaper|color>|set-lockscreen-background-color <#RRGGBB>|set-lockscreen-wallpaper <absolute_path>|set-lockscreen-weather-location <location>|save-lockscreen-layout <json>|save-lockscreen-editor <layout_json> <visibility_json> <background> <background_color> <wallpaper_path>|reset-lockscreen-presentation|set-workspace-numbers <true|false>|set-bar-workspace-visible <1-10> <true|false>|set-workspace-icon-style <style>|set-workspace-style <legacy-style>|set-workspace-custom-label <label>|clear-workspace-custom-label|set-workspace-override <1-10> <label>|clear-workspace-override <1-10>|clear-workspace-overrides|set-launcher-icon <label>|reset-launcher-icon|reset-workspace-icons|reset-bar-icons|save-view <MON> <width> <height> <text_percent> <icon_percent> <centered> [capture_allowed]|save-flyout <TYPE> <MON> <width> <height> <text_percent> <icon_percent> <capture_allowed> [popup_limit]|set-update-notifications <true|false>|set-clock-date <MON> <true|false>|set-notification-popup-limit <1-20>|set-notification-popup-position <MON> <automatic|top-left|top-center|top-right|bottom-left|bottom-center|bottom-right>|copy-flyout <TYPE> <width> <height> <text_percent> <icon_percent> <MON>...|reset-flyout <TYPE> <MON>|set-capture <TYPE> <true|false>|save-quick-settings-layout <MON> <order_json> <hidden_json>|copy-quick-settings-layout <order_json> <hidden_json> <MON>...|reset-quick-settings-layout <MON>|lock-size <MON> <width> <height>|unlock-size <MON>|set-scales <MON> <text_percent> <icon_percent>|set-centered <MON> <true|false>|copy-view <width> <height> <text_percent> <icon_percent> <MON>...|reset-monitor <MON>|reset-all|reset-locks|set <field> <value>|set-size <width> <height>|set-all <width> <height> <text_size> <icon_size>|reset}\n' "${0##*/}" >&2
         exit 2
         ;;
 esac
