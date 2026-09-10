@@ -20,6 +20,7 @@ jobs:
           bash -n tests/test-quickshell-lockscreen-interactive-effects.sh
           bash -n tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
           bash -n tests/test-quickshell-lockscreen-logo-cohesion.sh
+          bash -n tests/test-quickshell-lockscreen-runtime-polish.sh
           bash -n tests/test-quickshell-lockscreen-interactive-managed-history.sh
           bash -n tests/test-quickshell-lockscreen-editor.sh
           bash -n tests/test-quickshell-lockscreen-editor-config-boundary.sh
@@ -35,11 +36,15 @@ jobs:
           if [[ -f config/hypr/scripts/quickshell_lockscreen_contrast.sh ]]; then
             bash -n config/hypr/scripts/quickshell_lockscreen_contrast.sh
           fi
+          if [[ -f config/hypr/scripts/quickshell_lockscreen_wallpaper_picker.sh ]]; then
+            bash -n config/hypr/scripts/quickshell_lockscreen_wallpaper_picker.sh
+          fi
       - name: ShellCheck
         run: |
           shellcheck tests/test-quickshell-lockscreen-interactive-effects.sh
           shellcheck tests/test-quickshell-lockscreen-interactive-physics-regressions.sh
           shellcheck tests/test-quickshell-lockscreen-logo-cohesion.sh
+          shellcheck tests/test-quickshell-lockscreen-runtime-polish.sh
           shellcheck tests/test-quickshell-lockscreen-interactive-managed-history.sh
           shellcheck tests/test-quickshell-lockscreen-editor.sh
           shellcheck tests/test-quickshell-lockscreen-editor-config-boundary.sh
@@ -55,13 +60,21 @@ jobs:
           if [[ -f config/hypr/scripts/quickshell_lockscreen_contrast.sh ]]; then
             shellcheck config/hypr/scripts/quickshell_lockscreen_contrast.sh
           fi
+          if [[ -f config/hypr/scripts/quickshell_lockscreen_wallpaper_picker.sh ]]; then
+            shellcheck config/hypr/scripts/quickshell_lockscreen_wallpaper_picker.sh
+          fi
       - name: Runtime helper mode
         run: |
           test -x config/hypr/scripts/quickshell_lockscreen_audio.sh
           test -x config/hypr/scripts/quickshell_lockscreen_weather.sh
           test -x config/hypr/scripts/quickshell_lockscreen_contrast.sh
+          if [[ -f config/hypr/scripts/quickshell_lockscreen_wallpaper_picker.sh ]]; then
+            test -x config/hypr/scripts/quickshell_lockscreen_wallpaper_picker.sh
+          fi
       - name: Logo cohesion contracts
         run: bash tests/test-quickshell-lockscreen-logo-cohesion.sh
+      - name: Runtime polish contracts
+        run: bash tests/test-quickshell-lockscreen-runtime-polish.sh
       - name: Weather refresh contracts
         run: bash tests/test-quickshell-lockscreen-weather.sh
       - name: Runtime service contracts
