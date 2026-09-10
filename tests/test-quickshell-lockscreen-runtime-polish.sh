@@ -177,6 +177,18 @@ require_text "$EDITOR" 'backgroundColorPicker' \
 require_text "$EDITOR" 'elementColorPicker' \
     'editor has no expandable per-element custom palette'
 
+# Auto contrast must update from draft state in the unlocked editor and persist only as a cache.
+require_text "$EDITOR" 'previewContrastProcess' \
+    'editor has no draft Auto-contrast process'
+require_text "$EDITOR" 'contrastRefreshDelay' \
+    'editor does not debounce draft contrast refreshes'
+require_text "$EDITOR" 'draftAutoAccents' \
+    'editor has no per-element draft Auto-contrast map'
+require_text "$EDITOR" '--stdout' \
+    'editor does not request non-persistent draft contrast output'
+require_text "$CONTRAST_HELPER" '--stdout' \
+    'contrast helper has no non-persistent draft-output mode'
+
 # Secure presentation accepts custom backgrounds and per-element cached Auto colors.
 require_text "$LOCK_SCENE" 'required property color backgroundColor' \
     'LockScene has no custom solid background color input'
