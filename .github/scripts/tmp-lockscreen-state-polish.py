@@ -1,978 +1,445 @@
 #!/usr/bin/env python3
 from pathlib import Path
 
+SCENE = Path("config/quickshell/awtarchy-lock/LockScene.qml")
+PREVIEW = Path("config/quickshell/awtarchy/LockPreviewScene.qml")
+EFFECTS_TEST = Path("tests/test-quickshell-lockscreen-interactive-effects.sh")
 
-def replace_once(path: str, old: str, new: str, label: str) -> None:
-    file_path = Path(path)
-    text = file_path.read_text()
+
+def replace_once(text: str, old: str, new: str, label: str) -> str:
     count = text.count(old)
     if count != 1:
         raise SystemExit(f"{label}: expected 1 match, found {count}")
-    file_path.write_text(text.replace(old, new, 1))
+    return text.replace(old, new, 1)
 
 
-def replace_tail(path: str, marker: str, tail: str, label: str) -> None:
-    file_path = Path(path)
-    text = file_path.read_text()
-    count = text.count(marker)
-    if count != 1:
-        raise SystemExit(f"{label}: expected 1 tail marker, found {count}")
-    index = text.index(marker)
-    file_path.write_text(text[:index] + tail)
+def remove_between(text: str, start: str, end: str, label: str) -> str:
+    start_count = text.count(start)
+    end_count = text.count(end)
+    if start_count != 1 or end_count < 1:
+        raise SystemExit(
+            f"{label}: expected one start and at least one end; got {start_count}/{end_count}"
+        )
+    begin = text.index(start)
+    finish = text.index(end, begin)
+    return text[:begin] + text[finish:]
 
 
-# BarState: expose the new persisted appearance fields safely to unlocked QML.
-bar_state = "config/quickshell/awtarchy/BarState.qml"
-replace_once(
-    bar_state,
-    '''            lockscreen_show_weather: false,
-            lockscreen_background: "black",
-            lockscreen_weather_location: "",
-            lockscreen_layout: root.defaultLockscreenLayout,''',
-    '''            lockscreen_show_weather: false,
-            lockscreen_background: "black",
-            lockscreen_background_color: "#000000",
-            lockscreen_wallpaper_path: "",
-            lockscreen_weather_location: "",
-            lockscreen_layout: root.defaultLockscreenLayout,''',
-    "BarState lockscreen appearance defaults",
-)
-replace_once(
-    bar_state,
-    '''    function lockscreenBackground() {
-        return String(data().lockscreen_background || "") === "wallpaper"
-            ? "wallpaper" : "black";
-    }
+text = SCENE.read_text()
 
-    function lockscreenWeatherLocation() {''',
-    '''    function lockscreenBackground() {
-        const value = String(data().lockscreen_background || "");
-        return ["black", "wallpaper", "color"].indexOf(value) >= 0 ? value : "black";
-    }
-
-    function lockscreenBackgroundColor() {
-        const value = String(data().lockscreen_background_color || "#000000").toLowerCase();
-        return /^#[0-9a-f]{6}$/.test(value) ? value : "#000000";
-    }
-
-    function lockscreenWallpaperPath() {
-        const value = data().lockscreen_wallpaper_path;
-        if (typeof value !== "string" || !value.startsWith("/")
-                || value.indexOf("://") >= 0 || /[\\u0000-\\u001f\\u007f-\\u009f]/.test(value))
-            return "";
-        return value;
-    }
-
-    function lockscreenWeatherLocation() {''',
-    "BarState lockscreen appearance readers",
+text = replace_once(
+    text,
+    '''    readonly property real audioDisplacementCap: 6 * uiScale
+    readonly property real logoBridgeMaxDistance: Math.sqrt(
+        wordmarkCellWidth * wordmarkCellWidth + wordmarkCellHeight * wordmarkCellHeight) * 1.35
+    readonly property real logoBridgeInteractionBoost: 0.30
+    readonly property var logoBridgePairs: buildLogoBridgePairs()
+    readonly property real pointerMovementThreshold: 3 * uiScale''',
+    '''    readonly property real audioDisplacementCap: 6 * uiScale
+    readonly property int pointerResponseDurationMs: 100
+    readonly property int pointerReturnDurationMs: 180
+    readonly property var logoCohesionGroups: buildLogoCohesionGroups()
+    readonly property real pointerMovementThreshold: 3 * uiScale''',
+    "cohesion properties",
 )
 
-
-# Shared presentation scene: custom background and per-element cached Auto colors.
-def patch_scene(path: str) -> None:
-    replace_once(
-        path,
-        '''    required property string backgroundMode
-    required property string wallpaperSource
-    required property color autoAccent
-    required property var layout''',
-        '''    required property string backgroundMode
-    required property string wallpaperSource
-    required property color backgroundColor
-    required property var autoAccents
-    required property var layout''',
-        f"{path} appearance inputs",
-    )
-    replace_once(
-        path,
-        '''    function elementColor(name) {
-        const point = normalizedPoint(name);
-        const value = String(point && point.color !== undefined ? point.color : "auto");
-        return value === "auto" ? root.autoAccent
-            : /^#[0-9a-fA-F]{6}$/.test(value) ? value : root.autoAccent;
-    }''',
-        '''    function elementColor(name) {
-        const point = normalizedPoint(name);
-        const value = String(point && point.color !== undefined ? point.color : "auto");
-        const automatic = String(root.autoAccents && root.autoAccents[name] !== undefined
-            ? root.autoAccents[name] : "#ffffff");
-        const safeAuto = /^#[0-9a-fA-F]{6}$/.test(automatic) ? automatic : "#ffffff";
-        return value === "auto" ? safeAuto
-            : /^#[0-9a-fA-F]{6}$/.test(value) ? value : safeAuto;
-    }''',
-        f"{path} per-element Auto color",
-    )
-    replace_once(
-        path,
-        '''    Rectangle {
-        anchors.fill: parent
-        color: "#000000"
-    }''',
-        '''    Rectangle {
-        anchors.fill: parent
-        color: root.backgroundMode === "color" ? root.backgroundColor : "#000000"
-    }''',
-        f"{path} custom solid background",
-    )
-
-
-patch_scene("config/quickshell/awtarchy-lock/LockScene.qml")
-patch_scene("config/quickshell/awtarchy/LockPreviewScene.qml")
-
-
-# Secure surface remains the auth owner; only presentation values are threaded through.
-lock_surface = "config/quickshell/awtarchy-lock/LockSurface.qml"
-replace_once(
-    lock_surface,
-    '''    required property string backgroundMode
-    required property string wallpaperSource
-    required property color autoAccent
-    required property var layout''',
-    '''    required property string backgroundMode
-    required property string wallpaperSource
-    required property color backgroundColor
-    required property var autoAccents
-    required property var layout''',
-    "LockSurface appearance inputs",
-)
-replace_once(
-    lock_surface,
-    '''        backgroundMode: root.backgroundMode
-        wallpaperSource: root.wallpaperSource
-        autoAccent: root.autoAccent
-        layout: root.layout''',
-    '''        backgroundMode: root.backgroundMode
-        wallpaperSource: root.wallpaperSource
-        backgroundColor: root.backgroundColor
-        autoAccents: root.autoAccents
-        layout: root.layout''',
-    "LockSurface scene appearance wiring",
+text = replace_once(
+    text,
+    '''    property bool pointerActive: false
+    property var wordmarkCells: ({})
+    property real ghostHeadX: -100''',
+    '''    property bool pointerActive: false
+    property var wordmarkCells: ({})
+    property real pointerFieldX: -1000
+    property real pointerFieldY: -1000
+    property real pointerFieldStrength: 0
+    property real clickFieldX: -1000
+    property real clickFieldY: -1000
+    property real clickFieldStrength: 0
+    property real ghostHeadX: -100''',
+    "interaction fields",
 )
 
-
-# Secure shell only reads local persisted state/cache. No editor, picker, network, or auth changes.
-lock_shell = "config/quickshell/awtarchy-lock/shell.qml"
-replace_once(
-    lock_shell,
-    '''    property bool lockShowWeather: false
-    property string lockBackground: "black"
-    property string lockWeatherLocation: ""
-    property var lockLayout: defaultLockLayout()''',
-    '''    property bool lockShowWeather: false
-    property string lockBackground: "black"
-    property color lockBackgroundColor: "#000000"
-    property string lockWallpaperPath: ""
-    property string lockWeatherLocation: ""
-    property var lockLayout: defaultLockLayout()''',
-    "secure shell appearance state",
-)
-replace_once(
-    lock_shell,
-    '''    function normalizedBackground(value) {
-        const key = String(value || "");
-        return key === "wallpaper" ? "wallpaper" : "black";
+old_group_start = '''    function buildLogoBridgePairs() {'''
+old_group_end = '''    function minuteTimeFormat() {'''
+new_group_block = '''    function logoCellKey(row, column) {
+        return String(row) + ":" + String(column);
     }
 
-    function layoutPoint(value, fallback, password) {''',
-    '''    function normalizedBackground(value) {
-        const key = String(value || "");
-        return ["black", "wallpaper", "color"].indexOf(key) >= 0 ? key : "black";
-    }
+    function buildLogoCohesionGroups() {
+        const groups = [];
+        const visited = ({});
+        const neighbors = [
+            ({ row: 0, column: 1 }),
+            ({ row: 1, column: 0 }),
+            ({ row: 0, column: -1 }),
+            ({ row: -1, column: 0 })
+        ];
+        let groupId = 0;
 
-    function normalizedBackgroundColor(value) {
-        const key = String(value || "#000000").toLowerCase();
-        return /^#[0-9a-f]{6}$/.test(key) ? key : "#000000";
-    }
+        for (let row = 0; row < wordmarkRows.length; ++row) {
+            for (let column = 0; column < wordmarkColumns; ++column) {
+                const firstKey = logoCellKey(row, column);
+                if (!isFilledWordmarkCell(row, column) || visited[firstKey])
+                    continue;
 
-    function normalizedWallpaperPath(value) {
-        const path = typeof value === "string" ? value : "";
-        if (!path.startsWith("/") || path.indexOf("://") >= 0
-                || /[\\u0000-\\u001f\\u007f-\\u009f]/.test(path))
-            return "";
-        return path;
-    }
+                const queue = [({ row: row, column: column })];
+                const cells = [];
+                const members = ({});
+                let cursor = 0;
+                let sumX = 0;
+                let sumY = 0;
+                visited[firstKey] = true;
 
-    function layoutPoint(value, fallback, password) {''',
-    "secure shell appearance normalizers",
-)
-replace_once(
-    lock_shell,
-    '''        lockShowWeather = false;
-        lockBackground = "black";
-        lockWeatherLocation = "";
-        lockLayout = defaultLockLayout();''',
-    '''        lockShowWeather = false;
-        lockBackground = "black";
-        lockBackgroundColor = "#000000";
-        lockWallpaperPath = "";
-        lockWeatherLocation = "";
-        lockLayout = defaultLockLayout();''',
-    "secure shell appearance reset",
-)
-replace_once(
-    lock_shell,
-    '''            lockShowWeather = normalizedBoolean(parsed.lockscreen_show_weather, false);
-            lockBackground = normalizedBackground(parsed.lockscreen_background);
-            lockWeatherLocation = normalizedWeatherLocation(parsed.lockscreen_weather_location);
-            lockLayout = normalizedLayout(parsed.lockscreen_layout);''',
-    '''            lockShowWeather = normalizedBoolean(parsed.lockscreen_show_weather, false);
-            lockBackground = normalizedBackground(parsed.lockscreen_background);
-            lockBackgroundColor = normalizedBackgroundColor(parsed.lockscreen_background_color);
-            lockWallpaperPath = normalizedWallpaperPath(parsed.lockscreen_wallpaper_path);
-            lockWeatherLocation = normalizedWeatherLocation(parsed.lockscreen_weather_location);
-            lockLayout = normalizedLayout(parsed.lockscreen_layout);''',
-    "secure shell appearance load",
-)
-replace_once(
-    lock_shell,
-    '''    LockWallpaperState {
-        id: lockWallpaperState
-    }''',
-    '''    LockWallpaperState {
-        id: lockWallpaperState
-        path: root.lockWallpaperPath
-    }''',
-    "secure wallpaper path wiring",
-)
-replace_once(
-    lock_shell,
-    '''                backgroundMode: root.lockBackground
-                wallpaperSource: lockWallpaperState.source
-                autoAccent: root.lockBackground === "black" ? "#ffffff" : lockContrastCache.accent
-                layout: root.lockLayout''',
-    '''                backgroundMode: root.lockBackground
-                wallpaperSource: lockWallpaperState.source
-                backgroundColor: root.lockBackgroundColor
-                autoAccents: lockContrastCache.colors
-                layout: root.lockLayout''',
-    "secure surface appearance wiring",
-)
+                while (cursor < queue.length) {
+                    const cell = queue[cursor++];
+                    const key = logoCellKey(cell.row, cell.column);
+                    cells.push(cell);
+                    members[key] = true;
+                    sumX += (cell.column + 0.5) * wordmarkCellWidth;
+                    sumY += (cell.row + 0.5) * wordmarkCellHeight;
 
-
-# Unlocked editor: draft-only appearance, selection-only Awtwall picker, live local contrast.
-editor = "config/quickshell/awtarchy/LockscreenEditor.qml"
-replace_once(
-    editor,
-    '''    readonly property string stateBackend: configHome + "/hypr/scripts/quickshell_application_state.sh"
-    readonly property bool open: editorWindow.visible''',
-    '''    readonly property string stateBackend: configHome + "/hypr/scripts/quickshell_application_state.sh"
-    readonly property string contrastBackend: configHome + "/hypr/scripts/quickshell_lockscreen_contrast.sh"
-    readonly property string wallpaperPickerBackend: configHome + "/hypr/scripts/quickshell_lockscreen_wallpaper_picker.sh"
-    readonly property bool open: editorWindow.visible''',
-    "editor helper paths",
-)
-replace_once(
-    editor,
-    '''    property var draftLayout: defaultLayout()
-    property var draftVisibility: defaultVisibility()
-    property string selectedElement: "logo"
-    property string statusMessage: ""''',
-    '''    property var draftLayout: defaultLayout()
-    property var draftVisibility: defaultVisibility()
-    property string draftBackgroundMode: "black"
-    property string draftBackgroundColor: "#000000"
-    property string draftWallpaperPath: ""
-    property var draftAutoAccents: defaultAutoAccents()
-    property string selectedElement: "logo"
-    property string statusMessage: ""
-    property bool elementPaletteOpen: false
-    property bool backgroundPaletteOpen: false
-    property bool contrastRefreshPending: false''',
-    "editor appearance draft state",
-)
-replace_once(
-    editor,
-    '''    function cloneObject(value, fallback) {''',
-    '''    function defaultAutoAccents() {
-        return ({
-            logo: "#ffffff",
-            time: "#ffffff",
-            date: "#ffffff",
-            username: "#ffffff",
-            weather: "#ffffff",
-            password: "#ffffff"
-        });
-    }
-
-    function validHex(value) {
-        return /^#[0-9a-f]{6}$/.test(String(value || "").toLowerCase());
-    }
-
-    function setAllDraftColors(colorValue) {
-        const value = String(colorValue || "").trim().toLowerCase();
-        if (value !== "auto" && !validHex(value))
-            return;
-        const next = cloneLayout(draftLayout);
-        for (const name of elementNames)
-            next[name].color = value;
-        draftLayout = next;
-        statusMessage = value === "auto" ? "All elements use Auto contrast"
-            : "All element colors updated";
-    }
-
-    function resetElementPosition(name) {
-        if (elementNames.indexOf(name) < 0)
-            return;
-        const defaults = defaultLayout();
-        const next = cloneLayout(draftLayout);
-        next[name].x = defaults[name].x;
-        next[name].y = defaults[name].y;
-        draftLayout = next;
-        selectedElement = name;
-        statusMessage = elementLabel(name) + " position reset";
-        scheduleContrastRefresh();
-    }
-
-    function setDraftBackgroundMode(mode) {
-        const value = String(mode || "");
-        if (["black", "wallpaper", "color"].indexOf(value) < 0)
-            return;
-        if (value === "wallpaper" && draftWallpaperPath.length === 0) {
-            statusMessage = "Choose a lockscreen wallpaper first";
-            return;
-        }
-        draftBackgroundMode = value;
-        statusMessage = "";
-        scheduleContrastRefresh();
-    }
-
-    function setDraftBackgroundColor(colorValue) {
-        const value = String(colorValue || "").trim().toLowerCase();
-        if (!validHex(value)) {
-            statusMessage = "Background color must be #RRGGBB";
-            return;
-        }
-        draftBackgroundColor = value;
-        draftBackgroundMode = "color";
-        statusMessage = "";
-        scheduleContrastRefresh();
-    }
-
-    function acceptWallpaperSelection(line) {
-        if (!open)
-            return;
-        const value = String(line || "").trim();
-        if (!value.startsWith("/") || value.indexOf("://") >= 0) {
-            statusMessage = "Awtwall returned an invalid local wallpaper";
-            return;
-        }
-        draftWallpaperPath = value;
-        draftBackgroundMode = "wallpaper";
-        statusMessage = "Wallpaper selected. Save to apply.";
-        scheduleContrastRefresh();
-    }
-
-    function scheduleContrastRefresh() {
-        if (!open)
-            return;
-        contrastRefreshPending = true;
-        contrastRefreshDelay.restart();
-    }
-
-    function refreshPreviewContrast() {
-        if (!open)
-            return;
-        if (previewContrastProcess.running) {
-            contrastRefreshPending = true;
-            return;
-        }
-        contrastRefreshPending = false;
-        previewContrastProcess.exec([
-            "bash", contrastBackend, "--stdout",
-            "--background", draftBackgroundMode,
-            "--background-color", draftBackgroundColor,
-            "--wallpaper", draftWallpaperPath,
-            "--layout-json", JSON.stringify(draftLayout)
-        ]);
-    }
-
-    function applyPreviewContrastLine(line) {
-        try {
-            const payload = JSON.parse(String(line || ""));
-            if (!payload || payload.provider !== "awtarchy-local-contrast"
-                    || !payload.colors || typeof payload.colors !== "object")
-                return;
-            const next = defaultAutoAccents();
-            for (const name of elementNames) {
-                const value = String(payload.colors[name] || "").toLowerCase();
-                next[name] = validHex(value) ? value : "#ffffff";
-            }
-            draftAutoAccents = next;
-        } catch (error) {
-            // Keep the current safe preview colors on malformed helper output.
-        }
-    }
-
-    function cloneObject(value, fallback) {''',
-    "editor appearance helper functions",
-)
-replace_once(
-    editor,
-    '''    function setDraftPoint(name, x, y) {
-        if (elementNames.indexOf(name) < 0)
-            return;
-        const next = cloneLayout(draftLayout);
-        const point = clampPoint(name, Number(x), Number(y));
-        next[name] = ({
-            x: point.x,
-            y: point.y,
-            scale: next[name].scale,
-            color: next[name].color
-        });
-        draftLayout = next;
-        selectedElement = name;
-    }''',
-    '''    function setDraftPoint(name, x, y) {
-        if (elementNames.indexOf(name) < 0)
-            return;
-        const next = cloneLayout(draftLayout);
-        const point = clampPoint(name, Number(x), Number(y));
-        next[name] = ({
-            x: point.x,
-            y: point.y,
-            scale: next[name].scale,
-            color: next[name].color
-        });
-        draftLayout = next;
-        selectedElement = name;
-        scheduleContrastRefresh();
-    }''',
-    "editor drag contrast refresh",
-)
-replace_once(
-    editor,
-    '''    function resetDraft() {
-        draftLayout = defaultLayout();
-        draftVisibility = defaultVisibility();
-        selectedElement = "logo";
-        statusMessage = "Defaults loaded. Save to apply.";
-    }''',
-    '''    function resetDraft() {
-        draftLayout = defaultLayout();
-        draftVisibility = defaultVisibility();
-        draftBackgroundMode = "black";
-        draftBackgroundColor = "#000000";
-        draftWallpaperPath = "";
-        draftAutoAccents = defaultAutoAccents();
-        selectedElement = "logo";
-        elementPaletteOpen = false;
-        backgroundPaletteOpen = false;
-        statusMessage = "Defaults loaded. Save to apply.";
-        scheduleContrastRefresh();
-    }''',
-    "editor appearance reset",
-)
-replace_once(
-    editor,
-    '''    function loadPersistedDraft() {
-        draftLayout = cloneLayout(BarState.lockscreenLayout());
-        draftVisibility = cloneVisibility(({
-            logo: BarState.lockscreenShowLogo(),
-            time: BarState.lockscreenShowTime(),
-            date: BarState.lockscreenShowDate(),
-            username: BarState.lockscreenShowUsername(),
-            weather: BarState.lockscreenShowWeather(),
-            password: true
-        }));
-        selectedElement = elementNames.indexOf(selectedElement) >= 0 ? selectedElement : "logo";
-        statusMessage = "";
-    }''',
-    '''    function loadPersistedDraft() {
-        draftLayout = cloneLayout(BarState.lockscreenLayout());
-        draftVisibility = cloneVisibility(({
-            logo: BarState.lockscreenShowLogo(),
-            time: BarState.lockscreenShowTime(),
-            date: BarState.lockscreenShowDate(),
-            username: BarState.lockscreenShowUsername(),
-            weather: BarState.lockscreenShowWeather(),
-            password: true
-        }));
-        draftBackgroundMode = BarState.lockscreenBackground();
-        draftBackgroundColor = BarState.lockscreenBackgroundColor();
-        draftWallpaperPath = BarState.lockscreenWallpaperPath();
-        draftAutoAccents = defaultAutoAccents();
-        selectedElement = elementNames.indexOf(selectedElement) >= 0 ? selectedElement : "logo";
-        elementPaletteOpen = false;
-        backgroundPaletteOpen = false;
-        statusMessage = "";
-    }''',
-    "editor persisted appearance load",
-)
-replace_once(
-    editor,
-    '''        loadPersistedDraft();
-        editorWindow.visible = true;
-        FlyoutManager.claimOverlay("lockscreen-editor");
-        Qt.callLater(() => editorFocus.forceActiveFocus());''',
-    '''        loadPersistedDraft();
-        editorWindow.visible = true;
-        FlyoutManager.claimOverlay("lockscreen-editor");
-        scheduleContrastRefresh();
-        Qt.callLater(() => editorFocus.forceActiveFocus());''',
-    "editor open contrast refresh",
-)
-replace_once(
-    editor,
-    '''    function save() {
-        if (saveProcess.running)
-            return;
-        statusMessage = "Saving…";
-        saveProcess.exec([
-            "bash",
-            stateBackend,
-            "save-lockscreen-editor",
-            JSON.stringify(draftLayout),
-            JSON.stringify(draftVisibility)
-        ]);
-    }''',
-    '''    function save() {
-        if (saveProcess.running || contrastPersistProcess.running)
-            return;
-        statusMessage = "Saving…";
-        saveProcess.exec([
-            "bash",
-            stateBackend,
-            "save-lockscreen-editor",
-            JSON.stringify(draftLayout),
-            JSON.stringify(draftVisibility),
-            draftBackgroundMode,
-            draftBackgroundColor,
-            draftWallpaperPath
-        ]);
-    }''',
-    "editor atomic appearance save",
-)
-replace_once(
-    editor,
-    '''    Process {
-        id: saveProcess
-        onExited: (exitCode, exitStatus) => {
-            if (exitCode === 0) {
-                BarState.refresh();
-                root.statusMessage = "Saved";
-                closeAfterSave.restart();
-            } else {
-                root.statusMessage = "Could not save lockscreen presentation";
-            }
-        }
-    }''',
-    '''    Process {
-        id: saveProcess
-        onExited: (exitCode, exitStatus) => {
-            if (exitCode === 0) {
-                BarState.refresh();
-                root.statusMessage = "Refreshing Auto contrast…";
-                contrastPersistProcess.exec(["bash", root.contrastBackend]);
-            } else {
-                root.statusMessage = "Could not save lockscreen presentation";
-            }
-        }
-    }
-
-    Process {
-        id: contrastPersistProcess
-        onExited: (exitCode, exitStatus) => {
-            root.statusMessage = exitCode === 0 ? "Saved"
-                : "Saved; Auto contrast cache could not refresh";
-            closeAfterSave.restart();
-        }
-    }''',
-    "editor post-save contrast cache",
-)
-replace_once(
-    editor,
-    '''    LockPreviewWallpaperState {
-        id: wallpaperState
-    }
-
-    Shortcut {''',
-    '''    LockPreviewWallpaperState {
-        id: wallpaperState
-        path: root.draftWallpaperPath
-    }
-
-    Timer {
-        id: contrastRefreshDelay
-        interval: 120
-        repeat: false
-        onTriggered: root.refreshPreviewContrast()
-    }
-
-    Process {
-        id: previewContrastProcess
-        stdout: SplitParser {
-            onRead: line => root.applyPreviewContrastLine(line)
-        }
-        onExited: (exitCode, exitStatus) => {
-            if (root.contrastRefreshPending)
-                contrastRefreshDelay.restart();
-        }
-    }
-
-    Process {
-        id: wallpaperPickerProcess
-        stdout: SplitParser {
-            onRead: line => root.acceptWallpaperSelection(line)
-        }
-        onExited: (exitCode, exitStatus) => {
-            if (root.open && exitCode !== 0 && root.statusMessage.length === 0)
-                root.statusMessage = "Lockscreen wallpaper picker closed";
-        }
-    }
-
-    Shortcut {''',
-    "editor local wallpaper and contrast processes",
-)
-replace_once(
-    editor,
-    '''                backgroundMode: BarState.lockscreenBackground()
-                wallpaperSource: wallpaperState.source
-                autoAccent: BarState.lockscreenBackground() === "black"
-                    ? "#ffffff" : LockscreenContrast.accent
-                layout: root.draftLayout''',
-    '''                backgroundMode: root.draftBackgroundMode
-                wallpaperSource: wallpaperState.source
-                backgroundColor: root.draftBackgroundColor
-                autoAccents: root.draftAutoAccents
-                layout: root.draftLayout''',
-    "editor live appearance preview",
-)
-
-panel_marker = '''            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                height: 138
-                color: Theme.popupBackground'''
-panel_tail = '''            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                height: 184 + ((root.elementPaletteOpen || root.backgroundPaletteOpen) ? 150 : 0)
-                color: Theme.popupBackground
-                border.width: 1
-                border.color: Theme.muted
-                z: 300
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 9
-                    spacing: 6
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 7
-
-                        Text {
-                            text: root.elementLabel(root.selectedElement)
-                            color: Theme.foreground
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 10
-                            font.bold: true
-                        }
-
-                        SettingsButton {
-                            label: root.selectedElement === "logo"
-                                ? (root.elementEnabled("logo") ? "Logo visible" : "Logo hidden")
-                                : root.elementCanHide(root.selectedElement)
-                                    ? (root.elementEnabled(root.selectedElement) ? "Visible" : "Hidden")
-                                    : "Always visible"
-                            active: root.elementEnabled(root.selectedElement)
-                            available: root.elementCanHide(root.selectedElement)
-                            textSize: 9
-                            onClicked: root.setDraftVisible(root.selectedElement,
-                                !root.elementEnabled(root.selectedElement))
-                        }
-
-                        Text {
-                            text: "Scale"
-                            color: Theme.muted
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 9
-                        }
-
-                        SettingsButton {
-                            label: "−"
-                            available: root.elementScale(root.selectedElement) > 0.50
-                            textSize: 10
-                            onClicked: root.setDraftScale(root.selectedElement,
-                                root.elementScale(root.selectedElement) - 0.10)
-                        }
-
-                        Text {
-                            text: Math.round(root.elementScale(root.selectedElement) * 100) + "%"
-                            color: Theme.foreground
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 9
-                            Layout.preferredWidth: 42
-                            horizontalAlignment: Text.AlignHCenter
-                        }
-
-                        SettingsButton {
-                            label: "+"
-                            available: root.elementScale(root.selectedElement) < 2.00
-                            textSize: 10
-                            onClicked: root.setDraftScale(root.selectedElement,
-                                root.elementScale(root.selectedElement) + 0.10)
-                        }
-
-                        SettingsButton {
-                            label: "Reset Position"
-                            textSize: 9
-                            onClicked: root.resetElementPosition(root.selectedElement)
-                        }
-
-                        Item { Layout.fillWidth: true }
-
-                        Text {
-                            text: root.statusMessage.length > 0
-                                ? root.statusMessage
-                                : "Drag the actual lockscreen visuals. Hidden items stay faded so they can be restored."
-                            color: Theme.muted
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 9
-                            elide: Text.ElideRight
-                            Layout.maximumWidth: 470
-                        }
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 7
-
-                        Text {
-                            text: "Element color"
-                            color: Theme.muted
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 9
-                        }
-
-                        SettingsButton {
-                            label: "Auto"
-                            active: root.elementColor(root.selectedElement) === "auto"
-                            textSize: 9
-                            onClicked: root.setDraftColor(root.selectedElement, "auto")
-                        }
-                        SettingsButton {
-                            label: "White"
-                            active: root.elementColor(root.selectedElement) === "#ffffff"
-                            textSize: 9
-                            onClicked: root.setDraftColor(root.selectedElement, "#ffffff")
-                        }
-                        SettingsButton {
-                            label: "Black"
-                            active: root.elementColor(root.selectedElement) === "#000000"
-                            textSize: 9
-                            onClicked: root.setDraftColor(root.selectedElement, "#000000")
-                        }
-                        SettingsButton {
-                            label: "Custom"
-                            active: root.elementPaletteOpen
-                            textSize: 9
-                            onClicked: {
-                                root.elementPaletteOpen = !root.elementPaletteOpen;
-                                if (root.elementPaletteOpen)
-                                    root.backgroundPaletteOpen = false;
-                            }
-                        }
-
-                        Text {
-                            text: "All:"
-                            color: Theme.muted
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 9
-                        }
-                        SettingsButton { label: "Auto All"; textSize: 9; onClicked: root.setAllDraftColors("auto") }
-                        SettingsButton { label: "White All"; textSize: 9; onClicked: root.setAllDraftColors("#ffffff") }
-                        SettingsButton { label: "Black All"; textSize: 9; onClicked: root.setAllDraftColors("#000000") }
-
-                        Item { Layout.fillWidth: true }
-
-                        Text {
-                            text: "Auto is calculated independently around each element."
-                            color: Theme.muted
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 9
-                            elide: Text.ElideRight
-                        }
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 7
-
-                        Text {
-                            text: "Background"
-                            color: Theme.muted
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 9
-                        }
-                        SettingsButton {
-                            label: "Black"
-                            active: root.draftBackgroundMode === "black"
-                            textSize: 9
-                            onClicked: root.setDraftBackgroundMode("black")
-                        }
-                        SettingsButton {
-                            label: "Wallpaper"
-                            active: root.draftBackgroundMode === "wallpaper"
-                            textSize: 9
-                            onClicked: {
-                                if (root.draftWallpaperPath.length > 0)
-                                    root.setDraftBackgroundMode("wallpaper");
-                                else if (!wallpaperPickerProcess.running) {
-                                    root.statusMessage = "Opening lockscreen wallpaper picker…";
-                                    wallpaperPickerProcess.exec(["bash", root.wallpaperPickerBackend]);
-                                }
-                            }
-                        }
-                        SettingsButton {
-                            label: "Choose Wallpaper"
-                            textSize: 9
-                            available: !wallpaperPickerProcess.running
-                            onClicked: {
-                                root.statusMessage = "Opening lockscreen wallpaper picker…";
-                                wallpaperPickerProcess.exec(["bash", root.wallpaperPickerBackend]);
-                            }
-                        }
-                        SettingsButton {
-                            label: "Color"
-                            active: root.draftBackgroundMode === "color"
-                            textSize: 9
-                            onClicked: {
-                                root.setDraftBackgroundMode("color");
-                                root.backgroundPaletteOpen = true;
-                                root.elementPaletteOpen = false;
-                            }
-                        }
-                        SettingsButton {
-                            label: "Palette"
-                            active: root.backgroundPaletteOpen
-                            textSize: 9
-                            onClicked: {
-                                root.backgroundPaletteOpen = !root.backgroundPaletteOpen;
-                                if (root.backgroundPaletteOpen)
-                                    root.elementPaletteOpen = false;
-                            }
-                        }
-
-                        Text {
-                            Layout.fillWidth: true
-                            text: root.draftWallpaperPath.length > 0
-                                ? "Lockscreen wallpaper: " + root.draftWallpaperPath.split("/").pop()
-                                : "Lockscreen wallpaper is independent from the desktop."
-                            color: Theme.muted
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 9
-                            elide: Text.ElideMiddle
-                        }
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: visible ? 142 : 0
-                        spacing: 12
-                        visible: root.elementPaletteOpen || root.backgroundPaletteOpen
-
-                        InlineColorPicker {
-                            id: elementColorPicker
-                            visible: root.elementPaletteOpen
-                            Layout.preferredWidth: 320
-                            Layout.preferredHeight: visible ? 142 : 0
-                            colorValue: root.elementColor(root.selectedElement) === "auto"
-                                ? String(root.draftAutoAccents[root.selectedElement] || "#ffffff")
-                                : root.elementColor(root.selectedElement)
-                            onColorEdited: hex => root.setDraftColor(root.selectedElement, hex)
-                        }
-
-                        InlineColorPicker {
-                            id: backgroundColorPicker
-                            visible: root.backgroundPaletteOpen
-                            Layout.preferredWidth: 320
-                            Layout.preferredHeight: visible ? 142 : 0
-                            colorValue: root.draftBackgroundColor
-                            onColorEdited: hex => root.setDraftBackgroundColor(hex)
-                        }
-
-                        Item { Layout.fillWidth: true }
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-
-                        Text {
-                            Layout.fillWidth: true
-                            text: "Changes are live preview only until Save. Password cannot be hidden."
-                            color: Theme.muted
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 9
-                            elide: Text.ElideRight
-                        }
-
-                        SettingsButton {
-                            label: "Restore Defaults"
-                            textSize: 10
-                            onClicked: root.resetDraft()
-                        }
-                        SettingsButton { label: "Cancel"; textSize: 10; onClicked: root.close() }
-                        SettingsButton {
-                            label: "Save"
-                            active: true
-                            textSize: 10
-                            available: !saveProcess.running && !contrastPersistProcess.running
-                            onClicked: root.save()
+                    for (let i = 0; i < neighbors.length; ++i) {
+                        const nextRow = cell.row + neighbors[i].row;
+                        const nextColumn = cell.column + neighbors[i].column;
+                        const nextKey = logoCellKey(nextRow, nextColumn);
+                        if (!visited[nextKey] && isFilledWordmarkCell(nextRow, nextColumn)) {
+                            visited[nextKey] = true;
+                            queue.push(({ row: nextRow, column: nextColumn }));
                         }
                     }
                 }
+
+                groups.push(({
+                    id: groupId,
+                    cells: cells,
+                    members: members,
+                    centerX: sumX / Math.max(1, cells.length),
+                    centerY: sumY / Math.max(1, cells.length)
+                }));
+                ++groupId;
             }
         }
+        return groups;
     }
-}
-'''
-replace_tail(editor, panel_marker, panel_tail, "editor control panel")
 
+    function logoGroupFor(row, column) {
+        const key = logoCellKey(row, column);
+        for (let i = 0; i < logoCohesionGroups.length; ++i) {
+            const group = logoCohesionGroups[i];
+            if (group.members && group.members[key])
+                return group;
+        }
+        return null;
+    }
 
-# Quick Settings no longer performs desktop-wallpaper actions for lockscreen selection.
-quick_settings = "config/quickshell/awtarchy/QuickSettings.qml"
-replace_once(
-    quick_settings,
-    '''                                SettingsButton {
-                                    label: "Choose with Awtwall"
-                                    textSize: root.scaledText(9)
-                                    onClicked: {
-                                        root.queueStateCommand(["set-lockscreen-background", "wallpaper"]);
-                                        root.queueAction(["wallpaper"], "Opening Awtwall wallpaper picker…");
-                                        root.close();
-                                    }
+    function registerWordmarkCell(row, column, cell) {
+        const next = Object.assign({}, wordmarkCells);
+        next[logoCellKey(row, column)] = cell;
+        wordmarkCells = next;
+    }
+
+    function logoGroupReady(group) {
+        if (!group || !Array.isArray(group.cells) || group.cells.length === 0)
+            return false;
+        for (let i = 0; i < group.cells.length; ++i) {
+            const member = group.cells[i];
+            const cell = wordmarkCells[logoCellKey(member.row, member.column)];
+            if (!cell || cell.formationProgress < 0.96)
+                return false;
+        }
+        return true;
+    }
+
+    function radialFieldOffset(group, fieldX, fieldY, strength, radius, cap) {
+        if (!group || strength <= 0 || radius <= 0 || cap <= 0)
+            return ({ x: 0, y: 0 });
+
+        let dx = group.centerX - fieldX;
+        let dy = group.centerY - fieldY;
+        let distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance >= radius)
+            return ({ x: 0, y: 0 });
+        if (distance < 0.001) {
+            const angle = (group.id + 1) * 2.399963229728653;
+            dx = Math.cos(angle);
+            dy = Math.sin(angle);
+            distance = 1;
+        }
+
+        const raw = Math.max(0, Math.min(1, 1 - distance / radius));
+        const proximity = raw * raw * (3 - 2 * raw);
+        const magnitude = cap * proximity * Math.max(0, Math.min(1, strength));
+        return ({
+            x: dx / distance * magnitude,
+            y: dy / distance * magnitude
+        });
+    }
+
+    function logoDeformationOffset(group) {
+        if (!group)
+            return ({ x: 0, y: 0 });
+        const pointer = pointerEffectsEnabled
+            ? radialFieldOffset(group, pointerFieldX, pointerFieldY,
+                pointerFieldStrength, pointerInfluenceRadius, pointerDisplacementCap)
+            : ({ x: 0, y: 0 });
+        const click = mouseInteractive
+            ? radialFieldOffset(group, clickFieldX, clickFieldY,
+                clickFieldStrength, clickInfluenceRadius, clickDisplacementCap)
+            : ({ x: 0, y: 0 });
+        return ({
+            x: Math.max(-clickDisplacementCap,
+                Math.min(clickDisplacementCap, pointer.x + click.x)),
+            y: Math.max(-clickDisplacementCap,
+                Math.min(clickDisplacementCap, pointer.y + click.y))
+        });
+    }
+
+    function logoGroupAudioOffset(group) {
+        if (!group || !audioEffectsEnabled)
+            return ({ x: 0, y: 0 });
+        const normalizedX = wordmarkWidth > 0 ? group.centerX / wordmarkWidth - 0.5 : 0;
+        const normalizedY = wordmarkHeight > 0 ? group.centerY / wordmarkHeight - 0.5 : 0;
+        const edgeWeight = Math.min(1,
+            Math.sqrt(normalizedX * normalizedX + normalizedY * normalizedY) * 2);
+        const band = group.id % 3;
+        const energy = band === 0 ? audioLow : band === 1 ? audioMid : audioHigh;
+        const envelope = Math.max(0, Math.min(1, energy)) * Math.pow(edgeWeight, 1.35);
+        if (envelope <= 0)
+            return ({ x: 0, y: 0 });
+        const angle = (group.id + 1) * 1.61803398875;
+        const rate = 0.82 + (group.id % 5) * 0.07;
+        return ({
+            x: Math.max(-audioDisplacementCap,
+                Math.min(audioDisplacementCap,
+                    Math.sin(audioPhase * rate + angle) * envelope * audioDisplacementCap)),
+            y: Math.max(-audioDisplacementCap,
+                Math.min(audioDisplacementCap,
+                    Math.cos(audioPhase * (rate + 0.09) + angle)
+                        * envelope * audioDisplacementCap * 0.82))
+        });
+    }
+
+    function minuteTimeFormat() {'''
+start = text.index(old_group_start)
+finish = text.index(old_group_end, start)
+text = text[:start] + new_group_block + text[finish + len(old_group_end):]
+
+old_pointer_start = '''    function applyPointerImpulse(x, y, speed) {'''
+old_pointer_end = '''    Rectangle {
+        anchors.fill: parent
+        color: root.backgroundMode === "color" ? root.backgroundColor : "#000000"
+    }'''
+new_pointer_block = '''    function updatePointerField(x, y, speed) {
+        if (!pointerEffectsEnabled)
+            return;
+        const local = wordmarkItem.mapFromItem(root, x, y);
+        pointerFieldX = local.x;
+        pointerFieldY = local.y;
+        pointerFieldStrength = 0.35 + 0.65 * Math.min(1, Math.max(0, speed) / 1400);
+    }
+
+    function applyClickField(x, y) {
+        if (!mouseInteractive)
+            return;
+        const local = wordmarkItem.mapFromItem(root, x, y);
+        clickFieldX = local.x;
+        clickFieldY = local.y;
+        clickFieldStrength = 1;
+        clickFieldDecay.restart();
+    }
+
+    function handlePointerClick(x, y) {
+        if (!mouseInteractive)
+            return;
+        pointerActive = true;
+        pushGhostSample(x, y);
+        applyClickField(x, y);
+        lastPointerX = x;
+        lastPointerY = y;
+        lastPointerSampleTime = Date.now();
+    }
+
+    function handlePointerMotion(x, y) {
+        if (!mouseInteractive)
+            return;
+
+        pointerActive = true;
+        const now = Date.now();
+        const hasPrevious = lastPointerX >= 0 && lastPointerY >= 0
+            && lastPointerSampleTime > 0;
+        const dx = hasPrevious ? x - lastPointerX : 0;
+        const dy = hasPrevious ? y - lastPointerY : 0;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const elapsed = hasPrevious ? Math.max(1, now - lastPointerSampleTime) : 1;
+        const speed = hasPrevious ? distance * 1000 / elapsed : 0;
+        const ghostDx = x - ghostHeadX;
+        const ghostDy = y - ghostHeadY;
+        const ghostDistance = Math.sqrt(ghostDx * ghostDx + ghostDy * ghostDy);
+
+        if (!hasPrevious || ghostOpacity <= 0 || ghostDistance >= pointerMovementThreshold)
+            pushGhostSample(x, y);
+
+        if (!hasPrevious || now - lastPhysicsUpdateTime >= pointerUpdateIntervalMs) {
+            updatePointerField(x, y, speed);
+            lastPhysicsUpdateTime = now;
+        }
+
+        lastPointerX = x;
+        lastPointerY = y;
+        lastPointerSampleTime = now;
+    }
+
+    NumberAnimation {
+        id: clickFieldDecay
+        target: root
+        property: "clickFieldStrength"
+        from: 1
+        to: 0
+        duration: 260
+        easing.type: Easing.OutCubic
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        color: root.backgroundMode === "color" ? root.backgroundColor : "#000000"
+    }'''
+start = text.index(old_pointer_start)
+finish = text.index(old_pointer_end, start)
+text = text[:start] + new_pointer_block + text[finish + len(old_pointer_end):]
+
+text = remove_between(
+    text,
+    '''            Canvas {
+                id: logoBridgeCanvas''',
+    '''            Repeater {
+                model: root.wordmarkRows.length''',
+    "legacy bridge canvas",
+)
+
+cell_start = '''                            property real pointerOffsetX: 0
+                            property real pointerOffsetY: 0'''
+cell_end = '''                            readonly property real randomA: Math.random()'''
+cell_block = '''                            readonly property var cohesionGroup: isFilledGlyph
+                                ? root.logoGroupFor(wordmarkRow.rowIndex, columnIndex) : null
+                            readonly property bool cohesionReady: isFilledGlyph
+                                && root.logoGroupReady(cohesionGroup)
+                            readonly property var pointerTarget: cohesionReady
+                                ? root.logoDeformationOffset(cohesionGroup) : ({ x: 0, y: 0 })
+                            readonly property bool pointerTargetActive:
+                                Math.abs(pointerTarget.x) + Math.abs(pointerTarget.y) > 0.01
+                            property real pointerOffsetX: pointerTarget.x
+                            property real pointerOffsetY: pointerTarget.y
+                            readonly property var groupAudioOffset: cohesionReady
+                                ? root.logoGroupAudioOffset(cohesionGroup) : ({ x: 0, y: 0 })
+                            readonly property real audioOffsetX: groupAudioOffset.x
+                            readonly property real audioOffsetY: groupAudioOffset.y
+                            readonly property real combinedOffsetX: Math.max(
+                                -root.clickDisplacementCap,
+                                Math.min(root.clickDisplacementCap,
+                                    pointerOffsetX + audioOffsetX))
+                            readonly property real combinedOffsetY: Math.max(
+                                -root.clickDisplacementCap,
+                                Math.min(root.clickDisplacementCap,
+                                    pointerOffsetY + audioOffsetY))
+
+                            readonly property real randomA: Math.random()'''
+start = text.index(cell_start)
+finish = text.index(cell_end, start)
+text = text[:start] + cell_block + text[finish + len(cell_end):]
+
+text = remove_between(
+    text,
+    '''                            function applyPointerImpulse(localX, localY, speed) {''',
+    '''                            Component.onCompleted: {''',
+    "per-cell impulse functions",
+)
+
+old_returns = '''                            NumberAnimation on pointerOffsetX {
+                                id: pointerReturnX
+                                running: false
+                                to: 0
+                                duration: 450
+                                easing.type: Easing.OutBack
+                                easing.overshoot: 0.55
+                            }
+
+                            NumberAnimation on pointerOffsetY {
+                                id: pointerReturnY
+                                running: false
+                                to: 0
+                                duration: 450
+                                easing.type: Easing.OutBack
+                                easing.overshoot: 0.55
+                            }'''
+new_returns = '''                            Behavior on pointerOffsetX {
+                                NumberAnimation {
+                                    duration: wordmarkCell.pointerTargetActive
+                                        ? root.pointerResponseDurationMs
+                                        : root.pointerReturnDurationMs
+                                    easing.type: Easing.OutCubic
                                 }
-''',
-    "",
-    "remove duplicated Quick Settings wallpaper picker",
+                            }
+
+                            Behavior on pointerOffsetY {
+                                NumberAnimation {
+                                    duration: wordmarkCell.pointerTargetActive
+                                        ? root.pointerResponseDurationMs
+                                        : root.pointerReturnDurationMs
+                                    easing.type: Easing.OutCubic
+                                }
+                            }'''
+text = replace_once(text, old_returns, new_returns, "smooth shared deformation behavior")
+
+for forbidden in (
+    "logoBridgeCanvas",
+    "logoBridgePairs",
+    "logoBridgeMaxDistance",
+    "logoBridgeInteractionBoost",
+    "buildLogoBridgePairs",
+    "logoBridgeInteractionEnergy",
+    "Easing.OutBack",
+    "pointerReturnX",
+    "pointerReturnY",
+):
+    if forbidden in text:
+        raise SystemExit(f"legacy cohesion token remains after patch: {forbidden}")
+
+SCENE.write_text(text)
+PREVIEW.write_text(text)
+
+# Align older interaction contracts with the new group-field implementation.
+test = EFFECTS_TEST.read_text()
+test = replace_once(
+    test,
+    '''require_text "$SCENE_QML" 'property real pointerOffsetX: 0' \\
+    'wordmark cells have no pointer displacement state'
+require_text "$SCENE_QML" 'property real pointerOffsetY: 0' \\
+    'wordmark cells have no pointer displacement state' ''',
+    '''require_text "$SCENE_QML" 'property real pointerOffsetX:' \\
+    'wordmark cells have no pointer displacement state'
+require_text "$SCENE_QML" 'property real pointerOffsetY:' \\
+    'wordmark cells have no pointer displacement state' ''',
+    "legacy pointer state assertions",
 )
-
-
-# Update the older editor test whose original picker requirement is now intentionally superseded.
-editor_test = "tests/test-quickshell-lockscreen-editor.sh"
-replace_once(
-    editor_test,
-    '''require_text "$QUICK_SETTINGS" 'label: "Choose with Awtwall"' \\
-    'Quick Settings has no Awtwall-backed lockscreen picture picker'
-require_text "$QUICK_SETTINGS" 'queueAction(["wallpaper"]' \\
-    'lockscreen picture picker does not reuse the existing Awtwall action'
-require_text "$QUICK_SETTINGS" 'queueStateCommand(["set-lockscreen-background", "wallpaper"])' \\
-    'choosing a lockscreen picture does not switch the lockscreen to wallpaper mode'
-''',
-    '''reject_text "$QUICK_SETTINGS" 'label: "Choose with Awtwall"' \\
-    'Quick Settings still duplicates lockscreen wallpaper selection outside the editor'
-require_text "$EDITOR_QML" 'quickshell_lockscreen_wallpaper_picker.sh' \\
-    'LockscreenEditor does not own the dedicated selection-only wallpaper flow'
-''',
-    "update superseded Quick Settings picker assertion",
+test = replace_once(
+    test,
+    '''require_text "$SCENE_QML" 'function applyClickImpulse(x, y)' \\
+    'shared scene has no distinct click impulse path' ''',
+    '''require_text "$SCENE_QML" 'function applyClickField(x, y)' \\
+    'shared scene has no distinct cohesive click field path' ''',
+    "legacy click assertion",
 )
-
-# The secure and preview presentation files are deliberately mirrored source.
-secure = Path("config/quickshell/awtarchy-lock/LockScene.qml").read_bytes()
-preview = Path("config/quickshell/awtarchy/LockPreviewScene.qml").read_bytes()
-if secure != preview:
-    raise SystemExit("presentation parity: secure and preview LockScene files diverged")
+test = replace_once(
+    test,
+    '''require_text "$SCENE_QML" 'NumberAnimation on pointerOffsetX' \\
+    'pointer X displacement has no return-to-rest animation'
+require_text "$SCENE_QML" 'NumberAnimation on pointerOffsetY' \\
+    'pointer Y displacement has no return-to-rest animation' ''',
+    '''require_text "$SCENE_QML" 'Behavior on pointerOffsetX {' \\
+    'pointer X displacement has no smooth response/return behavior'
+require_text "$SCENE_QML" 'Behavior on pointerOffsetY {' \\
+    'pointer Y displacement has no smooth response/return behavior' ''',
+    "legacy return-animation assertions",
+)
+EFFECTS_TEST.write_text(test)
