@@ -51,3 +51,5 @@ jobs:
           git add config/hypr/scripts/quickshell_application_state.sh
           git commit -m 'feat: persist lockscreen background appearance'
           git push origin HEAD:feature/lockscreen-interactive-effects
+
+# Trigger after workflow registration.
