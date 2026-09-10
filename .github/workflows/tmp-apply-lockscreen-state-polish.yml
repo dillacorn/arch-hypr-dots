@@ -25,16 +25,16 @@ jobs:
           fetch-depth: 0
       - name: Install validation tools
         run: sudo apt-get update && sudo apt-get install -y jq shellcheck
-      - name: Remove orphan bridge repaint
+      - name: Remove legacy bridge repaint hooks
         run: |
           python - <<'PY'
           from pathlib import Path
           path = Path('config/quickshell/awtarchy-lock/LockScene.qml')
           text = path.read_text()
           needle = "            logoBridgeCanvas.requestPaint();\n"
-          if text.count(needle) != 1:
-              raise SystemExit(f'orphan bridge repaint: expected 1 match, found {text.count(needle)}')
-          path.write_text(text.replace(needle, "", 1))
+          if text.count(needle) != 3:
+              raise SystemExit(f'legacy bridge repaint hooks: expected 3 matches, found {text.count(needle)}')
+          path.write_text(text.replace(needle, ""))
           PY
       - name: Apply cohesive logo patch
         run: python .github/scripts/tmp-lockscreen-state-polish.py
