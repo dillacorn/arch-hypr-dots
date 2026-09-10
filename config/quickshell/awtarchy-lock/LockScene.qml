@@ -66,10 +66,9 @@ Item {
     readonly property real clickInfluenceRadius: 110 * uiScale
     readonly property real clickDisplacementCap: 38 * uiScale
     readonly property real audioDisplacementCap: 6 * uiScale
-    readonly property real logoBridgeMaxDistance: Math.sqrt(
-        wordmarkCellWidth * wordmarkCellWidth + wordmarkCellHeight * wordmarkCellHeight) * 1.35
-    readonly property real logoBridgeInteractionBoost: 0.30
-    readonly property var logoBridgePairs: buildLogoBridgePairs()
+    readonly property int pointerResponseDurationMs: 100
+    readonly property int pointerReturnDurationMs: 180
+    readonly property var logoCohesionGroups: buildLogoCohesionGroups()
     readonly property real pointerMovementThreshold: 3 * uiScale
     readonly property string usernameText: showUsername ? Quickshell.env("USER") : ""
 
@@ -80,6 +79,12 @@ Item {
 
     property bool pointerActive: false
     property var wordmarkCells: ({})
+    property real pointerFieldX: -1000
+    property real pointerFieldY: -1000
+    property real pointerFieldStrength: 0
+    property real clickFieldX: -1000
+    property real clickFieldY: -1000
+    property real clickFieldStrength: 0
     property real ghostHeadX: -100
     property real ghostHeadY: -100
     property var ghostTrail: [
@@ -168,39 +173,162 @@ Item {
         return glyph === "█" || glyph === "▄" || glyph === "▀" || glyph === "▐";
     }
 
-    function buildLogoBridgePairs() {
-        const pairs = [];
-        const neighbors = [({ row: 0, column: 1 }), ({ row: 1, column: 0 })];
+    function logoCellKey(row, column) {
+        return String(row) + ":" + String(column);
+    }
+
+    function buildLogoCohesionGroups() {
+        const groups = [];
+        const visited = ({});
+        const neighbors = [
+            ({ row: 0, column: 1 }),
+            ({ row: 1, column: 0 }),
+            ({ row: 0, column: -1 }),
+            ({ row: -1, column: 0 })
+        ];
+        let groupId = 0;
+
         for (let row = 0; row < wordmarkRows.length; ++row) {
             for (let column = 0; column < wordmarkColumns; ++column) {
-                if (!isFilledWordmarkCell(row, column))
+                const firstKey = logoCellKey(row, column);
+                if (!isFilledWordmarkCell(row, column) || visited[firstKey])
                     continue;
-                for (let i = 0; i < neighbors.length; ++i) {
-                    const nextRow = row + neighbors[i].row;
-                    const nextColumn = column + neighbors[i].column;
-                    if (isFilledWordmarkCell(nextRow, nextColumn)) {
-                        pairs.push(({
-                            a: String(row) + ":" + String(column),
-                            b: String(nextRow) + ":" + String(nextColumn)
-                        }));
+
+                const queue = [({ row: row, column: column })];
+                const cells = [];
+                const members = ({});
+                let cursor = 0;
+                let sumX = 0;
+                let sumY = 0;
+                visited[firstKey] = true;
+
+                while (cursor < queue.length) {
+                    const cell = queue[cursor++];
+                    const key = logoCellKey(cell.row, cell.column);
+                    cells.push(cell);
+                    members[key] = true;
+                    sumX += (cell.column + 0.5) * wordmarkCellWidth;
+                    sumY += (cell.row + 0.5) * wordmarkCellHeight;
+
+                    for (let i = 0; i < neighbors.length; ++i) {
+                        const nextRow = cell.row + neighbors[i].row;
+                        const nextColumn = cell.column + neighbors[i].column;
+                        const nextKey = logoCellKey(nextRow, nextColumn);
+                        if (!visited[nextKey] && isFilledWordmarkCell(nextRow, nextColumn)) {
+                            visited[nextKey] = true;
+                            queue.push(({ row: nextRow, column: nextColumn }));
+                        }
                     }
                 }
+
+                groups.push(({
+                    id: groupId,
+                    cells: cells,
+                    members: members,
+                    centerX: sumX / Math.max(1, cells.length),
+                    centerY: sumY / Math.max(1, cells.length)
+                }));
+                ++groupId;
             }
         }
-        return pairs;
+        return groups;
+    }
+
+    function logoGroupFor(row, column) {
+        const key = logoCellKey(row, column);
+        for (let i = 0; i < logoCohesionGroups.length; ++i) {
+            const group = logoCohesionGroups[i];
+            if (group.members && group.members[key])
+                return group;
+        }
+        return null;
     }
 
     function registerWordmarkCell(row, column, cell) {
-        wordmarkCells[String(row) + ":" + String(column)] = cell;
-        logoBridgeCanvas.requestPaint();
+        const next = Object.assign({}, wordmarkCells);
+        next[logoCellKey(row, column)] = cell;
+        wordmarkCells = next;
     }
 
-    function logoBridgeInteractionEnergy(cellA, cellB) {
-        const offsetA = Math.sqrt(cellA.combinedOffsetX * cellA.combinedOffsetX
-            + cellA.combinedOffsetY * cellA.combinedOffsetY);
-        const offsetB = Math.sqrt(cellB.combinedOffsetX * cellB.combinedOffsetX
-            + cellB.combinedOffsetY * cellB.combinedOffsetY);
-        return Math.max(0, Math.min(1, Math.max(offsetA, offsetB) / clickDisplacementCap));
+    function logoGroupReady(group) {
+        if (!group || !Array.isArray(group.cells) || group.cells.length === 0)
+            return false;
+        for (let i = 0; i < group.cells.length; ++i) {
+            const member = group.cells[i];
+            const cell = wordmarkCells[logoCellKey(member.row, member.column)];
+            if (!cell || cell.formationProgress < 0.96)
+                return false;
+        }
+        return true;
+    }
+
+    function radialFieldOffset(group, fieldX, fieldY, strength, radius, cap) {
+        if (!group || strength <= 0 || radius <= 0 || cap <= 0)
+            return ({ x: 0, y: 0 });
+
+        let dx = group.centerX - fieldX;
+        let dy = group.centerY - fieldY;
+        let distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance >= radius)
+            return ({ x: 0, y: 0 });
+        if (distance < 0.001) {
+            const angle = (group.id + 1) * 2.399963229728653;
+            dx = Math.cos(angle);
+            dy = Math.sin(angle);
+            distance = 1;
+        }
+
+        const raw = Math.max(0, Math.min(1, 1 - distance / radius));
+        const proximity = raw * raw * (3 - 2 * raw);
+        const magnitude = cap * proximity * Math.max(0, Math.min(1, strength));
+        return ({
+            x: dx / distance * magnitude,
+            y: dy / distance * magnitude
+        });
+    }
+
+    function logoDeformationOffset(group) {
+        if (!group)
+            return ({ x: 0, y: 0 });
+        const pointer = pointerEffectsEnabled
+            ? radialFieldOffset(group, pointerFieldX, pointerFieldY,
+                pointerFieldStrength, pointerInfluenceRadius, pointerDisplacementCap)
+            : ({ x: 0, y: 0 });
+        const click = mouseInteractive
+            ? radialFieldOffset(group, clickFieldX, clickFieldY,
+                clickFieldStrength, clickInfluenceRadius, clickDisplacementCap)
+            : ({ x: 0, y: 0 });
+        return ({
+            x: Math.max(-clickDisplacementCap,
+                Math.min(clickDisplacementCap, pointer.x + click.x)),
+            y: Math.max(-clickDisplacementCap,
+                Math.min(clickDisplacementCap, pointer.y + click.y))
+        });
+    }
+
+    function logoGroupAudioOffset(group) {
+        if (!group || !audioEffectsEnabled)
+            return ({ x: 0, y: 0 });
+        const normalizedX = wordmarkWidth > 0 ? group.centerX / wordmarkWidth - 0.5 : 0;
+        const normalizedY = wordmarkHeight > 0 ? group.centerY / wordmarkHeight - 0.5 : 0;
+        const edgeWeight = Math.min(1,
+            Math.sqrt(normalizedX * normalizedX + normalizedY * normalizedY) * 2);
+        const band = group.id % 3;
+        const energy = band === 0 ? audioLow : band === 1 ? audioMid : audioHigh;
+        const envelope = Math.max(0, Math.min(1, energy)) * Math.pow(edgeWeight, 1.35);
+        if (envelope <= 0)
+            return ({ x: 0, y: 0 });
+        const angle = (group.id + 1) * 1.61803398875;
+        const rate = 0.82 + (group.id % 5) * 0.07;
+        return ({
+            x: Math.max(-audioDisplacementCap,
+                Math.min(audioDisplacementCap,
+                    Math.sin(audioPhase * rate + angle) * envelope * audioDisplacementCap)),
+            y: Math.max(-audioDisplacementCap,
+                Math.min(audioDisplacementCap,
+                    Math.cos(audioPhase * (rate + 0.09) + angle)
+                        * envelope * audioDisplacementCap * 0.82))
+        });
     }
 
     function minuteTimeFormat() {
@@ -232,57 +360,23 @@ Item {
         cursorFadeDelay.restart();
     }
 
-    function applyPointerImpulse(x, y, speed) {
+    function updatePointerField(x, y, speed) {
         if (!pointerEffectsEnabled)
             return;
-
         const local = wordmarkItem.mapFromItem(root, x, y);
-        const radius = pointerInfluenceRadius;
-        if (local.x < -radius || local.y < -radius
-                || local.x > wordmarkItem.width + radius
-                || local.y > wordmarkItem.height + radius)
-            return;
-
-        const minColumn = Math.max(0,
-            Math.floor((local.x - radius) / wordmarkCellWidth));
-        const maxColumn = Math.min(wordmarkColumns - 1,
-            Math.floor((local.x + radius) / wordmarkCellWidth));
-        const minRow = Math.max(0,
-            Math.floor((local.y - radius) / wordmarkCellHeight));
-        const maxRow = Math.min(wordmarkRows.length - 1,
-            Math.floor((local.y + radius) / wordmarkCellHeight));
-
-        for (let row = minRow; row <= maxRow; ++row) {
-            for (let column = minColumn; column <= maxColumn; ++column) {
-                const cell = wordmarkCells[String(row) + ":" + String(column)];
-                if (cell)
-                    cell.applyPointerImpulse(local.x, local.y, speed);
-            }
-        }
+        pointerFieldX = local.x;
+        pointerFieldY = local.y;
+        pointerFieldStrength = 0.35 + 0.65 * Math.min(1, Math.max(0, speed) / 1400);
     }
 
-    function applyClickImpulse(x, y) {
+    function applyClickField(x, y) {
         if (!mouseInteractive)
             return;
-
         const local = wordmarkItem.mapFromItem(root, x, y);
-        const radius = clickInfluenceRadius;
-        if (local.x < -radius || local.y < -radius
-                || local.x > wordmarkItem.width + radius
-                || local.y > wordmarkItem.height + radius)
-            return;
-
-        const minColumn = Math.max(0, Math.floor((local.x - radius) / wordmarkCellWidth));
-        const maxColumn = Math.min(wordmarkColumns - 1, Math.floor((local.x + radius) / wordmarkCellWidth));
-        const minRow = Math.max(0, Math.floor((local.y - radius) / wordmarkCellHeight));
-        const maxRow = Math.min(wordmarkRows.length - 1, Math.floor((local.y + radius) / wordmarkCellHeight));
-        for (let row = minRow; row <= maxRow; ++row) {
-            for (let column = minColumn; column <= maxColumn; ++column) {
-                const cell = wordmarkCells[String(row) + ":" + String(column)];
-                if (cell)
-                    cell.applyClickImpulse(local.x, local.y);
-            }
-        }
+        clickFieldX = local.x;
+        clickFieldY = local.y;
+        clickFieldStrength = 1;
+        clickFieldDecay.restart();
     }
 
     function handlePointerClick(x, y) {
@@ -290,7 +384,7 @@ Item {
             return;
         pointerActive = true;
         pushGhostSample(x, y);
-        applyClickImpulse(x, y);
+        applyClickField(x, y);
         lastPointerX = x;
         lastPointerY = y;
         lastPointerSampleTime = Date.now();
@@ -317,13 +411,23 @@ Item {
             pushGhostSample(x, y);
 
         if (!hasPrevious || now - lastPhysicsUpdateTime >= pointerUpdateIntervalMs) {
-            applyPointerImpulse(x, y, speed);
+            updatePointerField(x, y, speed);
             lastPhysicsUpdateTime = now;
         }
 
         lastPointerX = x;
         lastPointerY = y;
         lastPointerSampleTime = now;
+    }
+
+    NumberAnimation {
+        id: clickFieldDecay
+        target: root
+        property: "clickFieldStrength"
+        from: 1
+        to: 0
+        duration: 260
+        easing.type: Easing.OutCubic
     }
 
     Rectangle {
@@ -363,57 +467,6 @@ Item {
             scale: root.elementScale("logo")
             transformOrigin: Item.Center
 
-            Canvas {
-                id: logoBridgeCanvas
-                anchors.fill: parent
-                z: -1
-                antialiasing: true
-
-                onPaint: {
-                    const ctx = getContext("2d");
-                    ctx.reset();
-                    ctx.clearRect(0, 0, width, height);
-                    ctx.strokeStyle = root.elementColor("logo");
-                    ctx.lineCap = "round";
-                    ctx.lineJoin = "round";
-
-                    for (let i = 0; i < root.logoBridgePairs.length; ++i) {
-                        const pair = root.logoBridgePairs[i];
-                        const cellA = root.wordmarkCells[pair.a];
-                        const cellB = root.wordmarkCells[pair.b];
-                        if (!cellA || !cellB)
-                            continue;
-
-                        const formation = Math.min(cellA.formationProgress, cellB.formationProgress);
-                        if (formation <= 0.35)
-                            continue;
-
-                        const pointA = cellA.mapToItem(wordmarkItem,
-                            cellA.width / 2, cellA.height / 2);
-                        const pointB = cellB.mapToItem(wordmarkItem,
-                            cellB.width / 2, cellB.height / 2);
-                        const dx = pointB.x - pointA.x;
-                        const dy = pointB.y - pointA.y;
-                        const distance = Math.sqrt(dx * dx + dy * dy);
-                        if (distance >= root.logoBridgeMaxDistance)
-                            continue;
-
-                        const closeness = 1 - distance / root.logoBridgeMaxDistance;
-                        const interaction = root.logoBridgeInteractionEnergy(cellA, cellB);
-                        const interactionScale = 1 + interaction * root.logoBridgeInteractionBoost;
-                        ctx.globalAlpha = Math.min(0.48,
-                            (0.10 + 0.24 * closeness) * formation * interactionScale);
-                        ctx.lineWidth = Math.max(1.2 * root.uiScale,
-                            (2.0 + 2.2 * closeness) * root.uiScale * interactionScale);
-                        ctx.beginPath();
-                        ctx.moveTo(pointA.x, pointA.y);
-                        ctx.lineTo(pointB.x, pointB.y);
-                        ctx.stroke();
-                    }
-                    ctx.globalAlpha = 1;
-                }
-            }
-
             Repeater {
                 model: root.wordmarkRows.length
 
@@ -451,30 +504,20 @@ Item {
                             readonly property real finalCellX: columnIndex * root.wordmarkCellWidth
                             readonly property real finalCellY: wordmarkRow.rowIndex
                                 * root.wordmarkCellHeight
-                            property real pointerOffsetX: 0
-                            property real pointerOffsetY: 0
-                            readonly property real normalizedCenterX: root.wordmarkWidth > 0
-                                ? (finalCellX + root.wordmarkCellWidth / 2) / root.wordmarkWidth - 0.5 : 0
-                            readonly property real normalizedCenterY: root.wordmarkHeight > 0
-                                ? (finalCellY + root.wordmarkCellHeight / 2) / root.wordmarkHeight - 0.5 : 0
-                            readonly property real edgeWeight: Math.min(1,
-                                Math.sqrt(normalizedCenterX * normalizedCenterX
-                                    + normalizedCenterY * normalizedCenterY) * 2)
-                            readonly property real audioEnergy: randomA < 0.40
-                                ? root.audioLow : randomA < 0.78 ? root.audioMid : root.audioHigh
-                            readonly property real audioAngle: randomB * Math.PI * 2
-                            readonly property real audioEnvelope: root.audioEffectsEnabled
-                                ? Math.max(0, Math.min(1, audioEnergy)) * Math.pow(edgeWeight, 1.35) : 0
-                            readonly property real audioOffsetX: audioEnvelope <= 0 ? 0
-                                : Math.max(-root.audioDisplacementCap,
-                                    Math.min(root.audioDisplacementCap,
-                                        Math.sin(root.audioPhase * (0.75 + randomC * 0.55) + audioAngle)
-                                            * audioEnvelope * root.audioDisplacementCap))
-                            readonly property real audioOffsetY: audioEnvelope <= 0 ? 0
-                                : Math.max(-root.audioDisplacementCap,
-                                    Math.min(root.audioDisplacementCap,
-                                        Math.cos(root.audioPhase * (0.82 + randomD * 0.50) + audioAngle)
-                                            * audioEnvelope * root.audioDisplacementCap * 0.82))
+                            readonly property var cohesionGroup: isFilledGlyph
+                                ? root.logoGroupFor(wordmarkRow.rowIndex, columnIndex) : null
+                            readonly property bool cohesionReady: isFilledGlyph
+                                && root.logoGroupReady(cohesionGroup)
+                            readonly property var pointerTarget: cohesionReady
+                                ? root.logoDeformationOffset(cohesionGroup) : ({ x: 0, y: 0 })
+                            readonly property bool pointerTargetActive:
+                                Math.abs(pointerTarget.x) + Math.abs(pointerTarget.y) > 0.01
+                            property real pointerOffsetX: pointerTarget.x
+                            property real pointerOffsetY: pointerTarget.y
+                            readonly property var groupAudioOffset: cohesionReady
+                                ? root.logoGroupAudioOffset(cohesionGroup) : ({ x: 0, y: 0 })
+                            readonly property real audioOffsetX: groupAudioOffset.x
+                            readonly property real audioOffsetY: groupAudioOffset.y
                             readonly property real combinedOffsetX: Math.max(
                                 -root.clickDisplacementCap,
                                 Math.min(root.clickDisplacementCap,
@@ -541,87 +584,6 @@ Item {
                             property real formationProgress:
                                 root.animationPreference === "off" ? 1 : 0
 
-                            function applyPointerImpulse(localX, localY, speed) {
-                                if (!wordmarkCell.isFilledGlyph
-                                        || wordmarkCell.formationProgress < 0.96
-                                        || !root.pointerEffectsEnabled)
-                                    return;
-
-                                const centerX = wordmarkCell.finalCellX
-                                    + root.wordmarkCellWidth / 2;
-                                const centerY = wordmarkCell.finalCellY
-                                    + root.wordmarkCellHeight / 2;
-                                let dx = centerX - localX;
-                                let dy = centerY - localY;
-                                let distance = Math.sqrt(dx * dx + dy * dy);
-                                if (distance >= root.pointerInfluenceRadius)
-                                    return;
-                                if (distance < 0.001) {
-                                    dx = Math.cos(wordmarkCell.audioAngle);
-                                    dy = Math.sin(wordmarkCell.audioAngle);
-                                    distance = 1;
-                                }
-
-                                const proximity = 1 - distance / root.pointerInfluenceRadius;
-                                const speedFactor = 0.28 + 0.72 * Math.min(1, speed / 1200);
-                                const impulse = root.pointerDisplacementCap * proximity * speedFactor;
-                                const targetX = Math.max(-root.pointerDisplacementCap,
-                                    Math.min(root.pointerDisplacementCap,
-                                        wordmarkCell.pointerOffsetX + dx / distance * impulse));
-                                const targetY = Math.max(-root.pointerDisplacementCap,
-                                    Math.min(root.pointerDisplacementCap,
-                                        wordmarkCell.pointerOffsetY + dy / distance * impulse));
-
-                                pointerReturnX.stop();
-                                pointerReturnY.stop();
-                                wordmarkCell.pointerOffsetX = targetX;
-                                wordmarkCell.pointerOffsetY = targetY;
-                                pointerReturnX.restart();
-                                pointerReturnY.restart();
-                                logoBridgeCanvas.requestPaint();
-                            }
-
-                            function applyClickImpulse(localX, localY) {
-                                if (!wordmarkCell.isFilledGlyph
-                                        || wordmarkCell.formationProgress < 0.96
-                                        || !root.mouseInteractive)
-                                    return;
-
-                                const centerX = wordmarkCell.finalCellX + root.wordmarkCellWidth / 2;
-                                const centerY = wordmarkCell.finalCellY + root.wordmarkCellHeight / 2;
-                                let dx = centerX - localX;
-                                let dy = centerY - localY;
-                                let distance = Math.sqrt(dx * dx + dy * dy);
-                                if (distance >= root.clickInfluenceRadius)
-                                    return;
-                                if (distance < 0.001) {
-                                    dx = Math.cos(wordmarkCell.audioAngle);
-                                    dy = Math.sin(wordmarkCell.audioAngle);
-                                    distance = 1;
-                                }
-
-                                const proximity = 1 - distance / root.clickInfluenceRadius;
-                                const impulse = root.clickDisplacementCap * proximity * (0.82 + 0.18 * wordmarkCell.randomC);
-                                const targetX = Math.max(-root.clickDisplacementCap,
-                                    Math.min(root.clickDisplacementCap,
-                                        wordmarkCell.pointerOffsetX + dx / distance * impulse));
-                                const targetY = Math.max(-root.clickDisplacementCap,
-                                    Math.min(root.clickDisplacementCap,
-                                        wordmarkCell.pointerOffsetY + dy / distance * impulse));
-
-                                pointerReturnX.stop();
-                                pointerReturnY.stop();
-                                wordmarkCell.pointerOffsetX = targetX;
-                                wordmarkCell.pointerOffsetY = targetY;
-                                pointerReturnX.restart();
-                                pointerReturnY.restart();
-                                logoBridgeCanvas.requestPaint();
-                            }
-
-                            onFormationProgressChanged: logoBridgeCanvas.requestPaint()
-                            onCombinedOffsetXChanged: logoBridgeCanvas.requestPaint()
-                            onCombinedOffsetYChanged: logoBridgeCanvas.requestPaint()
-
                             Component.onCompleted: {
                                 if (wordmarkCell.isFilledGlyph)
                                     root.registerWordmarkCell(wordmarkRow.rowIndex,
@@ -670,22 +632,22 @@ Item {
                                 }
                             }
 
-                            NumberAnimation on pointerOffsetX {
-                                id: pointerReturnX
-                                running: false
-                                to: 0
-                                duration: 450
-                                easing.type: Easing.OutBack
-                                easing.overshoot: 0.55
+                            Behavior on pointerOffsetX {
+                                NumberAnimation {
+                                    duration: wordmarkCell.pointerTargetActive
+                                        ? root.pointerResponseDurationMs
+                                        : root.pointerReturnDurationMs
+                                    easing.type: Easing.OutCubic
+                                }
                             }
 
-                            NumberAnimation on pointerOffsetY {
-                                id: pointerReturnY
-                                running: false
-                                to: 0
-                                duration: 450
-                                easing.type: Easing.OutBack
-                                easing.overshoot: 0.55
+                            Behavior on pointerOffsetY {
+                                NumberAnimation {
+                                    duration: wordmarkCell.pointerTargetActive
+                                        ? root.pointerResponseDurationMs
+                                        : root.pointerReturnDurationMs
+                                    easing.type: Easing.OutCubic
+                                }
                             }
                         }
                     }
@@ -846,7 +808,6 @@ Item {
         running: root.audioEffectsEnabled
         onTriggered: {
             root.audioPhase += 0.22;
-            logoBridgeCanvas.requestPaint();
         }
     }
 

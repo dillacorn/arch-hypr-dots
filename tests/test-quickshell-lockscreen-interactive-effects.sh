@@ -180,15 +180,15 @@ require_text "$SCENE_QML" 'readonly property bool audioEffectsEnabled: audioReac
     'audio effects do not obey the independent Audio Reactive toggle'
 reject_text "$SCENE_QML" 'readonly property bool interactiveEffectsEnabled: root.animationPreference !== "off"' \
     'Lockscreen Animation Off still acts as the pointer/audio master switch'
-require_text "$SCENE_QML" 'property real pointerOffsetX: 0' \
+require_text "$SCENE_QML" 'property real pointerOffsetX:' \
     'wordmark cells have no pointer displacement state'
-require_text "$SCENE_QML" 'property real pointerOffsetY: 0' \
+require_text "$SCENE_QML" 'property real pointerOffsetY:' \
     'wordmark cells have no pointer displacement state'
 require_text "$SCENE_QML" 'readonly property real audioOffsetX:' \
     'wordmark cells have no audio displacement state'
 require_text "$SCENE_QML" 'readonly property real audioOffsetY:' \
     'wordmark cells have no audio displacement state'
-require_text "$SCENE_QML" 'function applyClickImpulse(x, y)' \
+require_text "$SCENE_QML" 'function applyClickField(x, y)' \
     'shared scene has no distinct click impulse path'
 require_text "$SCENE_QML" 'function handlePointerClick(x, y)' \
     'shared scene does not turn a click into an interaction event'
@@ -196,9 +196,9 @@ require_text "$SURFACE_QML" 'scene.handlePointerClick(mouse.x, mouse.y)' \
     'secure lock surface still drops pointer clicks before logo physics'
 require_text "$SURFACE_QML" 'password.forceActiveFocus()' \
     'click interaction no longer preserves password focus'
-require_text "$SCENE_QML" 'NumberAnimation on pointerOffsetX' \
+require_text "$SCENE_QML" 'Behavior on pointerOffsetX {' \
     'pointer X displacement has no return-to-rest animation'
-require_text "$SCENE_QML" 'NumberAnimation on pointerOffsetY' \
+require_text "$SCENE_QML" 'Behavior on pointerOffsetY {' \
     'pointer Y displacement has no return-to-rest animation'
 
 # Optional metadata remains independent from animation/effect preferences.
