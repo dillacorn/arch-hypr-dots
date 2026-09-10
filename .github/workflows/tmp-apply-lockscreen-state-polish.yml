@@ -45,7 +45,9 @@ jobs:
           patch.write_text(patch_text[:patch_text.index(marker)])
           PY
       - name: Apply cohesive logo scene patch
-        run: python .github/scripts/tmp-lockscreen-state-polish.py
+        run: |
+          python .github/scripts/tmp-lockscreen-state-polish.py
+          git checkout -- .github/scripts/tmp-lockscreen-state-polish.py
       - name: Align superseded interaction assertions
         run: |
           python - <<'PY'
