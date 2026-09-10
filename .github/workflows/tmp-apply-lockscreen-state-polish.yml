@@ -31,16 +31,10 @@ jobs:
           from pathlib import Path
           path = Path('config/quickshell/awtarchy-lock/LockScene.qml')
           text = path.read_text()
-          old = '''        onTriggered: {
-              root.audioPhase += 0.22;
-              logoBridgeCanvas.requestPaint();
-          }'''
-          new = '''        onTriggered: {
-              root.audioPhase += 0.22;
-          }'''
-          if text.count(old) != 1:
-              raise SystemExit(f'orphan bridge repaint: expected 1 match, found {text.count(old)}')
-          path.write_text(text.replace(old, new, 1))
+          needle = "            logoBridgeCanvas.requestPaint();\n"
+          if text.count(needle) != 1:
+              raise SystemExit(f'orphan bridge repaint: expected 1 match, found {text.count(needle)}')
+          path.write_text(text.replace(needle, "", 1))
           PY
       - name: Apply cohesive logo patch
         run: python .github/scripts/tmp-lockscreen-state-polish.py
